@@ -1,0 +1,35 @@
+# Example global cx config.
+# Save as ~/.cx/config.toml
+
+# Profile name used when --profile is not provided.
+default_profile = "default"
+
+# Default output mode when --output is not provided.
+# Valid values: "text", "json", "agents"
+default_output_format = "text"
+
+# Maximum serialized byte size of a non-aggregated Dataprime response that can
+# be printed directly to stdout in "agents" output mode. If the payload exceeds
+# this limit the results are written to a temp file instead, and a short summary
+# (result count + file path) is printed to stdout. Default: 102400 (100 KiB).
+# Set to -1 to disable the limit and always print results directly.
+# max_dataprime_direct_output_size = 102400
+
+# Directory where temp result files are stored when the payload exceeds
+# max_dataprime_direct_output_size. Files are prefixed with "cx_results" so
+# they can be identified and removed with `cx cleanup`. Default: "/tmp/".
+# temp_dir = "/tmp/"
+
+# Credentials live in separate profile files under ~/.cx/profiles/.
+# Example: ~/.cx/profiles/default.toml
+#
+# api_key = "cxp_your_api_key_here"
+# region = "eu1"
+# label = "production"
+#
+# Required for `cx search-fields`:
+# team_id = "123456"
+#
+# OpenAI API key used by `cx search-fields` for embedding generation.
+# The OPENAI_API_KEY environment variable takes precedence when set.
+# openai_api_key = "sk-..."

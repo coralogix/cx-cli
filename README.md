@@ -15,18 +15,40 @@ The CLI for Coralogix observability. Query logs, metrics, traces, dashboards, an
 
 ## Installation
 
-Build from source:
+### Shell (macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/coralogix/coralogix-cli/master/install.sh | sh
+```
+
+You can pin a specific version:
+
+```bash
+CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/coralogix-cli/master/install.sh | sh
+```
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew install coralogix/tap/cx
+```
+
+### Cargo
+
+```bash
+cargo install cx
+```
+
+### Pre-built binaries
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/coralogix-cli/releases).
+
+### Build from source
 
 ```bash
 cargo build --release
 cp target/release/cx /usr/local/bin/
 ```
-
-> On first checkout, fetch proto dependencies before building:
-> ```bash
-> protofetch --output-proto-directory proto fetch
-> cargo build --release
-> ```
 
 ## Quick Start
 

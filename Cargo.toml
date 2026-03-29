@@ -3,7 +3,7 @@ name = "cx"
 version = "0.1.0"
 edition = "2021"
 description = "Coralogix CLI — query observability data from the command line"
-repository = "https://github.com/coralogix/olly-open"
+repository = "https://github.com/coralogix/coralogix-cli"
 license = "Apache-2.0"
 default-run = "cx"
 

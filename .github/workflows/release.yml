@@ -9,6 +9,7 @@ env:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -49,11 +50,11 @@ jobs:
 
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --locked --target ${{ matrix.target }}
 
       - name: Build (native)
         if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package (unix)
         if: runner.os != 'Windows'
@@ -87,11 +88,29 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
       - name: Generate checksums
         run: |
           cd artifacts
           sha256sum cx-* > checksums-sha256.txt
           cat checksums-sha256.txt
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@c56c2d3e59e4281cc41dea2217323ba5694b171e # v3.8.0
+
+      - name: Sign checksums
+        run: |
+          cosign sign-blob --yes \
+            --output-signature artifacts/checksums-sha256.txt.sig \
+            --output-certificate artifacts/checksums-sha256.txt.pem \
+            artifacts/checksums-sha256.txt
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@55dc4ee22412511ee8c3142cbea40418e6cec693 # v0.17.8
+        with:
+          format: cyclonedx-json
+          output-file: artifacts/cx-sbom.cyclonedx.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2

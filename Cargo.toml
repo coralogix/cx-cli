@@ -36,6 +36,7 @@ dirs = "5"
 
 # Secure credential storage
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+inquire = "0.7"
 
 # Terminal output
 colored = "2"

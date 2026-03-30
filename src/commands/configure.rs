@@ -1,27 +1,42 @@
-use std::io::{self, Write};
-
 use anyhow::Result;
+use inquire::{Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{load_config, save_config, save_profile, OutputFormat, Profile, Region};
 use crate::keyring_store;
 
+const REGIONS: &[&str] = &["us1", "us2", "eu1", "eu2", "ap1", "ap2", "ap3", "stg1"];
+
+const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
+
 pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
     let name = profile_name.unwrap_or_else(|| "default".to_string());
 
-    println!("Configuring profile '{name}'");
-    println!("Press Enter to keep existing value when shown in brackets.\n");
+    println!("Configuring profile '{name}'\n");
 
-    let api_key = prompt("Coralogix API key")?;
-    let region_str = prompt_with_default("Region (us1/us2/eu1/eu2/ap1/ap2)", "eu1")?;
-    let label = prompt_optional("Label (optional, e.g. 'prod')")?;
-    let team_id = prompt_optional("Coralogix team ID (cgx-team-id, required for search-fields)")?;
-    let openai_api_key =
-        prompt_optional("OpenAI API key (optional, can also be set via OPENAI_API_KEY env var)")?;
+    let api_key = Password::new("Coralogix API key:")
+        .with_display_mode(PasswordDisplayMode::Masked)
+        .without_confirmation()
+        .prompt()?;
 
+    let region_str = Select::new("Region:", REGIONS.to_vec())
+        .with_starting_cursor(2) // eu1
+        .prompt()?;
     let region: Region = region_str.parse()?;
 
+    let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
+    let label = label.filter(|s| !s.is_empty());
+
+    let team_id = Text::new("Coralogix team ID (required for search-fields):")
+        .prompt_skippable()?;
+    let team_id = team_id.filter(|s| !s.is_empty());
+
+    let openai_api_key = Password::new("OpenAI API key (optional):")
+        .with_display_mode(PasswordDisplayMode::Masked)
+        .without_confirmation()
+        .prompt_skippable()?;
+    let openai_api_key = openai_api_key.filter(|s| !s.is_empty());
+
     if no_keyring {
-        // Store keys inline in the TOML file.
         let profile = Profile {
             api_key: Some(api_key),
             region,
@@ -31,7 +46,6 @@ pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
         };
         save_profile(&name, &profile)?;
     } else {
-        // Store keys in the system keyring.
         keyring_store::store_secret(&name, "api_key", &api_key)?;
         if let Some(ref oai_key) = openai_api_key {
             keyring_store::store_secret(&name, "openai_api_key", oai_key)?;
@@ -48,10 +62,14 @@ pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
 
     // Update global config with the chosen default output format.
     let mut global_config = load_config().unwrap_or_default();
-    let current_format = format!("{:?}", global_config.default_output_format).to_lowercase();
-    let format_str =
-        prompt_with_default("Default output format (text/json/agents)", &current_format)?;
-    global_config.default_output_format = match format_str.to_lowercase().as_str() {
+    let current_idx = OUTPUT_FORMATS
+        .iter()
+        .position(|&f| f == format!("{:?}", global_config.default_output_format).to_lowercase())
+        .unwrap_or(0);
+    let format_str = Select::new("Default output format:", OUTPUT_FORMATS.to_vec())
+        .with_starting_cursor(current_idx)
+        .prompt()?;
+    global_config.default_output_format = match format_str {
         "json" => OutputFormat::Json,
         "agents" => OutputFormat::Agents,
         _ => OutputFormat::Text,
@@ -65,30 +83,4 @@ pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
         cx_dir.display()
     );
     Ok(())
-}
-
-fn prompt(label: &str) -> Result<String> {
-    print!("{label}: ");
-    io::stdout().flush()?;
-    let mut s = String::new();
-    io::stdin().read_line(&mut s)?;
-    Ok(s.trim().to_string())
-}
-
-fn prompt_with_default(label: &str, default: &str) -> Result<String> {
-    print!("{label} [{default}]: ");
-    io::stdout().flush()?;
-    let mut s = String::new();
-    io::stdin().read_line(&mut s)?;
-    let trimmed = s.trim();
-    Ok(if trimmed.is_empty() {
-        default.to_string()
-    } else {
-        trimmed.to_string()
-    })
-}
-
-fn prompt_optional(label: &str) -> Result<Option<String>> {
-    let s = prompt(label)?;
-    Ok(if s.is_empty() { None } else { Some(s) })
 }

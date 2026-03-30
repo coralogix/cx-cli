@@ -12,7 +12,7 @@ const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
 
 const SECRET_STORAGE_OPTIONS: &[&str] = &["keyring", "file"];
 
-pub async fn run(
+pub fn run(
     profile_name: Option<String>,
     secret_storage: Option<SecretStorage>,
 ) -> Result<()> {
@@ -68,6 +68,8 @@ pub async fn run(
         };
         save_profile(&name, &profile)?;
     } else {
+        // Clean up any leftover keyring entries from a previous keyring-based config.
+        keyring_store::delete_profile(&name);
         let profile = Profile {
             api_key: Some(api_key),
             region,
@@ -82,7 +84,7 @@ pub async fn run(
     let mut global_config = load_config().unwrap_or_default();
     let current_idx = OUTPUT_FORMATS
         .iter()
-        .position(|&f| f == format!("{:?}", global_config.default_output_format).to_lowercase())
+        .position(|&f| f == global_config.default_output_format.as_str())
         .unwrap_or(0);
     let format_str = Select::new("Default output format:", OUTPUT_FORMATS.to_vec())
         .with_starting_cursor(current_idx)

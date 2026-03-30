@@ -302,7 +302,7 @@ async fn main() -> Result<()> {
 
     // Configure command doesn't need API credentials.
     if let Commands::Configure { profile, secret_storage } = cli.command {
-        return commands::configure::run(profile, secret_storage).await;
+        return commands::configure::run(profile, secret_storage);
     }
 
     // Cleanup command doesn't need API credentials.

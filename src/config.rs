@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +30,22 @@ pub enum OutputFormat {
     Agents,
 }
 
+impl OutputFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OutputFormat::Text => "text",
+            OutputFormat::Json => "json",
+            OutputFormat::Agents => "agents",
+        }
+    }
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Coralogix region, used to resolve the API endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -48,7 +67,7 @@ impl Region {
         match self {
             Region::Us1 => "https://api.us1.coralogix.com",
             Region::Us2 => "https://api.us2.coralogix.com",
-            Region::Eu1 => "https://api.eu2.coralogix.com",
+            Region::Eu1 => "https://api.eu1.coralogix.com",
             Region::Eu2 => "https://api.eu2.coralogix.com",
             Region::Ap1 => "https://api.ap1.coralogix.com",
             Region::Ap2 => "https://api.ap2.coralogix.com",
@@ -331,13 +350,17 @@ pub fn resolve_all(
 }
 
 /// Write a profile to disk, creating directories as needed.
+/// Sets file permissions to 0600 on Unix to protect any inline secrets.
 pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
     let dir = profiles_dir()?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{name}.toml"));
     let content = toml::to_string_pretty(profile).context("Failed to serialize profile")?;
-    std::fs::write(&path, content)
+    std::fs::write(&path, &content)
         .with_context(|| format!("Failed to write {}", path.display()))?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
     Ok(())
 }
 
@@ -365,7 +388,7 @@ mod tests {
 
     #[test]
     fn region_api_endpoint_eu1() {
-        assert_eq!(Region::Eu1.api_endpoint(), "https://api.eu2.coralogix.com");
+        assert_eq!(Region::Eu1.api_endpoint(), "https://api.eu1.coralogix.com");
     }
 
     #[test]

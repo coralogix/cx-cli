@@ -5,6 +5,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::keyring_store;
 
+/// Where to store API keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SecretStorage {
+    /// Store in the system keyring (macOS Keychain, Windows Credential Manager, etc.)
+    Keyring,
+    /// Store in the profile TOML file (plaintext).
+    File,
+}
+
 /// Output format for command results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]

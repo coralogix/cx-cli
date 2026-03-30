@@ -1,14 +1,21 @@
 use anyhow::Result;
 use inquire::{Password, PasswordDisplayMode, Select, Text};
 
-use crate::config::{load_config, save_config, save_profile, OutputFormat, Profile, Region};
+use crate::config::{
+    load_config, save_config, save_profile, OutputFormat, Profile, Region, SecretStorage,
+};
 use crate::keyring_store;
 
 const REGIONS: &[&str] = &["us1", "us2", "eu1", "eu2", "ap1", "ap2", "ap3", "stg1"];
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
 
-pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
+const SECRET_STORAGE_OPTIONS: &[&str] = &["keyring", "file"];
+
+pub async fn run(
+    profile_name: Option<String>,
+    secret_storage: Option<SecretStorage>,
+) -> Result<()> {
     let name = profile_name.unwrap_or_else(|| "default".to_string());
 
     println!("Configuring profile '{name}'\n");
@@ -36,16 +43,18 @@ pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
         .prompt_skippable()?;
     let openai_api_key = openai_api_key.filter(|s| !s.is_empty());
 
-    if no_keyring {
-        let profile = Profile {
-            api_key: Some(api_key),
-            region,
-            label,
-            team_id,
-            openai_api_key,
-        };
-        save_profile(&name, &profile)?;
-    } else {
+    let use_keyring = match secret_storage {
+        Some(SecretStorage::Keyring) => true,
+        Some(SecretStorage::File) => false,
+        None => {
+            let choice = Select::new("Store API keys in:", SECRET_STORAGE_OPTIONS.to_vec())
+                .with_starting_cursor(0) // keyring
+                .prompt()?;
+            choice == "keyring"
+        }
+    };
+
+    if use_keyring {
         keyring_store::store_secret(&name, "api_key", &api_key)?;
         if let Some(ref oai_key) = openai_api_key {
             keyring_store::store_secret(&name, "openai_api_key", oai_key)?;
@@ -56,6 +65,15 @@ pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
             label,
             team_id,
             openai_api_key: None,
+        };
+        save_profile(&name, &profile)?;
+    } else {
+        let profile = Profile {
+            api_key: Some(api_key),
+            region,
+            label,
+            team_id,
+            openai_api_key,
         };
         save_profile(&name, &profile)?;
     }
@@ -77,7 +95,7 @@ pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
     save_config(&global_config)?;
 
     let cx_dir = crate::config::config_dir()?;
-    let storage = if no_keyring { "profile file" } else { "system keyring" };
+    let storage = if use_keyring { "system keyring" } else { "profile file" };
     println!(
         "\nProfile '{name}' saved to {}\nAPI key stored in {storage}",
         cx_dir.display()

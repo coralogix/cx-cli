@@ -1,7 +1,23 @@
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::keyring_store;
+
+/// Where API keys are stored for a profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialStorage {
+    /// Store in the profile TOML file (plaintext, 0600 permissions).
+    #[default]
+    File,
+    /// Store in the OS credential store (macOS Keychain, Windows Credential Manager, etc.)
+    OsStore,
+}
 
 /// Output format for command results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
@@ -14,6 +30,22 @@ pub enum OutputFormat {
     Json,
     /// Token-aware, AI-agent-optimised JSON output.
     Agents,
+}
+
+impl OutputFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OutputFormat::Text => "text",
+            OutputFormat::Json => "json",
+            OutputFormat::Agents => "agents",
+        }
+    }
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Coralogix region, used to resolve the API endpoint.
@@ -37,7 +69,7 @@ impl Region {
         match self {
             Region::Us1 => "https://api.us1.coralogix.com",
             Region::Us2 => "https://api.us2.coralogix.com",
-            Region::Eu1 => "https://api.eu2.coralogix.com",
+            Region::Eu1 => "https://api.eu1.coralogix.com",
             Region::Eu2 => "https://api.eu2.coralogix.com",
             Region::Ap1 => "https://api.ap1.coralogix.com",
             Region::Ap2 => "https://api.ap2.coralogix.com",
@@ -159,18 +191,27 @@ mod max_size_serde {
 }
 
 /// A named profile storing credentials and endpoint info.
+///
+/// API keys are stored inline in the TOML by default (`credential_storage = "file"`).
+/// When `credential_storage = "os_store"`, keys are stored in the OS credential
+/// store and `api_key` / `openai_api_key` are `None` in the TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
-    pub api_key: String,
+    /// Where API keys for this profile are stored.
+    #[serde(default)]
+    pub credential_storage: CredentialStorage,
+    /// Coralogix API key. Present when `credential_storage = "file"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
     pub region: Region,
     /// Optional free-form label (e.g. "prod", "staging")
     pub label: Option<String>,
     /// Coralogix team ID, sent as `cgx-team-id` in gRPC metadata.
     #[serde(default)]
     pub team_id: Option<String>,
-    /// OpenAI API key for embedding-based features. Falls back to the
-    /// `OPENAI_API_KEY` environment variable when not set in the profile.
-    #[serde(default)]
+    /// OpenAI API key for embedding-based features. Present when
+    /// `credential_storage = "file"`. Falls back to `OPENAI_API_KEY` env var.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_api_key: Option<String>,
 }
 
@@ -236,6 +277,9 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 }
 
 /// Resolve a single named profile, respecting optional CLI overrides.
+///
+/// API key resolution order: CLI override > configured storage backend > bail.
+/// OpenAI key resolution: `OPENAI_API_KEY` env var > configured storage backend.
 fn resolve_single(
     profile_name: &str,
     api_key_override: Option<&str>,
@@ -243,23 +287,43 @@ fn resolve_single(
 ) -> Result<ResolvedConfig> {
     let mut profile = load_profile(profile_name)?;
 
-    if let Some(key) = api_key_override {
-        profile.api_key = key.to_string();
-    }
     if let Some(region) = region_override {
         profile.region = region.parse()?;
     }
 
-    // `OPENAI_API_KEY` env var takes precedence over the profile value.
+    // API key: CLI override > storage backend
+    let api_key = if let Some(key) = api_key_override {
+        key.to_string()
+    } else {
+        match profile.credential_storage {
+            CredentialStorage::OsStore => {
+                keyring_store::get_secret(profile_name, "api_key")?
+            }
+            CredentialStorage::File => profile.api_key,
+        }
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No API key found for profile '{profile_name}'.\n\
+                 Run `cx configure --profile {profile_name}` to set it up."
+            )
+        })?
+    };
+
+    // OpenAI key: env var > storage backend
     let openai_api_key = std::env::var("OPENAI_API_KEY")
         .ok()
         .filter(|s| !s.is_empty())
-        .or(profile.openai_api_key);
+        .or_else(|| match profile.credential_storage {
+            CredentialStorage::OsStore => {
+                keyring_store::get_secret(profile_name, "openai_api_key").ok().flatten()
+            }
+            CredentialStorage::File => profile.openai_api_key,
+        });
 
     Ok(ResolvedConfig {
         profile_name: profile_name.to_string(),
         endpoint: profile.region.api_endpoint().to_string(),
-        api_key: profile.api_key,
+        api_key,
         team_id: profile.team_id,
         openai_api_key,
     })
@@ -299,13 +363,17 @@ pub fn resolve_all(
 }
 
 /// Write a profile to disk, creating directories as needed.
+/// Sets file permissions to 0600 on Unix to protect any inline secrets.
 pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
     let dir = profiles_dir()?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{name}.toml"));
     let content = toml::to_string_pretty(profile).context("Failed to serialize profile")?;
-    std::fs::write(&path, content)
+    std::fs::write(&path, &content)
         .with_context(|| format!("Failed to write {}", path.display()))?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
     Ok(())
 }
 
@@ -333,7 +401,7 @@ mod tests {
 
     #[test]
     fn region_api_endpoint_eu1() {
-        assert_eq!(Region::Eu1.api_endpoint(), "https://api.eu2.coralogix.com");
+        assert_eq!(Region::Eu1.api_endpoint(), "https://api.eu1.coralogix.com");
     }
 
     #[test]
@@ -374,7 +442,8 @@ mod tests {
         let names = ["cx_inttest_multi_a", "cx_inttest_multi_b"];
         for (i, name) in names.iter().enumerate() {
             let profile = Profile {
-                api_key: format!("key-{i}"),
+                credential_storage: CredentialStorage::File,
+                api_key: Some(format!("key-{i}")),
                 region: Region::Eu1,
                 label: None,
                 team_id: None,
@@ -405,7 +474,8 @@ mod tests {
     #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
     fn resolve_all_integration_empty_slice_falls_back_to_default() {
         let profile = Profile {
-            api_key: "default-key".to_string(),
+            credential_storage: CredentialStorage::File,
+            api_key: Some("default-key".to_string()),
             region: Region::Eu1,
             label: None,
             team_id: None,
@@ -416,5 +486,70 @@ mod tests {
         let configs = resolve_all(&[], None, None).unwrap();
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].profile_name, "default");
+    }
+
+    // ── Credential storage resolution tests ────────────────────────────────
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx"]
+    fn resolve_prefers_cli_override_over_file() {
+        let name = "cx_inttest_resolve_override";
+        let profile = Profile {
+            credential_storage: CredentialStorage::File,
+            api_key: Some("file-key".to_string()),
+            region: Region::Eu1,
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+        };
+        save_profile(name, &profile).unwrap();
+
+        let config = resolve_single(name, Some("cli-key"), None).unwrap();
+        assert_eq!(config.api_key, "cli-key");
+
+        // cleanup
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx"]
+    fn resolve_reads_from_file_storage() {
+        let name = "cx_inttest_resolve_file";
+        let profile = Profile {
+            credential_storage: CredentialStorage::File,
+            api_key: Some("file-key".to_string()),
+            region: Region::Eu1,
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+        };
+        save_profile(name, &profile).unwrap();
+
+        let config = resolve_single(name, None, None).unwrap();
+        assert_eq!(config.api_key, "file-key");
+
+        // cleanup
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx"]
+    fn resolve_errors_when_no_key_anywhere() {
+        let name = "cx_inttest_resolve_no_key";
+        let profile = Profile {
+            credential_storage: CredentialStorage::File,
+            api_key: None,
+            region: Region::Eu1,
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+        };
+        save_profile(name, &profile).unwrap();
+
+        let result = resolve_single(name, None, None);
+        assert!(result.is_err());
+
+        // cleanup
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
     }
 }

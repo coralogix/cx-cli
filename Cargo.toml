@@ -34,6 +34,9 @@ thiserror = "2"
 # Config directory resolution
 dirs = "5"
 
+# Secure credential storage
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
 # Terminal output
 colored = "2"
 tabled = { version = "0.17", features = ["ansi"] }

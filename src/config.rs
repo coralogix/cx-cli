@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::keyring_store;
+
 /// Output format for command results.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
@@ -159,18 +161,24 @@ mod max_size_serde {
 }
 
 /// A named profile storing credentials and endpoint info.
+///
+/// API keys may be stored in the system keyring (default) or inline in the
+/// TOML file (when configured with `--no-keyring`). When stored in the
+/// keyring, `api_key` and `openai_api_key` are `None` in the TOML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
-    pub api_key: String,
+    /// Coralogix API key. Only present in the TOML when using `--no-keyring`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
     pub region: Region,
     /// Optional free-form label (e.g. "prod", "staging")
     pub label: Option<String>,
     /// Coralogix team ID, sent as `cgx-team-id` in gRPC metadata.
     #[serde(default)]
     pub team_id: Option<String>,
-    /// OpenAI API key for embedding-based features. Falls back to the
-    /// `OPENAI_API_KEY` environment variable when not set in the profile.
-    #[serde(default)]
+    /// OpenAI API key for embedding-based features. Only present in the TOML
+    /// when using `--no-keyring`. Falls back to `OPENAI_API_KEY` env var.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_api_key: Option<String>,
 }
 
@@ -236,6 +244,9 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 }
 
 /// Resolve a single named profile, respecting optional CLI overrides.
+///
+/// API key resolution order: CLI override > keyring > profile TOML file.
+/// OpenAI key resolution: `OPENAI_API_KEY` env var > keyring > profile TOML.
 fn resolve_single(
     profile_name: &str,
     api_key_override: Option<&str>,
@@ -243,23 +254,35 @@ fn resolve_single(
 ) -> Result<ResolvedConfig> {
     let mut profile = load_profile(profile_name)?;
 
-    if let Some(key) = api_key_override {
-        profile.api_key = key.to_string();
-    }
     if let Some(region) = region_override {
         profile.region = region.parse()?;
     }
 
-    // `OPENAI_API_KEY` env var takes precedence over the profile value.
+    // API key: CLI override > keyring > profile TOML
+    let api_key = if let Some(key) = api_key_override {
+        key.to_string()
+    } else if let Some(key) = keyring_store::get_secret(profile_name, "api_key")? {
+        key
+    } else if let Some(key) = profile.api_key {
+        key
+    } else {
+        anyhow::bail!(
+            "No API key found for profile '{profile_name}'.\n\
+             Run `cx configure --profile {profile_name}` to set it up."
+        );
+    };
+
+    // OpenAI key: env var > keyring > profile TOML
     let openai_api_key = std::env::var("OPENAI_API_KEY")
         .ok()
         .filter(|s| !s.is_empty())
+        .or_else(|| keyring_store::get_secret(profile_name, "openai_api_key").ok().flatten())
         .or(profile.openai_api_key);
 
     Ok(ResolvedConfig {
         profile_name: profile_name.to_string(),
         endpoint: profile.region.api_endpoint().to_string(),
-        api_key: profile.api_key,
+        api_key,
         team_id: profile.team_id,
         openai_api_key,
     })
@@ -374,7 +397,7 @@ mod tests {
         let names = ["cx_inttest_multi_a", "cx_inttest_multi_b"];
         for (i, name) in names.iter().enumerate() {
             let profile = Profile {
-                api_key: format!("key-{i}"),
+                api_key: Some(format!("key-{i}")),
                 region: Region::Eu1,
                 label: None,
                 team_id: None,
@@ -405,7 +428,7 @@ mod tests {
     #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
     fn resolve_all_integration_empty_slice_falls_back_to_default() {
         let profile = Profile {
-            api_key: "default-key".to_string(),
+            api_key: Some("default-key".to_string()),
             region: Region::Eu1,
             label: None,
             team_id: None,
@@ -416,5 +439,96 @@ mod tests {
         let configs = resolve_all(&[], None, None).unwrap();
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].profile_name, "default");
+    }
+
+    // ── Keyring resolution order tests ───────────────────────────────────────
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx and system keyring"]
+    fn resolve_prefers_cli_override_over_keyring_and_file() {
+        let name = "cx_inttest_resolve_override";
+        // Store key in both file and keyring
+        let profile = Profile {
+            api_key: Some("file-key".to_string()),
+            region: Region::Eu1,
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+        };
+        save_profile(name, &profile).unwrap();
+        crate::keyring_store::store_secret(name, "api_key", "keyring-key").unwrap();
+
+        let config = resolve_single(name, Some("cli-key"), None).unwrap();
+        assert_eq!(config.api_key, "cli-key");
+
+        // cleanup
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+        crate::keyring_store::delete_secret(name, "api_key");
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx and system keyring"]
+    fn resolve_prefers_keyring_over_file() {
+        let name = "cx_inttest_resolve_keyring";
+        let profile = Profile {
+            api_key: Some("file-key".to_string()),
+            region: Region::Eu1,
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+        };
+        save_profile(name, &profile).unwrap();
+        crate::keyring_store::store_secret(name, "api_key", "keyring-key").unwrap();
+
+        let config = resolve_single(name, None, None).unwrap();
+        assert_eq!(config.api_key, "keyring-key");
+
+        // cleanup
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+        crate::keyring_store::delete_secret(name, "api_key");
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx"]
+    fn resolve_falls_back_to_file_when_no_keyring_entry() {
+        let name = "cx_inttest_resolve_file_fallback";
+        // Only store in file, no keyring entry
+        let profile = Profile {
+            api_key: Some("file-key".to_string()),
+            region: Region::Eu1,
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+        };
+        save_profile(name, &profile).unwrap();
+        // Ensure no keyring entry
+        crate::keyring_store::delete_secret(name, "api_key");
+
+        let config = resolve_single(name, None, None).unwrap();
+        assert_eq!(config.api_key, "file-key");
+
+        // cleanup
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx"]
+    fn resolve_errors_when_no_key_anywhere() {
+        let name = "cx_inttest_resolve_no_key";
+        let profile = Profile {
+            api_key: None,
+            region: Region::Eu1,
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+        };
+        save_profile(name, &profile).unwrap();
+        crate::keyring_store::delete_secret(name, "api_key");
+
+        let result = resolve_single(name, None, None);
+        assert!(result.is_err());
+
+        // cleanup
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
     }
 }

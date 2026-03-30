@@ -3,8 +3,9 @@ use std::io::{self, Write};
 use anyhow::Result;
 
 use crate::config::{load_config, save_config, save_profile, OutputFormat, Profile, Region};
+use crate::keyring_store;
 
-pub async fn run(profile_name: Option<String>) -> Result<()> {
+pub async fn run(profile_name: Option<String>, no_keyring: bool) -> Result<()> {
     let name = profile_name.unwrap_or_else(|| "default".to_string());
 
     println!("Configuring profile '{name}'");
@@ -18,15 +19,32 @@ pub async fn run(profile_name: Option<String>) -> Result<()> {
         prompt_optional("OpenAI API key (optional, can also be set via OPENAI_API_KEY env var)")?;
 
     let region: Region = region_str.parse()?;
-    let profile = Profile {
-        api_key,
-        region,
-        label,
-        team_id,
-        openai_api_key,
-    };
 
-    save_profile(&name, &profile)?;
+    if no_keyring {
+        // Store keys inline in the TOML file.
+        let profile = Profile {
+            api_key: Some(api_key),
+            region,
+            label,
+            team_id,
+            openai_api_key,
+        };
+        save_profile(&name, &profile)?;
+    } else {
+        // Store keys in the system keyring.
+        keyring_store::store_secret(&name, "api_key", &api_key)?;
+        if let Some(ref oai_key) = openai_api_key {
+            keyring_store::store_secret(&name, "openai_api_key", oai_key)?;
+        }
+        let profile = Profile {
+            api_key: None,
+            region,
+            label,
+            team_id,
+            openai_api_key: None,
+        };
+        save_profile(&name, &profile)?;
+    }
 
     // Update global config with the chosen default output format.
     let mut global_config = load_config().unwrap_or_default();
@@ -41,8 +59,9 @@ pub async fn run(profile_name: Option<String>) -> Result<()> {
     save_config(&global_config)?;
 
     let cx_dir = crate::config::config_dir()?;
+    let storage = if no_keyring { "profile file" } else { "system keyring" };
     println!(
-        "\nProfile '{name}' saved to {}",
+        "\nProfile '{name}' saved to {}\nAPI key stored in {storage}",
         cx_dir.display()
     );
     Ok(())

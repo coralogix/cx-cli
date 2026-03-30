@@ -47,6 +47,9 @@ enum Commands {
         /// Profile name to configure (default: "default").
         #[arg(long, short = 'p')]
         profile: Option<String>,
+        /// Store API keys in the profile file instead of the system keyring.
+        #[arg(long)]
+        no_keyring: bool,
     },
 
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
@@ -298,8 +301,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Configure command doesn't need API credentials.
-    if let Commands::Configure { profile } = cli.command {
-        return commands::configure::run(profile).await;
+    if let Commands::Configure { profile, no_keyring } = cli.command {
+        return commands::configure::run(profile, no_keyring).await;
     }
 
     // Cleanup command doesn't need API credentials.

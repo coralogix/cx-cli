@@ -1,0 +1,8 @@
+version = 2
+
+[[dependencies]]
+name = "cx-api-schema-store"
+url = "github.com/coralogix/cx-api-schema-store"
+protocol = "ssh"
+branch = "master"
+commit_hash = "8d58ff1cec7642ae2dde192c25df6de88d8ea709"

@@ -1,0 +1,8 @@
+name = "cx"
+description = "Coralogix CLI"
+
+[cx-api-schema-store]
+url = "github.com/coralogix/cx-api-schema-store"
+protocol = "ssh"
+branch = "master"
+allow_policies = ["com/coralogix/schemastore/v1/*"]

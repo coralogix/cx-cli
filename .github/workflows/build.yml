@@ -1,0 +1,38 @@
+name: Build Verification
+
+on:
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Release Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.94.1"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Report binary size
+        run: |
+          BINARY="target/release/cx"
+          SIZE_BYTES=$(stat -c%s "$BINARY")
+          SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$SIZE_BYTES")
+          echo "## Binary Size" >> $GITHUB_STEP_SUMMARY
+          echo "| Binary | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`cx\` | $SIZE_HUMAN ($SIZE_BYTES bytes) |" >> $GITHUB_STEP_SUMMARY

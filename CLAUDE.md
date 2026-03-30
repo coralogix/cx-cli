@@ -19,7 +19,7 @@ cargo test -- --ignored             # Run integration tests (filesystem-dependen
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
-Rust toolchain is pinned to **1.87.0** via `rust-toolchain.toml`.
+Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 Proto files are generated at build time by `build.rs` using `tonic-build` with vendored `protoc`. After a fresh checkout, protos must be fetched first:
 ```bash

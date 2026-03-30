@@ -12,7 +12,7 @@ cargo test -- --ignored             # Run integration tests (requires ~/.cx)
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
-Rust toolchain is pinned to **1.87.0** via `rust-toolchain.toml`.
+Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Proto Generation
 

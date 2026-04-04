@@ -299,7 +299,7 @@ async fn main() -> Result<()> {
 
     // Configure command doesn't need API credentials.
     if let Commands::Configure { profile } = cli.command {
-        return commands::configure::run(profile);
+        return commands::configure::run(profile).await;
     }
 
     // Cleanup command doesn't need API credentials.
@@ -335,16 +335,13 @@ async fn main() -> Result<()> {
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = config::resolve_all(
-        &cli.profile,
-        cli.api_key.as_deref(),
-        cli.region.as_deref(),
-    )
-    .map_err(|e| {
-        eprintln!("Configuration error: {e}");
-        eprintln!("Run `cx configure` to set up credentials.");
-        e
-    })?;
+    let configs = config::resolve_all(&cli.profile, cli.api_key.as_deref(), cli.region.as_deref())
+        .await
+        .map_err(|e| {
+            eprintln!("Configuration error: {e}");
+            eprintln!("Run `cx configure` to set up credentials.");
+            e
+        })?;
 
     let targets = build_targets(configs)?;
 
@@ -353,16 +350,31 @@ async fn main() -> Result<()> {
         Commands::Cleanup => unreachable!(),
         Commands::Dataprime { .. } => unreachable!(),
 
-        Commands::Logs { query, start, end, limit, tier } => {
-            commands::logs::run(&targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir).await?;
+        Commands::Logs {
+            query,
+            start,
+            end,
+            limit,
+            tier,
+        } => {
+            commands::logs::run(
+                &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+            )
+            .await?;
         }
 
         Commands::Metrics { cmd } => match cmd {
             MetricsCmd::Query { expr, time } => {
                 commands::metrics::run_query(&targets, &expr, time.as_deref(), output).await?;
             }
-            MetricsCmd::QueryRange { expr, start, end, step } => {
-                commands::metrics::run_query_range(&targets, &expr, &start, &end, &step, output).await?;
+            MetricsCmd::QueryRange {
+                expr,
+                start,
+                end,
+                step,
+            } => {
+                commands::metrics::run_query_range(&targets, &expr, &start, &end, &step, output)
+                    .await?;
             }
             MetricsCmd::Search { name, description } => {
                 commands::metrics::run_search(
@@ -379,9 +391,17 @@ async fn main() -> Result<()> {
         },
 
         Commands::Spans { cmd } => match cmd {
-            SpansCmd::Query { query, start, end, limit, tier } => {
-                commands::spans::run(&targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir)
-                    .await?;
+            SpansCmd::Query {
+                query,
+                start,
+                end,
+                limit,
+                tier,
+            } => {
+                commands::spans::run(
+                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+                )
+                .await?;
             }
         },
 
@@ -412,7 +432,11 @@ async fn main() -> Result<()> {
             }
         },
 
-        Commands::SearchFields { text, dataset, limit } => {
+        Commands::SearchFields {
+            text,
+            dataset,
+            limit,
+        } => {
             let dataset_str = match dataset {
                 SearchFieldsDataset::Logs => "logs",
                 SearchFieldsDataset::Spans => "spans",

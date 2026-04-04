@@ -74,11 +74,7 @@ impl<'a> MetricsApi<'a> {
     }
 
     /// Execute a PromQL instant query.
-    pub async fn query(
-        &self,
-        expr: &str,
-        time: Option<&str>,
-    ) -> Result<PromQueryInstantResponse> {
+    pub async fn query(&self, expr: &str, time: Option<&str>) -> Result<PromQueryInstantResponse> {
         let mut params: Vec<(&str, &str)> = vec![("query", expr)];
         if let Some(t) = time {
             params.push(("time", t));
@@ -97,7 +93,12 @@ impl<'a> MetricsApi<'a> {
         self.client
             .get(
                 "/metrics/api/v1/query_range",
-                &[("query", expr), ("start", start), ("end", end), ("step", step)],
+                &[
+                    ("query", expr),
+                    ("start", start),
+                    ("end", end),
+                    ("step", step),
+                ],
             )
             .await
     }
@@ -112,10 +113,7 @@ impl<'a> MetricsApi<'a> {
     /// Fetch all label names for a specific metric.
     pub async fn labels_for_metric(&self, metric: &str) -> Result<PromLabelsResponse> {
         self.client
-            .get(
-                "/metrics/api/v1/labels",
-                &[("match[]", metric)],
-            )
+            .get("/metrics/api/v1/labels", &[("match[]", metric)])
             .await
     }
 }

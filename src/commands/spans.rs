@@ -39,7 +39,9 @@ async fn execute(
     let api = DataprimeApi::new(&target.client);
     let start_ts = parse_timestamp(start)?;
     let end_ts = parse_timestamp(end)?;
-    Ok(api.query_spans(query, &start_ts, &end_ts, limit, tier).await?)
+    Ok(api
+        .query_spans(query, &start_ts, &end_ts, limit, tier)
+        .await?)
 }
 
 // ── Merge ─────────────────────────────────────────────────────────────────────
@@ -51,7 +53,10 @@ struct MergedSpans {
     include_profile: bool,
 }
 
-fn merge(per_profile: Vec<(String, Result<QuerySpansResponse>)>, include_profile: bool) -> MergedSpans {
+fn merge(
+    per_profile: Vec<(String, Result<QuerySpansResponse>)>,
+    include_profile: bool,
+) -> MergedSpans {
     let mut rows: Vec<Value> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     let mut is_aggregate: Option<bool> = None;
@@ -80,7 +85,12 @@ fn merge(per_profile: Vec<(String, Result<QuerySpansResponse>)>, include_profile
         }
     }
 
-    MergedSpans { rows, warnings, is_aggregate: is_aggregate.unwrap_or(false), include_profile }
+    MergedSpans {
+        rows,
+        warnings,
+        is_aggregate: is_aggregate.unwrap_or(false),
+        include_profile,
+    }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────

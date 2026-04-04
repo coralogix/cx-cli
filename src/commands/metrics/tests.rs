@@ -45,7 +45,11 @@ fn single_sample_single_label_with_profile() {
 
 #[test]
 fn single_sample_multiple_labels_with_profile() {
-    let sample = make_instant_row(&[("job", "node"), ("instance", "host:9100")], "42", Some("p1"));
+    let sample = make_instant_row(
+        &[("job", "node"), ("instance", "host:9100")],
+        "42",
+        Some("p1"),
+    );
     let rows = instant_samples_to_toon_rows(&[sample], true);
 
     let obj = rows[0].as_object().unwrap();
@@ -67,7 +71,12 @@ fn multiple_samples_same_labels_produce_uniform_rows_with_profile() {
 
     assert_eq!(rows.len(), 2);
     for row in &rows {
-        let keys: Vec<&str> = row.as_object().unwrap().keys().map(String::as_str).collect();
+        let keys: Vec<&str> = row
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         // instance, job, profile, value
         assert_eq!(keys.len(), 4);
     }
@@ -106,10 +115,19 @@ fn multiple_samples_differing_labels_padded_with_empty_string_with_profile() {
 
 #[test]
 fn label_keys_are_sorted_alphabetically_before_profile_and_value() {
-    let sample = make_instant_row(&[("zzz", "z"), ("aaa", "a"), ("mmm", "m")], "0", Some("default"));
+    let sample = make_instant_row(
+        &[("zzz", "z"), ("aaa", "a"), ("mmm", "m")],
+        "0",
+        Some("default"),
+    );
     let rows = instant_samples_to_toon_rows(&[sample], true);
 
-    let keys: Vec<&str> = rows[0].as_object().unwrap().keys().map(String::as_str).collect();
+    let keys: Vec<&str> = rows[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     // Metric label keys sorted first, then "profile", then "value" last.
     assert_eq!(keys, vec!["aaa", "mmm", "zzz", "profile", "value"]);
 }
@@ -118,7 +136,12 @@ fn label_keys_are_sorted_alphabetically_before_profile_and_value() {
 fn value_column_is_always_last_with_profile() {
     let sample = make_instant_row(&[("a", "1"), ("z", "2")], "99", Some("default"));
     let rows = instant_samples_to_toon_rows(&[sample], true);
-    let keys: Vec<&str> = rows[0].as_object().unwrap().keys().map(String::as_str).collect();
+    let keys: Vec<&str> = rows[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     assert_eq!(keys.last(), Some(&"value"));
 }
 
@@ -164,7 +187,12 @@ fn single_profile_multiple_labels_omits_profile_column() {
 fn single_profile_value_column_is_always_last() {
     let sample = make_instant_row(&[("a", "1"), ("z", "2")], "99", None);
     let rows = instant_samples_to_toon_rows(&[sample], false);
-    let keys: Vec<&str> = rows[0].as_object().unwrap().keys().map(String::as_str).collect();
+    let keys: Vec<&str> = rows[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     assert_eq!(keys.last(), Some(&"value"));
     assert!(!keys.contains(&"profile"));
 }

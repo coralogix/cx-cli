@@ -7,31 +7,66 @@ use cx::Tier;
 
 #[test]
 fn build_body_logs_source() {
-    let body = build_dataprime_body("*", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", 100, Tier::FrequentSearch, "logs");
+    let body = build_dataprime_body(
+        "*",
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+        100,
+        Tier::FrequentSearch,
+        "logs",
+    );
     assert_eq!(body["metadata"]["defaultSource"], "logs");
 }
 
 #[test]
 fn build_body_spans_source() {
-    let body = build_dataprime_body("*", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", 100, Tier::FrequentSearch, "spans");
+    let body = build_dataprime_body(
+        "*",
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+        100,
+        Tier::FrequentSearch,
+        "spans",
+    );
     assert_eq!(body["metadata"]["defaultSource"], "spans");
 }
 
 #[test]
 fn build_body_tier_frequent() {
-    let body = build_dataprime_body("*", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", 100, Tier::FrequentSearch, "logs");
+    let body = build_dataprime_body(
+        "*",
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+        100,
+        Tier::FrequentSearch,
+        "logs",
+    );
     assert_eq!(body["metadata"]["tier"], "TIER_FREQUENT_SEARCH");
 }
 
 #[test]
 fn build_body_tier_archive() {
-    let body = build_dataprime_body("*", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", 100, Tier::Archive, "logs");
+    let body = build_dataprime_body(
+        "*",
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+        100,
+        Tier::Archive,
+        "logs",
+    );
     assert_eq!(body["metadata"]["tier"], "TIER_ARCHIVE");
 }
 
 #[test]
 fn build_body_syntax_is_dataprime() {
-    let body = build_dataprime_body("*", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", 100, Tier::FrequentSearch, "logs");
+    let body = build_dataprime_body(
+        "*",
+        "2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+        100,
+        Tier::FrequentSearch,
+        "logs",
+    );
     assert_eq!(body["metadata"]["syntax"], "QUERY_SYNTAX_DATAPRIME");
 }
 
@@ -56,7 +91,10 @@ fn build_body_all_metadata_fields_present() {
 #[test]
 fn normalize_query_prepends_source_spans_when_missing() {
     let q = normalize_query("filter $d.traceID == \"abc123\"");
-    assert!(q.starts_with("source spans |"), "query should start with 'source spans |', got: {q}");
+    assert!(
+        q.starts_with("source spans |"),
+        "query should start with 'source spans |', got: {q}"
+    );
 }
 
 #[test]
@@ -68,7 +106,10 @@ fn normalize_query_preserves_existing_source_spans() {
 #[test]
 fn normalize_query_preserves_different_source() {
     let q = normalize_query("source logs | filter $d.level == \"ERROR\"");
-    assert!(q.starts_with("source logs"), "query with different source should be preserved, got: {q}");
+    assert!(
+        q.starts_with("source logs"),
+        "query with different source should be preserved, got: {q}"
+    );
 }
 
 #[test]
@@ -80,5 +121,8 @@ fn normalize_query_handles_case_insensitive_source() {
 #[test]
 fn normalize_query_trims_leading_whitespace() {
     let q = normalize_query("  filter $d.traceID == \"abc\"  ");
-    assert!(q.starts_with("source spans |"), "query should be trimmed and normalized, got: {q}");
+    assert!(
+        q.starts_with("source spans |"),
+        "query should be trimmed and normalized, got: {q}"
+    );
 }

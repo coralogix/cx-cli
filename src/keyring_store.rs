@@ -8,8 +8,8 @@ const SERVICE_NAME: &str = "cx-cli";
 type SecretMap = HashMap<String, String>;
 
 fn load_map(profile: &str) -> Result<Option<SecretMap>> {
-    let entry = keyring::Entry::new(SERVICE_NAME, profile)
-        .context("Failed to create keyring entry")?;
+    let entry =
+        keyring::Entry::new(SERVICE_NAME, profile).context("Failed to create keyring entry")?;
     match entry.get_password() {
         Ok(json) => {
             let map: SecretMap =
@@ -22,8 +22,8 @@ fn load_map(profile: &str) -> Result<Option<SecretMap>> {
 }
 
 fn save_map(profile: &str, map: &SecretMap) -> Result<()> {
-    let entry = keyring::Entry::new(SERVICE_NAME, profile)
-        .context("Failed to create keyring entry")?;
+    let entry =
+        keyring::Entry::new(SERVICE_NAME, profile).context("Failed to create keyring entry")?;
     if map.is_empty() {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}

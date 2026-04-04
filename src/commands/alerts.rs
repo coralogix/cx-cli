@@ -175,10 +175,7 @@ pub async fn run_get(
     alert_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!(
-        "{}",
-        format!("Fetching alert {alert_id}...").dimmed()
-    );
+    eprintln!("{}", format!("Fetching alert {alert_id}...").dimmed());
 
     let include_profile = targets.len() > 1;
     let id = alert_id.to_string();
@@ -237,10 +234,18 @@ pub async fn run_get(
                 if let Some(alert_def) = val.get("alertDef") {
                     if let Ok(alert) = serde_json::from_value::<AlertDef>(alert_def.clone()) {
                         println!("{}:        {}", "Name".bold(), alert.display_name());
-                        println!("{}:          {}", "ID".bold(), alert.id.as_deref().unwrap_or("-"));
+                        println!(
+                            "{}:          {}",
+                            "ID".bold(),
+                            alert.id.as_deref().unwrap_or("-")
+                        );
                         println!("{}:        {}", "Type".bold(), alert.display_type());
                         println!("{}:    {}", "Priority".bold(), alert.display_priority());
-                        println!("{}:     {}", "Enabled".bold(), bool_display(alert.display_enabled()));
+                        println!(
+                            "{}:     {}",
+                            "Enabled".bold(),
+                            bool_display(alert.display_enabled())
+                        );
                         println!(
                             "{}:      {}",
                             "Status".bold(),
@@ -353,10 +358,7 @@ pub async fn run_create(
 }
 
 pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Result<()> {
-    eprintln!(
-        "{}",
-        format!("Enabling alert {alert_id}...").dimmed()
-    );
+    eprintln!("{}", format!("Enabling alert {alert_id}...").dimmed());
 
     let id = alert_id.to_string();
 
@@ -384,10 +386,7 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
 }
 
 pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Result<()> {
-    eprintln!(
-        "{}",
-        format!("Disabling alert {alert_id}...").dimmed()
-    );
+    eprintln!("{}", format!("Disabling alert {alert_id}...").dimmed());
 
     let id = alert_id.to_string();
 

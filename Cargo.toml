@@ -38,6 +38,12 @@ dirs = "5"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 inquire = "0.7"
 
+# OAuth / PKCE
+rand = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+open = "5"
+
 # Terminal output
 colored = "2"
 tabled = { version = "0.17", features = ["ansi"] }

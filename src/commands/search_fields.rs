@@ -62,7 +62,16 @@ pub async fn run(
                      Set OPENAI_API_KEY or run `cx configure` to store it in the profile."
                 )
             })?;
-            semantic_field_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, openai_key, &tx, &ds, limit).await
+            semantic_field_lookup(
+                &t.cfg.endpoint,
+                &t.cfg.api_key,
+                team_id,
+                openai_key,
+                &tx,
+                &ds,
+                limit,
+            )
+            .await
         }
     })
     .await;

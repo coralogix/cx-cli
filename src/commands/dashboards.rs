@@ -56,7 +56,11 @@ fn bool_display(v: Option<bool>) -> String {
     }
 }
 
-fn catalog_item_to_json(item: &crate::api::dashboards::DashboardCatalogItem, include_profile: bool, profile: &str) -> Value {
+fn catalog_item_to_json(
+    item: &crate::api::dashboards::DashboardCatalogItem,
+    include_profile: bool,
+    profile: &str,
+) -> Value {
     let mut v = json!({
         "id": item.id,
         "name": item.name,
@@ -83,19 +87,14 @@ fn catalog_item_to_json(item: &crate::api::dashboards::DashboardCatalogItem, inc
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
-pub async fn run_catalog(
-    targets: &[Arc<ExecutionTarget>],
-    output: OutputFormat,
-) -> Result<()> {
+pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching dashboard catalog...".dimmed());
 
     let include_profile = targets.len() > 1;
 
-    let per_profile = fan_out(targets, |t| {
-        async move {
-            let api = DashboardsApi::new(&t.client);
-            Ok(api.catalog().await?)
-        }
+    let per_profile = fan_out(targets, |t| async move {
+        let api = DashboardsApi::new(&t.client);
+        Ok(api.catalog().await?)
     })
     .await;
 
@@ -120,8 +119,8 @@ pub async fn run_catalog(
             println!("{}", serde_json::to_string_pretty(&all_rows)?);
         }
         OutputFormat::Agents => {
-            let toon = toon_encode(&all_rows)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon =
+                toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {
@@ -136,7 +135,11 @@ pub async fn run_catalog(
                         profile: profile.clone(),
                         id: item.id.clone().unwrap_or_default(),
                         name: item.name.clone().unwrap_or_default(),
-                        folder: item.folder.as_ref().and_then(|f| f.name.clone()).unwrap_or_default(),
+                        folder: item
+                            .folder
+                            .as_ref()
+                            .and_then(|f| f.name.clone())
+                            .unwrap_or_default(),
                         updated: item.update_time.clone().unwrap_or_default(),
                         pinned: bool_display(item.is_pinned),
                         locked: bool_display(item.is_locked),
@@ -149,7 +152,11 @@ pub async fn run_catalog(
                     .map(|(_, item)| CatalogRowSingle {
                         id: item.id.clone().unwrap_or_default(),
                         name: item.name.clone().unwrap_or_default(),
-                        folder: item.folder.as_ref().and_then(|f| f.name.clone()).unwrap_or_default(),
+                        folder: item
+                            .folder
+                            .as_ref()
+                            .and_then(|f| f.name.clone())
+                            .unwrap_or_default(),
                         updated: item.update_time.clone().unwrap_or_default(),
                         pinned: bool_display(item.is_pinned),
                         locked: bool_display(item.is_locked),
@@ -168,7 +175,10 @@ pub async fn run_get(
     dashboard_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!("{}", format!("Fetching dashboard {dashboard_id}...").dimmed());
+    eprintln!(
+        "{}",
+        format!("Fetching dashboard {dashboard_id}...").dimmed()
+    );
 
     let include_profile = targets.len() > 1;
     let id = dashboard_id.to_string();
@@ -223,15 +233,21 @@ pub async fn run_get(
                         println!("{}", format!("[{p}]").dimmed());
                     }
                 }
-                let name = val.get("name").or_else(|| {
-                    val.get("dashboard").and_then(|d| d.get("name"))
-                }).and_then(|v| v.as_str()).unwrap_or("-");
-                let id = val.get("id").or_else(|| {
-                    val.get("dashboard").and_then(|d| d.get("id"))
-                }).and_then(|v| v.as_str()).unwrap_or("-");
-                let desc = val.get("description").or_else(|| {
-                    val.get("dashboard").and_then(|d| d.get("description"))
-                }).and_then(|v| v.as_str()).unwrap_or("");
+                let name = val
+                    .get("name")
+                    .or_else(|| val.get("dashboard").and_then(|d| d.get("name")))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                let id = val
+                    .get("id")
+                    .or_else(|| val.get("dashboard").and_then(|d| d.get("id")))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                let desc = val
+                    .get("description")
+                    .or_else(|| val.get("dashboard").and_then(|d| d.get("description")))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
 
                 println!("{}: {}", "Name".bold(), name);
                 println!("{}:   {}", "ID".bold(), id);

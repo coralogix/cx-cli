@@ -204,9 +204,8 @@ async fn build_client(
     let team_id_val: MetadataValue<_> = team_id
         .parse()
         .context("Invalid team_id for gRPC metadata")?;
-    let client_id_val: MetadataValue<_> = CLIENT_ID
-        .parse()
-        .expect("static CLIENT_ID is always valid");
+    let client_id_val: MetadataValue<_> =
+        CLIENT_ID.parse().expect("static CLIENT_ID is always valid");
 
     let client = SchemaStoreOllyLookupServiceClient::with_interceptor(
         channel,

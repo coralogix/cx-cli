@@ -7,6 +7,18 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::keyring_store;
+use crate::oauth;
+
+/// Authentication method used by a profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthKind {
+    /// Static Coralogix API key.  Default for legacy profiles that pre-date OAuth.
+    #[default]
+    ApiKey,
+    /// OAuth 2.0 + OIDC browser login with automatic token refresh.
+    OAuth,
+}
 
 /// Where API keys are stored for a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -125,12 +137,15 @@ pub struct Config {
     #[serde(default)]
     pub default_output_format: OutputFormat,
 
-/// Maximum serialized byte size of a non-aggregated Dataprime response
+    /// Maximum serialized byte size of a non-aggregated Dataprime response
     /// that can be printed directly to stdout in `agents` mode. If the payload
     /// exceeds this limit the data is written to a temp file instead.
     /// Set to `-1` to disable the limit (always print directly).
     /// Default: 100 KiB (102400 bytes).
-    #[serde(default = "default_max_dataprime_direct_output_size", with = "max_size_serde")]
+    #[serde(
+        default = "default_max_dataprime_direct_output_size",
+        with = "max_size_serde"
+    )]
     pub max_dataprime_direct_output_size: Option<usize>,
 
     /// Directory used to store temporary result files when the output exceeds
@@ -195,8 +210,15 @@ mod max_size_serde {
 /// API keys are stored inline in the TOML by default (`credential_storage = "file"`).
 /// When `credential_storage = "os_store"`, keys are stored in the OS credential
 /// store and `api_key` / `openai_api_key` are `None` in the TOML.
+///
+/// OAuth profiles always use `credential_storage = "os_store"`; tokens are stored
+/// in the OS keyring and never written to the profile TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
+    /// Authentication method for this profile.
+    /// Defaults to `ApiKey` so that existing profiles without this field continue to work.
+    #[serde(default)]
+    pub auth: AuthKind,
     /// Where API keys for this profile are stored.
     #[serde(default)]
     pub credential_storage: CredentialStorage,
@@ -213,6 +235,15 @@ pub struct Profile {
     /// `credential_storage = "file"`. Falls back to `OPENAI_API_KEY` env var.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_api_key: Option<String>,
+    /// OAuth: override the OAuth client ID.
+    /// Required for custom regions; hard-coded for known Coralogix regions.
+    /// Not written to the TOML for known regions (looked up from `KNOWN_ENVIRONMENTS`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_client_id: Option<String>,
+    /// OAuth: override the base URL used for OpenID Connect discovery.
+    /// When `None`, `region.api_endpoint()` is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_base_url: Option<String>,
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -278,9 +309,14 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 
 /// Resolve a single named profile, respecting optional CLI overrides.
 ///
-/// API key resolution order: CLI override > configured storage backend > bail.
+/// Resolution order for the bearer token:
+///   1. `--api-key` / `CX_API_KEY` CLI override (always wins, any auth mode)
+///   2. `AuthKind::ApiKey` — reads the key from OS keyring or profile file
+///   3. `AuthKind::OAuth`  — loads the cached access token; refreshes via the
+///      refresh token if the access token has expired (or is missing)
+///
 /// OpenAI key resolution: `OPENAI_API_KEY` env var > configured storage backend.
-fn resolve_single(
+async fn resolve_single(
     profile_name: &str,
     api_key_override: Option<&str>,
     region_override: Option<&str>,
@@ -291,22 +327,41 @@ fn resolve_single(
         profile.region = region.parse()?;
     }
 
-    // API key: CLI override > storage backend
-    let api_key = if let Some(key) = api_key_override {
+    // --api-key / CX_API_KEY always overrides, regardless of auth mode.
+    let bearer = if let Some(key) = api_key_override {
         key.to_string()
     } else {
-        match profile.credential_storage {
-            CredentialStorage::OsStore => {
-                keyring_store::get_secret(profile_name, "api_key")?
+        match profile.auth {
+            AuthKind::ApiKey => match profile.credential_storage {
+                CredentialStorage::OsStore => keyring_store::get_secret(profile_name, "api_key")?,
+                CredentialStorage::File => profile.api_key.clone(),
             }
-            CredentialStorage::File => profile.api_key,
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No API key found for profile '{profile_name}'.\n\
+                         Run `cx configure --profile {profile_name}` to set it up."
+                )
+            })?,
+            AuthKind::OAuth => {
+                let region_name = profile.region.to_string();
+                let base_url = profile
+                    .oauth_base_url
+                    .as_deref()
+                    .unwrap_or_else(|| profile.region.api_endpoint());
+                let client_id = profile
+                    .oauth_client_id
+                    .as_deref()
+                    .or_else(|| oauth::client_id_for_region(&region_name))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "No OAuth client ID configured for profile '{profile_name}' \
+                             (region: {region_name}).\n\
+                             Run `cx configure --profile {profile_name}` to reconfigure."
+                        )
+                    })?;
+                oauth::resolve_token(profile_name, base_url, client_id).await?
+            }
         }
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No API key found for profile '{profile_name}'.\n\
-                 Run `cx configure --profile {profile_name}` to set it up."
-            )
-        })?
     };
 
     // OpenAI key: env var > storage backend
@@ -314,16 +369,16 @@ fn resolve_single(
         .ok()
         .filter(|s| !s.is_empty())
         .or_else(|| match profile.credential_storage {
-            CredentialStorage::OsStore => {
-                keyring_store::get_secret(profile_name, "openai_api_key").ok().flatten()
-            }
-            CredentialStorage::File => profile.openai_api_key,
+            CredentialStorage::OsStore => keyring_store::get_secret(profile_name, "openai_api_key")
+                .ok()
+                .flatten(),
+            CredentialStorage::File => profile.openai_api_key.clone(),
         });
 
     Ok(ResolvedConfig {
         profile_name: profile_name.to_string(),
         endpoint: profile.region.api_endpoint().to_string(),
-        api_key,
+        api_key: bearer,
         team_id: profile.team_id,
         openai_api_key,
     })
@@ -332,14 +387,14 @@ fn resolve_single(
 /// Resolve the active profile, respecting CLI overrides.
 ///
 /// When `profile_override` is `None`, falls back to the default profile in config.
-pub fn resolve(
+pub async fn resolve(
     profile_override: Option<&str>,
     api_key_override: Option<&str>,
     region_override: Option<&str>,
 ) -> Result<ResolvedConfig> {
     let config = load_config()?;
     let name = profile_override.unwrap_or(&config.default_profile);
-    resolve_single(name, api_key_override, region_override)
+    resolve_single(name, api_key_override, region_override).await
 }
 
 /// Resolve one or more named profiles into a list of `ResolvedConfig` values.
@@ -347,19 +402,22 @@ pub fn resolve(
 /// When `profiles` is empty, falls back to the single default profile from config.
 /// Overrides (`api_key_override`, `region_override`) are applied uniformly to every
 /// resolved profile — the caller should reject these when `profiles.len() > 1`.
-pub fn resolve_all(
+pub async fn resolve_all(
     profiles: &[String],
     api_key_override: Option<&str>,
     region_override: Option<&str>,
 ) -> Result<Vec<ResolvedConfig>> {
     if profiles.is_empty() {
         let cfg = load_config()?;
-        return Ok(vec![resolve_single(&cfg.default_profile, api_key_override, region_override)?]);
+        return Ok(vec![
+            resolve_single(&cfg.default_profile, api_key_override, region_override).await?,
+        ]);
     }
-    profiles
-        .iter()
-        .map(|name| resolve_single(name, api_key_override, region_override))
-        .collect()
+    let mut results = Vec::with_capacity(profiles.len());
+    for name in profiles {
+        results.push(resolve_single(name, api_key_override, region_override).await?);
+    }
+    Ok(results)
 }
 
 /// Write a profile to disk, creating directories as needed.
@@ -383,7 +441,7 @@ pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
 mod tests {
     use super::*;
 
-    // ── resolve_single (unit logic, no disk I/O) ──────────────────────────────
+    // ── Unit tests (no disk I/O) ───────────────────────────────────────────────
 
     /// Build a `ResolvedConfig` directly without touching the filesystem, by
     /// testing the field-level properties that `resolve_single` must guarantee.
@@ -422,32 +480,92 @@ mod tests {
         assert_eq!(r.api_endpoint(), url);
     }
 
-    // ── resolve_all empty / missing (no filesystem) ───────────────────────────
-
+    /// Legacy TOML without `auth` field must deserialise as `AuthKind::ApiKey`.
     #[test]
-    fn resolve_all_missing_profile_returns_error() {
+    fn profile_without_auth_field_defaults_to_api_key() {
+        let toml = r#"
+region = "eu1"
+api_key = "mykey"
+"#;
+        let p: Profile = toml::from_str(toml).unwrap();
+        assert_eq!(p.auth, AuthKind::ApiKey);
+        assert_eq!(p.api_key.as_deref(), Some("mykey"));
+        assert!(p.oauth_client_id.is_none());
+        assert!(p.oauth_base_url.is_none());
+    }
+
+    /// OAuth profile round-trips through TOML serialisation.
+    #[test]
+    fn oauth_profile_round_trips() {
+        let profile = Profile {
+            auth: AuthKind::OAuth,
+            credential_storage: CredentialStorage::OsStore,
+            api_key: None,
+            region: Region::Eu2,
+            label: Some("prod".to_string()),
+            team_id: Some("12345".to_string()),
+            openai_api_key: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
+        };
+        let toml = toml::to_string_pretty(&profile).unwrap();
+        let restored: Profile = toml::from_str(&toml).unwrap();
+        assert_eq!(restored.auth, AuthKind::OAuth);
+        assert_eq!(restored.credential_storage, CredentialStorage::OsStore);
+        assert!(restored.api_key.is_none());
+        // oauth_client_id / oauth_base_url are skip_serializing_if = None, so absent
+        assert!(restored.oauth_client_id.is_none());
+    }
+
+    /// Custom OAuth profile (with explicit client ID) round-trips.
+    #[test]
+    fn custom_oauth_profile_preserves_client_id() {
+        let profile = Profile {
+            auth: AuthKind::OAuth,
+            credential_storage: CredentialStorage::OsStore,
+            api_key: None,
+            region: Region::Custom("https://api.myenv.coralogix.com".to_string()),
+            label: None,
+            team_id: None,
+            openai_api_key: None,
+            oauth_client_id: Some("abc-123".to_string()),
+            oauth_base_url: None,
+        };
+        let toml = toml::to_string_pretty(&profile).unwrap();
+        let restored: Profile = toml::from_str(&toml).unwrap();
+        assert_eq!(restored.oauth_client_id.as_deref(), Some("abc-123"));
+    }
+
+    // ── resolve_all missing profile (no filesystem) ───────────────────────────
+
+    #[tokio::test]
+    async fn resolve_all_missing_profile_returns_error() {
         let result = resolve_all(
             &["cx_definitely_does_not_exist_xyz".to_string()],
             None,
             None,
-        );
+        )
+        .await;
         assert!(result.is_err());
     }
 
-    // ── resolve_all with real profiles (integration, requires ~/.cx access) ───
+    // ── Integration tests (require ~/.cx access, run with --ignored) ──────────
 
-    #[test]
+    #[tokio::test]
     #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
-    fn resolve_all_integration_multiple_profiles() {
+    async fn resolve_all_integration_multiple_profiles() {
         let names = ["cx_inttest_multi_a", "cx_inttest_multi_b"];
         for (i, name) in names.iter().enumerate() {
             let profile = Profile {
+                auth: AuthKind::ApiKey,
                 credential_storage: CredentialStorage::File,
                 api_key: Some(format!("key-{i}")),
                 region: Region::Eu1,
                 label: None,
                 team_id: None,
                 openai_api_key: None,
+                oauth_client_id: None,
+                oauth_base_url: None,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -457,6 +575,7 @@ mod tests {
             None,
             None,
         )
+        .await
         .unwrap();
 
         assert_eq!(configs.len(), 2);
@@ -470,86 +589,93 @@ mod tests {
         }
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
-    fn resolve_all_integration_empty_slice_falls_back_to_default() {
+    async fn resolve_all_integration_empty_slice_falls_back_to_default() {
         let profile = Profile {
+            auth: AuthKind::ApiKey,
             credential_storage: CredentialStorage::File,
             api_key: Some("default-key".to_string()),
             region: Region::Eu1,
             label: None,
             team_id: None,
             openai_api_key: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
         };
         save_profile("default", &profile).unwrap();
 
-        let configs = resolve_all(&[], None, None).unwrap();
+        let configs = resolve_all(&[], None, None).await.unwrap();
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].profile_name, "default");
     }
 
-    // ── Credential storage resolution tests ────────────────────────────────
-
-    #[test]
+    #[tokio::test]
     #[ignore = "requires write access to ~/.cx"]
-    fn resolve_prefers_cli_override_over_file() {
+    async fn resolve_prefers_cli_override_over_file() {
         let name = "cx_inttest_resolve_override";
         let profile = Profile {
+            auth: AuthKind::ApiKey,
             credential_storage: CredentialStorage::File,
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
             label: None,
             team_id: None,
             openai_api_key: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
         };
         save_profile(name, &profile).unwrap();
 
-        let config = resolve_single(name, Some("cli-key"), None).unwrap();
+        let config = resolve_single(name, Some("cli-key"), None).await.unwrap();
         assert_eq!(config.api_key, "cli-key");
 
-        // cleanup
         let _ = std::fs::remove_file(profile_file(name).unwrap());
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore = "requires write access to ~/.cx"]
-    fn resolve_reads_from_file_storage() {
+    async fn resolve_reads_from_file_storage() {
         let name = "cx_inttest_resolve_file";
         let profile = Profile {
+            auth: AuthKind::ApiKey,
             credential_storage: CredentialStorage::File,
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
             label: None,
             team_id: None,
             openai_api_key: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
         };
         save_profile(name, &profile).unwrap();
 
-        let config = resolve_single(name, None, None).unwrap();
+        let config = resolve_single(name, None, None).await.unwrap();
         assert_eq!(config.api_key, "file-key");
 
-        // cleanup
         let _ = std::fs::remove_file(profile_file(name).unwrap());
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore = "requires write access to ~/.cx"]
-    fn resolve_errors_when_no_key_anywhere() {
+    async fn resolve_errors_when_no_key_anywhere() {
         let name = "cx_inttest_resolve_no_key";
         let profile = Profile {
+            auth: AuthKind::ApiKey,
             credential_storage: CredentialStorage::File,
             api_key: None,
             region: Region::Eu1,
             label: None,
             team_id: None,
             openai_api_key: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
         };
         save_profile(name, &profile).unwrap();
 
-        let result = resolve_single(name, None, None);
+        let result = resolve_single(name, None, None).await;
         assert!(result.is_err());
 
-        // cleanup
         let _ = std::fs::remove_file(profile_file(name).unwrap());
     }
 }

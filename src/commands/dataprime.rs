@@ -193,11 +193,7 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
     } else if let Some(entry) = docs.functions.get(name) {
         ("function", entry)
     } else {
-        let all_names: Vec<_> = docs
-            .commands
-            .keys()
-            .chain(docs.functions.keys())
-            .collect();
+        let all_names: Vec<_> = docs.commands.keys().chain(docs.functions.keys()).collect();
 
         let suggestions: Vec<_> = all_names
             .iter()
@@ -316,9 +312,6 @@ category: ["Commands reference", "test"]
 
     #[test]
     fn first_sentence_multiline_no_period() {
-        assert_eq!(
-            first_sentence("First line\nSecond line"),
-            "First line"
-        );
+        assert_eq!(first_sentence("First line\nSecond line"), "First line");
     }
 }

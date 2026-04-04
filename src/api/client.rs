@@ -44,11 +44,7 @@ impl CxClient {
     }
 
     /// GET with optional query params, deserialize response into T.
-    pub async fn get<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        params: &[(&str, &str)],
-    ) -> Result<T> {
+    pub async fn get<T: DeserializeOwned>(&self, path: &str, params: &[(&str, &str)]) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
         let resp = self.inner.get(&url).query(params).send().await?;
         let text = self.checked_text(resp).await?;
@@ -93,7 +89,10 @@ impl CxClient {
                 .ok()
                 .and_then(|v| v["message"].as_str().map(String::from))
                 .unwrap_or(body);
-            return Err(CxError::Api { status: code, message });
+            return Err(CxError::Api {
+                status: code,
+                message,
+            });
         }
         Ok(resp.text().await?)
     }

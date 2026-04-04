@@ -9,7 +9,12 @@ use serde_json::{json, Value};
 // ── NDJSON response parsing ───────────────────────────────────────────────────
 
 fn kv_array(pairs: &[(&str, &str)]) -> Value {
-    Value::Array(pairs.iter().map(|(k, v)| json!({"key": k, "value": v})).collect())
+    Value::Array(
+        pairs
+            .iter()
+            .map(|(k, v)| json!({"key": k, "value": v}))
+            .collect(),
+    )
 }
 
 /// Wrap a list of result rows in the Dataprime NDJSON envelope and serialize
@@ -59,7 +64,9 @@ fn ndjson_ignores_empty_lines() {
 fn ndjson_handles_multiple_result_batches() {
     let header = serde_json::to_string(&json!({"queryId": {"queryId": "x"}})).unwrap();
     let batch1 = serde_json::to_string(&json!({"result": {"results": [json!({"a": 1})]}})).unwrap();
-    let batch2 = serde_json::to_string(&json!({"result": {"results": [json!({"a": 2}), json!({"a": 3})]}})).unwrap();
+    let batch2 =
+        serde_json::to_string(&json!({"result": {"results": [json!({"a": 2}), json!({"a": 3})]}}))
+            .unwrap();
     let ndjson = format!("{header}\n{batch1}\n{batch2}\n");
     let (rows, _) = parse_ndjson_response(&ndjson).unwrap();
     assert_eq!(rows.len(), 3);
@@ -107,7 +114,10 @@ fn parse_log_record_extracts_timestamp() {
         "userData": r#"{"timestamp":"2026-03-21T09:34:56.062881","message":"hello"}"#
     }));
     let record = parse_log_record(&row);
-    assert_eq!(record.timestamp.as_deref(), Some("2026-03-21T09:34:56.062881"));
+    assert_eq!(
+        record.timestamp.as_deref(),
+        Some("2026-03-21T09:34:56.062881")
+    );
 }
 
 #[test]
@@ -214,22 +224,34 @@ fn parse_log_record_from_example_error_row() {
 
 #[test]
 fn extract_severity_numeric_1_is_debug() {
-    assert_eq!(extract_severity(&json!({"severity": "1"})).as_deref(), Some("DEBUG"));
+    assert_eq!(
+        extract_severity(&json!({"severity": "1"})).as_deref(),
+        Some("DEBUG")
+    );
 }
 
 #[test]
 fn extract_severity_numeric_2_is_verbose() {
-    assert_eq!(extract_severity(&json!({"severity": "2"})).as_deref(), Some("VERBOSE"));
+    assert_eq!(
+        extract_severity(&json!({"severity": "2"})).as_deref(),
+        Some("VERBOSE")
+    );
 }
 
 #[test]
 fn extract_severity_numeric_6_is_critical() {
-    assert_eq!(extract_severity(&json!({"severity": "6"})).as_deref(), Some("CRITICAL"));
+    assert_eq!(
+        extract_severity(&json!({"severity": "6"})).as_deref(),
+        Some("CRITICAL")
+    );
 }
 
 #[test]
 fn extract_severity_unknown_string_is_uppercased() {
-    assert_eq!(extract_severity(&json!({"severity": "trace"})).as_deref(), Some("TRACE"));
+    assert_eq!(
+        extract_severity(&json!({"severity": "trace"})).as_deref(),
+        Some("TRACE")
+    );
 }
 
 #[test]
@@ -328,12 +350,20 @@ fn group_spans_from_example_traces() {
     assert_eq!(trace.spans.len(), 5);
 
     // Verify the PING span details
-    let ping = trace.spans.iter().find(|s| s.operation_name == "PING").unwrap();
+    let ping = trace
+        .spans
+        .iter()
+        .find(|s| s.operation_name == "PING")
+        .unwrap();
     assert_eq!(ping.span_id, "0cd3201c4b783729");
     assert_eq!(ping.duration, 26142);
 
     // Verify the shortest span (GET /health/readiness http send, 35µs)
-    let short = trace.spans.iter().find(|s| s.span_id == "cb379f67b0f45e9e").unwrap();
+    let short = trace
+        .spans
+        .iter()
+        .find(|s| s.span_id == "cb379f67b0f45e9e")
+        .unwrap();
     assert_eq!(short.duration, 35);
 }
 
@@ -377,9 +407,18 @@ fn aggregate_row_fields_extracted_correctly() {
     let out = normalize_aggregate_row(&row);
     assert_eq!(out["region"], json!("cx440"));
     assert_eq!(out["total_logs"], json!(16));
-    assert!(out.get("metadata").is_none(), "envelope field 'metadata' must be absent");
-    assert!(out.get("labels").is_none(), "envelope field 'labels' must be absent");
-    assert!(out.get("userData").is_none(), "envelope field 'userData' must be absent");
+    assert!(
+        out.get("metadata").is_none(),
+        "envelope field 'metadata' must be absent"
+    );
+    assert!(
+        out.get("labels").is_none(),
+        "envelope field 'labels' must be absent"
+    );
+    assert!(
+        out.get("userData").is_none(),
+        "envelope field 'userData' must be absent"
+    );
 }
 
 #[test]
@@ -393,7 +432,10 @@ fn aggregate_ndjson_full_pipeline() {
         json!({"metadata": [], "labels": [], "userData": r#"{"region":"production","total_logs":2}"#}),
     ];
 
-    let header = serde_json::to_string(&json!({"queryId": {"queryId": "85cdcaf7-de88-41d9-b1c4-a33f01ff2d36"}})).unwrap();
+    let header = serde_json::to_string(
+        &json!({"queryId": {"queryId": "85cdcaf7-de88-41d9-b1c4-a33f01ff2d36"}}),
+    )
+    .unwrap();
     let result = serde_json::to_string(&json!({"result": {"results": rows}})).unwrap();
     let ndjson = format!("{header}\n{result}\n");
 
@@ -406,14 +448,18 @@ fn aggregate_ndjson_full_pipeline() {
     assert_eq!(results.len(), 5);
 
     // Validate each row is a plain object with only the userData fields
-    let regions: Vec<&str> =
-        results.iter().filter_map(|r| r["region"].as_str()).collect();
+    let regions: Vec<&str> = results
+        .iter()
+        .filter_map(|r| r["region"].as_str())
+        .collect();
     assert!(regions.contains(&"cx440"));
     assert!(regions.contains(&"usprod1"));
     assert!(regions.contains(&"production"));
 
-    let totals: Vec<u64> =
-        results.iter().filter_map(|r| r["total_logs"].as_u64()).collect();
+    let totals: Vec<u64> = results
+        .iter()
+        .filter_map(|r| r["total_logs"].as_u64())
+        .collect();
     assert_eq!(totals.iter().sum::<u64>(), 81);
 
     for r in &results {

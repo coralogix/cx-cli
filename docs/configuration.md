@@ -13,6 +13,58 @@
     staging.toml           # Named profile
 ```
 
+## Quick Start
+
+Run `cx configure` to create or update the default profile.  OAuth (browser login) is selected by default and is the recommended option — it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
+
+```
+$ cx configure
+Configuring profile 'default'
+
+Authentication method: OAuth (browser login)
+Region: eu2
+Label (e.g. 'prod'): production
+Coralogix team ID (required for search-fields): 123456
+OpenAI API key (optional): <enter>
+
+Opening browser for authentication...
+Waiting for browser callback...
+Authorization code received, exchanging for tokens...
+Login successful!
+
+Profile 'default' saved to /Users/you/.cx
+Credentials stored in OS credential store (OAuth tokens)
+```
+
+To use a plain API key instead, select `API key (paste manually)` at the first prompt.
+
+## Authentication Methods
+
+### OAuth (default)
+
+OAuth uses the standard browser-based Authorization Code + PKCE flow.
+
+- Tokens (`access_token`, `refresh_token`, `id_token`) are stored in the OS keyring (macOS Keychain / Windows Credential Manager / libsecret) and are **never written to the profile TOML**.
+- The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry.  
+- If the refresh token is also expired, `cx` exits with an actionable message:  
+  `Run cx configure --profile <name> to re-authenticate.`
+
+#### Custom / non-standard environments
+
+If your environment is not in the standard list, select `Custom (specify URL + client ID)` at the Region prompt:
+
+```
+Region: Custom (specify URL + client ID)
+Base URL (e.g. https://api.myenv.coralogix.com): https://api.myenv.example.com
+OAuth client ID: abc123-my-client
+```
+
+The base URL is used both as the API endpoint and for OpenID Connect discovery (`{base_url}/oauth/.well-known/openid-configuration`). The client ID is stored in the profile TOML (`oauth_client_id`) since there is no built-in mapping for it.
+
+### API Key
+
+A static Coralogix API key.  The key can be stored either in the profile TOML file (permissions set to `0600` on Unix) or in the OS keyring.
+
 ## Global Config (`~/.cx/config.toml`)
 
 | Key | Default | Description |
@@ -33,25 +85,73 @@ temp_dir = "/tmp/"
 
 ## Profile Files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and region info for a Coralogix environment.
+Each profile stores credentials and endpoint configuration.  The sensitive
+secrets (API key, OAuth tokens, OpenAI key) live in the OS keyring when
+`credential_storage = "os_store"` and are **not** written to the TOML.
+
+### Common fields
 
 | Key | Required | Description |
 |-----|----------|-------------|
-| `api_key` | Yes | Coralogix API key |
-| `region` | Yes | Coralogix region (see below) |
-| `label` | No | Free-form label (e.g. "production", "staging") |
+| `auth` | No | `"oauth"` or `"api_key"` (default `"api_key"` for backward compat) |
+| `region` | Yes | Coralogix region identifier or a custom URL (see below) |
+| `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
+| `label` | No | Free-form label (e.g. `"production"`) |
 | `team_id` | No | Coralogix team ID — required for `cx search-fields` |
-| `openai_api_key` | No | OpenAI API key for semantic search features |
+| `openai_api_key` | No | OpenAI API key for semantic search (file storage only) |
 
-Example:
+### OAuth-specific fields
+
+| Key | When present | Description |
+|-----|-------------|-------------|
+| `oauth_client_id` | Custom environments | OAuth client ID.  Omitted for known regions (hard-coded). |
+| `oauth_base_url` | Rarely | Override the base URL for OpenID discovery.  Defaults to `region.api_endpoint()`. |
+
+### Example — OAuth profile (known region)
 
 ```toml
-api_key = "cxp_your_api_key_here"
+auth = "oauth"
+credential_storage = "os_store"
+region = "eu2"
+label = "production"
+team_id = "123456"
+```
+
+Tokens are in the OS keyring; nothing sensitive is in this file.
+
+### Example — OAuth profile (custom environment)
+
+```toml
+auth = "oauth"
+credential_storage = "os_store"
+region = "https://api.myenv.example.com"
+oauth_client_id = "abc123-my-client"
+label = "custom-env"
+```
+
+### Example — API key profile (OS keyring)
+
+```toml
+auth = "api_key"
+credential_storage = "os_store"
 region = "eu1"
+label = "production"
+team_id = "123456"
+```
+
+The API key is in the OS keyring under the service `cx-cli`, profile name as the account.
+
+### Example — API key profile (file, legacy)
+
+```toml
+region = "eu1"
+api_key = "cxp_your_api_key_here"
 label = "production"
 team_id = "123456"
 openai_api_key = "sk-..."
 ```
+
+Legacy profiles without an `auth` field behave as `auth = "api_key"` automatically.
 
 ## Regions
 
@@ -59,14 +159,14 @@ openai_api_key = "sk-..."
 |--------|----------|
 | `us1` | `https://api.us1.coralogix.com` |
 | `us2` | `https://api.us2.coralogix.com` |
-| `eu1` | `https://api.eu2.coralogix.com` |
+| `eu1` | `https://api.eu1.coralogix.com` |
 | `eu2` | `https://api.eu2.coralogix.com` |
 | `ap1` | `https://api.ap1.coralogix.com` |
 | `ap2` | `https://api.ap2.coralogix.com` |
 | `ap3` | `https://api.ap3.coralogix.com` |
 | `stg1` | `https://api.stg1.coralogix.net` |
 
-You can also pass a custom URL as the region value.
+A fully-qualified HTTPS URL may be used as a region value for non-standard environments.
 
 ## Environment Variables
 
@@ -75,8 +175,23 @@ Environment variables override profile file values:
 | Variable | Overrides |
 |----------|-----------|
 | `CX_PROFILE` | `--profile` flag / `default_profile` |
-| `CX_API_KEY` | `api_key` in profile |
+| `CX_API_KEY` | `api_key` in profile (also overrides OAuth — sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 | `OPENAI_API_KEY` | `openai_api_key` in profile (takes precedence) |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
+
+> **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles.  This
+> lets scripts and CI systems inject tokens directly without going through the
+> browser login flow.
+
+## OAuth Callback Ports
+
+The local HTTP callback listener used during `cx configure` (OAuth path) binds one
+port from the following fixed allow-list, chosen at random:
+
+```
+21783  24861  27654  31847  38129
+```
+
+Ensure at least one of these ports is available when running `cx configure`.

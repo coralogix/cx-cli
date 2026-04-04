@@ -85,7 +85,10 @@ impl<'a> DataprimeApi<'a> {
         source: &str,
     ) -> Result<(Vec<Value>, Vec<String>)> {
         let body = build_dataprime_body(query, start_time, end_time, limit, tier, source);
-        let raw = self.client.post_raw("/api/v1/dataprime/query", &body).await?;
+        let raw = self
+            .client
+            .post_raw("/api/v1/dataprime/query", &body)
+            .await?;
         parse_ndjson_response(&raw)
     }
 
@@ -110,7 +113,13 @@ impl<'a> DataprimeApi<'a> {
             let results = raw.iter().map(parse_log_record).collect();
             (raw, results)
         };
-        Ok(QueryLogsResponse { results, raw_results, warnings, total_count: None, is_aggregate: aggregate })
+        Ok(QueryLogsResponse {
+            results,
+            raw_results,
+            warnings,
+            total_count: None,
+            is_aggregate: aggregate,
+        })
     }
 
     /// Query spans using Dataprime syntax with `source spans` as the default source.
@@ -134,7 +143,13 @@ impl<'a> DataprimeApi<'a> {
             let data = group_spans_into_traces(rows);
             (raw, data)
         };
-        Ok(QuerySpansResponse { data, raw_results, warnings, total: None, is_aggregate: aggregate })
+        Ok(QuerySpansResponse {
+            data,
+            raw_results,
+            warnings,
+            total: None,
+            is_aggregate: aggregate,
+        })
     }
 }
 
@@ -207,8 +222,14 @@ pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
 /// segment (i.e. it appears immediately after a `|`).  The check is
 /// case-insensitive.
 pub fn is_aggregation_query(query: &str) -> bool {
-    const AGG_COMMANDS: &[&str] =
-        &["aggregate", "groupby", "multigroupby", "count", "countby", "distinct"];
+    const AGG_COMMANDS: &[&str] = &[
+        "aggregate",
+        "groupby",
+        "multigroupby",
+        "count",
+        "countby",
+        "distinct",
+    ];
 
     for segment in query.split('|') {
         let first = segment.trim().split_whitespace().next().unwrap_or("");
@@ -267,7 +288,10 @@ pub fn normalize_row(record: &Value) -> Value {
 /// If `userData` cannot be parsed as JSON the original string value is
 /// returned as-is.
 pub fn normalize_aggregate_row(record: &Value) -> Value {
-    let raw = record.get("userData").and_then(|v| v.as_str()).unwrap_or("{}");
+    let raw = record
+        .get("userData")
+        .and_then(|v| v.as_str())
+        .unwrap_or("{}");
     serde_json::from_str::<Value>(raw).unwrap_or_else(|_| Value::String(raw.to_string()))
 }
 
@@ -278,14 +302,16 @@ pub fn normalize_aggregate_row(record: &Value) -> Value {
 /// Expects rows that have already been passed through `normalize_row`:
 /// `metadata` and `labels` are objects, and `userData` is a parsed JSON value.
 pub fn parse_log_record(record: &Value) -> LogRecord {
-    let user_data: Value = record
-        .get("userData")
-        .cloned()
-        .unwrap_or(Value::Null);
+    let user_data: Value = record.get("userData").cloned().unwrap_or(Value::Null);
 
     let timestamp = extract_field(
         &user_data,
-        &["$m.timestamp", "coralogix.timestamp", "timestamp", "@timestamp"],
+        &[
+            "$m.timestamp",
+            "coralogix.timestamp",
+            "timestamp",
+            "@timestamp",
+        ],
     );
 
     // Severity is always in the required metadata.severity field.
@@ -299,7 +325,11 @@ pub fn parse_log_record(record: &Value) -> LogRecord {
     LogRecord {
         timestamp,
         severity,
-        text: if user_data.is_null() { None } else { Some(user_data) },
+        text: if user_data.is_null() {
+            None
+        } else {
+            Some(user_data)
+        },
         extra,
     }
 }
@@ -337,10 +367,8 @@ pub fn parse_span_record(record: &Value) -> Option<Span> {
         .cloned()
         .unwrap_or_else(|| record.clone());
 
-    let trace_id =
-        extract_field(&user_data, &["traceID", "trace_id", "$d.traceID"])?;
-    let span_id =
-        extract_field(&user_data, &["spanID", "spanId", "span_id", "$d.spanId"])?;
+    let trace_id = extract_field(&user_data, &["traceID", "trace_id", "$d.traceID"])?;
+    let span_id = extract_field(&user_data, &["spanID", "spanId", "span_id", "$d.spanId"])?;
     let operation_name = extract_field(
         &user_data,
         &["operationName", "operation_name", "$l.operationName"],
@@ -350,7 +378,12 @@ pub fn parse_span_record(record: &Value) -> Option<Span> {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
-    Some(Span { trace_id, span_id, operation_name, duration })
+    Some(Span {
+        trace_id,
+        span_id,
+        operation_name,
+        duration,
+    })
 }
 
 /// Group a flat list of span rows into traces, preserving the insertion order
@@ -373,7 +406,10 @@ pub fn group_spans_into_traces(rows: Vec<Value>) -> Vec<Trace> {
         .into_iter()
         .map(|tid| {
             let spans = map.remove(&tid).unwrap_or_default();
-            Trace { trace_id: tid, spans }
+            Trace {
+                trace_id: tid,
+                spans,
+            }
         })
         .collect()
 }
@@ -517,7 +553,9 @@ mod tests {
 
     #[test]
     fn agg_query_multigroupby_after_pipe() {
-        assert!(is_aggregation_query("source logs | multigroupby a, b aggregate count()"));
+        assert!(is_aggregation_query(
+            "source logs | multigroupby a, b aggregate count()"
+        ));
     }
 
     #[test]
@@ -532,7 +570,9 @@ mod tests {
 
     #[test]
     fn agg_query_keyword_case_insensitive() {
-        assert!(is_aggregation_query("source logs | GroupBy $l.app aggregate count()"));
+        assert!(is_aggregation_query(
+            "source logs | GroupBy $l.app aggregate count()"
+        ));
     }
 
     #[test]

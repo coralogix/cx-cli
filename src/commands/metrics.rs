@@ -539,13 +539,13 @@ pub async fn run_search(
                 let team_id = t.cfg.team_id.as_deref().ok_or_else(|| {
                     anyhow::anyhow!(
                         "cgx-team-id is required for description-based search.\n\
-                         Run `cx configure` and enter your Coralogix team ID."
+                         Run `cx profiles add` and enter your Coralogix team ID."
                     )
                 })?;
                 let openai_key = t.cfg.openai_api_key.as_deref().ok_or_else(|| {
                     anyhow::anyhow!(
                         "An OpenAI API key is required for description-based search.\n\
-                         Set OPENAI_API_KEY or run `cx configure` to store it in the profile."
+                         Set OPENAI_API_KEY or run `cx profiles add` to store it in the profile."
                     )
                 })?;
                 semantic_metric_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, openai_key, &d, 5)

@@ -24,7 +24,7 @@ Or add it permanently in your Claude Code settings.
 
 ## Requirements
 
-- [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx configure`)
+- [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx profiles add`)
 - Claude Code
 
 ## Usage

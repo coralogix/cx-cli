@@ -1,6 +1,6 @@
 pub mod alerts;
 pub mod cleanup;
-pub mod configure;
+pub mod profiles;
 pub mod dashboards;
 pub mod dataprime;
 pub mod logs;

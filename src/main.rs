@@ -40,13 +40,29 @@ struct Cli {
     command: Commands,
 }
 
+/// Separate CLI parser for the `profiles` command — no global API flags.
+#[derive(Parser)]
+#[command(name = "cx", version, about = "Coralogix CLI — query observability data from the terminal.")]
+struct ProfilesCli {
+    #[command(subcommand)]
+    command: ProfilesTopLevel,
+}
+
+#[derive(Subcommand)]
+enum ProfilesTopLevel {
+    /// Manage profiles (list, add, delete, set-default).
+    Profiles {
+        #[command(subcommand)]
+        cmd: ProfilesCmd,
+    },
+}
+
 #[derive(Subcommand)]
 enum Commands {
-    /// Configure credentials and endpoints for a profile.
-    Configure {
-        /// Profile name to configure (default: "default").
-        #[arg(long, short = 'p')]
-        profile: Option<String>,
+    /// Manage profiles (list, add, delete, set-default).
+    Profiles {
+        #[command(subcommand)]
+        cmd: ProfilesCmd,
     },
 
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
@@ -125,6 +141,30 @@ Examples:
     Dataprime {
         #[command(subcommand)]
         cmd: DataprimeCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProfilesCmd {
+    /// List all configured profiles.
+    List,
+    /// Add or reconfigure a profile interactively.
+    Add {
+        /// Profile name to configure (default: "default").
+        name: Option<String>,
+    },
+    /// Delete a profile and its stored credentials.
+    Delete {
+        /// Profile name to delete.
+        name: String,
+        /// Skip confirmation prompt.
+        #[arg(long, short = 'f')]
+        force: bool,
+    },
+    /// Set the default profile.
+    SetDefault {
+        /// Profile name to set as default.
+        name: String,
     },
 }
 
@@ -295,11 +335,23 @@ Examples:
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Check if this is a profiles command — use separate parser without global API flags.
+    if std::env::args().nth(1).as_deref() == Some("profiles") {
+        let profiles_cli = ProfilesCli::parse();
+        let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        return match cmd {
+            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::Add { name } => commands::profiles::run_add(name).await,
+            ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
+            ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+        };
+    }
+
     let cli = Cli::parse();
 
-    // Configure command doesn't need API credentials.
-    if let Commands::Configure { profile } = cli.command {
-        return commands::configure::run(profile).await;
+    // Profiles command is handled above; this branch is unreachable but needed for exhaustiveness.
+    if let Commands::Profiles { cmd: _ } = cli.command {
+        unreachable!("profiles command handled above");
     }
 
     // Cleanup command doesn't need API credentials.
@@ -324,7 +376,7 @@ async fn main() -> Result<()> {
     if cli.profile.len() > 1 && (cli.api_key.is_some() || cli.region.is_some()) {
         bail!(
             "Cannot combine multiple --profile values with --api-key or --region overrides.\n\
-             Store per-profile credentials with `cx configure --profile <name>`."
+             Store per-profile credentials with `cx profiles add <name>`."
         );
     }
 
@@ -339,16 +391,16 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| {
             eprintln!("Configuration error: {e}");
-            eprintln!("Run `cx configure` to set up credentials.");
+            eprintln!("Run `cx profiles add` to set up credentials.");
             e
         })?;
 
     let targets = build_targets(configs)?;
 
     match cli.command {
-        Commands::Configure { .. } => unreachable!(),
-        Commands::Cleanup => unreachable!(),
-        Commands::Dataprime { .. } => unreachable!(),
+        Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
+        Commands::Cleanup => unreachable!("handled above"),
+        Commands::Dataprime { .. } => unreachable!("handled above"),
 
         Commands::Logs {
             query,

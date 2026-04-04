@@ -53,13 +53,13 @@ pub async fn run(
             let team_id = t.cfg.team_id.as_deref().ok_or_else(|| {
                 anyhow::anyhow!(
                     "cgx-team-id is required for search-fields.\n\
-                     Run `cx configure` and enter your Coralogix team ID."
+                     Run `cx profiles add` and enter your Coralogix team ID."
                 )
             })?;
             let openai_key = t.cfg.openai_api_key.as_deref().ok_or_else(|| {
                 anyhow::anyhow!(
                     "An OpenAI API key is required for search-fields.\n\
-                     Set OPENAI_API_KEY or run `cx configure` to store it in the profile."
+                     Set OPENAI_API_KEY or run `cx profiles add` to store it in the profile."
                 )
             })?;
             semantic_field_lookup(

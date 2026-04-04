@@ -46,7 +46,7 @@ cargo build
 - **`src/api/metrics.rs`** — PromQL queries (instant, range, search, labels)
 - **`src/api/schema_store.rs`** — gRPC client for semantic field/metric lookup
 - **`src/api/openai.rs`** — Embedding generation for semantic search
-- **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, search-fields, configure, cleanup, dataprime docs)
+- **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, search-fields, profiles, cleanup, dataprime docs)
 - **`src/time.rs`** — Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/spill.rs`** — Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)
 - **`src/tier.rs`** — Storage tier enum (FrequentSearch vs Archive)

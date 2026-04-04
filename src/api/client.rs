@@ -79,7 +79,7 @@ impl CxClient {
         let status = resp.status();
         if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
             return Err(CxError::Auth(
-                "Invalid or expired API key. Run `cx configure` to update credentials.".into(),
+                "Invalid or expired API key. Run `cx profiles add` to update credentials.".into(),
             ));
         }
         if !status.is_success() {

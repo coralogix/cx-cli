@@ -40,9 +40,26 @@ struct Cli {
     command: Commands,
 }
 
+/// Separate CLI parser for the `profiles` command — no global API flags.
+#[derive(Parser)]
+#[command(name = "cx", version, about = "Coralogix CLI — query observability data from the terminal.")]
+struct ProfilesCli {
+    #[command(subcommand)]
+    command: ProfilesTopLevel,
+}
+
+#[derive(Subcommand)]
+enum ProfilesTopLevel {
+    /// Manage profiles (list, add, delete, set-default).
+    Profiles {
+        #[command(subcommand)]
+        cmd: ProfilesCmd,
+    },
+}
+
 #[derive(Subcommand)]
 enum Commands {
-    /// Manage profiles (list, add, delete).
+    /// Manage profiles (list, add, delete, set-default).
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -139,6 +156,14 @@ enum ProfilesCmd {
     /// Delete a profile and its stored credentials.
     Delete {
         /// Profile name to delete.
+        name: String,
+        /// Skip confirmation prompt.
+        #[arg(long, short = 'f')]
+        force: bool,
+    },
+    /// Set the default profile.
+    SetDefault {
+        /// Profile name to set as default.
         name: String,
     },
 }
@@ -310,15 +335,23 @@ Examples:
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    // Profiles command doesn't need API credentials.
-    if let Commands::Profiles { cmd } = cli.command {
+    // Check if this is a profiles command — use separate parser without global API flags.
+    if std::env::args().nth(1).as_deref() == Some("profiles") {
+        let profiles_cli = ProfilesCli::parse();
+        let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         return match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add { name } => commands::profiles::run_add(name).await,
-            ProfilesCmd::Delete { name } => commands::profiles::run_delete(name),
+            ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
+            ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
+    }
+
+    let cli = Cli::parse();
+
+    // Profiles command is handled above; this branch is unreachable but needed for exhaustiveness.
+    if let Commands::Profiles { cmd: _ } = cli.command {
+        unreachable!("profiles command handled above");
     }
 
     // Cleanup command doesn't need API credentials.
@@ -365,9 +398,9 @@ async fn main() -> Result<()> {
     let targets = build_targets(configs)?;
 
     match cli.command {
-        Commands::Profiles { .. } => unreachable!(),
-        Commands::Cleanup => unreachable!(),
-        Commands::Dataprime { .. } => unreachable!(),
+        Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
+        Commands::Cleanup => unreachable!("handled above"),
+        Commands::Dataprime { .. } => unreachable!("handled above"),
 
         Commands::Logs {
             query,

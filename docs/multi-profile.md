@@ -38,6 +38,6 @@ When only a single profile is used, no `"profile"` tag is added.
 cx logs 'query' -p prod -p staging --api-key sk-...
 
 # Instead, store per-profile credentials:
-cx configure --profile prod
-cx configure --profile staging
+cx profiles add prod
+cx profiles add staging
 ```

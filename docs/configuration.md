@@ -15,10 +15,10 @@
 
 ## Quick Start
 
-Run `cx configure` to create or update the default profile.  OAuth (browser login) is selected by default and is the recommended option — it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
+Run `cx profiles add` to create or update the default profile.  OAuth (browser login) is selected by default and is the recommended option — it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
 
 ```
-$ cx configure
+$ cx profiles add
 Configuring profile 'default'
 
 Authentication method: OAuth (browser login)
@@ -47,7 +47,7 @@ OAuth uses the standard browser-based Authorization Code + PKCE flow.
 - Tokens (`access_token`, `refresh_token`, `id_token`) are stored in the OS keyring (macOS Keychain / Windows Credential Manager / libsecret) and are **never written to the profile TOML**.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry.  
 - If the refresh token is also expired, `cx` exits with an actionable message:  
-  `Run cx configure --profile <name> to re-authenticate.`
+  `Run cx profiles add <name> to re-authenticate.`
 
 #### Custom / non-standard environments
 
@@ -187,11 +187,11 @@ Environment variables override profile file values:
 
 ## OAuth Callback Ports
 
-The local HTTP callback listener used during `cx configure` (OAuth path) binds one
+The local HTTP callback listener used during `cx profiles add` (OAuth path) binds one
 port from the following fixed allow-list, chosen at random:
 
 ```
 21783  24861  27654  31847  38129
 ```
 
-Ensure at least one of these ports is available when running `cx configure`.
+Ensure at least one of these ports is available when running `cx profiles add`.

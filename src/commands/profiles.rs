@@ -1,5 +1,5 @@
 use anyhow::Result;
-use inquire::{Password, PasswordDisplayMode, Select, Text};
+use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{
     load_config, load_profile, profile_file, profiles_dir, save_config, save_profile, AuthKind,
@@ -179,14 +179,70 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 
-pub fn run_delete(profile_name: String) -> Result<()> {
+pub fn run_delete(profile_name: String, force: bool) -> Result<()> {
     let path = profile_file(&profile_name)?;
     if !path.exists() {
         anyhow::bail!("Profile '{profile_name}' not found.");
     }
+
+    // Warn if deleting the default profile.
+    let global_config = load_config().unwrap_or_default();
+    let is_default = profile_name == global_config.default_profile;
+
+    if !force {
+        let warning = if is_default {
+            format!(
+                "Delete profile '{profile_name}'? This is your default profile.\n\
+                 All stored credentials will be removed."
+            )
+        } else {
+            format!(
+                "Delete profile '{profile_name}'?\n\
+                 All stored credentials will be removed."
+            )
+        };
+
+        let confirmed = Confirm::new(&warning).with_default(false).prompt()?;
+
+        if !confirmed {
+            println!("Cancelled.");
+            return Ok(());
+        }
+    }
+
     keyring_store::delete_profile(&profile_name);
     std::fs::remove_file(&path)?;
     println!("Profile '{profile_name}' deleted.");
+
+    if is_default {
+        println!(
+            "Note: '{profile_name}' was your default profile. \
+             Run `cx profiles set-default <name>` to set a new default."
+        );
+    }
+
+    Ok(())
+}
+
+// ── Set Default ───────────────────────────────────────────────────────────────
+
+pub fn run_set_default(profile_name: String) -> Result<()> {
+    let path = profile_file(&profile_name)?;
+    if !path.exists() {
+        anyhow::bail!("Profile '{profile_name}' not found.");
+    }
+
+    let mut global_config = load_config().unwrap_or_default();
+
+    if global_config.default_profile == profile_name {
+        println!("Profile '{profile_name}' is already the default.");
+        return Ok(());
+    }
+
+    global_config.default_profile = profile_name.clone();
+    save_config(&global_config)?;
+
+    println!("Default profile set to '{profile_name}'.");
     Ok(())
 }
 

@@ -42,11 +42,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Configure credentials and endpoints for a profile.
-    Configure {
-        /// Profile name to configure (default: "default").
-        #[arg(long, short = 'p')]
-        profile: Option<String>,
+    /// Manage profiles (list, add, delete).
+    Profiles {
+        #[command(subcommand)]
+        cmd: ProfilesCmd,
     },
 
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
@@ -125,6 +124,22 @@ Examples:
     Dataprime {
         #[command(subcommand)]
         cmd: DataprimeCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProfilesCmd {
+    /// List all configured profiles.
+    List,
+    /// Add or reconfigure a profile interactively.
+    Add {
+        /// Profile name to configure (default: "default").
+        name: Option<String>,
+    },
+    /// Delete a profile and its stored credentials.
+    Delete {
+        /// Profile name to delete.
+        name: String,
     },
 }
 
@@ -297,9 +312,13 @@ Examples:
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Configure command doesn't need API credentials.
-    if let Commands::Configure { profile } = cli.command {
-        return commands::configure::run(profile).await;
+    // Profiles command doesn't need API credentials.
+    if let Commands::Profiles { cmd } = cli.command {
+        return match cmd {
+            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::Add { name } => commands::profiles::run_add(name).await,
+            ProfilesCmd::Delete { name } => commands::profiles::run_delete(name),
+        };
     }
 
     // Cleanup command doesn't need API credentials.
@@ -324,7 +343,7 @@ async fn main() -> Result<()> {
     if cli.profile.len() > 1 && (cli.api_key.is_some() || cli.region.is_some()) {
         bail!(
             "Cannot combine multiple --profile values with --api-key or --region overrides.\n\
-             Store per-profile credentials with `cx configure --profile <name>`."
+             Store per-profile credentials with `cx profiles add <name>`."
         );
     }
 
@@ -339,14 +358,14 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| {
             eprintln!("Configuration error: {e}");
-            eprintln!("Run `cx configure` to set up credentials.");
+            eprintln!("Run `cx profiles add` to set up credentials.");
             e
         })?;
 
     let targets = build_targets(configs)?;
 
     match cli.command {
-        Commands::Configure { .. } => unreachable!(),
+        Commands::Profiles { .. } => unreachable!(),
         Commands::Cleanup => unreachable!(),
         Commands::Dataprime { .. } => unreachable!(),
 

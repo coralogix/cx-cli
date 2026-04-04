@@ -2,8 +2,8 @@ use anyhow::Result;
 use inquire::{Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{
-    load_config, save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile,
-    Region,
+    load_config, load_profile, profile_file, profiles_dir, save_config, save_profile, AuthKind,
+    CredentialStorage, OutputFormat, Profile, Region,
 };
 use crate::keyring_store;
 use crate::oauth;
@@ -31,9 +31,106 @@ const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
 
 const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &["file", "os-store (encrypted)"];
 
-// ── Entry point ───────────────────────────────────────────────────────────────
+// ── List ──────────────────────────────────────────────────────────────────────
 
-pub async fn run(profile_name: Option<String>) -> Result<()> {
+pub fn run_list() -> Result<()> {
+    let dir = profiles_dir()?;
+    let global_config = load_config().unwrap_or_default();
+
+    if !dir.exists() {
+        println!("No profiles configured. Run `cx profiles add` to create one.");
+        return Ok(());
+    }
+
+    let mut entries: Vec<(String, Profile)> = std::fs::read_dir(&dir)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension()?.to_str()? != "toml" {
+                return None;
+            }
+            let name = path.file_stem()?.to_str()?.to_string();
+            let profile = load_profile(&name).ok()?;
+            Some((name, profile))
+        })
+        .collect();
+
+    if entries.is_empty() {
+        println!("No profiles configured. Run `cx profiles add` to create one.");
+        return Ok(());
+    }
+
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Column widths
+    let name_w = entries
+        .iter()
+        .map(|(n, _)| n.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    let label_w = entries
+        .iter()
+        .map(|(_, p)| p.label.as_deref().unwrap_or("-").len())
+        .max()
+        .unwrap_or(5)
+        .max(5);
+    let region_w = entries
+        .iter()
+        .map(|(_, p)| p.region.to_string().len())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+
+    println!(
+        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  DEFAULT",
+        "NAME", "LABEL", "REGION", "AUTH",
+        name_w = name_w,
+        label_w = label_w,
+        region_w = region_w,
+    );
+    println!(
+        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  -------",
+        "-".repeat(name_w),
+        "-".repeat(label_w),
+        "-".repeat(region_w),
+        "--------",
+        name_w = name_w,
+        label_w = label_w,
+        region_w = region_w,
+    );
+
+    for (name, profile) in &entries {
+        let label = profile.label.as_deref().unwrap_or("-");
+        let region = profile.region.to_string();
+        let auth = match profile.auth {
+            AuthKind::OAuth => "oauth",
+            AuthKind::ApiKey => "api-key",
+        };
+        let is_default = if *name == global_config.default_profile {
+            "yes"
+        } else {
+            ""
+        };
+        println!(
+            "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {}",
+            name,
+            label,
+            region,
+            auth,
+            is_default,
+            name_w = name_w,
+            label_w = label_w,
+            region_w = region_w,
+        );
+    }
+
+    Ok(())
+}
+
+// ── Add ───────────────────────────────────────────────────────────────────────
+
+pub async fn run_add(profile_name: Option<String>) -> Result<()> {
     let name = profile_name.unwrap_or_else(|| "default".to_string());
 
     println!("Configuring profile '{name}'\n");
@@ -77,6 +174,19 @@ pub async fn run(profile_name: Option<String>) -> Result<()> {
         "\nProfile '{name}' saved to {}\nCredentials stored in {storage_desc}",
         cx_dir.display()
     );
+    Ok(())
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+pub fn run_delete(profile_name: String) -> Result<()> {
+    let path = profile_file(&profile_name)?;
+    if !path.exists() {
+        anyhow::bail!("Profile '{profile_name}' not found.");
+    }
+    keyring_store::delete_profile(&profile_name);
+    std::fs::remove_file(&path)?;
+    println!("Profile '{profile_name}' deleted.");
     Ok(())
 }
 
@@ -162,7 +272,7 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
     Ok((profile, "OS credential store (OAuth tokens)"))
 }
 
-// ── API key configure path (existing behaviour) ───────────────────────────────
+// ── API key configure path ────────────────────────────────────────────────────
 
 fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
     let api_key = Password::new("Coralogix API key:")

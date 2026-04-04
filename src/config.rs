@@ -303,7 +303,7 @@ pub fn save_config(config: &Config) -> Result<()> {
 pub fn load_profile(name: &str) -> Result<Profile> {
     let path = profile_file(name)?;
     let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("Profile '{name}' not found. Run `cx configure` to set it up."))?;
+        .with_context(|| format!("Profile '{name}' not found. Run `cx profiles add` to set it up."))?;
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 
@@ -339,7 +339,7 @@ async fn resolve_single(
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "No API key found for profile '{profile_name}'.\n\
-                         Run `cx configure --profile {profile_name}` to set it up."
+                         Run `cx profiles add {profile_name}` to set it up."
                 )
             })?,
             AuthKind::OAuth => {
@@ -356,7 +356,7 @@ async fn resolve_single(
                         anyhow::anyhow!(
                             "No OAuth client ID configured for profile '{profile_name}' \
                              (region: {region_name}).\n\
-                             Run `cx configure --profile {profile_name}` to reconfigure."
+                             Run `cx profiles add {profile_name}` to reconfigure."
                         )
                     })?;
                 oauth::resolve_token(profile_name, base_url, client_id).await?

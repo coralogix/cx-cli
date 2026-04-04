@@ -442,7 +442,7 @@ pub async fn resolve_token(profile_name: &str, base_url: &str, client_id: &str) 
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "OAuth session expired for profile '{profile_name}'.\n\
-                 Run `cx configure --profile {profile_name}` to re-authenticate."
+                 Run `cx profiles add {profile_name}` to re-authenticate."
             )
         })?;
 
@@ -457,7 +457,7 @@ pub async fn resolve_token(profile_name: &str, base_url: &str, client_id: &str) 
         .with_context(|| {
             format!(
                 "OAuth token refresh failed for profile '{profile_name}'.\n\
-                 Run `cx configure --profile {profile_name}` to re-authenticate."
+                 Run `cx profiles add {profile_name}` to re-authenticate."
             )
         })?;
 

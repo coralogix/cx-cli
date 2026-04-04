@@ -157,7 +157,11 @@ pub(crate) fn instant_samples_to_toon_rows(samples: &[Value], include_profile: b
             let mut obj = serde_json::Map::new();
             for k in &all_keys {
                 let v = match k.as_str() {
-                    "value" => s.get("value").and_then(|arr| arr.get(1)).cloned().unwrap_or(Value::Null),
+                    "value" => s
+                        .get("value")
+                        .and_then(|arr| arr.get(1))
+                        .cloned()
+                        .unwrap_or(Value::Null),
                     "profile" => s.get("profile").cloned().unwrap_or(Value::Null),
                     _ => s
                         .get("metric")
@@ -178,7 +182,11 @@ pub(crate) fn instant_samples_to_toon_rows(samples: &[Value], include_profile: b
 ///
 /// When `include_profile` is true: `{ "profile": "...", "metric": { labels }, "value": [ts, val] }`
 /// When false: `{ "metric": { labels }, "value": [ts, val] }`
-fn instant_response_to_rows(profile: &str, resp: PromQueryInstantResponse, include_profile: bool) -> Vec<Value> {
+fn instant_response_to_rows(
+    profile: &str,
+    resp: PromQueryInstantResponse,
+    include_profile: bool,
+) -> Vec<Value> {
     resp.data
         .result
         .into_iter()
@@ -203,7 +211,11 @@ fn instant_response_to_rows(profile: &str, resp: PromQueryInstantResponse, inclu
 ///
 /// When `include_profile` is true: `{ "profile": "...", "metric": { labels }, "values": [[ts, val], ...] }`
 /// When false: `{ "metric": { labels }, "values": [[ts, val], ...] }`
-fn range_response_to_rows(profile: &str, resp: PromQueryRangeResponse, include_profile: bool) -> Vec<Value> {
+fn range_response_to_rows(
+    profile: &str,
+    resp: PromQueryRangeResponse,
+    include_profile: bool,
+) -> Vec<Value> {
     resp.data
         .result
         .into_iter()
@@ -254,16 +266,17 @@ async fn execute_range(
     Ok(resp)
 }
 
-async fn execute_metric_names(
-    client: &CxClient,
-    pattern: &str,
-) -> Result<Vec<String>> {
+async fn execute_metric_names(client: &CxClient, pattern: &str) -> Result<Vec<String>> {
     let api = MetricsApi::new(client);
     let resp = api.metric_names().await?;
     if resp.status != "success" {
         bail!("Request returned non-success status: {}", resp.status);
     }
-    Ok(resp.data.into_iter().filter(|n| matches_pattern(n, pattern)).collect())
+    Ok(resp
+        .data
+        .into_iter()
+        .filter(|n| matches_pattern(n, pattern))
+        .collect())
 }
 
 async fn execute_labels(client: &CxClient, metric: &str) -> Result<Vec<String>> {
@@ -328,7 +341,11 @@ pub async fn run_query(
                 let rows: Vec<InstantRow> = all_rows
                     .iter()
                     .map(|s| {
-                        let profile = s.get("profile").and_then(|v| v.as_str()).unwrap_or("-").to_string();
+                        let profile = s
+                            .get("profile")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("-")
+                            .to_string();
                         let val = s
                             .get("value")
                             .and_then(|arr| arr.get(1))
@@ -340,12 +357,18 @@ pub async fn run_query(
                             .map(|m| {
                                 let map: std::collections::HashMap<String, String> = m
                                     .iter()
-                                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                                    .filter_map(|(k, v)| {
+                                        v.as_str().map(|s| (k.clone(), s.to_string()))
+                                    })
                                     .collect();
                                 format_labels(&map)
                             })
                             .unwrap_or_default();
-                        InstantRow { profile, labels, value: val }
+                        InstantRow {
+                            profile,
+                            labels,
+                            value: val,
+                        }
                     })
                     .collect();
                 println!("{}", Table::new(rows));
@@ -364,7 +387,9 @@ pub async fn run_query(
                             .map(|m| {
                                 let map: std::collections::HashMap<String, String> = m
                                     .iter()
-                                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                                    .filter_map(|(k, v)| {
+                                        v.as_str().map(|s| (k.clone(), s.to_string()))
+                                    })
                                     .collect();
                                 format_labels(&map)
                             })
@@ -425,7 +450,11 @@ pub async fn run_query_range(
             if include_profile {
                 let mut rows: Vec<RangeRow> = Vec::new();
                 for series in &all_rows {
-                    let profile = series.get("profile").and_then(|v| v.as_str()).unwrap_or("-").to_string();
+                    let profile = series
+                        .get("profile")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("-")
+                        .to_string();
                     let metric = series.get("metric").and_then(|m| m.as_object());
                     let labels = metric
                         .map(|m| {
@@ -439,7 +468,11 @@ pub async fn run_query_range(
                     if let Some(values) = series.get("values").and_then(|v| v.as_array()) {
                         for point in values {
                             let ts = point.get(0).map(|v| v.to_string()).unwrap_or_default();
-                            let val = point.get(1).and_then(|v| v.as_str()).unwrap_or("-").to_string();
+                            let val = point
+                                .get(1)
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("-")
+                                .to_string();
                             rows.push(RangeRow {
                                 profile: profile.clone(),
                                 labels: labels.clone(),
@@ -466,7 +499,11 @@ pub async fn run_query_range(
                     if let Some(values) = series.get("values").and_then(|v| v.as_array()) {
                         for point in values {
                             let ts = point.get(0).map(|v| v.to_string()).unwrap_or_default();
-                            let val = point.get(1).and_then(|v| v.as_str()).unwrap_or("-").to_string();
+                            let val = point
+                                .get(1)
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("-")
+                                .to_string();
                             rows.push(RangeRowSingle {
                                 labels: labels.clone(),
                                 timestamp: ts,
@@ -511,7 +548,8 @@ pub async fn run_search(
                          Set OPENAI_API_KEY or run `cx configure` to store it in the profile."
                     )
                 })?;
-                semantic_metric_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, openai_key, &d, 5).await
+                semantic_metric_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, openai_key, &d, 5)
+                    .await
             }
         })
         .await;

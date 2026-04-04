@@ -102,7 +102,10 @@ pub fn maybe_spill(
     }
 
     let path = write_to_temp(&json, temp_dir)?;
-    Ok(SpillOutcome::Spilled { path, count: raw_results.len() })
+    Ok(SpillOutcome::Spilled {
+        path,
+        count: raw_results.len(),
+    })
 }
 
 /// Write `content` to a `cx_results_<hash>.json` file inside `temp_dir`.
@@ -166,10 +169,7 @@ fn short_hash(s: &str) -> String {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(FNV_PRIME);
     }
-    format!("{hash:016x}")
-        .chars()
-        .take(8)
-        .collect()
+    format!("{hash:016x}").chars().take(8).collect()
 }
 
 #[cfg(test)]
@@ -208,8 +208,9 @@ mod tests {
 
     #[test]
     fn maybe_spill_direct_when_disabled() {
-        let results: Vec<Value> =
-            (0..50).map(|i| json!({"index": i, "data": "payload"})).collect();
+        let results: Vec<Value> = (0..50)
+            .map(|i| json!({"index": i, "data": "payload"}))
+            .collect();
         // None means no limit — always direct regardless of size.
         let outcome = maybe_spill(&results, None, "/tmp/").unwrap();
         match outcome {
@@ -220,8 +221,9 @@ mod tests {
 
     #[test]
     fn maybe_spill_writes_file_when_over_limit() {
-        let results: Vec<Value> =
-            (0..10).map(|i| json!({"index": i, "data": "some payload"})).collect();
+        let results: Vec<Value> = (0..10)
+            .map(|i| json!({"index": i, "data": "some payload"}))
+            .collect();
         let expected = serde_json::to_string_pretty(&results).unwrap();
         let limit = Some(expected.len() / 2);
 
@@ -256,9 +258,18 @@ mod tests {
         assert!(out.get("$m").is_some(), "$m should be present");
         assert!(out.get("$l").is_some(), "$l should be present");
         assert!(out.get("$d").is_some(), "$d should be present");
-        assert!(out.get("metadata").is_none(), "original 'metadata' key must be gone");
-        assert!(out.get("labels").is_none(), "original 'labels' key must be gone");
-        assert!(out.get("userData").is_none(), "original 'userData' key must be gone");
+        assert!(
+            out.get("metadata").is_none(),
+            "original 'metadata' key must be gone"
+        );
+        assert!(
+            out.get("labels").is_none(),
+            "original 'labels' key must be gone"
+        );
+        assert!(
+            out.get("userData").is_none(),
+            "original 'userData' key must be gone"
+        );
     }
 
     #[test]

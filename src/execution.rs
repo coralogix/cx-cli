@@ -32,13 +32,20 @@ impl ExecutionTarget {
     pub fn new(cfg: ResolvedConfig) -> Result<Self> {
         let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
         let profile_name = cfg.profile_name.clone();
-        Ok(Self { profile_name, cfg, client })
+        Ok(Self {
+            profile_name,
+            cfg,
+            client,
+        })
     }
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.
 pub fn build_targets(configs: Vec<ResolvedConfig>) -> Result<Vec<Arc<ExecutionTarget>>> {
-    configs.into_iter().map(|cfg| ExecutionTarget::new(cfg).map(Arc::new)).collect()
+    configs
+        .into_iter()
+        .map(|cfg| ExecutionTarget::new(cfg).map(Arc::new))
+        .collect()
 }
 
 // ── Fan-out ───────────────────────────────────────────────────────────────────
@@ -48,10 +55,7 @@ pub fn build_targets(configs: Vec<ResolvedConfig>) -> Result<Vec<Arc<ExecutionTa
 /// Returns a `Vec` of `(profile_name, Result<T>)` in completion order.
 /// Errors are preserved per-profile so the caller can report failures
 /// while still rendering results from the profiles that succeeded.
-pub async fn fan_out<T, F, Fut>(
-    targets: &[Arc<ExecutionTarget>],
-    f: F,
-) -> Vec<(String, Result<T>)>
+pub async fn fan_out<T, F, Fut>(targets: &[Arc<ExecutionTarget>], f: F) -> Vec<(String, Result<T>)>
 where
     F: Fn(Arc<ExecutionTarget>) -> Fut,
     Fut: Future<Output = Result<T>>,
@@ -124,9 +128,7 @@ mod tests {
 
     #[test]
     fn tag_rows_skips_profile_when_disabled() {
-        let rows = vec![
-            json!({"timestamp": "2024-01-01T00:00:00Z", "message": "hello"}),
-        ];
+        let rows = vec![json!({"timestamp": "2024-01-01T00:00:00Z", "message": "hello"})];
         let tagged = tag_rows(rows.clone(), "prod", false);
         assert!(tagged[0].get("profile").is_none());
         assert_eq!(tagged[0]["message"], json!("hello"));
@@ -143,7 +145,10 @@ mod tests {
     #[test]
     fn merge_tagged_results_combines_rows_with_profile_when_enabled() {
         let per_profile = vec![
-            ("prod".to_string(), Ok(vec![json!({"a": 1}), json!({"a": 2})])),
+            (
+                "prod".to_string(),
+                Ok(vec![json!({"a": 1}), json!({"a": 2})]),
+            ),
             ("staging".to_string(), Ok(vec![json!({"a": 3})])),
         ];
         let merged = merge_tagged_results(per_profile, true);
@@ -156,9 +161,7 @@ mod tests {
 
     #[test]
     fn merge_tagged_results_omits_profile_when_disabled() {
-        let per_profile = vec![
-            ("prod".to_string(), Ok(vec![json!({"a": 1})])),
-        ];
+        let per_profile = vec![("prod".to_string(), Ok(vec![json!({"a": 1})]))];
         let merged = merge_tagged_results(per_profile, false);
 
         assert_eq!(merged.len(), 1);

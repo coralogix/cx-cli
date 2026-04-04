@@ -26,7 +26,9 @@ pub async fn execute(
     let api = DataprimeApi::new(&target.client);
     let start_ts = parse_timestamp(start)?;
     let end_ts = parse_timestamp(end)?;
-    Ok(api.query_logs(query, &start_ts, &end_ts, limit, tier).await?)
+    Ok(api
+        .query_logs(query, &start_ts, &end_ts, limit, tier)
+        .await?)
 }
 
 // ── Merge ─────────────────────────────────────────────────────────────────────
@@ -45,7 +47,10 @@ pub struct MergedLogs {
     pub include_profile: bool,
 }
 
-pub fn merge(per_profile: Vec<(String, Result<QueryLogsResponse>)>, include_profile: bool) -> MergedLogs {
+pub fn merge(
+    per_profile: Vec<(String, Result<QueryLogsResponse>)>,
+    include_profile: bool,
+) -> MergedLogs {
     let mut rows: Vec<Value> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     let mut is_aggregate: Option<bool> = None;
@@ -60,19 +65,12 @@ pub fn merge(per_profile: Vec<(String, Result<QueryLogsResponse>)>, include_prof
                     is_aggregate = Some(resp.is_aggregate);
                 }
                 if include_profile {
-                    rows.extend(
-                        resp.raw_results
-                            .into_iter()
-                            .map(|mut row| {
-                                if let Value::Object(ref mut m) = row {
-                                    m.insert(
-                                        "profile".to_string(),
-                                        Value::String(profile.clone()),
-                                    );
-                                }
-                                row
-                            }),
-                    );
+                    rows.extend(resp.raw_results.into_iter().map(|mut row| {
+                        if let Value::Object(ref mut m) = row {
+                            m.insert("profile".to_string(), Value::String(profile.clone()));
+                        }
+                        row
+                    }));
                 } else {
                     rows.extend(resp.raw_results);
                 }
@@ -81,7 +79,12 @@ pub fn merge(per_profile: Vec<(String, Result<QueryLogsResponse>)>, include_prof
         }
     }
 
-    MergedLogs { rows, warnings, is_aggregate: is_aggregate.unwrap_or(false), include_profile }
+    MergedLogs {
+        rows,
+        warnings,
+        is_aggregate: is_aggregate.unwrap_or(false),
+        include_profile,
+    }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -106,8 +109,7 @@ pub fn render(
                     .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
                 println!("{toon}");
             } else {
-                let agent_rows: Vec<_> =
-                    merged.rows.iter().map(transform_for_agents).collect();
+                let agent_rows: Vec<_> = merged.rows.iter().map(transform_for_agents).collect();
                 match maybe_spill(&agent_rows, max_direct, temp_dir)? {
                     SpillOutcome::Direct(json) => println!("{json}"),
                     SpillOutcome::Spilled { path, count } => {
@@ -177,7 +179,13 @@ pub fn render(
                 if profile.is_empty() {
                     println!("{} [{}] {}", ts.dimmed(), sev_colored, text);
                 } else {
-                    println!("{}{} [{}] {}", profile.dimmed(), ts.dimmed(), sev_colored, text);
+                    println!(
+                        "{}{} [{}] {}",
+                        profile.dimmed(),
+                        ts.dimmed(),
+                        sev_colored,
+                        text
+                    );
                 }
             }
         }
@@ -252,8 +260,14 @@ mod tests {
     #[test]
     fn merge_multiple_profiles_labels_each_row_with_source_profile() {
         let per_profile = vec![
-            ("prod".to_string(), Ok(make_response(vec![make_raw_row("prod-log")], false))),
-            ("staging".to_string(), Ok(make_response(vec![make_raw_row("staging-log")], false))),
+            (
+                "prod".to_string(),
+                Ok(make_response(vec![make_raw_row("prod-log")], false)),
+            ),
+            (
+                "staging".to_string(),
+                Ok(make_response(vec![make_raw_row("staging-log")], false)),
+            ),
         ];
         let merged = merge(per_profile, true);
 
@@ -265,7 +279,10 @@ mod tests {
     #[test]
     fn merge_skips_errored_profiles_and_keeps_successful_ones() {
         let per_profile: Vec<(String, anyhow::Result<QueryLogsResponse>)> = vec![
-            ("good".to_string(), Ok(make_response(vec![make_raw_row("ok")], false))),
+            (
+                "good".to_string(),
+                Ok(make_response(vec![make_raw_row("ok")], false)),
+            ),
             ("bad".to_string(), Err(anyhow::anyhow!("network error"))),
         ];
         let merged = merge(per_profile, true);

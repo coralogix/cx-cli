@@ -35,7 +35,11 @@ impl AlertDef {
                     .and_then(|p| p.get("priority"))
                     .and_then(|v| v.as_str())
             })
-            .map(|s| s.strip_prefix("ALERT_DEF_PRIORITY_").unwrap_or(s).to_string())
+            .map(|s| {
+                s.strip_prefix("ALERT_DEF_PRIORITY_")
+                    .unwrap_or(s)
+                    .to_string()
+            })
             .unwrap_or_else(|| "-".to_string())
     }
 

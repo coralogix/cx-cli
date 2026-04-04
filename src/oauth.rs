@@ -15,7 +15,8 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
+use std::time::Duration;
 
 use crate::keyring_store;
 
@@ -154,70 +155,93 @@ fn generate_pkce() -> (String, String) {
 }
 
 fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char);
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
 /// Block the calling thread until the browser delivers the OAuth callback.
 /// Validates the `state` parameter and returns the `code`.
 ///
-/// **Note:** Uses synchronous blocking I/O.  This is intentional — the function
-/// is only called from the interactive `cx configure` command where blocking is
-/// acceptable.
-fn wait_for_callback_blocking(listener: TcpListener, expected_state: &str) -> Result<String> {
+/// Loops over incoming connections so that browser pre-flight requests
+/// (e.g. favicon fetches) do not consume the one accepted connection before
+/// the real redirect arrives.
+///
+/// **Note:** Uses synchronous blocking I/O.  Always call via
+/// `tokio::task::spawn_blocking` to avoid stalling the async runtime.
+fn wait_for_callback_blocking(listener: TcpListener, expected_state: String) -> Result<String> {
     println!("Waiting for browser callback...");
-    let (stream, _) = listener.accept()?;
+    loop {
+        let (stream, _) = listener.accept()?;
+        if let Some(code) = extract_and_respond(stream, &expected_state)? {
+            return Ok(code);
+        }
+        // Not an OAuth callback (e.g. favicon request) — keep waiting.
+    }
+}
+
+/// Parse one HTTP connection and send an appropriate response.
+///
+/// Returns `Ok(Some(code))` when a valid OAuth callback is received,
+/// `Ok(None)` for unrelated requests, and `Err` on a CSRF state mismatch.
+fn extract_and_respond(stream: TcpStream, expected_state: &str) -> Result<Option<String>> {
     let mut reader = BufReader::new(&stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
+    drop(reader); // release the borrow so we can write below
 
     let path = request_line
         .split_whitespace()
         .nth(1)
         .context("Malformed HTTP request in OAuth callback")?;
 
-    let query = path
-        .split('?')
-        .nth(1)
-        .context("No query string in OAuth callback URI")?;
+    let Some(query) = path.split('?').nth(1) else {
+        // No query string — not an OAuth redirect (e.g. GET / or GET /favicon.ico).
+        send_http_response(&stream, 204, "");
+        return Ok(None);
+    };
 
-    let mut code = None;
-    let mut state = None;
-    for pair in query.split('&') {
-        let mut kv = pair.splitn(2, '=');
-        match (kv.next(), kv.next()) {
-            (Some("code"), Some(v)) => code = Some(v.to_string()),
-            (Some("state"), Some(v)) => state = Some(v.to_string()),
-            _ => {}
+    let params: std::collections::HashMap<String, String> =
+        url::form_urlencoded::parse(query.as_bytes())
+            .into_owned()
+            .collect();
+
+    let (code, returned_state) = match (params.get("code"), params.get("state")) {
+        (Some(c), Some(s)) => (c.clone(), s.clone()),
+        _ => {
+            // Query string present but missing code/state — not an OAuth redirect.
+            send_http_response(&stream, 204, "");
+            return Ok(None);
         }
-    }
+    };
 
-    let returned_state = state.context("Missing state parameter in OAuth callback")?;
     if returned_state != expected_state {
+        send_http_response(&stream, 400, "State mismatch.");
         bail!("OAuth state mismatch – possible CSRF attempt, aborting.");
     }
-    let code = code.context("Missing authorization code in OAuth callback")?;
 
     let body = "<html><body><h2>Authentication successful!</h2>\
                 <p>You may close this tab and return to the terminal.</p></body></html>";
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        body.len(),
-        body
-    );
-    let mut stream = stream;
+    send_http_response(&stream, 200, body);
+    Ok(Some(code))
+}
+
+fn send_http_response(mut stream: &TcpStream, status: u16, body: &str) {
+    let status_text = match status {
+        200 => "200 OK",
+        204 => "204 No Content",
+        400 => "400 Bad Request",
+        _ => "200 OK",
+    };
+    let response = if body.is_empty() {
+        format!("HTTP/1.1 {status_text}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    } else {
+        format!(
+            "HTTP/1.1 {status_text}\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+    };
     let _ = stream.write_all(response.as_bytes());
     let _ = stream.flush();
-
-    Ok(code)
 }
 
 async fn fetch_openid_config(base_url: &str) -> Result<OpenIdConfig> {
@@ -227,9 +251,11 @@ async fn fetch_openid_config(base_url: &str) -> Result<OpenIdConfig> {
     );
     reqwest::get(&url)
         .await?
+        .error_for_status()
+        .with_context(|| format!("OpenID discovery endpoint returned an error: {url}"))?
         .json::<OpenIdConfig>()
         .await
-        .with_context(|| format!("Failed to fetch OpenID configuration from {url}"))
+        .with_context(|| format!("Failed to parse OpenID configuration from {url}"))
 }
 
 async fn exchange_code(
@@ -301,7 +327,15 @@ async fn do_token_refresh(
 pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenResponse> {
     let oidc = fetch_openid_config(base_url).await?;
     let (verifier, challenge) = generate_pkce();
-    let state = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+
+    // Generate an independent random state for CSRF protection.
+    // Must NOT reuse the PKCE challenge — state and code_challenge serve
+    // distinct roles and using the same value leaks information.
+    let state = {
+        let mut rng = rand::rng();
+        let bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
+        URL_SAFE_NO_PAD.encode(bytes)
+    };
 
     let (listener, port) = bind_callback_listener()?;
     let redirect_uri = format!("http://localhost:{port}/callback");
@@ -322,7 +356,17 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
         println!("Could not open browser automatically.\nPlease visit:\n  {auth_url}");
     }
 
-    let code = wait_for_callback_blocking(listener, &state)?;
+    // Run the blocking TCP listener on a dedicated thread so it does not
+    // stall the async runtime.  Bail out if the user takes longer than 5 minutes.
+    let code = tokio::time::timeout(
+        Duration::from_secs(300),
+        tokio::task::spawn_blocking(move || wait_for_callback_blocking(listener, state)),
+    )
+    .await
+    .context("OAuth login timed out after 5 minutes")?
+    .context("OAuth callback task failed")?
+    ?;
+
     println!("Authorization code received, exchanging for tokens...");
 
     exchange_code(
@@ -347,17 +391,17 @@ pub fn store_tokens(profile: &str, tokens: &TokenResponse) -> Result<()> {
     if let Some(ref it) = tokens.id_token {
         keyring_store::store_secret(profile, "oauth_id_token", it)?;
     }
-    let expiry: u64 = tokens
-        .expires_in
-        .map(|exp_in| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + exp_in
-        })
-        .unwrap_or(0);
-    keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
+    // Only store the expiry timestamp when the server provides `expires_in`.
+    // When absent, `resolve_token` falls back to parsing the JWT `exp` claim directly.
+    // Storing a sentinel `0` would make every cached token appear permanently expired.
+    if let Some(exp_in) = tokens.expires_in {
+        let expiry = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + exp_in;
+        keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
+    }
     Ok(())
 }
 

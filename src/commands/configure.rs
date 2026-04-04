@@ -140,6 +140,12 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         keyring_store::store_secret(name, "openai_api_key", oai_key)?;
     }
 
+    // For custom environments, explicitly store the base URL so that token
+    // refresh can reach the correct OIDC discovery endpoint even if the
+    // Region display string is ever changed.  For known regions the base URL
+    // is derived from `region.api_endpoint()` at runtime and need not be stored.
+    let oauth_base_url_for_profile = if is_custom { Some(base_url) } else { None };
+
     let profile = Profile {
         auth: AuthKind::OAuth,
         // OAuth profiles always use the OS keyring; tokens are never in the TOML.
@@ -150,7 +156,7 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         team_id,
         openai_api_key: None,
         oauth_client_id: oauth_client_id_for_profile,
-        oauth_base_url: None,
+        oauth_base_url: oauth_base_url_for_profile,
     };
 
     Ok((profile, "OS credential store (OAuth tokens)"))

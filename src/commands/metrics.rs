@@ -542,14 +542,7 @@ pub async fn run_search(
                          Run `cx profiles add` and enter your Coralogix team ID."
                     )
                 })?;
-                let openai_key = t.cfg.openai_api_key.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "An OpenAI API key is required for description-based search.\n\
-                         Set OPENAI_API_KEY or run `cx profiles add` to store it in the profile."
-                    )
-                })?;
-                semantic_metric_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, openai_key, &d, 5)
-                    .await
+                semantic_metric_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, &d, 5).await
             }
         })
         .await;
@@ -594,7 +587,7 @@ pub async fn run_search(
                             profile: profile.clone(),
                             metric_name: r.metric_name.clone(),
                             description: r.description.clone(),
-                            similarity: format!("{:.3}", r.similarity),
+                            similarity: format!("{:.3}", r.similarity_score),
                         })
                         .collect();
                     println!("{}", Table::new(rows));
@@ -604,7 +597,7 @@ pub async fn run_search(
                         .map(|(_, r)| MetricSearchRowSingle {
                             metric_name: r.metric_name.clone(),
                             description: r.description.clone(),
-                            similarity: format!("{:.3}", r.similarity),
+                            similarity: format!("{:.3}", r.similarity_score),
                         })
                         .collect();
                     println!("{}", Table::new(rows));

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use serde::Serialize;
+use reqwest::header::{self, HeaderMap, HeaderValue};
+use serde::{Deserialize, Deserializer, Serialize};
 use tonic::metadata::MetadataValue;
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
@@ -13,7 +14,6 @@ pub mod proto {
 use proto::{
     schema_store_olly_lookup_service_client::SchemaStoreOllyLookupServiceClient,
     DatasetV2, Embedding, EmbeddingV1, NamedDataset, SemanticFieldLookupRequest,
-    SemanticMetricLookupRequest,
     {dataset_v2::Dataset, embedding::Embedding as EmbeddingOneof},
 };
 
@@ -33,15 +33,30 @@ pub struct SemanticFieldResult {
     pub similarity: f64,
 }
 
-/// One result row returned by the semantic metric lookup.
-#[derive(Debug, Serialize)]
+/// Deserialize `null` or a JSON array into `Vec` (API may send `"metric_suffixes": null`).
+fn deserialize_nullable_string_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<Vec<String>>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
+/// One result row returned by the semantic metric lookup (REST `semantic-search/metrics` payload).
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SemanticMetricResult {
     pub metric_name: String,
     pub description: String,
     pub metric_type: String,
+    #[serde(default, deserialize_with = "deserialize_nullable_string_list")]
     pub metric_suffixes: Vec<String>,
     /// Semantic similarity (higher is more similar, range 0–1)
-    pub similarity: f64,
+    pub similarity_score: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct SemanticMetricsHttpResponse {
+    results: Vec<SemanticMetricResult>,
 }
 
 /// Perform a semantic field lookup against the SchemaStore gRPC service.
@@ -125,63 +140,100 @@ pub async fn semantic_field_lookup(
     Ok(results)
 }
 
-/// Perform a semantic metric lookup against the SchemaStore gRPC service.
+/// Perform semantic metric lookup via the public Semantic Search REST API
+/// (`POST /api/v1/semantic-search/metrics`). See Coralogix Olly KB integration guide.
 ///
-/// * `endpoint`       — Base API URL (e.g. `https://api.eu2.coralogix.com`)
-/// * `api_key`        — Coralogix API key (Bearer token)
-/// * `team_id`        — Coralogix team / company ID (sent as `cgx-team-id`)
-/// * `openai_api_key` — OpenAI API key for generating the embedding
-/// * `text`           — Free-text description to embed and search
-/// * `limit`          — Maximum number of results
+/// * `endpoint` — Profile base URL (e.g. `https://api.eu2.coralogix.com`); mapped to
+///   `https://ng-api-http.<region>.coralogix.com` unless the host already contains `ng-api-http`.
+/// * `api_key`  — Coralogix API key (`Authorization: Bearer …`)
+/// * `team_id`  — Company ID (`cgx-team-id` header)
+/// * `text`     — Natural-language query (1–2000 chars)
+/// * `limit`    — Max results (clamped to 1–100 per API)
 pub async fn semantic_metric_lookup(
     endpoint: &str,
     api_key: &str,
     team_id: &str,
-    openai_api_key: &str,
     text: &str,
     limit: u32,
 ) -> Result<Vec<SemanticMetricResult>> {
-    let company_id: u32 = team_id
-        .parse()
+    team_id
+        .parse::<u32>()
         .with_context(|| format!("cgx-team-id must be a numeric company ID, got: {team_id}"))?;
 
-    let embedding_values = generate_embedding(text, openai_api_key)
+    let base = ng_api_http_base(endpoint);
+    let url = format!("{base}/api/v1/semantic-search/metrics");
+    let limit = limit.clamp(1, 100);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {api_key}"))
+            .context("Invalid API key format for Authorization header")?,
+    );
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("cgx-team-id"),
+        HeaderValue::from_str(team_id).context("Invalid cgx-team-id header value")?,
+    );
+    headers.insert(
+        header::USER_AGENT,
+        HeaderValue::from_static(concat!("cx-cli/", env!("CARGO_PKG_VERSION"))),
+    );
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .context("failed to build HTTP client for semantic metric search")?;
+
+    let body = serde_json::json!({
+        "query": text,
+        "limit": limit,
+    });
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
         .await
-        .context("Failed to generate OpenAI embedding")?;
+        .with_context(|| format!("POST {url}"))?;
 
-    let mut client = build_client(endpoint, api_key, team_id).await?;
-
-    let request = SemanticMetricLookupRequest {
-        company_id,
-        embedding: Some(Embedding {
-            embedding: Some(EmbeddingOneof::V1(EmbeddingV1 {
-                values: embedding_values,
-            })),
-        }),
-        limit,
-    };
-
-    let response = client
-        .semantic_metric_lookup(request)
+    let status = resp.status();
+    let response_text = resp
+        .text()
         .await
-        .context("SchemaStore metric gRPC call failed")?;
+        .context("read semantic-search/metrics response body")?;
 
-    let results = response
-        .into_inner()
-        .results
-        .into_iter()
-        .map(|r| SemanticMetricResult {
-            metric_name: r.metric_name,
-            description: r.description,
-            metric_type: r.metric_type,
-            metric_suffixes: r.metric_suffixes,
-            // The API stores cosine distance; invert to get similarity.
-            similarity: (1.0 - r.similarity_score as f64).clamp(0.0, 1.0),
-        })
-        .collect();
+    if !status.is_success() {
+        anyhow::bail!(
+            "semantic metric search failed: HTTP {status} — {response_text}"
+        );
+    }
 
-    Ok(results)
+    let parsed: SemanticMetricsHttpResponse = serde_json::from_str(&response_text).with_context(
+        || format!("invalid JSON from semantic-search/metrics: {response_text}"),
+    )?;
+
+    Ok(parsed.results)
 }
+
+/// Map profile API base (`https://api.<region>.coralogix.com`) to the public gateway host
+/// used by the Semantic Search REST API (`https://ng-api-http.<region>.coralogix.com`).
+fn ng_api_http_base(endpoint: &str) -> String {
+    let base = endpoint.trim_end_matches('/');
+    if base.contains("ng-api-http") {
+        return base.to_string();
+    }
+    if let Some(rest) = base.strip_prefix("https://api.") {
+        return format!("https://ng-api-http.{rest}");
+    }
+    if let Some(rest) = base.strip_prefix("http://api.") {
+        return format!("http://ng-api-http.{rest}");
+    }
+    base.to_string()
+}
+
 
 /// Build a TLS gRPC channel with required Coralogix metadata attached via interceptor.
 async fn build_client(

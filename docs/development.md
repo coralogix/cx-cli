@@ -14,17 +14,6 @@ cargo run -- <args>                 # Run CLI in dev mode
 
 Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
-## Proto Generation
-
-Proto files are generated at build time by `build.rs` using `tonic-build` with vendored `protoc`. After a fresh checkout, protos must be fetched first:
-
-```bash
-protofetch --output-proto-directory proto fetch
-cargo build
-```
-
-The fetched `.proto` files live under `proto/` which is gitignored.
-
 ## DataPrime Documentation Setup
 
 The `cx dataprime` commands require a documentation file at `~/.cx/dataprime_docs.yaml`, generated from the official Coralogix DataPrime documentation JSON.

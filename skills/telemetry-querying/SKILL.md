@@ -58,7 +58,7 @@ cx search-fields "payment total" --dataset spans
 cx search-fields "purchase value" --dataset logs --limit 10
 ```
 
-**Requirements:** `cx search-fields` requires `team_id` in the active profile and an OpenAI API key (via `OPENAI_API_KEY` or profile `openai_api_key`). If these are missing, prompt the user to run `cx profiles add`.
+**Requirements:** `cx search-fields` requires `team_id` in the active profile and a Coralogix API key (or OAuth). If these are missing, prompt the user to run `cx profiles add`.
 
 If matching fields are found:
 - For **logs**: continue with the `logs-querying` skill using DataPrime

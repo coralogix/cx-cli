@@ -25,7 +25,6 @@ Authentication method: OAuth (browser login)
 Region: eu2
 Label (e.g. 'prod'): production
 Coralogix team ID (required for search-fields): 123456
-OpenAI API key (optional): <enter>
 
 Opening browser for authentication...
 Waiting for browser callback...
@@ -86,7 +85,7 @@ temp_dir = "/tmp/"
 ## Profile Files (`~/.cx/profiles/<name>.toml`)
 
 Each profile stores credentials and endpoint configuration.  The sensitive
-secrets (API key, OAuth tokens, OpenAI key) live in the OS keyring when
+secrets (API key, OAuth tokens) live in the OS keyring when
 `credential_storage = "os_store"` and are **not** written to the TOML.
 
 ### Common fields
@@ -98,7 +97,6 @@ secrets (API key, OAuth tokens, OpenAI key) live in the OS keyring when
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
 | `label` | No | Free-form label (e.g. `"production"`) |
 | `team_id` | No | Coralogix team ID — required for `cx search-fields` |
-| `openai_api_key` | No | OpenAI API key for semantic search (file storage only) |
 
 ### OAuth-specific fields
 
@@ -148,7 +146,6 @@ region = "eu1"
 api_key = "cxp_your_api_key_here"
 label = "production"
 team_id = "123456"
-openai_api_key = "sk-..."
 ```
 
 Legacy profiles without an `auth` field behave as `auth = "api_key"` automatically.
@@ -177,7 +174,6 @@ Environment variables override profile file values:
 | `CX_PROFILE` | `--profile` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth — sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
-| `OPENAI_API_KEY` | `openai_api_key` in profile (takes precedence) |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 

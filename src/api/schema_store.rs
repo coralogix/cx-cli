@@ -206,14 +206,11 @@ pub async fn semantic_metric_lookup(
         .context("read semantic-search/metrics response body")?;
 
     if !status.is_success() {
-        anyhow::bail!(
-            "semantic metric search failed: HTTP {status} — {response_text}"
-        );
+        anyhow::bail!("semantic metric search failed: HTTP {status} — {response_text}");
     }
 
-    let parsed: SemanticMetricsHttpResponse = serde_json::from_str(&response_text).with_context(
-        || format!("invalid JSON from semantic-search/metrics: {response_text}"),
-    )?;
+    let parsed: SemanticMetricsHttpResponse = serde_json::from_str(&response_text)
+        .with_context(|| format!("invalid JSON from semantic-search/metrics: {response_text}"))?;
 
     Ok(parsed.results)
 }
@@ -233,7 +230,6 @@ fn ng_api_http_base(endpoint: &str) -> String {
     }
     base.to_string()
 }
-
 
 /// Build a TLS gRPC channel with required Coralogix metadata attached via interceptor.
 async fn build_client(

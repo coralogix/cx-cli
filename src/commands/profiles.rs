@@ -84,7 +84,10 @@ pub fn run_list() -> Result<()> {
 
     println!(
         "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  DEFAULT",
-        "NAME", "LABEL", "REGION", "AUTH",
+        "NAME",
+        "LABEL",
+        "REGION",
+        "AUTH",
         name_w = name_w,
         label_w = label_w,
         region_w = region_w,

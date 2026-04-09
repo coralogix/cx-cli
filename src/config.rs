@@ -302,8 +302,9 @@ pub fn save_config(config: &Config) -> Result<()> {
 /// Load a named profile.
 pub fn load_profile(name: &str) -> Result<Profile> {
     let path = profile_file(name)?;
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("Profile '{name}' not found. Run `cx profiles add` to set it up."))?;
+    let raw = std::fs::read_to_string(&path).with_context(|| {
+        format!("Profile '{name}' not found. Run `cx profiles add` to set it up.")
+    })?;
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 

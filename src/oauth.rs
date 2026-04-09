@@ -364,8 +364,7 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
     )
     .await
     .context("OAuth login timed out after 5 minutes")?
-    .context("OAuth callback task failed")?
-    ?;
+    .context("OAuth callback task failed")??;
 
     println!("Authorization code received, exchanging for tokens...");
 

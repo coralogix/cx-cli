@@ -82,9 +82,7 @@ pub async fn semantic_field_lookup(
         "dataset_type": dataset,
         "limit": limit,
     });
-    let parsed: FieldsHttpResponse = client
-        .post("/api/v1/semantic-search/fields", &body)
-        .await?;
+    let parsed: FieldsHttpResponse = client.post("/api/v1/semantic-search/fields", &body).await?;
 
     let results = parsed
         .results

@@ -65,22 +65,6 @@ struct SemanticMetricsHttpResponse {
     results: Vec<SemanticMetricResult>,
 }
 
-/// Map profile API base (`https://api.<region>.coralogix.com`) to the public gateway host
-/// used by the Semantic Search REST API (`https://ng-api-http.<region>.coralogix.com`).
-pub fn semantic_search_gateway_from_api_endpoint(api_endpoint: &str) -> String {
-    let base = api_endpoint.trim_end_matches('/');
-    if base.contains("ng-api-http") {
-        return base.to_string();
-    }
-    if let Some(rest) = base.strip_prefix("https://api.") {
-        return format!("https://ng-api-http.{rest}");
-    }
-    if let Some(rest) = base.strip_prefix("http://api.") {
-        return format!("http://ng-api-http.{rest}");
-    }
-    base.to_string()
-}
-
 fn build_default_headers(api_key: &str, team_id: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -112,8 +96,7 @@ pub async fn semantic_search_post<R: DeserializeOwned>(
         .parse::<u32>()
         .with_context(|| format!("cgx-team-id must be a numeric company ID, got: {team_id}"))?;
 
-    let base = semantic_search_gateway_from_api_endpoint(profile_api_endpoint);
-    let base = base.trim_end_matches('/');
+    let base = profile_api_endpoint.trim_end_matches('/');
     let url = format!("{base}{path}");
 
     let headers = build_default_headers(api_key, team_id)?;

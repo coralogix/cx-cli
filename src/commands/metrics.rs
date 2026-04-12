@@ -9,7 +9,7 @@ use toon_format::encode_default as toon_encode;
 use crate::api::{
     client::CxClient,
     metrics::{MetricsApi, PromQueryInstantResponse, PromQueryRangeResponse},
-    schema_store::{semantic_metric_lookup, SemanticMetricResult},
+    semantic_search::{semantic_metric_lookup, SemanticMetricResult},
 };
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
@@ -536,13 +536,9 @@ pub async fn run_search(
         let per_profile = fan_out(targets, |t| {
             let d = desc.clone();
             async move {
-                let team_id = t.cfg.team_id.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "cgx-team-id is required for description-based search.\n\
-                         Run `cx profiles add` and enter your Coralogix team ID."
-                    )
-                })?;
-                semantic_metric_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, &d, 5).await
+                semantic_metric_lookup(&t.client, &d, 5)
+                    .await
+                    .map_err(Into::into)
             }
         })
         .await;

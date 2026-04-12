@@ -285,10 +285,6 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
 
-    let team_id =
-        Text::new("Coralogix team ID (required for search-fields):").prompt_skippable()?;
-    let team_id = team_id.filter(|s| !s.is_empty());
-
     // Clean up any existing secrets before writing new ones.
     keyring_store::delete_profile(name);
 
@@ -313,7 +309,6 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         api_key: None,
         region,
         label,
-        team_id,
         oauth_client_id: oauth_client_id_for_profile,
         oauth_base_url: oauth_base_url_for_profile,
     };
@@ -336,10 +331,6 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
 
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
-
-    let team_id =
-        Text::new("Coralogix team ID (required for search-fields):").prompt_skippable()?;
-    let team_id = team_id.filter(|s| !s.is_empty());
 
     let storage_choice = Select::new(
         "Where should API keys be stored?",
@@ -367,7 +358,6 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 api_key: None,
                 region,
                 label,
-                team_id,
                 oauth_client_id: None,
                 oauth_base_url: None,
             };
@@ -382,7 +372,6 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 api_key: Some(api_key),
                 region,
                 label,
-                team_id,
                 oauth_client_id: None,
                 oauth_base_url: None,
             };

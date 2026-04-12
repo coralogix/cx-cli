@@ -5,7 +5,7 @@ use colored::Colorize;
 use serde_json::Value;
 use tabled::{Table, Tabled};
 
-use crate::api::schema_store::{semantic_field_lookup, SemanticFieldResult};
+use crate::api::semantic_search::{semantic_field_lookup, SemanticFieldResult};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 
@@ -50,13 +50,9 @@ pub async fn run(
         let tx = text.clone();
         let ds = dataset.clone();
         async move {
-            let team_id = t.cfg.team_id.as_deref().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "cgx-team-id is required for search-fields.\n\
-                     Run `cx profiles add` and enter your Coralogix team ID."
-                )
-            })?;
-            semantic_field_lookup(&t.cfg.endpoint, &t.cfg.api_key, team_id, &tx, &ds, limit).await
+            semantic_field_lookup(&t.client, &tx, &ds, limit)
+                .await
+                .map_err(Into::into)
         }
     })
     .await;

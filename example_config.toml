@@ -26,6 +26,3 @@ default_output_format = "text"
 # api_key = "cxp_your_api_key_here"
 # region = "eu1"
 # label = "production"
-#
-# Required for `cx search-fields` and `cx metrics search --description`:
-# team_id = "123456"

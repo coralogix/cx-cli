@@ -38,7 +38,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 - **`src/api/client.rs`** — `CxClient`: HTTP wrapper with Bearer auth, methods for REST (post/get) and NDJSON streaming
 - **`src/api/dataprime.rs`** — DataPrime query API (logs & traces via NDJSON)
 - **`src/api/metrics.rs`** — PromQL queries (instant, range, search, labels)
-- **`src/api/semantic_search.rs`** — Semantic Search HTTP API (fields + metrics via `ng-api-http` gateway); **`schema_store.rs`** re-exports for compatibility
+- **`src/api/semantic_search.rs`** — Semantic Search HTTP API (fields + metrics)
 - **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, search-fields, profiles, cleanup, dataprime docs)
 - **`src/time.rs`** — Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/spill.rs`** — Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)

@@ -24,7 +24,6 @@ Configuring profile 'default'
 Authentication method: OAuth (browser login)
 Region: eu2
 Label (e.g. 'prod'): production
-Coralogix team ID (required for search-fields): 123456
 
 Opening browser for authentication...
 Waiting for browser callback...
@@ -96,7 +95,6 @@ secrets (API key, OAuth tokens) live in the OS keyring when
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
 | `label` | No | Free-form label (e.g. `"production"`) |
-| `team_id` | No | Coralogix team ID — required for `cx search-fields` |
 
 ### OAuth-specific fields
 
@@ -112,7 +110,6 @@ auth = "oauth"
 credential_storage = "os_store"
 region = "eu2"
 label = "production"
-team_id = "123456"
 ```
 
 Tokens are in the OS keyring; nothing sensitive is in this file.
@@ -134,7 +131,6 @@ auth = "api_key"
 credential_storage = "os_store"
 region = "eu1"
 label = "production"
-team_id = "123456"
 ```
 
 The API key is in the OS keyring under the service `cx-cli`, profile name as the account.
@@ -145,7 +141,6 @@ The API key is in the OS keyring under the service `cx-cli`, profile name as the
 region = "eu1"
 api_key = "cxp_your_api_key_here"
 label = "production"
-team_id = "123456"
 ```
 
 Legacy profiles without an `auth` field behave as `auth = "api_key"` automatically.

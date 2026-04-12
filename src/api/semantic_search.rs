@@ -1,10 +1,10 @@
-//! Coralogix Semantic Search HTTP API (`ng-api-http` gateway).
+//! Coralogix Semantic Search HTTP API.
 //! See Olly Knowledge Base integration guide: `POST /api/v1/semantic-search/{fields,metrics}`.
 
-use anyhow::{Context, Result};
-use reqwest::header::{self, HeaderMap, HeaderValue};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::api::client::CxClient;
+use crate::error::Result as CxResult;
 
 /// One result row returned by semantic field lookup (`semantic-search/fields`).
 #[derive(Debug, Serialize)]
@@ -21,7 +21,9 @@ pub struct SemanticFieldResult {
 }
 
 /// Deserialize `null` or a JSON array into `Vec` (API may send `"metric_suffixes": null`).
-fn deserialize_nullable_string_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+fn deserialize_nullable_string_list<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -65,93 +67,24 @@ struct SemanticMetricsHttpResponse {
     results: Vec<SemanticMetricResult>,
 }
 
-fn build_default_headers(api_key: &str, team_id: &str) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {api_key}"))
-            .context("Invalid API key format for Authorization header")?,
-    );
-    // Do not set Content-Type here — `.json()` on the request sets it (avoids duplicate headers).
-    headers.insert(
-        header::HeaderName::from_static("cgx-team-id"),
-        HeaderValue::from_str(team_id).context("Invalid cgx-team-id header value")?,
-    );
-    Ok(headers)
-}
-
-/// POST JSON to the Semantic Search API (`ng-api-http` gateway) and deserialize the body as `R`.
-///
-/// `profile_api_endpoint` is the profile’s Coralogix API base (e.g. `https://api.eu2.coralogix.com`);
-/// it is mapped to the public gateway host. `path` should start with `/`, e.g.
-/// `/api/v1/semantic-search/metrics`.
-pub async fn semantic_search_post<R: DeserializeOwned>(
-    profile_api_endpoint: &str,
-    path: &str,
-    api_key: &str,
-    team_id: &str,
-    body: serde_json::Value,
-) -> Result<R> {
-    team_id
-        .parse::<u32>()
-        .with_context(|| format!("cgx-team-id must be a numeric company ID, got: {team_id}"))?;
-
-    let base = profile_api_endpoint.trim_end_matches('/');
-    let url = format!("{base}{path}");
-
-    let headers = build_default_headers(api_key, team_id)?;
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .user_agent(concat!("cx-cli/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .context("failed to build HTTP client for semantic search")?;
-
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .with_context(|| format!("POST {url}"))?;
-
-    let status = resp.status();
-    let response_text = resp
-        .text()
-        .await
-        .context("read semantic search response body")?;
-
-    if !status.is_success() {
-        anyhow::bail!("semantic search failed: HTTP {status} — {response_text} (URL: {url})");
-    }
-
-    serde_json::from_str(&response_text)
-        .with_context(|| format!("invalid JSON from semantic search: {response_text}"))
-}
-
 /// Natural-language search over log/span fields (`POST /api/v1/semantic-search/fields`).
 ///
 /// * `dataset` must be `"logs"` or `"spans"` (`dataset_type` in the API).
 pub async fn semantic_field_lookup(
-    endpoint: &str,
-    api_key: &str,
-    team_id: &str,
+    client: &CxClient,
     text: &str,
     dataset: &str,
     limit: u32,
-) -> Result<Vec<SemanticFieldResult>> {
+) -> CxResult<Vec<SemanticFieldResult>> {
     let limit = limit.clamp(1, 100);
     let body = serde_json::json!({
         "query": text,
         "dataset_type": dataset,
         "limit": limit,
     });
-    let parsed: FieldsHttpResponse = semantic_search_post(
-        endpoint,
-        "/api/v1/semantic-search/fields",
-        api_key,
-        team_id,
-        body,
-    )
-    .await?;
+    let parsed: FieldsHttpResponse = client
+        .post("/api/v1/semantic-search/fields", &body)
+        .await?;
 
     let results = parsed
         .results
@@ -183,25 +116,18 @@ pub async fn semantic_field_lookup(
 
 /// Natural-language search over metrics (`POST /api/v1/semantic-search/metrics`).
 pub async fn semantic_metric_lookup(
-    endpoint: &str,
-    api_key: &str,
-    team_id: &str,
+    client: &CxClient,
     text: &str,
     limit: u32,
-) -> Result<Vec<SemanticMetricResult>> {
+) -> CxResult<Vec<SemanticMetricResult>> {
     let limit = limit.clamp(1, 100);
     let body = serde_json::json!({
         "query": text,
         "limit": limit,
     });
-    let parsed: SemanticMetricsHttpResponse = semantic_search_post(
-        endpoint,
-        "/api/v1/semantic-search/metrics",
-        api_key,
-        team_id,
-        body,
-    )
-    .await?;
+    let parsed: SemanticMetricsHttpResponse = client
+        .post("/api/v1/semantic-search/metrics", &body)
+        .await?;
 
     Ok(parsed.results)
 }

@@ -228,9 +228,6 @@ pub struct Profile {
     pub region: Region,
     /// Optional free-form label (e.g. "prod", "staging")
     pub label: Option<String>,
-    /// Coralogix team ID, sent as `cgx-team-id` in gRPC metadata.
-    #[serde(default)]
-    pub team_id: Option<String>,
     /// OAuth: override the OAuth client ID.
     /// Required for custom regions; hard-coded for known Coralogix regions.
     /// Not written to the TOML for known regions (looked up from `KNOWN_ENVIRONMENTS`).
@@ -249,8 +246,6 @@ pub struct ResolvedConfig {
     pub profile_name: String,
     pub api_key: String,
     pub endpoint: String,
-    /// Coralogix team ID (`cgx-team-id` gRPC metadata).
-    pub team_id: Option<String>,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -361,7 +356,6 @@ async fn resolve_single(
         profile_name: profile_name.to_string(),
         endpoint: profile.region.api_endpoint().to_string(),
         api_key: bearer,
-        team_id: profile.team_id,
     })
 }
 
@@ -432,7 +426,6 @@ mod tests {
             profile_name: "prod".to_string(),
             api_key: "k".to_string(),
             endpoint: "https://api.eu2.coralogix.com".to_string(),
-            team_id: None,
         };
         assert_eq!(cfg.profile_name, "prod");
     }
@@ -483,7 +476,6 @@ api_key = "mykey"
             api_key: None,
             region: Region::Eu2,
             label: Some("prod".to_string()),
-            team_id: Some("12345".to_string()),
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -505,7 +497,6 @@ api_key = "mykey"
             api_key: None,
             region: Region::Custom("https://api.myenv.coralogix.com".to_string()),
             label: None,
-            team_id: None,
             oauth_client_id: Some("abc-123".to_string()),
             oauth_base_url: None,
         };
@@ -540,7 +531,6 @@ api_key = "mykey"
                 api_key: Some(format!("key-{i}")),
                 region: Region::Eu1,
                 label: None,
-                team_id: None,
                 oauth_client_id: None,
                 oauth_base_url: None,
             };
@@ -575,7 +565,6 @@ api_key = "mykey"
             api_key: Some("default-key".to_string()),
             region: Region::Eu1,
             label: None,
-            team_id: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -596,7 +585,6 @@ api_key = "mykey"
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
             label: None,
-            team_id: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -618,7 +606,6 @@ api_key = "mykey"
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
             label: None,
-            team_id: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -640,7 +627,6 @@ api_key = "mykey"
             api_key: None,
             region: Region::Eu1,
             label: None,
-            team_id: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };

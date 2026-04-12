@@ -1,9 +1,9 @@
 pub mod alerts;
 pub mod cleanup;
-pub mod profiles;
 pub mod dashboards;
 pub mod dataprime;
 pub mod logs;
 pub mod metrics;
+pub mod profiles;
 pub mod search_fields;
 pub mod spans;

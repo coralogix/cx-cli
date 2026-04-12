@@ -21,12 +21,6 @@ cargo run -- <args>                 # Run CLI in dev mode
 
 Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
-Proto files are generated at build time by `build.rs` using `tonic-build` with vendored `protoc`. After a fresh checkout, protos must be fetched first:
-```bash
-protofetch --output-proto-directory proto fetch
-cargo build
-```
-
 ## Architecture
 
 ### Execution Flow
@@ -44,8 +38,7 @@ cargo build
 - **`src/api/client.rs`** — `CxClient`: HTTP wrapper with Bearer auth, methods for REST (post/get) and NDJSON streaming
 - **`src/api/dataprime.rs`** — DataPrime query API (logs & traces via NDJSON)
 - **`src/api/metrics.rs`** — PromQL queries (instant, range, search, labels)
-- **`src/api/schema_store.rs`** — gRPC client for semantic field/metric lookup
-- **`src/api/openai.rs`** — Embedding generation for semantic search
+- **`src/api/semantic_search.rs`** — Semantic Search HTTP API (fields + metrics)
 - **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, search-fields, profiles, cleanup, dataprime docs)
 - **`src/time.rs`** — Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/spill.rs`** — Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)

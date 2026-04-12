@@ -59,15 +59,7 @@ url = "2"
 # TOON format — agent-optimised, token-efficient serialisation
 toon-format = { version = "0.4.4", default-features = false }
 
-# gRPC client for SchemaStore semantic field lookup
-tonic = { version = "0.12", features = ["tls", "tls-webpki-roots"] }
-prost = "0.13"
-prost-types = "0.13"
 futures = "0.3.32"
-
-[build-dependencies]
-tonic-build = "0.12"
-protoc-bin-vendored = "3"
 
 [profile.release]
 strip = true

@@ -84,7 +84,10 @@ pub fn run_list() -> Result<()> {
 
     println!(
         "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  DEFAULT",
-        "NAME", "LABEL", "REGION", "AUTH",
+        "NAME",
+        "LABEL",
+        "REGION",
+        "AUTH",
         name_w = name_w,
         label_w = label_w,
         region_w = region_w,
@@ -282,16 +285,6 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
 
-    let team_id =
-        Text::new("Coralogix team ID (required for search-fields):").prompt_skippable()?;
-    let team_id = team_id.filter(|s| !s.is_empty());
-
-    let openai_api_key = Password::new("OpenAI API key (optional):")
-        .with_display_mode(PasswordDisplayMode::Masked)
-        .without_confirmation()
-        .prompt_skippable()?;
-    let openai_api_key = openai_api_key.filter(|s| !s.is_empty());
-
     // Clean up any existing secrets before writing new ones.
     keyring_store::delete_profile(name);
 
@@ -300,11 +293,8 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
     let tokens = oauth::browser_login(&base_url, &client_id).await?;
     println!("Login successful!");
 
-    // Store tokens and optional OpenAI key in the OS keyring.
+    // Store tokens in the OS keyring.
     oauth::store_tokens(name, &tokens)?;
-    if let Some(ref oai_key) = openai_api_key {
-        keyring_store::store_secret(name, "openai_api_key", oai_key)?;
-    }
 
     // For custom environments, explicitly store the base URL so that token
     // refresh can reach the correct OIDC discovery endpoint even if the
@@ -319,8 +309,6 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         api_key: None,
         region,
         label,
-        team_id,
-        openai_api_key: None,
         oauth_client_id: oauth_client_id_for_profile,
         oauth_base_url: oauth_base_url_for_profile,
     };
@@ -344,16 +332,6 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
 
-    let team_id =
-        Text::new("Coralogix team ID (required for search-fields):").prompt_skippable()?;
-    let team_id = team_id.filter(|s| !s.is_empty());
-
-    let openai_api_key = Password::new("OpenAI API key (optional):")
-        .with_display_mode(PasswordDisplayMode::Masked)
-        .without_confirmation()
-        .prompt_skippable()?;
-    let openai_api_key = openai_api_key.filter(|s| !s.is_empty());
-
     let storage_choice = Select::new(
         "Where should API keys be stored?",
         CREDENTIAL_STORAGE_OPTIONS.to_vec(),
@@ -374,17 +352,12 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
     let (profile, storage_desc) = match credential_storage {
         CredentialStorage::OsStore => {
             keyring_store::store_secret(name, "api_key", &api_key)?;
-            if let Some(ref oai_key) = openai_api_key {
-                keyring_store::store_secret(name, "openai_api_key", oai_key)?;
-            }
             let profile = Profile {
                 auth: AuthKind::ApiKey,
                 credential_storage,
                 api_key: None,
                 region,
                 label,
-                team_id,
-                openai_api_key: None,
                 oauth_client_id: None,
                 oauth_base_url: None,
             };
@@ -399,8 +372,6 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 api_key: Some(api_key),
                 region,
                 label,
-                team_id,
-                openai_api_key,
                 oauth_client_id: None,
                 oauth_base_url: None,
             };

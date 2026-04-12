@@ -209,7 +209,7 @@ mod max_size_serde {
 ///
 /// API keys are stored inline in the TOML by default (`credential_storage = "file"`).
 /// When `credential_storage = "os_store"`, keys are stored in the OS credential
-/// store and `api_key` / `openai_api_key` are `None` in the TOML.
+/// store and `api_key` is `None` in the TOML.
 ///
 /// OAuth profiles always use `credential_storage = "os_store"`; tokens are stored
 /// in the OS keyring and never written to the profile TOML.
@@ -228,13 +228,6 @@ pub struct Profile {
     pub region: Region,
     /// Optional free-form label (e.g. "prod", "staging")
     pub label: Option<String>,
-    /// Coralogix team ID, sent as `cgx-team-id` in gRPC metadata.
-    #[serde(default)]
-    pub team_id: Option<String>,
-    /// OpenAI API key for embedding-based features. Present when
-    /// `credential_storage = "file"`. Falls back to `OPENAI_API_KEY` env var.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub openai_api_key: Option<String>,
     /// OAuth: override the OAuth client ID.
     /// Required for custom regions; hard-coded for known Coralogix regions.
     /// Not written to the TOML for known regions (looked up from `KNOWN_ENVIRONMENTS`).
@@ -253,10 +246,6 @@ pub struct ResolvedConfig {
     pub profile_name: String,
     pub api_key: String,
     pub endpoint: String,
-    /// Coralogix team ID (`cgx-team-id` gRPC metadata).
-    pub team_id: Option<String>,
-    /// OpenAI API key resolved from profile or `OPENAI_API_KEY` env var.
-    pub openai_api_key: Option<String>,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -302,8 +291,9 @@ pub fn save_config(config: &Config) -> Result<()> {
 /// Load a named profile.
 pub fn load_profile(name: &str) -> Result<Profile> {
     let path = profile_file(name)?;
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("Profile '{name}' not found. Run `cx profiles add` to set it up."))?;
+    let raw = std::fs::read_to_string(&path).with_context(|| {
+        format!("Profile '{name}' not found. Run `cx profiles add` to set it up.")
+    })?;
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 
@@ -314,8 +304,6 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 ///   2. `AuthKind::ApiKey` — reads the key from OS keyring or profile file
 ///   3. `AuthKind::OAuth`  — loads the cached access token; refreshes via the
 ///      refresh token if the access token has expired (or is missing)
-///
-/// OpenAI key resolution: `OPENAI_API_KEY` env var > configured storage backend.
 async fn resolve_single(
     profile_name: &str,
     api_key_override: Option<&str>,
@@ -364,23 +352,10 @@ async fn resolve_single(
         }
     };
 
-    // OpenAI key: env var > storage backend
-    let openai_api_key = std::env::var("OPENAI_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .or_else(|| match profile.credential_storage {
-            CredentialStorage::OsStore => keyring_store::get_secret(profile_name, "openai_api_key")
-                .ok()
-                .flatten(),
-            CredentialStorage::File => profile.openai_api_key.clone(),
-        });
-
     Ok(ResolvedConfig {
         profile_name: profile_name.to_string(),
         endpoint: profile.region.api_endpoint().to_string(),
         api_key: bearer,
-        team_id: profile.team_id,
-        openai_api_key,
     })
 }
 
@@ -451,8 +426,6 @@ mod tests {
             profile_name: "prod".to_string(),
             api_key: "k".to_string(),
             endpoint: "https://api.eu2.coralogix.com".to_string(),
-            team_id: None,
-            openai_api_key: None,
         };
         assert_eq!(cfg.profile_name, "prod");
     }
@@ -503,8 +476,6 @@ api_key = "mykey"
             api_key: None,
             region: Region::Eu2,
             label: Some("prod".to_string()),
-            team_id: Some("12345".to_string()),
-            openai_api_key: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -526,8 +497,6 @@ api_key = "mykey"
             api_key: None,
             region: Region::Custom("https://api.myenv.coralogix.com".to_string()),
             label: None,
-            team_id: None,
-            openai_api_key: None,
             oauth_client_id: Some("abc-123".to_string()),
             oauth_base_url: None,
         };
@@ -562,8 +531,6 @@ api_key = "mykey"
                 api_key: Some(format!("key-{i}")),
                 region: Region::Eu1,
                 label: None,
-                team_id: None,
-                openai_api_key: None,
                 oauth_client_id: None,
                 oauth_base_url: None,
             };
@@ -598,8 +565,6 @@ api_key = "mykey"
             api_key: Some("default-key".to_string()),
             region: Region::Eu1,
             label: None,
-            team_id: None,
-            openai_api_key: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -620,8 +585,6 @@ api_key = "mykey"
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
             label: None,
-            team_id: None,
-            openai_api_key: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -643,8 +606,6 @@ api_key = "mykey"
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
             label: None,
-            team_id: None,
-            openai_api_key: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };
@@ -666,8 +627,6 @@ api_key = "mykey"
             api_key: None,
             region: Region::Eu1,
             label: None,
-            team_id: None,
-            openai_api_key: None,
             oauth_client_id: None,
             oauth_base_url: None,
         };

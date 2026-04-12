@@ -42,7 +42,11 @@ struct Cli {
 
 /// Separate CLI parser for the `profiles` command — no global API flags.
 #[derive(Parser)]
-#[command(name = "cx", version, about = "Coralogix CLI — query observability data from the terminal.")]
+#[command(
+    name = "cx",
+    version,
+    about = "Coralogix CLI — query observability data from the terminal."
+)]
 struct ProfilesCli {
     #[command(subcommand)]
     command: ProfilesTopLevel,

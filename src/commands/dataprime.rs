@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -7,7 +6,11 @@ use serde::{Deserialize, Serialize};
 use tabled::{Table, Tabled};
 use toon_format::encode_default as toon_encode;
 
-use crate::config::{self, OutputFormat};
+use crate::config::OutputFormat;
+
+/// YAML bundle shipped in the binary (`assets/dataprime_docs.yaml`).
+const EMBEDDED_DATAPRIME_DOCS_YAML: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/dataprime_docs.yaml"));
 
 /// A single documentation entry for a command or function.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,25 +47,10 @@ struct ListRow {
     description: String,
 }
 
-/// Returns the path to the dataprime docs YAML file.
-pub fn docs_file() -> Result<PathBuf> {
-    Ok(config::config_dir()?.join("dataprime_docs.yaml"))
-}
-
-/// Load the DataPrime documentation from disk.
+/// Load the DataPrime documentation from the bundle embedded at build time (`assets/dataprime_docs.yaml`).
 pub fn load_docs() -> Result<DataprimeDocs> {
-    let path = docs_file()?;
-    let content = std::fs::read_to_string(&path).with_context(|| {
-        format!(
-            "DataPrime documentation not found at {}.\n\n\
-            Run the following to generate it:\n  \
-            python3 scripts/generate_dataprime_docs.py --input <path-to-dataprime_docs.json>\n\n\
-            The docs will be written to: {}",
-            path.display(),
-            path.display()
-        )
-    })?;
-    serde_yaml::from_str(&content).context("Failed to parse dataprime_docs.yaml")
+    serde_yaml::from_str(EMBEDDED_DATAPRIME_DOCS_YAML)
+        .context("Failed to parse embedded dataprime documentation")
 }
 
 /// Truncate a string to a maximum length, adding ellipsis if needed.

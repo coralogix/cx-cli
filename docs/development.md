@@ -14,24 +14,30 @@ cargo run -- <args>                 # Run CLI in dev mode
 
 Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
-## DataPrime Documentation Setup
+## DataPrime documentation bundle
 
-The `cx dataprime` commands require a documentation file at `~/.cx/dataprime_docs.yaml`, generated from the official Coralogix DataPrime documentation JSON.
+The `cx dataprime` subcommands load YAML produced by **`generate_dataprime_docs.py`** from the sibling repository **[dataprime-docs-generator](https://github.com/coralogix/dataprime-docs-generator)** (clone as `../dataprime-docs-generator` next to this repo). That script downloads fresh `dataprime_docs.json` when run without `--input` (unless you pass `--input` for an offline file), writes YAML, and you commit **`assets/dataprime_docs.yaml`** here.
+
+- **Embedded only** — `assets/dataprime_docs.yaml` is compiled into the binary (`include_str!`). To ship newer docs, regenerate that file and rebuild `cx`; there is no runtime override path.
+
+### Regenerating `assets/dataprime_docs.yaml` (local sibling layout)
+
+With `coralogix-cli` and `dataprime-docs-generator` as sibling directories under the same parent:
 
 ```bash
-# Generate from a local dataprime_docs.json file
-python3 scripts/generate_dataprime_docs.py --input /path/to/dataprime_docs.json
+cd ../dataprime-docs-generator
+# Writes ~/.cx/dataprime_docs.yaml (default) and copies the same YAML into this repo
+python3 generate_dataprime_docs.py --also-output ../coralogix-cli/assets/dataprime_docs.yaml
 
-# Write to stdout (for CI pipelines)
-python3 scripts/generate_dataprime_docs.py --input /path/to/dataprime_docs.json --stdout
-
-# Write to a custom output path
-python3 scripts/generate_dataprime_docs.py --input /path/to/dataprime_docs.json --output /custom/path.yaml
+cd ../coralogix-cli
+cargo test   # unit tests parse the embedded YAML; fix any failures before committing
 ```
 
-The `dataprime_docs.json` source file can be obtained from internal Coralogix sources. The script extracts ~30-40 DataPrime commands and ~100-150 functions.
+### Regenerating from a published clone
 
-All JSON parsing logic lives in the Python script. The Rust binary only reads the pre-parsed YAML file, allowing documentation updates without rebuilding the binary.
+If you only have a Git clone of `dataprime-docs-generator` elsewhere, use its path in `--output` (absolute or relative), or `curl` the raw `generate_dataprime_docs.py` from GitHub and run it with `--output /path/to/coralogix-cli/assets/dataprime_docs.yaml`.
+
+If you need a **fixed** JSON file (air‑gapped or debugging), pass `--input /path/to/dataprime_docs.json` to the generator instead of relying on the download.
 
 ## Architecture
 

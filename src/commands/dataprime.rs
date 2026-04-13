@@ -9,8 +9,10 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 
 /// YAML bundle shipped in the binary (`assets/dataprime_docs.yaml`).
-const EMBEDDED_DATAPRIME_DOCS_YAML: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/dataprime_docs.yaml"));
+const EMBEDDED_DATAPRIME_DOCS_YAML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/dataprime_docs.yaml"
+));
 
 /// A single documentation entry for a command or function.
 #[derive(Debug, Clone, Serialize, Deserialize)]

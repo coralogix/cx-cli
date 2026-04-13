@@ -53,6 +53,10 @@ pub const KNOWN_ENVIRONMENTS: &[OAuthEnvironment] = &[
         client_id: "TODO_CLIENT_ID_US2",
     },
     OAuthEnvironment {
+        name: "us3",
+        client_id: "TODO_CLIENT_ID_US3",
+    },
+    OAuthEnvironment {
         name: "eu1",
         client_id: "TODO_CLIENT_ID_EU1",
     },

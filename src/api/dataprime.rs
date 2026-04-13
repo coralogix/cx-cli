@@ -232,7 +232,7 @@ pub fn is_aggregation_query(query: &str) -> bool {
     ];
 
     for segment in query.split('|') {
-        let first = segment.trim().split_whitespace().next().unwrap_or("");
+        let first = segment.split_whitespace().next().unwrap_or("");
         if AGG_COMMANDS.contains(&first.to_lowercase().as_str()) {
             return true;
         }

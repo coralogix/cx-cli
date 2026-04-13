@@ -82,6 +82,20 @@ struct MetricSearchRowSingle {
 }
 
 #[derive(Tabled)]
+struct MetricNameRow {
+    #[tabled(rename = "Profile")]
+    profile: String,
+    #[tabled(rename = "Metric name")]
+    metric_name: String,
+}
+
+#[derive(Tabled)]
+struct MetricNameRowSingle {
+    #[tabled(rename = "Metric name")]
+    metric_name: String,
+}
+
+#[derive(Tabled)]
 struct LabelRow {
     #[tabled(rename = "Label")]
     label: String,
@@ -630,31 +644,52 @@ pub async fn run_search(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
-            let json_rows: Vec<Value> = if include_profile {
+        OutputFormat::Json => {
+            let names: Vec<&str> = all_matches.iter().map(|(_, n)| n.as_str()).collect();
+            println!("{}", serde_json::to_string_pretty(&names)?);
+        }
+        OutputFormat::Agents => {
+            if all_matches.is_empty() {
+                println!("[]");
+                return Ok(());
+            }
+            let rows: Vec<Value> = if include_profile {
                 all_matches
                     .iter()
-                    .map(|(profile, name)| json!({"profile": profile, "metric": name}))
+                    .map(|(profile, name)| json!({"profile": profile, "name": name}))
                     .collect()
             } else {
                 all_matches
                     .iter()
-                    .map(|(_, name)| json!({"metric": name}))
+                    .map(|(_, name)| json!({"name": name}))
                     .collect()
             };
-            println!("{}", serde_json::to_string_pretty(&json_rows)?);
+            let toon = toon_encode(&rows)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
         }
         OutputFormat::Text => {
             if all_matches.is_empty() {
                 println!("{}", "No metrics matched.".yellow());
                 return Ok(());
             }
-            for (profile, name) in &all_matches {
-                if include_profile {
-                    println!("[{profile}] {name}");
-                } else {
-                    println!("{name}");
-                }
+            if include_profile {
+                let rows: Vec<MetricNameRow> = all_matches
+                    .iter()
+                    .map(|(profile, name)| MetricNameRow {
+                        profile: profile.clone(),
+                        metric_name: name.clone(),
+                    })
+                    .collect();
+                println!("{}", Table::new(rows));
+            } else {
+                let rows: Vec<MetricNameRowSingle> = all_matches
+                    .iter()
+                    .map(|(_, name)| MetricNameRowSingle {
+                        metric_name: name.clone(),
+                    })
+                    .collect();
+                println!("{}", Table::new(rows));
             }
         }
     }

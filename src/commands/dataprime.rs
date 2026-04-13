@@ -82,8 +82,6 @@ fn first_sentence(s: &str) -> String {
         s[..=pos].to_string()
     } else if let Some(pos) = s.find(".\n") {
         s[..=pos].to_string()
-    } else if s.ends_with('.') {
-        s.lines().next().unwrap_or(s).to_string()
     } else {
         s.lines().next().unwrap_or(s).to_string()
     }

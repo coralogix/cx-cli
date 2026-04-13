@@ -46,35 +46,35 @@ pub struct OAuthEnvironment {
 pub const KNOWN_ENVIRONMENTS: &[OAuthEnvironment] = &[
     OAuthEnvironment {
         name: "us1",
-        client_id: "TODO_CLIENT_ID_US1",
+        client_id: "2b6d0b5c-da8f-477e-907e-50cdad7b90e7",
     },
     OAuthEnvironment {
         name: "us2",
-        client_id: "TODO_CLIENT_ID_US2",
+        client_id: "2820e159-5b12-432d-bc09-bef144f9b8c9",
     },
     OAuthEnvironment {
         name: "us3",
-        client_id: "TODO_CLIENT_ID_US3",
+        client_id: "a489741c-c875-4652-9b2e-1ba680352b72",
     },
     OAuthEnvironment {
         name: "eu1",
-        client_id: "TODO_CLIENT_ID_EU1",
+        client_id: "cfb0915d-cb82-436c-b0fb-e8f75e4f9db4",
     },
     OAuthEnvironment {
         name: "eu2",
-        client_id: "TODO_CLIENT_ID_EU2",
+        client_id: "941d86ab-f652-4430-8153-9af5db5791e5",
     },
     OAuthEnvironment {
         name: "ap1",
-        client_id: "TODO_CLIENT_ID_AP1",
+        client_id: "091a273c-8194-4ad1-a09e-d787cc5e490a",
     },
     OAuthEnvironment {
         name: "ap2",
-        client_id: "TODO_CLIENT_ID_AP2",
+        client_id: "d827249c-0699-4abf-8d4c-d1d27dd8fe9a",
     },
     OAuthEnvironment {
         name: "ap3",
-        client_id: "TODO_CLIENT_ID_AP3",
+        client_id: "7c8d9c61-7d28-4c0f-803b-d4061f33282b",
     },
     OAuthEnvironment {
         name: "stg1",

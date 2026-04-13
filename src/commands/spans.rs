@@ -201,6 +201,7 @@ fn render(
 
 // ── Top-level orchestrator ────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     targets: &[Arc<ExecutionTarget>],
     query: &str,

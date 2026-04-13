@@ -32,5 +32,9 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
       - name: Run tests
         run: cargo test --locked

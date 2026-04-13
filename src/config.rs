@@ -66,6 +66,7 @@ impl std::fmt::Display for OutputFormat {
 pub enum Region {
     Us1,
     Us2,
+    Us3,
     Eu1,
     Eu2,
     Ap1,
@@ -81,6 +82,7 @@ impl Region {
         match self {
             Region::Us1 => "https://api.us1.coralogix.com",
             Region::Us2 => "https://api.us2.coralogix.com",
+            Region::Us3 => "https://api.us3.coralogix.com",
             Region::Eu1 => "https://api.eu1.coralogix.com",
             Region::Eu2 => "https://api.eu2.coralogix.com",
             Region::Ap1 => "https://api.ap1.coralogix.com",
@@ -97,6 +99,7 @@ impl std::fmt::Display for Region {
         match self {
             Region::Us1 => write!(f, "us1"),
             Region::Us2 => write!(f, "us2"),
+            Region::Us3 => write!(f, "us3"),
             Region::Eu1 => write!(f, "eu1"),
             Region::Eu2 => write!(f, "eu2"),
             Region::Ap1 => write!(f, "ap1"),
@@ -115,6 +118,7 @@ impl std::str::FromStr for Region {
         Ok(match s.to_lowercase().as_str() {
             "us1" => Region::Us1,
             "us2" => Region::Us2,
+            "us3" => Region::Us3,
             "eu1" => Region::Eu1,
             "eu2" => Region::Eu2,
             "ap1" => Region::Ap1,

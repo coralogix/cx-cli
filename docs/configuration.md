@@ -151,6 +151,7 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 |--------|----------|
 | `us1` | `https://api.us1.coralogix.com` |
 | `us2` | `https://api.us2.coralogix.com` |
+| `us3` | `https://api.us3.coralogix.com` |
 | `eu1` | `https://api.eu1.coralogix.com` |
 | `eu2` | `https://api.eu2.coralogix.com` |
 | `ap1` | `https://api.ap1.coralogix.com` |

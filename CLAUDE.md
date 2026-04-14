@@ -62,5 +62,3 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 ### Documentation
 
 `docs/` contains detailed reference documentation: [configuration](docs/configuration.md), [agents output format](docs/agents-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md), and [development guide](docs/development.md).
-
-Regenerating `assets/dataprime_docs.yaml` uses [internal-dataprime-docs-generator](https://github.com/coralogix/internal-dataprime-docs-generator) (`generate_dataprime_docs.py`); automation also writes an updated bundle to that repo’s **`output/`** when docs change. See the DataPrime section in [development.md](docs/development.md).

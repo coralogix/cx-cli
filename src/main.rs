@@ -190,6 +190,35 @@ enum DataprimeCmd {
         /// Name of the command or function.
         name: String,
     },
+
+    /// Execute a DataPrime query. The query must include its own source command
+    /// (e.g. 'source logs | filter ...').
+    #[command(after_help = "\
+Examples:
+  cx dataprime query 'source logs | filter $m.severity == \"ERROR\"'
+  cx dataprime query 'source spans | filter $m.duration > 1000000' --start now-6h
+  cx dataprime query 'source logs | groupby $l.subsystemname aggregate count()' --limit 50")]
+    Query {
+        /// DataPrime query string. Must include a source command
+        /// (e.g. 'source logs | filter ...').
+        query: String,
+
+        /// Start time in ISO 8601 or relative format. e.g. "2024-01-01T00:00:00Z" or "now-1h"
+        #[arg(long, default_value = "now-1h")]
+        start: String,
+
+        /// End time in ISO 8601 or relative format.
+        #[arg(long, default_value = "now")]
+        end: String,
+
+        /// Maximum number of results.
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+
+        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
+        #[arg(long, default_value = "frequent")]
+        tier: Tier,
+    },
 }
 
 #[derive(Subcommand)]
@@ -363,16 +392,20 @@ async fn main() -> Result<()> {
         return commands::cleanup::run();
     }
 
-    // Dataprime command doesn't need API credentials.
-    if let Commands::Dataprime { cmd } = cli.command {
-        let global_config = config::load_config().unwrap_or_default();
-        let output = cli.output.unwrap_or(global_config.default_output_format);
-        return match cmd {
-            DataprimeCmd::List { filter, name } => {
-                commands::dataprime::run_list(filter, name.as_deref(), output)
-            }
-            DataprimeCmd::Show { name } => commands::dataprime::run_help(&name, output),
-        };
+    // Dataprime list/show don't need API credentials — handle them early.
+    if let Commands::Dataprime { ref cmd } = cli.command {
+        if matches!(cmd, DataprimeCmd::List { .. } | DataprimeCmd::Show { .. }) {
+            let global_config = config::load_config().unwrap_or_default();
+            let output = cli.output.unwrap_or(global_config.default_output_format);
+            return match cmd {
+                DataprimeCmd::List { filter, name } => {
+                    commands::dataprime::run_list(*filter, name.as_deref(), output)
+                }
+                DataprimeCmd::Show { name } => commands::dataprime::run_help(name, output),
+                DataprimeCmd::Query { .. } => unreachable!(),
+            };
+        }
+        // DataprimeCmd::Query needs credentials — fall through.
     }
 
     // Reject --api-key / --region when more than one --profile is supplied,
@@ -404,7 +437,25 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
         Commands::Cleanup => unreachable!("handled above"),
-        Commands::Dataprime { .. } => unreachable!("handled above"),
+
+        Commands::Dataprime { cmd } => match cmd {
+            DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {
+                unreachable!("handled above")
+            }
+            DataprimeCmd::Query {
+                query,
+                start,
+                end,
+                limit,
+                tier,
+            } => {
+                commands::dataprime::run_query(
+                    &targets, &query, "", &start, &end, limit, tier, output, max_direct,
+                    &temp_dir, None,
+                )
+                .await?;
+            }
+        },
 
         Commands::Logs {
             query,

@@ -58,6 +58,15 @@ pub struct QuerySpansResponse {
     pub is_aggregate: bool,
 }
 
+/// Generic query response used by `cx dataprime query` and the shared
+/// execute/merge/render pipeline.  Source-agnostic — no log- or span-specific
+/// fields.
+pub struct QueryGenericResponse {
+    pub raw_results: Vec<Value>,
+    pub warnings: Vec<String>,
+    pub is_aggregate: bool,
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 
 pub struct DataprimeApi<'a> {
@@ -118,6 +127,35 @@ impl<'a> DataprimeApi<'a> {
             raw_results,
             warnings,
             total_count: None,
+            is_aggregate: aggregate,
+        })
+    }
+
+    /// Execute a generic Dataprime query as-is, with no default source.
+    ///
+    /// The query must include its own `source` command (e.g. `source logs | ...`).
+    /// Used by `cx dataprime query` and as the shared foundation for logs/spans.
+    pub async fn query_generic(
+        &self,
+        query: &str,
+        start_time: &str,
+        end_time: &str,
+        limit: u32,
+        tier: Tier,
+        source: &str,
+    ) -> Result<QueryGenericResponse> {
+        let (rows, warnings) = self
+            .post_query(query, start_time, end_time, limit, tier, source)
+            .await?;
+        let aggregate = is_aggregation_query(query);
+        let raw_results = if aggregate {
+            rows.iter().map(normalize_aggregate_row).collect()
+        } else {
+            rows.iter().map(normalize_row).collect()
+        };
+        Ok(QueryGenericResponse {
+            raw_results,
+            warnings,
             is_aggregate: aggregate,
         })
     }

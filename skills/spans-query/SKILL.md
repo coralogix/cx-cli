@@ -301,5 +301,5 @@ If you're migrating from the old `cx traces` commands:
 ## Related Skills
 
 - **`metrics-query`** — For aggregated latency metrics (histograms, counters)
-- **`logs-querying`** — For detailed log messages correlated with spans
+- **`query-logs`** — For detailed log messages correlated with spans
 - **`telemetry-querying`** — Gateway skill for choosing the right data source

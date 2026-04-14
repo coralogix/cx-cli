@@ -62,7 +62,3 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 ### Documentation
 
 `docs/` contains detailed reference documentation: [configuration](docs/configuration.md), [agents output format](docs/agents-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md), and [development guide](docs/development.md).
-
-### Scripts
-
-`scripts/generate_dataprime_docs.py` — Parses official DataPrime docs JSON into YAML for offline browsing.

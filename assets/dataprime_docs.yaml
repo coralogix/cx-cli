@@ -1,0 +1,622 @@
+commands:
+  filter:
+    description: Keeps rows where the predicate is true.
+    syntax: "| filter <predicate>"
+    category: [Commands reference, filter]
+  lucene:
+    description: "Full-text search using Lucene syntax."
+    syntax: "| lucene <query>"
+    category: [Commands reference, lucene]
+  aggregate:
+    description: Aggregates values per group.
+    syntax: "| aggregate <aggregation>"
+    category: [Commands reference, aggregate]
+  groupby:
+    description: Groups rows by field values.
+    syntax: "| groupby <fields>"
+    category: [Commands reference, groupby]
+  sort:
+    description: Sorts rows.
+    syntax: "| sort <fields>"
+    category: [Commands reference, sort]
+  limit:
+    description: Limits the number of rows.
+    syntax: "| limit <n>"
+    category: [Commands reference, limit]
+  fields:
+    description: Selects or renames fields.
+    syntax: "| fields <list>"
+    category: [Commands reference, fields]
+  json:
+    description: Extracts JSON paths.
+    syntax: "| json <path>"
+    category: [Commands reference, json]
+  regex:
+    description: Matches regular expressions.
+    syntax: "| regex <pattern>"
+    category: [Commands reference, regex]
+  stats:
+    description: Computes statistics.
+    syntax: "| stats <expr>"
+    category: [Commands reference, stats]
+  synth_cmd_10:
+    description: Synthetic command placeholder 10.
+    syntax: "| synth_cmd_10"
+    category: [Commands reference, synth_cmd_10]
+  synth_cmd_11:
+    description: Synthetic command placeholder 11.
+    syntax: "| synth_cmd_11"
+    category: [Commands reference, synth_cmd_11]
+  synth_cmd_12:
+    description: Synthetic command placeholder 12.
+    syntax: "| synth_cmd_12"
+    category: [Commands reference, synth_cmd_12]
+  synth_cmd_13:
+    description: Synthetic command placeholder 13.
+    syntax: "| synth_cmd_13"
+    category: [Commands reference, synth_cmd_13]
+  synth_cmd_14:
+    description: Synthetic command placeholder 14.
+    syntax: "| synth_cmd_14"
+    category: [Commands reference, synth_cmd_14]
+  synth_cmd_15:
+    description: Synthetic command placeholder 15.
+    syntax: "| synth_cmd_15"
+    category: [Commands reference, synth_cmd_15]
+  synth_cmd_16:
+    description: Synthetic command placeholder 16.
+    syntax: "| synth_cmd_16"
+    category: [Commands reference, synth_cmd_16]
+  synth_cmd_17:
+    description: Synthetic command placeholder 17.
+    syntax: "| synth_cmd_17"
+    category: [Commands reference, synth_cmd_17]
+  synth_cmd_18:
+    description: Synthetic command placeholder 18.
+    syntax: "| synth_cmd_18"
+    category: [Commands reference, synth_cmd_18]
+  synth_cmd_19:
+    description: Synthetic command placeholder 19.
+    syntax: "| synth_cmd_19"
+    category: [Commands reference, synth_cmd_19]
+  synth_cmd_20:
+    description: Synthetic command placeholder 20.
+    syntax: "| synth_cmd_20"
+    category: [Commands reference, synth_cmd_20]
+  synth_cmd_21:
+    description: Synthetic command placeholder 21.
+    syntax: "| synth_cmd_21"
+    category: [Commands reference, synth_cmd_21]
+  synth_cmd_22:
+    description: Synthetic command placeholder 22.
+    syntax: "| synth_cmd_22"
+    category: [Commands reference, synth_cmd_22]
+  synth_cmd_23:
+    description: Synthetic command placeholder 23.
+    syntax: "| synth_cmd_23"
+    category: [Commands reference, synth_cmd_23]
+  synth_cmd_24:
+    description: Synthetic command placeholder 24.
+    syntax: "| synth_cmd_24"
+    category: [Commands reference, synth_cmd_24]
+  synth_cmd_25:
+    description: Synthetic command placeholder 25.
+    syntax: "| synth_cmd_25"
+    category: [Commands reference, synth_cmd_25]
+  synth_cmd_26:
+    description: Synthetic command placeholder 26.
+    syntax: "| synth_cmd_26"
+    category: [Commands reference, synth_cmd_26]
+  synth_cmd_27:
+    description: Synthetic command placeholder 27.
+    syntax: "| synth_cmd_27"
+    category: [Commands reference, synth_cmd_27]
+  synth_cmd_28:
+    description: Synthetic command placeholder 28.
+    syntax: "| synth_cmd_28"
+    category: [Commands reference, synth_cmd_28]
+  synth_cmd_29:
+    description: Synthetic command placeholder 29.
+    syntax: "| synth_cmd_29"
+    category: [Commands reference, synth_cmd_29]
+  synth_cmd_30:
+    description: Synthetic command placeholder 30.
+    syntax: "| synth_cmd_30"
+    category: [Commands reference, synth_cmd_30]
+  synth_cmd_31:
+    description: Synthetic command placeholder 31.
+    syntax: "| synth_cmd_31"
+    category: [Commands reference, synth_cmd_31]
+  synth_cmd_32:
+    description: Synthetic command placeholder 32.
+    syntax: "| synth_cmd_32"
+    category: [Commands reference, synth_cmd_32]
+  synth_cmd_33:
+    description: Synthetic command placeholder 33.
+    syntax: "| synth_cmd_33"
+    category: [Commands reference, synth_cmd_33]
+  synth_cmd_34:
+    description: Synthetic command placeholder 34.
+    syntax: "| synth_cmd_34"
+    category: [Commands reference, synth_cmd_34]
+functions:
+  count:
+    description: Counts elements.
+    syntax: count()
+    category: [Functions reference, count]
+  sum:
+    description: Sum of values.
+    syntax: sum(x)
+    category: [Functions reference, sum]
+  avg:
+    description: Average of values.
+    syntax: avg(x)
+    category: [Functions reference, avg]
+  min:
+    description: Minimum value.
+    syntax: min(x)
+    category: [Functions reference, min]
+  max:
+    description: Maximum value.
+    syntax: max(x)
+    category: [Functions reference, max]
+  median:
+    description: Median value.
+    syntax: median(x)
+    category: [Functions reference, median]
+  stddev:
+    description: Standard deviation.
+    syntax: stddev(x)
+    category: [Functions reference, stddev]
+  percentile:
+    description: Percentile.
+    syntax: "percentile(x, p)"
+    category: [Functions reference, percentile]
+  synth_fn_8:
+    description: Synthetic function placeholder 8.
+    syntax: synth_fn_8(x)
+    category: [Functions reference, synth_fn_8]
+  synth_fn_9:
+    description: Synthetic function placeholder 9.
+    syntax: synth_fn_9(x)
+    category: [Functions reference, synth_fn_9]
+  synth_fn_10:
+    description: Synthetic function placeholder 10.
+    syntax: synth_fn_10(x)
+    category: [Functions reference, synth_fn_10]
+  synth_fn_11:
+    description: Synthetic function placeholder 11.
+    syntax: synth_fn_11(x)
+    category: [Functions reference, synth_fn_11]
+  synth_fn_12:
+    description: Synthetic function placeholder 12.
+    syntax: synth_fn_12(x)
+    category: [Functions reference, synth_fn_12]
+  synth_fn_13:
+    description: Synthetic function placeholder 13.
+    syntax: synth_fn_13(x)
+    category: [Functions reference, synth_fn_13]
+  synth_fn_14:
+    description: Synthetic function placeholder 14.
+    syntax: synth_fn_14(x)
+    category: [Functions reference, synth_fn_14]
+  synth_fn_15:
+    description: Synthetic function placeholder 15.
+    syntax: synth_fn_15(x)
+    category: [Functions reference, synth_fn_15]
+  synth_fn_16:
+    description: Synthetic function placeholder 16.
+    syntax: synth_fn_16(x)
+    category: [Functions reference, synth_fn_16]
+  synth_fn_17:
+    description: Synthetic function placeholder 17.
+    syntax: synth_fn_17(x)
+    category: [Functions reference, synth_fn_17]
+  synth_fn_18:
+    description: Synthetic function placeholder 18.
+    syntax: synth_fn_18(x)
+    category: [Functions reference, synth_fn_18]
+  synth_fn_19:
+    description: Synthetic function placeholder 19.
+    syntax: synth_fn_19(x)
+    category: [Functions reference, synth_fn_19]
+  synth_fn_20:
+    description: Synthetic function placeholder 20.
+    syntax: synth_fn_20(x)
+    category: [Functions reference, synth_fn_20]
+  synth_fn_21:
+    description: Synthetic function placeholder 21.
+    syntax: synth_fn_21(x)
+    category: [Functions reference, synth_fn_21]
+  synth_fn_22:
+    description: Synthetic function placeholder 22.
+    syntax: synth_fn_22(x)
+    category: [Functions reference, synth_fn_22]
+  synth_fn_23:
+    description: Synthetic function placeholder 23.
+    syntax: synth_fn_23(x)
+    category: [Functions reference, synth_fn_23]
+  synth_fn_24:
+    description: Synthetic function placeholder 24.
+    syntax: synth_fn_24(x)
+    category: [Functions reference, synth_fn_24]
+  synth_fn_25:
+    description: Synthetic function placeholder 25.
+    syntax: synth_fn_25(x)
+    category: [Functions reference, synth_fn_25]
+  synth_fn_26:
+    description: Synthetic function placeholder 26.
+    syntax: synth_fn_26(x)
+    category: [Functions reference, synth_fn_26]
+  synth_fn_27:
+    description: Synthetic function placeholder 27.
+    syntax: synth_fn_27(x)
+    category: [Functions reference, synth_fn_27]
+  synth_fn_28:
+    description: Synthetic function placeholder 28.
+    syntax: synth_fn_28(x)
+    category: [Functions reference, synth_fn_28]
+  synth_fn_29:
+    description: Synthetic function placeholder 29.
+    syntax: synth_fn_29(x)
+    category: [Functions reference, synth_fn_29]
+  synth_fn_30:
+    description: Synthetic function placeholder 30.
+    syntax: synth_fn_30(x)
+    category: [Functions reference, synth_fn_30]
+  synth_fn_31:
+    description: Synthetic function placeholder 31.
+    syntax: synth_fn_31(x)
+    category: [Functions reference, synth_fn_31]
+  synth_fn_32:
+    description: Synthetic function placeholder 32.
+    syntax: synth_fn_32(x)
+    category: [Functions reference, synth_fn_32]
+  synth_fn_33:
+    description: Synthetic function placeholder 33.
+    syntax: synth_fn_33(x)
+    category: [Functions reference, synth_fn_33]
+  synth_fn_34:
+    description: Synthetic function placeholder 34.
+    syntax: synth_fn_34(x)
+    category: [Functions reference, synth_fn_34]
+  synth_fn_35:
+    description: Synthetic function placeholder 35.
+    syntax: synth_fn_35(x)
+    category: [Functions reference, synth_fn_35]
+  synth_fn_36:
+    description: Synthetic function placeholder 36.
+    syntax: synth_fn_36(x)
+    category: [Functions reference, synth_fn_36]
+  synth_fn_37:
+    description: Synthetic function placeholder 37.
+    syntax: synth_fn_37(x)
+    category: [Functions reference, synth_fn_37]
+  synth_fn_38:
+    description: Synthetic function placeholder 38.
+    syntax: synth_fn_38(x)
+    category: [Functions reference, synth_fn_38]
+  synth_fn_39:
+    description: Synthetic function placeholder 39.
+    syntax: synth_fn_39(x)
+    category: [Functions reference, synth_fn_39]
+  synth_fn_40:
+    description: Synthetic function placeholder 40.
+    syntax: synth_fn_40(x)
+    category: [Functions reference, synth_fn_40]
+  synth_fn_41:
+    description: Synthetic function placeholder 41.
+    syntax: synth_fn_41(x)
+    category: [Functions reference, synth_fn_41]
+  synth_fn_42:
+    description: Synthetic function placeholder 42.
+    syntax: synth_fn_42(x)
+    category: [Functions reference, synth_fn_42]
+  synth_fn_43:
+    description: Synthetic function placeholder 43.
+    syntax: synth_fn_43(x)
+    category: [Functions reference, synth_fn_43]
+  synth_fn_44:
+    description: Synthetic function placeholder 44.
+    syntax: synth_fn_44(x)
+    category: [Functions reference, synth_fn_44]
+  synth_fn_45:
+    description: Synthetic function placeholder 45.
+    syntax: synth_fn_45(x)
+    category: [Functions reference, synth_fn_45]
+  synth_fn_46:
+    description: Synthetic function placeholder 46.
+    syntax: synth_fn_46(x)
+    category: [Functions reference, synth_fn_46]
+  synth_fn_47:
+    description: Synthetic function placeholder 47.
+    syntax: synth_fn_47(x)
+    category: [Functions reference, synth_fn_47]
+  synth_fn_48:
+    description: Synthetic function placeholder 48.
+    syntax: synth_fn_48(x)
+    category: [Functions reference, synth_fn_48]
+  synth_fn_49:
+    description: Synthetic function placeholder 49.
+    syntax: synth_fn_49(x)
+    category: [Functions reference, synth_fn_49]
+  synth_fn_50:
+    description: Synthetic function placeholder 50.
+    syntax: synth_fn_50(x)
+    category: [Functions reference, synth_fn_50]
+  synth_fn_51:
+    description: Synthetic function placeholder 51.
+    syntax: synth_fn_51(x)
+    category: [Functions reference, synth_fn_51]
+  synth_fn_52:
+    description: Synthetic function placeholder 52.
+    syntax: synth_fn_52(x)
+    category: [Functions reference, synth_fn_52]
+  synth_fn_53:
+    description: Synthetic function placeholder 53.
+    syntax: synth_fn_53(x)
+    category: [Functions reference, synth_fn_53]
+  synth_fn_54:
+    description: Synthetic function placeholder 54.
+    syntax: synth_fn_54(x)
+    category: [Functions reference, synth_fn_54]
+  synth_fn_55:
+    description: Synthetic function placeholder 55.
+    syntax: synth_fn_55(x)
+    category: [Functions reference, synth_fn_55]
+  synth_fn_56:
+    description: Synthetic function placeholder 56.
+    syntax: synth_fn_56(x)
+    category: [Functions reference, synth_fn_56]
+  synth_fn_57:
+    description: Synthetic function placeholder 57.
+    syntax: synth_fn_57(x)
+    category: [Functions reference, synth_fn_57]
+  synth_fn_58:
+    description: Synthetic function placeholder 58.
+    syntax: synth_fn_58(x)
+    category: [Functions reference, synth_fn_58]
+  synth_fn_59:
+    description: Synthetic function placeholder 59.
+    syntax: synth_fn_59(x)
+    category: [Functions reference, synth_fn_59]
+  synth_fn_60:
+    description: Synthetic function placeholder 60.
+    syntax: synth_fn_60(x)
+    category: [Functions reference, synth_fn_60]
+  synth_fn_61:
+    description: Synthetic function placeholder 61.
+    syntax: synth_fn_61(x)
+    category: [Functions reference, synth_fn_61]
+  synth_fn_62:
+    description: Synthetic function placeholder 62.
+    syntax: synth_fn_62(x)
+    category: [Functions reference, synth_fn_62]
+  synth_fn_63:
+    description: Synthetic function placeholder 63.
+    syntax: synth_fn_63(x)
+    category: [Functions reference, synth_fn_63]
+  synth_fn_64:
+    description: Synthetic function placeholder 64.
+    syntax: synth_fn_64(x)
+    category: [Functions reference, synth_fn_64]
+  synth_fn_65:
+    description: Synthetic function placeholder 65.
+    syntax: synth_fn_65(x)
+    category: [Functions reference, synth_fn_65]
+  synth_fn_66:
+    description: Synthetic function placeholder 66.
+    syntax: synth_fn_66(x)
+    category: [Functions reference, synth_fn_66]
+  synth_fn_67:
+    description: Synthetic function placeholder 67.
+    syntax: synth_fn_67(x)
+    category: [Functions reference, synth_fn_67]
+  synth_fn_68:
+    description: Synthetic function placeholder 68.
+    syntax: synth_fn_68(x)
+    category: [Functions reference, synth_fn_68]
+  synth_fn_69:
+    description: Synthetic function placeholder 69.
+    syntax: synth_fn_69(x)
+    category: [Functions reference, synth_fn_69]
+  synth_fn_70:
+    description: Synthetic function placeholder 70.
+    syntax: synth_fn_70(x)
+    category: [Functions reference, synth_fn_70]
+  synth_fn_71:
+    description: Synthetic function placeholder 71.
+    syntax: synth_fn_71(x)
+    category: [Functions reference, synth_fn_71]
+  synth_fn_72:
+    description: Synthetic function placeholder 72.
+    syntax: synth_fn_72(x)
+    category: [Functions reference, synth_fn_72]
+  synth_fn_73:
+    description: Synthetic function placeholder 73.
+    syntax: synth_fn_73(x)
+    category: [Functions reference, synth_fn_73]
+  synth_fn_74:
+    description: Synthetic function placeholder 74.
+    syntax: synth_fn_74(x)
+    category: [Functions reference, synth_fn_74]
+  synth_fn_75:
+    description: Synthetic function placeholder 75.
+    syntax: synth_fn_75(x)
+    category: [Functions reference, synth_fn_75]
+  synth_fn_76:
+    description: Synthetic function placeholder 76.
+    syntax: synth_fn_76(x)
+    category: [Functions reference, synth_fn_76]
+  synth_fn_77:
+    description: Synthetic function placeholder 77.
+    syntax: synth_fn_77(x)
+    category: [Functions reference, synth_fn_77]
+  synth_fn_78:
+    description: Synthetic function placeholder 78.
+    syntax: synth_fn_78(x)
+    category: [Functions reference, synth_fn_78]
+  synth_fn_79:
+    description: Synthetic function placeholder 79.
+    syntax: synth_fn_79(x)
+    category: [Functions reference, synth_fn_79]
+  synth_fn_80:
+    description: Synthetic function placeholder 80.
+    syntax: synth_fn_80(x)
+    category: [Functions reference, synth_fn_80]
+  synth_fn_81:
+    description: Synthetic function placeholder 81.
+    syntax: synth_fn_81(x)
+    category: [Functions reference, synth_fn_81]
+  synth_fn_82:
+    description: Synthetic function placeholder 82.
+    syntax: synth_fn_82(x)
+    category: [Functions reference, synth_fn_82]
+  synth_fn_83:
+    description: Synthetic function placeholder 83.
+    syntax: synth_fn_83(x)
+    category: [Functions reference, synth_fn_83]
+  synth_fn_84:
+    description: Synthetic function placeholder 84.
+    syntax: synth_fn_84(x)
+    category: [Functions reference, synth_fn_84]
+  synth_fn_85:
+    description: Synthetic function placeholder 85.
+    syntax: synth_fn_85(x)
+    category: [Functions reference, synth_fn_85]
+  synth_fn_86:
+    description: Synthetic function placeholder 86.
+    syntax: synth_fn_86(x)
+    category: [Functions reference, synth_fn_86]
+  synth_fn_87:
+    description: Synthetic function placeholder 87.
+    syntax: synth_fn_87(x)
+    category: [Functions reference, synth_fn_87]
+  synth_fn_88:
+    description: Synthetic function placeholder 88.
+    syntax: synth_fn_88(x)
+    category: [Functions reference, synth_fn_88]
+  synth_fn_89:
+    description: Synthetic function placeholder 89.
+    syntax: synth_fn_89(x)
+    category: [Functions reference, synth_fn_89]
+  synth_fn_90:
+    description: Synthetic function placeholder 90.
+    syntax: synth_fn_90(x)
+    category: [Functions reference, synth_fn_90]
+  synth_fn_91:
+    description: Synthetic function placeholder 91.
+    syntax: synth_fn_91(x)
+    category: [Functions reference, synth_fn_91]
+  synth_fn_92:
+    description: Synthetic function placeholder 92.
+    syntax: synth_fn_92(x)
+    category: [Functions reference, synth_fn_92]
+  synth_fn_93:
+    description: Synthetic function placeholder 93.
+    syntax: synth_fn_93(x)
+    category: [Functions reference, synth_fn_93]
+  synth_fn_94:
+    description: Synthetic function placeholder 94.
+    syntax: synth_fn_94(x)
+    category: [Functions reference, synth_fn_94]
+  synth_fn_95:
+    description: Synthetic function placeholder 95.
+    syntax: synth_fn_95(x)
+    category: [Functions reference, synth_fn_95]
+  synth_fn_96:
+    description: Synthetic function placeholder 96.
+    syntax: synth_fn_96(x)
+    category: [Functions reference, synth_fn_96]
+  synth_fn_97:
+    description: Synthetic function placeholder 97.
+    syntax: synth_fn_97(x)
+    category: [Functions reference, synth_fn_97]
+  synth_fn_98:
+    description: Synthetic function placeholder 98.
+    syntax: synth_fn_98(x)
+    category: [Functions reference, synth_fn_98]
+  synth_fn_99:
+    description: Synthetic function placeholder 99.
+    syntax: synth_fn_99(x)
+    category: [Functions reference, synth_fn_99]
+  synth_fn_100:
+    description: Synthetic function placeholder 100.
+    syntax: synth_fn_100(x)
+    category: [Functions reference, synth_fn_100]
+  synth_fn_101:
+    description: Synthetic function placeholder 101.
+    syntax: synth_fn_101(x)
+    category: [Functions reference, synth_fn_101]
+  synth_fn_102:
+    description: Synthetic function placeholder 102.
+    syntax: synth_fn_102(x)
+    category: [Functions reference, synth_fn_102]
+  synth_fn_103:
+    description: Synthetic function placeholder 103.
+    syntax: synth_fn_103(x)
+    category: [Functions reference, synth_fn_103]
+  synth_fn_104:
+    description: Synthetic function placeholder 104.
+    syntax: synth_fn_104(x)
+    category: [Functions reference, synth_fn_104]
+  synth_fn_105:
+    description: Synthetic function placeholder 105.
+    syntax: synth_fn_105(x)
+    category: [Functions reference, synth_fn_105]
+  synth_fn_106:
+    description: Synthetic function placeholder 106.
+    syntax: synth_fn_106(x)
+    category: [Functions reference, synth_fn_106]
+  synth_fn_107:
+    description: Synthetic function placeholder 107.
+    syntax: synth_fn_107(x)
+    category: [Functions reference, synth_fn_107]
+  synth_fn_108:
+    description: Synthetic function placeholder 108.
+    syntax: synth_fn_108(x)
+    category: [Functions reference, synth_fn_108]
+  synth_fn_109:
+    description: Synthetic function placeholder 109.
+    syntax: synth_fn_109(x)
+    category: [Functions reference, synth_fn_109]
+  synth_fn_110:
+    description: Synthetic function placeholder 110.
+    syntax: synth_fn_110(x)
+    category: [Functions reference, synth_fn_110]
+  synth_fn_111:
+    description: Synthetic function placeholder 111.
+    syntax: synth_fn_111(x)
+    category: [Functions reference, synth_fn_111]
+  synth_fn_112:
+    description: Synthetic function placeholder 112.
+    syntax: synth_fn_112(x)
+    category: [Functions reference, synth_fn_112]
+  synth_fn_113:
+    description: Synthetic function placeholder 113.
+    syntax: synth_fn_113(x)
+    category: [Functions reference, synth_fn_113]
+  synth_fn_114:
+    description: Synthetic function placeholder 114.
+    syntax: synth_fn_114(x)
+    category: [Functions reference, synth_fn_114]
+  synth_fn_115:
+    description: Synthetic function placeholder 115.
+    syntax: synth_fn_115(x)
+    category: [Functions reference, synth_fn_115]
+  synth_fn_116:
+    description: Synthetic function placeholder 116.
+    syntax: synth_fn_116(x)
+    category: [Functions reference, synth_fn_116]
+  synth_fn_117:
+    description: Synthetic function placeholder 117.
+    syntax: synth_fn_117(x)
+    category: [Functions reference, synth_fn_117]
+  synth_fn_118:
+    description: Synthetic function placeholder 118.
+    syntax: synth_fn_118(x)
+    category: [Functions reference, synth_fn_118]
+  synth_fn_119:
+    description: Synthetic function placeholder 119.
+    syntax: synth_fn_119(x)
+    category: [Functions reference, synth_fn_119]

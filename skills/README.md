@@ -9,7 +9,7 @@ A collection of Claude Code skills for the [`cx` Coralogix CLI](https://github.c
 | `cx-alerts` | Manage Coralogix alert definitions — list, inspect, create, enable/disable via `cx alerts` |
 | `query-logs` | Query and analyze Coralogix logs using DataPrime syntax via `cx logs` |
 | `metrics-query` | Investigate production issues by searching metrics, constructing PromQL queries, and analyzing results via `cx metrics` |
-| `spans-query` | Query distributed traces and analyze span latency via `cx spans` |
+| `query-spans` | Query distributed traces and analyze span latency via `cx spans` |
 | `telemetry-querying` | Gateway skill for telemetry-driven investigation — decide where to look (metrics, logs, traces, RUM, APM) before querying |
 
 ## Installation

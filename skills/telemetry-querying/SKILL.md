@@ -62,7 +62,7 @@ cx search-fields "purchase value" --dataset logs --limit 10
 
 If matching fields are found:
 - For **logs**: continue with the `query-logs` skill using DataPrime
-- For **spans**: continue with the `traces-querying` skill
+- For **spans**: continue with the `query-spans` skill
 
 ### Step 3: Search the Codebase
 
@@ -82,7 +82,7 @@ Based on discovery results, pick the pillar with the clearest signal and delegat
 |---|---|
 | Metrics | `metrics-query` |
 | Logs | `query-logs` |
-| Traces/Spans | `traces-querying` |
+| Traces/Spans | `query-spans` |
 | RUM | `RUM-data-querying` |
 | APM | APM-specific guidance |
 
@@ -126,7 +126,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 3. Search span fields: `cx search-fields "payment total" --dataset spans`
 4. If a metric like `payment_total_usd` exists, use `metrics-query` skill with a range query
 5. If only logs have the data, use `query-logs` skill with DataPrime aggregation
-6. If traces have `purchase.amount` attribute, use `traces-querying` skill
+6. If traces have `purchase.amount` attribute, use `query-spans` skill
 
 ### Example 2: Latency Question (Clear First Choice)
 
@@ -144,7 +144,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 **Approach:**
 1. This is clearly a RUM question — frontend page load data
 2. Use `RUM-data-querying` skill directly
-3. If RUM shows backend calls are slow, pivot to `traces-querying` for the API calls
+3. If RUM shows backend calls are slow, pivot to `query-spans` for the API calls
 
 ### Example 4: Error Investigation (Logs + Traces)
 
@@ -153,7 +153,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 **Approach:**
 1. Check error rate metrics: `cx metrics search --name '*error*'` → `metrics-query` skill
 2. Search for error logs: `cx search-fields "error message" --dataset logs` → `query-logs` skill
-3. Get traces for failed requests: `cx traces search payment-service` → `traces-querying` skill
+3. Get traces for failed requests: `cx traces search payment-service` → `query-spans` skill
 4. Cross-reference: find trace IDs in logs, then fetch full traces for root cause
 
 ---
@@ -172,6 +172,6 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 - **`metrics-query`** — PromQL queries, metric discovery, instant and range queries
 - **`query-logs`** — DataPrime log queries, log field exploration
-- **`traces-querying`** — Trace search, span analysis, distributed tracing
+- **`query-spans`** — Trace search, span analysis, distributed tracing
 - **`RUM-data-querying`** — Frontend performance, user sessions, page loads
 - **`cx-alerts`** — Creating alerts on metrics, logs, or traces

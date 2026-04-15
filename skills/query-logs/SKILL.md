@@ -174,6 +174,6 @@ cx dataprime show filter           # Detailed help for a specific command
 ## Related Skills
 
 - **`metrics-query`** — Aggregated counters, gauges, and histograms (PromQL)
-- **`spans-query`** — Distributed traces and service latency (DataPrime)
+- **`query-spans`** — Distributed traces and service latency (DataPrime)
 - **`telemetry-querying`** — Gateway skill for choosing the right data source
 - **`cx-alerts`** — Create and manage alerts based on log patterns

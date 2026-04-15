@@ -7,17 +7,20 @@ DataPrime is the query language used to search and analyze logs, spans, and othe
 A DataPrime query is a pipeline of commands separated by `|`. Each command transforms the output of the previous one:
 
 ```dataprime
-source logs | filter $m.severity == ERROR | groupby $l.subsystemname aggregate count() as errors
+filter $m.severity == ERROR | groupby $l.subsystemname aggregate count() as errors
 ```
 
-Every query targets a **source** (`logs`, `spans`, etc.). When using `cx logs` or `cx spans`, the source is injected automatically. When using `cx dataprime query`, you must include the `source` command explicitly.
+### Source Handling
+
+Every query targets a **source** (`logs`, `spans`, etc.). The source is set by whichever `cx` command you use — the examples in this reference omit the `source` command and focus purely on the DataPrime query language.
+
+### Comments
 
 Comments are supported with `#` or `//`:
 
 ```dataprime
-source logs
-| filter $m.severity == ERROR  # only errors
-| limit 10                     // cap results
+filter $m.severity == ERROR  # only errors
+| limit 10                   // cap results
 ```
 
 ## Data Prefixes
@@ -129,7 +132,7 @@ filter $d.http['status/code'] == 500
 
 Example:
 ```bash
-cx logs 'groupby $l.subsystemname aggregate count() as error_count, avg($d.response_time) as avg_response | orderby error_count desc'
+cx dataprime query --source logs 'groupby $l.subsystemname aggregate count() as error_count, avg($d.response_time) as avg_response | orderby error_count desc'
 ```
 
 ## Utility Functions
@@ -151,7 +154,7 @@ groupby firstNonNull($d.error_message, $d.msg) as message aggregate count() as n
 Find top error patterns with a sample message for each:
 
 ```bash
-cx logs 'filter $m.severity == ERROR | groupby $m.templateid aggregate any_value($d) as sample, count() as total | orderby total desc | limit 5'
+cx dataprime query --source logs 'filter $m.severity == ERROR | groupby $m.templateid aggregate any_value($d) as sample, count() as total | orderby total desc | limit 5'
 ```
 
 ## Time-Based Grouping
@@ -160,10 +163,10 @@ Use `roundTime()` to bucket timestamps:
 
 ```bash
 # Group by hour
-cx logs 'groupby roundTime($m.timestamp, 1h) as hour aggregate count() as count'
+cx dataprime query --source logs 'groupby roundTime($m.timestamp, 1h) as hour aggregate count() as count'
 
 # Error rate over 15-minute intervals
-cx logs 'filter $m.severity == ERROR | groupby roundTime($m.timestamp, 15m) as interval aggregate count() as errors'
+cx dataprime query --source logs 'filter $m.severity == ERROR | groupby roundTime($m.timestamp, 15m) as interval aggregate count() as errors'
 ```
 
 ## Multi-Value Matching
@@ -172,10 +175,10 @@ Use `arrayContains` to match against a set of values:
 
 ```bash
 # Match multiple subsystems
-cx logs 'filter ["api", "web", "worker"].arrayContains($l.subsystemname)'
+cx dataprime query --source logs 'filter ["api", "web", "worker"].arrayContains($l.subsystemname)'
 
 # Match multiple severity levels
-cx logs 'filter [ERROR, CRITICAL].arrayContains($m.severity)'
+cx dataprime query --source logs 'filter [ERROR, CRITICAL].arrayContains($m.severity)'
 ```
 
 ## Text Extraction
@@ -184,27 +187,27 @@ cx logs 'filter [ERROR, CRITICAL].arrayContains($m.severity)'
 
 ```bash
 # Extract with unnamed capture group
-cx logs 'extract $d.email into domain using regexp(e=/@(.*)/) | distinct $d.domain._0'
+cx dataprime query --source logs 'extract $d.email into domain using regexp(e=/@(.*)/) | distinct $d.domain._0'
 
 # Named capture groups
-cx logs 'extract $d.email into extracted using regexp(e=/(?<username>[a-zA-Z0-9._%+-]+)@(?<domain>.*)/) | choose $d.extracted.username, $d.extracted.domain'
+cx dataprime query --source logs 'extract $d.email into extracted using regexp(e=/(?<username>[a-zA-Z0-9._%+-]+)@(?<domain>.*)/) | choose $d.extracted.username, $d.extracted.domain'
 ```
 
 ### JSON String Parsing
 
 ```bash
 # Parse a JSON string field into an object for further querying
-cx logs 'extract $d.json_payload into parsed using jsonobject() | filter $d.parsed.status == "failed"'
+cx dataprime query --source logs 'extract $d.json_payload into parsed using jsonobject() | filter $d.parsed.status == "failed"'
 ```
 
 ## Deduplication
 
 ```bash
 # Remove duplicates by log template
-cx logs 'dedupeby $m.templateid'
+cx dataprime query --source logs 'dedupeby $m.templateid'
 
 # Dedupe by a custom field
-cx logs 'dedupeby $d.request_id'
+cx dataprime query --source logs 'dedupeby $d.request_id'
 ```
 
 ## Built-In Documentation

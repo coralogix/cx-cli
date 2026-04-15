@@ -9,20 +9,6 @@ use crate::config::OutputFormat;
 use crate::execution::ExecutionTarget;
 use crate::Tier;
 
-// ── Query Normalization ──────────────────────────────────────────────────────
-
-/// Normalize query to ensure it starts with 'source spans'.
-/// If the query already starts with 'source', it's returned as-is.
-/// Otherwise, 'source spans |' is prepended.
-pub fn normalize_query(query: &str) -> String {
-    let trimmed = query.trim();
-    if trimmed.to_lowercase().starts_with("source ") {
-        trimmed.to_string()
-    } else {
-        format!("source spans | {trimmed}")
-    }
-}
-
 // ── Text renderer ────────────────────────────────────────────────────────────
 
 /// Render merged span rows as human-readable text.
@@ -113,10 +99,9 @@ pub async fn run(
     max_direct: Option<usize>,
     temp_dir: &str,
 ) -> Result<()> {
-    let normalized_query = normalize_query(query);
     super::dataprime::run_query(
         targets,
-        &normalized_query,
+        query,
         "spans",
         start,
         end,
@@ -130,49 +115,3 @@ pub async fn run(
     .await
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalize_query_prepends_source_spans() {
-        assert_eq!(
-            normalize_query("filter $d.traceID == \"abc\""),
-            "source spans | filter $d.traceID == \"abc\""
-        );
-    }
-
-    #[test]
-    fn normalize_query_preserves_existing_source() {
-        assert_eq!(
-            normalize_query("source spans | filter $d.traceID == \"abc\""),
-            "source spans | filter $d.traceID == \"abc\""
-        );
-    }
-
-    #[test]
-    fn normalize_query_handles_different_source() {
-        assert_eq!(
-            normalize_query("source logs | filter $d.msg ~ 'error'"),
-            "source logs | filter $d.msg ~ 'error'"
-        );
-    }
-
-    #[test]
-    fn normalize_query_case_insensitive() {
-        assert_eq!(
-            normalize_query("SOURCE spans | filter $d.error == true"),
-            "SOURCE spans | filter $d.error == true"
-        );
-    }
-
-    #[test]
-    fn normalize_query_trims_whitespace() {
-        assert_eq!(
-            normalize_query("  filter $d.traceID == \"abc\"  "),
-            "source spans | filter $d.traceID == \"abc\""
-        );
-    }
-}

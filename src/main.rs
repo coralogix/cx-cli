@@ -213,17 +213,24 @@ enum DataprimeCmd {
         name: String,
     },
 
-    /// Execute a DataPrime query. The query must include its own source command
-    /// (e.g. 'source logs | filter ...').
+    /// Execute a raw DataPrime query. Either include a `source` command in the
+    /// query itself or use `--source` to set the default source.
     #[command(after_help = "\
 Examples:
   cx dataprime query 'source logs | filter $m.severity == \"ERROR\"'
-  cx dataprime query 'source spans | filter $m.duration > 1000000' --start now-6h
+  cx dataprime query --source logs 'filter $m.severity == ERROR'
+  cx dataprime query --source spans 'filter $m.duration > 1000000' --start now-6h
   cx dataprime query 'source logs | groupby $l.subsystemname aggregate count()' --limit 50")]
     Query {
-        /// DataPrime query string. Must include a source command
-        /// (e.g. 'source logs | filter ...').
+        /// DataPrime query string. Include a `source` command in the query
+        /// or use --source to set the default source.
         query: String,
+
+        /// Default source for the query (e.g. "logs", "spans"). Equivalent to
+        /// starting the query with `source <value>`. Ignored if the query
+        /// already contains an explicit `source` command.
+        #[arg(long, short = 's')]
+        source: Option<String>,
 
         /// Start time in ISO 8601 or relative format. e.g. "2024-01-01T00:00:00Z" or "now-1h"
         #[arg(long, default_value = "now-1h")]
@@ -393,6 +400,7 @@ async fn main() -> Result<()> {
                     commands::dataprime::run_list(*filter, name.as_deref(), output)
                 }
                 DataprimeCmd::Show { name } => commands::dataprime::run_help(name, output),
+                // Query needs credentials — handled in the main match below.
                 DataprimeCmd::Query { .. } => unreachable!(),
             };
         }
@@ -435,14 +443,24 @@ async fn main() -> Result<()> {
             }
             DataprimeCmd::Query {
                 query,
+                source,
                 start,
                 end,
                 limit,
                 tier,
             } => {
                 commands::dataprime::run_query(
-                    &targets, &query, "", &start, &end, limit, tier, output, max_direct,
-                    &temp_dir, None,
+                    &targets,
+                    &query,
+                    source.as_deref().unwrap_or(""),
+                    &start,
+                    &end,
+                    limit,
+                    tier,
+                    output,
+                    max_direct,
+                    &temp_dir,
+                    None,
                 )
                 .await?;
             }

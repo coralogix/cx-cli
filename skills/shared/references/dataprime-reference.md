@@ -12,7 +12,15 @@ filter $m.severity == ERROR | groupby $l.subsystemname aggregate count() as erro
 
 ### Source Handling
 
-Every query targets a **source** (`logs`, `spans`, etc.). The source is set by whichever `cx` command you use — the examples in this reference omit the `source` command and focus purely on the DataPrime query language.
+Every query targets a **source** (`logs`, `spans`, etc.). The source is set by whichever `cx` command you use. A full query with an explicit source looks like:
+
+```dataprime
+source <logs|spans> | filter ... | groupby ...
+```
+
+When running via a source-specific command (e.g. `cx logs`, `cx spans`), the source is injected automatically — omit it from the query. When running via `cx dataprime query`, use the `--source` flag or include `source` in the query itself.
+
+The examples below focus on the DataPrime query language and omit the source and CLI command prefix.
 
 ### Comments
 
@@ -130,7 +138,7 @@ filter $d.http['status/code'] == 500
 | `any_value($field)` | Random sample value |
 | `collect($field)` | Collect values into an array |
 
-Example:
+Example — full CLI invocation:
 ```bash
 cx dataprime query --source logs 'groupby $l.subsystemname aggregate count() as error_count, avg($d.response_time) as avg_response | orderby error_count desc'
 ```
@@ -153,61 +161,61 @@ groupby firstNonNull($d.error_message, $d.msg) as message aggregate count() as n
 
 Find top error patterns with a sample message for each:
 
-```bash
-cx dataprime query --source logs 'filter $m.severity == ERROR | groupby $m.templateid aggregate any_value($d) as sample, count() as total | orderby total desc | limit 5'
+```dataprime
+filter $m.severity == ERROR | groupby $m.templateid aggregate any_value($d) as sample, count() as total | orderby total desc | limit 5
 ```
 
 ## Time-Based Grouping
 
 Use `roundTime()` to bucket timestamps:
 
-```bash
+```dataprime
 # Group by hour
-cx dataprime query --source logs 'groupby roundTime($m.timestamp, 1h) as hour aggregate count() as count'
+groupby roundTime($m.timestamp, 1h) as hour aggregate count() as count
 
 # Error rate over 15-minute intervals
-cx dataprime query --source logs 'filter $m.severity == ERROR | groupby roundTime($m.timestamp, 15m) as interval aggregate count() as errors'
+filter $m.severity == ERROR | groupby roundTime($m.timestamp, 15m) as interval aggregate count() as errors
 ```
 
 ## Multi-Value Matching
 
 Use `arrayContains` to match against a set of values:
 
-```bash
+```dataprime
 # Match multiple subsystems
-cx dataprime query --source logs 'filter ["api", "web", "worker"].arrayContains($l.subsystemname)'
+filter ["api", "web", "worker"].arrayContains($l.subsystemname)
 
 # Match multiple severity levels
-cx dataprime query --source logs 'filter [ERROR, CRITICAL].arrayContains($m.severity)'
+filter [ERROR, CRITICAL].arrayContains($m.severity)
 ```
 
 ## Text Extraction
 
 ### Regex Extraction
 
-```bash
+```dataprime
 # Extract with unnamed capture group
-cx dataprime query --source logs 'extract $d.email into domain using regexp(e=/@(.*)/) | distinct $d.domain._0'
+extract $d.email into domain using regexp(e=/@(.*)/) | distinct $d.domain._0
 
 # Named capture groups
-cx dataprime query --source logs 'extract $d.email into extracted using regexp(e=/(?<username>[a-zA-Z0-9._%+-]+)@(?<domain>.*)/) | choose $d.extracted.username, $d.extracted.domain'
+extract $d.email into extracted using regexp(e=/(?<username>[a-zA-Z0-9._%+-]+)@(?<domain>.*)/) | choose $d.extracted.username, $d.extracted.domain
 ```
 
 ### JSON String Parsing
 
-```bash
+```dataprime
 # Parse a JSON string field into an object for further querying
-cx dataprime query --source logs 'extract $d.json_payload into parsed using jsonobject() | filter $d.parsed.status == "failed"'
+extract $d.json_payload into parsed using jsonobject() | filter $d.parsed.status == "failed"
 ```
 
 ## Deduplication
 
-```bash
+```dataprime
 # Remove duplicates by log template
-cx dataprime query --source logs 'dedupeby $m.templateid'
+dedupeby $m.templateid
 
 # Dedupe by a custom field
-cx dataprime query --source logs 'dedupeby $d.request_id'
+dedupeby $d.request_id
 ```
 
 ## Built-In Documentation

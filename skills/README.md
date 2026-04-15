@@ -10,6 +10,7 @@ A collection of Claude Code skills for the [`cx` Coralogix CLI](https://github.c
 | `query-logs` | Query and analyze Coralogix logs using DataPrime syntax via `cx logs` |
 | `metrics-query` | Investigate production issues by searching metrics, constructing PromQL queries, and analyzing results via `cx metrics` |
 | `query-spans` | Query distributed traces and analyze span latency via `cx spans` |
+| `rum` | Query and analyze Real User Monitoring data — frontend errors, web vitals, user interactions, page performance via `cx logs` |
 | `telemetry-querying` | Gateway skill for telemetry-driven investigation — decide where to look (metrics, logs, traces, RUM, APM) before querying |
 
 ## Installation

@@ -10,7 +10,7 @@ A DataPrime query is a pipeline of commands separated by `|`. Each command trans
 source logs | filter $m.severity == ERROR | groupby $l.subsystemname aggregate count() as errors
 ```
 
-Every query targets a **source** (`logs`, `spans`, etc.). When using `cx logs` or `cx spans query`, the source is injected automatically. When using `cx dataprime query`, you must include the `source` command explicitly.
+Every query targets a **source** (`logs`, `spans`, etc.). When using `cx logs` or `cx spans`, the source is injected automatically. When using `cx dataprime query`, you must include the `source` command explicitly.
 
 Comments are supported with `#` or `//`:
 

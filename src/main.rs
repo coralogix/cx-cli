@@ -75,11 +75,11 @@ enum Commands {
     /// Query logs using DataPrime syntax.
     #[command(after_help = "\
 Examples:
-  cx logs 'source logs | filter $d.severity == \"ERROR\"'
-  cx logs 'filter $d.message ~= \"timeout\"' --start now-6h --tier archive
-  cx logs 'source logs | filter $l.applicationname == \"api\"' --limit 200 -o json")]
+  cx logs 'filter $m.severity == ERROR'
+  cx logs 'filter $d.message ~ \"timeout\"' --start now-6h --tier archive
+  cx logs 'filter $l.applicationname == \"api\"' --limit 200 -o json")]
     Logs {
-        /// DataPrime query string. e.g. 'source logs | filter $d.severity == "ERROR"'
+        /// DataPrime query string. e.g. 'filter $m.severity == ERROR'
         query: String,
 
         /// Start time in ISO 8601 or relative format. e.g. "2024-01-01T00:00:00Z" or "now-1h"
@@ -106,9 +106,31 @@ Examples:
     },
 
     /// Query spans using DataPrime syntax.
+    #[command(after_help = "\
+Examples:
+  cx spans 'filter $d.traceID == \"abc123\"'
+  cx spans 'filter $l.serviceName == \"checkout\"' --start now-2h --limit 50
+  cx spans 'groupby $l.operationName aggregate avg($m.duration) as avg_latency'
+  cx spans 'filter $m.duration > 1000000' --tier archive -o json")]
     Spans {
-        #[command(subcommand)]
-        cmd: SpansCmd,
+        /// DataPrime query string. 'source spans' is automatically prepended if not present.
+        query: String,
+
+        /// Start time in ISO 8601 or relative format. e.g. "2024-01-01T00:00:00Z" or "now-1h"
+        #[arg(long, default_value = "now-1h")]
+        start: String,
+
+        /// End time in ISO 8601 or relative format.
+        #[arg(long, default_value = "now")]
+        end: String,
+
+        /// Maximum number of results.
+        #[arg(long, default_value_t = 200)]
+        limit: u32,
+
+        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
+        #[arg(long, default_value = "frequent")]
+        tier: Tier,
     },
 
     /// Manage and inspect dashboards.
@@ -189,6 +211,42 @@ enum DataprimeCmd {
     Show {
         /// Name of the command or function.
         name: String,
+    },
+
+    /// Execute a raw DataPrime query. Either include a `source` command in the
+    /// query itself or use `--source` to set the default source.
+    #[command(after_help = "\
+Examples:
+  cx dataprime query 'source logs | filter $m.severity == \"ERROR\"'
+  cx dataprime query --source logs 'filter $m.severity == ERROR'
+  cx dataprime query --source spans 'filter $m.duration > 1000000' --start now-6h
+  cx dataprime query 'source logs | groupby $l.subsystemname aggregate count()' --limit 50")]
+    Query {
+        /// DataPrime query string. Include a `source` command in the query
+        /// or use --source to set the default source.
+        query: String,
+
+        /// Default source for the query (e.g. "logs", "spans"). Equivalent to
+        /// starting the query with `source <value>`. Ignored if the query
+        /// already contains an explicit `source` command.
+        #[arg(long, short = 's')]
+        source: Option<String>,
+
+        /// Start time in ISO 8601 or relative format. e.g. "2024-01-01T00:00:00Z" or "now-1h"
+        #[arg(long, default_value = "now-1h")]
+        start: String,
+
+        /// End time in ISO 8601 or relative format.
+        #[arg(long, default_value = "now")]
+        end: String,
+
+        /// Maximum number of results.
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+
+        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
+        #[arg(long, default_value = "frequent")]
+        tier: Tier,
     },
 }
 
@@ -306,37 +364,6 @@ Examples:
     },
 }
 
-#[derive(Subcommand)]
-enum SpansCmd {
-    /// Query spans using DataPrime syntax.
-    #[command(after_help = "\
-Examples:
-  cx spans query 'filter $d.traceID == \"abc123\"'
-  cx spans query 'filter $l.serviceName == \"checkout\"' --start now-2h --limit 50
-  cx spans query 'groupby $l.operationName aggregate avg($m.duration) as avg_latency'
-  cx spans query 'filter $m.duration > 1000000' --tier archive -o json")]
-    Query {
-        /// DataPrime query string. 'source spans' is automatically prepended if not present.
-        query: String,
-
-        /// Start time in ISO 8601 or relative format. e.g. "2024-01-01T00:00:00Z" or "now-1h"
-        #[arg(long, default_value = "now-1h")]
-        start: String,
-
-        /// End time in ISO 8601 or relative format.
-        #[arg(long, default_value = "now")]
-        end: String,
-
-        /// Maximum number of results.
-        #[arg(long, default_value_t = 200)]
-        limit: u32,
-
-        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
-        #[arg(long, default_value = "frequent")]
-        tier: Tier,
-    },
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Check if this is a profiles command — use separate parser without global API flags.
@@ -363,16 +390,21 @@ async fn main() -> Result<()> {
         return commands::cleanup::run();
     }
 
-    // Dataprime command doesn't need API credentials.
-    if let Commands::Dataprime { cmd } = cli.command {
-        let global_config = config::load_config().unwrap_or_default();
-        let output = cli.output.unwrap_or(global_config.default_output_format);
-        return match cmd {
-            DataprimeCmd::List { filter, name } => {
-                commands::dataprime::run_list(filter, name.as_deref(), output)
-            }
-            DataprimeCmd::Show { name } => commands::dataprime::run_help(&name, output),
-        };
+    // Dataprime list/show don't need API credentials — handle them early.
+    if let Commands::Dataprime { ref cmd } = cli.command {
+        if matches!(cmd, DataprimeCmd::List { .. } | DataprimeCmd::Show { .. }) {
+            let global_config = config::load_config().unwrap_or_default();
+            let output = cli.output.unwrap_or(global_config.default_output_format);
+            return match cmd {
+                DataprimeCmd::List { filter, name } => {
+                    commands::dataprime::run_list(*filter, name.as_deref(), output)
+                }
+                DataprimeCmd::Show { name } => commands::dataprime::run_help(name, output),
+                // Query needs credentials — handled in the main match below.
+                DataprimeCmd::Query { .. } => unreachable!(),
+            };
+        }
+        // DataprimeCmd::Query needs credentials — fall through.
     }
 
     // Reject --api-key / --region when more than one --profile is supplied,
@@ -404,7 +436,35 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
         Commands::Cleanup => unreachable!("handled above"),
-        Commands::Dataprime { .. } => unreachable!("handled above"),
+
+        Commands::Dataprime { cmd } => match cmd {
+            DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {
+                unreachable!("handled above")
+            }
+            DataprimeCmd::Query {
+                query,
+                source,
+                start,
+                end,
+                limit,
+                tier,
+            } => {
+                commands::dataprime::run_query(
+                    &targets,
+                    &query,
+                    source.as_deref().unwrap_or(""),
+                    &start,
+                    &end,
+                    limit,
+                    tier,
+                    output,
+                    max_direct,
+                    &temp_dir,
+                    None,
+                )
+                .await?;
+            }
+        },
 
         Commands::Logs {
             query,
@@ -446,20 +506,18 @@ async fn main() -> Result<()> {
             }
         },
 
-        Commands::Spans { cmd } => match cmd {
-            SpansCmd::Query {
-                query,
-                start,
-                end,
-                limit,
-                tier,
-            } => {
-                commands::spans::run(
-                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
-                )
-                .await?;
-            }
-        },
+        Commands::Spans {
+            query,
+            start,
+            end,
+            limit,
+            tier,
+        } => {
+            commands::spans::run(
+                &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+            )
+            .await?;
+        }
 
         Commands::Dashboards { cmd } => match cmd {
             DashboardsCmd::Catalog => {

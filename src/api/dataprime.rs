@@ -20,17 +20,6 @@ pub struct LogRecord {
     pub extra: HashMap<String, Value>,
 }
 
-pub struct QueryLogsResponse {
-    pub results: Vec<LogRecord>,
-    pub raw_results: Vec<Value>,
-    pub warnings: Vec<String>,
-    pub total_count: Option<u64>,
-    /// True when the original query was an aggregation (groupby, count, etc.).
-    /// In that case `results` is empty and `raw_results` contains parsed
-    /// `userData` objects instead of full normalised rows.
-    pub is_aggregate: bool,
-}
-
 // ── Span / trace types ────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,14 +36,12 @@ pub struct Trace {
     pub spans: Vec<Span>,
 }
 
-pub struct QuerySpansResponse {
-    pub data: Vec<Trace>,
+/// Generic query response used by `cx dataprime query` and the shared
+/// execute/merge/render pipeline.  Source-agnostic — no log- or span-specific
+/// fields.
+pub struct QueryGenericResponse {
     pub raw_results: Vec<Value>,
     pub warnings: Vec<String>,
-    pub total: Option<u64>,
-    /// True when the original query was an aggregation (groupby, count, etc.).
-    /// In that case `data` is empty and `raw_results` contains parsed
-    /// `userData` objects instead of full normalised rows.
     pub is_aggregate: bool,
 }
 
@@ -92,65 +79,35 @@ impl<'a> DataprimeApi<'a> {
         parse_ndjson_response(&raw)
     }
 
-    /// Query logs using Dataprime syntax with `source logs` as the default source.
-    pub async fn query_logs(
+    /// Execute a generic Dataprime query as-is, with no default source.
+    ///
+    /// The query must include its own `source` command (e.g. `source logs | ...`).
+    /// Used by `cx dataprime query` and as the shared foundation for logs/spans.
+    pub async fn query_generic(
         &self,
         query: &str,
         start_time: &str,
         end_time: &str,
         limit: u32,
         tier: Tier,
-    ) -> Result<QueryLogsResponse> {
+        source: &str,
+    ) -> Result<QueryGenericResponse> {
         let (rows, warnings) = self
-            .post_query(query, start_time, end_time, limit, tier, "logs")
+            .post_query(query, start_time, end_time, limit, tier, source)
             .await?;
         let aggregate = is_aggregation_query(query);
-        let (raw_results, results) = if aggregate {
-            let raw: Vec<Value> = rows.iter().map(normalize_aggregate_row).collect();
-            (raw, vec![])
+        let raw_results = if aggregate {
+            rows.iter().map(normalize_aggregate_row).collect()
         } else {
-            let raw: Vec<Value> = rows.iter().map(normalize_row).collect();
-            let results = raw.iter().map(parse_log_record).collect();
-            (raw, results)
+            rows.iter().map(normalize_row).collect()
         };
-        Ok(QueryLogsResponse {
-            results,
+        Ok(QueryGenericResponse {
             raw_results,
             warnings,
-            total_count: None,
             is_aggregate: aggregate,
         })
     }
 
-    /// Query spans using Dataprime syntax with `source spans` as the default source.
-    pub async fn query_spans(
-        &self,
-        query: &str,
-        start_time: &str,
-        end_time: &str,
-        limit: u32,
-        tier: Tier,
-    ) -> Result<QuerySpansResponse> {
-        let (rows, warnings) = self
-            .post_query(query, start_time, end_time, limit, tier, "spans")
-            .await?;
-        let aggregate = is_aggregation_query(query);
-        let (raw_results, data) = if aggregate {
-            let raw: Vec<Value> = rows.iter().map(normalize_aggregate_row).collect();
-            (raw, vec![])
-        } else {
-            let raw: Vec<Value> = rows.iter().map(normalize_row).collect();
-            let data = group_spans_into_traces(rows);
-            (raw, data)
-        };
-        Ok(QuerySpansResponse {
-            data,
-            raw_results,
-            warnings,
-            total: None,
-            is_aggregate: aggregate,
-        })
-    }
 }
 
 // ── Request building ──────────────────────────────────────────────────────────

@@ -12,6 +12,14 @@ source logs | filter $m.severity == ERROR | groupby $l.subsystemname aggregate c
 
 Every query targets a **source** (`logs`, `spans`, etc.). When using `cx logs` or `cx spans query`, the source is injected automatically. When using `cx dataprime query`, you must include the `source` command explicitly.
 
+Comments are supported with `#` or `//`:
+
+```dataprime
+source logs
+| filter $m.severity == ERROR  # only errors
+| limit 10                     // cap results
+```
+
 ## Data Prefixes
 
 All fields are accessed through three namespaces:
@@ -24,6 +32,19 @@ All fields are accessed through three namespaces:
 
 `$d` is the default prefix and can sometimes be omitted, but being explicit avoids ambiguity.
 
+## Data Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `string` | Text, enclosed in **single quotes** | `'some_text'` |
+| `number` | Numeric value | `123`, `3.14` |
+| `boolean` | True or false | `true`, `false` |
+| `timestamp` | Date and time (nanoseconds since epoch) | `1714636800000000000` |
+| `interval` | Time duration | `1h`, `1d`, `1w` |
+| `array` | List of values | `[1, 2, 3]` |
+| `object` | Key-value pairs | `{"name": "John"}` |
+| `null` | Missing value or key | `null` |
+
 ## Commands
 
 ### Filtering and Selection
@@ -33,7 +54,10 @@ All fields are accessed through three namespaces:
 | `filter` | Keep rows matching a condition | `filter $m.severity == ERROR` |
 | `choose` | Select specific fields | `choose $m.timestamp, $d.message` |
 | `limit` | Cap the number of results | `limit 10` |
-| `wildfind` | Search all fields for a string | `wildfind "connection refused"` |
+| `wildfind` | Search all fields for a string (see note below) | `wildfind "connection refused"` |
+| `lucene` | Filter using Lucene syntax | `lucene 'key:field:"value"'` |
+
+> **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions — use it as its own pipeline stage.
 
 ### Aggregation
 
@@ -64,6 +88,7 @@ All fields are accessed through three namespaces:
 | `~` | Contains (substring match) | `filter $d.message ~ 'timeout'` |
 | `&&` | AND | `filter $m.severity == ERROR && $l.applicationname == 'api'` |
 | `\|\|` | OR | `filter $m.severity == ERROR \|\| $m.severity == CRITICAL` |
+| `!= null` | Field exists | `filter $d.some_field != null` |
 
 ## Type Conversions
 
@@ -95,12 +120,38 @@ filter $d.http['status/code'] == 500
 | `min($field)` | Minimum |
 | `max($field)` | Maximum |
 | `percentile(0.95, $field)` | Percentile |
+| `median($field)` | Median value |
+| `stddev($field)` | Standard deviation |
+| `variance($field)` | Variance |
 | `distinct_count($field)` | Count unique values |
 | `any_value($field)` | Random sample value |
+| `collect($field)` | Collect values into an array |
 
 Example:
 ```bash
 cx logs 'groupby $l.subsystemname aggregate count() as error_count, avg($d.response_time) as avg_response | orderby error_count desc'
+```
+
+## Utility Functions
+
+### firstNonNull — Field Coalescing
+
+Return the first non-null value from a list of fields. Useful when the same data may appear in different fields across log sources:
+
+```dataprime
+# Merge fields
+create message from firstNonNull($d.error_message, $d.msg, $d.body)
+
+# Use inside groupby
+groupby firstNonNull($d.error_message, $d.msg) as message aggregate count() as n
+```
+
+### Template Sampling
+
+Find top error patterns with a sample message for each:
+
+```bash
+cx logs 'filter $m.severity == ERROR | groupby $m.templateid aggregate any_value($d) as sample, count() as total | orderby total desc | limit 5'
 ```
 
 ## Time-Based Grouping

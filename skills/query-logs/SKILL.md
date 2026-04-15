@@ -51,8 +51,8 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 | `$m.timestamp` | Log timestamp |
 | `$m.severity` | Severity level (see below) |
 | `$m.templateid` | Log template identifier (groups structurally similar logs) |
-| `$l.applicationname` | Application name (typically maps to an environment or team) |
-| `$l.subsystemname` | Subsystem name (typically maps to a service or component) |
+| `$l.applicationname` | Application name — the highest-level label. All data in Coralogix is tagged with it. Meaning varies by customer (environment, team, region) but it always exists. |
+| `$l.subsystemname` | Subsystem name — second highest-level label. All data is tagged with it. Typically maps to a service or component. |
 | `$d.*` | User data — free-form, application-specific (see [Field Discovery](#field-discovery)) |
 
 ### Severity Values
@@ -106,9 +106,13 @@ In all other cases, use `filter` with known fields (`$m.severity`, `$l.subsystem
 
 ## Field Discovery
 
-Standard fields (`$m.*`, `$l.*`) are always available — no discovery needed.
+**Skip discovery when:**
+- The query only uses standard fields (`$m.severity`, `$m.timestamp`, `$l.applicationname`, `$l.subsystemname`)
+- The user explicitly names the fields they want (e.g., "filter by `$d.customer_id`")
+- You're searching for a specific error message — use `wildfind` directly
+- The fields have already been discovered earlier in the conversation
 
-For customer-specific `$d.*` fields, use one of these approaches:
+For customer-specific `$d.*` fields that need discovery, use one of these approaches:
 
 ### 1. Infer from Source Code (Preferred)
 

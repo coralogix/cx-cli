@@ -159,7 +159,7 @@ If a query returns no results, change **one thing at a time**:
 
 ## References
 
-- **[DataPrime Reference](../shared/references/dataprime-reference.md)** — Full query language: commands, operators, aggregations, text extraction, type conversions
+- **`dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
 - **[Advanced Usage](references/advanced-usage.md)** — Investigation workflows, common query patterns, performance tips, production debugging
 
 For inline DataPrime help:

@@ -22,7 +22,7 @@ This means:
 - **User data (`$d.cx_rum.*`)** contains all RUM-specific fields — event types, errors, sessions, web vitals, interactions, and more. See the **[RUM Fields Reference](references/rum-fields.md)** for the complete field catalog.
 - **Session replay and session flows are not available** — only individual RUM log events can be queried.
 
-For general log querying concepts and field discovery, see the **`query-logs`** skill. For DataPrime query language syntax, see the **[DataPrime Reference](../shared/references/dataprime-reference.md)**.
+For general log querying concepts and field discovery, see the **`query-logs`** skill. For DataPrime query language syntax, see the **`dataprime`** skill.
 
 ---
 
@@ -189,9 +189,8 @@ If a query returns no results, change **one thing at a time**:
 ## References
 
 - **[RUM Fields Reference](references/rum-fields.md)** — Complete field reference for all RUM contexts (session, network, web vitals, mobile, etc.)
-- **[`query-logs` skill](../query-logs/SKILL.md)** — General log querying, field discovery, investigation workflows, wildfind policy
-- **[DataPrime Reference](../shared/references/dataprime-reference.md)** — Full query language: commands, operators, aggregations, text extraction, type conversions
-- **[Logs Advanced Usage](../query-logs/references/advanced-usage.md)** — Investigation workflows, common query patterns, performance tips
+- **`query-logs` skill** — General log querying, field discovery, investigation workflows, wildfind policy
+- **`dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
 
 For inline DataPrime help:
 

@@ -170,6 +170,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 ## Related Skills
 
+- **`dataprime`** — DataPrime query language reference (syntax, operators, aggregations, functions)
 - **`metrics-query`** — PromQL queries, metric discovery, instant and range queries
 - **`query-logs`** — DataPrime log queries, log field exploration
 - **`query-spans`** — Trace search, span analysis, distributed tracing

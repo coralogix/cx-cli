@@ -1,7 +1,5 @@
 # DataPrime Query Language Reference
 
-DataPrime is the query language used to search and analyze logs, spans, and other observability data in Coralogix.
-
 ## Query Structure
 
 A DataPrime query is a pipeline of commands separated by `|`. Each command transforms the output of the previous one:

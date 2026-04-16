@@ -83,7 +83,7 @@ Based on discovery results, pick the pillar with the clearest signal and delegat
 | Metrics | `metrics-query` |
 | Logs | `query-logs` |
 | Traces/Spans | `query-spans` |
-| RUM | `RUM-data-querying` |
+| RUM | `rum` |
 | APM | APM-specific guidance |
 
 ---
@@ -143,7 +143,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 **Approach:**
 1. This is clearly a RUM question — frontend page load data
-2. Use `RUM-data-querying` skill directly
+2. Use `rum` skill directly
 3. If RUM shows backend calls are slow, pivot to `query-spans` for the API calls
 
 ### Example 4: Error Investigation (Logs + Traces)
@@ -173,5 +173,5 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 - **`metrics-query`** — PromQL queries, metric discovery, instant and range queries
 - **`query-logs`** — DataPrime log queries, log field exploration
 - **`query-spans`** — Trace search, span analysis, distributed tracing
-- **`RUM-data-querying`** — Frontend performance, user sessions, page loads
+- **`rum`** — Frontend performance, user sessions, page loads
 - **`cx-alerts`** — Creating alerts on metrics, logs, or traces

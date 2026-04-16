@@ -339,7 +339,8 @@ Examples:
     },
     /// Get a single alert definition by ID.
     Get {
-        /// Alert definition ID (UUID).
+        /// Alert definition ID or alert version ID (UUID). The alert definition ID is tried
+        /// first; if not found, the ID is retried as an alert version ID.
         alert_id: String,
     },
     /// Create an alert from a JSON definition file.

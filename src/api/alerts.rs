@@ -151,9 +151,15 @@ impl<'a> AlertsApi<'a> {
         self.client.get(ALERTS_BASE, &[]).await
     }
 
-    /// Get a single alert definition by ID (returns raw JSON — preserves the full API response).
+    /// Get a single alert definition by alert def ID (returns raw JSON — preserves the full API response).
     pub async fn get(&self, id: &str) -> Result<Value> {
         let path = format!("{ALERTS_BASE}/{id}");
+        self.client.get(&path, &[]).await
+    }
+
+    /// Get a single alert definition by alert version ID.
+    pub async fn get_by_version_id(&self, version_id: &str) -> Result<Value> {
+        let path = format!("{ALERTS_BASE}/alert-version-id/{version_id}");
         self.client.get(&path, &[]).await
     }
 
@@ -327,6 +333,21 @@ mod tests {
         });
         let resp: GetAlertResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.alert_def.unwrap().id.as_deref(), Some("abc-123"));
+    }
+
+    #[test]
+    fn deserialize_get_by_version_id_response() {
+        // GetAlertDefByVersionIdResponse has the same shape as GetAlertResponse
+        let json = json!({
+            "alertDef": {
+                "id": "abc-123",
+                "name": "Versioned Alert"
+            }
+        });
+        let resp: GetAlertResponse = serde_json::from_value(json).unwrap();
+        let def = resp.alert_def.unwrap();
+        assert_eq!(def.id.as_deref(), Some("abc-123"));
+        assert_eq!(def.name.as_deref(), Some("Versioned Alert"));
     }
 
     #[test]

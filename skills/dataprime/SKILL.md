@@ -1,21 +1,20 @@
 ---
 name: dataprime
 description: |
-  DataPrime query language reference for Coralogix. This is a companion skill used by query-logs,
-  query-spans, and rum for detailed syntax help. It triggers when the user needs help with DataPrime
-  syntax specifically — how to write filters, groupby, aggregations, extract fields with regex,
-  use type conversions, time bucketing with roundTime, arrayContains, or asks "how do I write a
-  DataPrime query", "what operators does DataPrime support", "how does extract work in DataPrime".
-  If the user wants to actually run a query against a data source, use query-logs, query-spans, or
-  rum instead — this skill is the language reference, not the execution guide.
-version: 0.1.0
+  DataPrime query language reference for Coralogix. This is a companion skill for detailed syntax
+  help. It triggers when the user needs help with DataPrime syntax specifically — how to write
+  filters, groupby, aggregations, extract fields with regex, use type conversions, time bucketing
+  with roundTime, arrayContains, or asks "how do I write a DataPrime query", "what operators does
+  DataPrime support", "how does extract work in DataPrime". This skill is the language reference,
+  not the execution guide — if the user wants to actually run a query against a specific data
+  source, use the appropriate source-specific skill instead.
 ---
 
 # DataPrime Query Language
 
 Reference for the DataPrime query language used across Coralogix to search and analyze logs, spans, and other observability data. Covers syntax, commands, operators, and functions.
 
-To actually run queries against a data source, use the **`query-logs`**, **`query-spans`**, or **`rum`** skills — they include enough inline DataPrime guidance for common cases and point here when deeper syntax help is needed.
+This skill is the language reference. To actually run queries against a specific data source, use the appropriate source-specific skill instead.
 
 ## Quick Reference
 

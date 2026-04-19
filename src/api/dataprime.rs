@@ -238,7 +238,7 @@ pub fn normalize_row(record: &Value) -> Value {
 ///
 /// Aggregate rows always have empty `metadata` and `labels`.  The only
 /// interesting content is in `userData`, which is a JSON-encoded string
-/// containing the aggregated fields (e.g. `{"region":"cx440","total_logs":16}`).
+/// containing the aggregated fields (e.g. `{"region":"us1","total_logs":16}`).
 /// This function extracts and parses that string and returns the inner object
 /// directly, discarding the empty envelope fields.
 ///
@@ -471,7 +471,7 @@ mod tests {
             ]),
             "labels": kv_array(&[
                 ("applicationname", "api"),
-                ("subsystemname", "usprod1")
+                ("subsystemname", "us3")
             ]),
             "userData": r#"{"message":"Health check timeout","levelname":"ERROR"}"#
         });
@@ -559,10 +559,10 @@ mod tests {
         let row = json!({
             "metadata": [],
             "labels": [],
-            "userData": r#"{"region":"cx440","total_logs":16}"#
+            "userData": r#"{"region":"us1","total_logs":16}"#
         });
         let out = normalize_aggregate_row(&row);
-        assert_eq!(out["region"], json!("cx440"));
+        assert_eq!(out["region"], json!("us1"));
         assert_eq!(out["total_logs"], json!(16));
         assert!(out.get("metadata").is_none());
         assert!(out.get("labels").is_none());
@@ -579,14 +579,14 @@ mod tests {
     fn aggregate_rows_from_groupby_example() {
         // Mirror of the example provided in the task description
         let rows = vec![
-            json!({"metadata": [], "labels": [], "userData": r#"{"region":"cx440","total_logs":16}"#}),
-            json!({"metadata": [], "labels": [], "userData": r#"{"region":"cx498","total_logs":20}"#}),
-            json!({"metadata": [], "labels": [], "userData": r#"{"region":"usprod1","total_logs":12}"#}),
+            json!({"metadata": [], "labels": [], "userData": r#"{"region":"us1","total_logs":16}"#}),
+            json!({"metadata": [], "labels": [], "userData": r#"{"region":"us2","total_logs":20}"#}),
+            json!({"metadata": [], "labels": [], "userData": r#"{"region":"us3","total_logs":12}"#}),
         ];
         let results: Vec<_> = rows.iter().map(normalize_aggregate_row).collect();
-        assert_eq!(results[0]["region"], json!("cx440"));
+        assert_eq!(results[0]["region"], json!("us1"));
         assert_eq!(results[1]["total_logs"], json!(20));
-        assert_eq!(results[2]["region"], json!("usprod1"));
+        assert_eq!(results[2]["region"], json!("us3"));
         // Envelope fields must not appear in the output
         for r in &results {
             assert!(r.get("metadata").is_none());

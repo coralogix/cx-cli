@@ -40,9 +40,6 @@ pub struct OAuthEnvironment {
 }
 
 /// Known Coralogix environments with their OAuth client IDs.
-///
-/// Client IDs marked `TODO_*` are placeholders to be replaced once per-region
-/// IDs are finalised.  The staging environment already has a real client ID.
 pub const KNOWN_ENVIRONMENTS: &[OAuthEnvironment] = &[
     OAuthEnvironment {
         name: "us1",

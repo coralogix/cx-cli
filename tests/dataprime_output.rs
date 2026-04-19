@@ -79,7 +79,7 @@ fn ndjson_from_example_logs_data() {
         json!({"metadata": kv_array(&[("severity","Warning"),("timestamp","2026-03-21T09:34:56.062881")]), "labels": kv_array(&[("applicationname","api")]), "userData": "{\"levelname\":\"WARNING\",\"message\":\"OPENAI_API_KEY is not set, skipping trace export\"}"}),
         json!({"metadata": kv_array(&[("severity","Warning"),("timestamp","2026-03-21T09:35:01.065767")]), "labels": kv_array(&[("applicationname","api")]), "userData": "{\"levelname\":\"WARNING\",\"message\":\"OPENAI_API_KEY is not set, skipping trace export\"}"}),
         json!({"metadata": kv_array(&[("severity","Info"),  ("timestamp","2026-03-21T09:35:20.378890")]), "labels": kv_array(&[("applicationname","api")]), "userData": "{\"levelname\":\"INFO\",\"message\":\"Authentication failed: AuthErrorReason.SESSION_TOKEN_MISSING\"}"}),
-        json!({"metadata": kv_array(&[("severity","Info"),  ("timestamp","2026-03-21T09:40:11.817193")]), "labels": kv_array(&[("applicationname","api")]), "userData": "{\"text\":\"The Application Name api and Subsystem Name approd2 from the Python SDK\"}"}),
+        json!({"metadata": kv_array(&[("severity","Info"),  ("timestamp","2026-03-21T09:40:11.817193")]), "labels": kv_array(&[("applicationname","api")]), "userData": "{\"text\":\"The Application Name api and Subsystem Name ap2 from the Python SDK\"}"}),
         json!({"metadata": kv_array(&[("severity","Error"), ("timestamp","2026-03-21T09:39:51.294912")]), "labels": kv_array(&[("applicationname","api")]), "userData": "{\"levelname\":\"ERROR\",\"message\":\"Health check failure\"}"}),
     ];
     let ndjson = make_ndjson(&rows);
@@ -212,7 +212,7 @@ fn parse_log_record_from_example_error_row() {
             ("severity", "Error"),
             ("timestamp", "2026-03-21T09:39:51.294912")
         ]),
-        "labels": kv_array(&[("applicationname", "api"), ("subsystemname", "approd2")]),
+        "labels": kv_array(&[("applicationname", "api"), ("subsystemname", "ap2")]),
         "userData": "{\"levelname\":\"ERROR\",\"message\":\"Health check failure\",\"error_type\":\"connection_refused\"}"
     }));
     let record = parse_log_record(&row);
@@ -403,9 +403,9 @@ fn is_not_aggregate_plain_source_query() {
 #[test]
 fn aggregate_row_fields_extracted_correctly() {
     let row =
-        json!({"metadata": [], "labels": [], "userData": r#"{"region":"cx440","total_logs":16}"#});
+        json!({"metadata": [], "labels": [], "userData": r#"{"region":"us1","total_logs":16}"#});
     let out = normalize_aggregate_row(&row);
-    assert_eq!(out["region"], json!("cx440"));
+    assert_eq!(out["region"], json!("us1"));
     assert_eq!(out["total_logs"], json!(16));
     assert!(
         out.get("metadata").is_none(),
@@ -425,10 +425,10 @@ fn aggregate_row_fields_extracted_correctly() {
 fn aggregate_ndjson_full_pipeline() {
     // Simulate the full NDJSON payload from a groupby query (5 region rows)
     let rows = vec![
-        json!({"metadata": [], "labels": [], "userData": r#"{"region":"cx440","total_logs":16}"#}),
-        json!({"metadata": [], "labels": [], "userData": r#"{"region":"cx498","total_logs":20}"#}),
-        json!({"metadata": [], "labels": [], "userData": r#"{"region":"usprod1","total_logs":12}"#}),
-        json!({"metadata": [], "labels": [], "userData": r#"{"region":"approd2","total_logs":31}"#}),
+        json!({"metadata": [], "labels": [], "userData": r#"{"region":"us1","total_logs":16}"#}),
+        json!({"metadata": [], "labels": [], "userData": r#"{"region":"us2","total_logs":20}"#}),
+        json!({"metadata": [], "labels": [], "userData": r#"{"region":"us3","total_logs":12}"#}),
+        json!({"metadata": [], "labels": [], "userData": r#"{"region":"ap2","total_logs":31}"#}),
         json!({"metadata": [], "labels": [], "userData": r#"{"region":"production","total_logs":2}"#}),
     ];
 
@@ -452,8 +452,8 @@ fn aggregate_ndjson_full_pipeline() {
         .iter()
         .filter_map(|r| r["region"].as_str())
         .collect();
-    assert!(regions.contains(&"cx440"));
-    assert!(regions.contains(&"usprod1"));
+    assert!(regions.contains(&"us1"));
+    assert!(regions.contains(&"us3"));
     assert!(regions.contains(&"production"));
 
     let totals: Vec<u64> = results

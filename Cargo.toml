@@ -39,7 +39,7 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 inquire = "0.7"
 
 # OAuth / PKCE
-rand = "0.9"
+rand = "0.9.3"
 sha2 = "0.10"
 base64 = "0.22"
 open = "5"

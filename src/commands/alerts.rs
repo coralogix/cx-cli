@@ -8,6 +8,7 @@ use toon_format::encode_default as toon_encode;
 
 use crate::api::alerts::{AlertDef, AlertsApi};
 use crate::config::OutputFormat;
+use crate::error::CxError;
 use crate::execution::{fan_out, ExecutionTarget};
 
 // ── Text-output row types ─────────────────────────────────────────────────────
@@ -184,7 +185,13 @@ pub async fn run_get(
         let id = id.clone();
         async move {
             let api = AlertsApi::new(&t.client);
-            Ok(api.get(&id).await?)
+            match api.get(&id).await {
+                Ok(val) => Ok(val),
+                Err(CxError::Api { status: 404, .. }) => {
+                    Ok(api.get_by_version_id(&id).await?)
+                }
+                Err(e) => Err(anyhow::Error::from(e)),
+            }
         }
     })
     .await;

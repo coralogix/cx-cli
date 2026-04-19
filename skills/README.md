@@ -1,6 +1,6 @@
 # cx Skills
 
-A collection of agent skills for the [`cx` Coralogix CLI](https://github.com/coralogix/cx-cli). Install these skills to give your coding agent deep knowledge of how to investigate observability data using the CLI.
+A collection of agent skills for the [`cx` Coralogix CLI](https://github.com/coralogix/coralogix-cli). Install these skills to give your coding agent deep knowledge of how to investigate observability data using the CLI.
 
 Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more agents](https://github.com/vercel-labs/skills#supported-agents).
 
@@ -21,30 +21,30 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 Install all skills:
 
 ```bash
-npx skills add coralogix/cx-cli
+npx skills add coralogix/coralogix-cli
 ```
 
 Install specific skills:
 
 ```bash
-npx skills add coralogix/cx-cli --skill query-logs --skill dataprime
+npx skills add coralogix/coralogix-cli --skill query-logs --skill dataprime
 ```
 
 Install globally (available across all projects):
 
 ```bash
-npx skills add coralogix/cx-cli -g
+npx skills add coralogix/coralogix-cli -g
 ```
 
 Install for a specific agent:
 
 ```bash
-npx skills add coralogix/cx-cli -a claude-code -g -y
+npx skills add coralogix/coralogix-cli -a claude-code -g -y
 ```
 
 ## Requirements
 
-- [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx profiles add`)
+- [`cx` CLI](https://github.com/coralogix/coralogix-cli) installed and configured with a valid profile (`cx profiles add`)
 - A supported coding agent (Claude Code, Cursor, Codex, etc.)
 
 ## Usage

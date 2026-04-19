@@ -1,5 +1,4 @@
-//! Coralogix Semantic Search HTTP API.
-//! See Olly Knowledge Base integration guide: `POST /api/v1/semantic-search/{fields,metrics}`.
+//! Coralogix Fields and Metrics Semantic Search HTTP API.
 
 use serde::{Deserialize, Deserializer, Serialize};
 

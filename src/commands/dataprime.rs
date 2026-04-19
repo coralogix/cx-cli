@@ -479,7 +479,10 @@ category: ["Commands reference", "test"]
 
     use crate::api::dataprime::QueryGenericResponse;
 
-    fn make_generic_response(rows: Vec<serde_json::Value>, is_aggregate: bool) -> QueryGenericResponse {
+    fn make_generic_response(
+        rows: Vec<serde_json::Value>,
+        is_aggregate: bool,
+    ) -> QueryGenericResponse {
         QueryGenericResponse {
             raw_results: rows,
             warnings: vec![],
@@ -503,11 +506,17 @@ category: ["Commands reference", "test"]
         let per_profile = vec![
             (
                 "prod".to_string(),
-                Ok(make_generic_response(vec![json!({"userData": {"msg": "a"}})], false)),
+                Ok(make_generic_response(
+                    vec![json!({"userData": {"msg": "a"}})],
+                    false,
+                )),
             ),
             (
                 "staging".to_string(),
-                Ok(make_generic_response(vec![json!({"userData": {"msg": "b"}})], false)),
+                Ok(make_generic_response(
+                    vec![json!({"userData": {"msg": "b"}})],
+                    false,
+                )),
             ),
         ];
         let merged = merge_results(per_profile, true);

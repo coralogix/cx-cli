@@ -107,7 +107,6 @@ impl<'a> DataprimeApi<'a> {
             is_aggregate: aggregate,
         })
     }
-
 }
 
 // ── Request building ──────────────────────────────────────────────────────────

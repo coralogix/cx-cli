@@ -664,8 +664,8 @@ pub async fn run_search(
                     .map(|(_, name)| json!({"name": name}))
                     .collect()
             };
-            let toon = toon_encode(&rows)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon =
+                toon_encode(&rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {

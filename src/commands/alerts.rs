@@ -187,9 +187,7 @@ pub async fn run_get(
             let api = AlertsApi::new(&t.client);
             match api.get(&id).await {
                 Ok(val) => Ok(val),
-                Err(CxError::Api { status: 404, .. }) => {
-                    Ok(api.get_by_version_id(&id).await?)
-                }
+                Err(CxError::Api { status: 404, .. }) => Ok(api.get_by_version_id(&id).await?),
                 Err(e) => Err(anyhow::Error::from(e)),
             }
         }

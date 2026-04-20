@@ -73,10 +73,6 @@ pub const KNOWN_ENVIRONMENTS: &[OAuthEnvironment] = &[
         name: "ap3",
         client_id: "7c8d9c61-7d28-4c0f-803b-d4061f33282b",
     },
-    OAuthEnvironment {
-        name: "stg1",
-        client_id: "32cfc1bb-65a1-4c36-9687-6d606a5e0635",
-    },
 ];
 
 // ── Data types ────────────────────────────────────────────────────────────────

@@ -54,7 +54,7 @@ cp target/release/cx /usr/local/bin/
 
 ```bash
 # Configure a profile interactively
-cx configure
+cx profiles add
 
 # Query logs
 cx logs 'source logs | filter $d.severity == "ERROR"'
@@ -74,7 +74,7 @@ cx alerts list --name "payment"
 
 ## Configuration
 
-Config lives in `~/.cx/`. Run `cx configure` to create a profile interactively.
+Config lives in `~/.cx/`. Run `cx profiles add` to create a profile interactively.
 
 ```
 ~/.cx/
@@ -91,7 +91,7 @@ See [docs/configuration.md](docs/configuration.md) for full reference.
 
 | Command | Description |
 |---------|-------------|
-| `cx configure` | Configure credentials and endpoints for a profile |
+| `cx profiles` | Manage profiles (list, add, delete, set-default) |
 | `cx logs` | Query logs using DataPrime syntax |
 | `cx metrics` | Query metrics using PromQL (instant, range, search, get-labels) |
 | `cx traces` | Search and inspect distributed traces |

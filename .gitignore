@@ -26,8 +26,5 @@
 **/*.rs.bk
 *.pdb
 
-# Proto source files fetched by protofetch (run `protofetch fetch` to regenerate)
-/proto/
-
 # Claire AI agent working directory
 .claire/

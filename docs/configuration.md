@@ -157,7 +157,6 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 | `ap1` | `https://api.ap1.coralogix.com` |
 | `ap2` | `https://api.ap2.coralogix.com` |
 | `ap3` | `https://api.ap3.coralogix.com` |
-| `stg1` | `https://api.stg1.coralogix.net` |
 
 A fully-qualified HTTPS URL may be used as a region value for non-standard environments.
 

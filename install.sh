@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="coralogix/coralogix-cli"
+REPO="coralogix/cx-cli"
 BINARY_NAME="cx"
 
 main() {

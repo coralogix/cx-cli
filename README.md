@@ -18,13 +18,13 @@ The CLI for Coralogix observability. Query logs, metrics, traces, dashboards, an
 ### Shell (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coralogix/coralogix-cli/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
 You can pin a specific version:
 
 ```bash
-CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/coralogix-cli/master/install.sh | sh
+CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
 ### Homebrew (macOS / Linux)
@@ -41,7 +41,7 @@ cargo install cx
 
 ### Pre-built binaries
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/coralogix-cli/releases).
+Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
 
 ### Build from source
 

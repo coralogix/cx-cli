@@ -25,6 +25,3 @@
 # Rust-specific
 **/*.rs.bk
 *.pdb
-
-# Claire AI agent working directory
-.claire/

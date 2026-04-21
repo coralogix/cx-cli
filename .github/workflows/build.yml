@@ -3,9 +3,11 @@ name: Build Verification
 on:
   pull_request:
     branches: [master]
+  push:
+    branches: [master]
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -15,6 +17,9 @@ jobs:
   build:
     name: Release Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -35,7 +40,59 @@ jobs:
           BINARY="target/release/cx"
           SIZE_BYTES=$(stat -c%s "$BINARY")
           SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$SIZE_BYTES")
+          echo "$SIZE_BYTES" > binary-size.txt
           echo "## Binary Size" >> $GITHUB_STEP_SUMMARY
           echo "| Binary | Size |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|------|" >> $GITHUB_STEP_SUMMARY
           echo "| \`cx\` | $SIZE_HUMAN ($SIZE_BYTES bytes) |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload binary size baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-size-baseline
+          path: binary-size.txt
+          retention-days: 90
+
+      - name: Check binary size regression
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT=$(cat binary-size.txt)
+
+          # Download baseline from latest successful master build
+          RUN_ID=$(gh run list --branch master --workflow "Build Verification" \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId' \
+            -R "$GITHUB_REPOSITORY") || true
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::notice::No previous master build found. Skipping size comparison."
+            exit 0
+          fi
+
+          gh run download "$RUN_ID" --name binary-size-baseline --dir baseline-dir \
+            -R "$GITHUB_REPOSITORY" 2>/dev/null || {
+            echo "::notice::No baseline artifact found. Skipping size comparison."
+            exit 0
+          }
+
+          BASELINE=$(cat baseline-dir/binary-size.txt)
+          DELTA=$((CURRENT - BASELINE))
+          PERCENT=$(echo "scale=2; ($DELTA * 100) / $BASELINE" | bc)
+
+          BASELINE_HUMAN=$(numfmt --to=iec-i --suffix=B "$BASELINE")
+          CURRENT_HUMAN=$(numfmt --to=iec-i --suffix=B "$CURRENT")
+          DELTA_HUMAN=$(numfmt --to=iec-i --suffix=B -- "$DELTA")
+
+          echo "### Size Comparison (vs master)" >> $GITHUB_STEP_SUMMARY
+          echo "| Baseline | Current | Delta | Change |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| $BASELINE_HUMAN | $CURRENT_HUMAN | $DELTA_HUMAN | ${PERCENT}% |" >> $GITHUB_STEP_SUMMARY
+
+          if (( $(echo "$PERCENT > 20" | bc -l) )); then
+            echo "::error::Binary size increased by ${PERCENT}% (>20% threshold)"
+            exit 1
+          elif (( $(echo "$PERCENT > 10" | bc -l) )); then
+            echo "::warning::Binary size increased by ${PERCENT}% (>10% threshold)"
+          fi

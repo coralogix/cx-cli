@@ -528,45 +528,11 @@ cargo fmt --check           # Format check
 
 ## User-Facing Skill (Required)
 
-Every command must have a corresponding skill in `skills/`. Skills tell AI agents how to use your command effectively.
+Every command must have a corresponding skill in `skills/`. Skills teach AI agents how to use your command effectively — including CLI syntax, workflows, and behavioral guidelines.
 
-Create `skills/your-domain/SKILL.md`:
+See **[Adding a Skill](adding-a-skill.md)** for the complete guide covering directory structure, frontmatter conventions, trigger phrases, reference files, and a copy-pasteable template.
 
-```markdown
----
-name: cx-your-domain
-description: This skill should be used when the user asks to "list items", "inspect item", "query your-domain data", or wants to interact with YourDomain resources using the cx CLI.
-version: 0.1.0
----
-
-# YourDomain Skill
-
-Use this skill to query and manage YourDomain resources using the `cx your-domain` CLI commands.
-
-## CLI Commands
-
-| Command | Purpose | Key flags |
-|---|---|---|
-| `cx your-domain list` | List all items | — |
-| `cx your-domain get <id>` | Get a single item by ID | — |
-
-**Output format:** append `-o json` or `-o agents` for machine-readable output.
-
-**Multi-profile:** use `-p <profile>` (repeatable) to target multiple profiles.
-
-## Workflow
-
-1. Start with `cx your-domain list` to see available items
-2. Use `cx your-domain get <id> -o json` for full details
-3. Use `-o json | jq '...'` for filtering and transformation
-
-## Key Principles
-
-- Use `-o json` with `jq` for filtering and transformation
-- Multi-profile queries add a Profile column automatically
-```
-
-**Reference:** `skills/cx-alerts/SKILL.md` — full skill with command table, type reference, workflow, and examples.
+**Reference:** `skills/cx-alerts/SKILL.md` and `skills/metrics-query/SKILL.md` — full examples.
 
 ---
 

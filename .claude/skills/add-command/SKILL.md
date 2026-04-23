@@ -99,13 +99,7 @@ In `src/main.rs`, add three things. See `docs/adding-a-command.md` § "CLI Wirin
 
 ## Step 6: Create User-Facing Skill
 
-Every command needs a corresponding skill in `skills/` so AI agents know how to use it. See `docs/adding-a-skill.md` for the full guide and a copy-pasteable template.
-
-Key requirements:
-- Frontmatter `description` with 10+ trigger phrases (this is how agents decide when to activate)
-- CLI Commands table, workflow steps, key principles, and examples
-- Reference files in `skills/<domain>/references/` for dense material (>100 lines)
-- Update `skills/README.md` with the new skill
+Every command needs a corresponding skill in `skills/` so AI agents know how to use it. Use the **add-skill** workflow to create it — it walks through the full process including reading reference implementations, writing effective trigger descriptions, and verification.
 
 ## Step 7: Verify
 

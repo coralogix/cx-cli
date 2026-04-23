@@ -367,6 +367,10 @@ Examples:
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // Check if this is a profiles command — use separate parser without global API flags.
     if std::env::args().nth(1).as_deref() == Some("profiles") {
         let profiles_cli = ProfilesCli::parse();

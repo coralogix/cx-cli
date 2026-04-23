@@ -1,622 +1,594 @@
 commands:
-  filter:
-    description: Keeps rows where the predicate is true.
-    syntax: "| filter <predicate>"
-    category: [Commands reference, filter]
-  lucene:
-    description: "Full-text search using Lucene syntax."
-    syntax: "| lucene <query>"
-    category: [Commands reference, lucene]
+  source:
+    description: "The `source` command is a foundational component of DataPrime. It informs the\nDataPrime engine which datasource you wish to read from.\n\n\n!!! note\n    While you can start your query with this, the `source` command is optional and will default to `logs`.\n\n### Basic usage\n\nIn DataPrime, you read data by specifying a **dataset** within an optional **dataspace**:\n\n```dataprime\nsource <dataspace>/<dataset>\n```\n\nIf no dataspace is provided, the query defaults to the `default` dataspace. This allows for concise syntax when working within the most common data sources.\n\nCommon datasets include:\n\n* `logs` – Application and infrastructure logs.\n  *Default dataset. Equivalent to `source default/logs`.*\n* `spans` – Distributed tracing data from systems like OpenTelemetry.\n  *Equivalent to `source default/spans`.*\n* `enrichments/<name>` – [custom enrichment](https://coralogix.com/docs/user-guides/data-transformation/enrichments/custom-enrichment/) tables uploaded via the UI or API.\n  *For example: `source default/enrichments/ip_lookup`*\n\nYou can also query system-generated datasets such as:\n\n* `system/engine.queries` – Logs of all DataPrime query executions.\n* `system/alerts.history` – Historical records of alert events.\n\n> Dataset names may include dots (e.g., `engine.queries`) but are still treated as flat identifiers—not nested structures.\n\nThis structure supports querying across teams, environments, or pipelines—whether you’re debugging logs, analyzing performance, or auditing notifications.\n"
+    syntax: "(source|from) <data_store>"
+    category: [Commands reference, Sources, source]
+  around:
+    description: "The `around` keyword allows users to declare a timerange, defined as some interval before and after a `timestamp`, on which a query should operate.\n\n!!! note\n    The `interval`, if specified, **MUST** be positive.\n\n!!! note\n    If the `interval` is not specified, then a default value of `30m` is used."
+    syntax: "source (logs|spans) around <time> [interval <interval>]"
+    category: [Commands reference, Sources, Time, around]
+  between:
+    description: "The `between` keyword specifies a date range on which a query on `logs` or `spans` should operate.\n\n!!! note\n    The `between` keyword will work on any time expression, but the result of the expression must be of type `timestamp`."
+    syntax: "source (logs|spans) between <time-expression> and <time-expression>"
+    category: [Commands reference, Sources, Time, between]
+  last:
+    description: "The `last` keyword specifies how far back in time a query should go, defined by a given `interval`.\n\n!!! note\n    The value of the given `interval` MUST be non-negative."
+    syntax: "source (logs|spans) last <interval>"
+    category: [Commands reference, Sources, Time, last]
+  timeshifted:
+    description: "The `timeshifted` keyword modifies the timerange within the scope of the query. This is useful when, for example, a custom dashboard has a global timerange of `Today` but your query only makes sense when looking at yesterday's data."
+    syntax: "source (logs|spans) timeshifted <interval>"
+    category: [Commands reference, Sources, Time, timeshifted]
   aggregate:
-    description: Aggregates values per group.
-    syntax: "| aggregate <aggregation>"
+    description: "The `aggregate` command performs calculations across the entire working set of\ndocuments, producing summary statistics such as totals, averages, minimums,\nmaximums, or counts. Unlike `groupby`, which splits data into multiple groups,\n`aggregate` computes results over the full dataset as a single group.\n\nMultiple aggregation functions can be combined in one command to produce a\nsingle document containing several computed values.\n\n!!! note\n    Aggregations are limited to 1000 buckets in a single operation.\n"
+    syntax: "aggregate <aggregation_expression> [as <result_keypath>] [, <aggregation_expression_2> [as <result_keypath_2>], ...]\n"
     category: [Commands reference, aggregate]
-  groupby:
-    description: Groups rows by field values.
-    syntax: "| groupby <fields>"
-    category: [Commands reference, groupby]
-  sort:
-    description: Sorts rows.
-    syntax: "| sort <fields>"
-    category: [Commands reference, sort]
-  limit:
-    description: Limits the number of rows.
-    syntax: "| limit <n>"
-    category: [Commands reference, limit]
-  fields:
-    description: Selects or renames fields.
-    syntax: "| fields <list>"
-    category: [Commands reference, fields]
-  json:
-    description: Extracts JSON paths.
-    syntax: "| json <path>"
-    category: [Commands reference, json]
-  regex:
-    description: Matches regular expressions.
-    syntax: "| regex <pattern>"
-    category: [Commands reference, regex]
-  stats:
-    description: Computes statistics.
-    syntax: "| stats <expr>"
-    category: [Commands reference, stats]
-  synth_cmd_10:
-    description: Synthetic command placeholder 10.
-    syntax: "| synth_cmd_10"
-    category: [Commands reference, synth_cmd_10]
-  synth_cmd_11:
-    description: Synthetic command placeholder 11.
-    syntax: "| synth_cmd_11"
-    category: [Commands reference, synth_cmd_11]
-  synth_cmd_12:
-    description: Synthetic command placeholder 12.
-    syntax: "| synth_cmd_12"
-    category: [Commands reference, synth_cmd_12]
-  synth_cmd_13:
-    description: Synthetic command placeholder 13.
-    syntax: "| synth_cmd_13"
-    category: [Commands reference, synth_cmd_13]
-  synth_cmd_14:
-    description: Synthetic command placeholder 14.
-    syntax: "| synth_cmd_14"
-    category: [Commands reference, synth_cmd_14]
-  synth_cmd_15:
-    description: Synthetic command placeholder 15.
-    syntax: "| synth_cmd_15"
-    category: [Commands reference, synth_cmd_15]
-  synth_cmd_16:
-    description: Synthetic command placeholder 16.
-    syntax: "| synth_cmd_16"
-    category: [Commands reference, synth_cmd_16]
-  synth_cmd_17:
-    description: Synthetic command placeholder 17.
-    syntax: "| synth_cmd_17"
-    category: [Commands reference, synth_cmd_17]
-  synth_cmd_18:
-    description: Synthetic command placeholder 18.
-    syntax: "| synth_cmd_18"
-    category: [Commands reference, synth_cmd_18]
-  synth_cmd_19:
-    description: Synthetic command placeholder 19.
-    syntax: "| synth_cmd_19"
-    category: [Commands reference, synth_cmd_19]
-  synth_cmd_20:
-    description: Synthetic command placeholder 20.
-    syntax: "| synth_cmd_20"
-    category: [Commands reference, synth_cmd_20]
-  synth_cmd_21:
-    description: Synthetic command placeholder 21.
-    syntax: "| synth_cmd_21"
-    category: [Commands reference, synth_cmd_21]
-  synth_cmd_22:
-    description: Synthetic command placeholder 22.
-    syntax: "| synth_cmd_22"
-    category: [Commands reference, synth_cmd_22]
-  synth_cmd_23:
-    description: Synthetic command placeholder 23.
-    syntax: "| synth_cmd_23"
-    category: [Commands reference, synth_cmd_23]
-  synth_cmd_24:
-    description: Synthetic command placeholder 24.
-    syntax: "| synth_cmd_24"
-    category: [Commands reference, synth_cmd_24]
-  synth_cmd_25:
-    description: Synthetic command placeholder 25.
-    syntax: "| synth_cmd_25"
-    category: [Commands reference, synth_cmd_25]
-  synth_cmd_26:
-    description: Synthetic command placeholder 26.
-    syntax: "| synth_cmd_26"
-    category: [Commands reference, synth_cmd_26]
-  synth_cmd_27:
-    description: Synthetic command placeholder 27.
-    syntax: "| synth_cmd_27"
-    category: [Commands reference, synth_cmd_27]
-  synth_cmd_28:
-    description: Synthetic command placeholder 28.
-    syntax: "| synth_cmd_28"
-    category: [Commands reference, synth_cmd_28]
-  synth_cmd_29:
-    description: Synthetic command placeholder 29.
-    syntax: "| synth_cmd_29"
-    category: [Commands reference, synth_cmd_29]
-  synth_cmd_30:
-    description: Synthetic command placeholder 30.
-    syntax: "| synth_cmd_30"
-    category: [Commands reference, synth_cmd_30]
-  synth_cmd_31:
-    description: Synthetic command placeholder 31.
-    syntax: "| synth_cmd_31"
-    category: [Commands reference, synth_cmd_31]
-  synth_cmd_32:
-    description: Synthetic command placeholder 32.
-    syntax: "| synth_cmd_32"
-    category: [Commands reference, synth_cmd_32]
-  synth_cmd_33:
-    description: Synthetic command placeholder 33.
-    syntax: "| synth_cmd_33"
-    category: [Commands reference, synth_cmd_33]
-  synth_cmd_34:
-    description: Synthetic command placeholder 34.
-    syntax: "| synth_cmd_34"
-    category: [Commands reference, synth_cmd_34]
-functions:
+  block:
+    description: "The `block` command filters out all documents where the given predicate\nevaluates to true. It is the inverse of `filter`, which keeps only documents\nthat match the predicate.\n"
+    syntax: "block <boolean expression>"
+    category: [Commands reference, block]
+  bottom:
+    description: "The `bottom` command limits the rows returned from a query to the last *N* rows\nin a given set, ordered by a specified expression. It is useful for finding the\nlowest-ranking values or least frequent occurrences within a dataset.\n\n!!! note\n    When using this command, pay close attention to your ordering expression,\n    as it determines which records are considered \"bottom\" in the result.\n"
+    syntax: "bottom <limit> <result_expression1> [as <alias>] [, <result_expression2> [as\n<alias2>], ...] by <orderby_expression> [as <alias>]\n"
+    category: [Commands reference, bottom]
+  choose:
+    description: "The `choose` command removes all keypaths **not explicitly specified**. This\nallows you to extract and reshape only the data you need from a larger log\ndocument.\n\n!!! note\n    The `choose` command supports nested key paths and aliasing in the output,\n    making it useful for simplifying complex documents.\n"
+    syntax: "(choose|select) <keypath1> [as <new_keypath>], <keypath2> [as <new_keypath>], ...\n"
+    category: [Commands reference, choose]
+  convert:
+    description: "The `convert` command is a **semantic keyword** that indicates type conversion\nis taking place. It has no effect on query execution and exists purely to make\ntransformations more readable and self-documenting.\n\n!!! note\n    The `convert` keyword is optional and does not change functionality. Use it\n    when you want to make type changes explicit in your query.\n"
+    syntax: "(conv|convert) [datatypes] <keypath1>:<datatype1>, <keypath2>:<datatype2>, ..."
+    category: [Commands reference, convert]
   count:
-    description: Counts elements.
-    syntax: count()
-    category: [Functions reference, count]
-  sum:
-    description: Sum of values.
-    syntax: sum(x)
-    category: [Functions reference, sum]
+    description: "The `count` command returns a single row representing the total number of\ndocuments in the current result set. It can optionally store this result in a\nnamed keypath for readability using the `into` keyword.\n"
+    syntax: "count [into <keypath>]"
+    category: [Commands reference, count]
+  countby:
+    description: "The `countby` command generates a count for each distinct value in a given\nexpression, effectively grouping the results by that key.\n\n!!! note\n    Unlike `count`, which tallies all records in a set, `countby` provides a\n    per-group count based on the specified key or expression.\n"
+    syntax: "countby <expression> [as <alias>] [into <keypath>] [(asc|desc)]"
+    category: [Commands reference, countby]
+  create:
+    description: "The `create` command defines a new key and assigns it a value derived from an\nexpression. It is one of the most flexible commands in DataPrime, allowing you\nto **add new fields**, **populate missing data**, or **enrich existing\nstructures** without overwriting parent keys.\n\nIn practice, `create` acts like a safe write operation for structured data.\nYou can explicitly control what happens when a key already exists, when it is\nmissing, or when the new value's type differs from the existing one.\n\n- **Existing keys** can be overwritten, skipped, or cause the query to fail.\n- **Missing keys** can be created, skipped, or trigger a failure.\n- **Type changes** can either be enforced, ignored, or handled as an error.\n\n!!! note\n    Key creation is granular, meaning that parent keys in the path are not\n    overwritten. This allows you to safely add fields within existing\n    objects, even in nested log structures.\n"
+    syntax: "(a|add|c|create) <keypath> from <expression> [on keypath exists (fail|skip|overwrite)] [on keypath missing (fail|create|skip)] [on datatype change (skip|fail|overwrite)\n"
+    category: [Commands reference, create]
+  dedupeby:
+    description: "The `dedupeby` command removes duplicate documents based on one or more\nexpressions, keeping only *N* events for each unique combination of the\nspecified fields. This is especially useful for sampling representative data\nfrom large datasets without aggregation.\n\nConceptually, it functions like a smart filter: it doesn’t modify event\ncontent or compute summaries—it simply trims redundancy by retaining a\nlimited number of examples per group.\n\n!!! note\n    The content of each retained document remains unchanged. `dedupeby` only\n    limits how many documents are kept for each unique grouping.\n"
+    syntax: "dedupeby <expression1> [, <expression2> ...] keep N\n"
+    category: [Commands reference, dedupeby]
+  distinct:
+    description: "The `distinct` command returns one document per unique value (or combination\nof values) for the given expressions. It is particularly useful for reporting\nor identifying unique entities within a dataset.\n\nFunctionally, it behaves like a lightweight `groupby` without any aggregation\nfunctions—simply collapsing duplicates and returning the first occurrence of\neach distinct value.\n\n!!! note\n    Use `distinct` when you want a list of unique keys, not an aggregate\n    summary.\n"
+    syntax: "distinct <expression> [as <alias>] [, <expression_2> [as <alias_2>], ...]\n"
+    category: [Commands reference, distinct]
+  enrich:
+    description: "The `enrich` command adds contextual information to logs by performing lookups\nagainst a custom enrichment table. It merges additional columns from the\nlookup into each log document based on a matching key.\n\nThis is particularly useful for attaching static metadata (like user details,\nservice mappings, or IP ownership) to incoming logs without modifying upstream\nsystems. The enrichment is applied **at query time**, meaning you always work\nwith the most recent version of the enrichment table.\n\nEach lookup table must be created and uploaded beforehand as a **Custom\nEnrichment**. For setup and management instructions, see\n[Custom Enrichment](https://coralogix.com/docs/user-guides/data-transformation/enrichments/custom-enrichment/).\n\n!!! note\n    - All values in a lookup table are stored as strings. Use conversion\n      functions such as `toNumber()` or `toTimestamp()` if a different type is\n      required.\n    - If a log already contains the enriched key, `enrich` will merge or update\n      only the matching sub-keys; unrelated fields remain unchanged.\n"
+    syntax: "enrich <value_to_lookup> into <enriched_key> using <lookup_table>"
+    category: [Commands reference, enrich]
+  explode:
+    description: "The `explode` command transforms an array of *N* elements into *N* separate\ndocuments, each containing one element of the array at the specified keypath.\nIt’s commonly used to “flatten” nested data structures for easier analysis or\naggregation.\n\nWhen using `explode`, you can control whether to keep or remove the original\ndocument fields via the `original` modifier:\n\n- `original discard` removes all original fields, producing minimal output\n  with just the exploded key.\n- `original preserve` retains the original document fields, duplicating them\n  across the new documents.\n\n!!! note\n    If the destination keypath already exists in the document, it is\n    overwritten by the exploded value.  \n    The default behavior is `original discard`.\n"
+    syntax: "explode <expression> into <keypath> [original discard|preserve]"
+    category: [Commands reference, explode]
+  extract:
+    description: "The `extract` function allows you to transform raw strings into structured data by parsing out embedded values and storing them as objects. It supports various extraction strategies to convert unstructured fields into clean, queryable formats."
+    syntax: "(e|extract) <expression> into <keypath> using <extraction-type>(<extraction-params>) [datatypes keypath:datatype,keypath:datatype,...]"
+    category: [Commands reference, extract]
+  filter:
+    description: "The `filter` command removes all documents that do not satisfy a specified\ncondition. Only events for which the condition evaluates to `true` are\nretained in the result set.\n\nThis command forms the foundation of most queries—it defines which data should\nbe kept for further transformation or aggregation. Filters can be simple\ncomparisons or complex logical expressions involving multiple conditions and\nfunctions.\n\n!!! note\n    When comparing keypaths to `null`, the comparison only works on scalar\n    values (`string`, `number`, `timestamp`, etc.). For nested JSON objects,\n    comparisons with `null` will always return `null`.\n"
+    syntax: "(f|filter|where) <condition-expression>\n"
+    category: [Commands reference, filter]
+  find:
+    description: "The `find` command performs a free-text search within a specified keypath. It acts as a\nshorthand for combining `filter` with a text match (`~`).\n\nThis command is ideal for quick searches across log messages or string fields\nwhere full parsing is unnecessary. The alias `text` can be used\ninterchangeably with `find`.\n"
+    syntax: "(find|text) <free-text-string> in <keypath>\n"
+    category: [Commands reference, find / text]
+  groupby:
+    description: "The `groupby` command aggregates documents that share one or more common values or calculated expressions, allowing you to compute metrics such as `sum`, `avg`, `max`, `min`, and `count`. It is the cornerstone of DataPrime’s analytical capabilities, enabling powerful summarization and insight generation from raw event data.\nEach unique combination of grouping expressions produces a single output document. The `aggregate` or `agg` keyword specifies which aggregation functions to apply within each group.\n!!! note\n    You can group by both keypaths and calculated expressions. When grouping by\n    an expression, DataPrime evaluates it dynamically for each document before\n    grouping."
+    syntax: "groupby <grouping_expression> [as <alias>] [, <grouping_expression_2> [as\n<alias_2>], ...] [aggregate|agg] <aggregate_function> [as <result_keypath>] [,\n<aggregate_function_2> [as <result_keypath_2], ...]\n"
+    category: [Commands reference, groupby]
+  multigroupby:
+    description: "The `multigroupby` command concatenates the results from two or more\n[`groupby`](groupby) queries into a single dataset. It allows multiple\naggregation queries to execute in one scan, improving efficiency and keeping\ngrouped results synchronized.\n\n**Key benefits:**\n\n- **Efficiency:** Data is scanned only once across multiple groupings.\n- **Synchronization:** Results remain coherent, avoiding mismatches between\n  independently run groupby queries.\n\n!!! note\n    The maximum number of buckets that `multigroupby` can process is 64.\n"
+    syntax: "multigroupby (<grouping_expression_1> as <alias> [, <grouping_expression_2> as <alias_2>, ...]) \n[, (<grouping_expression_1> as <alias> [, <grouping_expression_2> as <alias_2>, ...]), ...]\n[aggregate] <aggregation_expression> [as <result_keypath>] [, <aggregation_expression_2> [as <result_keypath_2>], ...]\n"
+    category: [Commands reference, multigroupby]
+  join:
+    description: "The `join` command merges the current (left) query with the results of a\nsecond (right) query. Conceptually, it forms a Cartesian product of left and\nright rows, then applies join logic based on a condition (`on`) or matching\nkeypaths (`using`) and writes the matching right-side row into a destination\nkeypath (`into`).\n\n**Join types**\n\n* **left** (default): Keep all left rows; attach matching right rows or `null`\n  when no match.\n* **inner**: Keep only rows that match on both sides.\n* **full**: Keep all rows from both sides; non-matching fields are `null`.\n* **cross**: Return the full Cartesian product; no `on`/`using` supported.\n\n**Addressing fields**\n\n* Use `left=>` and `right=>` prefixes inside `on` to disambiguate fields with\n  the same name; omit when a keypath exists only on one side.\n\n**Behavior & caveats**\n\n* Conditions support **equality (`==`)** on keypaths; chain multiple with `&&`.\n* One side must be relatively small (< 200MB); reduce size with `filter` or\n  `remove`.\n* In left joins, nulls in the join keys prevent matches; use `join full` to\n  include unmatched keys from either side.\n* Joins can duplicate rows if multiple matches exist; consider preprocessing\n  (e.g., `distinct`) to avoid unintended multiplicity.\n"
+    syntax: "<left_side_query> | join [left/inner/full] (<right_side_query>) on <condition> into <right_side_target>\n\n<left_side_query> | join [left/inner/full] (<right_side_query>) using <join_keypath_1> [, <join_keypath_2>, ...] into <right_side_target>\n\n<left_side_query> | join cross (<right_side_query>) into <right_side_target>\n"
+    category: [Commands reference, join]
+  limit:
+    description: "The `limit` command restricts the number of documents returned by a query to a\nspecified count. It is typically used after sorting or aggregation operations\nto retrieve only the most relevant or top results from a larger dataset.\n\nThis command is especially useful for performance optimization or for\ndisplaying only a subset of high-value results (for example, the top 100 users\nor the most recent 50 logs).\n\n!!! note\n    The `limit` command does not guarantee order unless used after an explicit\n    `orderby`. If order matters, always pair it with `orderby` to ensure\n    predictable results.\n"
+    syntax: "limit <event-count>\n"
+    category: [Commands reference, limit]
+  lucene:
+    description: "The `lucene` command executes a Lucene query within a DataPrime query,\nallowing users to seamlessly combine Lucene’s search syntax with DataPrime’s\nstructured query capabilities.\n\nThis enables powerful hybrid queries—for example, filtering or aggregating\nover results first narrowed by a Lucene search expression.\n\n!!! note\n    Field names inside the Lucene query are relative to `$d` (the root level\n    of user data). You can combine Lucene search with other DataPrime commands\n    such as `filter`, `aggregate`, or `groupby`.\n"
+    syntax: "lucene <lucene-query-as-a-string>"
+    category: [Commands reference, lucene]
+  move:
+    description: "The `move` command relocates a keypath to a new position within a document.\nThis is useful when keypaths are deeply nested or inconsistently structured,\nmaking queries cumbersome to write and read.\n\nWhen a keypath is moved, its value (and any child keys if it’s an object) is\ntransferred to the target keypath, and the original keypath is removed.\n\n!!! note\n    If the source keypath is an object, the entire key and all child elements\n    are moved to the new location.\n"
+    syntax: "(m|move) <source-keypath> to <target-keypath>\n"
+    category: [Commands reference, move]
+  orderby:
+    description: "The `orderby` command sorts query results in ascending or descending order\nbased on one or more expressions. It supports multiple sort keys, allowing you\nto order by several fields sequentially.\n\nThe command has several aliases, `orderby`, `sortby`, `order by`, and\n`sort by`, that behave identically.\n\n!!! note\n    Sorting is limited to 10,000 values. Beyond that limit, order is not\n    guaranteed.\n"
+    syntax: "(orderby|sortby|order by|sort by) <expression> [(asc|desc)] , ..."
+    category: [Commands reference, orderby / sortby]
+  redact:
+    description: "The `redact` command replaces parts of a string that match a given substring\nor regular expression with a replacement value. It’s commonly used to hide\nsensitive information such as emails, tokens, or identifiers found in message\nfields.\n\nYou can use either a plain string or a regular expression pattern to define\nwhat should be redacted.\n\n!!! note\n    The optional keyword `matching` improves readability but is not required.\n"
+    syntax: "redact <keypath> [matching] /<regular-expression>/ to '<redacted_str>'\n\nredact <keypath> [matching] <string> to '<redacted_str>'\n"
+    category: [Commands reference, redact]
+  remove:
+    description: "The `remove` command deletes one or more keypaths from every document in the\nworking set. It is the inverse of `choose`, which keeps only the specified\nfields.\n\nThis is especially useful for sanitizing logs or removing fields containing\nunnecessary or sensitive information before performing analysis.\n\n!!! note\n    `remove` can operate on scalar values or entire objects.\n"
+    syntax: "'r|remove <keypath1> [ \",\" <keypath2> ]...'\n"
+    category: [Commands reference, remove]
+  replace:
+    description: "The `replace` command overwrites the value of an existing keypath with the\nresult of a new expression. It is often used to clean or transform existing\nvalues while maintaining the same document structure.\n\nThis is particularly helpful for decoding, normalizing, or updating data\nfields without creating new keys.\n"
+    syntax: "replace <keypath> with <expression>\n"
+    category: [Commands reference, replace]
+  stitch:
+    description: "The `stitch` command performs a **horizontal union** of two datasets,\ncombining them side-by-side. It aligns rows from one dataset with rows from\nanother and merges their columns into a single unified dataset.\n\nThis is particularly useful for joining datasets that share a logical order\nbut lack a join key.\n\n**Key behaviors:**\n\n- Rows are combined in order (row 1 with row 1, row 2 with row 2, etc.).\n- If one dataset contains more rows than the other, unmatched rows include\n  `null` values for missing columns.\n- The resulting dataset contains all columns from both sides.\n\n**Difference from `union`:**\n\n- `stitch` merges datasets horizontally (adding columns).\n- `union` merges datasets vertically (adding rows).\n"
+    syntax: "stitch (<subquery>) into <target-keypath>\n"
+    category: [Commands reference, stitch]
+  top:
+    description: "The `top` command is an aggregation operator that limits the data returned to\nthe first N rows based on an ordering expression. It is particularly useful\nfor identifying the most frequent or highest-ranking values within a dataset.\n\n!!! note\n    - Without grouping, `top` limits the full result set to N rows, ordered by a given expression.\n    - With grouping, it applies the same logic but within each group, returning the top N results per group.\n    - Sorting direction (ascending/descending) is determined by the expression or implicit aggregate ordering.\n"
+    syntax: "top <limit> <result_expression1> [as <alias>] [, <result_expression2> [as\n<alias2>], ...] by <orderby_expression> [as <alias>]\n"
+    category: [Commands reference, top]
+  union:
+    description: "The `union` command concatenates the results from two or more datasets into\none dataset. This allows users to combine results from multiple queries into\none seamless dataset. One dataset can be a result set piped into the `union`\ncommand and then concatenated with another dataset.\n"
+    syntax: "<query> | union (<query>)"
+    category: [Commands reference, union]
+  wildfind:
+    description: "The `wildfind` command searches for a given string across **all keypaths** in\nevery document in the working set. It is useful when you don’t know which\nfield contains the target value.\n\nThe alias `wildtext` behaves identically.\n\n!!! note\n    `wildfind` is significantly slower than `find` or `text`, since it must\n    inspect every field in every document. Use `find` when the keypath is\n    known for better performance.\n"
+    syntax: "(wildfind|wildtext) <string>"
+    category: [Commands reference, wildfind / wildtext]
+functions:
+  any_value:
+    description: "Returns any non-null value from the specified expression within a group.\nIf no expression is provided, it defaults to the `$d` object.\n\nReturns `null` if all values in the group are `null`.\n"
+    syntax: "any_value(expression: any?): any\n"
+    category: [Functions reference, Aggregration, any_value]
+  approx_count_distinct:
+    description: "Returns an approximate count of unique, non-null values for a given expression.\n\n* A document is counted if it contains a unique, non-null value.\n* The result is approximate, optimized for performance rather than precision.\n\n!!! note\n    `approx_count_distinct` is an aggregation function and must be used with a grouping keyword such as `groupby`.\n"
+    syntax: "approx_count_distinct(expression: any): number\n"
+    category: [Functions reference, Aggregration, approx_count_distinct]
   avg:
-    description: Average of values.
-    syntax: avg(x)
-    category: [Functions reference, avg]
-  min:
-    description: Minimum value.
-    syntax: min(x)
-    category: [Functions reference, min]
+    description: "Returns the average (mean) value of a numerical expression.\n\n!!! note\n    The input must be a number. Use a cast if the field is stored as a string.\n"
+    syntax: "avg(expression: number): number\n"
+    category: [Functions reference, Aggregration, avg]
+  collect:
+    description: "Returns an array of values collected from an expression for each group.\n\n* Supports optional deduplication (`distinct`), null filtering (`ignoreNulls`), and element limits (`limit`).\n* Values are aggregated into an array, preserving order of processing unless constrained by `distinct` or `limit`.\n"
+    syntax: "collect(expression: T, distinct: bool?, limit: number?, ignoreNulls: bool?): array<T>\n"
+    category: [Functions reference, Aggregration, collect]
+  count_if:
+    description: "Returns the number of rows that satisfy a given condition, counting only non-null expression values.\n\n* Useful for measuring subsets of data within groups.\n* Can evaluate a condition alone or in combination with a non-null expression.\n\n!!! note\n    `count_if` is an aggregation function and must be used with a grouping keyword such as `groupby`.\n"
+    syntax: "count_if(condition: bool, expression: any?): number\n"
+    category: [Functions reference, Aggregration, count_if]
+  distinct_count_if:
+    description: "Returns the number of distinct, non-null values that satisfy a given condition.\n\n* A document is counted only if the condition evaluates to `true`.\n* Duplicate values for the same expression are counted once per group.\n\n!!! note\n    `distinct_count_if` is an aggregation function and must be used with a grouping keyword such as `groupby`.\n"
+    syntax: "distinct_count_if(condition: bool, expression: any): number\n"
+    category: [Functions reference, Aggregration, distinct_count_if]
+  distinct_count:
+    description: "Returns the number of distinct, non-null values for a given expression.\n\n* Each unique value is counted once per group.\n\n!!! note\n    `distinct_count` is an aggregation function and must be used with a grouping keyword such as `groupby`.\n"
+    syntax: "distinct_count(expression: any): number\n"
+    category: [Functions reference, Aggregration, distinct_count]
   max:
-    description: Maximum value.
-    syntax: max(x)
-    category: [Functions reference, max]
-  median:
-    description: Median value.
-    syntax: median(x)
-    category: [Functions reference, median]
-  stddev:
-    description: Standard deviation.
-    syntax: stddev(x)
-    category: [Functions reference, stddev]
+    description: "Returns the largest numerical value from the input.\n\n* Can be used in aggregation to compute the maximum value across grouped rows.\n* When used with multiple arguments, returns the largest among them.\n"
+    syntax: "max(value: number, ...values: number): number\n"
+    category: [Functions reference, Aggregration, max]
+  max_by:
+    description: "Returns the value of an expression associated with the maximum value of a given sort key.\n\n* Both `sortKey` and `expression` must be comparable types (`string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, or `enum`).\n* Useful for retrieving details from the row that has the maximum value of another field.\n"
+    syntax: "max_by(sortKey: T, expression: U): U\n"
+    category: [Functions reference, Aggregration, max_by]
+  min:
+    description: "Returns the smallest numerical value from the input.\n\n* Can be used in aggregation to compute the minimum value across grouped rows.\n* When used with multiple arguments, returns the smallest among them.\n"
+    syntax: "min(value: number, ...values: number): number\n"
+    category: [Functions reference, Aggregration, min]
+  min_by:
+    description: "Returns the value of an expression associated with the minimum value of a given sort key.\n\n* Both `sortKey` and `expression` must be comparable types (`string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, or `enum`).\n* Useful for retrieving details from the row that has the earliest or smallest value of another field.\n"
+    syntax: "min_by(sortKey: T, expression: U): U\n"
+    category: [Functions reference, Aggregration, min_by]
   percentile:
-    description: Percentile.
-    syntax: "percentile(x, p)"
-    category: [Functions reference, percentile]
-  synth_fn_8:
-    description: Synthetic function placeholder 8.
-    syntax: synth_fn_8(x)
-    category: [Functions reference, synth_fn_8]
-  synth_fn_9:
-    description: Synthetic function placeholder 9.
-    syntax: synth_fn_9(x)
-    category: [Functions reference, synth_fn_9]
-  synth_fn_10:
-    description: Synthetic function placeholder 10.
-    syntax: synth_fn_10(x)
-    category: [Functions reference, synth_fn_10]
-  synth_fn_11:
-    description: Synthetic function placeholder 11.
-    syntax: synth_fn_11(x)
-    category: [Functions reference, synth_fn_11]
-  synth_fn_12:
-    description: Synthetic function placeholder 12.
-    syntax: synth_fn_12(x)
-    category: [Functions reference, synth_fn_12]
-  synth_fn_13:
-    description: Synthetic function placeholder 13.
-    syntax: synth_fn_13(x)
-    category: [Functions reference, synth_fn_13]
-  synth_fn_14:
-    description: Synthetic function placeholder 14.
-    syntax: synth_fn_14(x)
-    category: [Functions reference, synth_fn_14]
-  synth_fn_15:
-    description: Synthetic function placeholder 15.
-    syntax: synth_fn_15(x)
-    category: [Functions reference, synth_fn_15]
-  synth_fn_16:
-    description: Synthetic function placeholder 16.
-    syntax: synth_fn_16(x)
-    category: [Functions reference, synth_fn_16]
-  synth_fn_17:
-    description: Synthetic function placeholder 17.
-    syntax: synth_fn_17(x)
-    category: [Functions reference, synth_fn_17]
-  synth_fn_18:
-    description: Synthetic function placeholder 18.
-    syntax: synth_fn_18(x)
-    category: [Functions reference, synth_fn_18]
-  synth_fn_19:
-    description: Synthetic function placeholder 19.
-    syntax: synth_fn_19(x)
-    category: [Functions reference, synth_fn_19]
-  synth_fn_20:
-    description: Synthetic function placeholder 20.
-    syntax: synth_fn_20(x)
-    category: [Functions reference, synth_fn_20]
-  synth_fn_21:
-    description: Synthetic function placeholder 21.
-    syntax: synth_fn_21(x)
-    category: [Functions reference, synth_fn_21]
-  synth_fn_22:
-    description: Synthetic function placeholder 22.
-    syntax: synth_fn_22(x)
-    category: [Functions reference, synth_fn_22]
-  synth_fn_23:
-    description: Synthetic function placeholder 23.
-    syntax: synth_fn_23(x)
-    category: [Functions reference, synth_fn_23]
-  synth_fn_24:
-    description: Synthetic function placeholder 24.
-    syntax: synth_fn_24(x)
-    category: [Functions reference, synth_fn_24]
-  synth_fn_25:
-    description: Synthetic function placeholder 25.
-    syntax: synth_fn_25(x)
-    category: [Functions reference, synth_fn_25]
-  synth_fn_26:
-    description: Synthetic function placeholder 26.
-    syntax: synth_fn_26(x)
-    category: [Functions reference, synth_fn_26]
-  synth_fn_27:
-    description: Synthetic function placeholder 27.
-    syntax: synth_fn_27(x)
-    category: [Functions reference, synth_fn_27]
-  synth_fn_28:
-    description: Synthetic function placeholder 28.
-    syntax: synth_fn_28(x)
-    category: [Functions reference, synth_fn_28]
-  synth_fn_29:
-    description: Synthetic function placeholder 29.
-    syntax: synth_fn_29(x)
-    category: [Functions reference, synth_fn_29]
-  synth_fn_30:
-    description: Synthetic function placeholder 30.
-    syntax: synth_fn_30(x)
-    category: [Functions reference, synth_fn_30]
-  synth_fn_31:
-    description: Synthetic function placeholder 31.
-    syntax: synth_fn_31(x)
-    category: [Functions reference, synth_fn_31]
-  synth_fn_32:
-    description: Synthetic function placeholder 32.
-    syntax: synth_fn_32(x)
-    category: [Functions reference, synth_fn_32]
-  synth_fn_33:
-    description: Synthetic function placeholder 33.
-    syntax: synth_fn_33(x)
-    category: [Functions reference, synth_fn_33]
-  synth_fn_34:
-    description: Synthetic function placeholder 34.
-    syntax: synth_fn_34(x)
-    category: [Functions reference, synth_fn_34]
-  synth_fn_35:
-    description: Synthetic function placeholder 35.
-    syntax: synth_fn_35(x)
-    category: [Functions reference, synth_fn_35]
-  synth_fn_36:
-    description: Synthetic function placeholder 36.
-    syntax: synth_fn_36(x)
-    category: [Functions reference, synth_fn_36]
-  synth_fn_37:
-    description: Synthetic function placeholder 37.
-    syntax: synth_fn_37(x)
-    category: [Functions reference, synth_fn_37]
-  synth_fn_38:
-    description: Synthetic function placeholder 38.
-    syntax: synth_fn_38(x)
-    category: [Functions reference, synth_fn_38]
-  synth_fn_39:
-    description: Synthetic function placeholder 39.
-    syntax: synth_fn_39(x)
-    category: [Functions reference, synth_fn_39]
-  synth_fn_40:
-    description: Synthetic function placeholder 40.
-    syntax: synth_fn_40(x)
-    category: [Functions reference, synth_fn_40]
-  synth_fn_41:
-    description: Synthetic function placeholder 41.
-    syntax: synth_fn_41(x)
-    category: [Functions reference, synth_fn_41]
-  synth_fn_42:
-    description: Synthetic function placeholder 42.
-    syntax: synth_fn_42(x)
-    category: [Functions reference, synth_fn_42]
-  synth_fn_43:
-    description: Synthetic function placeholder 43.
-    syntax: synth_fn_43(x)
-    category: [Functions reference, synth_fn_43]
-  synth_fn_44:
-    description: Synthetic function placeholder 44.
-    syntax: synth_fn_44(x)
-    category: [Functions reference, synth_fn_44]
-  synth_fn_45:
-    description: Synthetic function placeholder 45.
-    syntax: synth_fn_45(x)
-    category: [Functions reference, synth_fn_45]
-  synth_fn_46:
-    description: Synthetic function placeholder 46.
-    syntax: synth_fn_46(x)
-    category: [Functions reference, synth_fn_46]
-  synth_fn_47:
-    description: Synthetic function placeholder 47.
-    syntax: synth_fn_47(x)
-    category: [Functions reference, synth_fn_47]
-  synth_fn_48:
-    description: Synthetic function placeholder 48.
-    syntax: synth_fn_48(x)
-    category: [Functions reference, synth_fn_48]
-  synth_fn_49:
-    description: Synthetic function placeholder 49.
-    syntax: synth_fn_49(x)
-    category: [Functions reference, synth_fn_49]
-  synth_fn_50:
-    description: Synthetic function placeholder 50.
-    syntax: synth_fn_50(x)
-    category: [Functions reference, synth_fn_50]
-  synth_fn_51:
-    description: Synthetic function placeholder 51.
-    syntax: synth_fn_51(x)
-    category: [Functions reference, synth_fn_51]
-  synth_fn_52:
-    description: Synthetic function placeholder 52.
-    syntax: synth_fn_52(x)
-    category: [Functions reference, synth_fn_52]
-  synth_fn_53:
-    description: Synthetic function placeholder 53.
-    syntax: synth_fn_53(x)
-    category: [Functions reference, synth_fn_53]
-  synth_fn_54:
-    description: Synthetic function placeholder 54.
-    syntax: synth_fn_54(x)
-    category: [Functions reference, synth_fn_54]
-  synth_fn_55:
-    description: Synthetic function placeholder 55.
-    syntax: synth_fn_55(x)
-    category: [Functions reference, synth_fn_55]
-  synth_fn_56:
-    description: Synthetic function placeholder 56.
-    syntax: synth_fn_56(x)
-    category: [Functions reference, synth_fn_56]
-  synth_fn_57:
-    description: Synthetic function placeholder 57.
-    syntax: synth_fn_57(x)
-    category: [Functions reference, synth_fn_57]
-  synth_fn_58:
-    description: Synthetic function placeholder 58.
-    syntax: synth_fn_58(x)
-    category: [Functions reference, synth_fn_58]
-  synth_fn_59:
-    description: Synthetic function placeholder 59.
-    syntax: synth_fn_59(x)
-    category: [Functions reference, synth_fn_59]
-  synth_fn_60:
-    description: Synthetic function placeholder 60.
-    syntax: synth_fn_60(x)
-    category: [Functions reference, synth_fn_60]
-  synth_fn_61:
-    description: Synthetic function placeholder 61.
-    syntax: synth_fn_61(x)
-    category: [Functions reference, synth_fn_61]
-  synth_fn_62:
-    description: Synthetic function placeholder 62.
-    syntax: synth_fn_62(x)
-    category: [Functions reference, synth_fn_62]
-  synth_fn_63:
-    description: Synthetic function placeholder 63.
-    syntax: synth_fn_63(x)
-    category: [Functions reference, synth_fn_63]
-  synth_fn_64:
-    description: Synthetic function placeholder 64.
-    syntax: synth_fn_64(x)
-    category: [Functions reference, synth_fn_64]
-  synth_fn_65:
-    description: Synthetic function placeholder 65.
-    syntax: synth_fn_65(x)
-    category: [Functions reference, synth_fn_65]
-  synth_fn_66:
-    description: Synthetic function placeholder 66.
-    syntax: synth_fn_66(x)
-    category: [Functions reference, synth_fn_66]
-  synth_fn_67:
-    description: Synthetic function placeholder 67.
-    syntax: synth_fn_67(x)
-    category: [Functions reference, synth_fn_67]
-  synth_fn_68:
-    description: Synthetic function placeholder 68.
-    syntax: synth_fn_68(x)
-    category: [Functions reference, synth_fn_68]
-  synth_fn_69:
-    description: Synthetic function placeholder 69.
-    syntax: synth_fn_69(x)
-    category: [Functions reference, synth_fn_69]
-  synth_fn_70:
-    description: Synthetic function placeholder 70.
-    syntax: synth_fn_70(x)
-    category: [Functions reference, synth_fn_70]
-  synth_fn_71:
-    description: Synthetic function placeholder 71.
-    syntax: synth_fn_71(x)
-    category: [Functions reference, synth_fn_71]
-  synth_fn_72:
-    description: Synthetic function placeholder 72.
-    syntax: synth_fn_72(x)
-    category: [Functions reference, synth_fn_72]
-  synth_fn_73:
-    description: Synthetic function placeholder 73.
-    syntax: synth_fn_73(x)
-    category: [Functions reference, synth_fn_73]
-  synth_fn_74:
-    description: Synthetic function placeholder 74.
-    syntax: synth_fn_74(x)
-    category: [Functions reference, synth_fn_74]
-  synth_fn_75:
-    description: Synthetic function placeholder 75.
-    syntax: synth_fn_75(x)
-    category: [Functions reference, synth_fn_75]
-  synth_fn_76:
-    description: Synthetic function placeholder 76.
-    syntax: synth_fn_76(x)
-    category: [Functions reference, synth_fn_76]
-  synth_fn_77:
-    description: Synthetic function placeholder 77.
-    syntax: synth_fn_77(x)
-    category: [Functions reference, synth_fn_77]
-  synth_fn_78:
-    description: Synthetic function placeholder 78.
-    syntax: synth_fn_78(x)
-    category: [Functions reference, synth_fn_78]
-  synth_fn_79:
-    description: Synthetic function placeholder 79.
-    syntax: synth_fn_79(x)
-    category: [Functions reference, synth_fn_79]
-  synth_fn_80:
-    description: Synthetic function placeholder 80.
-    syntax: synth_fn_80(x)
-    category: [Functions reference, synth_fn_80]
-  synth_fn_81:
-    description: Synthetic function placeholder 81.
-    syntax: synth_fn_81(x)
-    category: [Functions reference, synth_fn_81]
-  synth_fn_82:
-    description: Synthetic function placeholder 82.
-    syntax: synth_fn_82(x)
-    category: [Functions reference, synth_fn_82]
-  synth_fn_83:
-    description: Synthetic function placeholder 83.
-    syntax: synth_fn_83(x)
-    category: [Functions reference, synth_fn_83]
-  synth_fn_84:
-    description: Synthetic function placeholder 84.
-    syntax: synth_fn_84(x)
-    category: [Functions reference, synth_fn_84]
-  synth_fn_85:
-    description: Synthetic function placeholder 85.
-    syntax: synth_fn_85(x)
-    category: [Functions reference, synth_fn_85]
-  synth_fn_86:
-    description: Synthetic function placeholder 86.
-    syntax: synth_fn_86(x)
-    category: [Functions reference, synth_fn_86]
-  synth_fn_87:
-    description: Synthetic function placeholder 87.
-    syntax: synth_fn_87(x)
-    category: [Functions reference, synth_fn_87]
-  synth_fn_88:
-    description: Synthetic function placeholder 88.
-    syntax: synth_fn_88(x)
-    category: [Functions reference, synth_fn_88]
-  synth_fn_89:
-    description: Synthetic function placeholder 89.
-    syntax: synth_fn_89(x)
-    category: [Functions reference, synth_fn_89]
-  synth_fn_90:
-    description: Synthetic function placeholder 90.
-    syntax: synth_fn_90(x)
-    category: [Functions reference, synth_fn_90]
-  synth_fn_91:
-    description: Synthetic function placeholder 91.
-    syntax: synth_fn_91(x)
-    category: [Functions reference, synth_fn_91]
-  synth_fn_92:
-    description: Synthetic function placeholder 92.
-    syntax: synth_fn_92(x)
-    category: [Functions reference, synth_fn_92]
-  synth_fn_93:
-    description: Synthetic function placeholder 93.
-    syntax: synth_fn_93(x)
-    category: [Functions reference, synth_fn_93]
-  synth_fn_94:
-    description: Synthetic function placeholder 94.
-    syntax: synth_fn_94(x)
-    category: [Functions reference, synth_fn_94]
-  synth_fn_95:
-    description: Synthetic function placeholder 95.
-    syntax: synth_fn_95(x)
-    category: [Functions reference, synth_fn_95]
-  synth_fn_96:
-    description: Synthetic function placeholder 96.
-    syntax: synth_fn_96(x)
-    category: [Functions reference, synth_fn_96]
-  synth_fn_97:
-    description: Synthetic function placeholder 97.
-    syntax: synth_fn_97(x)
-    category: [Functions reference, synth_fn_97]
-  synth_fn_98:
-    description: Synthetic function placeholder 98.
-    syntax: synth_fn_98(x)
-    category: [Functions reference, synth_fn_98]
-  synth_fn_99:
-    description: Synthetic function placeholder 99.
-    syntax: synth_fn_99(x)
-    category: [Functions reference, synth_fn_99]
-  synth_fn_100:
-    description: Synthetic function placeholder 100.
-    syntax: synth_fn_100(x)
-    category: [Functions reference, synth_fn_100]
-  synth_fn_101:
-    description: Synthetic function placeholder 101.
-    syntax: synth_fn_101(x)
-    category: [Functions reference, synth_fn_101]
-  synth_fn_102:
-    description: Synthetic function placeholder 102.
-    syntax: synth_fn_102(x)
-    category: [Functions reference, synth_fn_102]
-  synth_fn_103:
-    description: Synthetic function placeholder 103.
-    syntax: synth_fn_103(x)
-    category: [Functions reference, synth_fn_103]
-  synth_fn_104:
-    description: Synthetic function placeholder 104.
-    syntax: synth_fn_104(x)
-    category: [Functions reference, synth_fn_104]
-  synth_fn_105:
-    description: Synthetic function placeholder 105.
-    syntax: synth_fn_105(x)
-    category: [Functions reference, synth_fn_105]
-  synth_fn_106:
-    description: Synthetic function placeholder 106.
-    syntax: synth_fn_106(x)
-    category: [Functions reference, synth_fn_106]
-  synth_fn_107:
-    description: Synthetic function placeholder 107.
-    syntax: synth_fn_107(x)
-    category: [Functions reference, synth_fn_107]
-  synth_fn_108:
-    description: Synthetic function placeholder 108.
-    syntax: synth_fn_108(x)
-    category: [Functions reference, synth_fn_108]
-  synth_fn_109:
-    description: Synthetic function placeholder 109.
-    syntax: synth_fn_109(x)
-    category: [Functions reference, synth_fn_109]
-  synth_fn_110:
-    description: Synthetic function placeholder 110.
-    syntax: synth_fn_110(x)
-    category: [Functions reference, synth_fn_110]
-  synth_fn_111:
-    description: Synthetic function placeholder 111.
-    syntax: synth_fn_111(x)
-    category: [Functions reference, synth_fn_111]
-  synth_fn_112:
-    description: Synthetic function placeholder 112.
-    syntax: synth_fn_112(x)
-    category: [Functions reference, synth_fn_112]
-  synth_fn_113:
-    description: Synthetic function placeholder 113.
-    syntax: synth_fn_113(x)
-    category: [Functions reference, synth_fn_113]
-  synth_fn_114:
-    description: Synthetic function placeholder 114.
-    syntax: synth_fn_114(x)
-    category: [Functions reference, synth_fn_114]
-  synth_fn_115:
-    description: Synthetic function placeholder 115.
-    syntax: synth_fn_115(x)
-    category: [Functions reference, synth_fn_115]
-  synth_fn_116:
-    description: Synthetic function placeholder 116.
-    syntax: synth_fn_116(x)
-    category: [Functions reference, synth_fn_116]
-  synth_fn_117:
-    description: Synthetic function placeholder 117.
-    syntax: synth_fn_117(x)
-    category: [Functions reference, synth_fn_117]
-  synth_fn_118:
-    description: Synthetic function placeholder 118.
-    syntax: synth_fn_118(x)
-    category: [Functions reference, synth_fn_118]
-  synth_fn_119:
-    description: Synthetic function placeholder 119.
-    syntax: synth_fn_119(x)
-    category: [Functions reference, synth_fn_119]
+    description: "Returns the approximate n-th percentile of a numerical expression.\n\n* The percentile value must be between `0` and `1`.\n* The calculation is approximate, with accuracy controlled by the optional `error_threshold`.\n"
+    syntax: "percentile(percentile: number, expression: number, error_threshold: number?): number\n"
+    category: [Functions reference, Aggregration, percentile]
+  sample_stddev:
+    description: "Returns the sample standard deviation of a numerical expression within a group.\n\n* Designed for use cases where substantial values are missing, such as when data is heavily sampled.\n\n!!! note\n    Use `sample_stddev` when working with incomplete datasets (e.g., sampled trace data). For full datasets, prefer `stddev`.\n"
+    syntax: "sample_stddev(expression: number): number\n"
+    category: [Functions reference, Aggregration, sample_stddev]
+  sample_variance:
+    description: "Returns the sample variance of a numerical expression within a group.\n\n* Useful for analyzing variability when working with incomplete datasets.\n* Designed for scenarios like heavy trace sampling, where global variance would be misleading.\n\n!!! note\n    Use `sample_variance` when only a subset of data is available. For complete datasets, prefer `variance`.\n"
+    syntax: "sample_variance(expression: number): number\n"
+    category: [Functions reference, Aggregration, sample_variance]
+  stddev:
+    description: "Returns the standard deviation of a numerical expression within a group.\n\n* Useful for measuring how much values vary around the mean.\n* Best applied when a complete dataset is available (for sampled data, use `sample_stddev`).\n"
+    syntax: "stddev(expression: number): number\n"
+    category: [Functions reference, Aggregration, stddev]
+  sum:
+    description: "Returns the total of all numerical values passed into the function.\n\n* Can be used in aggregation to compute totals across grouped rows.\n* When used with multiple arguments, returns the sum of all provided values.\n"
+    syntax: "sum(value: number, ...values: number): number\n"
+    category: [Functions reference, Aggregration, sum]
+  variance:
+    description: "Returns the variance of a numerical expression within a group.\n\n* Variance measures how far values spread out from the mean.\n* Best applied when a complete dataset is available (for sampled data, use `sample_variance`).\n"
+    syntax: "variance(expression: number): number\n"
+    category: [Functions reference, Aggregration, variance]
+  arrayAppend:
+    description: "Returns a new array with an additional element appended to the end of an existing array.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayAppend(array: array<T>, element: T): array<T>\n"
+    category: [Functions reference, Array, arrayAppend]
+  arrayConcat:
+    description: "Returns a new array by concatenating the elements of two arrays into a single array.\n\n* Both arrays must be of the same element type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayConcat(array1: array<T>, array2: array<T>): array<T>\n"
+    category: [Functions reference, Array, arrayConcat]
+  arrayContains:
+    description: "Returns `true` if an array includes the specified element, or `false` if it does not.\n\n* This function is the mirror version of [inArray](inArray).\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayContains(array: array<T>, element: T): bool\n"
+    category: [Functions reference, Array, arrayContains]
+  arrayInsertAt:
+    description: "Returns a new array with an element inserted at the specified position.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayInsertAt(array: array<T>, position: number, value: T): array<T>\n"
+    category: [Functions reference, Array, arrayInsertAt]
+  arrayJoin:
+    description: "Returns a single string by joining the elements of an array using the specified delimiter.\n\n* The element type must be compatible with string conversion.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayJoin(array: array<T>, delimiter: string): string\n"
+    category: [Functions reference, Array, arrayJoin]
+  arrayLength:
+    description: "Returns the number of elements in an array.\n"
+    syntax: "arrayLength(array: array<any>): number\n"
+    category: [Functions reference, Array, arrayLength]
+  arrayRemove:
+    description: "Returns a new array with the specified element removed.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayRemove(array: array<T>, element: T): array<T>\n"
+    category: [Functions reference, Array, arrayRemove]
+  arrayRemoveAt:
+    description: "Returns a new array with the element at the specified position removed.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n* Positions are **0-indexed**.\n"
+    syntax: "arrayRemoveAt(array: array<T>, position: number): array<T>\n"
+    category: [Functions reference, Array, arrayRemoveAt]
+  arrayReplaceAll:
+    description: "Returns a new array where all instances of a specified value are replaced with a new value.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayReplaceAll(array: array<T>, value: T, newValue: T): array<T>\n"
+    category: [Functions reference, Array, arrayReplaceAll]
+  arrayReplaceAt:
+    description: "Returns a new array with the element at the specified position replaced by a new value.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "arrayReplaceAt(array: array<T>, position: number, value: T): array<T>\n"
+    category: [Functions reference, Array, arrayReplaceAt]
+  arraySort:
+    description: "Returns a new array with the elements sorted according to the specified options.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n* By default, the array is sorted in ascending order, with null values appearing last.\n"
+    syntax: "arraySort(array: array<T>, desc: bool?, nullsFirst: bool?): array<T>\n"
+    category: [Functions reference, Array, arraySort]
+  arraySplit:
+    description: "Returns an array of substrings by splitting a string using the specified delimiter.\n\n* The delimiter can be either a `string` or a `regexp`.\n"
+    syntax: "arraySplit(string: string, delimiter: regexp | string): array<string>\n"
+    category: [Functions reference, Array, arraySplit]
+  cardinality:
+    description: "Returns the number of unique elements in an array.\n\n* The element type must match the array type.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "cardinality(array: array<T>): number\n"
+    category: [Functions reference, Array, cardinality]
+  inArray:
+    description: "Returns `true` if the specified element exists within the array, or `false` if it does not.\n\n* This function is the inverse of [`arrayContains`](arrayContains).\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "inArray(element: T, array: array<T>): bool\n"
+    category: [Functions reference, Array, inArray]
+  isEmpty:
+    description: "Returns `true` if the array contains no elements, or `false` otherwise.\n\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "isEmpty(array: array<T>): bool\n"
+    category: [Functions reference, Array, isEmpty]
+  isSubset:
+    description: "Returns `true` if `array1` is a subset of `array2`, or `false` otherwise.\n\n* When comparing `array1` and `array2`, duplicates are discarded. This means two arrays of different lengths but with the same unique elements are considered equal.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "isSubset(array1: array<T>, array2: array<T>): bool\n"
+    category: [Functions reference, Array, isSubset]
+  isSuperset:
+    description: "Returns `true` if `array1` is a superset of `array2`, or `false` otherwise.\n\n* When comparing `array1` and `array2`, duplicates are discarded. This means two arrays of different lengths but with the same unique elements are considered equal.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "isSuperset(array1: array<T>, array2: array<T>): bool\n"
+    category: [Functions reference, Array, isSuperset]
+  setDiff:
+    description: "Returns the set difference of two arrays, producing a new array with elements from `array1` that are not in `array2`.\n\n* Duplicates are discarded when computing the difference.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "setDiff(array1: array<T>, array2: array<T>): array<T>\n"
+    category: [Functions reference, Array, setDiff]
+  setDiffSymmetric:
+    description: "Returns the symmetric difference of two arrays, producing a new array with elements that exist in either `array1` or `array2` but not in both.\n\n* Duplicates are discarded when computing the difference.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "setDiffSymmetric(array1: array<T>, array2: array<T>): array<T>\n"
+    category: [Functions reference, Array, setDiffSymmetric]
+  setEqualsTo:
+    description: "Returns `true` if `array1` and `array2` contain the same unique elements, or `false` otherwise.\n\n* When comparing arrays, duplicates are discarded. This means two arrays of different lengths but with the same unique elements are considered equal.\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "setEqualsTo(array1: array<T>, array2: array<T>): bool\n"
+    category: [Functions reference, Array, setEqualsTo]
+  setIntersection:
+    description: "Returns the intersection of two arrays, producing a new array with elements common to both.\n\n* Both arrays are treated as sets:\n\n* Duplicates are removed from both arrays\n* Order is not preserved in the result\n* `null` is treated as an empty set\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "setIntersection(array1: array<T>, array2: array<T>): array<T>\n"
+    category: [Functions reference, Array, setIntersection]
+  setUnion:
+    description: "Returns the union of two arrays, producing a new array that contains all unique elements from both.\n\n* Both arrays are treated as sets:\n\n* Duplicates are removed\n* Order is not preserved in the result\n* `null` is treated as an empty set\n* Supported element types include `string`, `bool`, `number`, `interval`, `timestamp`, `regexp`, and `enum`.\n"
+    syntax: "setUnion(array1: array<T>, array2: array<T>): array<T>\n"
+    category: [Functions reference, Array, setUnion]
+  case:
+    description: "Returns a value based on the first condition that evaluates to `true`.\n\nThe `case` statement allows you to perform multiple conditional checks against a value. Each condition must resolve to a boolean expression, and the first condition that matches determines the result.\n\n!!! note\n    Like all case statements, `case` returns the **first matching value**. The order of clauses is important.\n"
+    syntax: "case {\ncondition1 -> value1,\ncondition2 -> value2,\n...\nconditionN -> valueN,\n_          -> default\n}\n"
+    category: [Functions reference, Case, case]
+  case_contains:
+    description: "Returns a value based on whether a string contains one of several specified substrings.\n\nThis function is a shorthand for `case` expressions with `contains` logic and helps shorten queries that would otherwise repeat conditional statements.\n\n!!! note\n    Like all case statements, `case_contains` returns the **first matching value**. The order of clauses is important.\n"
+    syntax: "case_contains {\ns: string,\nsubstring1 -> result1,\nsubstring2 -> result2,\n...\nsubstringN -> resultN,\n_          -> default\n}\n"
+    category: [Functions reference, Case, case_contains]
+  case_equals:
+    description: "Returns a value based on whether an expression equals one of several specified values.\n\nThis function is a shorthand for `case` expressions with equality (`==`) logic and helps shorten queries that would otherwise repeat conditional statements.\n\n!!! note\n    Like all case statements, `case_equals` returns the **first matching value**. The order of clauses is important.\n"
+    syntax: "case_equals {\ne: any,\nvalue1 -> result1,\nvalue2 -> result2,\n...\nvalueN -> resultN,\n_      -> default\n}\n"
+    category: [Functions reference, Case, case_equals]
+  case_greaterthan:
+    description: "Returns a value based on whether a number is greater than one of several thresholds.\n\nThis function is a shorthand for `case` expressions with `>` (greater than) logic and helps shorten queries that would otherwise repeat conditional statements.\n\n!!! note\n    Like all case statements, `case_greaterthan` returns the **first matching value**. The order of clauses is important.\n"
+    syntax: "case_greaterthan {\n  n: number,\n  value1: number -> result1,\n  value2: number -> result2,\n  ...\n  valueN: number -> resultN,\n  _              -> default\n}\n"
+    category: [Functions reference, Case, case_greaterthan]
+  case_lessthan:
+    description: "Returns a value based on whether a number is less than one of several thresholds.\n\nThis function is a shorthand for `case` expressions with `<` (less than) logic and helps shorten queries that would otherwise repeat conditional statements.\n\n!!! note\n    Like all case statements, `case_lessthan` returns the **first matching value**. The order of clauses is important.\n"
+    syntax: "case_lessthan {\nn: number,\nvalue1: number -> result1,\nvalue2: number -> result2,\n...\nvalueN: number -> resultN,\n_              -> default\n}\n"
+    category: [Functions reference, Case, case_lessthan]
+  firstNonNull:
+    description: "Return the first non-null value from a list of arguments, in the order they\nare provided.\n\n!!! note\n    Works only on scalar values such as `number`, `string`, or `timestamp`.\n    Does not work on objects.\n"
+    syntax: "firstNonNull(value: any, ...values: any): any\n"
+    category: [Functions reference, General, firstNonNull]
+  if:
+    description: "Return one value if a condition is `true`, otherwise return an alternative\nvalue.\n"
+    syntax: "if(condition: bool, then: any, else: any?): any\n"
+    category: [Functions reference, General, if]
+  in:
+    description: "Return `true` if a given value matches any value in a list of candidates,\notherwise return `false`.\n"
+    syntax: "in(comparand: any, value: any, ...values: any): bool\n"
+    category: [Functions reference, General, in]
+  recordLocation:
+    description: "Return the cloud storage location of a record, such as the URL of an S3 object\nwhen using AWS S3.\n\n!!! note\n    Works only with data stored in your cloud storage. Running this on indexed\n    documents (Frequent Search mode) will return `null`.\n"
+    syntax: "recordLocation(): string\n"
+    category: [Functions reference, General, recordLocation]
+  ipInSubnet:
+    description: "Return `true` if an IP address belongs to a given subnet, otherwise return\n`false`.\n"
+    syntax: "ipInSubnet(ip: string, ipPrefix: string): bool\n"
+    category: [Functions reference, IP, ipInSubnet]
+  ipPrefix:
+    description: "Return the CIDR subnet for a given IP address and subnet size.\n"
+    syntax: "ipPrefix(ip: string, subnetSize: number): string\n"
+    category: [Functions reference, IP, ipPrefix]
+  abs:
+    description: "Returns the absolute value of a number. Useful for computing the total\ndifference between two values without regard to sign.\n"
+    syntax: "abs(number: number): number\n"
+    category: [Functions reference, Number, abs]
+  ceil:
+    description: "Returns the smallest integer greater than or equal to a number.\nFor example, `1.5` becomes `2`, and `8.1` becomes `9`.\n"
+    syntax: "ceil(number: number): number\n"
+    category: [Functions reference, Number, ceil]
+  floor:
+    description: "Returns the largest integer less than or equal to a number.\nFor example, `1.5` becomes `1`, and `8.1` becomes `8`.\n"
+    syntax: "floor(number: number): number\n"
+    category: [Functions reference, Number, floor]
+  fromBase:
+    description: "Converts a string representation of a number in a given base into its numeric value.\n\nFor example, `\"101\"` in base `2` becomes `5` in base `10`.\n"
+    syntax: "fromBase(string: string, radix: number): number\n"
+    category: [Functions reference, Number, fromBase]
+  ln:
+    description: "Computes the natural logarithm (base *e*) of a number.\n"
+    syntax: "ln(number: number): number\n"
+    category: [Functions reference, Number, ln]
+  log:
+    description: "Returns the logarithm of a number to a specified base.\nCommon uses include modeling compound interest, exponential growth or decay,\npH levels, and earthquake magnitudes.\n"
+    syntax: "log(base: number, number: number): number\n"
+    category: [Functions reference, Number, log]
+  log2:
+    description: "Returns the base-2 logarithm of a number.\nEquivalent to `log(2, number)`.\n"
+    syntax: "log2(number: number): number\n"
+    category: [Functions reference, Number, log2]
+  mod:
+    description: "Returns the remainder after dividing a number by a divisor.\nEquivalent to the modulus operator (`%`).\n"
+    syntax: "mod(number: number, divisor: number): number\n"
+    category: [Functions reference, Number, mod]
+  pi:
+    description: "Returns the mathematical constant π (pi), limited to 15 decimal places.\n"
+    syntax: "pi(): number\n"
+    category: [Functions reference, Number, pi]
+  power:
+    description: "Returns the result of raising a number to the power of an exponent.\n"
+    syntax: "power(number: number, exponent: number): number\n"
+    category: [Functions reference, Number, power]
+  random:
+    description: "Returns a pseudorandom decimal between `0` (inclusive) and `1` (exclusive).\n\n!!! note\n    `random` is not cryptographically secure.\n"
+    syntax: "random(): number\n"
+    category: [Functions reference, Number, random]
+  randomInt:
+    description: "Returns a pseudorandom integer between `0` (inclusive) and an upper bound\n(exclusive).\n\n!!! note\n    `randomInt` is not cryptographically secure.\n"
+    syntax: "randomInt(upperBound: number): number\n"
+    category: [Functions reference, Number, randomInt]
+  round:
+    description: "Returns a number rounded to the nearest integer or to a specified number of\ndecimal places.\nFor example, `1.5` becomes `2` and `8.1` becomes `8`.\n"
+    syntax: "round(number: number, digits: number?): number\n"
+    category: [Functions reference, Number, round]
+  sqrt:
+    description: "Returns the square root of a number.\n\n!!! note\n    This is the inverse of `power(number, 2)`.\n"
+    syntax: "sqrt(number: number): number\n"
+    category: [Functions reference, Number, sqrt]
+  toBase:
+    description: "Converts a number into its string representation in a specified base.\n\nFor example, converting `10` into base `16` results in `\"a\"`.\n"
+    syntax: "toBase(number: number, radix: number): string\n"
+    category: [Functions reference, Number, toBase]
+  byteLength:
+    description: "Returns the number of bytes required to represent a UTF-8 encoded string.\n"
+    syntax: "byteLength(value: string): number\n"
+    category: [Functions reference, String, byteLength]
+  chr:
+    description: "Converts a numeric Unicode code point into its corresponding string character.\n"
+    syntax: "chr(value: number): string\n"
+    category: [Functions reference, String, chr]
+  codepoint:
+    description: "Converts a Unicode character into its numeric code point representation.\n"
+    syntax: "codepoint(value: string): number\n"
+    category: [Functions reference, String, codepoint]
+  concat:
+    description: "Joins multiple strings together and return the result as a single string.\n"
+    syntax: "concat(value: string, ...values: string): string\n"
+    category: [Functions reference, String, concat]
+  contains:
+    description: "Returns `true` if the given substring appears anywhere in a string; otherwise return `false`. The check is case sensitive. For case-insensitive matching, normalize both values with `toLowerCase()` or `toUpperCase()` before calling `contains`.\n"
+    syntax: "contains(value: string, substring: string): bool\n"
+    category: [Functions reference, String, contains]
+  decodeBase64:
+    description: "Decodes a Base64-encoded string into its original value.\n"
+    syntax: "decodeBase64(value: string): string\n"
+    category: [Functions reference, String, decodeBase64]
+  encodeBase64:
+    description: "Encodes a string into its Base64 representation.\n"
+    syntax: "encodeBase64(value: string): string\n"
+    category: [Functions reference, String, encodeBase64]
+  endsWith:
+    description: "Returns `true` if a string ends with a given substring, otherwise return `false`.\n\n!!! note\n    Unlike `contains`, which checks for a substring anywhere in the string, `endsWith` only matches the end.\n"
+    syntax: "endsWith(value: string, suffix: string): bool\n"
+    category: [Functions reference, String, endsWith]
+  indexOf:
+    description: "Returns the position of the first occurrence of a substring within a string.\n\nThe index is zero-based. If the substring is not found, the function returns `-1`.\n"
+    syntax: "indexOf(value: string, substring: string): number\n"
+    category: [Functions reference, String, indexOf]
+  length:
+    description: "Returns the number of characters in a string.\n"
+    syntax: "length(value: string): number\n"
+    category: [Functions reference, String, length]
+  ltrim:
+    description: "Removes whitespace from the start of a string while leaving the end unchanged.\n"
+    syntax: "ltrim(value: string): string\n"
+    category: [Functions reference, String, ltrim]
+  matches:
+    description: "Returns `true` if a string matches a given regular expression. The expression is applied to the entire string; partial matches return `false`.\n"
+    syntax: "matches(value: string, pattern: regexp): bool\n"
+    category: [Functions reference, String, matches]
+  pad:
+    description: "**Alias for [`padLeft`](padLeft).**\n\nAdds characters to the beginning of a string until it reaches the desired length.\nIf the string is longer than the target length, it is truncated from the end.\n\n!!! note\n    The `fillWith` argument must be a single-character string.\n"
+    syntax: "pad(value: string, charCount: number, fillWith: string): string\n"
+    category: [Functions reference, String, pad]
+  padLeft:
+    description: "Adds characters to the beginning of a string until it reaches the desired length.\nIf the string is longer than the target length, it is truncated from the end.\n\n!!! note\n    The `fillWith` argument must be a single-character string.\n"
+    syntax: "padLeft(value: string, charCount: number, fillWith: string): string\n"
+    category: [Functions reference, String, padLeft]
+  padRight:
+    description: "Adds characters to the end of a string until it reaches the desired length.\nIf the string is longer than the target length, it is truncated from the end.\n\n!!! note\n    The `fillWith` argument must be a single-character string.\n"
+    syntax: "padRight(value: string, charCount: number, fillWith: string): string\n"
+    category: [Functions reference, String, padRight]
+  regexpSplitParts:
+    description: "Splits a string using a regular expression as the delimiter and return the token at the specified index.\nThe index starts at 1, not 0.\n"
+    syntax: "regexpSplitParts(value: string, delimiter: regexp, index: number): string\n"
+    category: [Functions reference, String, regexpSplitParts]
+  rtrim:
+    description: "Removes whitespace from the end of a string while leaving the beginning unchanged.\n"
+    syntax: "rtrim(value: string): string\n"
+    category: [Functions reference, String, rtrim]
+  splitParts:
+    description: "Splits a string using a delimiter and return the token at the specified index.\nThe index starts at 1, not 0.\n"
+    syntax: "splitParts(value: string, delimiter: string, index: number): string\n"
+    category: [Functions reference, String, splitParts]
+  startsWith:
+    description: "Returns `true` if a string begins with a given substring, otherwise return `false`.\n\n!!! note\n    Unlike `contains`, which checks for a substring anywhere in the string, `startsWith` only matches the beginning.\n"
+    syntax: "startsWith(value: string, prefix: string): bool\n"
+    category: [Functions reference, String, startsWith]
+  substr:
+    description: "Extracts a substring from a string starting at a given position, with an optional length.\nUseful for simple value extraction without needing regular expressions.\n"
+    syntax: "substr(value: string, from: number, length?: number): string\n"
+    category: [Functions reference, String, substr]
+  textSearch:
+    description: "Searches for a text phrase within a target value.\n\nThe behavior depends on the type of the target:\n\n* **Primitive types** (`string`, `number`, `bool`, `interval`, `timestamp`, `regexp`, `enum`) are converted to strings before searching.\n* **Objects** are searched by their values (keys are ignored).\n* **Arrays** are searched by their elements.\n\nThe `phrase` must appear as one or more complete tokens. Tokens are defined during log parsing and are split on the following characters:\nwhitespace (`\\s`), `=`, `/`, `:`, `@`, `#`, `$`, `*`, `|`, `,`, `;`, `'`, `\"`, `(`, `[`, `{`, `}`, `)`, `]`, `&lt;`, `&gt;`, `.`, `_`, `-`.\n\nBecause of this, a search for `online` will not match `onlineboutique` (one token), but will match `online_boutique` (`online` and `boutique` are separate tokens).\nSimilarly, `Version 17` matches `Version 17.4 (Build 21E213)` because `Version` and `17` are two tokens, but `Vers` would not match because it is not a full token.\n"
+    syntax: "textSearch(target: T, phrase: string): bool\n"
+    category: [Functions reference, String, textSearch]
+  toLowerCase:
+    description: "Converts all alphabetical characters in a string to lowercase.\n"
+    syntax: "toLowerCase(value: string): string\n"
+    category: [Functions reference, String, toLowerCase]
+  toUpperCase:
+    description: "Converts all alphabetical characters in a string to uppercase.\n"
+    syntax: "toUpperCase(value: string): string\n"
+    category: [Functions reference, String, toUpperCase]
+  trim:
+    description: "Removes whitespace from both the start and end of a string.\n"
+    syntax: "trim(value: string): string\n"
+    category: [Functions reference, String, trim]
+  addInterval:
+    description: "Returns the sum of two intervals as a single interval value.\n\nFor example, adding an interval of `1d` (one day) to another `1d` produces `2d` (two days).\n\n!!! note\n    This function also supports negative intervals. For example, `1d + -1h` results in `23h`, following standard arithmetic rules where adding a negative is equivalent to subtraction.\n"
+    syntax: "addInterval(left: interval, right: interval): interval\n"
+    category: [Functions reference, Time, addInterval]
+  addTime:
+    description: "Returns a new timestamp by adding an interval to an existing timestamp.\n\nBoth `timestamp` and `interval` are first-class types in DataPrime, so ensure that the correct types are passed.\n\n!!! note\n    Negative intervals are supported and act as subtraction. For example, adding `-1h` to a timestamp subtracts one hour.\n"
+    syntax: "addTime(t: timestamp, i: interval): timestamp\n"
+    category: [Functions reference, Time, addTime]
+  diffTime:
+    description: "Returns the duration between two timestamps as an interval.\n\nThe result is not the absolute difference:\n\n* Positive if `to > from`\n* Negative if `to < from`\n"
+    syntax: "diffTime(to: timestamp, from: timestamp): interval\n"
+    category: [Functions reference, Time, diffTime]
+  extractTime:
+    description: "Returns a specific unit of time extracted from a timestamp, such as the hour, minute, or second.\n\n!!! note\n    * Date units such as `'month'` or `'week'` start from **1**, not 0.\n    * Units smaller than `minute` return floating-point numbers; all others return integers.\n"
+    syntax: "extractTime(timestamp: timestamp, unit: dateunit | timeunit, tz?: string): number\n"
+    category: [Functions reference, Time, extractTime]
+  formatInterval:
+    description: "Returns an interval rendered as a string, with optional control over which time unit is displayed.\n"
+    syntax: "formatInterval(interval: interval, scale?: timeunit): string\n"
+    category: [Functions reference, Time, formatInterval]
+  formatTimestamp:
+    description: "Returns a timestamp formatted as a string, with optional control over the output format and time zone.\n"
+    syntax: "formatTimestamp(timestamp: timestamp, format?: string, tz?: string): string\n"
+    category: [Functions reference, Time, formatTimestamp]
+  fromUnixTime:
+    description: "Returns a parsed timestamp from a numeric Unix time value.\n\nThe Unix epoch starts on January 1, 1970. Timestamps before this are represented by negative numbers.\n"
+    syntax: "fromUnixTime(unixTime: number, timeUnit?: timeunit): timestamp\n"
+    category: [Functions reference, Time, fromUnixTime]
+  multiplyInterval:
+    description: "Returns an interval multiplied by a numeric factor, allowing extrapolation over time.\n\n!!! note\n    Both integer and decimal factors are supported.\n"
+    syntax: "multiplyInterval(i: interval, factor: number): interval\n"
+    category: [Functions reference, Time, multiplyInterval]
+  now:
+    description: "Returns the current time as a timestamp at query execution.\n\n* Produces nanosecond precision if supported by the runtime, otherwise falls back to milliseconds.\n* Always returns the same value across multiple invocations within the same query.\n"
+    syntax: "now(): timestamp\n"
+    category: [Functions reference, Time, now]
+  parseInterval:
+    description: "Returns an interval parsed from a string representation such as `2d` or `35m10s`, enabling calculations with durations.\n\nA valid string must follow these rules:\n\n* Format: `NdNhNmNsNmsNusNns` where `N` is a non-negative integer\n* At least one time unit must be present\n* No unit may appear more than once (`1d2d` is invalid)\n* Units must appear in descending order (days → nanoseconds). `1d1s` is valid; `1s1d` is not\n* A leading `-` is allowed to indicate a negative interval (the only valid position for `-`)\n* If the format is invalid, the function returns `null`\n"
+    syntax: "parseInterval(string: string): interval\n"
+    category: [Functions reference, Time, parseInterval]
+  parseTimestamp:
+    description: "Returns a parsed timestamp from a date or time string, enabling use of DataPrime's time functions.\n\n!!! note\n    If the string cannot be parsed (for example, if it does not match the expected format), the function returns `null`.\n"
+    syntax: "parseTimestamp(string: string, format?: string, tz?: string): timestamp\n"
+    category: [Functions reference, Time, parseTimestamp]
+  parseToTimestamp:
+    description: "Returns a timestamp parsed from a date/time string with an optional format specification and time zone override. See [`parseTimestamp`](parseTimestamp) for details.\n"
+    syntax: "parseToTimestamp(string: string, format?: string, tz?: string): timestamp\n"
+    category: [Functions reference, Time, parseToTimestamp]
+  roundInterval:
+    description: "Returns an interval rounded down to a specified precision. All time units smaller than the specified `timeunit` are zeroed out.\n"
+    syntax: "roundInterval(interval: interval, scale: timeunit): interval\n"
+    category: [Functions reference, Time, roundInterval]
+  roundTime:
+    description: "Returns a timestamp rounded down to the nearest interval.\n\n!!! note\n    Functionally equivalent to dividing a timestamp by an interval: `timestamp / interval`.\n"
+    syntax: "roundTime(sourceTimestamp: timestamp, timeInterval: interval): timestamp\n"
+    category: [Functions reference, Time, roundTime]
+  subtractInterval:
+    description: "Returns the result of subtracting one interval from another.\n\n!!! note\n    Equivalent to `addInterval(left, -right)` or `left - right`.\n"
+    syntax: "subtractInterval(left: interval, right: interval): interval\n"
+    category: [Functions reference, Time, subtractInterval]
+  subtractTime:
+    description: "Returns a timestamp reduced by a given interval.\n\n!!! note\n    Equivalent to `addTime(t, -i)` or `t - i`, where `t` is a timestamp and `i` is an interval.\n"
+    syntax: "subtractTime(t: timestamp, i: interval): timestamp\n"
+    category: [Functions reference, Time, subtractTime]
+  timeRound:
+    description: "Returns a timestamp rounded down to a specified interval. This function is deprecated in favor of `roundTime`.\n"
+    syntax: "timeRound(date: timestamp, interval: interval): timestamp\n"
+    category: [Functions reference, Time, timeRound]
+  toInterval:
+    description: "Returns an interval created from a numeric value and an optional time unit.\n\nThis function works with integers, decimals, positive, and negative values.\n"
+    syntax: "toInterval(number: number, timeUnit?: timeunit): interval\n"
+    category: [Functions reference, Time, toInterval]
+  toIso8601DateTime:
+    description: "Returns a timestamp formatted as an ISO 8601 string (e.g. `2023-08-11T07:29:17.634Z`).\nThis function supports nanosecond precision.\n"
+    syntax: "toIso8601DateTime(timestamp: timestamp): string\n"
+    category: [Functions reference, Time, toIso8601DateTime]
+  toUnixTime:
+    description: "Returns the number of time units since the Unix epoch (`1970-01-01T00:00:00Z`) for a given timestamp.\n\n!!! note\n    Timestamps before the epoch are represented as negative numbers.\n"
+    syntax: "toUnixTime(timestamp: timestamp, timeUnit?: timeunit): number\n"
+    category: [Functions reference, Time, toUnixTime]
+  urlDecode:
+    description: "Returns the decoded version of a URL-encoded string.\n\nURL encoding replaces certain characters with escape sequences (for example, spaces become `%20`) so they can be safely transmitted in URLs. Use `urlDecode` to restore the original values after parsing.\n"
+    syntax: "urlDecode(string: string): string\n"
+    category: [Functions reference, URL, urlDecode]
+  urlEncode:
+    description: "Returns the URL-encoded version of a string.\n\nURL encoding replaces special characters with escape sequences (for example, spaces become `%20`) so values can be safely transmitted in URLs. Use `urlEncode` when preparing data for output, such as with log forwarders.\n"
+    syntax: "urlEncode(string: string): string\n"
+    category: [Functions reference, URL, urlEncode]
+  isUuid:
+    description: "Returns `true` if a given string is a valid UUID, otherwise returns `false`.\n\nUse `isUuid` to clean data or flag malformed identifiers in logs and datasets.\n"
+    syntax: "isUuid(uuid: string): bool\n"
+    category: [Functions reference, UUID, isUuid]
+  randomUuid:
+    description: "Returns a randomly generated UUIDv4, useful for assigning identifiers to documents.\n"
+    syntax: "randomUuid(): string\n"
+    category: [Functions reference, UUID, randomUuid]
+  uuid:
+    description: "\nReturns a randomly generated UUID, useful for assigning identifiers to documents.\n"
+    syntax: "uuid(): string\n"
+    category: [Functions reference, UUID, uuid]

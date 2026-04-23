@@ -76,6 +76,9 @@ keyring = { version = "3", features = ["windows-native"] }
 [target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service"] }
 
+[dev-dependencies]
+wiremock = "0.6"
+
 [profile.release]
 strip = true
 lto = true

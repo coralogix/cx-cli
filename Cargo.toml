@@ -35,8 +35,8 @@ thiserror = "2"
 # Config directory resolution
 dirs = "6"
 
-# Secure credential storage
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+# Secure credential storage (platform-specific backends added below)
+keyring = { version = "3", default-features = false }
 inquire = "0.9"
 
 # OAuth / PKCE
@@ -61,6 +61,20 @@ url = "2"
 toon-format = { version = "0.4.5", default-features = false }
 
 futures = "0.3.32"
+
+# ── Platform-specific keyring backends ─────────────────────────────────────────
+# macOS: Keychain
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+# Windows: Credential Manager
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+# Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)
+# NOTE: musl builds have no keyring backend — users must use file-based credential storage
+[target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
 
 [profile.release]
 strip = true

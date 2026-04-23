@@ -323,6 +323,39 @@ Examples:
         /// Dashboard ID.
         dashboard_id: String,
     },
+    /// Create a new dashboard from a JSON definition file.
+    #[command(after_help = "\
+Examples:
+  cx dashboards create --from-file dashboard.json
+  cx dashboards create --from-file dashboard.json --folder <folder-id>
+  cat dashboard.json | cx dashboards create")]
+    Create {
+        /// Path to a JSON file with the dashboard definition. Use '-' for stdin.
+        /// Accepts either a bare dashboard document or a `{\"dashboard\": {...}}` wrapper;
+        /// the `requestId` envelope field is generated automatically.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+
+        /// Optional folder ID to place the dashboard in. Look up with
+        /// `cx dashboards folders list`.
+        #[arg(long)]
+        folder: Option<String>,
+    },
+    /// Manage dashboard folders.
+    Folders {
+        #[command(subcommand)]
+        cmd: FoldersCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum FoldersCmd {
+    /// List all dashboard folders.
+    #[command(after_help = "\
+Examples:
+  cx dashboards folders list
+  cx dashboards folders list -o json")]
+    List,
 }
 
 #[derive(Subcommand)]
@@ -527,6 +560,15 @@ async fn main() -> Result<()> {
             DashboardsCmd::Get { dashboard_id } => {
                 commands::dashboards::run_get(&targets, &dashboard_id, output).await?;
             }
+            DashboardsCmd::Create { from_file, folder } => {
+                commands::dashboards::run_create(&targets, &from_file, folder.as_deref(), output)
+                    .await?;
+            }
+            DashboardsCmd::Folders { cmd } => match cmd {
+                FoldersCmd::List => {
+                    commands::dashboards::run_folders_list(&targets, output).await?;
+                }
+            },
         },
 
         Commands::Alerts { cmd } => match cmd {

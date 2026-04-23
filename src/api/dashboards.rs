@@ -35,7 +35,42 @@ pub struct DashboardCatalogResponse {
     pub items: Vec<DashboardCatalogItem>,
 }
 
+// --- Folders response types ---
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardFolderItem {
+    pub id: Option<FolderIdValue>,
+    pub name: Option<String>,
+    pub parent_id: Option<FolderIdValue>,
+}
+
+/// The folders API returns id/parentId as `{"value": "<uuid>"}` wrappers.
+#[derive(Debug, Deserialize)]
+pub struct FolderIdValue {
+    pub value: Option<String>,
+}
+
+impl DashboardFolderItem {
+    pub fn id_str(&self) -> Option<&str> {
+        self.id.as_ref().and_then(|v| v.value.as_deref())
+    }
+
+    pub fn parent_id_str(&self) -> Option<&str> {
+        self.parent_id.as_ref().and_then(|v| v.value.as_deref())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DashboardFoldersResponse {
+    #[serde(default)]
+    pub folders: Vec<DashboardFolderItem>,
+}
+
 // --- API ---
+
+const DASHBOARDS_BASE: &str = "/mgmt/openapi/latest/dashboards/dashboards/v1";
+const FOLDERS_BASE: &str = "/mgmt/openapi/latest/dashboards/folders/v1";
 
 pub struct DashboardsApi<'a> {
     client: &'a CxClient,
@@ -49,7 +84,7 @@ impl<'a> DashboardsApi<'a> {
     /// List all dashboards in the catalog.
     pub async fn catalog(&self) -> Result<DashboardCatalogResponse> {
         self.client
-            .get("/mgmt/openapi/latest/dashboards/dashboards/v1/catalog", &[])
+            .get(&format!("{DASHBOARDS_BASE}/catalog"), &[])
             .await
     }
 
@@ -57,5 +92,17 @@ impl<'a> DashboardsApi<'a> {
     pub async fn get(&self, id: &str) -> Result<Value> {
         let path = format!("/mgmt/openapi/latest/v1/dashboards/dashboards/{id}");
         self.client.get(&path, &[]).await
+    }
+
+    /// Create a new dashboard. `body` must be the full
+    /// `{ "requestId": ..., "dashboard": { ... } }` payload expected by the
+    /// Coralogix Dashboard Service.
+    pub async fn create(&self, body: &Value) -> Result<Value> {
+        self.client.post(DASHBOARDS_BASE, body).await
+    }
+
+    /// List all dashboard folders.
+    pub async fn folders(&self) -> Result<DashboardFoldersResponse> {
+        self.client.get(FOLDERS_BASE, &[]).await
     }
 }

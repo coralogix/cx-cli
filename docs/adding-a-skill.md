@@ -96,6 +96,14 @@ Also add a representative user query to the "Usage" section's example list if it
 
 ---
 
+## Handling Large Output
+
+If the data your skill handles is potentially very large (e.g., dashboard JSON, full alert definitions), the command should output to a file rather than stdout. In this case, the corresponding skill should document the expected JSON format so agents can easily parse and script around the output.
+
+For example, if `cx your-domain get <id> -o json` produces large payloads, the skill should instruct agents to pipe output to a file and describe the JSON structure they can expect.
+
+---
+
 ## Complete Template
 
 Copy this as a starting point for `skills/your-domain/SKILL.md`:

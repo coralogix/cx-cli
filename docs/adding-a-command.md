@@ -11,6 +11,8 @@ Every command falls into one of two patterns:
 | **A: DataPrime-based** | Querying logs, spans, or any DataPrime source | `logs` (`src/commands/logs.rs`) |
 | **B: REST-based** | Wrapping a Coralogix REST API | `alerts` (`src/commands/alerts.rs`, `src/api/alerts.rs`) |
 
+> **Important:** All API integrations must use REST (HTTP). Do not use gRPC — the CLI is HTTP-only by design.
+
 DataPrime commands delegate to the shared pipeline and require minimal code. REST commands manage their own fan-out, merge, and render — more code, but more control.
 
 ---

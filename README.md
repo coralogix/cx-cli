@@ -1,33 +1,41 @@
 # cx
 
-The CLI for Coralogix observability. Query logs, metrics, traces, dashboards, and alerts from the terminal — built for humans and AI agents.
+The Coralogix CLI. Query logs, metrics, spans, and Real User Monitoring (RUM) data from the terminal using DataPrime and PromQL—built for humans and AI coding agents.
 
-## Features
+## What you can do
 
-- Query logs with [DataPrime](https://coralogix.com/docs/dataprime-query-language/) syntax
-- Query metrics with PromQL (instant and range queries)
-- Search and inspect distributed traces
-- List and manage dashboards and alerts
-- Search metric and log/span fields semantically by natural-language description
-- Browse DataPrime language reference offline
-- Fan out queries across multiple profiles simultaneously
-- AI-agent-optimized output mode with automatic large-result spilling
+- Query any signal—logs, metrics, spans, and RUM data—with DataPrime or PromQL, and render results as tables, raw JSON, or a token-efficient format for AI agents.
+- List, inspect, and manage dashboards and alerts.
+- Run the same query across multiple profiles or regions in a single command.
+- Find the right log or span field by describing it in natural language.
+- Browse the DataPrime language reference offline.
+- Plug Coralogix into your AI coding agent with bundled skills for Claude Code, Cursor, Codex, and 40+ more agents.
+
+## What makes cx different
+
+- DataPrime and PromQL at the terminal—Coralogix's proprietary query languages work end-to-end without leaving the shell.
+- Multi-profile fan-out with `-p prod-eu -p prod-us <command>`—run one query across multiple accounts or regions in a single invocation, with rows tagged by profile.
+- `agents` output format—token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
+- Semantic field search—find the right log or span field by describing it in natural language.
+- Bundled skills for Claude Code, Cursor, Codex, OpenCode, and 40+ more agents, distributed via `npx skills add`.
 
 ## Installation
 
-### Shell (macOS / Linux)
+### macOS and Linux
+
+Install the latest release with the install script:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
-You can pin a specific version:
+Pin a specific version:
 
 ```bash
 CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
-### Homebrew (macOS / Linux)
+### Homebrew
 
 ```bash
 brew install coralogix/tap/cx
@@ -50,88 +58,137 @@ cargo build --release
 cp target/release/cx /usr/local/bin/
 ```
 
-## Quick Start
+## Quick start
 
-```bash
-# Configure a profile interactively
-cx profiles add
+Follow these steps to go from a fresh install to a working query.
 
-# Query logs
-cx logs 'source logs | filter $d.severity == "ERROR"'
+1. Create a profile. `cx profiles add` opens an interactive prompt for region, credentials, and default output format:
 
-# Query metrics
-cx metrics query 'rate(http_requests_total[5m])'
+    ```bash
+    cx profiles add
+    ```
 
-# Search traces
-cx traces search checkout-service --start now-6h
+2. Query logs. The positional argument is a DataPrime query:
 
-# List dashboards
-cx dashboards catalog
+    ```bash
+    cx logs 'source logs | filter $d.severity == "ERROR"'
+    ```
 
-# List alerts
-cx alerts list --name "payment"
+3. Query metrics. `cx metrics query` takes a PromQL expression:
+
+    ```bash
+    cx metrics query 'rate(http_requests_total[5m])'
+    ```
+
+4. Search distributed spans. The positional argument is a DataPrime filter; `source spans` is prepended automatically:
+
+    ```bash
+    cx spans 'filter $l.serviceName == "checkout"' --start now-2h --limit 50
+    ```
+
+5. List dashboards to confirm the API is reachable:
+
+    ```bash
+    cx dashboards catalog
+    ```
+
+Run `cx <command> --help` for full syntax and examples on any command.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx logs` | Query logs using DataPrime |
+| `cx spans` | Query distributed spans |
+| `cx metrics` | Query metrics using PromQL: `query`, `query-range`, `search`, `get-labels` |
+| `cx dashboards` | List and inspect dashboards: `catalog`, `get` |
+| `cx alerts` | Manage alerts: `list`, `get`, `create`, `enable`, `disable` |
+| `cx search-fields` | Find log or span fields by description |
+| `cx dataprime` | Browse the DataPrime language reference offline, or run raw queries: `list`, `show`, `query` |
+| `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
+
+### Global options
+
+```
+-p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
+    --api-key <API_KEY>      Override the profile API key
+    --region <REGION>        Override the profile region
+-o, --output <FORMAT>        text | json | agents (default: text)
 ```
 
 ## Configuration
 
-Config lives in `~/.cx/`. Run `cx profiles add` to create a profile interactively.
+Configuration lives in `~/.cx/`:
 
 ```
 ~/.cx/
-  config.toml              # Global settings (default profile, output format)
+  config.toml              # Global settings
   profiles/
     default.toml           # Credentials and region per profile
 ```
 
-Environment variable overrides: `CX_PROFILE`, `CX_API_KEY`, `CX_REGION`, `OPENAI_API_KEY`.
+Credentials are stored in the OS keyring on macOS (Keychain) and Windows (Credential Manager). On Linux, keyring support (Secret Service) requires a glibc build; the default install script and release binaries use musl, which has no keyring backend—credentials fall back to file storage. If you need keyring support on Linux, build from source with a glibc toolchain.
 
-See [docs/configuration.md](docs/configuration.md) for full reference.
+Environment variables override profile settings: `CX_PROFILE`, `CX_API_KEY`, `CX_REGION`, `OPENAI_API_KEY`.
 
-## Commands
+See [docs/configuration.md](docs/configuration.md) for the full reference.
 
-| Command | Description |
-|---------|-------------|
-| `cx profiles` | Manage profiles (list, add, delete, set-default) |
-| `cx logs` | Query logs using DataPrime syntax |
-| `cx metrics` | Query metrics using PromQL (instant, range, search, get-labels) |
-| `cx traces` | Search and inspect distributed traces |
-| `cx dashboards` | List and inspect dashboards |
-| `cx alerts` | List, inspect, create, enable, and disable alerts |
-| `cx search-fields` | Search log/span fields semantically by description |
-| `cx dataprime` | Browse DataPrime language reference |
-| `cx cleanup` | Remove stale temp result files |
+## Output formats
 
-Run `cx <command> --help` for full usage and examples.
+Choose an output format with `-o` or by setting the profile default.
 
-### Global Options
+- `text`—human-readable tables with color. Default.
+- `json`—raw, pretty-printed API responses for scripting.
+- `agents`—token-efficient format for AI agents. Large responses automatically spill to a temporary file and the path is returned.
 
-```
--p, --profile <PROFILE>       Profile to use (repeat for multi-profile fan-out)
-    --api-key <API_KEY>        Override the profile API key
-    --region <REGION>          Override the profile region
--o, --output <text|json|agents> Output format
+See [docs/agents-output.md](docs/agents-output.md) for the `agents` format specification.
+
+## AI agent skills
+
+`cx` ships a companion skill bundle for Claude Code, Cursor, Codex, OpenCode, and [40+ other agents](https://github.com/vercel-labs/skills#supported-agents). The skills teach your agent how to investigate issues by querying Coralogix—without memorizing DataPrime syntax or API endpoints.
+
+Install all skills:
+
+```bash
+npx skills add coralogix/cx-cli
 ```
 
-## Output Formats
+Install selected skills:
 
-- **`text`** — human-readable tables and formatted output (default)
-- **`json`** — pretty-printed raw API responses
-- **`agents`** — token-optimized JSON for AI agent workflows, with automatic spilling of large results to temp files
+```bash
+npx skills add coralogix/cx-cli --skill query-logs --skill dataprime
+```
 
-See [docs/agents-output.md](docs/agents-output.md) for the agents format specification.
+Install globally for all projects:
 
-## Skills
+```bash
+npx skills add coralogix/cx-cli -g
+```
 
-The `skills/` directory contains Claude Code skill plugins for AI-driven observability investigation — alert management, metrics querying, and telemetry triage.
+Available skills: `query-logs`, `query-spans`, `metrics-query`, `cx-alerts`, `dataprime`, `rum`, `telemetry-querying`. See [skills/README.md](skills/README.md) for per-skill usage.
 
-See [skills/README.md](skills/README.md) for installation and usage.
+## Multi-profile fan-out
 
-## Further Reading
+Repeat `-p` to run a command across multiple profiles in parallel. Results are merged and tagged with the profile name:
 
-- [Configuration reference](docs/configuration.md)
+```bash
+cx -p prod-eu -p prod-us logs 'source logs | filter $d.severity == "ERROR"'
+```
+
+See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
+
+## Migrating from cxctl
+
+`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail, SAML management, and account invite flows.
+
+## Further reading
+
+- [Configuration](docs/configuration.md)
 - [Agents output format](docs/agents-output.md)
 - [Multi-profile fan-out](docs/multi-profile.md)
 - [Time syntax](docs/time-syntax.md)
+- [Architecture](docs/architecture.md)
 - [Development guide](docs/development.md)
 
 ## License

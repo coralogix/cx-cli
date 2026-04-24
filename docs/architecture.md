@@ -2,7 +2,7 @@
 
 > Contributor-facing architecture reference for `cx`. Start here before adding a command, debugging the execution pipeline, or reviewing a PR.
 
-## Execution Flow
+## Execution flow
 
 Every `cx` invocation follows a seven-step pipeline:
 
@@ -36,7 +36,7 @@ CLI parsing ──> Config resolution ──> Target building ──> Fan-out
 
 **5-7.** Merging, rendering, and spilling differ by command archetype. See below.
 
-## Command Archetypes
+## Command archetypes
 
 Commands fall into two patterns. New commands should follow one of these.
 
@@ -103,7 +103,7 @@ pub async fn run_list(targets, ..., output) -> Result<()> {
 
 **Reference:** `src/commands/alerts.rs` -- full example with list, get, create, enable, disable subcommands.
 
-## Output Rendering
+## Output rendering
 
 All commands support three output formats controlled by `--output` / `OutputFormat`:
 
@@ -127,7 +127,7 @@ Token-optimized format for AI consumers:
 2. **Metadata stripping** (DataPrime only) -- `transform_for_agents()` renames keys (`metadata` -> `$m`, `labels` -> `$l`, `userData` -> `$d`) and removes noisy metadata fields (`branchid`, `priorityclass`, `*TimestampMicros`, etc.)
 3. **Spilling** (DataPrime non-aggregates only) -- `maybe_spill()` checks serialized size against `max_dataprime_direct_output_size` (default 100 KiB). If exceeded, writes to `cx_results_<hash>.json` in `temp_dir` and prints the path instead.
 
-## Multi-Profile Pattern
+## Multi-profile pattern
 
 A single boolean controls profile-aware behavior throughout the codebase:
 
@@ -147,7 +147,7 @@ When `false`:
 
 The generic version lives in `execution.rs` (`tag_rows`, `merge_tagged_results`). DataPrime commands use a specialized `dataprime::merge_results()` that also handles `is_aggregate` detection and warning collection.
 
-## Error Handling
+## Error handling
 
 Two error systems coexist, each serving a different layer:
 
@@ -188,7 +188,7 @@ Errors during fan-out are **per-profile** and **non-fatal**:
 - Successful profiles continue normally
 - The command exits 0 if at least one profile succeeds
 
-## The API Client
+## The API client
 
 `CxClient` (`src/api/client.rs`) is a thin `reqwest` wrapper pre-configured with Bearer auth:
 
@@ -214,7 +214,7 @@ impl<'a> AlertsApi<'a> {
 }
 ```
 
-## Naming Conventions
+## Naming conventions
 
 | Element | Convention | Example |
 |---------|-----------|---------|
@@ -225,7 +225,7 @@ impl<'a> AlertsApi<'a> {
 | Command modules | `src/commands/<resource>.rs` | mirrors `src/api/<resource>.rs` |
 | Error types | `CxError` for API, `anyhow::Result` for commands | -- |
 
-## Module Map
+## Module map
 
 ```
 src/

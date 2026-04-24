@@ -2,7 +2,7 @@
 
 > Step-by-step guide for adding a new command to `cx`. Read [architecture.md](architecture.md) first for the execution flow and design decisions behind this structure.
 
-## Choose Your Archetype
+## Choose your archetype
 
 Every command falls into one of two patterns:
 
@@ -17,7 +17,7 @@ DataPrime commands delegate to the shared pipeline and require minimal code. RES
 
 ---
 
-## Archetype A: DataPrime-Based Command
+## Archetype A: DataPrime-based command
 
 Use this when your command queries a DataPrime source. The shared pipeline in `commands::dataprime` handles fan-out, merge, render, and spilling — you provide only a text renderer and a thin `run()` wrapper.
 
@@ -26,7 +26,7 @@ Use this when your command queries a DataPrime source. The shared pipeline in `c
 - `src/commands/mod.rs` (add module)
 - `src/main.rs` (CLI definition + dispatch)
 
-### Step 1: Command Module
+### Step 1: Command module
 
 Create `src/commands/your_domain.rs`:
 
@@ -116,7 +116,7 @@ The text renderer signature must be `fn(&MergedResults) -> Result<()>`. The shar
 
 **Reference:** `src/commands/logs.rs` — the entire module is ~130 lines.
 
-### Step 2: Register the Module
+### Step 2: Register the module
 
 Add your module to `src/commands/mod.rs`:
 
@@ -124,7 +124,7 @@ Add your module to `src/commands/mod.rs`:
 pub mod your_domain;
 ```
 
-### Step 3: CLI Wiring
+### Step 3: CLI wiring
 
 In `src/main.rs`, add a variant to the `Commands` enum:
 
@@ -178,7 +178,7 @@ That's it for a DataPrime command. The shared pipeline handles fan-out, merge, a
 
 ---
 
-## Archetype B: REST-Based Command
+## Archetype B: REST-based command
 
 Use this when your command wraps a Coralogix REST API. You'll build the full pipeline: API client, fan-out, merge, and render.
 
@@ -189,7 +189,7 @@ Use this when your command wraps a Coralogix REST API. You'll build the full pip
 - `src/commands/mod.rs` (add module)
 - `src/main.rs` (CLI definition + dispatch)
 
-### Step 1: API Module
+### Step 1: API module
 
 Create `src/api/your_domain.rs`:
 
@@ -279,7 +279,7 @@ Key conventions:
 
 **Reference:** `src/api/alerts.rs` — full example with list, get, create, and state-change endpoints.
 
-### Step 2: Register the API Module
+### Step 2: Register the API module
 
 Add to `src/api/mod.rs`:
 
@@ -287,7 +287,7 @@ Add to `src/api/mod.rs`:
 pub mod your_domain;
 ```
 
-### Step 3: Command Module
+### Step 3: Command module
 
 Create `src/commands/your_domain.rs`:
 
@@ -414,7 +414,7 @@ Key patterns to follow:
 
 **Reference:** `src/commands/alerts.rs` — full example with list, get, create, enable, disable.
 
-### Step 4: Register the Command Module
+### Step 4: Register the command module
 
 Add to `src/commands/mod.rs`:
 
@@ -422,7 +422,7 @@ Add to `src/commands/mod.rs`:
 pub mod your_domain;
 ```
 
-### Step 5: CLI Wiring
+### Step 5: CLI wiring
 
 In `src/main.rs`, define the subcommand enum and add to `Commands`:
 
@@ -467,7 +467,7 @@ Commands::YourDomain { cmd } => match cmd {
 
 ## Testing
 
-### Deserialization Tests (API layer)
+### Deserialization tests (API layer)
 
 Every API module must have deserialization tests. These verify that your response types correctly parse the actual API JSON shape.
 
@@ -499,7 +499,7 @@ mod tests {
 
 Test both happy-path responses and edge cases (empty lists, missing optional fields, fallback values).
 
-### Manual Smoke Testing
+### Manual smoke testing
 
 After building (`cargo build`), verify:
 
@@ -518,7 +518,7 @@ cx your-domain get <id>
 cx -p prod -p staging your-domain list
 ```
 
-### Run the Full Suite
+### Run the full suite
 
 ```bash
 cargo test                  # All unit tests
@@ -528,7 +528,7 @@ cargo fmt --check           # Format check
 
 ---
 
-## User-Facing Skill (Required)
+## User-facing skill (required)
 
 Every command must have a corresponding skill in `skills/`. Skills teach AI agents how to use your command effectively — including CLI syntax, workflows, and behavioral guidelines.
 
@@ -538,7 +538,7 @@ See **[Adding a Skill](adding-a-skill.md)** for the complete guide covering dire
 
 ---
 
-## PR Checklist
+## PR checklist
 
 Copy this into your PR description:
 

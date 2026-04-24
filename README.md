@@ -130,7 +130,7 @@ Configuration lives in `~/.cx/`:
 
 Credentials are stored in the OS keyring on macOS (Keychain) and Windows (Credential Manager). On Linux, keyring support (Secret Service) requires a glibc build; the default install script and release binaries use musl, which has no keyring backend—credentials fall back to file storage. If you need keyring support on Linux, build from source with a glibc toolchain.
 
-Environment variables override profile settings: `CX_PROFILE`, `CX_API_KEY`, `CX_REGION`, `OPENAI_API_KEY`.
+Environment variables override profile settings: `CX_PROFILE`, `CX_API_KEY`, and `CX_REGION`.
 
 See [docs/configuration.md](docs/configuration.md) for the full reference.
 

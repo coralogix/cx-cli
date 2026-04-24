@@ -71,7 +71,7 @@ Follow these steps to go from a fresh install to a working query.
 2. Query logs. The positional argument is a DataPrime query:
 
     ```bash
-    cx logs 'source logs | filter $d.severity == "ERROR"'
+    cx logs 'filter $m.severity == "ERROR"'
     ```
 
 3. Query metrics. `cx metrics query` takes a PromQL expression:
@@ -173,7 +173,7 @@ Available skills: `query-logs`, `query-spans`, `metrics-query`, `cx-alerts`, `da
 Repeat `-p` to run a command across multiple profiles in parallel. Results are merged and tagged with the profile name:
 
 ```bash
-cx -p prod-eu -p prod-us logs 'source logs | filter $d.severity == "ERROR"'
+cx -p prod-eu -p prod-us logs 'filter $m.severity == "ERROR"'
 ```
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.

@@ -2,7 +2,7 @@
 
 `cx` stores all configuration under `~/.cx/`.
 
-## Directory Structure
+## Directory structure
 
 ```
 ~/.cx/
@@ -13,9 +13,9 @@
     staging.toml           # Named profile
 ```
 
-## Quick Start
+## Quick start
 
-Run `cx profiles add` to create or update the default profile.  OAuth (browser login) is selected by default and is the recommended option — it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
+Run `cx profiles add` to create or update the default profile. OAuth (browser login) is selected by default and is the recommended option — it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
 
 ```
 $ cx profiles add
@@ -36,20 +36,23 @@ Credentials stored in OS credential store (OAuth tokens)
 
 To use a plain API key instead, select `API key (paste manually)` at the first prompt.
 
-## Authentication Methods
+## Authentication methods
 
 ### OAuth (default)
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are stored in the OS keyring (macOS Keychain / Windows Credential Manager / libsecret) and are **never written to the profile TOML**.
-- The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry.  
-- If the refresh token is also expired, `cx` exits with an actionable message:  
-  `Run cx profiles add <name> to re-authenticate.`
+- Tokens (`access_token`, `refresh_token`, `id_token`) are stored in the OS keyring and are **never written to the profile TOML**.
+- The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry.
+- If the refresh token is also expired, `cx` exits with an actionable message:
 
-#### Custom / non-standard environments
+  ```
+  Run cx profiles add <name> to re-authenticate.
+  ```
 
-If your environment is not in the standard list, select `Custom (specify URL + client ID)` at the Region prompt:
+#### Custom or non-standard environments
+
+If your environment is not in the standard region list, select `Custom (specify URL + client ID)` at the Region prompt:
 
 ```
 Region: Custom (specify URL + client ID)
@@ -59,16 +62,29 @@ OAuth client ID: abc123-my-client
 
 The base URL is used both as the API endpoint and for OpenID Connect discovery (`{base_url}/oauth/.well-known/openid-configuration`). The client ID is stored in the profile TOML (`oauth_client_id`) since there is no built-in mapping for it.
 
-### API Key
+### API key
 
-A static Coralogix API key.  The key can be stored either in the profile TOML file (permissions set to `0600` on Unix) or in the OS keyring.
+A static Coralogix API key. The key can be stored either in the profile TOML file (permissions set to `0600` on Unix) or in the OS keyring.
 
-## Global Config (`~/.cx/config.toml`)
+## OS keyring backends
+
+Credentials stored in the OS keyring use the following backends:
+
+| Platform | Backend |
+|---|---|
+| macOS | Keychain |
+| Windows | Credential Manager |
+| Linux (glibc) | D-Bus Secret Service (GNOME Keyring, KWallet) |
+| Linux (musl) | No keyring backend — fall back to file-based storage |
+
+The default install script and release binaries are built for musl on Linux, so keyring support is only available when you build from source against glibc. Script-installed Linux users must use file-based credential storage.
+
+## Global config (`~/.cx/config.toml`)
 
 | Key | Default | Description |
-|-----|---------|-------------|
-| `default_profile` | `"default"` | Profile used when `--profile` is not provided |
-| `default_output_format` | `"text"` | Output format when `--output` is not provided (`text`, `json`, `agents`) |
+|---|---|---|
+| `default_profile` | `"default"` | Profile used when `-p` is not provided |
+| `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `agents`) |
 | `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `agents` mode before spilling to a temp file. Set to `-1` to disable |
 | `temp_dir` | `"/tmp/"` | Directory for spilled result files |
 
@@ -81,29 +97,27 @@ max_dataprime_direct_output_size = 102400
 temp_dir = "/tmp/"
 ```
 
-## Profile Files (`~/.cx/profiles/<name>.toml`)
+## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration.  The sensitive
-secrets (API key, OAuth tokens) live in the OS keyring when
-`credential_storage = "os_store"` and are **not** written to the TOML.
+Each profile stores credentials and endpoint configuration. Sensitive secrets (API key, OAuth tokens) live in the OS keyring when `credential_storage = "os_store"` and are **not** written to the TOML.
 
 ### Common fields
 
 | Key | Required | Description |
-|-----|----------|-------------|
-| `auth` | No | `"oauth"` or `"api_key"` (default `"api_key"` for backward compat) |
+|---|---|---|
+| `auth` | No | `"oauth"` or `"api_key"` (default `"api_key"` for backward compatibility) |
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
-| `label` | No | Free-form label (e.g. `"production"`) |
+| `label` | No | Free-form label, for example `"production"` |
 
 ### OAuth-specific fields
 
 | Key | When present | Description |
-|-----|-------------|-------------|
-| `oauth_client_id` | Custom environments | OAuth client ID.  Omitted for known regions (hard-coded). |
-| `oauth_base_url` | Rarely | Override the base URL for OpenID discovery.  Defaults to `region.api_endpoint()`. |
+|---|---|---|
+| `oauth_client_id` | Custom environments | OAuth client ID. Omitted for known regions (hard-coded in the binary). |
+| `oauth_base_url` | Rarely | Overrides the base URL for OpenID discovery. Defaults to `region.api_endpoint()`. |
 
-### Example — OAuth profile (known region)
+### Example: OAuth profile (known region)
 
 ```toml
 auth = "oauth"
@@ -112,9 +126,9 @@ region = "eu2"
 label = "production"
 ```
 
-Tokens are in the OS keyring; nothing sensitive is in this file.
+Tokens live in the OS keyring; nothing sensitive is in this file.
 
-### Example — OAuth profile (custom environment)
+### Example: OAuth profile (custom environment)
 
 ```toml
 auth = "oauth"
@@ -124,7 +138,7 @@ oauth_client_id = "abc123-my-client"
 label = "custom-env"
 ```
 
-### Example — API key profile (OS keyring)
+### Example: API key profile (OS keyring)
 
 ```toml
 auth = "api_key"
@@ -133,9 +147,9 @@ region = "eu1"
 label = "production"
 ```
 
-The API key is in the OS keyring under the service `cx-cli`, profile name as the account.
+The API key is stored in the OS keyring under service `cx-cli`, profile name as the account.
 
-### Example — API key profile (file, legacy)
+### Example: API key profile (file, legacy)
 
 ```toml
 region = "eu1"
@@ -148,7 +162,7 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 ## Regions
 
 | Region | Endpoint |
-|--------|----------|
+|---|---|
 | `us1` | `https://api.us1.coralogix.com` |
 | `us2` | `https://api.us2.coralogix.com` |
 | `us3` | `https://api.us3.coralogix.com` |
@@ -158,28 +172,25 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 | `ap2` | `https://api.ap2.coralogix.com` |
 | `ap3` | `https://api.ap3.coralogix.com` |
 
-A fully-qualified HTTPS URL may be used as a region value for non-standard environments.
+A fully qualified HTTPS URL can be used as a region value for non-standard environments.
 
-## Environment Variables
+## Environment variables
 
 Environment variables override profile file values:
 
 | Variable | Overrides |
-|----------|-----------|
-| `CX_PROFILE` | `--profile` flag / `default_profile` |
+|---|---|
+| `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth — sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
-> **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles.  This
-> lets scripts and CI systems inject tokens directly without going through the
-> browser login flow.
+> **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
-## OAuth Callback Ports
+## OAuth callback ports
 
-The local HTTP callback listener used during `cx profiles add` (OAuth path) binds one
-port from the following fixed allow-list, chosen at random:
+The local HTTP callback listener used during `cx profiles add` (OAuth path) binds one port from the following fixed allow-list, chosen at random:
 
 ```
 21783  24861  27654  31847  38129

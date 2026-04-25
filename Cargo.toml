@@ -19,35 +19,36 @@ clap = { version = "=4.5.37", features = ["derive", "env", "color"] }
 tokio = { version = "1", features = ["full"] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "query", "form", "rustls-no-provider", "rustls-native-certs"], default-features = false }
+rustls = { version = "0.23", features = ["ring"], default-features = false }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-toml = "0.8"
+toml = "1.1"
 
 # Error handling
 anyhow = "1"
 thiserror = "2"
 
 # Config directory resolution
-dirs = "5"
+dirs = "6"
 
-# Secure credential storage
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
-inquire = "0.7"
+# Secure credential storage (platform-specific backends added below)
+keyring = { version = "3", default-features = false }
+inquire = "0.9"
 
 # OAuth / PKCE
-rand = "0.9.3"
-sha2 = "0.10"
+rand = "0.10.1"
+sha2 = "0.11"
 base64 = "0.22"
 open = "5"
 
 # Terminal output
-colored = "2"
-tabled = { version = "0.17", features = ["ansi"] }
-indicatif = "0.17"
+colored = "3"
+tabled = { version = "0.20", features = ["ansi"] }
+indicatif = "0.18"
 
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
@@ -57,9 +58,26 @@ humantime = "2"
 url = "2"
 
 # TOON format — agent-optimised, token-efficient serialisation
-toon-format = { version = "0.4.4", default-features = false }
+toon-format = { version = "0.4.5", default-features = false }
 
 futures = "0.3.32"
+
+# ── Platform-specific keyring backends ─────────────────────────────────────────
+# macOS: Keychain
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+# Windows: Credential Manager
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+# Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)
+# NOTE: musl builds have no keyring backend — users must use file-based credential storage
+[target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
+
+[dev-dependencies]
+wiremock = "0.6"
 
 [profile.release]
 strip = true

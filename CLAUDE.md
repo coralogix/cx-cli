@@ -61,4 +61,49 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 ### Documentation
 
-`docs/` contains detailed reference documentation: [configuration](docs/configuration.md), [agents output format](docs/agents-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md), and [development guide](docs/development.md).
+**Contributor guides:** [architecture](docs/architecture.md), [adding a command](docs/adding-a-command.md), [adding a skill](docs/adding-a-skill.md), [development](docs/development.md)
+
+**Reference docs:** [configuration](docs/configuration.md), [agents output format](docs/agents-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md)
+
+## Contributing
+
+### Development Skills
+
+The `.claude/skills/` directory contains workflow skills for agents developing cx itself:
+
+| Skill | Trigger | Purpose |
+|-------|---------|---------|
+| `/add-command` | "add a command", "implement cx ..." | End-to-end workflow for adding a new CLI command |
+| `/add-skill` | "add a skill", "create a skill" | End-to-end workflow for creating a user-facing skill |
+| `/run-tests` | "run tests", "cargo test", "check CI" | Run tests, clippy, fmt — full verification |
+| `/create-pr` | "create a PR", "open a pull request" | Create GitHub PR with auto-generated summary |
+
+### Skill Coverage
+
+Which CLI commands have user-facing skills in `skills/`:
+
+| CLI Command | User-Facing Skill | Status |
+|-------------|-------------------|--------|
+| `cx logs` | `query-logs` | Covered |
+| `cx spans` | `query-spans` | Covered |
+| `cx metrics` | `metrics-query` | Covered |
+| `cx alerts` | `cx-alerts` | Covered |
+| `cx dataprime` | `dataprime` | Covered |
+| `cx logs` (RUM) | `rum` | Covered |
+| _(cross-signal)_ | `telemetry-querying` | Gateway skill |
+| `cx dashboards` | — | Not covered |
+| `cx search-fields` | — | Not covered |
+| `cx profiles` | — | Not covered |
+| `cx cleanup` | — | Not covered |
+
+### Testing Expectations
+
+All agent-authored code must pass before committing:
+
+- **`cargo fmt`** — all code must be formatted
+- **`cargo clippy`** — no warnings allowed
+- **`cargo test`** — all existing tests must pass
+- **New commands** — add at least one unit test for output formatting
+- **New skills** — verify skill triggers and reference file completeness
+
+Use `/run-tests` to run the full check before committing.

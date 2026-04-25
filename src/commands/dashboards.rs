@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
@@ -266,6 +267,16 @@ pub async fn run_get(
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
+#[derive(Tabled)]
+struct CreatedRow {
+    #[tabled(rename = "Profile")]
+    profile: String,
+    #[tabled(rename = "ID")]
+    id: String,
+    #[tabled(rename = "Name")]
+    name: String,
+}
+
 /// Generate a random hex string for the `requestId` envelope field.
 fn new_request_id() -> String {
     let mut rng = rand::rng();
@@ -280,7 +291,6 @@ fn new_request_id() -> String {
 fn read_dashboard_body(from_file: &str) -> Result<Value> {
     let raw = if from_file == "-" {
         eprintln!("{}", "Reading dashboard definition from stdin...".dimmed());
-        use std::io::Read;
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
         buf
@@ -357,7 +367,7 @@ pub async fn run_create(
     })
     .await;
 
-    let mut all_results: Vec<(String, Value)> = Vec::new();
+    let mut all_results: Vec<(String, String, Value)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(mut resp) => {
@@ -378,20 +388,12 @@ pub async fn run_create(
                     })
                     .unwrap_or_else(|| "unknown".to_string());
 
-                eprintln!(
-                    "{}",
-                    format!(
-                        "Created dashboard '{name}' (ID: {created_id}) in profile '{profile}'."
-                    )
-                    .green()
-                );
-
                 if include_profile {
                     if let Value::Object(ref mut m) = resp {
                         m.insert("_profile".to_string(), Value::String(profile.clone()));
                     }
                 }
-                all_results.push((profile, resp));
+                all_results.push((profile, created_id, resp));
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
@@ -400,20 +402,42 @@ pub async fn run_create(
     match output {
         OutputFormat::Json => {
             if all_results.len() == 1 {
-                println!("{}", serde_json::to_string_pretty(&all_results[0].1)?);
+                println!("{}", serde_json::to_string_pretty(&all_results[0].2)?);
             } else {
-                let vals: Vec<&Value> = all_results.iter().map(|(_, v)| v).collect();
+                let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
                 println!("{}", serde_json::to_string_pretty(&vals)?);
             }
         }
         OutputFormat::Agents => {
-            let vals: Vec<&Value> = all_results.iter().map(|(_, v)| v).collect();
+            let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
             let toon =
                 toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {
-            // Human summary already printed above as eprintln!; nothing more to do.
+            if all_results.is_empty() {
+                // Per-profile errors already surfaced via eprintln! above.
+                return Ok(());
+            }
+            if include_profile {
+                let rows: Vec<CreatedRow> = all_results
+                    .iter()
+                    .map(|(profile, id, _)| CreatedRow {
+                        profile: profile.clone(),
+                        id: id.clone(),
+                        name: name.clone(),
+                    })
+                    .collect();
+                println!("{}", Table::new(rows));
+            } else {
+                let (_, id, _) = &all_results[0];
+                println!(
+                    "{}",
+                    format!("Created dashboard '{name}' (ID: {id})")
+                        .green()
+                        .bold()
+                );
+            }
         }
     }
 

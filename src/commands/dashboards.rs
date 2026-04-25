@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use colored::Colorize;
-use rand::Rng;
+use rand::RngExt;
 use serde_json::{json, Value};
 use tabled::{Table, Tabled};
 use toon_format::encode_default as toon_encode;
@@ -280,8 +280,9 @@ struct CreatedRow {
 /// Generate a random hex string for the `requestId` envelope field.
 fn new_request_id() -> String {
     let mut rng = rand::rng();
-    let bytes: [u8; 16] = rng.random();
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    (0..16)
+        .map(|_| format!("{:02x}", rng.random::<u8>()))
+        .collect()
 }
 
 /// Read a JSON payload from a file path or stdin (when `from_file == "-"`),

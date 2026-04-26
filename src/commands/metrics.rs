@@ -3,7 +3,6 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::{json, Value};
-use tabled::{Table, Tabled};
 use toon_format::encode_default as toon_encode;
 
 use crate::api::{
@@ -13,93 +12,8 @@ use crate::api::{
 };
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
+use crate::render;
 use crate::time::parse_timestamp;
-
-// ── Text-output row types ─────────────────────────────────────────────────────
-
-// Multi-profile row types (with Profile column)
-#[derive(Tabled)]
-struct RangeRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "Labels")]
-    labels: String,
-    #[tabled(rename = "Timestamp")]
-    timestamp: String,
-    #[tabled(rename = "Value")]
-    value: String,
-}
-
-#[derive(Tabled)]
-struct InstantRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "Labels")]
-    labels: String,
-    #[tabled(rename = "Value")]
-    value: String,
-}
-
-#[derive(Tabled)]
-struct MetricSearchRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "Metric name")]
-    metric_name: String,
-    #[tabled(rename = "Description")]
-    description: String,
-    #[tabled(rename = "Similarity")]
-    similarity: String,
-}
-
-// Single-profile row types (without Profile column)
-#[derive(Tabled)]
-struct RangeRowSingle {
-    #[tabled(rename = "Labels")]
-    labels: String,
-    #[tabled(rename = "Timestamp")]
-    timestamp: String,
-    #[tabled(rename = "Value")]
-    value: String,
-}
-
-#[derive(Tabled)]
-struct InstantRowSingle {
-    #[tabled(rename = "Labels")]
-    labels: String,
-    #[tabled(rename = "Value")]
-    value: String,
-}
-
-#[derive(Tabled)]
-struct MetricSearchRowSingle {
-    #[tabled(rename = "Metric name")]
-    metric_name: String,
-    #[tabled(rename = "Description")]
-    description: String,
-    #[tabled(rename = "Similarity")]
-    similarity: String,
-}
-
-#[derive(Tabled)]
-struct MetricNameRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "Metric name")]
-    metric_name: String,
-}
-
-#[derive(Tabled)]
-struct MetricNameRowSingle {
-    #[tabled(rename = "Metric name")]
-    metric_name: String,
-}
-
-#[derive(Tabled)]
-struct LabelRow {
-    #[tabled(rename = "Label")]
-    label: String,
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -193,9 +107,6 @@ pub(crate) fn instant_samples_to_toon_rows(samples: &[Value], include_profile: b
 // ── Normalise metric responses to optionally tagged JSON rows ─────────────────
 
 /// Convert a `PromQueryInstantResponse` into flat JSON rows.
-///
-/// When `include_profile` is true: `{ "profile": "...", "metric": { labels }, "value": [ts, val] }`
-/// When false: `{ "metric": { labels }, "value": [ts, val] }`
 fn instant_response_to_rows(
     profile: &str,
     resp: PromQueryInstantResponse,
@@ -222,9 +133,6 @@ fn instant_response_to_rows(
 }
 
 /// Convert a `PromQueryRangeResponse` into flat JSON rows.
-///
-/// When `include_profile` is true: `{ "profile": "...", "metric": { labels }, "values": [[ts, val], ...] }`
-/// When false: `{ "metric": { labels }, "values": [[ts, val], ...] }`
 fn range_response_to_rows(
     profile: &str,
     resp: PromQueryRangeResponse,
@@ -248,6 +156,39 @@ fn range_response_to_rows(
             }
         })
         .collect()
+}
+
+// ── Text rendering helpers ───────────────────────────────────────────────────
+
+fn extract_labels(sample: &Value) -> String {
+    sample
+        .get("metric")
+        .and_then(|m| m.as_object())
+        .map(|m| {
+            let map: std::collections::HashMap<String, String> = m
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect();
+            format_labels(&map)
+        })
+        .unwrap_or_default()
+}
+
+fn extract_instant_value(sample: &Value) -> String {
+    sample
+        .get("value")
+        .and_then(|arr| arr.get(1))
+        .and_then(|v| v.as_str())
+        .unwrap_or("-")
+        .to_string()
+}
+
+fn extract_profile(sample: &Value) -> String {
+    sample
+        .get("profile")
+        .and_then(|v| v.as_str())
+        .unwrap_or("-")
+        .to_string()
 }
 
 // ── Execute helpers ───────────────────────────────────────────────────────────
@@ -333,9 +274,7 @@ pub async fn run_query(
     }
 
     match output {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&all_rows)?);
-        }
+        OutputFormat::Json => render::render_json(&all_rows)?,
         OutputFormat::Agents => {
             if all_rows.is_empty() {
                 println!("[]");
@@ -348,71 +287,20 @@ pub async fn run_query(
         }
         OutputFormat::Text => {
             if all_rows.is_empty() {
-                println!("{}", "No results found.".yellow());
+                render::print_no_results("No results found.");
                 return Ok(());
             }
-            if include_profile {
-                let rows: Vec<InstantRow> = all_rows
-                    .iter()
-                    .map(|s| {
-                        let profile = s
-                            .get("profile")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("-")
-                            .to_string();
-                        let val = s
-                            .get("value")
-                            .and_then(|arr| arr.get(1))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("-")
-                            .to_string();
-                        let metric = s.get("metric").and_then(|m| m.as_object());
-                        let labels = metric
-                            .map(|m| {
-                                let map: std::collections::HashMap<String, String> = m
-                                    .iter()
-                                    .filter_map(|(k, v)| {
-                                        v.as_str().map(|s| (k.clone(), s.to_string()))
-                                    })
-                                    .collect();
-                                format_labels(&map)
-                            })
-                            .unwrap_or_default();
-                        InstantRow {
-                            profile,
-                            labels,
-                            value: val,
-                        }
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            } else {
-                let rows: Vec<InstantRowSingle> = all_rows
-                    .iter()
-                    .map(|s| {
-                        let val = s
-                            .get("value")
-                            .and_then(|arr| arr.get(1))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("-")
-                            .to_string();
-                        let metric = s.get("metric").and_then(|m| m.as_object());
-                        let labels = metric
-                            .map(|m| {
-                                let map: std::collections::HashMap<String, String> = m
-                                    .iter()
-                                    .filter_map(|(k, v)| {
-                                        v.as_str().map(|s| (k.clone(), s.to_string()))
-                                    })
-                                    .collect();
-                                format_labels(&map)
-                            })
-                            .unwrap_or_default();
-                        InstantRowSingle { labels, value: val }
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            }
+            let rows: Vec<Vec<String>> = all_rows
+                .iter()
+                .map(|s| {
+                    vec![
+                        extract_profile(s),
+                        extract_labels(s),
+                        extract_instant_value(s),
+                    ]
+                })
+                .collect();
+            render::render_table(&["Labels", "Value"], rows, include_profile);
         }
     }
 
@@ -453,81 +341,29 @@ pub async fn run_query_range(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
-            println!("{}", serde_json::to_string_pretty(&all_rows)?);
-        }
+        OutputFormat::Json | OutputFormat::Agents => render::render_json(&all_rows)?,
         OutputFormat::Text => {
             if all_rows.is_empty() {
-                println!("{}", "No results found.".yellow());
+                render::print_no_results("No results found.");
                 return Ok(());
             }
-            if include_profile {
-                let mut rows: Vec<RangeRow> = Vec::new();
-                for series in &all_rows {
-                    let profile = series
-                        .get("profile")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("-")
-                        .to_string();
-                    let metric = series.get("metric").and_then(|m| m.as_object());
-                    let labels = metric
-                        .map(|m| {
-                            let map: std::collections::HashMap<String, String> = m
-                                .iter()
-                                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                                .collect();
-                            format_labels(&map)
-                        })
-                        .unwrap_or_default();
-                    if let Some(values) = series.get("values").and_then(|v| v.as_array()) {
-                        for point in values {
-                            let ts = point.get(0).map(|v| v.to_string()).unwrap_or_default();
-                            let val = point
-                                .get(1)
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("-")
-                                .to_string();
-                            rows.push(RangeRow {
-                                profile: profile.clone(),
-                                labels: labels.clone(),
-                                timestamp: ts,
-                                value: val,
-                            });
-                        }
+            let mut rows: Vec<Vec<String>> = Vec::new();
+            for series in &all_rows {
+                let profile = extract_profile(series);
+                let labels = extract_labels(series);
+                if let Some(values) = series.get("values").and_then(|v| v.as_array()) {
+                    for point in values {
+                        let ts = point.get(0).map(|v| v.to_string()).unwrap_or_default();
+                        let val = point
+                            .get(1)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("-")
+                            .to_string();
+                        rows.push(vec![profile.clone(), labels.clone(), ts, val]);
                     }
                 }
-                println!("{}", Table::new(rows));
-            } else {
-                let mut rows: Vec<RangeRowSingle> = Vec::new();
-                for series in &all_rows {
-                    let metric = series.get("metric").and_then(|m| m.as_object());
-                    let labels = metric
-                        .map(|m| {
-                            let map: std::collections::HashMap<String, String> = m
-                                .iter()
-                                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                                .collect();
-                            format_labels(&map)
-                        })
-                        .unwrap_or_default();
-                    if let Some(values) = series.get("values").and_then(|v| v.as_array()) {
-                        for point in values {
-                            let ts = point.get(0).map(|v| v.to_string()).unwrap_or_default();
-                            let val = point
-                                .get(1)
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("-")
-                                .to_string();
-                            rows.push(RangeRowSingle {
-                                labels: labels.clone(),
-                                timestamp: ts,
-                                value: val,
-                            });
-                        }
-                    }
-                }
-                println!("{}", Table::new(rows));
             }
+            render::render_table(&["Labels", "Timestamp", "Value"], rows, include_profile);
         }
     }
 
@@ -583,35 +419,29 @@ pub async fn run_search(
                         v
                     })
                     .collect();
-                println!("{}", serde_json::to_string_pretty(&json_rows)?);
+                render::render_json(&json_rows)?;
             }
             OutputFormat::Text => {
                 if all_results.is_empty() {
-                    println!("{}", "No matching metrics found.".yellow());
+                    render::print_no_results("No matching metrics found.");
                     return Ok(());
                 }
-                if include_profile {
-                    let rows: Vec<MetricSearchRow> = all_results
-                        .iter()
-                        .map(|(profile, r)| MetricSearchRow {
-                            profile: profile.clone(),
-                            metric_name: r.metric_name.clone(),
-                            description: r.description.clone(),
-                            similarity: format!("{:.3}", r.similarity_score),
-                        })
-                        .collect();
-                    println!("{}", Table::new(rows));
-                } else {
-                    let rows: Vec<MetricSearchRowSingle> = all_results
-                        .iter()
-                        .map(|(_, r)| MetricSearchRowSingle {
-                            metric_name: r.metric_name.clone(),
-                            description: r.description.clone(),
-                            similarity: format!("{:.3}", r.similarity_score),
-                        })
-                        .collect();
-                    println!("{}", Table::new(rows));
-                }
+                let rows: Vec<Vec<String>> = all_results
+                    .iter()
+                    .map(|(profile, r)| {
+                        vec![
+                            profile.clone(),
+                            r.metric_name.clone(),
+                            r.description.clone(),
+                            format!("{:.3}", r.similarity_score),
+                        ]
+                    })
+                    .collect();
+                render::render_table(
+                    &["Metric name", "Description", "Similarity"],
+                    rows,
+                    include_profile,
+                );
             }
         }
         return Ok(());
@@ -646,7 +476,12 @@ pub async fn run_search(
     match output {
         OutputFormat::Json => {
             let names: Vec<&str> = all_matches.iter().map(|(_, n)| n.as_str()).collect();
-            println!("{}", serde_json::to_string_pretty(&names)?);
+            render::render_json(
+                &names
+                    .iter()
+                    .map(|n| Value::String(n.to_string()))
+                    .collect::<Vec<_>>(),
+            )?;
         }
         OutputFormat::Agents => {
             if all_matches.is_empty() {
@@ -664,33 +499,18 @@ pub async fn run_search(
                     .map(|(_, name)| json!({"name": name}))
                     .collect()
             };
-            let toon =
-                toon_encode(&rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
+            render::render_agents(&rows)?;
         }
         OutputFormat::Text => {
             if all_matches.is_empty() {
-                println!("{}", "No metrics matched.".yellow());
+                render::print_no_results("No metrics matched.");
                 return Ok(());
             }
-            if include_profile {
-                let rows: Vec<MetricNameRow> = all_matches
-                    .iter()
-                    .map(|(profile, name)| MetricNameRow {
-                        profile: profile.clone(),
-                        metric_name: name.clone(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            } else {
-                let rows: Vec<MetricNameRowSingle> = all_matches
-                    .iter()
-                    .map(|(_, name)| MetricNameRowSingle {
-                        metric_name: name.clone(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            }
+            let rows: Vec<Vec<String>> = all_matches
+                .iter()
+                .map(|(profile, name)| vec![profile.clone(), name.clone()])
+                .collect();
+            render::render_table(&["Metric name"], rows, include_profile);
         }
     }
 
@@ -737,18 +557,16 @@ pub async fn run_get_labels(
                     .map(|(_, label)| json!({"label": label}))
                     .collect()
             };
-            println!("{}", serde_json::to_string_pretty(&json_rows)?);
+            render::render_json(&json_rows)?;
         }
         OutputFormat::Text => {
             if all_labels.is_empty() {
-                println!("{}", "No labels found.".yellow());
+                render::print_no_results("No labels found.");
                 return Ok(());
             }
-            let rows: Vec<LabelRow> = all_labels
-                .iter()
-                .map(|(_, l)| LabelRow { label: l.clone() })
-                .collect();
-            println!("{}", Table::new(rows));
+            // Labels table doesn't use profile column — it's a flat list
+            let rows: Vec<Vec<String>> = all_labels.iter().map(|(_, l)| vec![l.clone()]).collect();
+            render::render_table(&["Label"], rows, false);
         }
     }
 

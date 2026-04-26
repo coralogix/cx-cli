@@ -11,7 +11,7 @@ The Coralogix CLI. Query logs, metrics, spans, and Real User Monitoring (RUM) da
 - Browse the DataPrime language reference offline.
 - Plug Coralogix into your AI coding agent with bundled skills for Claude Code, Cursor, Codex, and 40+ more agents.
 
-## What makes cx different
+## Features
 
 - DataPrime and PromQL at the terminal—Coralogix's proprietary query languages work end-to-end without leaving the shell.
 - Multi-profile fan-out with `-p prod-eu -p prod-us <command>`—run one query across multiple accounts or regions in a single invocation, with rows tagged by profile.

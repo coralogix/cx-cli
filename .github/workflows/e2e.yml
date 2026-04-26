@@ -33,6 +33,6 @@ jobs:
 
       - name: Run e2e tests
         env:
-          CX_API_KEY: ${{ secrets.CX_STAGING_API_KEY }}
-          CX_REGION: stg1
+          CX_API_KEY: ${{ secrets.CX_E2E_API_KEY }}
+          CX_REGION: eu1
         run: cargo test --locked --test e2e -- --ignored --test-threads=1

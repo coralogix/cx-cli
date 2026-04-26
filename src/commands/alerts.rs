@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::{json, Value};
+use toon_format::encode_default as toon_encode;
 
 use crate::api::alerts::{AlertDef, AlertsApi};
 use crate::config::OutputFormat;
@@ -74,7 +75,11 @@ pub async fn run_list(
     // Render
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => render::render_agents(&all_json)?,
+        OutputFormat::Agents => {
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
         OutputFormat::Text => {
             if all_items.is_empty() {
                 render::print_no_results("No alerts found.");
@@ -148,7 +153,11 @@ pub async fn run_get(
     // Render
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => render::render_agents(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
         OutputFormat::Text => {
             render::render_get_text(
                 &all_results,
@@ -259,7 +268,11 @@ pub async fn run_create(
     // Render
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => render::render_agents(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
         OutputFormat::Text => {
             // Status messages already printed to stderr above
         }

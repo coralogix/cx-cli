@@ -13,8 +13,6 @@ use anyhow::Result;
 use colored::Colorize;
 use serde_json::Value;
 use tabled::builder::Builder;
-use toon_format::encode_default as toon_encode;
-
 // ── JSON output ──────────────────────────────────────────────────────────────
 
 /// Format rows as a JSON array.
@@ -40,16 +38,6 @@ pub fn format_json_auto(rows: &[Value]) -> Result<String> {
 /// Render JSON, unwrapping single-element arrays (for get commands).
 pub fn render_json_auto(rows: &[Value]) -> Result<()> {
     println!("{}", format_json_auto(rows)?);
-    Ok(())
-}
-
-// ── Agents output ────────────────────────────────────────────────────────────
-
-/// TOON-encode and print (for agents output mode).
-pub fn render_agents(rows: &[Value]) -> Result<()> {
-    let rows_vec = rows.to_vec();
-    let toon = toon_encode(&rows_vec).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-    println!("{toon}");
     Ok(())
 }
 

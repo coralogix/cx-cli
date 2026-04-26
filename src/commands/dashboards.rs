@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
+use toon_format::encode_default as toon_encode;
 
 use crate::api::dashboards::DashboardsApi;
 use crate::config::OutputFormat;
@@ -71,7 +72,11 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
     // Render
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
-        OutputFormat::Agents => render::render_agents(&all_rows)?,
+        OutputFormat::Agents => {
+            let toon =
+                toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
         OutputFormat::Text => {
             if all_items.is_empty() {
                 render::print_no_results("No dashboards found.");
@@ -144,7 +149,11 @@ pub async fn run_get(
     // Render
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => render::render_agents(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
         OutputFormat::Text => {
             render::render_get_text(
                 &all_results,

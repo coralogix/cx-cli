@@ -25,11 +25,17 @@ Default to "Root" if nothing fits.
 
 ## 2. If the user wants a new folder
 
-The `cx` CLI doesn't support folder creation (the Coralogix API doesn't expose folder-create on every tenant). When the user picks "None of these":
+Ask them for a folder name (and an optional parent folder id — omit for a top-level folder), then create it directly:
 
-1. Ask them to create the folder they want in the Coralogix UI: **Dashboards → Folders → + New folder**.
-2. Once they confirm it's created, rerun `cx dashboards folders list -o json` and present the updated list so they can pick the new folder.
-3. Proceed to step 3 with the chosen folder id.
+```bash
+cx dashboards folders create --name "<Folder Name>"
+# or, as a sub-folder of an existing one:
+cx dashboards folders create --name "<Sub-folder>" --parent-id <parent-folder-id>
+```
+
+The command prints the new folder id. Use that id as `--folder` in step 3.
+
+If folder creation fails (most common cause: API key missing the `team-dashboards:Update` permission), fall back to the Coralogix UI — **Dashboards → Folders → + New folder** — then rerun `cx dashboards folders list -o json` and proceed with the chosen id.
 
 ---
 

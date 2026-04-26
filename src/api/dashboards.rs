@@ -37,40 +37,37 @@ pub struct DashboardCatalogResponse {
 
 // --- Folders response types ---
 
+/// The folders API returns each item with plain string `id` / `parentId`
+/// (no `{"value": "..."}` wrapper), and the top-level array is named `folder`
+/// (singular) rather than `folders`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardFolderItem {
-    pub id: Option<FolderIdValue>,
+    pub id: Option<String>,
     pub name: Option<String>,
-    pub parent_id: Option<FolderIdValue>,
-}
-
-/// The folders API returns id/parentId as `{"value": "<uuid>"}` wrappers.
-#[derive(Debug, Deserialize)]
-pub struct FolderIdValue {
-    pub value: Option<String>,
+    pub parent_id: Option<String>,
 }
 
 impl DashboardFolderItem {
     pub fn id_str(&self) -> Option<&str> {
-        self.id.as_ref().and_then(|v| v.value.as_deref())
+        self.id.as_deref()
     }
 
     pub fn parent_id_str(&self) -> Option<&str> {
-        self.parent_id.as_ref().and_then(|v| v.value.as_deref())
+        self.parent_id.as_deref()
     }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct DashboardFoldersResponse {
-    #[serde(default)]
+    #[serde(default, rename = "folder")]
     pub folders: Vec<DashboardFolderItem>,
 }
 
 // --- API ---
 
-const DASHBOARDS_BASE: &str = "/mgmt/openapi/latest/dashboards/dashboards/v1";
-const FOLDERS_BASE: &str = "/mgmt/openapi/latest/dashboards/folders/v1";
+const DASHBOARDS_BASE: &str = "/mgmt/openapi/5/dashboards/dashboards/v1";
+const FOLDERS_BASE: &str = "/mgmt/openapi/5/dashboards/folders/v1";
 
 pub struct DashboardsApi<'a> {
     client: &'a CxClient,
@@ -90,8 +87,9 @@ impl<'a> DashboardsApi<'a> {
 
     /// Get a single dashboard by ID (returns raw JSON — the schema is large).
     pub async fn get(&self, id: &str) -> Result<Value> {
-        let path = format!("/mgmt/openapi/latest/v1/dashboards/dashboards/{id}");
-        self.client.get(&path, &[]).await
+        self.client
+            .get(&format!("{DASHBOARDS_BASE}/{id}"), &[])
+            .await
     }
 
     /// Create a new dashboard. `body` must be the full
@@ -104,5 +102,12 @@ impl<'a> DashboardsApi<'a> {
     /// List all dashboard folders.
     pub async fn folders(&self) -> Result<DashboardFoldersResponse> {
         self.client.get(FOLDERS_BASE, &[]).await
+    }
+
+    /// Create a new dashboard folder. `body` must be the
+    /// `{ "requestId": ..., "folder": { "name": ..., "parentId": ... } }`
+    /// payload expected by the Dashboard Folders Service.
+    pub async fn folders_create(&self, body: &Value) -> Result<Value> {
+        self.client.post(FOLDERS_BASE, body).await
     }
 }

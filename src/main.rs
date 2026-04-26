@@ -356,6 +356,20 @@ Examples:
   cx dashboards folders list
   cx dashboards folders list -o json")]
     List,
+    /// Create a new dashboard folder.
+    #[command(after_help = "\
+Examples:
+  cx dashboards folders create --name \"My Service\"
+  cx dashboards folders create --name \"Sub-folder\" --parent-id <folder-id>")]
+    Create {
+        /// Folder name (required, must be unique within its parent).
+        #[arg(long)]
+        name: String,
+
+        /// Optional parent folder ID. Omit to create a top-level folder.
+        #[arg(long)]
+        parent_id: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -571,6 +585,15 @@ async fn main() -> Result<()> {
             DashboardsCmd::Folders { cmd } => match cmd {
                 FoldersCmd::List => {
                     commands::dashboards::run_folders_list(&targets, output).await?;
+                }
+                FoldersCmd::Create { name, parent_id } => {
+                    commands::dashboards::run_folders_create(
+                        &targets,
+                        &name,
+                        parent_id.as_deref(),
+                        output,
+                    )
+                    .await?;
                 }
             },
         },

@@ -552,3 +552,113 @@ pub async fn run_folders_list(
 
     Ok(())
 }
+
+#[derive(Tabled)]
+struct FolderCreatedRow {
+    #[tabled(rename = "Profile")]
+    profile: String,
+    #[tabled(rename = "ID")]
+    id: String,
+    #[tabled(rename = "Name")]
+    name: String,
+}
+
+pub async fn run_folders_create(
+    targets: &[Arc<ExecutionTarget>],
+    name: &str,
+    parent_id: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Creating dashboard folder '{name}'...").dimmed()
+    );
+
+    let include_profile = targets.len() > 1;
+    let name_owned = name.to_string();
+    let parent_id_owned = parent_id.map(|s| s.to_string());
+
+    let per_profile = fan_out(targets, |t| {
+        let name = name_owned.clone();
+        let parent_id = parent_id_owned.clone();
+        async move {
+            let mut folder = json!({ "name": name });
+            if let (Some(p), Value::Object(ref mut m)) = (parent_id.as_ref(), &mut folder) {
+                m.insert("parentId".to_string(), Value::String(p.clone()));
+            }
+            let body = json!({
+                "requestId": new_request_id(),
+                "folder": folder,
+            });
+            let api = DashboardsApi::new(&t.client);
+            Ok(api.folders_create(&body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<(String, String, Value)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut resp) => {
+                let created_id = resp
+                    .get("folderId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        resp.get("id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "unknown".to_string());
+                if include_profile {
+                    if let Value::Object(ref mut m) = resp {
+                        m.insert("_profile".to_string(), Value::String(profile.clone()));
+                    }
+                }
+                all_results.push((profile, created_id, resp));
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => {
+            if all_results.len() == 1 {
+                println!("{}", serde_json::to_string_pretty(&all_results[0].2)?);
+            } else {
+                let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
+                println!("{}", serde_json::to_string_pretty(&vals)?);
+            }
+        }
+        OutputFormat::Agents => {
+            let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
+            let toon =
+                toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_results.is_empty() {
+                return Ok(());
+            }
+            if include_profile {
+                let rows: Vec<FolderCreatedRow> = all_results
+                    .iter()
+                    .map(|(profile, id, _)| FolderCreatedRow {
+                        profile: profile.clone(),
+                        id: id.clone(),
+                        name: name.to_string(),
+                    })
+                    .collect();
+                println!("{}", Table::new(rows));
+            } else {
+                let (_, id, _) = &all_results[0];
+                println!(
+                    "{}",
+                    format!("Created folder '{name}' (ID: {id})").green().bold()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}

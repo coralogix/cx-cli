@@ -2,7 +2,7 @@
 
 > Step-by-step guide for creating a user-facing skill in `skills/`. Read [adding-a-command.md](adding-a-command.md) first if you're adding a new CLI command — every command needs a skill, and the command guide links here.
 
-## Directory Structure
+## Directory structure
 
 Each skill lives in its own directory under `skills/`:
 
@@ -24,7 +24,7 @@ Directory name must be **kebab-case** and match the frontmatter `name` field (e.
 
 ---
 
-## SKILL.md Frontmatter
+## SKILL.md frontmatter
 
 Every `SKILL.md` starts with YAML frontmatter:
 
@@ -46,7 +46,7 @@ The `description` field is how agents decide when to activate a skill. Follow th
 
 ---
 
-## Reference Files
+## Reference files
 
 Use `references/` for dense reference material that would bloat `SKILL.md` but that agents need when constructing specific payloads or queries.
 
@@ -75,9 +75,9 @@ Use `references/` for dense reference material that would bloat `SKILL.md` but t
 - Link from SKILL.md at the bottom:
 
 ```markdown
-## Additional Resources
+## Additional resources
 
-### Reference Files
+### Reference files
 
 - **`references/your-reference.md`** — One-line description of what it contains
 ```
@@ -96,7 +96,7 @@ Also add a representative user query to the "Usage" section's example list if it
 
 ---
 
-## Handling Large Output
+## Handling large output
 
 If the data your skill handles is potentially very large (e.g., dashboard JSON, full alert definitions), the command should output to a file rather than stdout. In this case, the corresponding skill should document the expected JSON format so agents can easily parse and script around the output.
 
@@ -104,7 +104,7 @@ For example, if `cx your-domain get <id> -o json` produces large payloads, the s
 
 ---
 
-## Complete Template
+## Complete template
 
 Copy this as a starting point for `skills/your-domain/SKILL.md`:
 
@@ -119,7 +119,7 @@ version: 0.1.0
 
 Use this skill to query and manage YourDomain resources using the `cx your-domain` CLI commands.
 
-## CLI Commands
+## CLI commands
 
 | Command | Purpose | Key flags |
 |---|---|---|
@@ -136,7 +136,7 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 2. Use `cx your-domain get <id> -o json` for full details
 3. Use `-o json | jq '...'` for filtering and transformation
 
-## Key Principles
+## Key principles
 
 - **Use `-o json` with `jq`** for filtering and transformation
 - **Multi-profile queries** add a Profile column automatically
@@ -147,7 +147,7 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 
 ---
 
-## PR Checklist
+## PR checklist
 
 ```markdown
 ## Checklist

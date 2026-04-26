@@ -51,7 +51,7 @@ What gets written to the file: the full JSON array of transformed results.
 
 ### File naming
 
-Spilled files follow the pattern `cx_results_<hash>.json`, where `<hash>` is a short hex string derived from the file contents.
+Spilled files follow the pattern `cx_results_<hash>.json`, where `<hash>` is an 8-character hex string derived from the file contents.
 
 ### Cleanup
 

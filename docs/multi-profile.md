@@ -14,7 +14,7 @@ cx metrics query 'up' -p us-prod -p eu-prod
 ## How it works
 
 1. Each profile is resolved into an independent execution target with its own API client.
-2. The command runs concurrently against all targets using `futures::join_all()`.
+2. The command runs concurrently against all targets.
 3. Results are merged into a single output, with each row tagged with a `"profile"` key identifying its source.
 4. Errors from individual profiles are printed to stderr but do not fail the entire operation — successful results are still returned. The command exits 0 if at least one profile succeeds.
 

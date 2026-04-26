@@ -162,4 +162,3 @@ fn first_id(v: &Value) -> Option<String> {
         .next()
         .map(String::from)
 }
-

@@ -1,11 +1,13 @@
+use std::io::Read;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
+use rand::RngExt;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::dashboards::DashboardsApi;
+use crate::api::dashboards::{DashboardFolderItem, DashboardsApi};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
@@ -183,6 +185,330 @@ pub async fn run_get(
                     }
                 }),
             )?;
+        }
+    }
+
+    Ok(())
+}
+
+// ── Create ────────────────────────────────────────────────────────────────────
+
+/// Generate a random hex string for the `requestId` envelope field.
+fn new_request_id() -> String {
+    let mut rng = rand::rng();
+    (0..16)
+        .map(|_| format!("{:02x}", rng.random::<u8>()))
+        .collect()
+}
+
+/// Read a JSON payload from a file path or stdin (when `from_file == "-"`),
+/// and normalize it into the inner `dashboard` object expected by the
+/// `CreateDashboard` API. Accepts either the bare dashboard JSON or the
+/// `{ "dashboard": {...} }` wrapper form.
+fn read_dashboard_body(from_file: &str) -> Result<Value> {
+    let raw = if from_file == "-" {
+        eprintln!("{}", "Reading dashboard definition from stdin...".dimmed());
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        eprintln!(
+            "{}",
+            format!("Reading dashboard definition from {from_file}...").dimmed()
+        );
+        std::fs::read_to_string(from_file)?
+    };
+
+    let parsed: Value = serde_json::from_str(&raw)?;
+
+    // Allow either a bare dashboard doc or a pre-wrapped request payload.
+    let dashboard = if parsed.get("dashboard").is_some() {
+        parsed
+            .get("dashboard")
+            .cloned()
+            .unwrap_or_else(|| json!({}))
+    } else {
+        parsed
+    };
+
+    if !dashboard.is_object() {
+        bail!("Dashboard JSON must be a JSON object (got {})", dashboard);
+    }
+    if dashboard.get("layout").is_none() {
+        bail!(
+            "Dashboard JSON is missing required 'layout' field. See `cx dashboards create --help`."
+        );
+    }
+
+    Ok(dashboard)
+}
+
+pub async fn run_create(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: &str,
+    folder_id: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let mut dashboard = read_dashboard_body(from_file)?;
+
+    // Inject folder assignment if the caller provided one.
+    if let Some(folder) = folder_id {
+        if let Value::Object(ref mut m) = dashboard {
+            m.insert(
+                "folderId".to_string(),
+                json!({ "value": folder.to_string() }),
+            );
+        }
+    }
+
+    let name = dashboard
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<unnamed>")
+        .to_string();
+
+    eprintln!("{}", format!("Creating dashboard '{name}'...").dimmed());
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| {
+        let dashboard = dashboard.clone();
+        async move {
+            let body = json!({
+                "requestId": new_request_id(),
+                "dashboard": dashboard,
+            });
+            let api = DashboardsApi::new(&t.client);
+            Ok(api.create(&body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<(String, String, Value)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut resp) => {
+                let created_id = resp
+                    .get("dashboardId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        resp.get("id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .or_else(|| {
+                        resp.get("dashboard")
+                            .and_then(|d| d.get("id"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                if include_profile {
+                    render::tag_get_result(&mut resp, &profile);
+                }
+                all_results.push((profile, created_id, resp));
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => {
+            let vals: Vec<Value> = all_results.iter().map(|(_, _, v)| v.clone()).collect();
+            render::render_json_auto(&vals)?;
+        }
+        OutputFormat::Agents => {
+            let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
+            let toon =
+                toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_results.is_empty() {
+                // Per-profile errors already surfaced via eprintln! above.
+                return Ok(());
+            }
+            if include_profile {
+                let rows: Vec<Vec<String>> = all_results
+                    .iter()
+                    .map(|(profile, id, _)| vec![profile.clone(), id.clone(), name.clone()])
+                    .collect();
+                render::render_table(&["ID", "Name"], rows, true);
+            } else {
+                let (_, id, _) = &all_results[0];
+                println!(
+                    "{}",
+                    format!("Created dashboard '{name}' (ID: {id})")
+                        .green()
+                        .bold()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── Folders ───────────────────────────────────────────────────────────────────
+
+fn folder_item_to_json(item: &DashboardFolderItem, include_profile: bool, profile: &str) -> Value {
+    let mut v = json!({
+        "id": item.id_str(),
+        "name": item.name,
+        "parent_id": item.parent_id_str(),
+    });
+    if include_profile {
+        if let Value::Object(ref mut m) = v {
+            m.insert("profile".to_string(), Value::String(profile.to_string()));
+        }
+    }
+    v
+}
+
+pub async fn run_folders_list(
+    targets: &[Arc<ExecutionTarget>],
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", "Fetching dashboard folders...".dimmed());
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| async move {
+        let api = DashboardsApi::new(&t.client);
+        Ok(api.folders().await?)
+    })
+    .await;
+
+    let mut all_rows: Vec<Value> = Vec::new();
+    let mut all_items: Vec<(String, DashboardFolderItem)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for item in resp.folders {
+                    all_rows.push(folder_item_to_json(&item, include_profile, &profile));
+                    all_items.push((profile.clone(), item));
+                }
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json(&all_rows)?,
+        OutputFormat::Agents => {
+            let toon =
+                toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_items.is_empty() {
+                render::print_no_results("No dashboard folders found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, item)| {
+                    vec![
+                        profile.clone(),
+                        item.id_str().unwrap_or("").to_string(),
+                        item.name.clone().unwrap_or_default(),
+                        item.parent_id_str().unwrap_or("").to_string(),
+                    ]
+                })
+                .collect();
+            render::render_table(&["ID", "Name", "Parent ID"], rows, include_profile);
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn run_folders_create(
+    targets: &[Arc<ExecutionTarget>],
+    name: &str,
+    parent_id: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Creating dashboard folder '{name}'...").dimmed()
+    );
+
+    let include_profile = targets.len() > 1;
+    let name_owned = name.to_string();
+    let parent_id_owned = parent_id.map(|s| s.to_string());
+
+    let per_profile = fan_out(targets, |t| {
+        let name = name_owned.clone();
+        let parent_id = parent_id_owned.clone();
+        async move {
+            let mut folder = json!({ "name": name });
+            if let (Some(p), Value::Object(ref mut m)) = (parent_id.as_ref(), &mut folder) {
+                m.insert("parentId".to_string(), Value::String(p.clone()));
+            }
+            let body = json!({
+                "requestId": new_request_id(),
+                "folder": folder,
+            });
+            let api = DashboardsApi::new(&t.client);
+            Ok(api.folders_create(&body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<(String, String, Value)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut resp) => {
+                let created_id = resp
+                    .get("folderId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        resp.get("id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "unknown".to_string());
+                if include_profile {
+                    render::tag_get_result(&mut resp, &profile);
+                }
+                all_results.push((profile, created_id, resp));
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => {
+            let vals: Vec<Value> = all_results.iter().map(|(_, _, v)| v.clone()).collect();
+            render::render_json_auto(&vals)?;
+        }
+        OutputFormat::Agents => {
+            let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
+            let toon =
+                toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_results.is_empty() {
+                return Ok(());
+            }
+            if include_profile {
+                let rows: Vec<Vec<String>> = all_results
+                    .iter()
+                    .map(|(profile, id, _)| vec![profile.clone(), id.clone(), name.to_string()])
+                    .collect();
+                render::render_table(&["ID", "Name"], rows, true);
+            } else {
+                let (_, id, _) = &all_results[0];
+                println!(
+                    "{}",
+                    format!("Created folder '{name}' (ID: {id})").green().bold()
+                );
+            }
         }
     }
 

@@ -193,16 +193,6 @@ pub async fn run_get(
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
-#[derive(Tabled)]
-struct CreatedRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-}
-
 /// Generate a random hex string for the `requestId` envelope field.
 fn new_request_id() -> String {
     let mut rng = rand::rng();
@@ -316,9 +306,7 @@ pub async fn run_create(
                     .unwrap_or_else(|| "unknown".to_string());
 
                 if include_profile {
-                    if let Value::Object(ref mut m) = resp {
-                        m.insert("_profile".to_string(), Value::String(profile.clone()));
-                    }
+                    render::tag_get_result(&mut resp, &profile);
                 }
                 all_results.push((profile, created_id, resp));
             }
@@ -328,12 +316,8 @@ pub async fn run_create(
 
     match output {
         OutputFormat::Json => {
-            if all_results.len() == 1 {
-                println!("{}", serde_json::to_string_pretty(&all_results[0].2)?);
-            } else {
-                let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
-                println!("{}", serde_json::to_string_pretty(&vals)?);
-            }
+            let vals: Vec<Value> = all_results.iter().map(|(_, _, v)| v.clone()).collect();
+            render::render_json_auto(&vals)?;
         }
         OutputFormat::Agents => {
             let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
@@ -347,15 +331,11 @@ pub async fn run_create(
                 return Ok(());
             }
             if include_profile {
-                let rows: Vec<CreatedRow> = all_results
+                let rows: Vec<Vec<String>> = all_results
                     .iter()
-                    .map(|(profile, id, _)| CreatedRow {
-                        profile: profile.clone(),
-                        id: id.clone(),
-                        name: name.clone(),
-                    })
+                    .map(|(profile, id, _)| vec![profile.clone(), id.clone(), name.clone()])
                     .collect();
-                println!("{}", Table::new(rows));
+                render::render_table(&["ID", "Name"], rows, true);
             } else {
                 let (_, id, _) = &all_results[0];
                 println!(
@@ -372,28 +352,6 @@ pub async fn run_create(
 }
 
 // ── Folders ───────────────────────────────────────────────────────────────────
-
-#[derive(Tabled)]
-struct FolderRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-    #[tabled(rename = "Parent ID")]
-    parent_id: String,
-}
-
-#[derive(Tabled)]
-struct FolderRowSingle {
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-    #[tabled(rename = "Parent ID")]
-    parent_id: String,
-}
 
 fn folder_item_to_json(item: &DashboardFolderItem, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
@@ -438,9 +396,7 @@ pub async fn run_folders_list(
     }
 
     match output {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&all_rows)?);
-        }
+        OutputFormat::Json => render::render_json(&all_rows)?,
         OutputFormat::Agents => {
             let toon =
                 toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -448,45 +404,25 @@ pub async fn run_folders_list(
         }
         OutputFormat::Text => {
             if all_items.is_empty() {
-                println!("{}", "No dashboard folders found.".yellow());
+                render::print_no_results("No dashboard folders found.");
                 return Ok(());
             }
-            if include_profile {
-                let rows: Vec<FolderRow> = all_items
-                    .iter()
-                    .map(|(profile, item)| FolderRow {
-                        profile: profile.clone(),
-                        id: item.id_str().unwrap_or("").to_string(),
-                        name: item.name.clone().unwrap_or_default(),
-                        parent_id: item.parent_id_str().unwrap_or("").to_string(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            } else {
-                let rows: Vec<FolderRowSingle> = all_items
-                    .iter()
-                    .map(|(_, item)| FolderRowSingle {
-                        id: item.id_str().unwrap_or("").to_string(),
-                        name: item.name.clone().unwrap_or_default(),
-                        parent_id: item.parent_id_str().unwrap_or("").to_string(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, item)| {
+                    vec![
+                        profile.clone(),
+                        item.id_str().unwrap_or("").to_string(),
+                        item.name.clone().unwrap_or_default(),
+                        item.parent_id_str().unwrap_or("").to_string(),
+                    ]
+                })
+                .collect();
+            render::render_table(&["ID", "Name", "Parent ID"], rows, include_profile);
         }
     }
 
     Ok(())
-}
-
-#[derive(Tabled)]
-struct FolderCreatedRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
 }
 
 pub async fn run_folders_create(
@@ -537,9 +473,7 @@ pub async fn run_folders_create(
                     })
                     .unwrap_or_else(|| "unknown".to_string());
                 if include_profile {
-                    if let Value::Object(ref mut m) = resp {
-                        m.insert("_profile".to_string(), Value::String(profile.clone()));
-                    }
+                    render::tag_get_result(&mut resp, &profile);
                 }
                 all_results.push((profile, created_id, resp));
             }
@@ -549,12 +483,8 @@ pub async fn run_folders_create(
 
     match output {
         OutputFormat::Json => {
-            if all_results.len() == 1 {
-                println!("{}", serde_json::to_string_pretty(&all_results[0].2)?);
-            } else {
-                let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
-                println!("{}", serde_json::to_string_pretty(&vals)?);
-            }
+            let vals: Vec<Value> = all_results.iter().map(|(_, _, v)| v.clone()).collect();
+            render::render_json_auto(&vals)?;
         }
         OutputFormat::Agents => {
             let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
@@ -567,15 +497,11 @@ pub async fn run_folders_create(
                 return Ok(());
             }
             if include_profile {
-                let rows: Vec<FolderCreatedRow> = all_results
+                let rows: Vec<Vec<String>> = all_results
                     .iter()
-                    .map(|(profile, id, _)| FolderCreatedRow {
-                        profile: profile.clone(),
-                        id: id.clone(),
-                        name: name.to_string(),
-                    })
+                    .map(|(profile, id, _)| vec![profile.clone(), id.clone(), name.to_string()])
                     .collect();
-                println!("{}", Table::new(rows));
+                render::render_table(&["ID", "Name"], rows, true);
             } else {
                 let (_, id, _) = &all_results[0];
                 println!(

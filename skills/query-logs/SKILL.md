@@ -77,16 +77,16 @@ cx logs 'filter [ERROR, CRITICAL].arrayContains($m.severity)'
 cx logs 'filter $m.severity == ERROR'
 
 # Text search in a known field
-cx logs 'filter $d.message ~ "timeout"'
+cx logs "filter \$d.message ~ 'timeout'"
 
 # Filter by application and subsystem
-cx logs 'filter $l.applicationname == "api" && $l.subsystemname == "auth"'
+cx logs "filter \$l.applicationname == 'api' && \$l.subsystemname == 'auth'"
 
 # Aggregate errors by subsystem
 cx logs 'filter $m.severity == ERROR | groupby $l.subsystemname aggregate count() as errors | orderby errors desc'
 
 # Wider time range and archive tier
-cx logs 'filter $d.user_id == "12345"' --tier archive --start now-7d
+cx logs "filter \$d.user_id == '12345'" --tier archive --start now-7d
 ```
 
 ### Wildfind Policy
@@ -97,7 +97,7 @@ The **one exception**: when the user provides a specific, quoted error message o
 
 ```bash
 # User says: "Find logs with 'connection refused'"
-cx logs 'wildfind "connection refused"'
+cx logs "wildfind 'connection refused'"
 ```
 
 In all other cases, use `filter` with known fields (`$m.severity`, `$l.subsystemname`, `$d.<field>`) or discover field names first with `cx search-fields`.
@@ -139,7 +139,7 @@ Returns DataPrime paths with similarity scores:
 ### 3. Sample Query Inspection
 
 ```bash
-cx logs 'filter $l.subsystemname == "api"' --limit 5 -o json
+cx logs "filter \$l.subsystemname == 'api'" --limit 5 -o json
 ```
 
 Inspect the JSON output to see all available fields in the actual data.

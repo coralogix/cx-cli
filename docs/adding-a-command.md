@@ -2,7 +2,7 @@
 
 > Step-by-step guide for adding a new command to `cx`. Read [architecture.md](architecture.md) first for the execution flow and design decisions behind this structure.
 
-## Choose Your Archetype
+## Choose your archetype
 
 Every command falls into one of two patterns:
 
@@ -17,7 +17,7 @@ DataPrime commands delegate to the shared pipeline and require minimal code. RES
 
 ---
 
-## Archetype A: DataPrime-Based Command
+## Archetype A: DataPrime-based command
 
 Use this when your command queries a DataPrime source. The shared pipeline in `commands::dataprime` handles fan-out, merge, render, and spilling — you provide only a text renderer and a thin `run()` wrapper.
 
@@ -26,7 +26,7 @@ Use this when your command queries a DataPrime source. The shared pipeline in `c
 - `src/commands/mod.rs` (add module)
 - `src/main.rs` (CLI definition + dispatch)
 
-### Step 1: Command Module
+### Step 1: Command module
 
 Create `src/commands/your_domain.rs`:
 
@@ -116,7 +116,7 @@ The text renderer signature must be `fn(&MergedResults) -> Result<()>`. The shar
 
 **Reference:** `src/commands/logs.rs` — the entire module is ~130 lines.
 
-### Step 2: Register the Module
+### Step 2: Register the module
 
 Add your module to `src/commands/mod.rs`:
 
@@ -124,7 +124,7 @@ Add your module to `src/commands/mod.rs`:
 pub mod your_domain;
 ```
 
-### Step 3: CLI Wiring
+### Step 3: CLI wiring
 
 In `src/main.rs`, add a variant to the `Commands` enum:
 
@@ -178,7 +178,7 @@ That's it for a DataPrime command. The shared pipeline handles fan-out, merge, a
 
 ---
 
-## Archetype B: REST-Based Command
+## Archetype B: REST-based command
 
 Use this when your command wraps a Coralogix REST API. You'll build the full pipeline: API client, fan-out, merge, and render.
 
@@ -189,7 +189,7 @@ Use this when your command wraps a Coralogix REST API. You'll build the full pip
 - `src/commands/mod.rs` (add module)
 - `src/main.rs` (CLI definition + dispatch)
 
-### Step 1: API Module
+### Step 1: API module
 
 Create `src/api/your_domain.rs`:
 
@@ -279,7 +279,7 @@ Key conventions:
 
 **Reference:** `src/api/alerts.rs` — full example with list, get, create, and state-change endpoints.
 
-### Step 2: Register the API Module
+### Step 2: Register the API module
 
 Add to `src/api/mod.rs`:
 
@@ -287,7 +287,7 @@ Add to `src/api/mod.rs`:
 pub mod your_domain;
 ```
 
-### Step 3: Command Module
+### Step 3: Command module
 
 Create `src/commands/your_domain.rs`:
 
@@ -297,33 +297,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
-use tabled::{Table, Tabled};
 use toon_format::encode_default as toon_encode;
 
 use crate::api::your_domain::YourDomainApi;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
-
-// ── Text-output row types ──────────────────────────────────────────
-// Two structs: one with a Profile column (multi-profile), one without.
-
-#[derive(Tabled)]
-struct YourItemRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-}
-
-#[derive(Tabled)]
-struct YourItemRowSingle {
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-}
+use crate::render;
 
 // ── Subcommand runner ──────────────────────────────────────────────
 
@@ -366,9 +345,7 @@ pub async fn run_list(
 
     // 3. Render: match on output format.
     match output {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&all_json)?);
-        }
+        OutputFormat::Json => render::render_json(&all_json)?,
         OutputFormat::Agents => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -376,29 +353,16 @@ pub async fn run_list(
         }
         OutputFormat::Text => {
             if all_items.is_empty() {
-                println!("{}", "No items found.".yellow());
+                render::print_no_results("No items found.");
                 return Ok(());
             }
-            if include_profile {
-                let rows: Vec<YourItemRow> = all_items
-                    .iter()
-                    .map(|(profile, id, name)| YourItemRow {
-                        profile: profile.clone(),
-                        id: id.clone(),
-                        name: name.clone(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            } else {
-                let rows: Vec<YourItemRowSingle> = all_items
-                    .iter()
-                    .map(|(_, id, name)| YourItemRowSingle {
-                        id: id.clone(),
-                        name: name.clone(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, id, name)| {
+                    vec![profile.clone(), id.clone(), name.clone()]
+                })
+                .collect();
+            render::render_table(&["ID", "Name"], rows, include_profile);
         }
     }
 
@@ -408,13 +372,14 @@ pub async fn run_list(
 
 Key patterns to follow:
 - **`include_profile = targets.len() > 1`** — this boolean controls all multi-profile behavior
-- **Dual row structs** — `YourItemRow` (with Profile column) and `YourItemRowSingle` (without)
+- **`render::render_table`** handles the Profile column automatically — pass headers without "Profile", and put the profile name as the first element of each row. The helper conditionally includes/excludes it based on `include_profile`.
+- **Agents output is command-owned** — each command calls `toon_encode` directly after any post-processing it needs
 - **Fan-out errors are non-fatal** — print to stderr, continue with successful profiles
 - **Status messages go to stderr** — use `eprintln!` so they don't pollute piped output
 
-**Reference:** `src/commands/alerts.rs` — full example with list, get, create, enable, disable.
+**Reference:** `src/commands/dashboards.rs` — clean example with list and get subcommands using `render::*` helpers.
 
-### Step 4: Register the Command Module
+### Step 4: Register the command module
 
 Add to `src/commands/mod.rs`:
 
@@ -422,7 +387,7 @@ Add to `src/commands/mod.rs`:
 pub mod your_domain;
 ```
 
-### Step 5: CLI Wiring
+### Step 5: CLI wiring
 
 In `src/main.rs`, define the subcommand enum and add to `Commands`:
 
@@ -467,7 +432,7 @@ Commands::YourDomain { cmd } => match cmd {
 
 ## Testing
 
-### Deserialization Tests (API layer)
+### Deserialization tests (API layer)
 
 Every API module must have deserialization tests. These verify that your response types correctly parse the actual API JSON shape.
 
@@ -499,7 +464,7 @@ mod tests {
 
 Test both happy-path responses and edge cases (empty lists, missing optional fields, fallback values).
 
-### Manual Smoke Testing
+### Manual smoke testing
 
 After building (`cargo build`), verify:
 
@@ -518,7 +483,7 @@ cx your-domain get <id>
 cx -p prod -p staging your-domain list
 ```
 
-### Run the Full Suite
+### Run the full suite
 
 ```bash
 cargo test                  # All unit tests
@@ -528,7 +493,7 @@ cargo fmt --check           # Format check
 
 ---
 
-## User-Facing Skill (Required)
+## User-facing skill (required)
 
 Every command must have a corresponding skill in `skills/`. Skills teach AI agents how to use your command effectively — including CLI syntax, workflows, and behavioral guidelines.
 
@@ -538,7 +503,7 @@ See **[Adding a Skill](adding-a-skill.md)** for the complete guide covering dire
 
 ---
 
-## PR Checklist
+## PR checklist
 
 Copy this into your PR description:
 

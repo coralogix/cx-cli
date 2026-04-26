@@ -104,8 +104,21 @@ All agent-authored code must pass before committing:
 
 - **`cargo fmt`** — all code must be formatted
 - **`cargo clippy`** — no warnings allowed
-- **`cargo test`** — all existing tests must pass
-- **New commands** — add at least one unit test for output formatting
+- **`cargo test`** — all existing unit and integration tests must pass
+
+New commands must add tests at all three layers:
+
+| Layer | Location | Purpose |
+|-------|----------|---------|
+| **Unit** | `src/api/<domain>.rs` `#[cfg(test)]` | API response deserialization (mandatory for REST commands) |
+| **Integration** | `tests/<domain>.rs` (wiremock) | Command runner with mocked HTTP — covers fan-out, merge, render |
+| **E2E** | `tests/e2e/<domain>.rs` (`#[ignore]`d) | Real `cx` binary against staging — sanity check exit + output |
+
+E2E tests don't run by default; run them with
+`cargo test --test e2e -- --ignored --test-threads=1` (requires
+`CX_API_KEY`). See [docs/adding-a-command.md](docs/adding-a-command.md)
+§ "Testing" for templates.
+
 - **New skills** — verify skill triggers and reference file completeness
 
 Use `/run-tests` to run the full check before committing.

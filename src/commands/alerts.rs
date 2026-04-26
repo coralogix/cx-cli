@@ -3,63 +3,15 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::{json, Value};
-use tabled::{Table, Tabled};
 use toon_format::encode_default as toon_encode;
 
 use crate::api::alerts::{AlertDef, AlertsApi};
 use crate::config::OutputFormat;
 use crate::error::CxError;
 use crate::execution::{fan_out, ExecutionTarget};
-
-// ── Text-output row types ─────────────────────────────────────────────────────
-
-#[derive(Tabled)]
-struct AlertRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-    #[tabled(rename = "Type")]
-    alert_type: String,
-    #[tabled(rename = "Priority")]
-    priority: String,
-    #[tabled(rename = "Enabled")]
-    enabled: String,
-    #[tabled(rename = "Status")]
-    status: String,
-    #[tabled(rename = "Updated")]
-    updated: String,
-}
-
-#[derive(Tabled)]
-struct AlertRowSingle {
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-    #[tabled(rename = "Type")]
-    alert_type: String,
-    #[tabled(rename = "Priority")]
-    priority: String,
-    #[tabled(rename = "Enabled")]
-    enabled: String,
-    #[tabled(rename = "Status")]
-    status: String,
-    #[tabled(rename = "Updated")]
-    updated: String,
-}
+use crate::render;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn bool_display(v: Option<bool>) -> String {
-    match v {
-        Some(true) => "yes".to_string(),
-        Some(false) => "no".to_string(),
-        None => "-".to_string(),
-    }
-}
 
 fn alert_to_json(alert: &AlertDef, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
@@ -122,9 +74,7 @@ pub async fn run_list(
 
     // Render
     match output {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&all_json)?);
-        }
+        OutputFormat::Json => render::render_json(&all_json)?,
         OutputFormat::Agents => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -132,39 +82,31 @@ pub async fn run_list(
         }
         OutputFormat::Text => {
             if all_items.is_empty() {
-                println!("{}", "No alerts found.".yellow());
+                render::print_no_results("No alerts found.");
                 return Ok(());
             }
-            if include_profile {
-                let rows: Vec<AlertRow> = all_items
-                    .iter()
-                    .map(|(profile, alert)| AlertRow {
-                        profile: profile.clone(),
-                        id: alert.id.clone().unwrap_or_default(),
-                        name: alert.display_name(),
-                        alert_type: alert.display_type(),
-                        priority: alert.display_priority(),
-                        enabled: bool_display(alert.display_enabled()),
-                        status: alert.status.clone().unwrap_or_default(),
-                        updated: alert.updated_time.clone().unwrap_or_default(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            } else {
-                let rows: Vec<AlertRowSingle> = all_items
-                    .iter()
-                    .map(|(_, alert)| AlertRowSingle {
-                        id: alert.id.clone().unwrap_or_default(),
-                        name: alert.display_name(),
-                        alert_type: alert.display_type(),
-                        priority: alert.display_priority(),
-                        enabled: bool_display(alert.display_enabled()),
-                        status: alert.status.clone().unwrap_or_default(),
-                        updated: alert.updated_time.clone().unwrap_or_default(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, alert)| {
+                    vec![
+                        profile.clone(),
+                        alert.id.clone().unwrap_or_default(),
+                        alert.display_name(),
+                        alert.display_type(),
+                        alert.display_priority(),
+                        render::bool_display(alert.display_enabled()),
+                        alert.status.clone().unwrap_or_default(),
+                        alert.updated_time.clone().unwrap_or_default(),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &[
+                    "ID", "Name", "Type", "Priority", "Enabled", "Status", "Updated",
+                ],
+                rows,
+                include_profile,
+            );
         }
     }
 
@@ -200,9 +142,7 @@ pub async fn run_get(
         match result {
             Ok(mut val) => {
                 if include_profile {
-                    if let Value::Object(ref mut m) = val {
-                        m.insert("_profile".to_string(), Value::String(profile.clone()));
-                    }
+                    render::tag_get_result(&mut val, &profile);
                 }
                 all_results.push(val);
             }
@@ -212,59 +152,46 @@ pub async fn run_get(
 
     // Render
     match output {
-        OutputFormat::Json => {
-            if all_results.len() == 1 {
-                println!("{}", serde_json::to_string_pretty(&all_results[0])?);
-            } else {
-                println!("{}", serde_json::to_string_pretty(&all_results)?);
-            }
-        }
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {
-            if all_results.is_empty() {
-                println!("{}", "Alert not found.".yellow());
-                return Ok(());
-            }
-            for val in &all_results {
-                if include_profile {
-                    if let Some(p) = val.get("_profile").and_then(|v| v.as_str()) {
-                        println!("{}", format!("[{p}]").dimmed());
-                    }
-                }
-                // Try to extract AlertDef for the human-friendly summary header
-                if let Some(alert_def) = val.get("alertDef") {
-                    if let Ok(alert) = serde_json::from_value::<AlertDef>(alert_def.clone()) {
-                        println!("{}:        {}", "Name".bold(), alert.display_name());
-                        println!(
-                            "{}:          {}",
-                            "ID".bold(),
-                            alert.id.as_deref().unwrap_or("-")
-                        );
-                        println!("{}:        {}", "Type".bold(), alert.display_type());
-                        println!("{}:    {}", "Priority".bold(), alert.display_priority());
-                        println!(
-                            "{}:     {}",
-                            "Enabled".bold(),
-                            bool_display(alert.display_enabled())
-                        );
-                        println!(
-                            "{}:      {}",
-                            "Status".bold(),
-                            alert.status.as_deref().unwrap_or("-")
-                        );
-                        let desc = alert.display_description();
-                        if !desc.is_empty() {
-                            println!("{}: {}", "Description".bold(), desc);
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "Alert not found.",
+                Some(&|val| {
+                    if let Some(alert_def) = val.get("alertDef") {
+                        if let Ok(alert) = serde_json::from_value::<AlertDef>(alert_def.clone()) {
+                            println!("{}:        {}", "Name".bold(), alert.display_name());
+                            println!(
+                                "{}:          {}",
+                                "ID".bold(),
+                                alert.id.as_deref().unwrap_or("-")
+                            );
+                            println!("{}:        {}", "Type".bold(), alert.display_type());
+                            println!("{}:    {}", "Priority".bold(), alert.display_priority());
+                            println!(
+                                "{}:     {}",
+                                "Enabled".bold(),
+                                render::bool_display(alert.display_enabled())
+                            );
+                            println!(
+                                "{}:      {}",
+                                "Status".bold(),
+                                alert.status.as_deref().unwrap_or("-")
+                            );
+                            let desc = alert.display_description();
+                            if !desc.is_empty() {
+                                println!("{}: {}", "Description".bold(), desc);
+                            }
                         }
-                        println!();
                     }
-                }
-                println!("{}", serde_json::to_string_pretty(val)?);
-            }
+                }),
+            )?;
         }
     }
 
@@ -312,7 +239,7 @@ pub async fn run_create(
     .await;
 
     // Merge
-    let mut all_results: Vec<(String, Value)> = Vec::new();
+    let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {
@@ -325,7 +252,7 @@ pub async fn run_create(
                             .green()
                     );
                     let json = alert_to_json(&alert, include_profile, &profile);
-                    all_results.push((profile, json));
+                    all_results.push(json);
                 } else {
                     eprintln!(
                         "{}",
@@ -340,18 +267,10 @@ pub async fn run_create(
 
     // Render
     match output {
-        OutputFormat::Json => {
-            if all_results.len() == 1 {
-                println!("{}", serde_json::to_string_pretty(&all_results[0].1)?);
-            } else {
-                let vals: Vec<&Value> = all_results.iter().map(|(_, v)| v).collect();
-                println!("{}", serde_json::to_string_pretty(&vals)?);
-            }
-        }
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
-            let vals: Vec<&Value> = all_results.iter().map(|(_, v)| v).collect();
-            let toon =
-                toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {

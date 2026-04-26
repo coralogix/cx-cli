@@ -98,10 +98,9 @@ pub async fn run_list(targets, ..., output) -> Result<()> {
 **Adding a new REST command** requires:
 1. An API module (`src/api/<resource>.rs`) with a `<Resource>Api` struct wrapping `&CxClient`
 2. A command module (`src/commands/<resource>.rs`) with `run_<subcommand>()` functions
-3. Row struct(s) deriving `Tabled` for text output
-4. CLI definition in `main.rs` and dispatch
+3. CLI definition in `main.rs` and dispatch
 
-**Reference:** `src/commands/alerts.rs` -- full example with list, get, create, enable, disable subcommands.
+**Reference:** `src/commands/dashboards.rs` -- clean example using `render::*` helpers for all three output formats.
 
 ## Output rendering
 
@@ -109,9 +108,7 @@ All commands support three output formats controlled by `--output` / `OutputForm
 
 ### Text
 
-Human-readable output using `tabled` for tabular data and `colored` for severity/status highlighting. Multi-profile queries add a "Profile" column. This is implemented with dual row structs:
-- `AlertRow` -- includes a `profile` field (multi-profile)
-- `AlertRowSingle` -- omits the profile field (single-profile)
+Human-readable output using `tabled` for tabular data and `colored` for severity/status highlighting. Multi-profile queries add a "Profile" column. REST commands use `render::render_table()` which dynamically builds tables via `tabled::builder::Builder` -- the Profile column is conditionally included based on `include_profile`, so no duplicate struct definitions are needed.
 
 DataPrime commands use custom text renderers (e.g., `render_log_text`) that print `<timestamp> [<severity>] <message>` per row.
 
@@ -221,7 +218,7 @@ impl<'a> AlertsApi<'a> {
 | Source files | `snake_case.rs` | `search_fields.rs` |
 | Command functions | `run_<subcommand>()` | `run_list()`, `run_get()`, `run_query()` |
 | API structs | `<Resource>Api` | `AlertsApi`, `MetricsApi` |
-| Table row types | `<Resource>Row` / `<Resource>RowSingle` | `AlertRow`, `AlertRowSingle` |
+| Render helpers | `render::render_table`, `render::render_json`, etc. | Shared text/JSON output |
 | Command modules | `src/commands/<resource>.rs` | mirrors `src/api/<resource>.rs` |
 | Error types | `CxError` for API, `anyhow::Result` for commands | -- |
 
@@ -233,6 +230,7 @@ src/
 ├── lib.rs               # Module re-exports
 ├── config.rs            # Config/profile loading, resolution, Region enum
 ├── execution.rs         # ExecutionTarget, fan_out(), tag_rows(), merge_tagged_results()
+├── render.rs            # Shared rendering helpers (render_table, render_json, bool_display, etc.)
 ├── error.rs             # CxError enum
 ├── spill.rs             # Agents output spilling + transform_for_agents()
 ├── time.rs              # Relative/absolute timestamp parsing

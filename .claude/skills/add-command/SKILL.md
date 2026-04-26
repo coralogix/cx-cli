@@ -43,7 +43,7 @@ Before writing any code, read these files to internalize the existing patterns. 
 **REST archetype — also read:**
 - `src/api/alerts.rs` — see how response types are structured, how the API struct borrows `&CxClient`, how deserialization tests are written
 - `src/api/mod.rs` — module registrations
-- `src/commands/alerts.rs` — see the fan-out/merge/render pattern, how dual row structs work, and how all three output formats are handled
+- `src/commands/dashboards.rs` — see the fan-out/merge/render pattern using `render::*` helpers, and how all three output formats are handled
 
 ## Step 2: Create API Layer (REST Only)
 
@@ -76,11 +76,12 @@ Provide two things:
 
 Build the full fan-out/merge/render pipeline. Key patterns to understand:
 
-- **Dual row structs** — two `Tabled` structs are needed (one with Profile column, one without) because `tabled` derives columns from struct fields and can't conditionally show/hide a column at runtime
+- **`render::render_table`** for text output — pass column headers (without "Profile") and rows where the first element is the profile name. The helper conditionally includes the Profile column based on `include_profile`. No duplicate struct definitions needed.
+- **`render::render_json`** for JSON output — pretty-prints a `&[Value]` array
 - **`let include_profile = targets.len() > 1;`** — this single boolean controls all multi-profile behavior (Profile column in text, `"profile"` key in JSON)
 - **Fan-out errors are non-fatal** — print to stderr and continue, because one misconfigured profile shouldn't block results from others
 - **Status messages go to stderr** (`eprintln!`) — stdout is reserved for data so piped output isn't polluted
-- **All three output formats must be handled** — Text (via `Table::new`), Json (via `serde_json::to_string_pretty`), Agents (via `toon_encode`, optimized for AI consumption)
+- **Agents output is command-owned** — each command calls `toon_encode` directly after any post-processing, because different commands may transform data differently before encoding
 
 Register the module in `src/commands/mod.rs`.
 

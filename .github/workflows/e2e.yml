@@ -1,0 +1,38 @@
+name: E2E (staging)
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-staging
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e:
+    name: E2E against staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.94.1"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: e2e-ubuntu
+
+      - name: Install Linux system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
+      - name: Run e2e tests
+        env:
+          CX_API_KEY: ${{ secrets.CX_STAGING_API_KEY }}
+          CX_REGION: stg1
+        run: cargo test --locked --test e2e -- --ignored --test-threads=1

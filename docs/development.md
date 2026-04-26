@@ -20,6 +20,40 @@ Before submitting a PR, verify:
 - `cargo clippy` produces no warnings
 - `cargo test` passes
 
+## End-to-end tests
+
+The `tests/e2e/` suite invokes the compiled `cx` binary against a real
+Coralogix staging environment, sanity-checking every command and
+subcommand. All e2e tests are `#[ignore]`d, so the default `cargo test`
+run skips them.
+
+Set credentials one of two ways:
+
+```bash
+# Option A — environment
+export CX_API_KEY=cxtp_...
+export CX_REGION=stg1
+
+# Option B — .env file in the repo root (gitignored)
+cp .env.example .env
+# edit values
+```
+
+Then run:
+
+```bash
+cargo test --test e2e -- --ignored --test-threads=1
+```
+
+Tests skip gracefully (with a `[e2e] skipping ...` log line) when
+credentials are absent, or when staging has no test data for a discovery
+step (e.g. no alerts to fetch). The suite is read-only against staging —
+mutating commands (`alerts create`, `alerts enable`/`disable`) are
+intentionally not covered.
+
+CI runs the suite on every push to `master` and via manual
+`workflow_dispatch` (see `.github/workflows/e2e.yml`).
+
 ## DataPrime documentation bundle
 
 The `cx dataprime` subcommands read command and function help from `assets/dataprime_docs.yaml`, which is compiled into the binary at build time via `include_str!` in `src/commands/dataprime.rs`. Nothing is loaded from disk at runtime.

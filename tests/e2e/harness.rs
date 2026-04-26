@@ -1,0 +1,165 @@
+//! Shared harness for cx e2e tests.
+//!
+//! Resolves credentials, builds `cx` subprocess invocations via `assert_cmd`,
+//! and provides cached helpers that discover real IDs from staging so
+//! follow-up tests can exercise commands like `alerts get <id>`.
+//!
+//! All e2e tests are gated by `#[ignore]` and additionally skip with a clear
+//! `[e2e]` log line when no credentials are available, so the suite is safe
+//! to run on a developer machine that hasn't been configured for staging.
+
+use std::sync::OnceLock;
+
+use assert_cmd::Command;
+use serde_json::Value;
+
+pub const SHORT_WINDOW_START: &str = "now-15m";
+pub const SMALL_LIMIT: &str = "10";
+
+/// Returns `Some(())` if Coralogix credentials are available (env or
+/// `.env` file), and exports `CX_API_KEY`/`CX_REGION` into the test
+/// process so the `cx` subprocess inherits them. Returns `None` (after
+/// printing a skip message) if no key was found.
+pub fn require_creds(test_name: &str) -> Option<()> {
+    static INIT: OnceLock<bool> = OnceLock::new();
+    let ok = *INIT.get_or_init(|| {
+        if std::env::var("CX_API_KEY").is_ok() {
+            ensure_region();
+            return true;
+        }
+        let _ = dotenvy::dotenv();
+        if std::env::var("CX_API_KEY").is_ok() {
+            ensure_region();
+            return true;
+        }
+        false
+    });
+    if !ok {
+        eprintln!(
+            "[e2e] skipping {test_name}: no CX_API_KEY in env or .env (run with CX_API_KEY=... CX_REGION=stg1)"
+        );
+        return None;
+    }
+    Some(())
+}
+
+fn ensure_region() {
+    if std::env::var("CX_REGION").is_err() {
+        std::env::set_var("CX_REGION", "stg1");
+    }
+}
+
+/// Build a `cx` invocation. Inherits the parent process env, so credentials
+/// resolved by `require_creds` flow through automatically.
+pub fn cx() -> Command {
+    Command::cargo_bin("cx").expect("cx binary should build")
+}
+
+/// Run `cx <args>` and assert success. Returns captured stdout bytes.
+///
+/// Captured stdout/stderr are echoed via `println!`/`eprintln!` so they
+/// surface when the test runner is invoked with `--nocapture`. Without
+/// that flag they're hidden on success and shown on failure, which is
+/// what cargo's normal capture behaviour does anyway.
+pub fn run_ok(args: &[&str]) -> Vec<u8> {
+    let assert = cx().args(args).assert().success();
+    let output = assert.get_output();
+    let stdout = output.stdout.clone();
+
+    println!("\n$ cx {}", args.join(" "));
+    if !stdout.is_empty() {
+        println!("--- stdout ---");
+        println!("{}", String::from_utf8_lossy(&stdout));
+    }
+    if !output.stderr.is_empty() {
+        println!("--- stderr ---");
+        println!("{}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    stdout
+}
+
+/// Run `cx <args>`, assert success and that stdout is non-empty. Returns
+/// stdout bytes. Use this for commands whose contract is "produce some
+/// human-readable output" (e.g. text/agents modes, local-only commands).
+pub fn run_ok_nonempty(args: &[&str]) -> Vec<u8> {
+    let stdout = run_ok(args);
+    assert!(
+        !stdout.is_empty(),
+        "expected non-empty stdout from `cx {}`",
+        args.join(" ")
+    );
+    stdout
+}
+
+/// Run `cx <args> -o json`-style command, assert success, and parse stdout
+/// as JSON. Empty arrays/objects are valid — we only fail on malformed
+/// payloads or empty stdout. Returns the parsed value.
+pub fn run_ok_json(args: &[&str]) -> Value {
+    let stdout = run_ok_nonempty(args);
+    serde_json::from_slice(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "expected valid JSON on stdout from `cx {}`: {e}\nstdout: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&stdout)
+        )
+    })
+}
+
+/// Parse stdout bytes as JSON. Returns `None` if not valid JSON — used by
+/// discovery helpers that treat malformed payloads as a skip condition.
+pub fn parse_json(stdout: &[u8]) -> Option<Value> {
+    serde_json::from_slice(stdout).ok()
+}
+
+/// Discover an alert id from `alerts list -o json`. The list rendering emits
+/// a top-level array of alert objects with an `id` field.
+pub fn discover_alert_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = run_ok(&["alerts", "list", "-o", "json"]);
+            let v = parse_json(&stdout)?;
+            first_id(&v)
+        })
+        .clone()
+}
+
+/// Discover a dashboard id from `dashboards catalog -o json`.
+pub fn discover_dashboard_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = run_ok(&["dashboards", "catalog", "-o", "json"]);
+            let v = parse_json(&stdout)?;
+            first_id(&v)
+        })
+        .clone()
+}
+
+/// Discover a metric name from `metrics search --name '*' -o json`.
+/// The name-search rendering emits a top-level array of strings.
+pub fn discover_metric_name() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = run_ok(&["metrics", "search", "--name", "*", "-o", "json"]);
+            let v = parse_json(&stdout)?;
+            v.as_array()?.first()?.as_str().map(String::from)
+        })
+        .clone()
+}
+
+/// Pull the first non-null `id` out of a JSON array, or out of a single-object
+/// response. Tolerant of both shapes.
+fn first_id(v: &Value) -> Option<String> {
+    let arr = match v {
+        Value::Array(a) => a,
+        _ => return v.get("id").and_then(|x| x.as_str()).map(String::from),
+    };
+    arr.iter()
+        .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
+        .next()
+        .map(String::from)
+}
+

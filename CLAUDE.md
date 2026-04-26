@@ -16,6 +16,7 @@ cargo clippy                        # Lint
 cargo test                          # Run all tests
 cargo test <test_name>              # Run a single test
 cargo test -- --ignored             # Run integration tests (filesystem-dependent)
+cargo test --test e2e -- --ignored --test-threads=1   # E2E vs. staging (needs CX_API_KEY)
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 

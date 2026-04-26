@@ -297,33 +297,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
-use tabled::{Table, Tabled};
 use toon_format::encode_default as toon_encode;
 
 use crate::api::your_domain::YourDomainApi;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
-
-// ── Text-output row types ──────────────────────────────────────────
-// Two structs: one with a Profile column (multi-profile), one without.
-
-#[derive(Tabled)]
-struct YourItemRow {
-    #[tabled(rename = "Profile")]
-    profile: String,
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-}
-
-#[derive(Tabled)]
-struct YourItemRowSingle {
-    #[tabled(rename = "ID")]
-    id: String,
-    #[tabled(rename = "Name")]
-    name: String,
-}
+use crate::render;
 
 // ── Subcommand runner ──────────────────────────────────────────────
 
@@ -366,9 +345,7 @@ pub async fn run_list(
 
     // 3. Render: match on output format.
     match output {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&all_json)?);
-        }
+        OutputFormat::Json => render::render_json(&all_json)?,
         OutputFormat::Agents => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -376,29 +353,16 @@ pub async fn run_list(
         }
         OutputFormat::Text => {
             if all_items.is_empty() {
-                println!("{}", "No items found.".yellow());
+                render::print_no_results("No items found.");
                 return Ok(());
             }
-            if include_profile {
-                let rows: Vec<YourItemRow> = all_items
-                    .iter()
-                    .map(|(profile, id, name)| YourItemRow {
-                        profile: profile.clone(),
-                        id: id.clone(),
-                        name: name.clone(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            } else {
-                let rows: Vec<YourItemRowSingle> = all_items
-                    .iter()
-                    .map(|(_, id, name)| YourItemRowSingle {
-                        id: id.clone(),
-                        name: name.clone(),
-                    })
-                    .collect();
-                println!("{}", Table::new(rows));
-            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, id, name)| {
+                    vec![profile.clone(), id.clone(), name.clone()]
+                })
+                .collect();
+            render::render_table(&["ID", "Name"], rows, include_profile);
         }
     }
 
@@ -408,11 +372,12 @@ pub async fn run_list(
 
 Key patterns to follow:
 - **`include_profile = targets.len() > 1`** — this boolean controls all multi-profile behavior
-- **Dual row structs** — `YourItemRow` (with Profile column) and `YourItemRowSingle` (without)
+- **`render::render_table`** handles the Profile column automatically — pass headers without "Profile", and put the profile name as the first element of each row. The helper conditionally includes/excludes it based on `include_profile`.
+- **Agents output is command-owned** — each command calls `toon_encode` directly after any post-processing it needs
 - **Fan-out errors are non-fatal** — print to stderr, continue with successful profiles
 - **Status messages go to stderr** — use `eprintln!` so they don't pollute piped output
 
-**Reference:** `src/commands/alerts.rs` — full example with list, get, create, enable, disable.
+**Reference:** `src/commands/dashboards.rs` — clean example with list and get subcommands using `render::*` helpers.
 
 ### Step 4: Register the command module
 

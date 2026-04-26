@@ -30,7 +30,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 3. **Target building** (`execution.rs`) — Each profile becomes an `ExecutionTarget` wrapping a `ResolvedConfig` + `CxClient`
 4. **Fan-out** (`execution.rs::fan_out`) — Runs the command handler concurrently across all targets
 5. **Result merging** (`execution.rs::merge_tagged_results`) — Combines per-profile results, tags rows with profile names when multi-profile
-6. **Output rendering** — Text tables (`tabled`), raw JSON, or TOON-encoded agents format
+6. **Output rendering** (`render.rs`) — Shared helpers for text tables, JSON, and TOON-encoded agents format
 7. **Spilling** (`spill.rs`) — If output exceeds `max_dataprime_direct_output_size` (default 100KiB), writes to a temp file and returns the path
 
 ### Key Modules
@@ -41,6 +41,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 - **`src/api/semantic_search.rs`** — Semantic Search HTTP API (fields + metrics)
 - **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, search-fields, profiles, cleanup, dataprime docs)
 - **`src/time.rs`** — Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
+- **`src/render.rs`** — Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/agents output
 - **`src/spill.rs`** — Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)
 - **`src/tier.rs`** — Storage tier enum (FrequentSearch vs Archive)
 - **`src/error.rs`** — `CxError` enum (Auth, Api, Http, Json, Io)

@@ -19,7 +19,7 @@ fn alerts_get() {
         return;
     }
     let Some(id) = discover_alert_id() else {
-        eprintln!("[e2e] skipping alerts_get: no alerts available in staging");
+        eprintln!("[e2e] skipping alerts_get: no alerts available on test team");
         return;
     };
     let v = harness::run_ok_json(&["alerts", "get", &id, "-o", "json"]);
@@ -45,5 +45,5 @@ fn discover_alert_id() -> Option<String> {
 
 // Mutating alert commands (`create`, `enable`, `disable`) are deliberately
 // not covered yet. `create` has no companion delete; `enable`/`disable`
-// would change shared staging state. Revisit when we're comfortable
-// mutating staging from CI.
+// would change shared test team state. Revisit when we're comfortable
+// mutating the test team from CI.

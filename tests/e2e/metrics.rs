@@ -49,7 +49,7 @@ fn metrics_get_labels() {
         return;
     }
     let Some(metric) = discover_metric_name() else {
-        eprintln!("[e2e] skipping metrics_get_labels: no metrics available in staging");
+        eprintln!("[e2e] skipping metrics_get_labels: no metrics available on test team");
         return;
     };
     let v = harness::run_ok_json(&["metrics", "get-labels", &metric, "-o", "json"]);

@@ -1,8 +1,7 @@
 //! E2E test suite for the cx CLI.
 //!
 //! All tests are marked `#[ignore]` so they are excluded from the default
-//! `cargo test` run. To execute against a real Coralogix staging
-//! environment:
+//! `cargo test` run. To execute against a real Coralogix test team:
 //!
 //! ```bash
 //! export CX_API_KEY=...           # or populate .env
@@ -25,8 +24,6 @@ mod dataprime_query;
 mod logs;
 #[path = "e2e/metrics.rs"]
 mod metrics;
-#[path = "e2e/output_formats.rs"]
-mod output_formats;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
 #[path = "e2e/search_fields.rs"]

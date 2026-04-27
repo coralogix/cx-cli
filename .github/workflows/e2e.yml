@@ -1,4 +1,4 @@
-name: E2E (staging)
+name: E2E (test team)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: e2e-staging
+  group: e2e-test-team
   cancel-in-progress: false
 
 env:
@@ -14,7 +14,7 @@ env:
 
 jobs:
   e2e:
-    name: E2E against staging
+    name: E2E against test team
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -19,7 +19,7 @@ fn dashboards_get() {
         return;
     }
     let Some(id) = discover_dashboard_id() else {
-        eprintln!("[e2e] skipping dashboards_get: no dashboards available in staging");
+        eprintln!("[e2e] skipping dashboards_get: no dashboards available on test team");
         return;
     };
     let v = harness::run_ok_json(&["dashboards", "get", &id, "-o", "json"]);

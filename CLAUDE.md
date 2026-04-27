@@ -16,7 +16,7 @@ cargo clippy                        # Lint
 cargo test                          # Run all tests
 cargo test <test_name>              # Run a single test
 cargo test -- --ignored             # Run integration tests (filesystem-dependent)
-cargo test --test e2e -- --ignored --test-threads=1   # E2E vs. staging (needs CX_API_KEY)
+cargo test --test e2e -- --ignored --test-threads=1   # E2E vs. Coralogix test team (needs CX_API_KEY)
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
@@ -112,7 +112,7 @@ New commands must add tests at all three layers:
 |-------|----------|---------|
 | **Unit** | `src/api/<domain>.rs` `#[cfg(test)]` | API response deserialization (mandatory for REST commands) |
 | **Integration** | `tests/<domain>.rs` (wiremock) | Command runner with mocked HTTP — covers fan-out, merge, render |
-| **E2E** | `tests/e2e/<domain>.rs` (`#[ignore]`d) | Real `cx` binary against staging — sanity check exit + output |
+| **E2E** | `tests/e2e/<domain>.rs` (`#[ignore]`d) | Real `cx` binary against the Coralogix test team — sanity check exit + output |
 
 E2E tests don't run by default; run them with
 `cargo test --test e2e -- --ignored --test-threads=1` (requires

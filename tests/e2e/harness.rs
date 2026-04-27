@@ -7,7 +7,7 @@
 //!
 //! All e2e tests are gated by `#[ignore]` and additionally skip with a clear
 //! `[e2e]` log line when no credentials are available, so the suite is safe
-//! to run on a developer machine that hasn't been configured for staging.
+//! to run on a developer machine without test team credentials.
 
 use std::sync::OnceLock;
 
@@ -116,8 +116,8 @@ pub fn parse_json(stdout: &[u8]) -> Option<Value> {
 // ── Shape assertions ─────────────────────────────────────────────────
 //
 // These check the *structure* of a JSON response without inspecting values.
-// Empty arrays pass vacuously — that's intentional, since staging may
-// genuinely have no data — but they catch field renames, type changes
+// Empty arrays pass vacuously — that's intentional, since the test team
+// may genuinely have no data — but they catch field renames, type changes
 // (array → object, string → number), and missing keys whenever data is
 // present.
 

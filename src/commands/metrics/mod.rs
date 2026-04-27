@@ -9,7 +9,7 @@ pub mod api;
 
 use api::{MetricsApi, PromQueryInstantResponse, PromQueryRangeResponse};
 
-use crate::api::client::CxClient;
+use crate::api_client::CxClient;
 use crate::commands::dataprime::semantic_search::{semantic_metric_lookup, SemanticMetricResult};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::api::client::CxClient;
+use crate::api_client::CxClient;
 use crate::error::Result as CxResult;
 
 /// One result row returned by semantic field lookup (`semantic-search/fields`).

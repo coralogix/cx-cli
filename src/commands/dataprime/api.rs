@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::error::Result;
 use crate::Tier;
 
-use crate::api::client::CxClient;
+use crate::api_client::CxClient;
 
 // ── Log types ─────────────────────────────────────────────────────────────────
 

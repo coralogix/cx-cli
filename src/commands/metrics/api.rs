@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::error::Result;
 
-use crate::api::client::CxClient;
+use crate::api_client::CxClient;
 
 // --- Range query types ---
 

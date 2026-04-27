@@ -368,7 +368,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx data-usage --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 data_usage` passes against real Coralogix
 - **Dependencies:** 2.2b
 
-### 2.3 [ ] Add `retentions` API module
+### 2.3 [x] Add `retentions` API module *(completed 2026-04-27)*
 - **Files:** `src/api/retentions.rs`, `src/api/mod.rs`
 - **What:** Create `RetentionsApi<'a>` with methods: get, update, activate, get_enabled. Define response structs with fields for text table: id, name, retention_days, enabled. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -392,7 +392,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx retentions --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 retentions` passes against real Coralogix
 - **Dependencies:** 2.3b
 
-### 2.4 [ ] Add `quota-rules` API module
+### 2.4 [x] Add `quota-rules` API module *(completed 2026-04-27)*
 - **Files:** `src/api/quota_rules.rs`, `src/api/mod.rs`
 - **What:** Create `QuotaRulesApi<'a>` with methods: get, create, replace, delete. Define response structs for rule set details. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

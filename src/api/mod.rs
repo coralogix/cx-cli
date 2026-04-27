@@ -7,6 +7,8 @@ pub mod e2m;
 pub mod dataprime;
 pub mod incidents;
 pub mod metrics;
+pub mod quota_rules;
+pub mod retentions;
 pub mod recording_rules;
 pub mod semantic_search;
 pub mod slos;

@@ -239,7 +239,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 1.2a [ ] Add `recording-rules` command module
+### 1.2a [x] Add `recording-rules` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/recording_rules.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`. Text table: [ID, Name, Rules Count, Interval, Created]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

@@ -8,5 +8,6 @@ pub mod logs;
 pub mod metrics;
 pub mod profiles;
 pub mod search_fields;
+pub mod recording_rules;
 pub mod slos;
 pub mod spans;

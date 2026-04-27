@@ -338,7 +338,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test tco_policies` passes
 - **Dependencies:** 2.1a
 
-### 2.1c [ ] Wire `tco-policies` into CLI and add E2E tests
+### 2.1c [x] Wire `tco-policies` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/tco_policies.rs`, `tests/e2e.rs`
 - **What:** Add `TcoPolicies` variant to `Commands` enum with subcommands: `List`, `Get { id }`, `Create`, `Update`, `Delete { id }`, `Reorder`, `Test`, `Settings`, `SettingsUpdate`. Wire match arms. Add E2E tests for list and settings (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx tco-policies --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 tco_policies` passes against real Coralogix

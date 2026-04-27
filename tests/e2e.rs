@@ -36,3 +36,5 @@ mod search_fields;
 mod slos;
 #[path = "e2e/spans.rs"]
 mod spans;
+#[path = "e2e/tco_policies.rs"]
+mod tco_policies;

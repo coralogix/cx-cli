@@ -170,6 +170,18 @@ Examples:
         cmd: IncidentsCmd,
     },
 
+    /// Manage TCO (Total Cost of Ownership) policies.
+    #[command(after_help = "\
+Examples:
+  cx tco-policies list
+  cx tco-policies get <policy-id>
+  cx tco-policies create --from-file policy.json
+  cx tco-policies settings")]
+    TcoPolicies {
+        #[command(subcommand)]
+        cmd: TcoPoliciesCmd,
+    },
+
     /// Manage Events2Metrics definitions.
     #[command(after_help = "\
 Examples:
@@ -606,6 +618,54 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum TcoPoliciesCmd {
+    /// List all TCO policies.
+    List,
+    /// Get a single TCO policy by ID.
+    Get {
+        /// TCO policy ID.
+        id: String,
+    },
+    /// Create a TCO policy from a JSON definition file.
+    Create {
+        /// Path to JSON file with the policy definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a TCO policy from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated policy definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete a TCO policy.
+    Delete {
+        /// TCO policy ID.
+        id: String,
+    },
+    /// Reorder TCO policies by priority.
+    Reorder {
+        /// Path to JSON file with the reorder definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Test TCO policy matching.
+    Test {
+        /// Path to JSON file with the test definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Show TCO settings.
+    Settings,
+    /// Replace TCO settings from a JSON file.
+    SettingsUpdate {
+        /// Path to JSON file with the settings. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum E2mCmd {
     /// List all E2M definitions.
     List,
@@ -980,6 +1040,36 @@ async fn main() -> Result<()> {
             }
             IncidentsCmd::Aggregations => {
                 commands::incidents::run_aggregations(&targets, output).await?;
+            }
+        },
+
+        Commands::TcoPolicies { cmd } => match cmd {
+            TcoPoliciesCmd::List => {
+                commands::tco_policies::run_list(&targets, output).await?;
+            }
+            TcoPoliciesCmd::Get { id } => {
+                commands::tco_policies::run_get(&targets, &id, output).await?;
+            }
+            TcoPoliciesCmd::Create { from_file } => {
+                commands::tco_policies::run_create(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Update { from_file } => {
+                commands::tco_policies::run_update(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Delete { id } => {
+                commands::tco_policies::run_delete(&targets, &id).await?;
+            }
+            TcoPoliciesCmd::Reorder { from_file } => {
+                commands::tco_policies::run_reorder(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Test { from_file } => {
+                commands::tco_policies::run_test(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Settings => {
+                commands::tco_policies::run_settings(&targets, output).await?;
+            }
+            TcoPoliciesCmd::SettingsUpdate { from_file } => {
+                commands::tco_policies::run_settings_update(&targets, &from_file, output).await?;
             }
         },
 

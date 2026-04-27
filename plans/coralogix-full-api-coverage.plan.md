@@ -908,7 +908,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete`, `set-status`, `set-idp`, `set-active`, `admin delete`, `admin set-status` subcommands
 
-### 7.1 [ ] Add `api-keys` API module
+### 7.1 [x] Add `api-keys` API module *(completed 2026-04-28)*
 - **Files:** `src/api/api_keys.rs`, `src/api/mod.rs`
 - **What:** Create `ApiKeysApi<'a>` with methods: list, get, create, update, delete, get_send_data_keys, get_team_members_keys (admin), bulk_delete (admin), update_status (admin). Define response structs with fields for text table: id, name, owner, active, created, hashed_key. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -932,7 +932,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx api-keys --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 api_keys` passes against real Coralogix
 - **Dependencies:** 7.1b
 
-### 7.2 [ ] Add `roles` API module
+### 7.2 [x] Add `roles` API module *(completed 2026-04-28)*
 - **Files:** `src/api/roles.rs`, `src/api/mod.rs`
 - **What:** Create `RolesApi<'a>` with methods: list_custom, get_custom, create, update, delete, list_system. Define response structs with fields for text table: id, name, type, description, permissions_count. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -956,7 +956,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx roles --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 roles` passes against real Coralogix
 - **Dependencies:** 7.2b
 
-### 7.3 [ ] Add `scopes` API module
+### 7.3 [x] Add `scopes` API module *(completed 2026-04-28)*
 - **Files:** `src/api/scopes.rs`, `src/api/mod.rs`
 - **What:** Create `ScopesApi<'a>` with methods: list, get (via list+filter), create, update, delete. Define response structs with fields for text table: id, name, description, filters. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -980,7 +980,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx scopes --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 scopes` passes against real Coralogix
 - **Dependencies:** 7.3b
 
-### 7.4 [ ] Add `users` API module
+### 7.4 [x] Add `users` API module *(completed 2026-04-28)*
 - **Files:** `src/api/users.rs`, `src/api/mod.rs`
 - **What:** Create `UsersApi<'a>` with methods: search, get, create, update, update_statuses. Define response structs with fields for text table: user_id, name, email, role, status. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -1004,7 +1004,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx users --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 users` passes against real Coralogix
 - **Dependencies:** 7.4b
 
-### 7.5 [ ] Add `team-groups` API module
+### 7.5 [x] Add `team-groups` API module *(completed 2026-04-28)*
 - **Files:** `src/api/team_groups.rs`, `src/api/mod.rs`
 - **What:** Create `TeamGroupsApi<'a>` with methods: list, get_by_id, get_by_name, get_users, create, update, delete. Define response structs with fields for text table: group_id, name, members_count, description. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -1028,7 +1028,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx team-groups --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 team_groups` passes against real Coralogix
 - **Dependencies:** 7.5b
 
-### 7.6 [ ] Add `saml` API module
+### 7.6 [x] Add `saml` API module *(completed 2026-04-28)*
 - **Files:** `src/api/saml.rs`, `src/api/mod.rs`
 - **What:** Create `SamlApi<'a>` with methods: get_config, set_idp_params, get_sp_params, set_active. Define response structs for config details. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -1052,7 +1052,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx saml --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 saml` passes against real Coralogix
 - **Dependencies:** 7.6b
 
-### 7.7 [ ] Add `ip-access` API module
+### 7.7 [x] Add `ip-access` API module *(completed 2026-04-28)*
 - **Files:** `src/api/ip_access.rs`, `src/api/mod.rs`
 - **What:** Create `IpAccessApi<'a>` with methods: get, create, replace, delete. Define response structs for IP access rules. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

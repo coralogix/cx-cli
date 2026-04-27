@@ -16,6 +16,8 @@ mod harness;
 
 #[path = "e2e/alerts.rs"]
 mod alerts;
+#[path = "e2e/connectors.rs"]
+mod connectors;
 #[path = "e2e/dashboards.rs"]
 mod dashboards;
 #[path = "e2e/data_usage.rs"]
@@ -28,6 +30,8 @@ mod dataprime_query;
 mod logs;
 #[path = "e2e/metrics.rs"]
 mod metrics;
+#[path = "e2e/presets.rs"]
+mod presets;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
 #[path = "e2e/quota_rules.rs"]
@@ -36,6 +40,8 @@ mod quota_rules;
 mod recording_rules;
 #[path = "e2e/retentions.rs"]
 mod retentions;
+#[path = "e2e/routers.rs"]
+mod routers;
 #[path = "e2e/search_fields.rs"]
 mod search_fields;
 #[path = "e2e/slos.rs"]

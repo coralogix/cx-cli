@@ -170,6 +170,43 @@ Examples:
         cmd: IncidentsCmd,
     },
 
+    /// Manage notification connectors.
+    #[command(after_help = "\
+Examples:
+  cx connectors list
+  cx connectors get <connector-id>
+  cx connectors types")]
+    Connectors {
+        #[command(subcommand)]
+        cmd: ConnectorsCmd,
+    },
+
+    /// Manage notification routers.
+    #[command(after_help = "\
+Examples:
+  cx routers list
+  cx routers get <router-id>")]
+    Routers {
+        #[command(subcommand)]
+        cmd: RoutersCmd,
+    },
+
+    /// Manage notification presets.
+    #[command(after_help = "\
+Examples:
+  cx presets list
+  cx presets get <preset-id>")]
+    Presets {
+        #[command(subcommand)]
+        cmd: PresetsCmd,
+    },
+
+    /// Test notification configurations.
+    NotificationTest {
+        #[command(subcommand)]
+        cmd: NotificationTestCmd,
+    },
+
     /// View data usage and consumption metrics.
     #[command(after_help = "\
 Examples:
@@ -650,6 +687,68 @@ Examples:
         /// Alert scheduler rule ID.
         id: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ConnectorsCmd {
+    /// List all notification connectors.
+    List,
+    /// Get a single connector by ID.
+    Get { id: String },
+    /// Create a connector from a JSON definition file.
+    Create { #[arg(long, default_value = "-")] from_file: String },
+    /// Replace a connector definition from a JSON file.
+    Update { #[arg(long, default_value = "-")] from_file: String },
+    /// Delete a connector.
+    Delete { id: String },
+    /// List connector type summaries.
+    Types,
+}
+
+#[derive(Subcommand)]
+enum RoutersCmd {
+    /// List all notification routers.
+    List,
+    /// Get a single router by ID.
+    Get { id: String },
+    /// Create a router from a JSON definition file.
+    Create { #[arg(long, default_value = "-")] from_file: String },
+    /// Replace a router definition from a JSON file.
+    Update { #[arg(long, default_value = "-")] from_file: String },
+    /// Delete a router.
+    Delete { id: String },
+    /// Test entity label matcher.
+    ValidateMatcher { #[arg(long, default_value = "-")] from_file: String },
+}
+
+#[derive(Subcommand)]
+enum PresetsCmd {
+    /// List all notification presets.
+    List,
+    /// Get a single preset by ID.
+    Get { id: String },
+    /// Create a custom preset from a JSON definition file.
+    Create { #[arg(long, default_value = "-")] from_file: String },
+    /// Replace a custom preset from a JSON file.
+    Update { #[arg(long, default_value = "-")] from_file: String },
+    /// Delete a custom preset.
+    Delete { id: String },
+    /// Set default preset.
+    SetDefault { id: String },
+}
+
+#[derive(Subcommand)]
+enum NotificationTestCmd {
+    /// Test connector configuration.
+    Connector { #[arg(long, default_value = "-")] from_file: String },
+    /// Test destination.
+    Destination { #[arg(long, default_value = "-")] from_file: String },
+    /// Test preset configuration.
+    Preset { #[arg(long, default_value = "-")] from_file: String },
+    /// Test routing condition.
+    RoutingCondition { #[arg(long, default_value = "-")] from_file: String },
+    /// Test template rendering.
+    TemplateRender { #[arg(long, default_value = "-")] from_file: String },
 }
 
 #[derive(Subcommand)]
@@ -1138,6 +1237,41 @@ async fn main() -> Result<()> {
             IncidentsCmd::Aggregations => {
                 commands::incidents::run_aggregations(&targets, output).await?;
             }
+        },
+
+        Commands::Connectors { cmd } => match cmd {
+            ConnectorsCmd::List => { commands::connectors::run_list(&targets, output).await?; }
+            ConnectorsCmd::Get { id } => { commands::connectors::run_get(&targets, &id, output).await?; }
+            ConnectorsCmd::Create { from_file } => { commands::connectors::run_create(&targets, &from_file, output).await?; }
+            ConnectorsCmd::Update { from_file } => { commands::connectors::run_update(&targets, &from_file, output).await?; }
+            ConnectorsCmd::Delete { id } => { commands::connectors::run_delete(&targets, &id).await?; }
+            ConnectorsCmd::Types => { commands::connectors::run_types(&targets, output).await?; }
+        },
+
+        Commands::Routers { cmd } => match cmd {
+            RoutersCmd::List => { commands::routers::run_list(&targets, output).await?; }
+            RoutersCmd::Get { id } => { commands::routers::run_get(&targets, &id, output).await?; }
+            RoutersCmd::Create { from_file } => { commands::routers::run_create(&targets, &from_file, output).await?; }
+            RoutersCmd::Update { from_file } => { commands::routers::run_update(&targets, &from_file, output).await?; }
+            RoutersCmd::Delete { id } => { commands::routers::run_delete(&targets, &id).await?; }
+            RoutersCmd::ValidateMatcher { from_file } => { commands::routers::run_validate_matcher(&targets, &from_file, output).await?; }
+        },
+
+        Commands::Presets { cmd } => match cmd {
+            PresetsCmd::List => { commands::presets::run_list(&targets, output).await?; }
+            PresetsCmd::Get { id } => { commands::presets::run_get(&targets, &id, output).await?; }
+            PresetsCmd::Create { from_file } => { commands::presets::run_create(&targets, &from_file, output).await?; }
+            PresetsCmd::Update { from_file } => { commands::presets::run_update(&targets, &from_file, output).await?; }
+            PresetsCmd::Delete { id } => { commands::presets::run_delete(&targets, &id).await?; }
+            PresetsCmd::SetDefault { id } => { commands::presets::run_set_default(&targets, &id).await?; }
+        },
+
+        Commands::NotificationTest { cmd } => match cmd {
+            NotificationTestCmd::Connector { from_file } => { commands::notification_testing::run_test_connector(&targets, &from_file, output).await?; }
+            NotificationTestCmd::Destination { from_file } => { commands::notification_testing::run_test_destination(&targets, &from_file, output).await?; }
+            NotificationTestCmd::Preset { from_file } => { commands::notification_testing::run_test_preset(&targets, &from_file, output).await?; }
+            NotificationTestCmd::RoutingCondition { from_file } => { commands::notification_testing::run_test_routing_condition(&targets, &from_file, output).await?; }
+            NotificationTestCmd::TemplateRender { from_file } => { commands::notification_testing::run_test_template_render(&targets, &from_file, output).await?; }
         },
 
         Commands::DataUsage { cmd } => match cmd {

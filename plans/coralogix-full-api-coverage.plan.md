@@ -474,7 +474,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test connectors` passes
 - **Dependencies:** 3.1a
 
-### 3.1c [ ] Wire `connectors` into CLI and add E2E tests
+### 3.1c [x] Wire `connectors` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/connectors.rs`, `tests/e2e.rs`
 - **What:** Add `Connectors` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list and types (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx connectors --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 connectors` passes against real Coralogix
@@ -498,7 +498,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test routers` passes
 - **Dependencies:** 3.2a
 
-### 3.2c [ ] Wire `routers` into CLI and add E2E tests
+### 3.2c [x] Wire `routers` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/routers.rs`, `tests/e2e.rs`
 - **What:** Add `Routers` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx routers --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 routers` passes against real Coralogix
@@ -522,7 +522,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test presets` passes
 - **Dependencies:** 3.3a
 
-### 3.3c [ ] Wire `presets` into CLI and add E2E tests
+### 3.3c [x] Wire `presets` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/presets.rs`, `tests/e2e.rs`
 - **What:** Add `Presets` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx presets --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 presets` passes against real Coralogix
@@ -540,7 +540,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 3.4
 
-### 3.4b [ ] Add `notification-test` integration tests and wire into CLI
+### 3.4b [x] Add `notification-test` integration tests and wire into CLI *(completed 2026-04-27)*
 - **Files:** `tests/notification_testing.rs`, `src/main.rs`
 - **What:** Add `NotificationTest` variant to `Commands` enum with subcommands: `Connector`, `Destination`, `Preset`, `RoutingCondition`, `TemplateRender`. Wire match arms. Add wiremock-based integration tests for at least one test endpoint. No E2E tests (all subcommands are mutating/testing operations).
 - **Acceptance:** `cx notification-test --help` works, `cargo test` passes

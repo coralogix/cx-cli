@@ -233,7 +233,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx slos --help` shows subcommands, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 slos` passes against real Coralogix
 - **Dependencies:** 1.1b
 
-### 1.2 [ ] Add `recording-rules` API module
+### 1.2 [x] Add `recording-rules` API module *(completed 2026-04-27)*
 - **Files:** `src/api/recording_rules.rs`, `src/api/mod.rs`
 - **What:** Create `RecordingRulesApi<'a>` with methods: list, get, create, update, delete. Define response structs with fields for text table: id, name, rules_count, interval, created. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

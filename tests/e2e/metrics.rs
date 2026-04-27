@@ -6,7 +6,8 @@ fn metrics_query() {
     if harness::require_creds("metrics_query").is_none() {
         return;
     }
-    harness::run_ok_json(&["metrics", "query", "up", "-o", "json"]);
+    let v = harness::run_ok_json(&["metrics", "query", "up", "-o", "json"]);
+    harness::assert_array_of_objects_with_keys(&v, &["metric", "value"]);
 }
 
 #[test]
@@ -15,7 +16,7 @@ fn metrics_query_range() {
     if harness::require_creds("metrics_query_range").is_none() {
         return;
     }
-    harness::run_ok_json(&[
+    let v = harness::run_ok_json(&[
         "metrics",
         "query-range",
         "up",
@@ -26,6 +27,7 @@ fn metrics_query_range() {
         "-o",
         "json",
     ]);
+    harness::assert_array_of_objects_with_keys(&v, &["metric", "values"]);
 }
 
 #[test]
@@ -34,7 +36,8 @@ fn metrics_search_name() {
     if harness::require_creds("metrics_search_name").is_none() {
         return;
     }
-    harness::run_ok_json(&["metrics", "search", "--name", "*", "-o", "json"]);
+    let v = harness::run_ok_json(&["metrics", "search", "--name", "*", "-o", "json"]);
+    harness::assert_array_of_strings(&v);
 }
 
 #[test]
@@ -47,5 +50,6 @@ fn metrics_get_labels() {
         eprintln!("[e2e] skipping metrics_get_labels: no metrics available in staging");
         return;
     };
-    harness::run_ok_json(&["metrics", "get-labels", &metric, "-o", "json"]);
+    let v = harness::run_ok_json(&["metrics", "get-labels", &metric, "-o", "json"]);
+    harness::assert_array_of_objects_with_keys(&v, &["label"]);
 }

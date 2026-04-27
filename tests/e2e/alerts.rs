@@ -6,7 +6,8 @@ fn alerts_list() {
     if harness::require_creds("alerts_list").is_none() {
         return;
     }
-    harness::run_ok_json(&["alerts", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["alerts", "list", "-o", "json"]);
+    harness::assert_array_of_objects_with_keys(&v, &["id", "name", "enabled"]);
 }
 
 #[test]
@@ -19,7 +20,8 @@ fn alerts_get() {
         eprintln!("[e2e] skipping alerts_get: no alerts available in staging");
         return;
     };
-    harness::run_ok_json(&["alerts", "get", &id, "-o", "json"]);
+    let v = harness::run_ok_json(&["alerts", "get", &id, "-o", "json"]);
+    harness::assert_object_with_keys(&v, &["alertDef"]);
 }
 
 // Mutating alert commands (`create`, `enable`, `disable`) are deliberately

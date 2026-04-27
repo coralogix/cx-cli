@@ -6,7 +6,7 @@ fn dataprime_query_logs() {
     if harness::require_creds("dataprime_query_logs").is_none() {
         return;
     }
-    harness::run_ok_json(&[
+    let v = harness::run_ok_json(&[
         "dataprime",
         "query",
         "--source",
@@ -19,4 +19,5 @@ fn dataprime_query_logs() {
         "-o",
         "json",
     ]);
+    harness::assert_array(&v);
 }

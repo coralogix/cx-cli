@@ -6,7 +6,7 @@ fn spans_basic() {
     if harness::require_creds("spans_basic").is_none() {
         return;
     }
-    harness::run_ok_json(&[
+    let v = harness::run_ok_json(&[
         "spans",
         "limit 1",
         "--start",
@@ -16,4 +16,5 @@ fn spans_basic() {
         "-o",
         "json",
     ]);
+    harness::assert_array(&v);
 }

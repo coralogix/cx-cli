@@ -112,6 +112,62 @@ pub fn parse_json(stdout: &[u8]) -> Option<Value> {
     serde_json::from_slice(stdout).ok()
 }
 
+// ── Shape assertions ─────────────────────────────────────────────────
+//
+// These check the *structure* of a JSON response without inspecting values.
+// Empty arrays pass vacuously — that's intentional, since staging may
+// genuinely have no data — but they catch field renames, type changes
+// (array → object, string → number), and missing keys whenever data is
+// present.
+
+/// Asserts `v` is a JSON array. Returns a reference to the elements.
+pub fn assert_array(v: &Value) -> &[Value] {
+    v.as_array()
+        .unwrap_or_else(|| panic!("expected JSON array, got: {v}"))
+}
+
+/// Asserts `v` is an array, and every element is an object containing
+/// every key in `required_keys` (values may be any type, including null).
+/// Empty arrays pass vacuously.
+pub fn assert_array_of_objects_with_keys(v: &Value, required_keys: &[&str]) {
+    let arr = assert_array(v);
+    for (i, item) in arr.iter().enumerate() {
+        let obj = item
+            .as_object()
+            .unwrap_or_else(|| panic!("element {i} is not an object: {item}"));
+        for key in required_keys {
+            assert!(
+                obj.contains_key(*key),
+                "element {i} missing key '{key}': {item}"
+            );
+        }
+    }
+}
+
+/// Asserts `v` is an array of JSON strings. Empty arrays pass vacuously.
+pub fn assert_array_of_strings(v: &Value) {
+    let arr = assert_array(v);
+    for (i, item) in arr.iter().enumerate() {
+        assert!(
+            item.is_string(),
+            "element {i} is not a string: {item}"
+        );
+    }
+}
+
+/// Asserts `v` is an object containing every key in `required_keys`.
+pub fn assert_object_with_keys(v: &Value, required_keys: &[&str]) {
+    let obj = v
+        .as_object()
+        .unwrap_or_else(|| panic!("expected JSON object, got: {v}"));
+    for key in required_keys {
+        assert!(
+            obj.contains_key(*key),
+            "object missing key '{key}': {v}"
+        );
+    }
+}
+
 /// Discover an alert id from `alerts list -o json`. The list rendering emits
 /// a top-level array of alert objects with an `id` field.
 pub fn discover_alert_id() -> Option<String> {

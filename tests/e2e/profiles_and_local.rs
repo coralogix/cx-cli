@@ -30,7 +30,8 @@ fn dataprime_list() {
     if harness::require_creds("dataprime_list").is_none() {
         return;
     }
-    harness::run_ok_json(&["dataprime", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["dataprime", "list", "-o", "json"]);
+    harness::assert_array_of_objects_with_keys(&v, &["name", "type"]);
 }
 
 #[test]

@@ -245,7 +245,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 1.2
 
-### 1.2b [ ] Add `recording-rules` integration tests (wiremock)
+### 1.2b [x] Add `recording-rules` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/recording_rules.rs`
 - **What:** Wiremock-based integration tests for list/get handlers.
 - **Acceptance:** `cargo test --test recording_rules` passes

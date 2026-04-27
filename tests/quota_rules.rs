@@ -18,7 +18,7 @@ async fn quota_rules_get_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/dataplans/quota-rules/v1"))
+        .and(path("/mgmt/openapi/latest/dataplan/quota-rules/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

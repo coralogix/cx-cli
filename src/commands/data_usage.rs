@@ -12,14 +12,37 @@ use crate::render;
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
-pub async fn run_summary(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
+pub async fn run_summary(
+    targets: &[Arc<ExecutionTarget>],
+    start: Option<&str>,
+    end: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
     eprintln!("{}", "Fetching data usage summary...".dimmed());
 
     let include_profile = targets.len() > 1;
+    let from = start
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| chrono::Utc::now().checked_sub_signed(chrono::Duration::hours(24))
+            .unwrap_or_else(chrono::Utc::now)
+            .to_rfc3339());
+    let to = end
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
 
-    let per_profile = fan_out(targets, |t| async move {
-        let api = DataUsageApi::new(&t.client);
-        Ok(api.get_usage().await?)
+    let per_profile = fan_out(targets, |t| {
+        let from = from.clone();
+        let to = to.clone();
+        async move {
+            let api = DataUsageApi::new(&t.client);
+            Ok(api
+                .get_usage(&[
+                    ("date_range.fromDate", &from),
+                    ("date_range.toDate", &to),
+                    ("resolution", "1h"),
+                ])
+                .await?)
+        }
     })
     .await;
 
@@ -80,16 +103,14 @@ pub async fn run_daily(
         let end = end.clone();
         async move {
             let api = DataUsageApi::new(&t.client);
-            let mut params: Vec<(&str, String)> = Vec::new();
+            let mut body = serde_json::Map::new();
             if let Some(ref s) = start {
-                params.push(("start", s.clone()));
+                body.insert("start".into(), Value::String(s.clone()));
             }
             if let Some(ref e) = end {
-                params.push(("end", e.clone()));
+                body.insert("end".into(), Value::String(e.clone()));
             }
-            let params_ref: Vec<(&str, &str)> =
-                params.iter().map(|(k, v)| (*k, v.as_str())).collect();
-            Ok(api.daily(&data_type, &params_ref).await?)
+            Ok(api.daily(&data_type, &Value::Object(body)).await?)
         }
     })
     .await;

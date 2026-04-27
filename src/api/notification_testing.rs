@@ -16,7 +16,7 @@ pub struct TestResultResponse {
 
 // --- API ---
 
-const NOTIFICATION_TEST_BASE: &str = "/mgmt/openapi/latest/notifications/testing/v1";
+const NOTIFICATION_TEST_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1";
 
 pub struct NotificationTestingApi<'a> {
     client: &'a CxClient,
@@ -28,27 +28,27 @@ impl<'a> NotificationTestingApi<'a> {
     }
 
     pub async fn test_connector(&self, body: &Value) -> Result<Value> {
-        let path = format!("{NOTIFICATION_TEST_BASE}/connector");
+        let path = format!("{NOTIFICATION_TEST_BASE}/connectors/tests/config");
         self.client.post(&path, body).await
     }
 
     pub async fn test_destination(&self, body: &Value) -> Result<Value> {
-        let path = format!("{NOTIFICATION_TEST_BASE}/destination");
+        let path = format!("{NOTIFICATION_TEST_BASE}/destinations/tests");
         self.client.post(&path, body).await
     }
 
     pub async fn test_preset(&self, body: &Value) -> Result<Value> {
-        let path = format!("{NOTIFICATION_TEST_BASE}/preset");
+        let path = format!("{NOTIFICATION_TEST_BASE}/presets/tests/config");
         self.client.post(&path, body).await
     }
 
     pub async fn test_routing_condition(&self, body: &Value) -> Result<Value> {
-        let path = format!("{NOTIFICATION_TEST_BASE}/routing-condition");
+        let path = format!("{NOTIFICATION_TEST_BASE}/routing-conditions/tests");
         self.client.post(&path, body).await
     }
 
     pub async fn test_template_render(&self, body: &Value) -> Result<Value> {
-        let path = format!("{NOTIFICATION_TEST_BASE}/template-render");
+        let path = format!("{NOTIFICATION_TEST_BASE}/template-render/tests");
         self.client.post(&path, body).await
     }
 }

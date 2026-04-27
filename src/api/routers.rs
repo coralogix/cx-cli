@@ -59,7 +59,7 @@ pub struct DeleteRouterResponse {}
 
 // --- API ---
 
-const ROUTERS_BASE: &str = "/mgmt/openapi/latest/notifications/routers/v1";
+const ROUTERS_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1/routers";
 
 pub struct RoutersApi<'a> {
     client: &'a CxClient,
@@ -93,7 +93,7 @@ impl<'a> RoutersApi<'a> {
     }
 
     pub async fn validate_matcher(&self, body: &Value) -> Result<Value> {
-        let path = format!("{ROUTERS_BASE}/validate-matcher");
+        let path = format!("{ROUTERS_BASE}/matcher/validate");
         self.client.post(&path, body).await
     }
 }

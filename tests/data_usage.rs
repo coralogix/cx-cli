@@ -27,7 +27,7 @@ async fn data_usage_summary_from_mock() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    run_summary(&targets, OutputFormat::Json)
+    run_summary(&targets, None, None, OutputFormat::Json)
         .await
         .expect("run_summary should succeed");
 }

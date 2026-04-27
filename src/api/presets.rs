@@ -57,7 +57,7 @@ pub struct SetDefaultPresetResponse {}
 
 // --- API ---
 
-const PRESETS_BASE: &str = "/mgmt/openapi/latest/notifications/presets/v1";
+const PRESETS_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1/presets";
 
 pub struct PresetsApi<'a> {
     client: &'a CxClient,
@@ -78,23 +78,23 @@ impl<'a> PresetsApi<'a> {
     }
 
     pub async fn create(&self, body: &Value) -> Result<CreatePresetResponse> {
-        self.client.post(PRESETS_BASE, body).await
+        let path = format!("{PRESETS_BASE}/custom");
+        self.client.post(&path, body).await
     }
 
     pub async fn replace(&self, body: &Value) -> Result<Value> {
-        self.client.put(PRESETS_BASE, body).await
+        let path = format!("{PRESETS_BASE}/custom");
+        self.client.put(&path, body).await
     }
 
     pub async fn delete(&self, id: &str) -> Result<DeletePresetResponse> {
-        let path = format!("{PRESETS_BASE}/{id}");
+        let path = format!("{PRESETS_BASE}/custom/{id}");
         self.client.delete(&path).await
     }
 
     pub async fn set_default(&self, id: &str) -> Result<SetDefaultPresetResponse> {
-        let path = format!("{PRESETS_BASE}/{id}/set-default");
-        self.client
-            .post(&path, &serde_json::json!({}))
-            .await
+        let path = format!("{PRESETS_BASE}/{id}/default");
+        self.client.post(&path, &serde_json::json!({})).await
     }
 }
 

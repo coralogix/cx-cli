@@ -18,7 +18,7 @@ async fn retentions_list_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/dataplans/retentions/v1"))
+        .and(path("/mgmt/openapi/latest/dataengine/retention-tags/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -37,9 +37,7 @@ async fn retentions_status_from_mock() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path(
-            "/mgmt/openapi/latest/dataplans/retentions/v1/status",
-        ))
+        .and(path("/mgmt/openapi/latest/dataengine/retention-tags/v1/enabled"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
         .expect(1)
         .mount(&server)

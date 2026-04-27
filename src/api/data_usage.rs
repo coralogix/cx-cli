@@ -55,22 +55,22 @@ impl<'a> DataUsageApi<'a> {
         Self { client }
     }
 
-    pub async fn get_usage(&self) -> Result<Value> {
-        self.client.get(DATA_USAGE_BASE, &[]).await
+    pub async fn get_usage(&self, params: &[(&str, &str)]) -> Result<Value> {
+        self.client.get(DATA_USAGE_BASE, params).await
     }
 
-    pub async fn daily(&self, data_type: &str, params: &[(&str, &str)]) -> Result<Value> {
+    pub async fn daily(&self, data_type: &str, body: &Value) -> Result<Value> {
         let path = format!("{DATA_USAGE_BASE}/daily/{data_type}");
-        self.client.get(&path, params).await
+        self.client.post(&path, body).await
     }
 
     pub async fn logs_count(&self) -> Result<Value> {
-        let path = format!("{DATA_USAGE_BASE}/logs-count");
+        let path = format!("{DATA_USAGE_BASE}/logs/count");
         self.client.get(&path, &[]).await
     }
 
     pub async fn spans_count(&self) -> Result<Value> {
-        let path = format!("{DATA_USAGE_BASE}/spans-count");
+        let path = format!("{DATA_USAGE_BASE}/spans/count");
         self.client.get(&path, &[]).await
     }
 

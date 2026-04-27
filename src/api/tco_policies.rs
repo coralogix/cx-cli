@@ -31,33 +31,21 @@ impl TcoPolicy {
     pub fn display_priority(&self) -> String {
         self.priority
             .as_deref()
-            .map(|s| {
-                s.strip_prefix("PRIORITY_TYPE_")
-                    .unwrap_or(s)
-                    .to_string()
-            })
+            .map(|s| s.strip_prefix("PRIORITY_TYPE_").unwrap_or(s).to_string())
             .unwrap_or_else(|| "-".to_string())
     }
 
     pub fn display_source_type(&self) -> String {
         self.source_type
             .as_deref()
-            .map(|s| {
-                s.strip_prefix("SOURCE_TYPE_")
-                    .unwrap_or(s)
-                    .to_string()
-            })
+            .map(|s| s.strip_prefix("SOURCE_TYPE_").unwrap_or(s).to_string())
             .unwrap_or_else(|| "-".to_string())
     }
 
     pub fn display_severity(&self) -> String {
         self.severity
             .as_deref()
-            .map(|s| {
-                s.strip_prefix("SEVERITY_")
-                    .unwrap_or(s)
-                    .to_string()
-            })
+            .map(|s| s.strip_prefix("SEVERITY_").unwrap_or(s).to_string())
             .unwrap_or_else(|| "-".to_string())
     }
 
@@ -108,6 +96,7 @@ pub struct TcoSettingsResponse {
 // --- API ---
 
 const TCO_POLICIES_BASE: &str = "/mgmt/openapi/latest/dataplans/policies/v1";
+const TCO_POLICY_SETTINGS_BASE: &str = "/mgmt/openapi/latest/dataplans/policy-settings/v1";
 
 pub struct TcoPoliciesApi<'a> {
     client: &'a CxClient,
@@ -141,23 +130,25 @@ impl<'a> TcoPoliciesApi<'a> {
     }
 
     pub async fn reorder(&self, body: &Value) -> Result<Value> {
-        let path = format!("{TCO_POLICIES_BASE}/reorder");
+        let path = format!("{TCO_POLICIES_BASE}/all/reorder");
         self.client.post(&path, body).await
     }
 
     pub async fn test_policies(&self, body: &Value) -> Result<Value> {
-        let path = format!("{TCO_POLICIES_BASE}/test");
+        let path = format!("{TCO_POLICIES_BASE}/all/test-policies");
         self.client.post(&path, body).await
     }
 
     pub async fn get_settings(&self) -> Result<Value> {
-        let path = format!("{TCO_POLICIES_BASE}/settings");
-        self.client.get(&path, &[]).await
+        self.client
+            .get(TCO_POLICY_SETTINGS_BASE, &[])
+            .await
     }
 
     pub async fn replace_settings(&self, body: &Value) -> Result<Value> {
-        let path = format!("{TCO_POLICIES_BASE}/settings");
-        self.client.put(&path, body).await
+        self.client
+            .put(TCO_POLICY_SETTINGS_BASE, body)
+            .await
     }
 }
 

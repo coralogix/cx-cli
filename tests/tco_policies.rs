@@ -85,9 +85,7 @@ async fn get_tco_settings() {
     });
 
     Mock::given(method("GET"))
-        .and(path(
-            "/mgmt/openapi/latest/dataplans/policies/v1/settings",
-        ))
+        .and(path("/mgmt/openapi/latest/dataplans/policy-settings/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

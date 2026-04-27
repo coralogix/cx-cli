@@ -56,7 +56,7 @@ pub struct DeleteConnectorResponse {}
 
 // --- API ---
 
-const CONNECTORS_BASE: &str = "/mgmt/openapi/latest/notifications/connectors/v1";
+const CONNECTORS_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1/connectors";
 
 pub struct ConnectorsApi<'a> {
     client: &'a CxClient,
@@ -90,7 +90,7 @@ impl<'a> ConnectorsApi<'a> {
     }
 
     pub async fn get_type_summaries(&self) -> Result<Value> {
-        let path = format!("{CONNECTORS_BASE}/types");
+        let path = format!("{CONNECTORS_BASE}/types/summaries");
         self.client.get(&path, &[]).await
     }
 }

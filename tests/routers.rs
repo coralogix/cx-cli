@@ -18,12 +18,14 @@ async fn list_routers_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/notifications/routers/v1"))
+        .and(path("/mgmt/openapi/latest/notifications/notification-center/v1/routers"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
         .await;
 
     let target = common::test_target("test-profile", &server.uri());
-    run_list(&[target], OutputFormat::Json).await.expect("run_list should succeed");
+    run_list(&[target], OutputFormat::Json)
+        .await
+        .expect("run_list should succeed");
 }

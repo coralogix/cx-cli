@@ -22,7 +22,7 @@ pub struct DeleteQuotaRulesResponse {}
 
 // --- API ---
 
-const QUOTA_RULES_BASE: &str = "/mgmt/openapi/latest/dataplans/quota-rules/v1";
+const QUOTA_RULES_BASE: &str = "/mgmt/openapi/latest/dataplan/quota-rules/v1";
 
 pub struct QuotaRulesApi<'a> {
     client: &'a CxClient,

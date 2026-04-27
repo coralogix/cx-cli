@@ -43,7 +43,7 @@ pub struct RetentionStatusResponse {
 
 // --- API ---
 
-const RETENTIONS_BASE: &str = "/mgmt/openapi/latest/dataplans/retentions/v1";
+const RETENTIONS_BASE: &str = "/mgmt/openapi/latest/dataengine/retention-tags/v1";
 
 pub struct RetentionsApi<'a> {
     client: &'a CxClient,
@@ -64,13 +64,11 @@ impl<'a> RetentionsApi<'a> {
 
     pub async fn activate(&self) -> Result<Value> {
         let path = format!("{RETENTIONS_BASE}/activate");
-        self.client
-            .post(&path, &serde_json::json!({}))
-            .await
+        self.client.post(&path, &serde_json::json!({})).await
     }
 
     pub async fn status(&self) -> Result<Value> {
-        let path = format!("{RETENTIONS_BASE}/status");
+        let path = format!("{RETENTIONS_BASE}/enabled");
         self.client.get(&path, &[]).await
     }
 }

@@ -17,10 +17,10 @@ use serde_json::Value;
 pub const SHORT_WINDOW_START: &str = "now-15m";
 pub const SMALL_LIMIT: &str = "10";
 
-/// Returns `Some(())` if Coralogix credentials are available (env or
-/// `.env` file), and exports `CX_API_KEY`/`CX_REGION` into the test
-/// process so the `cx` subprocess inherits them. Returns `None` (after
-/// printing a skip message) if no key was found.
+/// Returns `Some(())` if Coralogix credentials are available (env,
+/// `.env` file, or a `~/.cx` profile), and exports `CX_API_KEY`/`CX_REGION`
+/// into the test process so the `cx` subprocess inherits them. Returns
+/// `None` (after printing a skip message) if no credentials were found.
 pub fn require_creds(test_name: &str) -> Option<()> {
     static INIT: OnceLock<bool> = OnceLock::new();
     let ok = *INIT.get_or_init(|| {
@@ -33,15 +33,24 @@ pub fn require_creds(test_name: &str) -> Option<()> {
             ensure_region();
             return true;
         }
+        if has_cx_profile() {
+            return true;
+        }
         false
     });
     if !ok {
         eprintln!(
-            "[e2e] skipping {test_name}: no CX_API_KEY in env or .env (run with CX_API_KEY=... CX_REGION=stg1)"
+            "[e2e] skipping {test_name}: no CX_API_KEY in env or .env and no ~/.cx profile found"
         );
         return None;
     }
     Some(())
+}
+
+fn has_cx_profile() -> bool {
+    dirs::home_dir()
+        .map(|h| h.join(".cx").join("profiles").join("default.toml").is_file())
+        .unwrap_or(false)
 }
 
 fn ensure_region() {
@@ -66,16 +75,23 @@ pub fn run_ok(args: &[&str]) -> Vec<u8> {
     let assert = cx().args(args).assert().success();
     let output = assert.get_output();
     let stdout = output.stdout.clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
 
     println!("\n$ cx {}", args.join(" "));
     if !stdout.is_empty() {
         println!("--- stdout ---");
         println!("{}", String::from_utf8_lossy(&stdout));
     }
-    if !output.stderr.is_empty() {
+    if !stderr.is_empty() {
         println!("--- stderr ---");
-        println!("{}", String::from_utf8_lossy(&output.stderr));
+        println!("{stderr}");
     }
+
+    assert!(
+        !stderr.contains("API request failed"),
+        "cx {} returned API errors on stderr:\n{stderr}",
+        args.join(" ")
+    );
 
     stdout
 }

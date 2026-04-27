@@ -95,8 +95,28 @@ In `src/main.rs`, add three things. See `docs/adding-a-command.md` § "CLI Wirin
 
 ## Step 5: Add Tests
 
-- **API deserialization tests** (REST, already done in Step 2) — realistic JSON fixtures, edge cases
-- **Data transformation tests** — if you have non-trivial mapping logic in the command module
+Every new command must add tests at three layers. See
+`docs/adding-a-command.md` § "Testing" for code templates and examples
+of each.
+
+| Layer | Location | What it verifies |
+|-------|----------|------------------|
+| Unit | `src/**/<file>.rs` `#[cfg(test)]` | Pure logic — deserialization (mandatory for REST), helpers, transforms |
+| Integration | `tests/<domain>.rs` (wiremock) | Command runner end-to-end with mocked HTTP |
+| E2E | `tests/e2e/<domain>.rs` (assert_cmd, `#[ignore]`d) | Real `cx` binary against the Coralogix test team |
+
+Things specific to *this workflow* that the doc doesn't emphasise:
+
+- **Don't add e2e for mutating commands** (create/delete/enable/disable)
+  unless there's a paired-undo plan — they touch shared test team state.
+  Mark them as deliberately uncovered with a comment, like
+  `tests/e2e/alerts.rs`.
+- **If a subcommand needs an ID from the test team** (e.g. `get <id>`),
+  add a local `discover_*` fn in your e2e test module, modelled after
+  `discover_alert_id` in `tests/e2e/alerts.rs`. Cache via `OnceLock` and
+  skip gracefully when the test team has no data — don't panic.
+- **Don't forget to declare the new e2e module** in `tests/e2e.rs` via
+  `#[path = "e2e/your_domain.rs"] mod your_domain;`.
 
 ## Step 6: Create User-Facing Skill
 
@@ -104,8 +124,15 @@ Every command needs a corresponding skill in `skills/` so AI agents know how to 
 
 ## Step 7: Verify
 
-Run `cargo build`, `cargo test`, `cargo clippy`, and `cargo fmt --check`. Fix any issues before committing.
+Run `cargo build`, `cargo test` (unit + integration), `cargo clippy`,
+and `cargo fmt --check`. Fix any issues before committing.
 
-If you have credentials configured, smoke test all three output formats (`text`, `json`, `agents`) and multi-profile (`-p profile1 -p profile2`).
+If you have staging credentials configured, also run the e2e suite:
+```bash
+cargo test --test e2e -- --ignored --test-threads=1
+```
+
+Smoke test all three output formats (`text`, `json`, `agents`) and
+multi-profile (`-p profile1 -p profile2`).
 
 See `docs/adding-a-command.md` § "PR Checklist" for the full checklist to include in your PR description.

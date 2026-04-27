@@ -78,6 +78,8 @@ keyring = { version = "3", features = ["sync-secret-service"] }
 
 [dev-dependencies]
 wiremock = "0.6"
+assert_cmd = "2"
+dotenvy = "0.15"
 
 [profile.release]
 strip = true

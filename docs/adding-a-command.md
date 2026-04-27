@@ -432,11 +432,25 @@ Commands::YourDomain { cmd } => match cmd {
 
 ## Testing
 
-### Deserialization tests (API layer)
+Every new command must add tests at three layers: **unit**, **integration**,
+and **e2e**. Each layer catches different categories of regressions —
+skipping any of them leaves real holes.
 
-Every API module must have deserialization tests. These verify that your response types correctly parse the actual API JSON shape.
+| Layer | Location | What it verifies | Network |
+|-------|----------|------------------|---------|
+| Unit | `src/**/<file>.rs` `#[cfg(test)]` blocks | Pure logic — deserialization, formatting helpers, data transforms | None |
+| Integration | `tests/<domain>.rs` (wiremock) | Command runner end-to-end with mocked HTTP responses | None |
+| E2E | `tests/e2e/<domain>.rs` (assert_cmd) | Real `cx` binary runs against the Coralogix test team | Real |
+
+### Layer 1 — Unit tests
+
+#### Deserialization tests (REST archetype, mandatory)
+
+Every API module must have deserialization tests. These verify that your
+response types correctly parse the actual API JSON shape.
 
 ```rust
+// in src/api/your_domain.rs
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,11 +476,145 @@ mod tests {
 }
 ```
 
-Test both happy-path responses and edge cases (empty lists, missing optional fields, fallback values).
+Test happy-path responses **and** edge cases: empty lists, missing optional
+fields, fallback values. These are the cases that break in production.
+
+#### Helper/formatting tests (any archetype, when applicable)
+
+If your command module has non-trivial mapping logic — building tabular
+rows, transforming JSON shapes, parsing user input — add unit tests for
+those helpers. See `src/commands/metrics/tests.rs` for an example.
+
+### Layer 2 — Integration tests (wiremock)
+
+Add `tests/<your_domain>.rs` using `wiremock` to spin up a fake Coralogix
+API and call your command runner directly. This catches regressions in
+fan-out, merge, rendering, and the wiring between command and API layer.
+
+Reference: `tests/alerts.rs`, `tests/metrics.rs`, `tests/search_fields.rs`.
+
+```rust
+// tests/your_domain.rs
+mod common;
+
+use serde_json::json;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+use cx::commands::your_domain::run_list;
+use cx::config::OutputFormat;
+
+#[tokio::test]
+async fn list_returns_items_from_mock() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/latest/your-domain/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [{ "id": "abc-123", "name": "Test" }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    run_list(&targets, OutputFormat::Json)
+        .await
+        .expect("run_list should succeed");
+}
+```
+
+Cover at minimum: happy-path list/get, an empty response, a `--name`/filter
+case if your command supports one, and the JSON output path.
+
+### Layer 3 — E2E tests (real test team)
+
+Add a sanity test in `tests/e2e/<your_domain>.rs` that invokes the
+compiled `cx` binary against a real Coralogix test team. The goal is
+**only** to verify that the command runs end-to-end: exits 0, produces
+non-empty stdout, and (for `-o json`) emits valid JSON. Don't assert on
+output content — test team data drifts.
+
+All e2e tests are `#[ignore]`d, so they don't run in the default
+`cargo test`. CI invokes them via a separate workflow.
+
+```rust
+// tests/e2e/your_domain.rs
+use std::sync::OnceLock;
+
+use crate::harness;
+
+#[test]
+#[ignore]
+fn your_domain_list() {
+    if harness::require_creds("your_domain_list").is_none() {
+        return;
+    }
+    harness::run_ok_json(&["your-domain", "list", "-o", "json"]);
+}
+
+#[test]
+#[ignore]
+fn your_domain_get() {
+    if harness::require_creds("your_domain_get").is_none() {
+        return;
+    }
+    let Some(id) = discover_your_domain_id() else {
+        eprintln!("[e2e] skipping your_domain_get: no items on test team");
+        return;
+    };
+    harness::run_ok_json(&["your-domain", "get", &id, "-o", "json"]);
+}
+
+/// Discover an id from `your-domain list -o json`. Cached so multiple
+/// tests don't each pay for the list call.
+fn discover_your_domain_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = harness::run_ok(&["your-domain", "list", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?
+                .iter()
+                .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
+                .next()
+                .map(String::from)
+        })
+        .clone()
+}
+```
+
+Then declare the module in `tests/e2e.rs`:
+
+```rust
+#[path = "e2e/your_domain.rs"]
+mod your_domain;
+```
+
+Discovery helpers stay local to each test module — see
+`discover_alert_id` in `tests/e2e/alerts.rs` for the pattern. They
+should cache via `OnceLock` and skip (return `None`) when the test team
+has no data, not panic.
+
+**Do not exercise mutating commands** in e2e (create/delete/enable/
+disable) until there's a paired-undo plan — they touch shared test team
+state. Use a comment to mark them as deliberately uncovered, like the
+existing block at the bottom of `tests/e2e/alerts.rs`.
+
+### Running the suites
+
+```bash
+cargo test                                              # unit + integration
+cargo test --test e2e -- --ignored --test-threads=1     # e2e (needs CX_API_KEY)
+cargo clippy                                            # lint
+cargo fmt --check                                       # format check
+```
+
+See [development.md](development.md) for the full e2e setup.
 
 ### Manual smoke testing
 
-After building (`cargo build`), verify:
+After building (`cargo build`), do at least one human-in-the-loop pass:
 
 ```bash
 # DataPrime commands:
@@ -481,14 +629,6 @@ cx your-domain get <id>
 
 # Multi-profile:
 cx -p prod -p staging your-domain list
-```
-
-### Run the full suite
-
-```bash
-cargo test                  # All unit tests
-cargo clippy                # Lint
-cargo fmt --check           # Format check
 ```
 
 ---
@@ -527,12 +667,20 @@ Copy this into your PR description:
 - [ ] `src/main.rs` — subcommand enum added (REST) or args defined (DataPrime)
 - [ ] `src/main.rs` — dispatch match arm added
 
+### Tests
+- [ ] **Unit:** API deserialization tests in `src/api/your_domain.rs` (REST)
+- [ ] **Unit:** helper/formatting tests if the command module has non-trivial logic
+- [ ] **Integration:** `tests/your_domain.rs` covering happy-path, empty response, and any filters via wiremock
+- [ ] **E2E:** sanity test(s) in `tests/e2e/your_domain.rs`, declared in `tests/e2e.rs` via `#[path]`
+- [ ] **E2E:** local `discover_*` fn added to `tests/e2e/<your_domain>.rs` if a subcommand needs an ID/name from the test team
+
 ### User-facing skill
 - [ ] `skills/your-domain/SKILL.md` — created with frontmatter, command table, workflow, examples
 
 ### Verification
 - [ ] `cargo build` succeeds
-- [ ] `cargo test` passes
+- [ ] `cargo test` passes (unit + integration)
+- [ ] `cargo test --test e2e -- --ignored --test-threads=1` passes against the test team
 - [ ] `cargo clippy` clean
 - [ ] `cargo fmt --check` clean
 - [ ] Manual smoke test: text, json, and agents output

@@ -320,7 +320,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete`, `reorder`, `test`, `settings-update`, `activate` subcommands
 
-### 2.1 [ ] Add `tco-policies` API module
+### 2.1 [x] Add `tco-policies` API module *(completed 2026-04-27)*
 - **Files:** `src/api/tco_policies.rs`, `src/api/mod.rs`
 - **What:** Create `TcoPoliciesApi<'a>` with methods: list (GET /dataplans/policies/v1), get, create, update, delete, reorder, test_policies, get_settings, replace_settings, overwrite_log_policies, overwrite_span_policies. Define response structs with fields for text table: id, name, priority, source_type, severity, archive_retention. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

@@ -9,3 +9,4 @@ pub mod metrics;
 pub mod recording_rules;
 pub mod semantic_search;
 pub mod slos;
+pub mod tco_policies;

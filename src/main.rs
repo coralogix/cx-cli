@@ -170,6 +170,21 @@ Examples:
         cmd: IncidentsCmd,
     },
 
+    /// Manage Events2Metrics definitions.
+    #[command(after_help = "\
+Examples:
+  cx e2m list
+  cx e2m get <e2m-id>
+  cx e2m create --from-file e2m.json
+  cx e2m update --from-file e2m.json
+  cx e2m delete <e2m-id>
+  cx e2m labels-cardinality
+  cx e2m limits")]
+    E2m {
+        #[command(subcommand)]
+        cmd: E2mCmd,
+    },
+
     /// Manage Prometheus recording rule groups.
     #[command(after_help = "\
 Examples:
@@ -591,6 +606,38 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum E2mCmd {
+    /// List all E2M definitions.
+    List,
+    /// Get a single E2M definition by ID.
+    Get {
+        /// E2M definition ID.
+        id: String,
+    },
+    /// Create an E2M definition from a JSON file.
+    Create {
+        /// Path to JSON file with the E2M definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Replace an E2M definition from a JSON file.
+    Update {
+        /// Path to JSON file with the updated E2M definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete an E2M definition.
+    Delete {
+        /// E2M definition ID.
+        id: String,
+    },
+    /// Get E2M labels cardinality.
+    LabelsCardinality,
+    /// Get E2M limits.
+    Limits,
+}
+
+#[derive(Subcommand)]
 enum RecordingRulesCmd {
     /// List all recording rule groups.
     List,
@@ -933,6 +980,30 @@ async fn main() -> Result<()> {
             }
             IncidentsCmd::Aggregations => {
                 commands::incidents::run_aggregations(&targets, output).await?;
+            }
+        },
+
+        Commands::E2m { cmd } => match cmd {
+            E2mCmd::List => {
+                commands::e2m::run_list(&targets, output).await?;
+            }
+            E2mCmd::Get { id } => {
+                commands::e2m::run_get(&targets, &id, output).await?;
+            }
+            E2mCmd::Create { from_file } => {
+                commands::e2m::run_create(&targets, &from_file, output).await?;
+            }
+            E2mCmd::Update { from_file } => {
+                commands::e2m::run_update(&targets, &from_file, output).await?;
+            }
+            E2mCmd::Delete { id } => {
+                commands::e2m::run_delete(&targets, &id).await?;
+            }
+            E2mCmd::LabelsCardinality => {
+                commands::e2m::run_labels_cardinality(&targets, output).await?;
+            }
+            E2mCmd::Limits => {
+                commands::e2m::run_limits(&targets, output).await?;
             }
         },
 

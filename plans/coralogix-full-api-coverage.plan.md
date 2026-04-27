@@ -275,7 +275,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test e2m` passes
 - **Dependencies:** 1.3a
 
-### 1.3c [ ] Wire `e2m` into CLI and add E2E tests
+### 1.3c [x] Wire `e2m` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/e2m.rs`, `tests/e2e.rs`
 - **What:** Add `E2m` variant to `Commands` enum with subcommands: `List`, `Get { id }`, `Create`, `Update`, `Delete { id }`, `LabelsCardinality`, `Limits`. Wire match arms. Add E2E tests for list. Register in `tests/e2e.rs`.
 - **Acceptance:** `cx e2m --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 e2m` passes against real Coralogix

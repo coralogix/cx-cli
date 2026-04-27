@@ -18,6 +18,8 @@ mod harness;
 mod alerts;
 #[path = "e2e/dashboards.rs"]
 mod dashboards;
+#[path = "e2e/e2m.rs"]
+mod e2m;
 #[path = "e2e/dataprime_query.rs"]
 mod dataprime_query;
 #[path = "e2e/logs.rs"]

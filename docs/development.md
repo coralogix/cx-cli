@@ -23,9 +23,8 @@ Before submitting a PR, verify:
 ## End-to-end tests
 
 The `tests/e2e/` suite invokes the compiled `cx` binary against a real
-Coralogix staging environment, sanity-checking every command and
-subcommand. All e2e tests are `#[ignore]`d, so the default `cargo test`
-run skips them.
+Coralogix test team, sanity-checking every command and subcommand. All
+e2e tests are `#[ignore]`d, so the default `cargo test` run skips them.
 
 Set credentials one of two ways:
 
@@ -46,10 +45,10 @@ cargo test --test e2e -- --ignored --test-threads=1
 ```
 
 Tests skip gracefully (with a `[e2e] skipping ...` log line) when
-credentials are absent, or when staging has no test data for a discovery
-step (e.g. no alerts to fetch). The suite is read-only against staging —
-mutating commands (`alerts create`, `alerts enable`/`disable`) are
-intentionally not covered.
+credentials are absent, or when the test team has no data for a
+discovery step (e.g. no alerts to fetch). The suite is read-only
+against the test team — mutating commands (`alerts create`,
+`alerts enable`/`disable`) are intentionally not covered.
 
 CI runs the suite on every push to `master` and via manual
 `workflow_dispatch` (see `.github/workflows/e2e.yml`).

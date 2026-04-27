@@ -100,19 +100,19 @@ of each.
 | Layer | Location | What it verifies |
 |-------|----------|------------------|
 | Unit | `src/**/<file>.rs` `#[cfg(test)]` | Pure logic — deserialization (mandatory for REST), helpers, transforms |
-| Integration | `tests/<domain>/main.rs` (wiremock) | Command runner end-to-end with mocked HTTP |
-| E2E | `tests/e2e/<domain>/mod.rs` (assert_cmd, `#[ignore]`d) | Real `cx` binary against Coralogix staging |
+| Integration | `tests/<command>/main.rs` (wiremock) | Command runner end-to-end with mocked HTTP |
+| E2E | `tests/e2e/<command>/mod.rs` (assert_cmd, `#[ignore]`d) | Real `cx` binary against the Coralogix test team |
 
 Things specific to *this workflow* that the doc doesn't emphasise:
 
 - **Don't add e2e for mutating commands** (create/delete/enable/disable)
-  unless there's a paired-undo plan — they touch shared staging state.
+  unless there's a paired-undo plan — they touch shared test team state.
   Mark them as deliberately uncovered with a comment, like
   `tests/e2e/alerts/mod.rs`.
-- **If a subcommand needs an ID from staging** (e.g. `get <id>`), add a
-  `discover_*` helper to `tests/e2e/harness.rs` modelled after
-  `discover_alert_id`. Skip the test gracefully when staging has no
-  data — don't panic.
+- **If a subcommand needs an ID from the test team** (e.g. `get <id>`),
+  add a local `discover_*` fn in your e2e test module, modelled after
+  `discover_alert_id` in `tests/e2e/alerts/mod.rs`. Cache via `OnceLock`
+  and skip gracefully when the test team has no data — don't panic.
 - **Don't forget to declare the new e2e module** in `tests/e2e.rs` via
   `#[path = "e2e/your_domain/mod.rs"] mod your_domain;`.
 
@@ -125,7 +125,7 @@ Every command needs a corresponding skill in `skills/` so AI agents know how to 
 Run `cargo build`, `cargo test` (unit + integration), `cargo clippy`,
 and `cargo fmt --check`. Fix any issues before committing.
 
-If you have staging credentials configured, also run the e2e suite:
+If you have test team credentials configured, also run the e2e suite:
 ```bash
 cargo test --test e2e -- --ignored --test-threads=1
 ```

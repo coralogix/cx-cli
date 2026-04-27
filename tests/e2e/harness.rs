@@ -1,12 +1,13 @@
 //! Shared harness for cx e2e tests.
 //!
-//! Resolves credentials, builds `cx` subprocess invocations via `assert_cmd`,
-//! and provides cached helpers that discover real IDs from staging so
-//! follow-up tests can exercise commands like `alerts get <id>`.
+//! Resolves credentials and builds `cx` subprocess invocations via
+//! `assert_cmd`. Per-domain ID discovery (e.g. picking a real alert id to
+//! pass to `alerts get`) lives in each test module — see
+//! `tests/e2e/alerts.rs` for the pattern.
 //!
 //! All e2e tests are gated by `#[ignore]` and additionally skip with a clear
 //! `[e2e]` log line when no credentials are available, so the suite is safe
-//! to run on a developer machine that hasn't been configured for staging.
+//! to run on a developer machine without test team credentials.
 
 use std::sync::OnceLock;
 
@@ -115,8 +116,8 @@ pub fn parse_json(stdout: &[u8]) -> Option<Value> {
 // ── Shape assertions ─────────────────────────────────────────────────
 //
 // These check the *structure* of a JSON response without inspecting values.
-// Empty arrays pass vacuously — that's intentional, since staging may
-// genuinely have no data — but they catch field renames, type changes
+// Empty arrays pass vacuously — that's intentional, since the test team
+// may genuinely have no data — but they catch field renames, type changes
 // (array → object, string → number), and missing keys whenever data is
 // present.
 
@@ -160,55 +161,4 @@ pub fn assert_object_with_keys(v: &Value, required_keys: &[&str]) {
     for key in required_keys {
         assert!(obj.contains_key(*key), "object missing key '{key}': {v}");
     }
-}
-
-/// Discover an alert id from `alerts list -o json`. The list rendering emits
-/// a top-level array of alert objects with an `id` field.
-pub fn discover_alert_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            let stdout = run_ok(&["alerts", "list", "-o", "json"]);
-            let v = parse_json(&stdout)?;
-            first_id(&v)
-        })
-        .clone()
-}
-
-/// Discover a dashboard id from `dashboards catalog -o json`.
-pub fn discover_dashboard_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            let stdout = run_ok(&["dashboards", "catalog", "-o", "json"]);
-            let v = parse_json(&stdout)?;
-            first_id(&v)
-        })
-        .clone()
-}
-
-/// Discover a metric name from `metrics search --name '*' -o json`.
-/// The name-search rendering emits a top-level array of strings.
-pub fn discover_metric_name() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            let stdout = run_ok(&["metrics", "search", "--name", "*", "-o", "json"]);
-            let v = parse_json(&stdout)?;
-            v.as_array()?.first()?.as_str().map(String::from)
-        })
-        .clone()
-}
-
-/// Pull the first non-null `id` out of a JSON array, or out of a single-object
-/// response. Tolerant of both shapes.
-fn first_id(v: &Value) -> Option<String> {
-    let arr = match v {
-        Value::Array(a) => a,
-        _ => return v.get("id").and_then(|x| x.as_str()).map(String::from),
-    };
-    arr.iter()
-        .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
-        .next()
-        .map(String::from)
 }

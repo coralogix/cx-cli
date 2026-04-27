@@ -1,8 +1,7 @@
 //! E2E test suite for the cx CLI.
 //!
 //! All tests are marked `#[ignore]` so they are excluded from the default
-//! `cargo test` run. To execute against a real Coralogix staging
-//! environment:
+//! `cargo test` run. To execute against a real Coralogix test team:
 //!
 //! ```bash
 //! export CX_API_KEY=...           # or populate .env

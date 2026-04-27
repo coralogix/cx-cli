@@ -434,7 +434,7 @@ skipping any of them leaves real holes.
 |-------|----------|------------------|---------|
 | Unit | `src/**/<file>.rs` `#[cfg(test)]` blocks | Pure logic — deserialization, formatting helpers, data transforms | None |
 | Integration | `tests/<domain>.rs` (wiremock) | Command runner end-to-end with mocked HTTP responses | None |
-| E2E | `tests/e2e/<domain>.rs` (assert_cmd) | Real `cx` binary runs against Coralogix staging | Real |
+| E2E | `tests/e2e/<command>/mod.rs` (assert_cmd) | Real `cx` binary runs against the Coralogix test team | Real |
 
 ### Layer 1 — Unit tests
 
@@ -521,19 +521,21 @@ async fn list_returns_items_from_mock() {
 Cover at minimum: happy-path list/get, an empty response, a `--name`/filter
 case if your command supports one, and the JSON output path.
 
-### Layer 3 — E2E tests (real staging)
+### Layer 3 — E2E tests (real test team)
 
-Add a sanity test in `tests/e2e/<your_domain>.rs` that invokes the
-compiled `cx` binary against a real Coralogix staging environment. The
-goal is **only** to verify that the command runs end-to-end: exits 0,
-produces non-empty stdout, and (for `-o json`) emits valid JSON. Don't
-assert on output content — staging data drifts.
+Add a sanity test in `tests/e2e/<your_domain>/mod.rs` that invokes the
+compiled `cx` binary against a real Coralogix test team. The goal is
+**only** to verify that the command runs end-to-end: exits 0, produces
+non-empty stdout, and (for `-o json`) emits valid JSON. Don't assert on
+output content — test team data drifts.
 
 All e2e tests are `#[ignore]`d, so they don't run in the default
 `cargo test`. CI invokes them via a separate workflow.
 
 ```rust
 // tests/e2e/your_domain/mod.rs
+use std::sync::OnceLock;
+
 use crate::harness;
 
 #[test]
@@ -551,29 +553,45 @@ fn your_domain_get() {
     if harness::require_creds("your_domain_get").is_none() {
         return;
     }
-    let Some(id) = harness::discover_your_domain_id() else {
-        eprintln!("[e2e] skipping your_domain_get: no items in staging");
+    let Some(id) = discover_your_domain_id() else {
+        eprintln!("[e2e] skipping your_domain_get: no items on test team");
         return;
     };
     harness::run_ok_json(&["your-domain", "get", &id, "-o", "json"]);
+}
+
+/// Discover an id from `your-domain list -o json`. Cached so multiple
+/// tests don't each pay for the list call.
+fn discover_your_domain_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = harness::run_ok(&["your-domain", "list", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?
+                .iter()
+                .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
+                .next()
+                .map(String::from)
+        })
+        .clone()
 }
 ```
 
 Then declare the module in `tests/e2e.rs`:
 
 ```rust
-#[path = "e2e/your_domain.rs"]
+#[path = "e2e/your_domain/mod.rs"]
 mod your_domain;
 ```
 
-If your command needs an ID/name discovered from staging, add a
-discovery helper to `tests/e2e/harness.rs` modelled after
-`discover_alert_id` / `discover_dashboard_id`. Discovery helpers should
-cache via `OnceLock` and skip (return `None`) when staging has no data,
-not panic.
+Discovery helpers stay local to each test module — see
+`discover_alert_id` in `tests/e2e/alerts/mod.rs` for the pattern. They
+should cache via `OnceLock` and skip (return `None`) when the test team
+has no data, not panic.
 
 **Do not exercise mutating commands** in e2e (create/delete/enable/
-disable) until there's a paired-undo plan — they touch shared staging
+disable) until there's a paired-undo plan — they touch shared test team
 state. Use a comment to mark them as deliberately uncovered, like the
 existing block at the bottom of `tests/e2e/alerts/mod.rs`.
 
@@ -648,7 +666,7 @@ Copy this into your PR description:
 - [ ] **Unit:** helper/formatting tests if the command module has non-trivial logic
 - [ ] **Integration:** `tests/your_domain/main.rs` covering happy-path, empty response, and any filters via wiremock
 - [ ] **E2E:** sanity test(s) in `tests/e2e/your_domain/mod.rs`, declared in `tests/e2e.rs` via `#[path]`
-- [ ] **E2E:** discovery helper added to `tests/e2e/harness.rs` if a subcommand needs an ID/name from staging
+- [ ] **E2E:** local `discover_*` fn added to `tests/e2e/<your_domain>/mod.rs` if a subcommand needs an ID/name from the test team
 
 ### User-facing skill
 - [ ] `skills/your-domain/SKILL.md` — created with frontmatter, command table, workflow, examples
@@ -656,7 +674,7 @@ Copy this into your PR description:
 ### Verification
 - [ ] `cargo build` succeeds
 - [ ] `cargo test` passes (unit + integration)
-- [ ] `cargo test --test e2e -- --ignored --test-threads=1` passes against staging
+- [ ] `cargo test --test e2e -- --ignored --test-threads=1` passes against the test team
 - [ ] `cargo clippy` clean
 - [ ] `cargo fmt --check` clean
 - [ ] Manual smoke test: text, json, and agents output

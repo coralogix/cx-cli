@@ -332,7 +332,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 2.1
 
-### 2.1b [ ] Add `tco-policies` integration tests (wiremock)
+### 2.1b [x] Add `tco-policies` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/tco_policies.rs`
 - **What:** Wiremock-based integration tests for list/get/settings handlers.
 - **Acceptance:** `cargo test --test tco_policies` passes

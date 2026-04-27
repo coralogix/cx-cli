@@ -344,7 +344,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx tco-policies --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 tco_policies` passes against real Coralogix
 - **Dependencies:** 2.1b
 
-### 2.2 [ ] Add `data-usage` API module
+### 2.2 [x] Add `data-usage` API module *(completed 2026-04-27)*
 - **Files:** `src/api/data_usage.rs`, `src/api/mod.rs`
 - **What:** Create `DataUsageApi<'a>` with methods: get_usage, daily_processed_gbs, daily_units, daily_eval_tokens, logs_count, spans_count, export_status. Define response structs for summary and daily breakdown. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

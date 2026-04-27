@@ -142,7 +142,8 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
         .with_starting_cursor(0) // OAuth is the default
         .with_help_message(
             "OAuth opens your browser for secure login. \
-             API key lets you paste credentials directly.",
+             API key lets you paste credentials directly \
+             (must be a Team Key or Personal Key — not a Send-Your-Data key).",
         )
         .prompt()?;
 
@@ -319,7 +320,13 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
 // ── API key configure path ────────────────────────────────────────────────────
 
 fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
-    let api_key = Password::new("Coralogix API key:")
+    println!(
+        "The API key must be a Team Key or a Personal Key.\n  \
+         • Team Key:     Data Flow → API Keys → Team Keys\n  \
+         • Personal Key: User menu (top-right) → Personal Keys\n\
+         Send-Your-Data / ingress keys will NOT work for querying."
+    );
+    let api_key = Password::new("Coralogix API key (Team Key or Personal Key):")
         .with_display_mode(PasswordDisplayMode::Masked)
         .without_confirmation()
         .prompt()?;

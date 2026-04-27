@@ -34,7 +34,7 @@ Profile 'default' saved to /Users/you/.cx
 Credentials stored in OS credential store (OAuth tokens)
 ```
 
-To use a plain API key instead, select `API key (paste manually)` at the first prompt.
+To use a plain API key instead, select `API key (paste manually)` at the first prompt. The API key must be a **Team Key** or a **Personal Key** — see [API Key](#api-key) below for where to generate one. Send-Your-Data / ingress keys will not work for querying.
 
 ## Authentication methods
 
@@ -64,7 +64,12 @@ The base URL is used both as the API endpoint and for OpenID Connect discovery (
 
 ### API key
 
-A static Coralogix API key. The key can be stored either in the profile TOML file (permissions set to `0600` on Unix) or in the OS keyring.
+A static Coralogix API key. The key **must be one of the following types** — `cx` uses it as a Bearer token when calling the query APIs, so ingress ("Send-Your-Data") keys will not work:
+
+- **Team Key** — generated in the Coralogix UI under *Data Flow → API Keys → Team Keys*. Scoped to a team; typical choice for shared/CI usage.
+- **Personal Key** — generated in the Coralogix UI under the user menu (top-right) → *Personal Keys*. Scoped to your user account.
+
+The key can be stored either in the profile TOML file (permissions set to `0600` on Unix) or in the OS keyring.
 
 ## OS keyring backends
 

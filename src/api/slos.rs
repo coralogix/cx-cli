@@ -36,11 +36,7 @@ impl Slo {
     pub fn display_type(&self) -> String {
         self.slo_type
             .as_deref()
-            .map(|s| {
-                s.strip_prefix("SLO_TYPE_")
-                    .unwrap_or(s)
-                    .to_string()
-            })
+            .map(|s| s.strip_prefix("SLO_TYPE_").unwrap_or(s).to_string())
             .unwrap_or_else(|| "-".to_string())
     }
 
@@ -58,11 +54,7 @@ impl Slo {
     pub fn display_product_type(&self) -> String {
         self.product_type
             .as_deref()
-            .map(|s| {
-                s.strip_prefix("SLO_PRODUCT_TYPE_")
-                    .unwrap_or(s)
-                    .to_string()
-            })
+            .map(|s| s.strip_prefix("SLO_PRODUCT_TYPE_").unwrap_or(s).to_string())
             .unwrap_or_else(|| "-".to_string())
     }
 }
@@ -189,10 +181,7 @@ mod tests {
         assert_eq!(resp.slos[0].id.as_deref(), Some("slo-001"));
         assert_eq!(resp.slos[0].name.as_deref(), Some("API Availability"));
         assert_eq!(resp.slos[0].target_threshold_percentage, Some(99.9));
-        assert_eq!(
-            resp.slos[0].slo_type.as_deref(),
-            Some("SLO_TYPE_REQUEST")
-        );
+        assert_eq!(resp.slos[0].slo_type.as_deref(), Some("SLO_TYPE_REQUEST"));
         assert_eq!(resp.slos[1].id.as_deref(), Some("slo-002"));
     }
 

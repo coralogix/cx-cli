@@ -106,7 +106,12 @@ mod tests {
 
     #[test]
     fn display_missing_fields() {
-        let e = Enrichment { id: None, field_name: None, enrichment_type: None, source: None };
+        let e = Enrichment {
+            id: None,
+            field_name: None,
+            enrichment_type: None,
+            source: None,
+        };
         assert_eq!(e.display_field_name(), "-");
         assert_eq!(e.display_type(), "-");
     }

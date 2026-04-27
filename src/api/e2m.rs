@@ -29,11 +29,7 @@ impl E2mDefinition {
     pub fn display_type(&self) -> String {
         self.e2m_type
             .as_deref()
-            .map(|s| {
-                s.strip_prefix("E2M_TYPE_")
-                    .unwrap_or(s)
-                    .to_string()
-            })
+            .map(|s| s.strip_prefix("E2M_TYPE_").unwrap_or(s).to_string())
             .unwrap_or_else(|| "-".to_string())
     }
 }
@@ -82,7 +78,7 @@ pub struct E2mLimitsResponse {
 
 // --- API ---
 
-const E2M_BASE: &str = "/mgmt/openapi/latest/e2m/e2m/v2";
+const E2M_BASE: &str = "/mgmt/openapi/latest/events2metrics/events2metrics/v2";
 
 pub struct E2mApi<'a> {
     client: &'a CxClient,
@@ -116,13 +112,18 @@ impl<'a> E2mApi<'a> {
     }
 
     pub async fn labels_cardinality(&self) -> Result<E2mLabelsCardinalityResponse> {
-        let path = format!("{E2M_BASE}/labels-cardinality");
-        self.client.get(&path, &[]).await
+        self.client
+            .get(
+                "/mgmt/openapi/latest/events2metrics/labels/v2/cardinalities",
+                &[],
+            )
+            .await
     }
 
     pub async fn limits(&self) -> Result<E2mLimitsResponse> {
-        let path = format!("{E2M_BASE}/limits");
-        self.client.get(&path, &[]).await
+        self.client
+            .get("/mgmt/openapi/latest/events2metrics/limits/v2", &[])
+            .await
     }
 }
 

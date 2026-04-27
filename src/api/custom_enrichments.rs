@@ -27,7 +27,11 @@ impl CustomEnrichment {
     pub fn display_type(&self) -> String {
         self.enrichment_type
             .as_deref()
-            .map(|s| s.strip_prefix("CUSTOM_ENRICHMENT_TYPE_").unwrap_or(s).to_string())
+            .map(|s| {
+                s.strip_prefix("CUSTOM_ENRICHMENT_TYPE_")
+                    .unwrap_or(s)
+                    .to_string()
+            })
             .unwrap_or_else(|| "-".to_string())
     }
 }
@@ -91,7 +95,9 @@ impl<'a> CustomEnrichmentsApi<'a> {
 
     pub async fn search(&self, id: &str, query: &str) -> Result<Value> {
         let path = format!("{CUSTOM_ENRICHMENTS_BASE}/{id}/search");
-        self.client.post(&path, &serde_json::json!({"query": query})).await
+        self.client
+            .post(&path, &serde_json::json!({"query": query}))
+            .await
     }
 }
 
@@ -127,7 +133,10 @@ mod tests {
     fn deserialize_get_response() {
         let json = json!({ "customEnrichment": { "id": "ce-001", "name": "IP Lookup" } });
         let resp: GetCustomEnrichmentResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.custom_enrichment.unwrap().id.as_deref(), Some("ce-001"));
+        assert_eq!(
+            resp.custom_enrichment.unwrap().id.as_deref(),
+            Some("ce-001")
+        );
     }
 
     #[test]
@@ -137,7 +146,14 @@ mod tests {
 
     #[test]
     fn display_missing_fields() {
-        let ce = CustomEnrichment { id: None, name: None, description: None, enrichment_type: None, create_time: None, update_time: None };
+        let ce = CustomEnrichment {
+            id: None,
+            name: None,
+            description: None,
+            enrichment_type: None,
+            create_time: None,
+            update_time: None,
+        };
         assert_eq!(ce.display_name(), "-");
         assert_eq!(ce.display_type(), "-");
     }

@@ -12,11 +12,7 @@ use crate::render;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn group_to_json(
-    group: &RecordingRuleGroup,
-    include_profile: bool,
-    profile: &str,
-) -> Value {
+fn group_to_json(group: &RecordingRuleGroup, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
         "id": group.id,
         "name": group.display_name(),
@@ -174,11 +170,7 @@ pub async fn run_get(
                                 "ID".bold(),
                                 group.id.as_deref().unwrap_or("-")
                             );
-                            println!(
-                                "{}: {}",
-                                "Rules Count".bold(),
-                                group.rules_count()
-                            );
+                            println!("{}: {}", "Rules Count".bold(), group.rules_count());
                             println!(
                                 "{}:   {}",
                                 "Interval".bold(),

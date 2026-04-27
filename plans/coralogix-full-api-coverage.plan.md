@@ -588,7 +588,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 4.1a [ ] Add `rule-groups` command module
+### 4.1a [x] Add `rule-groups` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/rule_groups.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_bulk_delete()`, `run_usage_limits()`. Text table: [ID, Name, Rules Count, Enabled, Order, Creator]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -612,7 +612,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 4.2a [ ] Add `enrichments` command module
+### 4.2a [x] Add `enrichments` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/enrichments.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_add()`, `run_remove()`, `run_overwrite()`, `run_limit()`, `run_settings()`. Text table: [ID, Field Name, Enrichment Type, Source]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -636,7 +636,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 4.3a [ ] Add `custom-enrichments` command module
+### 4.3a [x] Add `custom-enrichments` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/custom_enrichments.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_search()`. Text table: [ID, Name, Description, Type, Created]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

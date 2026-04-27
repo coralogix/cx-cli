@@ -147,7 +147,15 @@ mod tests {
 
     #[test]
     fn display_missing_fields() {
-        let rg = RuleGroup { id: None, name: None, rules: None, enabled: None, order: None, creator: None, description: None };
+        let rg = RuleGroup {
+            id: None,
+            name: None,
+            rules: None,
+            enabled: None,
+            order: None,
+            creator: None,
+            description: None,
+        };
         assert_eq!(rg.display_name(), "-");
         assert_eq!(rg.rules_count(), 0);
     }

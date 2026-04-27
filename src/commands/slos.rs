@@ -161,22 +161,12 @@ pub async fn run_get(
                     if let Some(slo_val) = val.get("slo") {
                         if let Ok(slo) = serde_json::from_value::<Slo>(slo_val.clone()) {
                             println!("{}:   {}", "Name".bold(), slo.display_name());
-                            println!(
-                                "{}:     {}",
-                                "ID".bold(),
-                                slo.id.as_deref().unwrap_or("-")
-                            );
+                            println!("{}:     {}", "ID".bold(), slo.id.as_deref().unwrap_or("-"));
                             println!("{}: {}", "Target".bold(), slo.display_target());
                             println!("{}:   {}", "Type".bold(), slo.display_type());
                             println!("{}: {}", "Period".bold(), slo.display_time_frame());
-                            println!(
-                                "{}:",
-                                "Creator".bold(),
-                            );
-                            println!(
-                                "        {}",
-                                slo.creator.as_deref().unwrap_or("-")
-                            );
+                            println!("{}:", "Creator".bold(),);
+                            println!("        {}", slo.creator.as_deref().unwrap_or("-"));
                             if let Some(ref desc) = slo.description {
                                 if !desc.is_empty() {
                                     println!("{}: {}", "Description".bold(), desc);

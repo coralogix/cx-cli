@@ -5,18 +5,18 @@ use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::connectors::{Connector, ConnectorsApi};
+use crate::api::custom_enrichments::{CustomEnrichment, CustomEnrichmentsApi};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
 
-fn connector_to_json(conn: &Connector, include_profile: bool, profile: &str) -> Value {
+fn ce_to_json(ce: &CustomEnrichment, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
-        "id": conn.id,
-        "name": conn.display_name(),
-        "type": conn.display_type(),
-        "enabled": conn.enabled,
-        "create_time": conn.create_time,
+        "id": ce.id,
+        "name": ce.display_name(),
+        "description": ce.description,
+        "type": ce.display_type(),
+        "create_time": ce.create_time,
     });
     if include_profile {
         if let Value::Object(ref mut m) = v {
@@ -28,7 +28,10 @@ fn connector_to_json(conn: &Connector, include_profile: bool, profile: &str) -> 
 
 fn read_from_file(path: &str) -> Result<Value> {
     let raw = if path == "-" {
-        eprintln!("{}", "Reading connector definition from stdin...".dimmed());
+        eprintln!(
+            "{}",
+            "Reading custom enrichment definition from stdin...".dimmed()
+        );
         use std::io::Read;
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
@@ -36,7 +39,7 @@ fn read_from_file(path: &str) -> Result<Value> {
     } else {
         eprintln!(
             "{}",
-            format!("Reading connector definition from {path}...").dimmed()
+            format!("Reading custom enrichment definition from {path}...").dimmed()
         );
         std::fs::read_to_string(path)?
     };
@@ -44,29 +47,26 @@ fn read_from_file(path: &str) -> Result<Value> {
 }
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
-    eprintln!("{}", "Fetching connectors...".dimmed());
+    eprintln!("{}", "Fetching custom enrichments...".dimmed());
     let include_profile = targets.len() > 1;
-
     let per_profile = fan_out(targets, |t| async move {
-        let api = ConnectorsApi::new(&t.client);
+        let api = CustomEnrichmentsApi::new(&t.client);
         Ok(api.list().await?)
     })
     .await;
-
     let mut all_json: Vec<Value> = Vec::new();
-    let mut all_items: Vec<(String, Connector)> = Vec::new();
+    let mut all_items: Vec<(String, CustomEnrichment)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {
-                for conn in resp.connectors {
-                    all_json.push(connector_to_json(&conn, include_profile, &profile));
-                    all_items.push((profile.clone(), conn));
+                for ce in resp.custom_enrichments {
+                    all_json.push(ce_to_json(&ce, include_profile, &profile));
+                    all_items.push((profile.clone(), ce));
                 }
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
     }
-
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
         OutputFormat::Agents => {
@@ -76,24 +76,24 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         }
         OutputFormat::Text => {
             if all_items.is_empty() {
-                render::print_no_results("No connectors found.");
+                render::print_no_results("No custom enrichments found.");
                 return Ok(());
             }
             let rows: Vec<Vec<String>> = all_items
                 .iter()
-                .map(|(profile, conn)| {
+                .map(|(profile, ce)| {
                     vec![
                         profile.clone(),
-                        conn.id.clone().unwrap_or_default(),
-                        conn.display_name().to_string(),
-                        conn.display_type(),
-                        render::bool_display(conn.enabled),
-                        conn.create_time.clone().unwrap_or_default(),
+                        ce.id.clone().unwrap_or_default(),
+                        ce.display_name().to_string(),
+                        ce.description.clone().unwrap_or_default(),
+                        ce.display_type(),
+                        ce.create_time.clone().unwrap_or_default(),
                     ]
                 })
                 .collect();
             render::render_table(
-                &["ID", "Name", "Type", "Enabled", "Created"],
+                &["ID", "Name", "Description", "Type", "Created"],
                 rows,
                 include_profile,
             );
@@ -107,19 +107,17 @@ pub async fn run_get(
     id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!("{}", format!("Fetching connector {id}...").dimmed());
+    eprintln!("{}", format!("Fetching custom enrichment {id}...").dimmed());
     let include_profile = targets.len() > 1;
     let id = id.to_string();
-
     let per_profile = fan_out(targets, |t| {
         let id = id.clone();
         async move {
-            let api = ConnectorsApi::new(&t.client);
+            let api = CustomEnrichmentsApi::new(&t.client);
             Ok(api.get(&id).await?)
         }
     })
     .await;
-
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -132,7 +130,6 @@ pub async fn run_get(
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
     }
-
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
@@ -144,7 +141,7 @@ pub async fn run_get(
             render::render_get_text(
                 &all_results,
                 include_profile,
-                "Connector not found.",
+                "Custom enrichment not found.",
                 None::<&dyn Fn(&Value)>,
             )?;
         }
@@ -158,37 +155,35 @@ pub async fn run_create(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
-    eprintln!("{}", "Creating connector...".dimmed());
+    eprintln!("{}", "Creating custom enrichment...".dimmed());
     let include_profile = targets.len() > 1;
-
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
         async move {
-            let api = ConnectorsApi::new(&t.client);
+            let api = CustomEnrichmentsApi::new(&t.client);
             Ok(api.create(&body).await?)
         }
     })
     .await;
-
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {
-                if let Some(conn) = resp.connector {
-                    let name = conn.display_name().to_string();
-                    let id = conn.id.as_deref().unwrap_or("unknown");
+                if let Some(ce) = resp.custom_enrichment {
                     eprintln!(
                         "{}",
-                        format!("Created connector '{name}' (ID: {id}) in profile '{profile}'.")
-                            .green()
+                        format!(
+                            "Created custom enrichment '{}' in profile '{profile}'.",
+                            ce.display_name()
+                        )
+                        .green()
                     );
-                    all_results.push(connector_to_json(&conn, include_profile, &profile));
+                    all_results.push(ce_to_json(&ce, include_profile, &profile));
                 }
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
     }
-
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
@@ -207,31 +202,28 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
-    eprintln!("{}", "Updating connector...".dimmed());
-
+    eprintln!("{}", "Updating custom enrichment...".dimmed());
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
         async move {
-            let api = ConnectorsApi::new(&t.client);
-            Ok(api.replace(&body).await?)
+            let api = CustomEnrichmentsApi::new(&t.client);
+            Ok(api.update(&body).await?)
         }
     })
     .await;
-
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(val) => {
                 eprintln!(
                     "{}",
-                    format!("Updated connector in profile '{profile}'.").green()
+                    format!("Updated custom enrichment in profile '{profile}'.").green()
                 );
                 all_results.push(val);
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
     }
-
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
@@ -245,12 +237,12 @@ pub async fn run_update(
 }
 
 pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
-    eprintln!("{}", format!("Deleting connector {id}...").dimmed());
+    eprintln!("{}", format!("Deleting custom enrichment {id}...").dimmed());
     let id = id.to_string();
     let per_profile = fan_out(targets, |t| {
         let id = id.clone();
         async move {
-            let api = ConnectorsApi::new(&t.client);
+            let api = CustomEnrichmentsApi::new(&t.client);
             api.delete(&id).await?;
             Ok(())
         }
@@ -260,7 +252,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         match result {
             Ok(()) => eprintln!(
                 "{}",
-                format!("Connector {id} deleted in profile '{profile}'.").green()
+                format!("Custom enrichment {id} deleted in profile '{profile}'.").green()
             ),
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
@@ -268,29 +260,34 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
     Ok(())
 }
 
-pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
-    eprintln!("{}", "Fetching connector types...".dimmed());
-    let include_profile = targets.len() > 1;
-
-    let per_profile = fan_out(targets, |t| async move {
-        let api = ConnectorsApi::new(&t.client);
-        Ok(api.get_type_summaries().await?)
+pub async fn run_search(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    query: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Searching custom enrichment {id}...").dimmed()
+    );
+    let id = id.to_string();
+    let query = query.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        let query = query.clone();
+        async move {
+            let api = CustomEnrichmentsApi::new(&t.client);
+            Ok(api.search(&id, &query).await?)
+        }
     })
     .await;
-
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
+            Ok(val) => all_results.push(val),
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
     }
-
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {

@@ -165,8 +165,7 @@ pub async fn run_get(
                 "TCO policy not found.",
                 Some(&|val| {
                     if let Some(policy_val) = val.get("policy") {
-                        if let Ok(policy) =
-                            serde_json::from_value::<TcoPolicy>(policy_val.clone())
+                        if let Ok(policy) = serde_json::from_value::<TcoPolicy>(policy_val.clone())
                         {
                             println!("{}:        {}", "Name".bold(), policy.display_name());
                             println!(
@@ -175,11 +174,7 @@ pub async fn run_get(
                                 policy.id.as_deref().unwrap_or("-")
                             );
                             println!("{}:    {}", "Priority".bold(), policy.display_priority());
-                            println!(
-                                "{}: {}",
-                                "Source Type".bold(),
-                                policy.display_source_type()
-                            );
+                            println!("{}: {}", "Source Type".bold(), policy.display_source_type());
                             println!("{}:    {}", "Severity".bold(), policy.display_severity());
                         }
                     }

@@ -31,7 +31,9 @@ async fn list_e2m_returns_items_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/e2m/e2m/v2"))
+        .and(path(
+            "/mgmt/openapi/latest/events2metrics/events2metrics/v2",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -58,7 +60,9 @@ async fn get_e2m_by_id() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/e2m/e2m/v2/e2m-001"))
+        .and(path(
+            "/mgmt/openapi/latest/events2metrics/events2metrics/v2/e2m-001",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

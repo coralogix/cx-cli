@@ -170,6 +170,18 @@ Examples:
         cmd: IncidentsCmd,
     },
 
+    /// View data usage and consumption metrics.
+    #[command(after_help = "\
+Examples:
+  cx data-usage summary
+  cx data-usage daily --type processed-gbs
+  cx data-usage logs-count
+  cx data-usage spans-count")]
+    DataUsage {
+        #[command(subcommand)]
+        cmd: DataUsageCmd,
+    },
+
     /// Manage TCO (Total Cost of Ownership) policies.
     #[command(after_help = "\
 Examples:
@@ -618,6 +630,32 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum DataUsageCmd {
+    /// Show data usage overview.
+    Summary,
+    /// Show daily usage breakdown.
+    Daily {
+        /// Usage type: processed-gbs, units, or eval-tokens.
+        #[arg(long, default_value = "processed-gbs")]
+        r#type: String,
+
+        /// Start time filter (ISO 8601 or relative).
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End time filter (ISO 8601 or relative).
+        #[arg(long)]
+        end: Option<String>,
+    },
+    /// Show logs count.
+    LogsCount,
+    /// Show spans count.
+    SpansCount,
+    /// Show export status.
+    ExportStatus,
+}
+
+#[derive(Subcommand)]
 enum TcoPoliciesCmd {
     /// List all TCO policies.
     List,
@@ -1040,6 +1078,35 @@ async fn main() -> Result<()> {
             }
             IncidentsCmd::Aggregations => {
                 commands::incidents::run_aggregations(&targets, output).await?;
+            }
+        },
+
+        Commands::DataUsage { cmd } => match cmd {
+            DataUsageCmd::Summary => {
+                commands::data_usage::run_summary(&targets, output).await?;
+            }
+            DataUsageCmd::Daily {
+                r#type,
+                start,
+                end,
+            } => {
+                commands::data_usage::run_daily(
+                    &targets,
+                    &r#type,
+                    start.as_deref(),
+                    end.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            DataUsageCmd::LogsCount => {
+                commands::data_usage::run_logs_count(&targets, output).await?;
+            }
+            DataUsageCmd::SpansCount => {
+                commands::data_usage::run_spans_count(&targets, output).await?;
+            }
+            DataUsageCmd::ExportStatus => {
+                commands::data_usage::run_export_status(&targets, output).await?;
             }
         },
 

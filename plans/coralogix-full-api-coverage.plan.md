@@ -362,7 +362,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test data_usage` passes
 - **Dependencies:** 2.2a
 
-### 2.2c [ ] Wire `data-usage` into CLI and add E2E tests
+### 2.2c [x] Wire `data-usage` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/data_usage.rs`, `tests/e2e.rs`
 - **What:** Add `DataUsage` variant to `Commands` enum with subcommands: `Summary`, `Daily { data_type, start, end }`, `LogsCount`, `SpansCount`, `ExportStatus`. Wire match arms. Add E2E tests for summary (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx data-usage --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 data_usage` passes against real Coralogix

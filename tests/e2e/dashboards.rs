@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::harness;
 
 #[test]
@@ -16,11 +18,27 @@ fn dashboards_get() {
     if harness::require_creds("dashboards_get").is_none() {
         return;
     }
-    let Some(id) = harness::discover_dashboard_id() else {
+    let Some(id) = discover_dashboard_id() else {
         eprintln!("[e2e] skipping dashboards_get: no dashboards available in staging");
         return;
     };
     let v = harness::run_ok_json(&["dashboards", "get", &id, "-o", "json"]);
     // Shape varies (top-level vs nested under "dashboard") — only assert object.
     harness::assert_object_with_keys(&v, &[]);
+}
+
+/// Discover a dashboard id from `dashboards catalog -o json`.
+fn discover_dashboard_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = harness::run_ok(&["dashboards", "catalog", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?
+                .iter()
+                .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
+                .next()
+                .map(String::from)
+        })
+        .clone()
 }

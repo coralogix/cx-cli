@@ -112,9 +112,9 @@ Things specific to *this workflow* that the doc doesn't emphasise:
   Mark them as deliberately uncovered with a comment, like
   `tests/e2e/alerts.rs`.
 - **If a subcommand needs an ID from staging** (e.g. `get <id>`), add a
-  `discover_*` helper to `tests/e2e/harness.rs` modelled after
-  `discover_alert_id`. Skip the test gracefully when staging has no
-  data — don't panic.
+  local `discover_*` fn in your e2e test module, modelled after
+  `discover_alert_id` in `tests/e2e/alerts.rs`. Cache via `OnceLock` and
+  skip gracefully when staging has no data — don't panic.
 - **Don't forget to declare the new e2e module** in `tests/e2e.rs` via
   `#[path = "e2e/your_domain.rs"] mod your_domain;`.
 

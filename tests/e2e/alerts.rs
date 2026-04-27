@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::harness;
 
 #[test]
@@ -16,12 +18,29 @@ fn alerts_get() {
     if harness::require_creds("alerts_get").is_none() {
         return;
     }
-    let Some(id) = harness::discover_alert_id() else {
+    let Some(id) = discover_alert_id() else {
         eprintln!("[e2e] skipping alerts_get: no alerts available in staging");
         return;
     };
     let v = harness::run_ok_json(&["alerts", "get", &id, "-o", "json"]);
     harness::assert_object_with_keys(&v, &["alertDef"]);
+}
+
+/// Discover an alert id from `alerts list -o json`. The list rendering emits
+/// a top-level array of alert objects with an `id` field.
+fn discover_alert_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = harness::run_ok(&["alerts", "list", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?
+                .iter()
+                .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
+                .next()
+                .map(String::from)
+        })
+        .clone()
 }
 
 // Mutating alert commands (`create`, `enable`, `disable`) are deliberately

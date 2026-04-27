@@ -540,6 +540,8 @@ All e2e tests are `#[ignore]`d, so they don't run in the default
 
 ```rust
 // tests/e2e/your_domain.rs
+use std::sync::OnceLock;
+
 use crate::harness;
 
 #[test]
@@ -557,11 +559,28 @@ fn your_domain_get() {
     if harness::require_creds("your_domain_get").is_none() {
         return;
     }
-    let Some(id) = harness::discover_your_domain_id() else {
+    let Some(id) = discover_your_domain_id() else {
         eprintln!("[e2e] skipping your_domain_get: no items in staging");
         return;
     };
     harness::run_ok_json(&["your-domain", "get", &id, "-o", "json"]);
+}
+
+/// Discover an id from `your-domain list -o json`. Cached so multiple
+/// tests don't each pay for the list call.
+fn discover_your_domain_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let stdout = harness::run_ok(&["your-domain", "list", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?
+                .iter()
+                .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
+                .next()
+                .map(String::from)
+        })
+        .clone()
 }
 ```
 
@@ -572,11 +591,10 @@ Then declare the module in `tests/e2e.rs`:
 mod your_domain;
 ```
 
-If your command needs an ID/name discovered from staging, add a
-discovery helper to `tests/e2e/harness.rs` modelled after
-`discover_alert_id` / `discover_dashboard_id`. Discovery helpers should
-cache via `OnceLock` and skip (return `None`) when staging has no data,
-not panic.
+Discovery helpers stay local to each test module — see
+`discover_alert_id` in `tests/e2e/alerts.rs` for the pattern. They
+should cache via `OnceLock` and skip (return `None`) when staging has
+no data, not panic.
 
 **Do not exercise mutating commands** in e2e (create/delete/enable/
 disable) until there's a paired-undo plan — they touch shared staging

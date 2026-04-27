@@ -257,7 +257,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx recording-rules --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 recording_rules` passes against real Coralogix
 - **Dependencies:** 1.2b
 
-### 1.3 [ ] Add `e2m` (Events2Metrics) API module
+### 1.3 [x] Add `e2m` (Events2Metrics) API module *(completed 2026-04-27)*
 - **Files:** `src/api/e2m.rs`, `src/api/mod.rs`
 - **What:** Create `E2mApi<'a>` with methods: list, get, create, replace, delete, batch_execute, get_labels_cardinality, get_limits. Define response structs with fields for text table: id, name, type, metric_name, created. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

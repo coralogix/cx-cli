@@ -15,21 +15,21 @@
 #[path = "e2e/harness.rs"]
 mod harness;
 
-#[path = "e2e/alerts.rs"]
+#[path = "e2e/alerts/mod.rs"]
 mod alerts;
-#[path = "e2e/dashboards.rs"]
+#[path = "e2e/dashboards/mod.rs"]
 mod dashboards;
-#[path = "e2e/dataprime_query.rs"]
-mod dataprime_query;
-#[path = "e2e/logs.rs"]
+#[path = "e2e/dataprime/mod.rs"]
+mod dataprime;
+#[path = "e2e/logs/mod.rs"]
 mod logs;
-#[path = "e2e/metrics.rs"]
+#[path = "e2e/metrics/mod.rs"]
 mod metrics;
 #[path = "e2e/output_formats.rs"]
 mod output_formats;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
-#[path = "e2e/search_fields.rs"]
+#[path = "e2e/search_fields/mod.rs"]
 mod search_fields;
-#[path = "e2e/spans.rs"]
+#[path = "e2e/spans/mod.rs"]
 mod spans;

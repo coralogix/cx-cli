@@ -582,7 +582,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete`, `bulk-delete`, `add`, `remove`, `overwrite`, `search` subcommands
 
-### 4.1 [ ] Add `rule-groups` API module
+### 4.1 [x] Add `rule-groups` API module *(completed 2026-04-27)*
 - **Files:** `src/api/rule_groups.rs`, `src/api/mod.rs`
 - **What:** Create `RuleGroupsApi<'a>` with methods: list, get, create, update, delete, bulk_delete, get_usage_limits, get_model_mapping. Define response structs with fields for text table: id, name, rules_count, enabled, order, creator. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -606,7 +606,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx rule-groups --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 rule_groups` passes against real Coralogix
 - **Dependencies:** 4.1b
 
-### 4.2 [ ] Add `enrichments` API module
+### 4.2 [x] Add `enrichments` API module *(completed 2026-04-27)*
 - **Files:** `src/api/enrichments.rs`, `src/api/mod.rs`
 - **What:** Create `EnrichmentsApi<'a>` with methods: get, add, remove, overwrite, overwrite_all, get_limit, get_settings. Define response structs with fields for text table: id, field_name, enrichment_type, source. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -630,7 +630,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx enrichments --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 enrichments` passes against real Coralogix
 - **Dependencies:** 4.2b
 
-### 4.3 [ ] Add `custom-enrichments` API module
+### 4.3 [x] Add `custom-enrichments` API module *(completed 2026-04-27)*
 - **Files:** `src/api/custom_enrichments.rs`, `src/api/mod.rs`
 - **What:** Create `CustomEnrichmentsApi<'a>` with methods: list, get, create, update, delete, search_data. Define response structs with fields for text table: id, name, description, type, created. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

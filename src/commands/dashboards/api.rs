@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::error::Result;
 
-use super::client::CxClient;
+use crate::api::client::CxClient;
 
 // --- Catalog response types ---
 

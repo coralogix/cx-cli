@@ -1,5 +1,5 @@
 /// Tests that verify commands translate to the correct Dataprime API call structure.
-use cx::api::dataprime::build_dataprime_body;
+use cx::commands::dataprime::api::build_dataprime_body;
 use cx::Tier;
 
 // ── Request body construction ─────────────────────────────────────────────────

@@ -7,7 +7,10 @@ use rand::RngExt;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::dashboards::{DashboardFolderItem, DashboardsApi};
+pub mod api;
+
+use api::{DashboardFolderItem, DashboardsApi};
+
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
@@ -15,7 +18,7 @@ use crate::render;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn catalog_item_to_json(
-    item: &crate::api::dashboards::DashboardCatalogItem,
+    item: &api::DashboardCatalogItem,
     include_profile: bool,
     profile: &str,
 ) -> Value {
@@ -58,7 +61,7 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
 
     // Merge
     let mut all_rows: Vec<Value> = Vec::new();
-    let mut all_items: Vec<(String, crate::api::dashboards::DashboardCatalogItem)> = Vec::new();
+    let mut all_items: Vec<(String, api::DashboardCatalogItem)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {

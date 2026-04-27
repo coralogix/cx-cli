@@ -4,7 +4,7 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::api::dashboards::DashboardsApi;
+use cx::commands::dashboards::api::DashboardsApi;
 use cx::commands::dashboards::run_catalog;
 use cx::config::OutputFormat;
 

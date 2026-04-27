@@ -5,7 +5,10 @@ use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::alerts::{AlertDef, AlertsApi};
+pub mod api;
+
+use api::{AlertDef, AlertsApi};
+
 use crate::config::OutputFormat;
 use crate::error::CxError;
 use crate::execution::{fan_out, ExecutionTarget};

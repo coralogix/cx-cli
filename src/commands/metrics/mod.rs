@@ -5,11 +5,12 @@ use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::{
-    client::CxClient,
-    metrics::{MetricsApi, PromQueryInstantResponse, PromQueryRangeResponse},
-    semantic_search::{semantic_metric_lookup, SemanticMetricResult},
-};
+pub mod api;
+
+use api::{MetricsApi, PromQueryInstantResponse, PromQueryRangeResponse};
+
+use crate::api::client::CxClient;
+use crate::commands::dataprime::semantic_search::{semantic_metric_lookup, SemanticMetricResult};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;

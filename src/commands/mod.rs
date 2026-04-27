@@ -2,6 +2,7 @@ pub mod alert_schedulers;
 pub mod alerts;
 pub mod cleanup;
 pub mod dashboards;
+pub mod e2m;
 pub mod dataprime;
 pub mod incidents;
 pub mod logs;

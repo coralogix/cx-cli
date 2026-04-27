@@ -263,7 +263,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 1.3a [ ] Add `e2m` command module
+### 1.3a [x] Add `e2m` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/e2m.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_labels_cardinality()`, `run_limits()`. Text table: [ID, Name, Type, Metric Name, Created]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

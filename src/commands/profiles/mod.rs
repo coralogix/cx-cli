@@ -2,8 +2,8 @@ use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{
-    load_config, load_profile, profile_file, profiles_dir, save_config, save_profile, AuthKind,
-    CredentialStorage, OutputFormat, Profile, Region,
+    has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
+    save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
 };
 use crate::keyring_store;
 use crate::oauth;
@@ -31,25 +31,29 @@ const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
 
 const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &["file", "os-store (encrypted)"];
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Print a one-line refresh hint when the user has managed static completions.
+/// Only shown when `cx completions install` has been used at least once.
+fn hint_completions_refresh() {
+    if has_managed_completions() {
+        println!(
+            "Tip: profile list changed — run `cx completions refresh` \
+             to update static completion scripts."
+        );
+    }
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 pub fn run_list() -> Result<()> {
-    let dir = profiles_dir()?;
     let global_config = load_config().unwrap_or_default();
 
-    if !dir.exists() {
-        println!("No profiles configured. Run `cx profiles add` to create one.");
-        return Ok(());
-    }
+    let names = list_profile_names()?;
 
-    let mut entries: Vec<(String, Profile)> = std::fs::read_dir(&dir)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension()?.to_str()? != "toml" {
-                return None;
-            }
-            let name = path.file_stem()?.to_str()?.to_string();
+    let entries: Vec<(String, Profile)> = names
+        .into_iter()
+        .filter_map(|name| {
             let profile = load_profile(&name).ok()?;
             Some((name, profile))
         })
@@ -59,8 +63,6 @@ pub fn run_list() -> Result<()> {
         println!("No profiles configured. Run `cx profiles add` to create one.");
         return Ok(());
     }
-
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     // Column widths
     let name_w = entries
@@ -178,6 +180,7 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
         "\nProfile '{name}' saved to {}\nCredentials stored in {storage_desc}",
         cx_dir.display()
     );
+    hint_completions_refresh();
     Ok(())
 }
 
@@ -225,6 +228,7 @@ pub fn run_delete(profile_name: String, force: bool) -> Result<()> {
         );
     }
 
+    hint_completions_refresh();
     Ok(())
 }
 

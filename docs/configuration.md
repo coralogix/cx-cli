@@ -193,6 +193,16 @@ Environment variables override profile file values:
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
+## Shell completion and profiles
+
+Profile names discovered in `~/.cx/profiles/*.toml` are offered as tab-completion candidates for the `-p`/`--profile` flag and for the `profiles add`, `profiles delete`, and `profiles set-default` subcommands.
+
+When using static completions installed with `cx completions install`, profile names are captured at installation time. After adding or deleting a profile, `cx` will print a reminder to run `cx completions refresh`, which regenerates every file registered in `managed_completions`.
+
+The `managed_completions` field in `~/.cx/config.toml` is updated automatically by `cx completions install` and is read by `cx completions refresh`. Only files recorded here are ever modified by `cx`; files installed by `cx completions generate ... > /path` are not tracked.
+
+For profile names that are always resolved fresh without a manual refresh step, use the dynamic completion approach instead: `source <(COMPLETE=zsh cx)` (or the bash/fish equivalent). See the [Shell completions](../README.md#shell-completions) section in the README for full setup instructions.
+
 ## OAuth callback ports
 
 The local HTTP callback listener used during `cx profiles add` (OAuth path) binds one port from the following fixed allow-list, chosen at random:

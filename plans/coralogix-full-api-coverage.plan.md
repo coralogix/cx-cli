@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | to-do |
+| Status | in-progress |
 | Created | 2026-04-27 |
 | Ticket | N/A |
 | Branch | feat/full-api-coverage |
@@ -209,7 +209,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete` subcommands
 
-### 1.1 [ ] Add `slos` API module
+### 1.1 [x] Add `slos` API module *(completed 2026-04-27)*
 - **Files:** `src/api/slos.rs`, `src/api/mod.rs`
 - **What:** Create `SlosApi<'a>` with methods: list, get, create (POST), replace (PUT), delete, batch_get, batch_execute. Define response structs (Slo, ListSlosResponse) with fields for text table: id, name, target, status, service, period. Register in api/mod.rs. Add `#[cfg(test)] mod tests` with unit tests covering response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization of list/get responses

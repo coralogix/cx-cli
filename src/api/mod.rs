@@ -6,3 +6,4 @@ pub mod dataprime;
 pub mod incidents;
 pub mod metrics;
 pub mod semantic_search;
+pub mod slos;

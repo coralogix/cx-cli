@@ -23,4 +23,5 @@ pub mod rule_groups;
 pub mod semantic_search;
 pub mod slos;
 pub mod tco_policies;
+pub mod views;
 pub mod webhooks;

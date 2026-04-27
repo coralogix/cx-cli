@@ -26,4 +26,5 @@ pub mod search_fields;
 pub mod slos;
 pub mod spans;
 pub mod tco_policies;
+pub mod views;
 pub mod webhooks;

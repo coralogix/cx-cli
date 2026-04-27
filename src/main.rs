@@ -364,6 +364,18 @@ Examples:
         cmd: ContextualDataCmd,
     },
 
+    /// Manage saved views and view folders.
+    #[command(after_help = "\
+Examples:
+  cx views list
+  cx views get <id>
+  cx views folders list
+  cx views folders get <id>")]
+    Views {
+        #[command(subcommand)]
+        cmd: ViewsCmd,
+    },
+
     /// Manage SLO definitions.
     #[command(after_help = "\
 Examples:
@@ -1310,6 +1322,71 @@ enum ContextualDataCmd {
 }
 
 #[derive(Subcommand)]
+enum ViewsCmd {
+    /// List all saved views.
+    List,
+    /// Get a view by ID.
+    Get {
+        /// View ID.
+        id: String,
+    },
+    /// Create a view from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Replace a view from a JSON file.
+    Update {
+        /// View ID.
+        id: String,
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete a view.
+    Delete {
+        /// View ID.
+        id: String,
+    },
+    /// Manage view folders.
+    Folders {
+        #[command(subcommand)]
+        cmd: ViewFoldersCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ViewFoldersCmd {
+    /// List all view folders.
+    List,
+    /// Get a folder by ID.
+    Get {
+        /// Folder ID.
+        id: String,
+    },
+    /// Create a folder from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Replace a folder from a JSON file.
+    Update {
+        /// Folder ID.
+        id: String,
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete a folder.
+    Delete {
+        /// Folder ID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SlosCmd {
     /// List all SLOs.
     List,
@@ -2010,6 +2087,41 @@ async fn main() -> Result<()> {
             ContextualDataCmd::Test { id } => {
                 commands::contextual_data::run_test(&targets, &id, output).await?;
             }
+        },
+
+        Commands::Views { cmd } => match cmd {
+            ViewsCmd::List => {
+                commands::views::run_list(&targets, output).await?;
+            }
+            ViewsCmd::Get { id } => {
+                commands::views::run_get(&targets, &id, output).await?;
+            }
+            ViewsCmd::Create { from_file } => {
+                commands::views::run_create(&targets, &from_file, output).await?;
+            }
+            ViewsCmd::Update { id, from_file } => {
+                commands::views::run_update(&targets, &id, &from_file, output).await?;
+            }
+            ViewsCmd::Delete { id } => {
+                commands::views::run_delete(&targets, &id).await?;
+            }
+            ViewsCmd::Folders { cmd } => match cmd {
+                ViewFoldersCmd::List => {
+                    commands::views::run_folders_list(&targets, output).await?;
+                }
+                ViewFoldersCmd::Get { id } => {
+                    commands::views::run_folders_get(&targets, &id, output).await?;
+                }
+                ViewFoldersCmd::Create { from_file } => {
+                    commands::views::run_folders_create(&targets, &from_file, output).await?;
+                }
+                ViewFoldersCmd::Update { id, from_file } => {
+                    commands::views::run_folders_update(&targets, &id, &from_file, output).await?;
+                }
+                ViewFoldersCmd::Delete { id } => {
+                    commands::views::run_folders_delete(&targets, &id).await?;
+                }
+            },
         },
 
         Commands::Slos { cmd } => match cmd {

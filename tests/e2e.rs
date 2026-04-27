@@ -62,5 +62,7 @@ mod slos;
 mod spans;
 #[path = "e2e/tco_policies.rs"]
 mod tco_policies;
+#[path = "e2e/views.rs"]
+mod views;
 #[path = "e2e/webhooks.rs"]
 mod webhooks;

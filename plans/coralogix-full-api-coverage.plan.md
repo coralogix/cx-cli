@@ -823,25 +823,25 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete` subcommands (views and folders)
 
-### 6.1 [ ] Add `views` API module
+### 6.1 [x] Add `views` API module *(completed 2026-04-28)*
 - **Files:** `src/api/views.rs`, `src/api/mod.rs`
 - **What:** Create `ViewsApi<'a>` with methods for views (list, get, create, replace, delete) and folders (list, get, create, replace, delete). Define response structs — views: id, name, folder, created; folders: id, name, parent. Follow dashboards API pattern for folder nesting. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization of views and folders
 - **Dependencies:** None
 
-### 6.1a [ ] Add `views` command module
+### 6.1a [x] Add `views` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/views.rs`, `src/commands/mod.rs`
 - **What:** Implement view handlers: `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`. Implement folder handlers: `run_folders_list()`, `run_folders_get()`, `run_folders_create()`, `run_folders_update()`, `run_folders_delete()`. Follow dashboards folders nesting pattern. Text table for views: [ID, Name, Folder, Created]. Text table for folders: [ID, Name, Parent]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 6.1
 
-### 6.1b [ ] Add `views` integration tests (wiremock)
+### 6.1b [x] Add `views` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/views.rs`
 - **What:** Wiremock-based integration tests for views list and folders list handlers.
 - **Acceptance:** `cargo test --test views` passes
 - **Dependencies:** 6.1a
 
-### 6.1c [ ] Wire `views` into CLI and add E2E tests
+### 6.1c [x] Wire `views` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/views.rs`, `tests/e2e.rs`
 - **What:** Add `Views` variant to `Commands` enum with nested subcommands for views and folders. Wire match arms. Add E2E tests for views list and folders list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx views --help` works, `cx views folders --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 views` passes against real Coralogix

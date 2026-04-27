@@ -380,7 +380,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 2.3
 
-### 2.3b [ ] Add `retentions` integration tests (wiremock)
+### 2.3b [x] Add `retentions` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/retentions.rs`
 - **What:** Wiremock-based integration tests for list and status handlers.
 - **Acceptance:** `cargo test --test retentions` passes
@@ -404,7 +404,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 2.4
 
-### 2.4b [ ] Add `quota-rules` integration tests (wiremock)
+### 2.4b [x] Add `quota-rules` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/quota_rules.rs`
 - **What:** Wiremock-based integration tests for get handler.
 - **Acceptance:** `cargo test --test quota_rules` passes

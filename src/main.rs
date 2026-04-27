@@ -170,6 +170,19 @@ Examples:
         cmd: IncidentsCmd,
     },
 
+    /// Manage Prometheus recording rule groups.
+    #[command(after_help = "\
+Examples:
+  cx recording-rules list
+  cx recording-rules get <group-id>
+  cx recording-rules create --from-file rules.json
+  cx recording-rules update --from-file rules.json <group-id>
+  cx recording-rules delete <group-id>")]
+    RecordingRules {
+        #[command(subcommand)]
+        cmd: RecordingRulesCmd,
+    },
+
     /// Manage SLO definitions.
     #[command(after_help = "\
 Examples:
@@ -578,6 +591,37 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum RecordingRulesCmd {
+    /// List all recording rule groups.
+    List,
+    /// Get a single recording rule group by ID.
+    Get {
+        /// Recording rule group ID.
+        id: String,
+    },
+    /// Create a recording rule group from a JSON definition file.
+    Create {
+        /// Path to JSON file with the rule group definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a recording rule group from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated rule group definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+
+        /// Recording rule group ID.
+        id: String,
+    },
+    /// Delete a recording rule group.
+    Delete {
+        /// Recording rule group ID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SlosCmd {
     /// List all SLOs.
     List,
@@ -889,6 +933,24 @@ async fn main() -> Result<()> {
             }
             IncidentsCmd::Aggregations => {
                 commands::incidents::run_aggregations(&targets, output).await?;
+            }
+        },
+
+        Commands::RecordingRules { cmd } => match cmd {
+            RecordingRulesCmd::List => {
+                commands::recording_rules::run_list(&targets, output).await?;
+            }
+            RecordingRulesCmd::Get { id } => {
+                commands::recording_rules::run_get(&targets, &id, output).await?;
+            }
+            RecordingRulesCmd::Create { from_file } => {
+                commands::recording_rules::run_create(&targets, &from_file, output).await?;
+            }
+            RecordingRulesCmd::Update { from_file, id } => {
+                commands::recording_rules::run_update(&targets, &id, &from_file, output).await?;
+            }
+            RecordingRulesCmd::Delete { id } => {
+                commands::recording_rules::run_delete(&targets, &id).await?;
             }
         },
 

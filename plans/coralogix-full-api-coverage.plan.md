@@ -251,7 +251,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test recording_rules` passes
 - **Dependencies:** 1.2a
 
-### 1.2c [ ] Wire `recording-rules` into CLI and add E2E tests
+### 1.2c [x] Wire `recording-rules` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/recording_rules.rs`, `tests/e2e.rs`
 - **What:** Add `RecordingRules` variant to `Commands` enum with CRUD subcommands. Wire match arms. Add E2E tests for list. Register in `tests/e2e.rs`.
 - **Acceptance:** `cx recording-rules --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 recording_rules` passes against real Coralogix

@@ -462,7 +462,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 3.1a [ ] Add `connectors` command module
+### 3.1a [x] Add `connectors` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/connectors.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_types()`. Text table: [ID, Name, Type, Enabled, Created]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -486,7 +486,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 3.2a [ ] Add `routers` command module
+### 3.2a [x] Add `routers` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/routers.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_validate_matcher()`. Text table: [ID, Name, Entity Type, Destinations Count]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -510,7 +510,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 3.3a [ ] Add `presets` command module
+### 3.3a [x] Add `presets` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/presets.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_set_default()`. Text table: [ID, Name, Connector Type, Is Default, Is Custom]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -534,7 +534,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 3.4a [ ] Add `notification-test` command module
+### 3.4a [x] Add `notification-test` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/notification_testing.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_test_connector()`, `run_test_destination()`, `run_test_preset()`, `run_test_routing_condition()`, `run_test_template_render()`. Each reads JSON from `--from-file` and sends to test endpoint. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

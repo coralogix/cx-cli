@@ -516,8 +516,7 @@ async fn main() -> Result<()> {
     if let Commands::Completions { cmd } = cli.command {
         return match cmd {
             CompletionsCmd::Generate { shell } => {
-                commands::completions::run_generate(shell, &mut Cli::command());
-                Ok(())
+                commands::completions::run_generate(shell, &mut Cli::command())
             }
             CompletionsCmd::Install { shell, path } => {
                 commands::completions::run_install(shell, path, &mut Cli::command())

@@ -1,8 +1,10 @@
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Command;
-use clap_complete::aot::{generate, Shell};
+use clap_complete::aot::Shell;
+use clap_complete::env::{Bash, Elvish, EnvCompleter, Fish, Powershell, Zsh};
 
 use crate::config;
 
@@ -43,18 +45,49 @@ fn setup_note(shell: Shell, path: &Path) -> Option<String> {
     }
 }
 
+// ── Registration script generation (dynamic env-based) ────────────────────────
+
+/// Write the dynamic env-completion registration stub for the given shell.
+///
+/// Unlike `clap_complete::aot::generate`, this emits a small bootstrap that
+/// calls back into `cx` at completion time — which means runtime completers
+/// like `ArgValueCompleter` (used for `--profile=`) work correctly.
+fn write_registration_for(shell: Shell, buf: &mut dyn std::io::Write) -> Result<()> {
+    // The shell-specific completer adapters all share the same registration
+    // contract (see clap_complete::env::EnvCompleter). We pick the right
+    // adapter based on our enum and call write_registration on it.
+    fn write<C: EnvCompleter>(c: &C, buf: &mut dyn std::io::Write) -> Result<()> {
+        c.write_registration("COMPLETE", "cx", "cx", "cx", buf)
+            .map_err(|e| anyhow!("Failed to write completion registration: {e}"))
+    }
+
+    match shell {
+        Shell::Bash => write(&Bash, buf),
+        Shell::Zsh => write(&Zsh, buf),
+        Shell::Fish => write(&Fish, buf),
+        Shell::Elvish => write(&Elvish, buf),
+        Shell::PowerShell => write(&Powershell, buf),
+        other => Err(anyhow!(
+            "Shell '{other}' is not supported by dynamic completions"
+        )),
+    }
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 /// Print a completion script for the given shell to stdout.
-pub fn run_generate(shell: Shell, clap_cmd: &mut Command) {
-    generate(shell, clap_cmd, "cx", &mut std::io::stdout());
+pub fn run_generate(shell: Shell, _clap_cmd: &mut Command) -> Result<()> {
+    let mut stdout = std::io::stdout().lock();
+    write_registration_for(shell, &mut stdout)?;
+    stdout.flush().ok();
+    Ok(())
 }
 
 /// Install a completion script to a default (or specified) path and register it.
 pub fn run_install(
     shell: Shell,
     path_override: Option<PathBuf>,
-    clap_cmd: &mut Command,
+    _clap_cmd: &mut Command,
 ) -> Result<()> {
     let path = path_override
         .or_else(|| default_install_path(shell))
@@ -65,15 +98,13 @@ pub fn run_install(
             )
         })?;
 
-    // Create parent directories.
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create directory {}", parent.display()))?;
     }
 
-    // Generate and write to file.
     let mut buf = Vec::new();
-    generate(shell, clap_cmd, "cx", &mut buf);
+    write_registration_for(shell, &mut buf)?;
     std::fs::write(&path, &buf)
         .with_context(|| format!("Failed to write completion script to {}", path.display()))?;
 
@@ -83,14 +114,17 @@ pub fn run_install(
         eprintln!("\nNote: {note}");
     }
 
-    // Record so `cx completions refresh` can update the file later.
     config::upsert_managed_completion(&shell.to_string(), path)?;
 
     Ok(())
 }
 
 /// Regenerate all completion scripts previously installed by `cx completions install`.
-pub fn run_refresh(clap_cmd_factory: impl Fn() -> Command) -> Result<()> {
+///
+/// With dynamic env-based completions, the on-disk stub rarely needs updating
+/// (it always delegates back to the current `cx` binary). Refreshing is still
+/// useful after upgrading `cx` in case the registration protocol changed.
+pub fn run_refresh(_clap_cmd_factory: impl Fn() -> Command) -> Result<()> {
     let managed = config::managed_completions()?;
 
     if managed.is_empty() {
@@ -110,8 +144,7 @@ pub fn run_refresh(clap_cmd_factory: impl Fn() -> Command) -> Result<()> {
         })?;
 
         let mut buf = Vec::new();
-        let mut cmd = clap_cmd_factory();
-        generate(shell, &mut cmd, "cx", &mut buf);
+        write_registration_for(shell, &mut buf)?;
 
         if let Some(parent) = entry.path.parent() {
             std::fs::create_dir_all(parent)

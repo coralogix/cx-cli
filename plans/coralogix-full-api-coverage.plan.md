@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | to-do |
 | Created | 2026-04-27 |
 | Ticket | N/A |
 | Branch | feat/full-api-coverage |
@@ -121,31 +121,31 @@ graph TD
 
 **Key decisions:** Incidents use POST for list (filter body) unlike most services that use GET. We'll accept filter flags as CLI args and build the POST body internally, keeping the UX consistent with other list commands.
 
-### 1.1 [x] Add `incidents` API module *(completed 2026-04-27)*
+### 1.1 [ ] Add `incidents` API module
 - **Files:** `src/api/incidents.rs`, `src/api/mod.rs`
 - **What:** Create `IncidentsApi<'a>` with methods: `list()` (POST /incidents/incidents/v1 with filter body), `get()` (GET /incidents/incidents/v1/{id}), `acknowledge()` (POST .../all/acknowledge), `resolve()` (POST .../all/resolve), `close()` (POST .../all/closed), `assign()` (POST .../all/by-user), `unassign()` (DELETE .../all/by-user), `get_events()` (GET /incidents/events/v1), `get_aggregations()` (GET /incidents/aggregations/v1). Define response structs for list/get (Incident, IncidentEvent) with fields needed for text table rendering: id, name, severity, status, created_at, assigned_to. Register in api/mod.rs.
 - **Acceptance:** `cargo test` passes, `IncidentsApi` compiles with all methods
 - **Dependencies:** None
 
-### 1.2 [x] Add `incidents` command module *(completed 2026-04-27)*
+### 1.2 [ ] Add `incidents` command module
 - **Files:** `src/commands/incidents.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_acknowledge()`, `run_resolve()`, `run_close()`, `run_assign()`, `run_unassign()`, `run_events()`, `run_aggregations()`. Follow the alerts pattern: fan_out → merge → render for each. `run_list()` should accept optional `--status`, `--severity`, `--assignee` filter flags. Text output: table with columns [ID, Name, Severity, Status, Created, Assigned To]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 1.1
 
-### 1.3 [x] Wire `incidents` into CLI *(completed 2026-04-27)*
+### 1.3 [ ] Wire `incidents` into CLI
 - **Files:** `src/main.rs`
 - **What:** Add `Incidents` variant to `Commands` enum with `IncidentsCmd` subcommand enum containing: `List` (with filter args), `Get { id }`, `Acknowledge { ids: Vec<String> }`, `Resolve { ids: Vec<String> }`, `Close { ids: Vec<String> }`, `Assign { ids: Vec<String>, user_id: String }`, `Unassign { ids: Vec<String> }`, `Events` (with optional --incident-id filter), `Aggregations`. Wire match arms to command handlers. Add help examples.
 - **Acceptance:** `cx incidents --help` shows all subcommands, `cx incidents list --help` shows filter flags, `cargo test` passes
 - **Dependencies:** 1.2
 
-### 1.4 [x] Add `alert-events` subcommand to existing `alerts` *(completed 2026-04-27)*
+### 1.4 [ ] Add `alert-events` subcommand to existing `alerts`
 - **Files:** `src/api/alerts.rs`, `src/commands/alerts.rs`, `src/main.rs`
 - **What:** Extend the existing alerts command with `events` subcommand. Add `events()` and `event_stats()` methods to `AlertsApi`. Implement `run_events()` (GET /alerts/alerts/v3/all/events with optional --alert-id, --start, --end filters) and `run_event_stats()`. Text table: [Event ID, Alert Name, Severity, Triggered At, Status]. Wire `Events` and `EventStats` into `AlertsCmd`.
 - **Acceptance:** `cx alerts events --help` works, `cargo test` passes
 - **Dependencies:** None
 
-### 1.5 [x] Add `alert-schedulers` command *(completed 2026-04-27)*
+### 1.5 [ ] Add `alert-schedulers` command
 - **Files:** `src/api/alert_schedulers.rs`, `src/api/mod.rs`, `src/commands/alert_schedulers.rs`, `src/commands/mod.rs`, `src/main.rs`
 - **What:** Full CRUD for alert scheduler (suppression) rules. API: list, get, create, update, delete + bulk create/update. CLI subcommands: `list`, `get <id>`, `create --from-file`, `update --from-file`, `delete <id>`. Text table for list: [ID, Name, Schedule, Enabled, Created]. Follow alerts create pattern for file input.
 - **Acceptance:** `cx alert-schedulers --help` shows subcommands, `cargo test` passes

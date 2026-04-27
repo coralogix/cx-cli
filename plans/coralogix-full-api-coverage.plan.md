@@ -215,7 +215,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization of list/get responses
 - **Dependencies:** None
 
-### 1.1a [ ] Add `slos` command module
+### 1.1a [x] Add `slos` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/slos.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`. Follow alerts pattern: fan_out → merge → render. Text table: [ID, Name, Target, Status, Service, Period]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

@@ -18,7 +18,7 @@ For basic queries, use standard fields directly:
 cx logs 'filter $m.severity == ERROR | limit 20'
 
 # Errors in a specific subsystem
-cx logs 'filter $m.severity == ERROR && $l.subsystemname == "payment-service"'
+cx logs "filter \$m.severity == ERROR && \$l.subsystemname == 'payment-service'"
 ```
 
 ### 3. Discover Fields When Needed
@@ -36,13 +36,13 @@ Start simple, add complexity:
 
 ```bash
 # Step 1: Check if data exists
-cx logs 'filter $l.subsystemname == "checkout"' --limit 10
+cx logs "filter \$l.subsystemname == 'checkout'" --limit 10
 
 # Step 2: Add filters
-cx logs 'filter $l.subsystemname == "checkout" && $m.severity == ERROR'
+cx logs "filter \$l.subsystemname == 'checkout' && \$m.severity == ERROR"
 
 # Step 3: Add aggregation
-cx logs 'filter $l.subsystemname == "checkout" && $m.severity == ERROR | groupby $d.error_type aggregate count() as occurrences'
+cx logs "filter \$l.subsystemname == 'checkout' && \$m.severity == ERROR | groupby \$d.error_type aggregate count() as occurrences"
 ```
 
 ### 5. Analyze and Iterate
@@ -74,7 +74,7 @@ cx logs 'filter $m.severity == ERROR'
 cx logs 'filter $m.severity == CRITICAL'
 
 # Errors with text search
-cx logs 'filter $m.severity == ERROR && $d.message ~ "database connection"'
+cx logs "filter \$m.severity == ERROR && \$d.message ~ 'database connection'"
 ```
 
 ### Aggregation by Service
@@ -111,10 +111,10 @@ cx logs 'filter $m.severity == ERROR | distinct $d.error_type'
 
 ```bash
 # Find all logs for a request ID
-cx logs 'filter $d.request_id == "abc-123-def"'
+cx logs "filter \$d.request_id == 'abc-123-def'"
 
 # Find logs for a user
-cx logs 'filter $d.user_id == "user_12345"' --start now-24h
+cx logs "filter \$d.user_id == 'user_12345'" --start now-24h
 ```
 
 ### Fetching Sample Logs by Template
@@ -138,7 +138,7 @@ cx logs 'filter $m.severity == ERROR | groupby $m.templateid aggregate any_value
 
 1. Start with recent errors: `cx logs 'filter $m.severity == ERROR' --limit 20`
 2. Identify the affected service from log labels
-3. Narrow to that service: `cx logs 'filter $l.subsystemname == "service-name" && $m.severity == ERROR'`
+3. Narrow to that service: `cx logs "filter \$l.subsystemname == 'service-name' && \$m.severity == ERROR"`
 4. Search for patterns in error messages
 5. Correlate with request IDs or user IDs
 6. Check time patterns for spikes

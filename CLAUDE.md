@@ -34,13 +34,19 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 6. **Output rendering** (`render.rs`) — Shared helpers for text tables, JSON, and TOON-encoded agents format
 7. **Spilling** (`spill.rs`) — If output exceeds `max_dataprime_direct_output_size` (default 100KiB), writes to a temp file and returns the path
 
+### Layout
+
+Each CLI command owns a directory under `src/commands/<command>/`. The directory holds the command handler (`mod.rs`) and, for REST commands, an HTTP-client module (`api.rs`). The dataprime command also owns `semantic_search.rs`, which is shared with the platform-owned `search-fields` command. The shared HTTP base client lives at `src/api_client.rs`. Cross-cutting infrastructure stays at the top of `src/`.
+
+This per-command layout drives `CODEOWNERS`: each domain in the file maps directly to the command directories it owns (see CODEOWNERS comments).
+
 ### Key Modules
 
-- **`src/api/client.rs`** — `CxClient`: HTTP wrapper with Bearer auth, methods for REST (post/get) and NDJSON streaming
-- **`src/api/dataprime.rs`** — DataPrime query API (logs & traces via NDJSON)
-- **`src/api/metrics.rs`** — PromQL queries (instant, range, search, labels)
-- **`src/api/semantic_search.rs`** — Semantic Search HTTP API (fields + metrics)
-- **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, search-fields, profiles, cleanup, dataprime docs)
+- **`src/api_client.rs`** — `CxClient`: HTTP wrapper with Bearer auth, methods for REST (post/get) and NDJSON streaming
+- **`src/commands/dataprime/api.rs`** — DataPrime query API (logs & traces via NDJSON)
+- **`src/commands/dataprime/semantic_search.rs`** — Semantic Search HTTP API (fields + metrics)
+- **`src/commands/metrics/api.rs`** — PromQL queries (instant, range, search, labels)
+- **`src/commands/<command>/mod.rs`** — Per-command handler (logs, metrics, spans, dashboards, alerts, search-fields, profiles, cleanup, dataprime)
 - **`src/time.rs`** — Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/render.rs`** — Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/agents output
 - **`src/spill.rs`** — Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)
@@ -110,9 +116,9 @@ New commands must add tests at all three layers:
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| **Unit** | `src/api/<domain>.rs` `#[cfg(test)]` | API response deserialization (mandatory for REST commands) |
-| **Integration** | `tests/<domain>.rs` (wiremock) | Command runner with mocked HTTP — covers fan-out, merge, render |
-| **E2E** | `tests/e2e/<domain>.rs` (`#[ignore]`d) | Real `cx` binary against the Coralogix test team — sanity check exit + output |
+| **Unit** | `src/commands/<command>/api.rs` `#[cfg(test)]` | API response deserialization (mandatory for REST commands) |
+| **Integration** | `tests/<command>/main.rs` (wiremock) | Command runner with mocked HTTP — covers fan-out, merge, render |
+| **E2E** | `tests/e2e/<command>/mod.rs` (`#[ignore]`d) | Real `cx` binary against the Coralogix test team — sanity check exit + output |
 
 E2E tests don't run by default; run them with
 `cargo test --test e2e -- --ignored --test-threads=1` (requires

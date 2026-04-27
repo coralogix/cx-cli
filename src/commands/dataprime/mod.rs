@@ -8,7 +8,11 @@ use serde_json::Value;
 use tabled::{Table, Tabled};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::dataprime::{DataprimeApi, QueryGenericResponse};
+pub mod api;
+pub mod semantic_search;
+
+use api::{DataprimeApi, QueryGenericResponse};
+
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::spill::{maybe_spill, transform_for_agents, SpillOutcome};
@@ -477,7 +481,7 @@ category: ["Commands reference", "test"]
 
     use serde_json::json;
 
-    use crate::api::dataprime::QueryGenericResponse;
+    use super::api::QueryGenericResponse;
 
     fn make_generic_response(
         rows: Vec<serde_json::Value>,

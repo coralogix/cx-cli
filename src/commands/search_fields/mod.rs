@@ -4,7 +4,7 @@ use anyhow::Result;
 use colored::Colorize;
 use serde_json::Value;
 
-use crate::api::semantic_search::{semantic_field_lookup, SemanticFieldResult};
+use crate::commands::dataprime::semantic_search::{semantic_field_lookup, SemanticFieldResult};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;

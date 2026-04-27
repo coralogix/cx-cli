@@ -145,6 +145,31 @@ Examples:
         cmd: AlertsCmd,
     },
 
+    /// Manage alert scheduler (suppression) rules.
+    #[command(after_help = "\
+Examples:
+  cx alert-schedulers list
+  cx alert-schedulers get <rule-id>
+  cx alert-schedulers create --from-file rule.json
+  cx alert-schedulers delete <rule-id>")]
+    AlertSchedulers {
+        #[command(subcommand)]
+        cmd: AlertSchedulersCmd,
+    },
+
+    /// Manage and triage incidents.
+    #[command(after_help = "\
+Examples:
+  cx incidents list
+  cx incidents list --severity CRITICAL
+  cx incidents get <incident-id>
+  cx incidents acknowledge <id1> <id2>
+  cx incidents resolve <id>")]
+    Incidents {
+        #[command(subcommand)]
+        cmd: IncidentsCmd,
+    },
+
     /// Search log/span fields semantically by description.
     #[command(after_help = "\
 Examples:
@@ -410,6 +435,133 @@ Examples:
         /// Alert definition ID (UUID).
         alert_id: String,
     },
+    /// List alert events (trigger instances).
+    #[command(after_help = "\
+Examples:
+  cx alerts events
+  cx alerts events --alert-id <id>
+  cx alerts events --start now-24h")]
+    Events {
+        /// Filter by alert definition ID.
+        #[arg(long)]
+        alert_id: Option<String>,
+
+        /// Start time filter (ISO 8601 or relative).
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End time filter (ISO 8601 or relative).
+        #[arg(long)]
+        end: Option<String>,
+    },
+    /// Get alert event statistics.
+    EventStats,
+}
+
+#[derive(Subcommand)]
+enum IncidentsCmd {
+    /// List incidents with optional filters.
+    #[command(after_help = "\
+Examples:
+  cx incidents list
+  cx incidents list --severity CRITICAL
+  cx incidents list --status TRIGGERED")]
+    List {
+        /// Filter by status (e.g. TRIGGERED, ACKNOWLEDGED, RESOLVED).
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Filter by severity (e.g. CRITICAL, WARNING, INFO).
+        #[arg(long)]
+        severity: Option<String>,
+
+        /// Filter by assignee user ID.
+        #[arg(long)]
+        assignee: Option<String>,
+    },
+    /// Get a single incident by ID.
+    Get {
+        /// Incident ID.
+        id: String,
+    },
+    /// Acknowledge one or more incidents.
+    Acknowledge {
+        /// Incident IDs to acknowledge.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Resolve one or more incidents.
+    Resolve {
+        /// Incident IDs to resolve.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Close one or more incidents.
+    Close {
+        /// Incident IDs to close.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Assign one or more incidents to a user.
+    Assign {
+        /// Incident IDs to assign.
+        #[arg(required = true)]
+        ids: Vec<String>,
+
+        /// User ID to assign to.
+        #[arg(long)]
+        user_id: String,
+    },
+    /// Unassign one or more incidents.
+    Unassign {
+        /// Incident IDs to unassign.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// List incident events.
+    #[command(after_help = "\
+Examples:
+  cx incidents events
+  cx incidents events --incident-id <id>")]
+    Events {
+        /// Filter events by incident ID.
+        #[arg(long)]
+        incident_id: Option<String>,
+    },
+    /// Get incident aggregations.
+    Aggregations,
+}
+
+#[derive(Subcommand)]
+enum AlertSchedulersCmd {
+    /// List all alert scheduler rules.
+    List,
+    /// Get a single alert scheduler rule by ID.
+    Get {
+        /// Alert scheduler rule ID.
+        id: String,
+    },
+    /// Create an alert scheduler rule from a JSON definition file.
+    #[command(after_help = "\
+Examples:
+  cx alert-schedulers create --from-file rule.json
+  cat rule.json | cx alert-schedulers create")]
+    Create {
+        /// Path to JSON file with the rule definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update an alert scheduler rule from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated rule definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete an alert scheduler rule.
+    Delete {
+        /// Alert scheduler rule ID.
+        id: String,
+    },
 }
 
 #[tokio::main]
@@ -613,6 +765,82 @@ async fn main() -> Result<()> {
             }
             AlertsCmd::Disable { alert_id } => {
                 commands::alerts::run_disable(&targets, &alert_id).await?;
+            }
+            AlertsCmd::Events {
+                alert_id,
+                start,
+                end,
+            } => {
+                commands::alerts::run_events(
+                    &targets,
+                    alert_id.as_deref(),
+                    start.as_deref(),
+                    end.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            AlertsCmd::EventStats => {
+                commands::alerts::run_event_stats(&targets, output).await?;
+            }
+        },
+
+        Commands::AlertSchedulers { cmd } => match cmd {
+            AlertSchedulersCmd::List => {
+                commands::alert_schedulers::run_list(&targets, output).await?;
+            }
+            AlertSchedulersCmd::Get { id } => {
+                commands::alert_schedulers::run_get(&targets, &id, output).await?;
+            }
+            AlertSchedulersCmd::Create { from_file } => {
+                commands::alert_schedulers::run_create(&targets, &from_file, output).await?;
+            }
+            AlertSchedulersCmd::Update { from_file } => {
+                commands::alert_schedulers::run_update(&targets, &from_file, output).await?;
+            }
+            AlertSchedulersCmd::Delete { id } => {
+                commands::alert_schedulers::run_delete(&targets, &id).await?;
+            }
+        },
+
+        Commands::Incidents { cmd } => match cmd {
+            IncidentsCmd::List {
+                status,
+                severity,
+                assignee,
+            } => {
+                commands::incidents::run_list(
+                    &targets,
+                    status.as_deref(),
+                    severity.as_deref(),
+                    assignee.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            IncidentsCmd::Get { id } => {
+                commands::incidents::run_get(&targets, &id, output).await?;
+            }
+            IncidentsCmd::Acknowledge { ids } => {
+                commands::incidents::run_acknowledge(&targets, &ids).await?;
+            }
+            IncidentsCmd::Resolve { ids } => {
+                commands::incidents::run_resolve(&targets, &ids).await?;
+            }
+            IncidentsCmd::Close { ids } => {
+                commands::incidents::run_close(&targets, &ids).await?;
+            }
+            IncidentsCmd::Assign { ids, user_id } => {
+                commands::incidents::run_assign(&targets, &ids, &user_id).await?;
+            }
+            IncidentsCmd::Unassign { ids } => {
+                commands::incidents::run_unassign(&targets, &ids).await?;
+            }
+            IncidentsCmd::Events { incident_id } => {
+                commands::incidents::run_events(&targets, incident_id.as_deref(), output).await?;
+            }
+            IncidentsCmd::Aggregations => {
+                commands::incidents::run_aggregations(&targets, output).await?;
             }
         },
 

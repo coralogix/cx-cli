@@ -99,6 +99,7 @@ Run `cx <command> --help` for full syntax and examples on any command.
 | Command | Purpose |
 |---|---|
 | `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx logs` | Query logs using DataPrime |
 | `cx spans` | Query distributed spans |
 | `cx metrics` | Query metrics using PromQL: `query`, `query-range`, `search`, `get-labels` |
@@ -181,6 +182,78 @@ See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
 ## Migrating from cxctl
 
 `cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail, SAML management, and account invite flows.
+
+## Shell completions
+
+`cx` supports tab-completion for all commands, flags, subcommands, and profile names.
+
+### Managed install (recommended)
+
+Let `cx` install and track a completion script for you. It writes to a standard user-writable location and records the path so `cx completions refresh` can update it later:
+
+```bash
+cx completions install zsh
+cx completions install bash
+cx completions install fish
+```
+
+Default paths used by each shell:
+
+| Shell | Default path |
+|---|---|
+| zsh | `~/.zfunc/_cx` |
+| bash | `~/.local/share/bash-completion/completions/cx` |
+| fish | `~/.config/fish/completions/cx.fish` |
+
+After installing for **zsh**, add `~/.zfunc` to your `$fpath` if it isn't already there (the install command will tell you):
+
+```bash
+# Add to ~/.zshrc:
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
+```
+
+### Refreshing after profile changes
+
+When you add or delete a profile, `cx` will remind you to refresh if you have managed completions. You can run it any time:
+
+```bash
+cx completions refresh
+```
+
+Only files previously installed by `cx completions install` are updated.
+
+### Manual install
+
+To generate a script yourself and pipe it anywhere:
+
+```bash
+cx completions generate zsh > ~/.zfunc/_cx
+cx completions generate bash > ~/.local/share/bash-completion/completions/cx
+cx completions generate fish > ~/.config/fish/completions/cx.fish
+```
+
+### Dynamic completions (always-fresh profile names)
+
+For profile names to update automatically on every Tab press without running `refresh`, source completions dynamically on each shell start. This calls back into `cx` at completion time:
+
+**zsh** — add to `~/.zshrc`:
+
+```bash
+source <(COMPLETE=zsh cx)
+```
+
+**bash** — add to `~/.bashrc`:
+
+```bash
+source <(COMPLETE=bash cx)
+```
+
+**fish** — add to `~/.config/fish/config.fish`:
+
+```fish
+COMPLETE=fish cx | source
+```
 
 ## Further reading
 

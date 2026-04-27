@@ -130,6 +130,15 @@ impl std::str::FromStr for Region {
     }
 }
 
+/// A shell completion script installed and tracked by `cx completions install`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ManagedCompletion {
+    /// Shell name as a lowercase string, e.g. "zsh", "bash", "fish".
+    pub shell: String,
+    /// Absolute path to the installed completion file.
+    pub path: PathBuf,
+}
+
 /// Top-level config file (~/.cx/config.toml).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -156,6 +165,11 @@ pub struct Config {
     /// `max_dataprime_direct_output_size`. Defaults to `/tmp/`.
     #[serde(default = "default_temp_dir")]
     pub temp_dir: String,
+
+    /// Shell completion scripts installed and tracked by `cx completions install`.
+    /// Only files recorded here are touched by `cx completions refresh`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub managed_completions: Vec<ManagedCompletion>,
 }
 
 fn default_profile() -> String {
@@ -177,6 +191,7 @@ impl Default for Config {
             default_output_format: OutputFormat::default(),
             max_dataprime_direct_output_size: default_max_dataprime_direct_output_size(),
             temp_dir: default_temp_dir(),
+            managed_completions: vec![],
         }
     }
 }
@@ -268,6 +283,33 @@ pub fn profiles_dir() -> Result<PathBuf> {
 
 pub fn profile_file(name: &str) -> Result<PathBuf> {
     Ok(profiles_dir()?.join(format!("{name}.toml")))
+}
+
+/// List all profile names from `~/.cx/profiles/`, sorted alphabetically.
+///
+/// Returns an empty list (not an error) when the directory does not exist.
+/// Silently skips entries whose filenames are not valid UTF-8 or whose
+/// extension is not `toml`.
+pub fn list_profile_names() -> Result<Vec<String>> {
+    list_profile_names_from(&profiles_dir()?)
+}
+
+fn list_profile_names_from(dir: &PathBuf) -> Result<Vec<String>> {
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut names: Vec<String> = std::fs::read_dir(dir)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension()?.to_str()? != "toml" {
+                return None;
+            }
+            Some(path.file_stem()?.to_str()?.to_string())
+        })
+        .collect();
+    names.sort();
+    Ok(names)
 }
 
 /// Load the global config (non-fatal if missing — returns default).
@@ -431,11 +473,132 @@ pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
     Ok(())
 }
 
+// ── Managed completion helpers ────────────────────────────────────────────────
+
+/// Returns `true` when at least one completion file is tracked in the config.
+/// Non-fatal: returns `false` if the config cannot be read.
+pub fn has_managed_completions() -> bool {
+    load_config()
+        .map(|c| !c.managed_completions.is_empty())
+        .unwrap_or(false)
+}
+
+/// Return the tracked managed completion entries from the global config.
+pub fn managed_completions() -> Result<Vec<ManagedCompletion>> {
+    Ok(load_config()?.managed_completions)
+}
+
+/// Add or update a managed completion entry for the given shell and path.
+///
+/// If an entry for this shell already exists, its path is updated in place.
+/// The updated config is persisted to `~/.cx/config.toml`.
+pub fn upsert_managed_completion(shell: &str, path: PathBuf) -> Result<()> {
+    let mut config = load_config().unwrap_or_default();
+    if let Some(existing) = config
+        .managed_completions
+        .iter_mut()
+        .find(|c| c.shell == shell)
+    {
+        existing.path = path;
+    } else {
+        config.managed_completions.push(ManagedCompletion {
+            shell: shell.to_string(),
+            path,
+        });
+    }
+    save_config(&config)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── list_profile_names_from ────────────────────────────────────────────────
+
+    #[test]
+    fn list_profile_names_sorted_and_filters_non_toml() {
+        let dir =
+            std::env::temp_dir().join(format!("cx_test_list_profiles_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(dir.join("prod.toml"), "").unwrap();
+        std::fs::write(dir.join("staging.toml"), "").unwrap();
+        std::fs::write(dir.join("alpha.toml"), "").unwrap();
+        std::fs::write(dir.join("ignored.txt"), "").unwrap();
+        std::fs::write(dir.join("also-ignored.json"), "").unwrap();
+
+        let names = list_profile_names_from(&dir).unwrap();
+        assert_eq!(names, vec!["alpha", "prod", "staging"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn list_profile_names_missing_dir_returns_empty() {
+        let dir = std::env::temp_dir().join("cx_test_nonexistent_profiles_dir_xyz_never_created");
+        // Ensure it really does not exist.
+        let _ = std::fs::remove_dir_all(&dir);
+        let names = list_profile_names_from(&dir).unwrap();
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn list_profile_names_empty_dir_returns_empty() {
+        let dir =
+            std::env::temp_dir().join(format!("cx_test_empty_profiles_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let names = list_profile_names_from(&dir).unwrap();
+        assert!(names.is_empty());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ── ManagedCompletion / upsert_managed_completion ─────────────────────────
+
+    #[test]
+    fn managed_completion_roundtrips_through_toml() {
+        let mc = ManagedCompletion {
+            shell: "zsh".to_string(),
+            path: PathBuf::from("/home/user/.zfunc/_cx"),
+        };
+        let config = Config {
+            managed_completions: vec![mc.clone()],
+            ..Config::default()
+        };
+        let toml = toml::to_string_pretty(&config).unwrap();
+        let restored: Config = toml::from_str(&toml).unwrap();
+        assert_eq!(restored.managed_completions.len(), 1);
+        assert_eq!(restored.managed_completions[0], mc);
+    }
+
+    #[test]
+    fn default_config_has_no_managed_completions() {
+        let config = Config::default();
+        assert!(config.managed_completions.is_empty());
+    }
+
+    #[test]
+    fn config_without_managed_completions_field_deserialises_ok() {
+        let toml = r#"
+default_profile = "my-profile"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.managed_completions.is_empty());
+        assert_eq!(config.default_profile, "my-profile");
+    }
+
+    #[test]
+    fn managed_completions_not_written_when_empty() {
+        let config = Config::default();
+        let toml = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            !toml.contains("managed_completions"),
+            "empty managed_completions should be skipped in TOML output"
+        );
+    }
 
     // ── Unit tests (no disk I/O) ───────────────────────────────────────────────
 

@@ -63,7 +63,7 @@ All fields are accessed through three namespaces:
 | `filter` | Keep rows matching a condition | `filter $m.severity == ERROR` |
 | `choose` | Select specific fields | `choose $m.timestamp, $d.message` |
 | `limit` | Cap the number of results | `limit 10` |
-| `wildfind` | Search all fields for a string (see note below) | `wildfind "connection refused"` |
+| `wildfind` | Search all fields for a string (see note below) | `wildfind 'connection refused'` |
 | `lucene` | Filter using Lucene syntax | `lucene 'key:field:"value"'` |
 
 > **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions — use it as its own pipeline stage.
@@ -181,7 +181,7 @@ Use `arrayContains` to match against a set of values:
 
 ```dataprime
 # Match multiple subsystems
-filter ["api", "web", "worker"].arrayContains($l.subsystemname)
+filter ['api', 'web', 'worker'].arrayContains($l.subsystemname)
 
 # Match multiple severity levels
 filter [ERROR, CRITICAL].arrayContains($m.severity)
@@ -203,7 +203,7 @@ extract $d.email into extracted using regexp(e=/(?<username>[a-zA-Z0-9._%+-]+)@(
 
 ```dataprime
 # Parse a JSON string field into an object for further querying
-extract $d.json_payload into parsed using jsonobject() | filter $d.parsed.status == "failed"
+extract $d.json_payload into parsed using jsonobject() | filter $d.parsed.status == 'failed'
 ```
 
 ## Deduplication

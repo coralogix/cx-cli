@@ -13,12 +13,12 @@ Identify:
 
 **If you have a trace ID** — go straight to it:
 ```bash
-cx spans 'filter $d.traceID == "<trace_id>"'
+cx spans "filter \$d.traceID == '<trace_id>'"
 ```
 
 **If you have a service name** — query its spans:
 ```bash
-cx spans 'filter $l.serviceName == "<service>"' --limit 50
+cx spans "filter \$l.serviceName == '<service>'" --limit 50
 ```
 
 **If you have neither** — start broad to find entry points:
@@ -30,7 +30,7 @@ cx spans 'filter $d.tags.error == true' --limit 20
 cx spans 'groupby $l.serviceName, $l.operationName aggregate avg($m.duration) as avg_latency | orderby avg_latency desc | limit 10'
 
 # Then extract trace IDs from interesting spans
-cx spans 'filter $l.serviceName == "<service>" && $m.duration > 1000000 | distinct $d.traceID'
+cx spans "filter \$l.serviceName == '<service>' && \$m.duration > 1000000 | distinct \$d.traceID"
 ```
 
 ### 3. Discover Fields When Needed
@@ -48,23 +48,23 @@ Add filters incrementally:
 
 ```bash
 # Step 1: Start broad
-cx spans 'filter $l.serviceName == "api"'
+cx spans "filter \$l.serviceName == 'api'"
 
 # Step 2: Add duration filter
-cx spans 'filter $l.serviceName == "api" | filter $m.duration > 500000'
+cx spans "filter \$l.serviceName == 'api' | filter \$m.duration > 500000"
 
 # Step 3: Add operation filter
-cx spans 'filter $l.serviceName == "api" | filter $l.operationName ~ "checkout"'
+cx spans "filter \$l.serviceName == 'api' | filter \$l.operationName ~ 'checkout'"
 ```
 
 ### 5. Aggregate for Insights
 
 ```bash
 # Count by operation
-cx spans 'filter $l.serviceName == "api" | groupby $l.operationName aggregate count() as span_count'
+cx spans "filter \$l.serviceName == 'api' | groupby \$l.operationName aggregate count() as span_count"
 
 # Latency distribution
-cx spans 'filter $l.serviceName == "api" | groupby $l.operationName aggregate avg($m.duration) as avg, max($m.duration) as max'
+cx spans "filter \$l.serviceName == 'api' | groupby \$l.operationName aggregate avg(\$m.duration) as avg, max(\$m.duration) as max"
 ```
 
 ### 6. Summarize Findings
@@ -83,13 +83,13 @@ After investigation, provide:
 
 ```bash
 # All spans for a trace
-cx spans 'filter $d.traceID == "4f6a8f3c2e8a1b97"'
+cx spans "filter \$d.traceID == '4f6a8f3c2e8a1b97'"
 
 # Find root spans only (no parent)
-cx spans 'filter $l.serviceName == "api-gateway" | filter $d.parentSpanID == ""'
+cx spans "filter \$l.serviceName == 'api-gateway' | filter \$d.parentSpanID == ''"
 
 # Find trace IDs for a service
-cx spans 'filter $l.serviceName == "payment-service" | distinct $d.traceID'
+cx spans "filter \$l.serviceName == 'payment-service' | distinct \$d.traceID"
 ```
 
 ### Latency Analysis
@@ -114,10 +114,10 @@ Find when latency changed over time:
 
 ```bash
 # Average latency per 15-minute window
-cx spans 'filter $l.serviceName == "api" | groupby roundTime($m.timestamp, 15m) as interval aggregate avg($m.duration) as avg_latency | orderby interval'
+cx spans "filter \$l.serviceName == 'api' | groupby roundTime(\$m.timestamp, 15m) as interval aggregate avg(\$m.duration) as avg_latency | orderby interval"
 
 # Find the time windows with highest latency
-cx spans 'filter $l.serviceName == "api" | groupby roundTime($m.timestamp, 5m) as interval aggregate avg($m.duration) as avg_latency | orderby avg_latency desc | limit 10'
+cx spans "filter \$l.serviceName == 'api' | groupby roundTime(\$m.timestamp, 5m) as interval aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc | limit 10"
 ```
 
 ### Error Investigation
@@ -127,7 +127,7 @@ cx spans 'filter $l.serviceName == "api" | groupby roundTime($m.timestamp, 5m) a
 cx spans 'filter $d.tags.error == true'
 
 # Error spans for a specific service
-cx spans 'filter $l.serviceName == "checkout" | filter $d.tags.error == true'
+cx spans "filter \$l.serviceName == 'checkout' | filter \$d.tags.error == true"
 
 # Error rate by service
 cx spans 'filter $d.tags.error == true | groupby $l.serviceName aggregate count() as errors | orderby errors desc'
@@ -157,7 +157,7 @@ Discover what's in the data before building complex queries:
 cx spans 'distinct $l.serviceName'
 
 # List all operations for a service
-cx spans 'filter $l.serviceName == "api" | distinct $l.operationName'
+cx spans "filter \$l.serviceName == 'api' | distinct \$l.operationName"
 
 # Find unique trace IDs for error spans
 cx spans 'filter $d.tags.error == true | distinct $d.traceID'
@@ -171,13 +171,13 @@ cx spans 'distinct $l.subsystemName'
 
 ```bash
 # Find all spans for a request ID (field name varies by customer)
-cx spans 'filter $d.request_id == "abc-123-def"'
+cx spans "filter \$d.request_id == 'abc-123-def'"
 
 # Find spans for a specific user
-cx spans 'filter $d.user_id == "user_12345"' --start now-24h
+cx spans "filter \$d.user_id == 'user_12345'" --start now-24h
 
 # Find spans across services for the same trace
-cx spans 'filter $d.traceID == "abc123" | groupby $l.serviceName aggregate count() as span_count, avg($m.duration) as avg_latency'
+cx spans "filter \$d.traceID == 'abc123' | groupby \$l.serviceName aggregate count() as span_count, avg(\$m.duration) as avg_latency"
 ```
 
 ### Service Interaction Analysis
@@ -187,7 +187,7 @@ cx spans 'filter $d.traceID == "abc123" | groupby $l.serviceName aggregate count
 cx spans 'groupby $l.serviceName, $l.operationName aggregate count() as span_count | orderby span_count desc'
 
 # Which services talk to each other (via shared trace IDs)
-cx spans 'filter $d.traceID == "<trace_id>" | groupby $l.serviceName aggregate count() as span_count, avg($m.duration) as avg_latency'
+cx spans "filter \$d.traceID == '<trace_id>' | groupby \$l.serviceName aggregate count() as span_count, avg(\$m.duration) as avg_latency"
 
 # Busiest operations per service
 cx spans 'groupby $l.serviceName, $l.operationName aggregate count() as calls, avg($m.duration) as avg_latency | orderby calls desc | limit 20'
@@ -216,7 +216,7 @@ cx spans 'filter $d.tags.error == true | groupby roundTime($m.timestamp, 15m) as
 ## Debugging a Request
 
 1. Get the trace ID from logs, headers, or error reports
-2. Fetch all spans: `cx spans 'filter $d.traceID == "<id>"'`
+2. Fetch all spans: `cx spans "filter \$d.traceID == '<id>'"`
 3. Identify slow spans: look at `$m.duration`
 4. Check for errors: look for `$d.tags.error == true`
 5. Follow the call chain using `parentSpanID`
@@ -227,5 +227,5 @@ cx spans 'filter $d.tags.error == true | groupby roundTime($m.timestamp, 15m) as
 For large queries, use `--output agents` which automatically spills to a temp file when results exceed the configured threshold:
 
 ```bash
-cx spans 'filter $l.serviceName == "api"' --start now-24h --limit 1000 -o agents
+cx spans "filter \$l.serviceName == 'api'" --start now-24h --limit 1000 -o agents
 ```

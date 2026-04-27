@@ -74,16 +74,14 @@ pub fn delete_profile(profile: &str) {
 mod tests {
     use super::*;
 
-    const TEST_PROFILE: &str = "cx_keyring_test";
-
     #[test]
     #[ignore = "requires system keyring access"]
     fn store_and_get_roundtrip() {
-        store_secret(TEST_PROFILE, "api_key", "test-secret-123").unwrap();
-        let result = get_secret(TEST_PROFILE, "api_key").unwrap();
+        let profile = "cx_keyring_test_roundtrip";
+        store_secret(profile, "api_key", "test-secret-123").unwrap();
+        let result = get_secret(profile, "api_key").unwrap();
         assert_eq!(result, Some("test-secret-123".to_string()));
-        // cleanup
-        delete_profile(TEST_PROFILE);
+        delete_profile(profile);
     }
 
     #[test]
@@ -96,28 +94,28 @@ mod tests {
     #[test]
     #[ignore = "requires system keyring access"]
     fn delete_removes_secret() {
-        store_secret(TEST_PROFILE, "delete_test", "to-be-deleted").unwrap();
-        delete_secret(TEST_PROFILE, "delete_test");
-        let result = get_secret(TEST_PROFILE, "delete_test").unwrap();
+        let profile = "cx_keyring_test_delete";
+        store_secret(profile, "delete_test", "to-be-deleted").unwrap();
+        delete_secret(profile, "delete_test");
+        let result = get_secret(profile, "delete_test").unwrap();
         assert_eq!(result, None);
-        // cleanup
-        delete_profile(TEST_PROFILE);
+        delete_profile(profile);
     }
 
     #[test]
     #[ignore = "requires system keyring access"]
     fn multiple_keys_single_entry() {
-        store_secret(TEST_PROFILE, "api_key", "key-1").unwrap();
-        store_secret(TEST_PROFILE, "openai_api_key", "key-2").unwrap();
+        let profile = "cx_keyring_test_multikey";
+        store_secret(profile, "api_key", "key-1").unwrap();
+        store_secret(profile, "openai_api_key", "key-2").unwrap();
         assert_eq!(
-            get_secret(TEST_PROFILE, "api_key").unwrap(),
+            get_secret(profile, "api_key").unwrap(),
             Some("key-1".to_string())
         );
         assert_eq!(
-            get_secret(TEST_PROFILE, "openai_api_key").unwrap(),
+            get_secret(profile, "openai_api_key").unwrap(),
             Some("key-2".to_string())
         );
-        // cleanup
-        delete_profile(TEST_PROFILE);
+        delete_profile(profile);
     }
 }

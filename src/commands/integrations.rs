@@ -1,0 +1,472 @@
+use std::sync::Arc;
+
+use anyhow::Result;
+use colored::Colorize;
+use serde_json::{json, Value};
+use toon_format::encode_default as toon_encode;
+
+use crate::api::integrations::{Integration, IntegrationsApi};
+use crate::config::OutputFormat;
+use crate::execution::{fan_out, ExecutionTarget};
+use crate::render;
+
+fn rg_to_json(integration: &Integration, include_profile: bool, profile: &str) -> Value {
+    let mut v = json!({
+        "id": integration.id,
+        "name": integration.name,
+        "type": integration.display_type(),
+        "status": integration.display_status(),
+        "version": integration.version.map(|v| v.to_string()).unwrap_or_default(),
+    });
+    if include_profile {
+        if let Value::Object(ref mut m) = v {
+            m.insert("profile".to_string(), Value::String(profile.to_string()));
+        }
+    }
+    v
+}
+
+fn read_from_file(path: &str) -> Result<Value> {
+    let raw = if path == "-" {
+        eprintln!("{}", "Reading integration definition from stdin...".dimmed());
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        eprintln!(
+            "{}",
+            format!("Reading integration definition from {path}...").dimmed()
+        );
+        std::fs::read_to_string(path)?
+    };
+    Ok(serde_json::from_str(&raw)?)
+}
+
+pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
+    eprintln!("{}", "Fetching integrations...".dimmed());
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| async move {
+        let api = IntegrationsApi::new(&t.client);
+        Ok(api.list().await?)
+    })
+    .await;
+
+    let mut all_json: Vec<Value> = Vec::new();
+    let mut all_items: Vec<(String, Integration)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for integration in resp.deployments {
+                    all_json.push(rg_to_json(&integration, include_profile, &profile));
+                    all_items.push((profile.clone(), integration));
+                }
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Agents => {
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_items.is_empty() {
+                render::print_no_results("No integrations found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, integration)| {
+                    vec![
+                        profile.clone(),
+                        integration.id.clone().unwrap_or_default(),
+                        integration.name.clone().unwrap_or_default(),
+                        integration.display_type().to_string(),
+                        integration.display_status().to_string(),
+                        integration
+                            .version
+                            .map(|v| v.to_string())
+                            .unwrap_or_default(),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["ID", "Name", "Type", "Status", "Version"],
+                rows,
+                include_profile,
+            );
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_get(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", format!("Fetching integration {id}...").dimmed());
+    let include_profile = targets.len() > 1;
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            Ok(api.get_details(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut val) => {
+                if include_profile {
+                    render::tag_get_result(&mut val, &profile);
+                }
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "Integration not found.",
+                None::<&dyn Fn(&Value)>,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_create(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let body = read_from_file(from_file)?;
+    eprintln!("{}", "Creating integration...".dimmed());
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            Ok(api.save(&body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                if let Some(integration) = resp.deployment {
+                    let name = integration.name.clone().unwrap_or_default();
+                    let id = integration.id.as_deref().unwrap_or("unknown");
+                    eprintln!(
+                        "{}",
+                        format!(
+                            "Created integration '{name}' (ID: {id}) in profile '{profile}'."
+                        )
+                        .green()
+                    );
+                    all_results.push(rg_to_json(&integration, include_profile, &profile));
+                }
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {}
+    }
+    Ok(())
+}
+
+pub async fn run_update(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let body = read_from_file(from_file)?;
+    eprintln!("{}", format!("Updating integration {id}...").dimmed());
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        let id = id.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            Ok(api.update(&id, &body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(val) => {
+                eprintln!(
+                    "{}",
+                    format!("Updated integration {id} in profile '{profile}'.").green()
+                );
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {}
+    }
+    Ok(())
+}
+
+pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
+    eprintln!("{}", format!("Deleting integration {id}...").dimmed());
+    let id = id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            api.delete(&id).await?;
+            Ok(())
+        }
+    })
+    .await;
+    for (profile, result) in per_profile {
+        match result {
+            Ok(()) => eprintln!(
+                "{}",
+                format!("Integration {id} deleted in profile '{profile}'.").green()
+            ),
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_definition(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching integration definition {id}...").dimmed()
+    );
+    let include_profile = targets.len() > 1;
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            Ok(api.get_definition(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut val) => {
+                if include_profile {
+                    render::tag_get_result(&mut val, &profile);
+                }
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "Integration definition not found.",
+                None::<&dyn Fn(&Value)>,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_deployed(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching deployed integration {id}...").dimmed()
+    );
+    let include_profile = targets.len() > 1;
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            Ok(api.get_deployed(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut val) => {
+                if include_profile {
+                    render::tag_get_result(&mut val, &profile);
+                }
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "Deployed integration not found.",
+                None::<&dyn Fn(&Value)>,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_test(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let body = read_from_file(from_file)?;
+    eprintln!("{}", "Testing integration...".dimmed());
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            Ok(api.test(&body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(val) => {
+                eprintln!(
+                    "{}",
+                    format!("Test completed in profile '{profile}'.").green()
+                );
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            for val in &all_results {
+                println!("{}", serde_json::to_string_pretty(val)?);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_template(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
+    eprintln!("{}", "Fetching integration template...".dimmed());
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| async move {
+        let api = IntegrationsApi::new(&t.client);
+        Ok(api.get_template().await?)
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut val) => {
+                if include_profile {
+                    render::tag_get_result(&mut val, &profile);
+                }
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "Integration template not found.",
+                None::<&dyn Fn(&Value)>,
+            )?;
+        }
+    }
+    Ok(())
+}

@@ -706,7 +706,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 5.1a [ ] Add `integrations` command module
+### 5.1a [x] Add `integrations` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/integrations.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_definition()`, `run_deployed()`, `run_create()`, `run_update()`, `run_delete()`, `run_test()`, `run_template()`. Text table: [ID, Name, Type, Status, Version]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -730,7 +730,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 5.2a [ ] Add `extensions` command module
+### 5.2a [x] Add `extensions` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/extensions.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_deployed()`, `run_deploy()`, `run_update()`, `run_undeploy()`. Text table: [ID, Name, Version, Deployed, Updated]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -754,7 +754,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 5.3a [ ] Add `webhooks` command module
+### 5.3a [x] Add `webhooks` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/webhooks.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_test()`, `run_types()`. Text table: [ID, Name, Type, URL, Created]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -778,7 +778,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 5.4a [ ] Add `contextual-data` command module
+### 5.4a [x] Add `contextual-data` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/contextual_data.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_definition()`, `run_test()`. Text table: [ID, Name, Type, Status, Created]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

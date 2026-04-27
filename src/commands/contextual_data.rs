@@ -1,0 +1,399 @@
+use std::sync::Arc;
+
+use anyhow::Result;
+use colored::Colorize;
+use serde_json::{json, Value};
+use toon_format::encode_default as toon_encode;
+
+use crate::api::contextual_data::{ContextualDataApi, ContextualDataIntegration};
+use crate::config::OutputFormat;
+use crate::execution::{fan_out, ExecutionTarget};
+use crate::render;
+
+fn item_to_json(
+    item: &ContextualDataIntegration,
+    include_profile: bool,
+    profile: &str,
+) -> Value {
+    let mut v = json!({
+        "id": item.id,
+        "name": item.name,
+        "type": item.display_type(),
+        "status": item.display_status(),
+        "created_at": item.created_at,
+    });
+    if include_profile {
+        if let Value::Object(ref mut m) = v {
+            m.insert("profile".to_string(), Value::String(profile.to_string()));
+        }
+    }
+    v
+}
+
+fn read_from_file(path: &str) -> Result<Value> {
+    let raw = if path == "-" {
+        eprintln!(
+            "{}",
+            "Reading contextual data definition from stdin...".dimmed()
+        );
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        eprintln!(
+            "{}",
+            format!("Reading contextual data definition from {path}...").dimmed()
+        );
+        std::fs::read_to_string(path)?
+    };
+    Ok(serde_json::from_str(&raw)?)
+}
+
+pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
+    eprintln!("{}", "Fetching contextual data integrations...".dimmed());
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| async move {
+        let api = ContextualDataApi::new(&t.client);
+        Ok(api.list().await?)
+    })
+    .await;
+
+    let mut all_json: Vec<Value> = Vec::new();
+    let mut all_items: Vec<(String, ContextualDataIntegration)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for item in resp.integrations {
+                    all_json.push(item_to_json(&item, include_profile, &profile));
+                    all_items.push((profile.clone(), item));
+                }
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Agents => {
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_items.is_empty() {
+                render::print_no_results("No contextual data integrations found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, item)| {
+                    vec![
+                        profile.clone(),
+                        item.id.clone().unwrap_or_default(),
+                        item.name.clone().unwrap_or_default(),
+                        item.display_type().to_string(),
+                        item.display_status().to_string(),
+                        item.created_at.clone().unwrap_or_default(),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["ID", "Name", "Type", "Status", "Created At"],
+                rows,
+                include_profile,
+            );
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_get(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching contextual data integration {id}...").dimmed()
+    );
+    let include_profile = targets.len() > 1;
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = ContextualDataApi::new(&t.client);
+            Ok(api.get(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut val) => {
+                if include_profile {
+                    render::tag_get_result(&mut val, &profile);
+                }
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "Contextual data integration not found.",
+                None::<&dyn Fn(&Value)>,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_create(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let body = read_from_file(from_file)?;
+    eprintln!("{}", "Creating contextual data integration...".dimmed());
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        async move {
+            let api = ContextualDataApi::new(&t.client);
+            Ok(api.save(&body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                if let Some(item) = resp.integration {
+                    let name = item.name.clone().unwrap_or_default();
+                    let id = item.id.as_deref().unwrap_or("unknown");
+                    eprintln!(
+                        "{}",
+                        format!(
+                            "Created contextual data integration '{name}' (ID: {id}) in profile '{profile}'."
+                        )
+                        .green()
+                    );
+                    all_results.push(item_to_json(&item, include_profile, &profile));
+                }
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {}
+    }
+    Ok(())
+}
+
+pub async fn run_update(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let body = read_from_file(from_file)?;
+    eprintln!(
+        "{}",
+        format!("Updating contextual data integration {id}...").dimmed()
+    );
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        let id = id.clone();
+        async move {
+            let api = ContextualDataApi::new(&t.client);
+            Ok(api.update(&id, &body).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(val) => {
+                eprintln!(
+                    "{}",
+                    format!(
+                        "Updated contextual data integration {id} in profile '{profile}'."
+                    )
+                    .green()
+                );
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {}
+    }
+    Ok(())
+}
+
+pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Deleting contextual data integration {id}...").dimmed()
+    );
+    let id = id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = ContextualDataApi::new(&t.client);
+            api.delete(&id).await?;
+            Ok(())
+        }
+    })
+    .await;
+    for (profile, result) in per_profile {
+        match result {
+            Ok(()) => eprintln!(
+                "{}",
+                format!(
+                    "Contextual data integration {id} deleted in profile '{profile}'."
+                )
+                .green()
+            ),
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_definition(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching contextual data integration definition {id}...").dimmed()
+    );
+    let include_profile = targets.len() > 1;
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = ContextualDataApi::new(&t.client);
+            Ok(api.get_definition(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(mut val) => {
+                if include_profile {
+                    render::tag_get_result(&mut val, &profile);
+                }
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "Contextual data integration definition not found.",
+                None::<&dyn Fn(&Value)>,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_test(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Testing contextual data integration {id}...").dimmed()
+    );
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = ContextualDataApi::new(&t.client);
+            Ok(api.test(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(val) => {
+                eprintln!(
+                    "{}",
+                    format!("Test completed in profile '{profile}'.").green()
+                );
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            for val in &all_results {
+                println!("{}", serde_json::to_string_pretty(val)?);
+            }
+        }
+    }
+    Ok(())
+}

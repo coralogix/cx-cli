@@ -724,7 +724,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx integrations --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 integrations` passes against real Coralogix
 - **Dependencies:** 5.1b
 
-### 5.2 [ ] Add `extensions` API module
+### 5.2 [x] Add `extensions` API module *(completed 2026-04-28)*
 - **Files:** `src/api/extensions.rs`, `src/api/mod.rs`
 - **What:** Create `ExtensionsApi<'a>` with methods: list_all, get, list_deployed, deploy, update, undeploy. Define response structs with fields for text table: id, name, version, deployed, updated. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -748,7 +748,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx extensions --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 extensions` passes against real Coralogix
 - **Dependencies:** 5.2b
 
-### 5.3 [ ] Add `webhooks` API module
+### 5.3 [x] Add `webhooks` API module *(completed 2026-04-28)*
 - **Files:** `src/api/webhooks.rs`, `src/api/mod.rs`
 - **What:** Create `WebhooksApi<'a>` with methods: list_all, get, create, update, delete, test, list_types, get_type_details, list_summaries. Define response structs with fields for text table: id, name, type, url, created. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -772,7 +772,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx webhooks --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 webhooks` passes against real Coralogix
 - **Dependencies:** 5.3b
 
-### 5.4 [ ] Add `contextual-data` API module
+### 5.4 [x] Add `contextual-data` API module *(completed 2026-04-28)*
 - **Files:** `src/api/contextual_data.rs`, `src/api/mod.rs`
 - **What:** Create `ContextualDataApi<'a>` with methods: list, get, save, update, delete, get_definition, test. Define response structs with fields for text table: id, name, type, status, created. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

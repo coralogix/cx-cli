@@ -56,7 +56,7 @@ CI runs the suite on every push to `master` and via manual
 
 ## DataPrime documentation bundle
 
-The `cx dataprime` subcommands read command and function help from `assets/dataprime_docs.yaml`, which is compiled into the binary at build time via `include_str!` in `src/commands/dataprime.rs`. Nothing is loaded from disk at runtime.
+The `cx dataprime` subcommands read command and function help from `assets/dataprime_docs.yaml`, which is compiled into the binary at build time via `include_str!` in `src/commands/dataprime/mod.rs`. Nothing is loaded from disk at runtime.
 
 ## Architecture
 

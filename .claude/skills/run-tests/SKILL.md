@@ -37,7 +37,7 @@ Pick the right level of verification based on what changed:
 - **Any `.rs` file** — `cargo test` + `cargo clippy --locked -- -D warnings`
 - **Formatting only** — `cargo fmt --check` (or `cargo fmt` to auto-fix)
 - **`Cargo.toml`** — full CI check (dependency changes affect everything)
-- **API types (`src/api/`)** — run that module's tests first (`cargo test alerts`, `cargo test dataprime`), then the full suite
+- **API types (`src/commands/<cmd>/api.rs`)** — run that command's tests first (`cargo test alerts`, `cargo test dataprime`), then the full suite
 - **Test files only** — `cargo test <relevant_test_name>`
 
 ## Running Specific Tests
@@ -45,8 +45,8 @@ Pick the right level of verification based on what changed:
 Target tests efficiently instead of running the entire suite:
 
 - `cargo test alerts` — all tests with "alerts" in the name
-- `cargo test --test dataprime_input` — only the `tests/dataprime_input.rs` integration test file
-- `cargo test --test dataprime_output` — only the `tests/dataprime_output.rs` integration test file
+- `cargo test --test dataprime` — only the `tests/dataprime/` integration test binary (input + output + query)
+- `cargo test --test dataprime input` — only the `input` submodule of that binary
 - `cargo test config::tests` — only the tests in the `config` module
 - `cargo test metrics::tests` — only metrics formatting tests
 

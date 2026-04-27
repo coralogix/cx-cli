@@ -20,8 +20,8 @@ Before writing any code, get clarity on the domain:
 
 | Archetype | When to use | Reference implementation |
 |-----------|------------|--------------------------|
-| **A: DataPrime-based** | Querying logs, spans, or any DataPrime source | `src/commands/logs.rs` |
-| **B: REST-based** | Wrapping a Coralogix REST API (most new commands) | `src/api/alerts.rs` + `src/commands/alerts.rs` |
+| **A: DataPrime-based** | Querying logs, spans, or any DataPrime source | `src/commands/logs/mod.rs` |
+| **B: REST-based** | Wrapping a Coralogix REST API (most new commands) | `src/commands/alerts/api.rs` + `src/commands/alerts/mod.rs` |
 
 DataPrime commands delegate to a shared pipeline and require minimal code (~130 lines). REST commands build the full pipeline (API client, fan-out, merge, render) — more code but more control.
 
@@ -37,19 +37,19 @@ Before writing any code, read these files to internalize the existing patterns. 
 - `docs/adding-a-command.md` — full guide with code templates for both archetypes
 
 **DataPrime archetype — also read:**
-- `src/commands/logs.rs` — a complete DataPrime command; notice how little code is needed because the shared pipeline does the heavy lifting
-- `src/commands/dataprime.rs` — the shared pipeline your command will delegate to; understand the `run_query()` signature and what it handles (fan-out, merge, spilling, agents output)
+- `src/commands/logs/mod.rs` — a complete DataPrime command; notice how little code is needed because the shared pipeline does the heavy lifting
+- `src/commands/dataprime/mod.rs` — the shared pipeline your command will delegate to; understand the `run_query()` signature and what it handles (fan-out, merge, spilling, agents output)
 
 **REST archetype — also read:**
-- `src/api/alerts.rs` — see how response types are structured, how the API struct borrows `&CxClient`, how deserialization tests are written
-- `src/api/mod.rs` — module registrations
-- `src/commands/dashboards.rs` — see the fan-out/merge/render pattern using `render::*` helpers, and how all three output formats are handled
+- `src/commands/alerts/api.rs` — see how response types are structured, how the API struct borrows `&CxClient`, how deserialization tests are written
+- `src/commands/alerts/mod.rs` — see how the handler declares `pub mod api;` and imports types via `use api::{...};`
+- `src/commands/dashboards/mod.rs` — see the fan-out/merge/render pattern using `render::*` helpers, and how all three output formats are handled
 
 ## Step 2: Create API Layer (REST Only)
 
 > Skip this step for DataPrime commands — they use the shared DataPrime pipeline.
 
-Create `src/api/<domain>.rs`. See `docs/adding-a-command.md` § "Archetype B, Step 1" for the full template.
+Create `src/commands/<domain>/api.rs`. See `docs/adding-a-command.md` § "Archetype B, Step 1" for the full template.
 
 Key conventions and why they matter:
 
@@ -60,11 +60,9 @@ Key conventions and why they matter:
 - **`const BASE_PATH`** for the endpoint prefix — keeps URLs DRY
 - **Deserialization tests are mandatory** — test both happy-path and edge cases (empty lists, missing optional fields) since these are the cases that break in production
 
-Register the module in `src/api/mod.rs`.
-
 ## Step 3: Create Command Module
 
-Create `src/commands/<domain>.rs`. See `docs/adding-a-command.md` for full templates of both archetypes.
+Create `src/commands/<domain>/mod.rs`. For REST commands, declare `pub mod api;` at the top so the handler can `use api::{...};` types from its sibling `api.rs`. See `docs/adding-a-command.md` for full templates of both archetypes.
 
 ### DataPrime archetype
 
@@ -102,21 +100,21 @@ of each.
 | Layer | Location | What it verifies |
 |-------|----------|------------------|
 | Unit | `src/**/<file>.rs` `#[cfg(test)]` | Pure logic — deserialization (mandatory for REST), helpers, transforms |
-| Integration | `tests/<domain>.rs` (wiremock) | Command runner end-to-end with mocked HTTP |
-| E2E | `tests/e2e/<domain>.rs` (assert_cmd, `#[ignore]`d) | Real `cx` binary against Coralogix staging |
+| Integration | `tests/<domain>/main.rs` (wiremock) | Command runner end-to-end with mocked HTTP |
+| E2E | `tests/e2e/<domain>/mod.rs` (assert_cmd, `#[ignore]`d) | Real `cx` binary against Coralogix staging |
 
 Things specific to *this workflow* that the doc doesn't emphasise:
 
 - **Don't add e2e for mutating commands** (create/delete/enable/disable)
   unless there's a paired-undo plan — they touch shared staging state.
   Mark them as deliberately uncovered with a comment, like
-  `tests/e2e/alerts.rs`.
+  `tests/e2e/alerts/mod.rs`.
 - **If a subcommand needs an ID from staging** (e.g. `get <id>`), add a
   `discover_*` helper to `tests/e2e/harness.rs` modelled after
   `discover_alert_id`. Skip the test gracefully when staging has no
   data — don't panic.
 - **Don't forget to declare the new e2e module** in `tests/e2e.rs` via
-  `#[path = "e2e/your_domain.rs"] mod your_domain;`.
+  `#[path = "e2e/your_domain/mod.rs"] mod your_domain;`.
 
 ## Step 6: Create User-Facing Skill
 

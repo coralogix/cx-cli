@@ -308,11 +308,28 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 ///   2. `AuthKind::ApiKey` — reads the key from OS keyring or profile file
 ///   3. `AuthKind::OAuth`  — loads the cached access token; refreshes via the
 ///      refresh token if the access token has expired (or is missing)
+///
+/// Env-only mode: when no profile file exists on disk but both an API key
+/// override (`--api-key` / `CX_API_KEY`) and a region override (`--region` /
+/// `CX_REGION`) are supplied, a `ResolvedConfig` is synthesised directly. This
+/// lets ephemeral environments (CI runners, containers, ad-hoc scripts) run
+/// `cx` without first invoking `cx profiles add`.
 async fn resolve_single(
     profile_name: &str,
     api_key_override: Option<&str>,
     region_override: Option<&str>,
 ) -> Result<ResolvedConfig> {
+    if !profile_file(profile_name)?.exists() {
+        if let (Some(key), Some(region)) = (api_key_override, region_override) {
+            let region: Region = region.parse()?;
+            return Ok(ResolvedConfig {
+                profile_name: profile_name.to_string(),
+                endpoint: region.api_endpoint().to_string(),
+                api_key: key.to_string(),
+            });
+        }
+    }
+
     let mut profile = load_profile(profile_name)?;
 
     if let Some(region) = region_override {
@@ -519,6 +536,34 @@ api_key = "mykey"
             None,
         )
         .await;
+        assert!(result.is_err());
+    }
+
+    // ── env-only mode (no filesystem) ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn resolve_single_env_only_synthesises_when_profile_file_missing() {
+        let cfg = resolve_single(
+            "cx_envonly_missing_profile_xyz",
+            Some("env-key"),
+            Some("eu1"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(cfg.profile_name, "cx_envonly_missing_profile_xyz");
+        assert_eq!(cfg.api_key, "env-key");
+        assert_eq!(cfg.endpoint, "https://api.eu1.coralogix.com");
+    }
+
+    #[tokio::test]
+    async fn resolve_single_env_only_requires_api_key_override() {
+        let result = resolve_single("cx_envonly_no_key_xyz", None, Some("eu1")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn resolve_single_env_only_requires_region_override() {
+        let result = resolve_single("cx_envonly_no_region_xyz", Some("env-key"), None).await;
         assert!(result.is_err());
     }
 

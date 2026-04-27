@@ -468,7 +468,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 3.1
 
-### 3.1b [ ] Add `connectors` integration tests (wiremock)
+### 3.1b [x] Add `connectors` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/connectors.rs`
 - **What:** Wiremock-based integration tests for list/get/types handlers.
 - **Acceptance:** `cargo test --test connectors` passes
@@ -492,7 +492,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 3.2
 
-### 3.2b [ ] Add `routers` integration tests (wiremock)
+### 3.2b [x] Add `routers` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/routers.rs`
 - **What:** Wiremock-based integration tests for list/get handlers.
 - **Acceptance:** `cargo test --test routers` passes
@@ -516,7 +516,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 3.3
 
-### 3.3b [ ] Add `presets` integration tests (wiremock)
+### 3.3b [x] Add `presets` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/presets.rs`
 - **What:** Wiremock-based integration tests for list/get handlers.
 - **Acceptance:** `cargo test --test presets` passes

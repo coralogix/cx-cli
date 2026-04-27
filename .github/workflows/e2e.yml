@@ -2,7 +2,7 @@ name: E2E (test team)
 
 on:
   push:
-    branches: [master, yonatanbeker/age-780-fix-e2e-in-ci]
+    branches: [master]
   workflow_dispatch:
 
 concurrency:

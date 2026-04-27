@@ -221,7 +221,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 1.1
 
-### 1.1b [ ] Add `slos` integration tests (wiremock)
+### 1.1b [x] Add `slos` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/slos.rs`
 - **What:** Add wiremock-based integration tests for slos list/get handlers. Follow `tests/alerts.rs` pattern: `MockServer::start()`, `Mock::given()`, `common::test_target()`.
 - **Acceptance:** `cargo test --test slos` passes, covers list and get handlers

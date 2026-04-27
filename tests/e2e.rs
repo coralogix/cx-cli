@@ -40,6 +40,10 @@ mod quota_rules;
 mod recording_rules;
 #[path = "e2e/retentions.rs"]
 mod retentions;
+#[path = "e2e/custom_enrichments.rs"]
+mod custom_enrichments;
+#[path = "e2e/enrichments.rs"]
+mod enrichments;
 #[path = "e2e/rule_groups.rs"]
 mod rule_groups;
 #[path = "e2e/routers.rs"]

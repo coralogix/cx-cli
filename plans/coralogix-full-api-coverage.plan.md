@@ -618,7 +618,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 4.2
 
-### 4.2b [ ] Add `enrichments` integration tests (wiremock)
+### 4.2b [x] Add `enrichments` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/enrichments.rs`
 - **What:** Wiremock-based integration tests for list/limit/settings handlers.
 - **Acceptance:** `cargo test --test enrichments` passes
@@ -642,7 +642,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 4.3
 
-### 4.3b [ ] Add `custom-enrichments` integration tests (wiremock)
+### 4.3b [x] Add `custom-enrichments` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/custom_enrichments.rs`
 - **What:** Wiremock-based integration tests for list/get handlers.
 - **Acceptance:** `cargo test --test custom_enrichments` passes

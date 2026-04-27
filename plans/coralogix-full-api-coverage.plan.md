@@ -374,7 +374,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 2.3a [ ] Add `retentions` command module
+### 2.3a [x] Add `retentions` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/retentions.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_update()`, `run_activate()`, `run_status()`. Text table: [ID, Name, Retention Days, Enabled]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -398,7 +398,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 2.4a [ ] Add `quota-rules` command module
+### 2.4a [x] Add `quota-rules` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/quota_rules.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_get()`, `run_create()`, `run_update()`, `run_delete()`. Text output: render rule set details. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

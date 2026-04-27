@@ -914,7 +914,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 7.1a [ ] Add `api-keys` command module
+### 7.1a [x] Add `api-keys` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/api_keys.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_send_data_keys()`, `run_admin_list()`, `run_admin_delete()`, `run_admin_set_status()`. Text table: [ID, Name, Owner, Active, Created, Hashed Key]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -938,7 +938,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 7.2a [ ] Add `roles` command module
+### 7.2a [x] Add `roles` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/roles.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_system()`. Text table: [ID, Name, Type, Description, Permissions Count]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -962,7 +962,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 7.3a [ ] Add `scopes` command module
+### 7.3a [x] Add `scopes` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/scopes.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`. Text table: [ID, Name, Description, Filters]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -986,7 +986,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 7.4a [ ] Add `users` command module
+### 7.4a [x] Add `users` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/users.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_search()`, `run_get()`, `run_create()`, `run_update()`, `run_set_status()`. team_id resolved from config/profile. Text table: [User ID, Name, Email, Role, Status]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -1010,7 +1010,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 7.5a [ ] Add `team-groups` command module
+### 7.5a [x] Add `team-groups` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/team_groups.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_get_by_name()`, `run_users()`, `run_create()`, `run_update()`, `run_delete()`. Text table: [Group ID, Name, Members Count, Description]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -1034,7 +1034,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 7.6a [ ] Add `saml` command module
+### 7.6a [x] Add `saml` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/saml.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_get()`, `run_sp_params()`, `run_set_idp()`, `run_set_active()`. Text output: formatted SAML config details. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
@@ -1058,7 +1058,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 7.7a [ ] Add `ip-access` command module
+### 7.7a [x] Add `ip-access` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/ip_access.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_get()`, `run_create()`, `run_update()`, `run_delete()`. Text output: formatted IP access rules. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

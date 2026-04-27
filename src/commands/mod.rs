@@ -1,7 +1,9 @@
+pub mod alert_schedulers;
 pub mod alerts;
 pub mod cleanup;
 pub mod dashboards;
 pub mod dataprime;
+pub mod incidents;
 pub mod logs;
 pub mod metrics;
 pub mod profiles;

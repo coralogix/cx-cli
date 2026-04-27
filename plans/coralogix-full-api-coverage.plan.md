@@ -227,7 +227,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test slos` passes, covers list and get handlers
 - **Dependencies:** 1.1a
 
-### 1.1c [ ] Wire `slos` into CLI and add E2E tests
+### 1.1c [x] Wire `slos` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/slos.rs`, `tests/e2e.rs`
 - **What:** Add `Slos` variant to `Commands` enum with subcommands: `List`, `Get { id }`, `Create`, `Update`, `Delete { id }`. Wire match arms. Add E2E tests with `#[test] #[ignore]` for list and get (ID discovery via OnceLock). Register in `tests/e2e.rs`. Skip mutating E2E tests.
 - **Acceptance:** `cx slos --help` shows subcommands, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 slos` passes against real Coralogix

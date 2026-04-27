@@ -170,6 +170,19 @@ Examples:
         cmd: IncidentsCmd,
     },
 
+    /// Manage SLO definitions.
+    #[command(after_help = "\
+Examples:
+  cx slos list
+  cx slos get <slo-id>
+  cx slos create --from-file slo.json
+  cx slos update --from-file slo.json
+  cx slos delete <slo-id>")]
+    Slos {
+        #[command(subcommand)]
+        cmd: SlosCmd,
+    },
+
     /// Search log/span fields semantically by description.
     #[command(after_help = "\
 Examples:
@@ -564,6 +577,41 @@ Examples:
     },
 }
 
+#[derive(Subcommand)]
+enum SlosCmd {
+    /// List all SLOs.
+    List,
+    /// Get a single SLO by ID.
+    Get {
+        /// SLO ID (UUID).
+        id: String,
+    },
+    /// Create an SLO from a JSON definition file.
+    #[command(after_help = "\
+Examples:
+  cx slos create --from-file slo.json
+  cat slo.json | cx slos create")]
+    Create {
+        /// Path to JSON file with the SLO definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Replace an SLO definition from a JSON file.
+    #[command(after_help = "\
+Examples:
+  cx slos update --from-file slo.json")]
+    Update {
+        /// Path to JSON file with the updated SLO definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete an SLO.
+    Delete {
+        /// SLO ID (UUID).
+        id: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     rustls::crypto::ring::default_provider()
@@ -841,6 +889,24 @@ async fn main() -> Result<()> {
             }
             IncidentsCmd::Aggregations => {
                 commands::incidents::run_aggregations(&targets, output).await?;
+            }
+        },
+
+        Commands::Slos { cmd } => match cmd {
+            SlosCmd::List => {
+                commands::slos::run_list(&targets, output).await?;
+            }
+            SlosCmd::Get { id } => {
+                commands::slos::run_get(&targets, &id, output).await?;
+            }
+            SlosCmd::Create { from_file } => {
+                commands::slos::run_create(&targets, &from_file, output).await?;
+            }
+            SlosCmd::Update { from_file } => {
+                commands::slos::run_update(&targets, &from_file, output).await?;
+            }
+            SlosCmd::Delete { id } => {
+                commands::slos::run_delete(&targets, &id).await?;
             }
         },
 

@@ -28,5 +28,7 @@ mod metrics;
 mod profiles_and_local;
 #[path = "e2e/search_fields.rs"]
 mod search_fields;
+#[path = "e2e/slos.rs"]
+mod slos;
 #[path = "e2e/spans.rs"]
 mod spans;

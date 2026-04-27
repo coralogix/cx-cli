@@ -26,7 +26,6 @@ pub fn default_install_path(shell: Shell) -> Option<PathBuf> {
             .join("completions")
             .join("cx.fish"),
         // PowerShell has no single canonical user path — require --path.
-        // Elvish (and any other variants clap_complete may add) is unsupported.
         _ => return None,
     };
     Some(path)

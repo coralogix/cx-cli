@@ -100,7 +100,6 @@ Examples:
     ///   zsh:   ~/.zfunc/_cx
     ///   bash:  ~/.local/share/bash-completion/completions/cx
     ///   fish:  ~/.config/fish/completions/cx.fish
-    ///   elvish: ~/.elvish/lib/cx-completions.elv
     #[command(after_help = "\
 Examples:
   cx completions install zsh

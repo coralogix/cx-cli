@@ -204,7 +204,6 @@ Default paths used by each shell:
 | zsh | `~/.zfunc/_cx` |
 | bash | `~/.local/share/bash-completion/completions/cx` |
 | fish | `~/.config/fish/completions/cx.fish` |
-| elvish | `~/.elvish/lib/cx-completions.elv` |
 
 After installing for **zsh**, add `~/.zfunc` to your `$fpath` if it isn't already there (the install command will tell you):
 

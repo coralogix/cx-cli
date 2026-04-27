@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use clap::Command;
 use clap_complete::aot::Shell;
-use clap_complete::env::{Bash, Elvish, EnvCompleter, Fish, Powershell, Zsh};
+use clap_complete::env::{Bash, EnvCompleter, Fish, Powershell, Zsh};
 
 use crate::config;
 
@@ -25,8 +25,8 @@ pub fn default_install_path(shell: Shell) -> Option<PathBuf> {
             .join("fish")
             .join("completions")
             .join("cx.fish"),
-        Shell::Elvish => home.join(".elvish").join("lib").join("cx-completions.elv"),
         // PowerShell has no single canonical user path — require --path.
+        // Elvish (and any other variants clap_complete may add) is unsupported.
         _ => return None,
     };
     Some(path)
@@ -52,7 +52,7 @@ fn setup_note(shell: Shell, path: &Path) -> Option<String> {
 /// Unlike `clap_complete::aot::generate`, this emits a small bootstrap that
 /// calls back into `cx` at completion time — which means runtime completers
 /// like `ArgValueCompleter` (used for `--profile=`) work correctly.
-fn write_registration_for(shell: Shell, buf: &mut dyn std::io::Write) -> Result<()> {
+fn write_registration_for_shell(shell: Shell, buf: &mut dyn std::io::Write) -> Result<()> {
     // The shell-specific completer adapters all share the same registration
     // contract (see clap_complete::env::EnvCompleter). We pick the right
     // adapter based on our enum and call write_registration on it.
@@ -65,12 +65,49 @@ fn write_registration_for(shell: Shell, buf: &mut dyn std::io::Write) -> Result<
         Shell::Bash => write(&Bash, buf),
         Shell::Zsh => write(&Zsh, buf),
         Shell::Fish => write(&Fish, buf),
-        Shell::Elvish => write(&Elvish, buf),
         Shell::PowerShell => write(&Powershell, buf),
         other => Err(anyhow!(
-            "Shell '{other}' is not supported by dynamic completions"
+            "Shell '{other}' is not supported by cx completions"
         )),
     }
+}
+
+// ── Atomic file write ─────────────────────────────────────────────────────────
+
+/// Write `contents` to `path` atomically: stage in a sibling temp file and
+/// rename into place. On any failure, the temp file is removed and any
+/// existing file at `path` is left untouched, so we never leave half-written
+/// completion scripts on disk.
+fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+    }
+
+    let mut tmp_name = path
+        .file_name()
+        .ok_or_else(|| anyhow!("Invalid completion path: {}", path.display()))?
+        .to_os_string();
+    tmp_name.push(".cx-tmp");
+    let tmp_path = path.with_file_name(tmp_name);
+
+    if let Err(e) = std::fs::write(&tmp_path, contents) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(anyhow::Error::new(e).context(format!(
+            "Failed to write completion script to {}",
+            path.display()
+        )));
+    }
+
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(anyhow::Error::new(e).context(format!(
+            "Failed to install completion script at {}",
+            path.display()
+        )));
+    }
+
+    Ok(())
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -78,7 +115,7 @@ fn write_registration_for(shell: Shell, buf: &mut dyn std::io::Write) -> Result<
 /// Print a completion script for the given shell to stdout.
 pub fn run_generate(shell: Shell, _clap_cmd: &mut Command) -> Result<()> {
     let mut stdout = std::io::stdout().lock();
-    write_registration_for(shell, &mut stdout)?;
+    write_registration_for_shell(shell, &mut stdout)?;
     stdout.flush().ok();
     Ok(())
 }
@@ -98,23 +135,23 @@ pub fn run_install(
             )
         })?;
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create directory {}", parent.display()))?;
-    }
-
     let mut buf = Vec::new();
-    write_registration_for(shell, &mut buf)?;
-    std::fs::write(&path, &buf)
-        .with_context(|| format!("Failed to write completion script to {}", path.display()))?;
+    write_registration_for_shell(shell, &mut buf)?;
+    write_atomically(&path, &buf)?;
+
+    // Track the install so `cx completions refresh` can update it later.
+    // If tracking fails, roll back the file we just wrote so we don't leave
+    // an untracked completion script on disk that we can't manage.
+    if let Err(e) = config::upsert_managed_completion(&shell.to_string(), path.clone()) {
+        let _ = std::fs::remove_file(&path);
+        return Err(e).context("Failed to record managed completion in cx config");
+    }
 
     eprintln!("Installed {} completions to {}", shell, path.display());
 
     if let Some(note) = setup_note(shell, &path) {
         eprintln!("\nNote: {note}");
     }
-
-    config::upsert_managed_completion(&shell.to_string(), path)?;
 
     Ok(())
 }
@@ -124,6 +161,11 @@ pub fn run_install(
 /// With dynamic env-based completions, the on-disk stub rarely needs updating
 /// (it always delegates back to the current `cx` binary). Refreshing is still
 /// useful after upgrading `cx` in case the registration protocol changed.
+///
+/// Each entry is refreshed atomically (temp file + rename), so a failure on
+/// one entry leaves the existing file untouched and never produces a partial
+/// write. We continue past per-entry failures so one bad path doesn't block
+/// refreshing the others, but exit with an error summary if any failed.
 pub fn run_refresh(_clap_cmd_factory: impl Fn() -> Command) -> Result<()> {
     let managed = config::managed_completions()?;
 
@@ -135,33 +177,44 @@ pub fn run_refresh(_clap_cmd_factory: impl Fn() -> Command) -> Result<()> {
         return Ok(());
     }
 
+    let mut failed = 0usize;
     for entry in &managed {
-        let shell: Shell = entry.shell.parse().map_err(|_| {
-            anyhow::anyhow!(
-                "Unrecognised shell '{}' in managed completions",
-                entry.shell
-            )
-        })?;
+        let result = (|| -> Result<()> {
+            let shell: Shell = entry.shell.parse().map_err(|_| {
+                anyhow!(
+                    "Unrecognised shell '{}' in managed completions",
+                    entry.shell
+                )
+            })?;
 
-        let mut buf = Vec::new();
-        write_registration_for(shell, &mut buf)?;
+            let mut buf = Vec::new();
+            write_registration_for_shell(shell, &mut buf)?;
+            write_atomically(&entry.path, &buf)?;
+            Ok(())
+        })();
 
-        if let Some(parent) = entry.path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create directory {}", parent.display()))?;
-        }
-
-        std::fs::write(&entry.path, &buf).with_context(|| {
-            format!(
-                "Failed to write completion script to {}",
+        match result {
+            Ok(()) => eprintln!(
+                "Refreshed {} completions at {}",
+                entry.shell,
                 entry.path.display()
-            )
-        })?;
+            ),
+            Err(e) => {
+                failed += 1;
+                eprintln!(
+                    "Failed to refresh {} completions at {}: {e:#}",
+                    entry.shell,
+                    entry.path.display()
+                );
+            }
+        }
+    }
 
-        eprintln!(
-            "Refreshed {} completions at {}",
-            entry.shell,
-            entry.path.display()
+    if failed > 0 {
+        anyhow::bail!(
+            "{} of {} completions failed to refresh",
+            failed,
+            managed.len()
         );
     }
 

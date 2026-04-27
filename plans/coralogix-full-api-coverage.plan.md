@@ -456,7 +456,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete`, `set-default`, `validate-matcher` subcommands; all `notification-test` subcommands
 
-### 3.1 [ ] Add `connectors` API module
+### 3.1 [x] Add `connectors` API module *(completed 2026-04-27)*
 - **Files:** `src/api/connectors.rs`, `src/api/mod.rs`
 - **What:** Create `ConnectorsApi<'a>` with methods: list, get, create, replace, delete, list_summaries, get_type_summaries. Define response structs with fields for text table: id, name, type, enabled, created. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -480,7 +480,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx connectors --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 connectors` passes against real Coralogix
 - **Dependencies:** 3.1b
 
-### 3.2 [ ] Add `routers` API module
+### 3.2 [x] Add `routers` API module *(completed 2026-04-27)*
 - **Files:** `src/api/routers.rs`, `src/api/mod.rs`
 - **What:** Create `RoutersApi<'a>` with methods: list, get, create, replace, delete, batch_get_summaries, validate_matcher. Define response structs with fields for text table: id, name, entity_type, destinations_count. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -504,7 +504,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx routers --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 routers` passes against real Coralogix
 - **Dependencies:** 3.2b
 
-### 3.3 [ ] Add `presets` API module
+### 3.3 [x] Add `presets` API module *(completed 2026-04-27)*
 - **Files:** `src/api/presets.rs`, `src/api/mod.rs`
 - **What:** Create `PresetsApi<'a>` with methods: list_summaries, get, create_custom, replace_custom, delete_custom, set_default, get_default_summary. Define response structs with fields for text table: id, name, connector_type, is_default, is_custom. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
@@ -528,7 +528,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cx presets --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 presets` passes against real Coralogix
 - **Dependencies:** 3.3b
 
-### 3.4 [ ] Add `notification-test` API module
+### 3.4 [x] Add `notification-test` API module *(completed 2026-04-27)*
 - **Files:** `src/api/notification_testing.rs`, `src/api/mod.rs`
 - **What:** Create `NotificationTestingApi<'a>` with methods for testing: connector, destination, preset, routing_condition, template_render. Define response structs. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

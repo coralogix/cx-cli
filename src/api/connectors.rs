@@ -93,6 +93,16 @@ impl<'a> ConnectorsApi<'a> {
         let path = format!("{CONNECTORS_BASE}/types/summaries");
         self.client.get(&path, &[]).await
     }
+
+    pub async fn list_entity_types(&self) -> Result<Value> {
+        let path = format!("{CONNECTORS_BASE}/entity-types");
+        self.client.get(&path, &[]).await
+    }
+
+    pub async fn list_entity_subtypes(&self, entity_type: &str) -> Result<Value> {
+        let path = format!("{CONNECTORS_BASE}/entity-types/{entity_type}/subtypes");
+        self.client.get(&path, &[]).await
+    }
 }
 
 // --- Tests ---
@@ -162,6 +172,12 @@ mod tests {
     fn deserialize_delete_response() {
         let json = json!({});
         let _resp: DeleteConnectorResponse = serde_json::from_value(json).unwrap();
+    }
+
+    #[test]
+    fn deserialize_entity_types_empty() {
+        let json = json!({});
+        let _resp: Value = serde_json::from_value(json).unwrap();
     }
 
     #[test]

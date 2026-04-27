@@ -2,33 +2,17 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use colored::Colorize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
-use crate::api::connectors::{Connector, ConnectorsApi};
+use crate::api::data_archive::DataArchiveApi;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
 
-fn connector_to_json(conn: &Connector, include_profile: bool, profile: &str) -> Value {
-    let mut v = json!({
-        "id": conn.id,
-        "name": conn.display_name(),
-        "type": conn.display_type(),
-        "enabled": conn.enabled,
-        "create_time": conn.create_time,
-    });
-    if include_profile {
-        if let Value::Object(ref mut m) = v {
-            m.insert("profile".to_string(), Value::String(profile.to_string()));
-        }
-    }
-    v
-}
-
 fn read_from_file(path: &str) -> Result<Value> {
     let raw = if path == "-" {
-        eprintln!("{}", "Reading connector definition from stdin...".dimmed());
+        eprintln!("{}", "Reading definition from stdin...".dimmed());
         use std::io::Read;
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
@@ -36,87 +20,25 @@ fn read_from_file(path: &str) -> Result<Value> {
     } else {
         eprintln!(
             "{}",
-            format!("Reading connector definition from {path}...").dimmed()
+            format!("Reading definition from {path}...").dimmed()
         );
         std::fs::read_to_string(path)?
     };
     Ok(serde_json::from_str(&raw)?)
 }
 
-pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
-    eprintln!("{}", "Fetching connectors...".dimmed());
+// --- Metrics ---
+
+pub async fn run_metrics_get(
+    targets: &[Arc<ExecutionTarget>],
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", "Fetching metrics archive config...".dimmed());
     let include_profile = targets.len() > 1;
 
     let per_profile = fan_out(targets, |t| async move {
-        let api = ConnectorsApi::new(&t.client);
-        Ok(api.list().await?)
-    })
-    .await;
-
-    let mut all_json: Vec<Value> = Vec::new();
-    let mut all_items: Vec<(String, Connector)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for conn in resp.connectors {
-                    all_json.push(connector_to_json(&conn, include_profile, &profile));
-                    all_items.push((profile.clone(), conn));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
-    }
-
-    match output {
-        OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
-            let toon =
-                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
-        OutputFormat::Text => {
-            if all_items.is_empty() {
-                render::print_no_results("No connectors found.");
-                return Ok(());
-            }
-            let rows: Vec<Vec<String>> = all_items
-                .iter()
-                .map(|(profile, conn)| {
-                    vec![
-                        profile.clone(),
-                        conn.id.clone().unwrap_or_default(),
-                        conn.display_name().to_string(),
-                        conn.display_type(),
-                        render::bool_display(conn.enabled),
-                        conn.create_time.clone().unwrap_or_default(),
-                    ]
-                })
-                .collect();
-            render::render_table(
-                &["ID", "Name", "Type", "Enabled", "Created"],
-                rows,
-                include_profile,
-            );
-        }
-    }
-    Ok(())
-}
-
-pub async fn run_get(
-    targets: &[Arc<ExecutionTarget>],
-    id: &str,
-    output: OutputFormat,
-) -> Result<()> {
-    eprintln!("{}", format!("Fetching connector {id}...").dimmed());
-    let include_profile = targets.len() > 1;
-    let id = id.to_string();
-
-    let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
-        async move {
-            let api = ConnectorsApi::new(&t.client);
-            Ok(api.get(&id).await?)
-        }
+        let api = DataArchiveApi::new(&t.client);
+        Ok(api.get_config().await?)
     })
     .await;
 
@@ -144,7 +66,7 @@ pub async fn run_get(
             render::render_get_text(
                 &all_results,
                 include_profile,
-                "Connector not found.",
+                "No metrics archive config found.",
                 None::<&dyn Fn(&Value)>,
             )?;
         }
@@ -152,68 +74,19 @@ pub async fn run_get(
     Ok(())
 }
 
-pub async fn run_create(
+pub async fn run_metrics_create(
     targets: &[Arc<ExecutionTarget>],
     from_file: &str,
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
-    eprintln!("{}", "Creating connector...".dimmed());
-    let include_profile = targets.len() > 1;
+    eprintln!("{}", "Creating metrics archive config...".dimmed());
 
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
         async move {
-            let api = ConnectorsApi::new(&t.client);
+            let api = DataArchiveApi::new(&t.client);
             Ok(api.create(&body).await?)
-        }
-    })
-    .await;
-
-    let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(conn) = resp.connector {
-                    let name = conn.display_name().to_string();
-                    let id = conn.id.as_deref().unwrap_or("unknown");
-                    eprintln!(
-                        "{}",
-                        format!("Created connector '{name}' (ID: {id}) in profile '{profile}'.")
-                            .green()
-                    );
-                    all_results.push(connector_to_json(&conn, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
-    }
-
-    match output {
-        OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
-            let toon = toon_encode(&all_results)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
-        OutputFormat::Text => {}
-    }
-    Ok(())
-}
-
-pub async fn run_update(
-    targets: &[Arc<ExecutionTarget>],
-    from_file: &str,
-    output: OutputFormat,
-) -> Result<()> {
-    let body = read_from_file(from_file)?;
-    eprintln!("{}", "Updating connector...".dimmed());
-
-    let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
-        async move {
-            let api = ConnectorsApi::new(&t.client);
-            Ok(api.replace(&body).await?)
         }
     })
     .await;
@@ -224,7 +97,7 @@ pub async fn run_update(
             Ok(val) => {
                 eprintln!(
                     "{}",
-                    format!("Updated connector in profile '{profile}'.").green()
+                    format!("Created metrics archive config in profile '{profile}'.").green()
                 );
                 all_results.push(val);
             }
@@ -244,23 +117,64 @@ pub async fn run_update(
     Ok(())
 }
 
-pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
-    eprintln!("{}", format!("Deleting connector {id}...").dimmed());
-    let id = id.to_string();
+pub async fn run_metrics_update(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let body = read_from_file(from_file)?;
+    eprintln!("{}", "Updating metrics archive config...".dimmed());
+
     let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
+        let body = body.clone();
         async move {
-            let api = ConnectorsApi::new(&t.client);
-            api.delete(&id).await?;
-            Ok(())
+            let api = DataArchiveApi::new(&t.client);
+            Ok(api.update(&body).await?)
         }
     })
     .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(val) => {
+                eprintln!(
+                    "{}",
+                    format!("Updated metrics archive config in profile '{profile}'.").green()
+                );
+                all_results.push(val);
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {}
+    }
+    Ok(())
+}
+
+pub async fn run_metrics_enable(targets: &[Arc<ExecutionTarget>]) -> Result<()> {
+    eprintln!("{}", "Enabling metrics archive...".dimmed());
+
+    let per_profile = fan_out(targets, |t| async move {
+        let api = DataArchiveApi::new(&t.client);
+        api.enable().await?;
+        Ok(())
+    })
+    .await;
+
     for (profile, result) in per_profile {
         match result {
             Ok(()) => eprintln!(
                 "{}",
-                format!("Connector {id} deleted in profile '{profile}'.").green()
+                format!("Metrics archive enabled in profile '{profile}'.").green()
             ),
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
@@ -268,13 +182,43 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
     Ok(())
 }
 
-pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
-    eprintln!("{}", "Fetching connector types...".dimmed());
-    let include_profile = targets.len() > 1;
+pub async fn run_metrics_disable(targets: &[Arc<ExecutionTarget>]) -> Result<()> {
+    eprintln!("{}", "Disabling metrics archive...".dimmed());
 
     let per_profile = fan_out(targets, |t| async move {
-        let api = ConnectorsApi::new(&t.client);
-        Ok(api.get_type_summaries().await?)
+        let api = DataArchiveApi::new(&t.client);
+        api.disable().await?;
+        Ok(())
+    })
+    .await;
+
+    for (profile, result) in per_profile {
+        match result {
+            Ok(()) => eprintln!(
+                "{}",
+                format!("Metrics archive disabled in profile '{profile}'.").green()
+            ),
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+    Ok(())
+}
+
+pub async fn run_metrics_validate(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let body = read_from_file(from_file)?;
+    eprintln!("{}", "Validating metrics archive config...".dimmed());
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        async move {
+            let api = DataArchiveApi::new(&t.client);
+            Ok(api.validate(&body).await?)
+        }
     })
     .await;
 
@@ -285,6 +229,10 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
                 if include_profile {
                     render::tag_get_result(&mut val, &profile);
                 }
+                eprintln!(
+                    "{}",
+                    format!("Validation complete in profile '{profile}'.").green()
+                );
                 all_results.push(val);
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
@@ -307,16 +255,18 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
     Ok(())
 }
 
-pub async fn run_entity_types(
+// --- Logs ---
+
+pub async fn run_logs_get(
     targets: &[Arc<ExecutionTarget>],
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!("{}", "Fetching connector entity types...".dimmed());
+    eprintln!("{}", "Fetching logs archive target...".dimmed());
     let include_profile = targets.len() > 1;
 
     let per_profile = fan_out(targets, |t| async move {
-        let api = ConnectorsApi::new(&t.client);
-        Ok(api.list_entity_types().await?)
+        let api = DataArchiveApi::new(&t.client);
+        Ok(api.get_target().await?)
     })
     .await;
 
@@ -344,7 +294,7 @@ pub async fn run_entity_types(
             render::render_get_text(
                 &all_results,
                 include_profile,
-                "No entity types found.",
+                "No logs archive target found.",
                 None::<&dyn Fn(&Value)>,
             )?;
         }
@@ -352,23 +302,19 @@ pub async fn run_entity_types(
     Ok(())
 }
 
-pub async fn run_entity_subtypes(
+pub async fn run_logs_set(
     targets: &[Arc<ExecutionTarget>],
-    entity_type: &str,
+    from_file: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!(
-        "{}",
-        format!("Fetching subtypes for entity type '{entity_type}'...").dimmed()
-    );
-    let include_profile = targets.len() > 1;
-    let entity_type = entity_type.to_string();
+    let body = read_from_file(from_file)?;
+    eprintln!("{}", "Setting logs archive target...".dimmed());
 
     let per_profile = fan_out(targets, |t| {
-        let entity_type = entity_type.clone();
+        let body = body.clone();
         async move {
-            let api = ConnectorsApi::new(&t.client);
-            Ok(api.list_entity_subtypes(&entity_type).await?)
+            let api = DataArchiveApi::new(&t.client);
+            Ok(api.set_target(&body).await?)
         }
     })
     .await;
@@ -376,10 +322,11 @@ pub async fn run_entity_subtypes(
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
+            Ok(val) => {
+                eprintln!(
+                    "{}",
+                    format!("Logs archive target set in profile '{profile}'.").green()
+                );
                 all_results.push(val);
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
@@ -393,14 +340,7 @@ pub async fn run_entity_subtypes(
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
-        OutputFormat::Text => {
-            render::render_get_text(
-                &all_results,
-                include_profile,
-                "No entity subtypes found.",
-                None::<&dyn Fn(&Value)>,
-            )?;
-        }
+        OutputFormat::Text => {}
     }
     Ok(())
 }

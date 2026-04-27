@@ -460,6 +460,28 @@ Examples:
         cmd: IpAccessCmd,
     },
 
+    /// Manage actions (automation hooks).
+    #[command(after_help = "\
+Examples:
+  cx actions list
+  cx actions get <id>
+  cx actions create --from-file action.json
+  cx actions delete <id>")]
+    Actions {
+        #[command(subcommand)]
+        cmd: ActionsCmd,
+    },
+
+    /// Manage data archive storage configuration.
+    #[command(after_help = "\
+Examples:
+  cx data-archive metrics get
+  cx data-archive logs get")]
+    DataArchive {
+        #[command(subcommand)]
+        cmd: DataArchiveCmd,
+    },
+
     /// Manage SLO definitions.
     #[command(after_help = "\
 Examples:
@@ -887,6 +909,14 @@ enum ConnectorsCmd {
     Delete { id: String },
     /// List connector type summaries.
     Types,
+    /// List entity types.
+    EntityTypes,
+    /// List entity subtypes for a given type.
+    EntitySubtypes {
+        /// Entity type name.
+        #[arg(long, rename_all = "kebab-case")]
+        r#type: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1727,6 +1757,100 @@ enum IpAccessCmd {
 }
 
 #[derive(Subcommand)]
+enum ActionsCmd {
+    /// List all actions.
+    List,
+    /// Get action details by ID.
+    Get {
+        /// Action ID.
+        id: String,
+    },
+    /// Create an action from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Replace an action from a JSON file.
+    Update {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete an action.
+    Delete {
+        /// Action ID.
+        id: String,
+    },
+    /// Batch execute actions from a JSON file.
+    Batch {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Reorder actions from a JSON file.
+    Reorder {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DataArchiveCmd {
+    /// Manage metrics archive.
+    Metrics {
+        #[command(subcommand)]
+        cmd: DataArchiveMetricsCmd,
+    },
+    /// Manage logs archive.
+    Logs {
+        #[command(subcommand)]
+        cmd: DataArchiveLogsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum DataArchiveMetricsCmd {
+    /// Get metrics archive configuration.
+    Get,
+    /// Create metrics archive from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update metrics archive from a JSON file.
+    Update {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Enable metrics archiving.
+    Enable,
+    /// Disable metrics archiving.
+    Disable,
+    /// Validate metrics archive configuration from a JSON file.
+    Validate {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DataArchiveLogsCmd {
+    /// Get logs archive target.
+    Get,
+    /// Set logs archive target from a JSON file.
+    Set {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SlosCmd {
     /// List all SLOs.
     List,
@@ -2059,6 +2183,12 @@ async fn main() -> Result<()> {
             }
             ConnectorsCmd::Types => {
                 commands::connectors::run_types(&targets, output).await?;
+            }
+            ConnectorsCmd::EntityTypes => {
+                commands::connectors::run_entity_types(&targets, output).await?;
+            }
+            ConnectorsCmd::EntitySubtypes { r#type } => {
+                commands::connectors::run_entity_subtypes(&targets, &r#type, output).await?;
             }
         },
 
@@ -2638,6 +2768,64 @@ async fn main() -> Result<()> {
             IpAccessCmd::Delete => {
                 commands::ip_access::run_delete(&targets).await?;
             }
+        },
+
+        Commands::Actions { cmd } => match cmd {
+            ActionsCmd::List => {
+                commands::actions::run_list(&targets, output).await?;
+            }
+            ActionsCmd::Get { id } => {
+                commands::actions::run_get(&targets, &id, output).await?;
+            }
+            ActionsCmd::Create { from_file } => {
+                commands::actions::run_create(&targets, &from_file, output).await?;
+            }
+            ActionsCmd::Update { from_file } => {
+                commands::actions::run_update(&targets, &from_file, output).await?;
+            }
+            ActionsCmd::Delete { id } => {
+                commands::actions::run_delete(&targets, &id).await?;
+            }
+            ActionsCmd::Batch { from_file } => {
+                commands::actions::run_batch(&targets, &from_file, output).await?;
+            }
+            ActionsCmd::Reorder { from_file } => {
+                commands::actions::run_reorder(&targets, &from_file, output).await?;
+            }
+        },
+
+        Commands::DataArchive { cmd } => match cmd {
+            DataArchiveCmd::Metrics { cmd } => match cmd {
+                DataArchiveMetricsCmd::Get => {
+                    commands::data_archive::run_metrics_get(&targets, output).await?;
+                }
+                DataArchiveMetricsCmd::Create { from_file } => {
+                    commands::data_archive::run_metrics_create(&targets, &from_file, output)
+                        .await?;
+                }
+                DataArchiveMetricsCmd::Update { from_file } => {
+                    commands::data_archive::run_metrics_update(&targets, &from_file, output)
+                        .await?;
+                }
+                DataArchiveMetricsCmd::Enable => {
+                    commands::data_archive::run_metrics_enable(&targets).await?;
+                }
+                DataArchiveMetricsCmd::Disable => {
+                    commands::data_archive::run_metrics_disable(&targets).await?;
+                }
+                DataArchiveMetricsCmd::Validate { from_file } => {
+                    commands::data_archive::run_metrics_validate(&targets, &from_file, output)
+                        .await?;
+                }
+            },
+            DataArchiveCmd::Logs { cmd } => match cmd {
+                DataArchiveLogsCmd::Get => {
+                    commands::data_archive::run_logs_get(&targets, output).await?;
+                }
+                DataArchiveLogsCmd::Set { from_file } => {
+                    commands::data_archive::run_logs_set(&targets, &from_file, output).await?;
+                }
+            },
         },
 
         Commands::Slos { cmd } => match cmd {

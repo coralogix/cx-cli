@@ -1,3 +1,4 @@
+pub mod actions;
 pub mod alert_schedulers;
 pub mod alerts;
 pub mod api_keys;
@@ -6,6 +7,7 @@ pub mod connectors;
 pub mod contextual_data;
 pub mod custom_enrichments;
 pub mod dashboards;
+pub mod data_archive;
 pub mod data_usage;
 pub mod dataprime;
 pub mod e2m;

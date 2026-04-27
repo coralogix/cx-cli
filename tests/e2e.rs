@@ -14,6 +14,8 @@
 #[path = "e2e/harness.rs"]
 mod harness;
 
+#[path = "e2e/actions.rs"]
+mod actions;
 #[path = "e2e/alerts.rs"]
 mod alerts;
 #[path = "e2e/api_keys.rs"]
@@ -22,6 +24,8 @@ mod api_keys;
 mod connectors;
 #[path = "e2e/dashboards.rs"]
 mod dashboards;
+#[path = "e2e/data_archive.rs"]
+mod data_archive;
 #[path = "e2e/data_usage.rs"]
 mod data_usage;
 #[path = "e2e/dataprime_query.rs"]

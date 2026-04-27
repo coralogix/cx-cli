@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | complete |
 | Created | 2026-04-27 |
 | Ticket | N/A |
 | Branch | feat/full-api-coverage |
@@ -1112,61 +1112,61 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete`, `batch`, `reorder`, `enable`, `disable`, `validate`, `set` subcommands
 
-### 8.1 [ ] Add `actions` API module
+### 8.1 [x] Add `actions` API module *(completed 2026-04-28)*
 - **Files:** `src/api/actions.rs`, `src/api/mod.rs`
 - **What:** Create `ActionsApi<'a>` with methods: list, get, create, replace, delete, batch_execute, order. Define response structs with fields for text table: id, name, type, url, is_active. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 8.1a [ ] Add `actions` command module
+### 8.1a [x] Add `actions` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/actions.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_batch()`, `run_reorder()`. Text table: [ID, Name, Type, URL, Is Active]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 8.1
 
-### 8.1b [ ] Add `actions` integration tests (wiremock)
+### 8.1b [x] Add `actions` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/actions.rs`
 - **What:** Wiremock-based integration tests for list handler.
 - **Acceptance:** `cargo test --test actions` passes
 - **Dependencies:** 8.1a
 
-### 8.1c [ ] Wire `actions` into CLI and add E2E tests
+### 8.1c [x] Wire `actions` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/actions.rs`, `tests/e2e.rs`
 - **What:** Add `Actions` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx actions --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 actions` passes against real Coralogix
 - **Dependencies:** 8.1b
 
-### 8.2 [ ] Add `data-archive` API module
+### 8.2 [x] Add `data-archive` API module *(completed 2026-04-28)*
 - **Files:** `src/api/data_archive.rs`, `src/api/mod.rs`
 - **What:** Create `DataArchiveApi<'a>` with methods for metrics (get_config, create, update, enable, disable, validate) and logs (get_target, set_target). Define response structs for storage configuration. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 8.2a [ ] Add `data-archive` command module
+### 8.2a [x] Add `data-archive` command module *(completed 2026-04-28)*
 - **Files:** `src/commands/data_archive.rs`, `src/commands/mod.rs`
 - **What:** Implement metrics handlers: `run_metrics_get()`, `run_metrics_create()`, `run_metrics_update()`, `run_metrics_enable()`, `run_metrics_disable()`, `run_metrics_validate()`. Logs handlers: `run_logs_get()`, `run_logs_set()`. Text output: formatted storage configuration details. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 8.2
 
-### 8.2b [ ] Add `data-archive` integration tests (wiremock)
+### 8.2b [x] Add `data-archive` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/data_archive.rs`
 - **What:** Wiremock-based integration tests for metrics get and logs get handlers.
 - **Acceptance:** `cargo test --test data_archive` passes
 - **Dependencies:** 8.2a
 
-### 8.2c [ ] Wire `data-archive` into CLI and add E2E tests
+### 8.2c [x] Wire `data-archive` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/data_archive.rs`, `tests/e2e.rs`
 - **What:** Add `DataArchive` variant to `Commands` enum with nested `Metrics` and `Logs` subcommand groups. Wire match arms. Add E2E tests for metrics get and logs get (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx data-archive --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 data_archive` passes against real Coralogix
 - **Dependencies:** 8.2b
 
-### 8.3 [ ] Add `entity-types` to connectors API
+### 8.3 [x] Add `entity-types` to connectors API *(completed 2026-04-28)*
 - **Files:** `src/api/connectors.rs`
 - **What:** Extend `ConnectorsApi` with methods: list_entity_types, list_entity_subtypes. Add response structs for entity types. Add unit tests for entity type response deserialization in existing `#[cfg(test)]` block.
 - **Acceptance:** `cargo test` passes, unit tests cover entity type deserialization
 - **Dependencies:** 3.1
 
-### 8.3a [ ] Wire `entity-types` subcommands and add tests
+### 8.3a [x] Wire `entity-types` subcommands and add tests *(completed 2026-04-28)*
 - **Files:** `src/commands/connectors.rs`, `src/main.rs`, `tests/connectors.rs`, `tests/e2e/connectors.rs`
 - **What:** Add `run_entity_types()`, `run_entity_subtypes()` to connectors command module. Add `EntityTypes` and `EntitySubtypes` to connectors CLI subcommands. Add wiremock test for entity-types in existing `tests/connectors.rs`. Add E2E test `connectors_entity_types` in existing `tests/e2e/connectors.rs` (read-only).
 - **Acceptance:** `cx connectors entity-types` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 connectors_entity_types` passes against real Coralogix

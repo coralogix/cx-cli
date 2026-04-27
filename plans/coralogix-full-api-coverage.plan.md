@@ -350,7 +350,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 2.2a [ ] Add `data-usage` command module
+### 2.2a [x] Add `data-usage` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/data_usage.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_summary()`, `run_daily()`, `run_logs_count()`, `run_spans_count()`, `run_export_status()`. Text output: summary table or daily breakdown. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

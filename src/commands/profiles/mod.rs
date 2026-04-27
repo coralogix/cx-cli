@@ -184,6 +184,26 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
     Ok(())
 }
 
+// ── Login ─────────────────────────────────────────────────────────────────────
+
+/// Configure the default profile — a friendlier entry point than `cx profiles add`.
+/// Always writes to the profile named "default" and marks it as the active default.
+pub async fn run_login() -> Result<()> {
+    run_add(Some("default".to_string())).await?;
+
+    // Ensure the "default" profile is recorded as the active default in the
+    // global config.  run_add only persists the output-format choice; it does
+    // not touch default_profile, so we do it here.
+    let mut global_config = load_config().unwrap_or_default();
+    if global_config.default_profile != "default" {
+        global_config.default_profile = "default".to_string();
+        save_config(&global_config)?;
+        println!("Profile 'default' is now the active default.");
+    }
+
+    Ok(())
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 pub fn run_delete(profile_name: String, force: bool) -> Result<()> {

@@ -130,6 +130,16 @@ enum Commands {
         cmd: CompletionsCmd,
     },
 
+    /// Configure the default Coralogix profile interactively.
+    ///
+    /// Equivalent to `cx profiles add` but always targets the "default" profile
+    /// and marks it as the active default — ideal for first-time setup.
+    #[command(after_help = "\
+Examples:
+  cx login                 # set up or refresh your default connection
+  cx profiles add staging  # add a named profile instead")]
+    Login,
+
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
     Cleanup,
 
@@ -506,6 +516,11 @@ async fn main() -> Result<()> {
         unreachable!("profiles command handled above");
     }
 
+    // Login command doesn't need API credentials.
+    if let Commands::Login = cli.command {
+        return commands::profiles::run_login().await;
+    }
+
     // Cleanup command doesn't need API credentials.
     if let Commands::Cleanup = cli.command {
         return commands::cleanup::run();
@@ -569,6 +584,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
+        Commands::Login => unreachable!("handled above"),
         Commands::Cleanup => unreachable!("handled above"),
         Commands::Completions { .. } => unreachable!("handled above"),
 

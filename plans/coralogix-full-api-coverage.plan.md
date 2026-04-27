@@ -269,7 +269,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 1.3
 
-### 1.3b [ ] Add `e2m` integration tests (wiremock)
+### 1.3b [x] Add `e2m` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/e2m.rs`
 - **What:** Wiremock-based integration tests for list/get handlers.
 - **Acceptance:** `cargo test --test e2m` passes

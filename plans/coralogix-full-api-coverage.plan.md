@@ -356,7 +356,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 2.2
 
-### 2.2b [ ] Add `data-usage` integration tests (wiremock)
+### 2.2b [x] Add `data-usage` integration tests (wiremock) *(completed 2026-04-27)*
 - **Files:** `tests/data_usage.rs`
 - **What:** Wiremock-based integration tests for summary handler.
 - **Acceptance:** `cargo test --test data_usage` passes

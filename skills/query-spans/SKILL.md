@@ -86,7 +86,7 @@ Spans do not have a `$m.severity` field like logs. Errors are typically indicate
 The exact field depends on the instrumentation library used. If `$d.tags.error` returns no results, inspect sample spans with `-o json` to discover how errors are tagged:
 
 ```bash
-cx spans 'filter $l.serviceName == "api"' --limit 5 -o json
+cx spans "filter \$l.serviceName == 'api'" --limit 5 -o json
 ```
 
 ---
@@ -97,10 +97,10 @@ cx spans 'filter $l.serviceName == "api"' --limit 5 -o json
 
 ```bash
 # Get all spans for a trace
-cx spans 'filter $d.traceID == "4f6a8f3c2e8a1b97"'
+cx spans "filter \$d.traceID == '4f6a8f3c2e8a1b97'"
 
 # Find spans for a service
-cx spans 'filter $l.serviceName == "checkout-service"'
+cx spans "filter \$l.serviceName == 'checkout-service'"
 
 # Find slow spans (> 1 second)
 cx spans 'filter $m.duration > 1000000'
@@ -112,7 +112,7 @@ cx spans 'filter $d.tags.error == true'
 cx spans 'groupby $l.operationName aggregate avg($m.duration) as avg_latency | orderby avg_latency desc'
 
 # Wider time range
-cx spans 'filter $l.serviceName == "api"' --start now-6h
+cx spans "filter \$l.serviceName == 'api'" --start now-6h
 ```
 
 ### Wildfind Policy
@@ -122,7 +122,7 @@ cx spans 'filter $l.serviceName == "api"' --start now-6h
 The **one exception**: when the user provides a specific string and you don't know which field contains it:
 
 ```bash
-cx spans 'wildfind "connection refused"'
+cx spans "wildfind 'connection refused'"
 ```
 
 In all other cases, use `filter` with known fields or discover field names first with `cx search-fields`.
@@ -157,7 +157,7 @@ Returns DataPrime paths with similarity scores. Note: `cx search-fields` only ha
 ### 3. Sample Query Inspection
 
 ```bash
-cx spans 'filter $l.serviceName == "api"' --limit 5 -o json
+cx spans "filter \$l.serviceName == 'api'" --limit 5 -o json
 ```
 
 Inspect the JSON output to see all available fields in the actual data. This is especially useful for discovering fields in unstructured or deeply nested data that semantic search may not cover.

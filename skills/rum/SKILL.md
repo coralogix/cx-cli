@@ -58,13 +58,13 @@ Application filtering in RUM uses dedicated fields — `$l.applicationname` does
 
 ```bash
 # RUM application name
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.version_metadata.app_name == "my-app"'
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.version_metadata.app_name == 'my-app'"
 
 # Micro-frontend app label
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.labels.mfeApp == "my-app"'
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.labels.mfeApp == 'my-app'"
 
 # WRONG — $l.applicationname is not the RUM application name
-cx logs 'filter $l.subsystemname == "cx_rum" && $l.applicationname == "my-app"'
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$l.applicationname == 'my-app'"
 ```
 
 ### Event Types
@@ -111,7 +111,7 @@ RUM errors can come from multiple event types (`error`, `network-request`, `cust
 The `rum_template_id` field groups similar error events into distinct issues — always group by it when analyzing errors, and filter out nulls:
 
 ```bash
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.severity:num == 5 && $d.cx_rum.rum_template_id != null | groupby $d.cx_rum.rum_template_id aggregate count() as error_count, any_value($d.cx_rum.version_metadata.app_name) as app_name, any_value($d.cx_rum.event_context.type) as event_type, any_value($d.cx_rum.error_context.error_message) as error_message, any_value($d.cx_rum.network_request_context.method) as method, any_value($d.cx_rum.network_request_context.fragments) as url_fragments, any_value($d.cx_rum.network_request_context.status_code) as status_code, any_value($d.cx_rum.custom_log_context.message) as custom_log_message, distinct_count($d.cx_rum.session_context.user_id) as affected_users | orderby error_count desc' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5 && \$d.cx_rum.rum_template_id != null | groupby \$d.cx_rum.rum_template_id aggregate count() as error_count, any_value(\$d.cx_rum.version_metadata.app_name) as app_name, any_value(\$d.cx_rum.event_context.type) as event_type, any_value(\$d.cx_rum.error_context.error_message) as error_message, any_value(\$d.cx_rum.network_request_context.method) as method, any_value(\$d.cx_rum.network_request_context.fragments) as url_fragments, any_value(\$d.cx_rum.network_request_context.status_code) as status_code, any_value(\$d.cx_rum.custom_log_context.message) as custom_log_message, distinct_count(\$d.cx_rum.session_context.user_id) as affected_users | orderby error_count desc" --start now-7d
 ```
 
 Include `any_value()` for descriptive fields from all error types — irrelevant fields will be null. When composing error descriptions from grouped results, the relevant fields depend on the event type:
@@ -127,22 +127,22 @@ Include `any_value()` for descriptive fields from all error types — irrelevant
 
 ```bash
 # All RUM errors in the last 7 days
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.severity:num == 5' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5" --start now-7d
 
 # Network request errors
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.severity:num == 5 && $d.cx_rum.event_context.type == "network-request" | groupby $d.cx_rum.rum_template_id aggregate count() as error_count, any_value($d.cx_rum.network_request_context.method) as method, any_value($d.cx_rum.network_request_context.fragments) as fragments, any_value($d.cx_rum.network_request_context.status_code) as status_code | orderby error_count desc' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5 && \$d.cx_rum.event_context.type == 'network-request' | groupby \$d.cx_rum.rum_template_id aggregate count() as error_count, any_value(\$d.cx_rum.network_request_context.method) as method, any_value(\$d.cx_rum.network_request_context.fragments) as fragments, any_value(\$d.cx_rum.network_request_context.status_code) as status_code | orderby error_count desc" --start now-7d
 
 # Slow loading pages (LT p75)
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.type == "web-vitals" && $d.cx_rum.web_vitals_context.name == "LT" | groupby $d.cx_rum.page_context.page_fragments aggregate distinct_count($d.cx_rum.session_context.user_id:string) as users, percentile(0.75, $d.cx_rum.web_vitals_context.value) as LT_p75_ms | orderby users desc' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'web-vitals' && \$d.cx_rum.web_vitals_context.name == 'LT' | groupby \$d.cx_rum.page_context.page_fragments aggregate distinct_count(\$d.cx_rum.session_context.user_id:string) as users, percentile(0.75, \$d.cx_rum.web_vitals_context.value) as LT_p75_ms | orderby users desc" --start now-7d
 
 # User interactions on a page
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.type == "user-interaction" && $d.cx_rum.page_context.page_fragments ~ "/some/page" && $d.cx_rum.interaction_context.target_element_inner_text != null && $d.cx_rum.interaction_context.target_element_inner_text != "" | groupby $d.cx_rum.interaction_context.target_element_inner_text aggregate count() as click_count, distinct_count($d.cx_rum.session_context.user_id) as unique_users | orderby click_count desc' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'user-interaction' && \$d.cx_rum.page_context.page_fragments ~ '/some/page' && \$d.cx_rum.interaction_context.target_element_inner_text != null && \$d.cx_rum.interaction_context.target_element_inner_text != '' | groupby \$d.cx_rum.interaction_context.target_element_inner_text aggregate count() as click_count, distinct_count(\$d.cx_rum.session_context.user_id) as unique_users | orderby click_count desc" --start now-7d
 
 # Affected users per error
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.severity:num == 5 && $d.cx_rum.rum_template_id != null | groupby $d.cx_rum.rum_template_id aggregate distinct_count($d.cx_rum.session_context.user_id) as affected_users, count() as error_count, any_value($d.cx_rum.error_context.error_message) as error_message | orderby affected_users desc' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5 && \$d.cx_rum.rum_template_id != null | groupby \$d.cx_rum.rum_template_id aggregate distinct_count(\$d.cx_rum.session_context.user_id) as affected_users, count() as error_count, any_value(\$d.cx_rum.error_context.error_message) as error_message | orderby affected_users desc" --start now-7d
 
 # LCP by page
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.type == "web-vitals" && $d.cx_rum.web_vitals_context.name == "LCP" | groupby $d.cx_rum.page_context.page_fragments aggregate percentile(0.75, $d.cx_rum.web_vitals_context.value) as LCP_p75_ms, count() as samples | orderby LCP_p75_ms desc' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'web-vitals' && \$d.cx_rum.web_vitals_context.name == 'LCP' | groupby \$d.cx_rum.page_context.page_fragments aggregate percentile(0.75, \$d.cx_rum.web_vitals_context.value) as LCP_p75_ms, count() as samples | orderby LCP_p75_ms desc" --start now-7d
 ```
 
 ### Web Vitals Querying
@@ -154,7 +154,7 @@ Only query the specific vitals the user asks about. For "loading times" query `L
 For multiple vitals in one query, use conditional `if()` inside percentile:
 
 ```bash
-cx logs 'filter $l.subsystemname == "cx_rum" && $d.cx_rum.event_context.type == "web-vitals" | groupby $d.cx_rum.page_context.page_fragments aggregate percentile(0.75, if($d.cx_rum.web_vitals_context.name == "LT", $d.cx_rum.web_vitals_context.value)) as LT_p75, percentile(0.75, if($d.cx_rum.web_vitals_context.name == "LCP", $d.cx_rum.web_vitals_context.value)) as LCP_p75' --start now-7d
+cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'web-vitals' | groupby \$d.cx_rum.page_context.page_fragments aggregate percentile(0.75, if(\$d.cx_rum.web_vitals_context.name == 'LT', \$d.cx_rum.web_vitals_context.value)) as LT_p75, percentile(0.75, if(\$d.cx_rum.web_vitals_context.name == 'LCP', \$d.cx_rum.web_vitals_context.value)) as LCP_p75" --start now-7d
 ```
 
 ### User Interaction Querying

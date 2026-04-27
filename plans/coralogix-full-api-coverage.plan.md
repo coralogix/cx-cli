@@ -13,13 +13,55 @@ The cx CLI currently covers ~9 command groups (alerts, dashboards, logs, spans, 
 
 ## API Reference
 
-**Coralogix OpenAPI spec:** https://api.coralogix.com/mgmt/openapi/5/openapi.yaml
+### OpenAPI spec
 
-Before implementing any task, fetch this spec to get the exact endpoint paths, HTTP methods, request/response schemas, and field names. Use it to:
-- Set correct API base paths (e.g., `const SLO_BASE: &str = "/mgmt/openapi/latest/slos/v2";`)
+The canonical Coralogix management API spec (v5) is saved locally at `plans/openapi.yaml`. Read this file to get exact endpoint paths, HTTP methods, request/response schemas, and field names before implementing any task.
+
+Services covered by `plans/openapi.yaml`: api-keys, roles, scopes, team-groups, users, saml, ip-access, actions, alerts, alert-events, alert-schedulers, cases, case-events, team-config, SLOs.
+
+**Services NOT in the spec:** incidents, recording-rules, e2m, TCO policies, data-usage, retentions, quota-rules, connectors, routers, presets, notification-testing, rule-groups, enrichments, custom-enrichments, integrations, extensions, webhooks, contextual-data, views, data-archive. For these, infer paths from the existing codebase pattern: `/mgmt/openapi/latest/<domain>/<resource>/<version>`, or check https://coralogix.com/docs/developer-portal/.
+
+### Verified API paths from specs
+
+| Service | Base path (append to `/mgmt/openapi/latest/` or `/mgmt/openapi/5/`) |
+|---------|-----|
+| Alerts | `/alerts/alerts-general/v3` (existing code uses `/mgmt/openapi/latest/alerts/alerts-general/v3`) |
+| Alert events | `/alerts/events/v3` |
+| Alert schedulers | `/alerts/suppression-rules/v1` |
+| SLOs | `/apm/apm-slo/v1` |
+| Cases | `/cases/cases/v1` |
+| Case events | `/cases/cases/v1/events` and `/cases/events/v1` |
+| Team config | `/cases/cases/team-configs/v1` |
+| Actions | `/actions/actions/v2`, `/actions/batch/v2`, `/actions/order/v2` |
+| API keys | `/aaa/api-keys/v3`, `/aaa/send-data-keys/v3` |
+| Roles | `/aaa/custom-roles/v1`, `/aaa/system-roles/v1` |
+| Scopes | `/aaa/team-scopes/v1` |
+| Team groups | `/aaa/team-groups/v2` |
+| Users | `/aaa/teams/v2/{team_id}/members` |
+| SAML | `/aaa/team-saml/v1` |
+| IP access | `/aaa/team-sec-ip-access/v1` |
+| Dashboards | `/dashboards/dashboards/v1` (existing code uses `/mgmt/openapi/5/dashboards/dashboards/v1`) |
+
+### How to use
+
+Before implementing any task, read `plans/openapi.yaml` to get exact endpoint paths, HTTP methods, request/response schemas, and field names. Use it to:
+- Set correct API base paths (e.g., `const SLO_BASE: &str = "/mgmt/openapi/5/apm/apm-slo/v1";`)
 - Define response structs with accurate field names and types
 - Set correct `#[serde(rename = "...")]` annotations where API uses camelCase or snake_case
 - Determine which endpoints use POST vs GET for list operations
+- For services not in the spec, follow the path convention: `/mgmt/openapi/latest/<domain>/<resource>/<version>`
+
+## Global CLI Flags
+
+Every command inherits these flags from the existing CLI framework (do not re-implement):
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--output <FORMAT>` | `-o` | Output format: `text` (default), `json`, `agents` |
+| `--profile <NAME>` | `-p` | Use specific profile (overrides CX_PROFILE) |
+| `--all-profiles` | `-a` | Fan-out across all configured profiles |
+
+All commands must support these three output modes via the existing `render_table()`/`render_json()`/agents TOON pattern.
 
 ## Architecture Decisions
 
@@ -159,6 +201,29 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **Key decisions:** Incidents use POST for list (filter body) unlike most services that use GET. We'll accept filter flags as CLI args and build the POST body internally, keeping the UX consistent with other list commands.
 
+### CLI Reference
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx incidents list` | — | `--status <STATUS>`, `--severity <SEV>`, `--assignee <USER>` | List incidents (filtered) |
+| `cx incidents get <ID>` | `ID` | — | Get incident details |
+| `cx incidents acknowledge <IDS...>` | `IDS` (one or more) | — | Acknowledge incidents |
+| `cx incidents resolve <IDS...>` | `IDS` (one or more) | — | Resolve incidents |
+| `cx incidents close <IDS...>` | `IDS` (one or more) | — | Close incidents |
+| `cx incidents assign <IDS...> --user <USER_ID>` | `IDS`, `--user` | — | Assign incidents to user |
+| `cx incidents unassign <IDS...>` | `IDS` (one or more) | — | Unassign incidents |
+| `cx incidents events` | — | `--incident-id <ID>` | List incident events |
+| `cx incidents aggregations` | — | — | Get incident aggregations |
+| `cx alerts events` | — | `--alert-id <ID>`, `--start <TIME>`, `--end <TIME>` | List alert triggered events |
+| `cx alerts event-stats` | — | `--alert-id <ID>`, `--start <TIME>`, `--end <TIME>` | Get alert event statistics |
+| `cx alert-schedulers list` | — | `--enabled`, `--active-timeframe`, `--next-page-token <TOKEN>` | List suppression rules |
+| `cx alert-schedulers get <ID>` | `ID` | — | Get suppression rule |
+| `cx alert-schedulers create --from-file <FILE>` | `--from-file` | — | Create suppression rule |
+| `cx alert-schedulers update --from-file <FILE>` | `--from-file` | — | Update suppression rule |
+| `cx alert-schedulers delete <ID>` | `ID` | — | Delete suppression rule |
+
+**E2E skip list:** `incidents acknowledge`, `incidents resolve`, `incidents close`, `incidents assign`, `incidents unassign`, `alert-schedulers create`, `alert-schedulers update`, `alert-schedulers delete`
+
 ### 1.1 [ ] Add `incidents` API module
 - **Files:** `src/api/incidents.rs`, `src/api/mod.rs`
 - **What:** Create `IncidentsApi<'a>` with methods: `list()` (POST /incidents/incidents/v1 with filter body), `get()` (GET /incidents/incidents/v1/{id}), `acknowledge()` (POST .../all/acknowledge), `resolve()` (POST .../all/resolve), `close()` (POST .../all/closed), `assign()` (POST .../all/by-user), `unassign()` (DELETE .../all/by-user), `get_events()` (GET /incidents/events/v1), `get_aggregations()` (GET /incidents/aggregations/v1). Define response structs for list/get (Incident, IncidentEvent) with fields needed for text table rendering: id, name, severity, status, created_at, assigned_to. Register in api/mod.rs. Add `#[cfg(test)] mod tests` with unit tests covering response deserialization (follow `src/api/alerts.rs:181-372` pattern).
@@ -241,6 +306,30 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **Key decisions:** SLOs and recording rules are independent services but grouped together because they serve the same SRE persona. Events2Metrics (E2M) is included here as it's closely related to recording rules.
 
+### CLI Reference
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx slos list` | — | `--order-by <FIELD>`, `--service-names <NAMES>` | List all SLOs |
+| `cx slos get <ID>` | `ID` | — | Get SLO details |
+| `cx slos create --from-file <FILE>` | `--from-file` | — | Create SLO |
+| `cx slos update --from-file <FILE>` | `--from-file` | — | Replace SLO definition |
+| `cx slos delete <ID>` | `ID` | — | Delete SLO |
+| `cx recording-rules list` | — | — | List recording rule groups |
+| `cx recording-rules get <ID>` | `ID` | — | Get recording rule group |
+| `cx recording-rules create --from-file <FILE>` | `--from-file` | — | Create recording rule group |
+| `cx recording-rules update --from-file <FILE> <ID>` | `--from-file`, `ID` | — | Update recording rule group |
+| `cx recording-rules delete <ID>` | `ID` | — | Delete recording rule group |
+| `cx e2m list` | — | — | List Events2Metrics definitions |
+| `cx e2m get <ID>` | `ID` | — | Get E2M definition |
+| `cx e2m create --from-file <FILE>` | `--from-file` | — | Create E2M definition |
+| `cx e2m update --from-file <FILE>` | `--from-file` | — | Replace E2M definition |
+| `cx e2m delete <ID>` | `ID` | — | Delete E2M definition |
+| `cx e2m labels-cardinality` | — | — | Get E2M labels cardinality |
+| `cx e2m limits` | — | — | Get E2M limits |
+
+**E2E skip list:** all `create`, `update`, `delete` subcommands
+
 ### 2.1 [ ] Add `slos` API module
 - **Files:** `src/api/slos.rs`, `src/api/mod.rs`
 - **What:** Create `SlosApi<'a>` with methods: list, get, create (POST), replace (PUT), delete, batch_get, batch_execute. Define response structs (Slo, ListSlosResponse) with fields for text table: id, name, target, status, service, period. Register in api/mod.rs. Add `#[cfg(test)] mod tests` with unit tests covering response deserialization.
@@ -322,6 +411,35 @@ cargo test --test e2e -- --ignored --test-threads=1
 **Success criteria:** A platform engineer can `cx tco-policies list` to see current policies, `cx data-usage` to check consumption, `cx retentions list` to see retention settings, and `cx quota-rules get` to inspect quota allocations.
 
 **Key decisions:** These four services (policies, data-usage, retentions, quota-rules) are grouped because they're all used by the same platform/FinOps persona for cost management.
+
+### CLI Reference
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx tco-policies list` | — | — | List TCO policies |
+| `cx tco-policies get <ID>` | `ID` | — | Get policy details |
+| `cx tco-policies create --from-file <FILE>` | `--from-file` | — | Create policy |
+| `cx tco-policies update --from-file <FILE>` | `--from-file` | — | Update policy |
+| `cx tco-policies delete <ID>` | `ID` | — | Delete policy |
+| `cx tco-policies reorder --from-file <FILE>` | `--from-file` | — | Reorder policies by priority |
+| `cx tco-policies test --from-file <FILE>` | `--from-file` | — | Test policy matching |
+| `cx tco-policies settings` | — | — | Show TCO settings |
+| `cx tco-policies settings-update --from-file <FILE>` | `--from-file` | — | Replace TCO settings |
+| `cx data-usage summary` | — | — | Show data usage overview |
+| `cx data-usage daily` | — | `--type <processed-gbs\|units\|eval-tokens>`, `--start <TIME>`, `--end <TIME>` | Daily usage breakdown |
+| `cx data-usage logs-count` | — | — | Show logs count |
+| `cx data-usage spans-count` | — | — | Show spans count |
+| `cx data-usage export-status` | — | — | Show export status |
+| `cx retentions list` | — | — | List retention settings |
+| `cx retentions update --from-file <FILE>` | `--from-file` | — | Update retention settings |
+| `cx retentions activate` | — | — | Activate retention |
+| `cx retentions status` | — | — | Check retention enabled status |
+| `cx quota-rules get` | — | — | Get quota rule set |
+| `cx quota-rules create --from-file <FILE>` | `--from-file` | — | Create quota rules |
+| `cx quota-rules update --from-file <FILE>` | `--from-file` | — | Replace quota rules |
+| `cx quota-rules delete` | — | — | Delete quota rules |
+
+**E2E skip list:** all `create`, `update`, `delete`, `reorder`, `test`, `settings-update`, `activate` subcommands
 
 ### 3.1 [ ] Add `tco-policies` API module
 - **Files:** `src/api/tco_policies.rs`, `src/api/mod.rs`
@@ -429,6 +547,36 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **Key decisions:** The notification center has 4 sub-services (connectors, presets, routers, testing). We implement each as a separate top-level command rather than nesting under `cx notifications` to keep commands discoverable and avoid deep nesting.
 
+### CLI Reference
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx connectors list` | — | — | List notification connectors |
+| `cx connectors get <ID>` | `ID` | — | Get connector details |
+| `cx connectors create --from-file <FILE>` | `--from-file` | — | Create connector |
+| `cx connectors update --from-file <FILE>` | `--from-file` | — | Replace connector |
+| `cx connectors delete <ID>` | `ID` | — | Delete connector |
+| `cx connectors types` | — | — | List connector type summaries |
+| `cx routers list` | — | — | List global notification routers |
+| `cx routers get <ID>` | `ID` | — | Get router details |
+| `cx routers create --from-file <FILE>` | `--from-file` | — | Create router |
+| `cx routers update --from-file <FILE>` | `--from-file` | — | Replace router |
+| `cx routers delete <ID>` | `ID` | — | Delete router |
+| `cx routers validate-matcher --from-file <FILE>` | `--from-file` | — | Test entity label matcher |
+| `cx presets list` | — | — | List notification presets |
+| `cx presets get <ID>` | `ID` | — | Get preset details |
+| `cx presets create --from-file <FILE>` | `--from-file` | — | Create custom preset |
+| `cx presets update --from-file <FILE>` | `--from-file` | — | Replace custom preset |
+| `cx presets delete <ID>` | `ID` | — | Delete custom preset |
+| `cx presets set-default <ID>` | `ID` | — | Set default preset |
+| `cx notification-test connector --from-file <FILE>` | `--from-file` | — | Test connector config |
+| `cx notification-test destination --from-file <FILE>` | `--from-file` | — | Test destination |
+| `cx notification-test preset --from-file <FILE>` | `--from-file` | — | Test preset config |
+| `cx notification-test routing-condition --from-file <FILE>` | `--from-file` | — | Test routing condition |
+| `cx notification-test template-render --from-file <FILE>` | `--from-file` | — | Test template rendering |
+
+**E2E skip list:** all `create`, `update`, `delete`, `set-default`, `validate-matcher` subcommands; all `notification-test` subcommands
+
 ### 4.1 [ ] Add `connectors` API module
 - **Files:** `src/api/connectors.rs`, `src/api/mod.rs`
 - **What:** Create `ConnectorsApi<'a>` with methods: list, get, create, replace, delete, list_summaries, get_type_summaries. Define response structs with fields for text table: id, name, type, enabled, created. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
@@ -529,6 +677,32 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **Key decisions:** Enrichments and custom-enrichments are separate API services with different schemas, so they get separate commands despite similar names.
 
+### CLI Reference
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx rule-groups list` | — | — | List parsing rule groups |
+| `cx rule-groups get <ID>` | `ID` | — | Get rule group details |
+| `cx rule-groups create --from-file <FILE>` | `--from-file` | — | Create rule group |
+| `cx rule-groups update --from-file <FILE> <ID>` | `--from-file`, `ID` | — | Update rule group |
+| `cx rule-groups delete <ID>` | `ID` | — | Delete rule group |
+| `cx rule-groups bulk-delete --ids <IDS...>` | `--ids` | — | Bulk delete rule groups |
+| `cx rule-groups usage-limits` | — | — | Show rule usage limits |
+| `cx enrichments list` | — | — | List enrichment rules |
+| `cx enrichments add --from-file <FILE>` | `--from-file` | — | Add enrichment rules |
+| `cx enrichments remove --from-file <FILE>` | `--from-file` | — | Remove enrichment rules |
+| `cx enrichments overwrite --from-file <FILE>` | `--from-file` | — | Overwrite enrichment rules |
+| `cx enrichments limit` | — | — | Show enrichment limits |
+| `cx enrichments settings` | — | — | Show enrichment settings |
+| `cx custom-enrichments list` | — | — | List custom enrichment tables |
+| `cx custom-enrichments get <ID>` | `ID` | — | Get enrichment table details |
+| `cx custom-enrichments create --from-file <FILE>` | `--from-file` | — | Create enrichment table |
+| `cx custom-enrichments update --from-file <FILE>` | `--from-file` | — | Update enrichment table |
+| `cx custom-enrichments delete <ID>` | `ID` | — | Delete enrichment table |
+| `cx custom-enrichments search --id <ID> --query <TEXT>` | `--id`, `--query` | — | Search enrichment data |
+
+**E2E skip list:** all `create`, `update`, `delete`, `bulk-delete`, `add`, `remove`, `overwrite`, `search` subcommands
+
 ### 5.1 [ ] Add `rule-groups` API module
 - **Files:** `src/api/rule_groups.rs`, `src/api/mod.rs`
 - **What:** Create `RuleGroupsApi<'a>` with methods: list, get, create, update, delete, bulk_delete, get_usage_limits, get_model_mapping. Define response structs with fields for text table: id, name, rules_count, enabled, order, creator. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
@@ -610,6 +784,42 @@ cargo test --test e2e -- --ignored --test-threads=1
 **Success criteria:** A DevOps engineer can `cx integrations list` to see configured integrations, `cx webhooks list` to see outgoing webhooks, and manage extensions — all with create/update/delete from JSON files.
 
 **Key decisions:** Integrations, extensions, and webhooks are separate top-level commands. Contextual data integrations get their own command due to distinct API patterns.
+
+### CLI Reference
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx integrations list` | — | — | List configured integrations |
+| `cx integrations get <ID>` | `ID` | — | Get integration details |
+| `cx integrations definition <ID>` | `ID` | — | Get integration definition |
+| `cx integrations deployed <ID>` | `ID` | — | Get deployed integration |
+| `cx integrations create --from-file <FILE>` | `--from-file` | — | Save integration |
+| `cx integrations update --from-file <FILE>` | `--from-file` | — | Update integration |
+| `cx integrations delete <ID>` | `ID` | — | Delete integration |
+| `cx integrations test --from-file <FILE>` | `--from-file` | — | Test integration |
+| `cx integrations template` | — | — | Get integration template |
+| `cx extensions list` | — | — | List all available extensions |
+| `cx extensions get <ID>` | `ID` | — | Get extension details |
+| `cx extensions deployed` | — | — | List deployed extensions |
+| `cx extensions deploy --from-file <FILE>` | `--from-file` | — | Deploy extension |
+| `cx extensions update --from-file <FILE>` | `--from-file` | — | Update deployed extension |
+| `cx extensions undeploy --from-file <FILE>` | `--from-file` | — | Undeploy extension |
+| `cx webhooks list` | — | — | List outgoing webhooks |
+| `cx webhooks get <ID>` | `ID` | — | Get webhook details |
+| `cx webhooks create --from-file <FILE>` | `--from-file` | — | Create webhook |
+| `cx webhooks update --from-file <FILE>` | `--from-file` | — | Update webhook |
+| `cx webhooks delete <ID>` | `ID` | — | Delete webhook |
+| `cx webhooks test <ID>` | `ID` | — | Test webhook |
+| `cx webhooks types` | — | — | List webhook types |
+| `cx contextual-data list` | — | — | List contextual data integrations |
+| `cx contextual-data get <ID>` | `ID` | — | Get integration details |
+| `cx contextual-data create --from-file <FILE>` | `--from-file` | — | Create integration |
+| `cx contextual-data update --from-file <FILE>` | `--from-file` | — | Update integration |
+| `cx contextual-data delete <ID>` | `ID` | — | Delete integration |
+| `cx contextual-data definition <ID>` | `ID` | — | Get integration definition |
+| `cx contextual-data test <ID>` | `ID` | — | Test integration |
+
+**E2E skip list:** all `create`, `update`, `delete`, `deploy`, `undeploy`, `test` subcommands
 
 ### 6.1 [ ] Add `integrations` API module
 - **Files:** `src/api/integrations.rs`, `src/api/mod.rs`
@@ -717,6 +927,23 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **Key decisions:** Views and view-folders are separate subcommands under a single `views` command (similar to how dashboards has `folders` nested).
 
+### CLI Reference
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx views list` | — | — | List saved views |
+| `cx views get <ID>` | `ID` | — | Get view details |
+| `cx views create --from-file <FILE>` | `--from-file` | — | Create view |
+| `cx views update --from-file <FILE> <ID>` | `--from-file`, `ID` | — | Replace view |
+| `cx views delete <ID>` | `ID` | — | Delete view |
+| `cx views folders list` | — | — | List view folders |
+| `cx views folders get <ID>` | `ID` | — | Get folder details |
+| `cx views folders create --from-file <FILE>` | `--from-file` | — | Create folder |
+| `cx views folders update --from-file <FILE>` | `--from-file` | — | Replace folder |
+| `cx views folders delete <ID>` | `ID` | — | Delete folder |
+
+**E2E skip list:** all `create`, `update`, `delete` subcommands (views and folders)
+
 ### 7.1 [ ] Add `views` API module
 - **Files:** `src/api/views.rs`, `src/api/mod.rs`
 - **What:** Create `ViewsApi<'a>` with methods for views (list, get, create, replace, delete) and folders (list, get, create, replace, delete). Define response structs — views: id, name, folder, created; folders: id, name, parent. Follow dashboards API pattern for folder nesting. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
@@ -751,6 +978,28 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **Key decisions:** Cases, case-events, and team-config are all nested under a single `cases` command since they share the same domain context.
 
+### CLI Reference
+
+**API paths (verified):** `/cases/cases/v1`, `/cases/cases/v1/events`, `/cases/events/v1`, `/cases/cases/team-configs/v1`
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx cases events --case-id <ID>` | `--case-id` | — | List events for a case |
+| `cx cases event <EVENT_ID>` | `EVENT_ID` | — | Get single event |
+| `cx cases comment --case-id <ID> --message <TEXT>` | `--case-id`, `--message` | — | Create comment on case |
+| `cx cases comment-update <EVENT_ID> --message <TEXT>` | `EVENT_ID`, `--message` | — | Update comment |
+| `cx cases comment-delete <EVENT_ID>` | `EVENT_ID` | — | Delete comment |
+| `cx cases external-refs <CASE_ID>` | `CASE_ID` | — | Get external references |
+| `cx cases team-config list` | — | — | List team configurations |
+| `cx cases team-config get <ID>` | `ID` | — | Get team config |
+| `cx cases team-config active` | — | — | Get active team config |
+| `cx cases team-config defaults` | — | — | Get system defaults |
+| `cx cases team-config create --from-file <FILE>` | `--from-file` | — | Create team config |
+| `cx cases team-config update --from-file <FILE> <ID>` | `--from-file`, `ID` | — | Update team config |
+| `cx cases team-config delete <ID>` | `ID` | — | Delete team config |
+
+**E2E skip list:** `cases comment`, `cases comment-update`, `cases comment-delete`, `cases events` (needs specific case ID), `cases event`, `cases external-refs`, `cases team-config create`, `cases team-config update`, `cases team-config delete`
+
 ### 8.1 [ ] Add `cases` API module
 - **Files:** `src/api/cases.rs`, `src/api/mod.rs`
 - **What:** Create `CasesApi<'a>` with methods: get_external_references, list_events, get_event, create_comment, update_comment, delete_comment, list_notification_deliveries. Team config methods: get_active, get, create, update, delete, get_system_defaults. Define response structs — events: event_id, type, created, author; team config: id, name, settings. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
@@ -784,6 +1033,55 @@ cargo test --test e2e -- --ignored --test-threads=1
 **Success criteria:** An admin can manage the full IAM lifecycle from the terminal: `cx api-keys list`, `cx roles list`, `cx scopes list`, `cx users search`, `cx team-groups list`, `cx saml get`, `cx ip-access get`.
 
 **Key decisions:** Each IAM service gets its own top-level command despite being in the same "aaa" API namespace. This keeps commands discoverable and avoids deep nesting. The API Keys Admin service (team-wide operations) is merged into the `api-keys` command as admin subcommands.
+
+### CLI Reference
+
+**API paths (verified):** `/aaa/api-keys/v3`, `/aaa/send-data-keys/v3`, `/aaa/custom-roles/v1`, `/aaa/system-roles/v1`, `/aaa/team-scopes/v1`, `/aaa/teams/v2/{team_id}/members`, `/aaa/team-groups/v2`, `/aaa/team-saml/v1`, `/aaa/team-sec-ip-access/v1`
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx api-keys list` | — | — | List user's API keys |
+| `cx api-keys get <ID>` | `ID` | — | Get API key details |
+| `cx api-keys create --from-file <FILE>` | `--from-file` | — | Generate new API key |
+| `cx api-keys update --from-file <FILE> <ID>` | `--from-file`, `ID` | — | Modify API key |
+| `cx api-keys delete <ID>` | `ID` | — | Remove API key |
+| `cx api-keys send-data-keys` | — | — | List send-data keys |
+| `cx api-keys admin list` | — | — | List all team members' keys |
+| `cx api-keys admin delete --ids <IDS...>` | `--ids` | — | Bulk remove keys |
+| `cx api-keys admin set-status --ids <IDS...> --active <BOOL>` | `--ids`, `--active` | — | Toggle key activation |
+| `cx roles list` | — | — | List custom + system roles |
+| `cx roles get <ID>` | `ID` | — | Get role details |
+| `cx roles create --from-file <FILE>` | `--from-file` | — | Create custom role |
+| `cx roles update --from-file <FILE> <ID>` | `--from-file`, `ID` | — | Update role |
+| `cx roles delete <ID>` | `ID` | — | Delete role |
+| `cx roles system` | — | — | List system (built-in) roles |
+| `cx scopes list` | — | — | List all team scopes |
+| `cx scopes get <ID>` | `ID` | — | Get scope details |
+| `cx scopes create --from-file <FILE>` | `--from-file` | — | Create scope |
+| `cx scopes update --from-file <FILE>` | `--from-file` | — | Update scope |
+| `cx scopes delete <ID>` | `ID` | — | Delete scope |
+| `cx users search` | — | `--query <TEXT>`, `--status <STATUS>`, `--page-size <N>`, `--page-token <TOKEN>` | Search team users |
+| `cx users get <USER_ID>` | `USER_ID` | — | Get user details |
+| `cx users create --from-file <FILE>` | `--from-file` | — | Create user |
+| `cx users update --from-file <FILE>` | `--from-file` | — | Update user profile |
+| `cx users set-status --user-ids <IDS...> --status <active\|suspended>` | `--user-ids`, `--status` | — | Activate or suspend users |
+| `cx team-groups list` | — | `--page-size <N>`, `--page-token <TOKEN>` | List team groups |
+| `cx team-groups get <ID>` | `ID` | — | Get group by ID |
+| `cx team-groups get-by-name <NAME>` | `NAME` | — | Get group by name |
+| `cx team-groups users <GROUP_ID>` | `GROUP_ID` | `--page-size <N>`, `--page-token <TOKEN>` | List group members |
+| `cx team-groups create --from-file <FILE>` | `--from-file` | — | Create group |
+| `cx team-groups update --from-file <FILE> <ID>` | `--from-file`, `ID` | — | Update group |
+| `cx team-groups delete <ID>` | `ID` | — | Delete group |
+| `cx saml get` | — | — | Show SAML configuration |
+| `cx saml sp-params` | — | — | Show service provider parameters |
+| `cx saml set-idp --from-file <FILE>` | `--from-file` | — | Set identity provider params |
+| `cx saml set-active --active <BOOL>` | `--active` | — | Enable/disable SAML |
+| `cx ip-access get` | — | — | Show IP access rules |
+| `cx ip-access create --from-file <FILE>` | `--from-file` | — | Create IP restrictions |
+| `cx ip-access update --from-file <FILE>` | `--from-file` | — | Replace IP settings |
+| `cx ip-access delete` | — | — | Remove IP configuration |
+
+**E2E skip list:** all `create`, `update`, `delete`, `set-status`, `set-idp`, `set-active`, `admin delete`, `admin set-status` subcommands
 
 ### 9.1 [ ] Add `api-keys` API module
 - **Files:** `src/api/api_keys.rs`, `src/api/mod.rs`
@@ -962,6 +1260,32 @@ cargo test --test e2e -- --ignored --test-threads=1
 **Success criteria:** Users can `cx actions list` and manage actions, `cx data-archive get` to check storage configuration — completing 100% API coverage.
 
 **Key decisions:** Actions get a dedicated top-level command. Metrics data archive and logs data archive are combined into a single `data-archive` command with `metrics` and `logs` subcommands.
+
+### CLI Reference
+
+**API paths (verified):** `/actions/actions/v2`, `/actions/batch/v2`, `/actions/order/v2`
+
+| Command | Required args | Optional args | Description |
+|---------|--------------|---------------|-------------|
+| `cx actions list` | — | — | List all actions |
+| `cx actions get <ID>` | `ID` | — | Get action details |
+| `cx actions create --from-file <FILE>` | `--from-file` | — | Create action |
+| `cx actions update --from-file <FILE>` | `--from-file` | — | Replace action |
+| `cx actions delete <ID>` | `ID` | — | Delete action |
+| `cx actions batch --from-file <FILE>` | `--from-file` | — | Batch execute actions |
+| `cx actions reorder --from-file <FILE>` | `--from-file` | — | Reorder actions |
+| `cx data-archive metrics get` | — | — | Get metrics archive config |
+| `cx data-archive metrics create --from-file <FILE>` | `--from-file` | — | Create metrics archive |
+| `cx data-archive metrics update --from-file <FILE>` | `--from-file` | — | Update metrics archive |
+| `cx data-archive metrics enable` | — | — | Enable metrics archiving |
+| `cx data-archive metrics disable` | — | — | Disable metrics archiving |
+| `cx data-archive metrics validate --from-file <FILE>` | `--from-file` | — | Validate archive config |
+| `cx data-archive logs get` | — | — | Get logs archive target |
+| `cx data-archive logs set --from-file <FILE>` | `--from-file` | — | Set logs archive target |
+| `cx connectors entity-types` | — | — | List entity types |
+| `cx connectors entity-subtypes --type <TYPE>` | `--type` | — | List entity subtypes |
+
+**E2E skip list:** all `create`, `update`, `delete`, `batch`, `reorder`, `enable`, `disable`, `validate`, `set` subcommands
 
 ### 10.1 [ ] Add `actions` API module
 - **Files:** `src/api/actions.rs`, `src/api/mod.rs`

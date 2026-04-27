@@ -194,6 +194,29 @@ Examples:
         cmd: TcoPoliciesCmd,
     },
 
+    /// Manage data retention settings.
+    #[command(after_help = "\
+Examples:
+  cx retentions list
+  cx retentions status
+  cx retentions update --from-file retentions.json")]
+    Retentions {
+        #[command(subcommand)]
+        cmd: RetentionsCmd,
+    },
+
+    /// Manage quota rules.
+    #[command(after_help = "\
+Examples:
+  cx quota-rules get
+  cx quota-rules create --from-file rules.json
+  cx quota-rules update --from-file rules.json
+  cx quota-rules delete")]
+    QuotaRules {
+        #[command(subcommand)]
+        cmd: QuotaRulesCmd,
+    },
+
     /// Manage Events2Metrics definitions.
     #[command(after_help = "\
 Examples:
@@ -704,6 +727,42 @@ enum TcoPoliciesCmd {
 }
 
 #[derive(Subcommand)]
+enum RetentionsCmd {
+    /// List retention settings.
+    List,
+    /// Update retention settings from a JSON file.
+    Update {
+        /// Path to JSON file with retention settings. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Activate retention.
+    Activate,
+    /// Check retention enabled status.
+    Status,
+}
+
+#[derive(Subcommand)]
+enum QuotaRulesCmd {
+    /// Get quota rule set.
+    Get,
+    /// Create quota rules from a JSON file.
+    Create {
+        /// Path to JSON file with quota rules. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Replace quota rules from a JSON file.
+    Update {
+        /// Path to JSON file with quota rules. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete quota rules.
+    Delete,
+}
+
+#[derive(Subcommand)]
 enum E2mCmd {
     /// List all E2M definitions.
     List,
@@ -1137,6 +1196,36 @@ async fn main() -> Result<()> {
             }
             TcoPoliciesCmd::SettingsUpdate { from_file } => {
                 commands::tco_policies::run_settings_update(&targets, &from_file, output).await?;
+            }
+        },
+
+        Commands::Retentions { cmd } => match cmd {
+            RetentionsCmd::List => {
+                commands::retentions::run_list(&targets, output).await?;
+            }
+            RetentionsCmd::Update { from_file } => {
+                commands::retentions::run_update(&targets, &from_file, output).await?;
+            }
+            RetentionsCmd::Activate => {
+                commands::retentions::run_activate(&targets).await?;
+            }
+            RetentionsCmd::Status => {
+                commands::retentions::run_status(&targets, output).await?;
+            }
+        },
+
+        Commands::QuotaRules { cmd } => match cmd {
+            QuotaRulesCmd::Get => {
+                commands::quota_rules::run_get(&targets, output).await?;
+            }
+            QuotaRulesCmd::Create { from_file } => {
+                commands::quota_rules::run_create(&targets, &from_file, output).await?;
+            }
+            QuotaRulesCmd::Update { from_file } => {
+                commands::quota_rules::run_update(&targets, &from_file, output).await?;
+            }
+            QuotaRulesCmd::Delete => {
+                commands::quota_rules::run_delete(&targets).await?;
             }
         },
 

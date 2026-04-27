@@ -30,8 +30,12 @@ mod logs;
 mod metrics;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
+#[path = "e2e/quota_rules.rs"]
+mod quota_rules;
 #[path = "e2e/recording_rules.rs"]
 mod recording_rules;
+#[path = "e2e/retentions.rs"]
+mod retentions;
 #[path = "e2e/search_fields.rs"]
 mod search_fields;
 #[path = "e2e/slos.rs"]

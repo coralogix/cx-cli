@@ -386,7 +386,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test retentions` passes
 - **Dependencies:** 2.3a
 
-### 2.3c [ ] Wire `retentions` into CLI and add E2E tests
+### 2.3c [x] Wire `retentions` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/retentions.rs`, `tests/e2e.rs`
 - **What:** Add `Retentions` variant to `Commands` enum with subcommands: `List`, `Update`, `Activate`, `Status`. Wire match arms. Add E2E tests for list and status (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx retentions --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 retentions` passes against real Coralogix
@@ -410,7 +410,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test quota_rules` passes
 - **Dependencies:** 2.4a
 
-### 2.4c [ ] Wire `quota-rules` into CLI and add E2E tests
+### 2.4c [x] Wire `quota-rules` into CLI and add E2E tests *(completed 2026-04-27)*
 - **Files:** `src/main.rs`, `tests/e2e/quota_rules.rs`, `tests/e2e.rs`
 - **What:** Add `QuotaRules` variant to `Commands` enum with subcommands: `Get`, `Create`, `Update`, `Delete`. Wire match arms. Add E2E tests for get (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx quota-rules --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 quota_rules` passes against real Coralogix

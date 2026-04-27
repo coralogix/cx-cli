@@ -320,6 +320,50 @@ Examples:
         cmd: CustomEnrichmentsCmd,
     },
 
+    /// Manage third-party integrations.
+    #[command(after_help = "\
+Examples:
+  cx integrations list
+  cx integrations get <id>
+  cx integrations create --from-file integration.json
+  cx integrations delete <id>")]
+    Integrations {
+        #[command(subcommand)]
+        cmd: IntegrationsCmd,
+    },
+
+    /// Manage extensions.
+    #[command(after_help = "\
+Examples:
+  cx extensions list
+  cx extensions deployed
+  cx extensions get <id>")]
+    Extensions {
+        #[command(subcommand)]
+        cmd: ExtensionsCmd,
+    },
+
+    /// Manage outgoing webhooks.
+    #[command(after_help = "\
+Examples:
+  cx webhooks list
+  cx webhooks get <id>
+  cx webhooks types")]
+    Webhooks {
+        #[command(subcommand)]
+        cmd: WebhooksCmd,
+    },
+
+    /// Manage contextual data integrations.
+    #[command(after_help = "\
+Examples:
+  cx contextual-data list
+  cx contextual-data get <id>")]
+    ContextualData {
+        #[command(subcommand)]
+        cmd: ContextualDataCmd,
+    },
+
     /// Manage SLO definitions.
     #[command(after_help = "\
 Examples:
@@ -1110,6 +1154,162 @@ enum CustomEnrichmentsCmd {
 }
 
 #[derive(Subcommand)]
+enum IntegrationsCmd {
+    /// List all integrations.
+    List,
+    /// Get integration details by ID.
+    Get {
+        /// Integration ID.
+        id: String,
+    },
+    /// Get integration definition by ID.
+    Definition {
+        /// Integration ID.
+        id: String,
+    },
+    /// Get deployed integration by ID.
+    Deployed {
+        /// Integration ID.
+        id: String,
+    },
+    /// Create an integration from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update an integration from a JSON file.
+    Update {
+        /// Integration ID.
+        id: String,
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete an integration.
+    Delete {
+        /// Integration ID.
+        id: String,
+    },
+    /// Test an integration configuration.
+    Test {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Get integration template.
+    Template,
+}
+
+#[derive(Subcommand)]
+enum ExtensionsCmd {
+    /// List all available extensions.
+    List,
+    /// Get extension details by ID.
+    Get {
+        /// Extension ID.
+        id: String,
+    },
+    /// List deployed extensions.
+    Deployed,
+    /// Deploy an extension from a JSON file.
+    Deploy {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a deployed extension from a JSON file.
+    Update {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Undeploy an extension from a JSON file.
+    Undeploy {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum WebhooksCmd {
+    /// List all outgoing webhooks.
+    List,
+    /// Get webhook details by ID.
+    Get {
+        /// Webhook ID.
+        id: String,
+    },
+    /// Create a webhook from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a webhook from a JSON file.
+    Update {
+        /// Webhook ID.
+        id: String,
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete a webhook.
+    Delete {
+        /// Webhook ID.
+        id: String,
+    },
+    /// Test a webhook by ID.
+    Test {
+        /// Webhook ID.
+        id: String,
+    },
+    /// List available webhook types.
+    Types,
+}
+
+#[derive(Subcommand)]
+enum ContextualDataCmd {
+    /// List contextual data integrations.
+    List,
+    /// Get integration details by ID.
+    Get {
+        /// Integration ID.
+        id: String,
+    },
+    /// Create an integration from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update an integration from a JSON file.
+    Update {
+        /// Integration ID.
+        id: String,
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete an integration.
+    Delete {
+        /// Integration ID.
+        id: String,
+    },
+    /// Get integration definition by ID.
+    Definition {
+        /// Integration ID.
+        id: String,
+    },
+    /// Test an integration by ID.
+    Test {
+        /// Integration ID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SlosCmd {
     /// List all SLOs.
     List,
@@ -1710,6 +1910,105 @@ async fn main() -> Result<()> {
             }
             CustomEnrichmentsCmd::Search { id, query } => {
                 commands::custom_enrichments::run_search(&targets, &id, &query, output).await?;
+            }
+        },
+
+        Commands::Integrations { cmd } => match cmd {
+            IntegrationsCmd::List => {
+                commands::integrations::run_list(&targets, output).await?;
+            }
+            IntegrationsCmd::Get { id } => {
+                commands::integrations::run_get(&targets, &id, output).await?;
+            }
+            IntegrationsCmd::Definition { id } => {
+                commands::integrations::run_definition(&targets, &id, output).await?;
+            }
+            IntegrationsCmd::Deployed { id } => {
+                commands::integrations::run_deployed(&targets, &id, output).await?;
+            }
+            IntegrationsCmd::Create { from_file } => {
+                commands::integrations::run_create(&targets, &from_file, output).await?;
+            }
+            IntegrationsCmd::Update { id, from_file } => {
+                commands::integrations::run_update(&targets, &id, &from_file, output).await?;
+            }
+            IntegrationsCmd::Delete { id } => {
+                commands::integrations::run_delete(&targets, &id).await?;
+            }
+            IntegrationsCmd::Test { from_file } => {
+                commands::integrations::run_test(&targets, &from_file, output).await?;
+            }
+            IntegrationsCmd::Template => {
+                commands::integrations::run_template(&targets, output).await?;
+            }
+        },
+
+        Commands::Extensions { cmd } => match cmd {
+            ExtensionsCmd::List => {
+                commands::extensions::run_list(&targets, output).await?;
+            }
+            ExtensionsCmd::Get { id } => {
+                commands::extensions::run_get(&targets, &id, output).await?;
+            }
+            ExtensionsCmd::Deployed => {
+                commands::extensions::run_deployed(&targets, output).await?;
+            }
+            ExtensionsCmd::Deploy { from_file } => {
+                commands::extensions::run_deploy(&targets, &from_file, output).await?;
+            }
+            ExtensionsCmd::Update { from_file } => {
+                commands::extensions::run_update(&targets, &from_file, output).await?;
+            }
+            ExtensionsCmd::Undeploy { from_file } => {
+                commands::extensions::run_undeploy(&targets, &from_file, output).await?;
+            }
+        },
+
+        Commands::Webhooks { cmd } => match cmd {
+            WebhooksCmd::List => {
+                commands::webhooks::run_list(&targets, output).await?;
+            }
+            WebhooksCmd::Get { id } => {
+                commands::webhooks::run_get(&targets, &id, output).await?;
+            }
+            WebhooksCmd::Create { from_file } => {
+                commands::webhooks::run_create(&targets, &from_file, output).await?;
+            }
+            WebhooksCmd::Update { id, from_file } => {
+                commands::webhooks::run_update(&targets, &id, &from_file, output).await?;
+            }
+            WebhooksCmd::Delete { id } => {
+                commands::webhooks::run_delete(&targets, &id).await?;
+            }
+            WebhooksCmd::Test { id } => {
+                commands::webhooks::run_test(&targets, &id, output).await?;
+            }
+            WebhooksCmd::Types => {
+                commands::webhooks::run_types(&targets, output).await?;
+            }
+        },
+
+        Commands::ContextualData { cmd } => match cmd {
+            ContextualDataCmd::List => {
+                commands::contextual_data::run_list(&targets, output).await?;
+            }
+            ContextualDataCmd::Get { id } => {
+                commands::contextual_data::run_get(&targets, &id, output).await?;
+            }
+            ContextualDataCmd::Create { from_file } => {
+                commands::contextual_data::run_create(&targets, &from_file, output).await?;
+            }
+            ContextualDataCmd::Update { id, from_file } => {
+                commands::contextual_data::run_update(&targets, &id, &from_file, output).await?;
+            }
+            ContextualDataCmd::Delete { id } => {
+                commands::contextual_data::run_delete(&targets, &id).await?;
+            }
+            ContextualDataCmd::Definition { id } => {
+                commands::contextual_data::run_definition(&targets, &id, output).await?;
+            }
+            ContextualDataCmd::Test { id } => {
+                commands::contextual_data::run_test(&targets, &id, output).await?;
             }
         },
 

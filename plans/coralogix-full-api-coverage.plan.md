@@ -712,13 +712,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 5.1
 
-### 5.1b [ ] Add `integrations` integration tests (wiremock)
+### 5.1b [x] Add `integrations` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/integrations.rs`
 - **What:** Wiremock-based integration tests for list handler.
 - **Acceptance:** `cargo test --test integrations` passes
 - **Dependencies:** 5.1a
 
-### 5.1c [ ] Wire `integrations` into CLI and add E2E tests
+### 5.1c [x] Wire `integrations` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/integrations.rs`, `tests/e2e.rs`
 - **What:** Add `Integrations` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx integrations --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 integrations` passes against real Coralogix
@@ -736,13 +736,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 5.2
 
-### 5.2b [ ] Add `extensions` integration tests (wiremock)
+### 5.2b [x] Add `extensions` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/extensions.rs`
 - **What:** Wiremock-based integration tests for list/deployed handlers.
 - **Acceptance:** `cargo test --test extensions` passes
 - **Dependencies:** 5.2a
 
-### 5.2c [ ] Wire `extensions` into CLI and add E2E tests
+### 5.2c [x] Wire `extensions` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/extensions.rs`, `tests/e2e.rs`
 - **What:** Add `Extensions` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list and deployed (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx extensions --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 extensions` passes against real Coralogix
@@ -760,13 +760,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 5.3
 
-### 5.3b [ ] Add `webhooks` integration tests (wiremock)
+### 5.3b [x] Add `webhooks` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/webhooks.rs`
 - **What:** Wiremock-based integration tests for list/types handlers.
 - **Acceptance:** `cargo test --test webhooks` passes
 - **Dependencies:** 5.3a
 
-### 5.3c [ ] Wire `webhooks` into CLI and add E2E tests
+### 5.3c [x] Wire `webhooks` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/webhooks.rs`, `tests/e2e.rs`
 - **What:** Add `Webhooks` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list and types (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx webhooks --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 webhooks` passes against real Coralogix
@@ -784,13 +784,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 5.4
 
-### 5.4b [ ] Add `contextual-data` integration tests (wiremock)
+### 5.4b [x] Add `contextual-data` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/contextual_data.rs`
 - **What:** Wiremock-based integration tests for list handler.
 - **Acceptance:** `cargo test --test contextual_data` passes
 - **Dependencies:** 5.4a
 
-### 5.4c [ ] Wire `contextual-data` into CLI and add E2E tests
+### 5.4c [x] Wire `contextual-data` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/contextual_data.rs`, `tests/e2e.rs`
 - **What:** Add `ContextualData` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx contextual-data --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 contextual_data` passes against real Coralogix

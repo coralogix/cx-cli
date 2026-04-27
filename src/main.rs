@@ -282,6 +282,44 @@ Examples:
         cmd: RecordingRulesCmd,
     },
 
+    /// Manage log parsing rule groups.
+    #[command(after_help = "\
+Examples:
+  cx rule-groups list
+  cx rule-groups get <group-id>
+  cx rule-groups create --from-file group.json
+  cx rule-groups update --from-file group.json <group-id>
+  cx rule-groups delete <group-id>
+  cx rule-groups usage-limits")]
+    RuleGroups {
+        #[command(subcommand)]
+        cmd: RuleGroupsCmd,
+    },
+
+    /// Manage log enrichment rules.
+    #[command(after_help = "\
+Examples:
+  cx enrichments list
+  cx enrichments add --from-file enrichments.json
+  cx enrichments limit
+  cx enrichments settings")]
+    Enrichments {
+        #[command(subcommand)]
+        cmd: EnrichmentsCmd,
+    },
+
+    /// Manage custom enrichment tables.
+    #[command(after_help = "\
+Examples:
+  cx custom-enrichments list
+  cx custom-enrichments get <id>
+  cx custom-enrichments create --from-file table.json
+  cx custom-enrichments delete <id>")]
+    CustomEnrichments {
+        #[command(subcommand)]
+        cmd: CustomEnrichmentsCmd,
+    },
+
     /// Manage SLO definitions.
     #[command(after_help = "\
 Examples:
@@ -969,6 +1007,109 @@ enum RecordingRulesCmd {
 }
 
 #[derive(Subcommand)]
+enum RuleGroupsCmd {
+    /// List all rule groups.
+    List,
+    /// Get a single rule group by ID.
+    Get {
+        /// Rule group ID.
+        id: String,
+    },
+    /// Create a rule group from a JSON definition file.
+    Create {
+        /// Path to JSON file with the rule group definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a rule group from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated rule group definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+        /// Rule group ID.
+        id: String,
+    },
+    /// Delete a rule group.
+    Delete {
+        /// Rule group ID.
+        id: String,
+    },
+    /// Bulk delete rule groups by IDs.
+    BulkDelete {
+        /// Rule group IDs to delete.
+        #[arg(long, num_args = 1..)]
+        ids: Vec<String>,
+    },
+    /// Show rule group usage limits.
+    UsageLimits,
+}
+
+#[derive(Subcommand)]
+enum EnrichmentsCmd {
+    /// List all enrichment rules.
+    List,
+    /// Add enrichment rules from a JSON file.
+    Add {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Remove enrichment rules from a JSON file.
+    Remove {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Overwrite all enrichment rules from a JSON file.
+    Overwrite {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Show enrichment limits.
+    Limit,
+    /// Show enrichment settings.
+    Settings,
+}
+
+#[derive(Subcommand)]
+enum CustomEnrichmentsCmd {
+    /// List all custom enrichment tables.
+    List,
+    /// Get a custom enrichment table by ID.
+    Get {
+        /// Custom enrichment table ID.
+        id: String,
+    },
+    /// Create a custom enrichment table from a JSON file.
+    Create {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a custom enrichment table from a JSON file.
+    Update {
+        /// Path to JSON file. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete a custom enrichment table.
+    Delete {
+        /// Custom enrichment table ID.
+        id: String,
+    },
+    /// Search data in a custom enrichment table.
+    Search {
+        /// Custom enrichment table ID.
+        #[arg(long)]
+        id: String,
+        /// Search query text.
+        #[arg(long)]
+        query: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum SlosCmd {
     /// List all SLOs.
     List,
@@ -1503,6 +1644,72 @@ async fn main() -> Result<()> {
             }
             RecordingRulesCmd::Delete { id } => {
                 commands::recording_rules::run_delete(&targets, &id).await?;
+            }
+        },
+
+        Commands::RuleGroups { cmd } => match cmd {
+            RuleGroupsCmd::List => {
+                commands::rule_groups::run_list(&targets, output).await?;
+            }
+            RuleGroupsCmd::Get { id } => {
+                commands::rule_groups::run_get(&targets, &id, output).await?;
+            }
+            RuleGroupsCmd::Create { from_file } => {
+                commands::rule_groups::run_create(&targets, &from_file, output).await?;
+            }
+            RuleGroupsCmd::Update { from_file, id } => {
+                commands::rule_groups::run_update(&targets, &id, &from_file, output).await?;
+            }
+            RuleGroupsCmd::Delete { id } => {
+                commands::rule_groups::run_delete(&targets, &id).await?;
+            }
+            RuleGroupsCmd::BulkDelete { ids } => {
+                commands::rule_groups::run_bulk_delete(&targets, &ids).await?;
+            }
+            RuleGroupsCmd::UsageLimits => {
+                commands::rule_groups::run_usage_limits(&targets, output).await?;
+            }
+        },
+
+        Commands::Enrichments { cmd } => match cmd {
+            EnrichmentsCmd::List => {
+                commands::enrichments::run_list(&targets, output).await?;
+            }
+            EnrichmentsCmd::Add { from_file } => {
+                commands::enrichments::run_add(&targets, &from_file, output).await?;
+            }
+            EnrichmentsCmd::Remove { from_file } => {
+                commands::enrichments::run_remove(&targets, &from_file, output).await?;
+            }
+            EnrichmentsCmd::Overwrite { from_file } => {
+                commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
+            }
+            EnrichmentsCmd::Limit => {
+                commands::enrichments::run_limit(&targets, output).await?;
+            }
+            EnrichmentsCmd::Settings => {
+                commands::enrichments::run_settings(&targets, output).await?;
+            }
+        },
+
+        Commands::CustomEnrichments { cmd } => match cmd {
+            CustomEnrichmentsCmd::List => {
+                commands::custom_enrichments::run_list(&targets, output).await?;
+            }
+            CustomEnrichmentsCmd::Get { id } => {
+                commands::custom_enrichments::run_get(&targets, &id, output).await?;
+            }
+            CustomEnrichmentsCmd::Create { from_file } => {
+                commands::custom_enrichments::run_create(&targets, &from_file, output).await?;
+            }
+            CustomEnrichmentsCmd::Update { from_file } => {
+                commands::custom_enrichments::run_update(&targets, &from_file, output).await?;
+            }
+            CustomEnrichmentsCmd::Delete { id } => {
+                commands::custom_enrichments::run_delete(&targets, &id).await?;
+            }
+            CustomEnrichmentsCmd::Search { id, query } => {
+                commands::custom_enrichments::run_search(&targets, &id, &query, output).await?;
             }
         },
 

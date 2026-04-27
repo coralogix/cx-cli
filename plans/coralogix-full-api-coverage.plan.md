@@ -600,7 +600,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test rule_groups` passes
 - **Dependencies:** 4.1a
 
-### 4.1c [ ] Wire `rule-groups` into CLI and add E2E tests
+### 4.1c [x] Wire `rule-groups` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/rule_groups.rs`, `tests/e2e.rs`
 - **What:** Add `RuleGroups` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list and usage-limits (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx rule-groups --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 rule_groups` passes against real Coralogix
@@ -624,7 +624,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test enrichments` passes
 - **Dependencies:** 4.2a
 
-### 4.2c [ ] Wire `enrichments` into CLI and add E2E tests
+### 4.2c [x] Wire `enrichments` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/enrichments.rs`, `tests/e2e.rs`
 - **What:** Add `Enrichments` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list, limit, and settings (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx enrichments --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 enrichments` passes against real Coralogix
@@ -648,7 +648,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test --test custom_enrichments` passes
 - **Dependencies:** 4.3a
 
-### 4.3c [ ] Wire `custom-enrichments` into CLI and add E2E tests
+### 4.3c [x] Wire `custom-enrichments` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/custom_enrichments.rs`, `tests/e2e.rs`
 - **What:** Add `CustomEnrichments` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx custom-enrichments --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 custom_enrichments` passes against real Coralogix

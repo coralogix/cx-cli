@@ -36,5 +36,8 @@
 /skills/cx-alerts/                     @coralogix/team-cxai
 /skills/create-dashboard/              @coralogix/team-cxai
 
+# === docs ===
+/docs/                                 @coralogix/team-technical-writers @coralogix/team-cxai
+
 # Everything else (shared infra, profiles, cleanup, search-fields, CI,
-# build files, docs, dev tooling, etc.) is owned by platform via `*`.
+# build files, dev tooling, etc.) is owned by platform via `*`.

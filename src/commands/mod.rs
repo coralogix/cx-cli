@@ -12,3 +12,4 @@ pub mod search_fields;
 pub mod recording_rules;
 pub mod slos;
 pub mod spans;
+pub mod tco_policies;

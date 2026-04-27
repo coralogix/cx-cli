@@ -326,7 +326,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization
 - **Dependencies:** None
 
-### 2.1a [ ] Add `tco-policies` command module
+### 2.1a [x] Add `tco-policies` command module *(completed 2026-04-27)*
 - **Files:** `src/commands/tco_policies.rs`, `src/commands/mod.rs`
 - **What:** Implement `run_list()`, `run_get()`, `run_create()`, `run_update()`, `run_delete()`, `run_reorder()`, `run_test()`, `run_settings()`, `run_settings_update()`. Text table: [ID, Name, Priority, Source Type, Severity, Archive Retention]. Register in commands/mod.rs.
 - **Acceptance:** Module compiles, `cargo clippy` clean

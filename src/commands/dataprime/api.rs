@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn aggregate_rows_from_groupby_example() {
         // Mirror of the example provided in the task description
-        let rows = vec![
+        let rows = [
             json!({"metadata": [], "labels": [], "userData": r#"{"region":"us1","total_logs":16}"#}),
             json!({"metadata": [], "labels": [], "userData": r#"{"region":"us2","total_logs":20}"#}),
             json!({"metadata": [], "labels": [], "userData": r#"{"region":"us3","total_logs":12}"#}),

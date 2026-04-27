@@ -193,6 +193,8 @@ Environment variables override profile file values:
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
+> **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add` first would be a paper-cut.
+
 ## OAuth callback ports
 
 The local HTTP callback listener used during `cx profiles add` (OAuth path) binds one port from the following fixed allow-list, chosen at random:

@@ -376,6 +376,90 @@ Examples:
         cmd: ViewsCmd,
     },
 
+    /// Manage API keys.
+    #[command(after_help = "\
+Examples:
+  cx api-keys list
+  cx api-keys get <id>
+  cx api-keys create --from-file key.json
+  cx api-keys send-data-keys
+  cx api-keys admin list")]
+    ApiKeys {
+        #[command(subcommand)]
+        cmd: ApiKeysCmd,
+    },
+
+    /// Manage custom and system roles.
+    #[command(after_help = "\
+Examples:
+  cx roles list
+  cx roles get <id>
+  cx roles create --from-file role.json
+  cx roles system")]
+    Roles {
+        #[command(subcommand)]
+        cmd: RolesCmd,
+    },
+
+    /// Manage team scopes.
+    #[command(after_help = "\
+Examples:
+  cx scopes list
+  cx scopes get <id>
+  cx scopes create --from-file scope.json")]
+    Scopes {
+        #[command(subcommand)]
+        cmd: ScopesCmd,
+    },
+
+    /// Search and manage team users.
+    #[command(after_help = "\
+Examples:
+  cx users search
+  cx users get <user-id>
+  cx users create --from-file users.json
+  cx users set-status --user-ids <id> --status ACTIVE")]
+    Users {
+        #[command(subcommand)]
+        cmd: UsersCmd,
+    },
+
+    /// Manage team groups.
+    #[command(after_help = "\
+Examples:
+  cx team-groups list
+  cx team-groups get <id>
+  cx team-groups get-by-name <name>
+  cx team-groups users <group-id>")]
+    TeamGroups {
+        #[command(subcommand)]
+        cmd: TeamGroupsCmd,
+    },
+
+    /// Manage SAML configuration.
+    #[command(after_help = "\
+Examples:
+  cx saml get
+  cx saml sp-params
+  cx saml set-idp --from-file idp.json
+  cx saml set-active --active")]
+    Saml {
+        #[command(subcommand)]
+        cmd: SamlCmd,
+    },
+
+    /// Manage IP access restrictions.
+    #[command(after_help = "\
+Examples:
+  cx ip-access get
+  cx ip-access create --from-file access.json
+  cx ip-access update --from-file access.json
+  cx ip-access delete")]
+    IpAccess {
+        #[command(subcommand)]
+        cmd: IpAccessCmd,
+    },
+
     /// Manage SLO definitions.
     #[command(after_help = "\
 Examples:
@@ -1387,6 +1471,262 @@ enum ViewFoldersCmd {
 }
 
 #[derive(Subcommand)]
+enum ApiKeysCmd {
+    /// List all API keys.
+    List,
+    /// Get a single API key by ID.
+    Get {
+        /// API key ID.
+        id: String,
+    },
+    /// Create an API key from a JSON definition file.
+    Create {
+        /// Path to JSON file with the API key definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update an API key from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated API key definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+        /// API key ID.
+        id: String,
+    },
+    /// Delete an API key.
+    Delete {
+        /// API key ID.
+        id: String,
+    },
+    /// List send-data API keys.
+    SendDataKeys,
+    /// Admin operations on team members' API keys.
+    Admin {
+        #[command(subcommand)]
+        cmd: ApiKeysAdminCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ApiKeysAdminCmd {
+    /// List all team members' API keys.
+    List,
+    /// Bulk delete API keys by IDs.
+    Delete {
+        /// API key IDs to delete.
+        #[arg(long, num_args = 1..)]
+        ids: Vec<String>,
+    },
+    /// Set active/inactive status for API keys.
+    SetStatus {
+        /// API key IDs to update.
+        #[arg(long, num_args = 1..)]
+        ids: Vec<String>,
+        /// Whether to activate or deactivate the keys.
+        #[arg(long)]
+        active: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RolesCmd {
+    /// List all custom roles.
+    List,
+    /// Get a single custom role by ID.
+    Get {
+        /// Role ID.
+        id: String,
+    },
+    /// Create a custom role from a JSON definition file.
+    Create {
+        /// Path to JSON file with the role definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a custom role from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated role definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+        /// Role ID.
+        id: String,
+    },
+    /// Delete a custom role.
+    Delete {
+        /// Role ID.
+        id: String,
+    },
+    /// List system roles.
+    System,
+}
+
+#[derive(Subcommand)]
+enum ScopesCmd {
+    /// List all scopes.
+    List,
+    /// Get a single scope by ID.
+    Get {
+        /// Scope ID.
+        id: String,
+    },
+    /// Create a scope from a JSON definition file.
+    Create {
+        /// Path to JSON file with the scope definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a scope from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated scope definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete a scope.
+    Delete {
+        /// Scope ID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum UsersCmd {
+    /// Search users.
+    Search {
+        /// Search query string.
+        #[arg(long)]
+        query: Option<String>,
+        /// Filter by status.
+        #[arg(long)]
+        status: Option<String>,
+        /// Maximum number of results per page.
+        #[arg(long)]
+        page_size: Option<String>,
+        /// Pagination token.
+        #[arg(long)]
+        page_token: Option<String>,
+    },
+    /// Get a single user by ID.
+    Get {
+        /// User ID.
+        user_id: String,
+    },
+    /// Create user(s) from a JSON definition file.
+    Create {
+        /// Path to JSON file with the user definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update user(s) from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated user definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Set status for one or more users.
+    SetStatus {
+        /// User IDs to update.
+        #[arg(long, num_args = 1..)]
+        user_ids: Vec<String>,
+        /// Status to set (e.g. ACTIVE, INACTIVE).
+        #[arg(long)]
+        status: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum TeamGroupsCmd {
+    /// List all team groups.
+    List {
+        /// Maximum number of results per page.
+        #[arg(long)]
+        page_size: Option<String>,
+        /// Pagination token.
+        #[arg(long)]
+        page_token: Option<String>,
+    },
+    /// Get a single team group by ID.
+    Get {
+        /// Team group ID.
+        id: String,
+    },
+    /// Get a team group by name.
+    GetByName {
+        /// Team group name.
+        name: String,
+    },
+    /// List users in a team group.
+    Users {
+        /// Team group ID.
+        group_id: String,
+        /// Maximum number of results per page.
+        #[arg(long)]
+        page_size: Option<String>,
+        /// Pagination token.
+        #[arg(long)]
+        page_token: Option<String>,
+    },
+    /// Create a team group from a JSON definition file.
+    Create {
+        /// Path to JSON file with the group definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a team group from a JSON definition file.
+    Update {
+        /// Path to JSON file with the updated group definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+        /// Team group ID.
+        id: String,
+    },
+    /// Delete a team group.
+    Delete {
+        /// Team group ID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SamlCmd {
+    /// Get SAML configuration.
+    Get,
+    /// Get SAML service provider parameters.
+    SpParams,
+    /// Set SAML IDP parameters from a JSON file.
+    SetIdp {
+        /// Path to JSON file with IDP parameters. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Activate or deactivate SAML.
+    SetActive {
+        /// Whether to activate SAML.
+        #[arg(long)]
+        active: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum IpAccessCmd {
+    /// Get IP access settings.
+    Get,
+    /// Create IP access settings from a JSON file.
+    Create {
+        /// Path to JSON file with IP access settings. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update IP access settings from a JSON file.
+    Update {
+        /// Path to JSON file with updated IP access settings. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Delete IP access settings.
+    Delete,
+}
+
+#[derive(Subcommand)]
 enum SlosCmd {
     /// List all SLOs.
     List,
@@ -2122,6 +2462,182 @@ async fn main() -> Result<()> {
                     commands::views::run_folders_delete(&targets, &id).await?;
                 }
             },
+        },
+
+        Commands::ApiKeys { cmd } => match cmd {
+            ApiKeysCmd::List => {
+                commands::api_keys::run_list(&targets, output).await?;
+            }
+            ApiKeysCmd::Get { id } => {
+                commands::api_keys::run_get(&targets, &id, output).await?;
+            }
+            ApiKeysCmd::Create { from_file } => {
+                commands::api_keys::run_create(&targets, &from_file, output).await?;
+            }
+            ApiKeysCmd::Update { from_file, id } => {
+                commands::api_keys::run_update(&targets, &id, &from_file, output).await?;
+            }
+            ApiKeysCmd::Delete { id } => {
+                commands::api_keys::run_delete(&targets, &id).await?;
+            }
+            ApiKeysCmd::SendDataKeys => {
+                commands::api_keys::run_send_data_keys(&targets, output).await?;
+            }
+            ApiKeysCmd::Admin { cmd } => match cmd {
+                ApiKeysAdminCmd::List => {
+                    commands::api_keys::run_admin_list(&targets, output).await?;
+                }
+                ApiKeysAdminCmd::Delete { ids } => {
+                    commands::api_keys::run_admin_delete(&targets, &ids).await?;
+                }
+                ApiKeysAdminCmd::SetStatus { ids, active } => {
+                    commands::api_keys::run_admin_set_status(&targets, &ids, active).await?;
+                }
+            },
+        },
+
+        Commands::Roles { cmd } => match cmd {
+            RolesCmd::List => {
+                commands::roles::run_list(&targets, output).await?;
+            }
+            RolesCmd::Get { id } => {
+                commands::roles::run_get(&targets, &id, output).await?;
+            }
+            RolesCmd::Create { from_file } => {
+                commands::roles::run_create(&targets, &from_file, output).await?;
+            }
+            RolesCmd::Update { from_file, id } => {
+                commands::roles::run_update(&targets, &id, &from_file, output).await?;
+            }
+            RolesCmd::Delete { id } => {
+                commands::roles::run_delete(&targets, &id).await?;
+            }
+            RolesCmd::System => {
+                commands::roles::run_system(&targets, output).await?;
+            }
+        },
+
+        Commands::Scopes { cmd } => match cmd {
+            ScopesCmd::List => {
+                commands::scopes::run_list(&targets, output).await?;
+            }
+            ScopesCmd::Get { id } => {
+                commands::scopes::run_get(&targets, &id, output).await?;
+            }
+            ScopesCmd::Create { from_file } => {
+                commands::scopes::run_create(&targets, &from_file, output).await?;
+            }
+            ScopesCmd::Update { from_file } => {
+                commands::scopes::run_update(&targets, &from_file, output).await?;
+            }
+            ScopesCmd::Delete { id } => {
+                commands::scopes::run_delete(&targets, &id).await?;
+            }
+        },
+
+        Commands::Users { cmd } => match cmd {
+            UsersCmd::Search {
+                query,
+                status,
+                page_size,
+                page_token,
+            } => {
+                commands::users::run_search(
+                    &targets,
+                    query.as_deref(),
+                    status.as_deref(),
+                    page_size.as_deref(),
+                    page_token.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            UsersCmd::Get { user_id } => {
+                commands::users::run_get(&targets, &user_id, output).await?;
+            }
+            UsersCmd::Create { from_file } => {
+                commands::users::run_create(&targets, &from_file, output).await?;
+            }
+            UsersCmd::Update { from_file } => {
+                commands::users::run_update(&targets, &from_file, output).await?;
+            }
+            UsersCmd::SetStatus { user_ids, status } => {
+                commands::users::run_set_status(&targets, &user_ids, &status).await?;
+            }
+        },
+
+        Commands::TeamGroups { cmd } => match cmd {
+            TeamGroupsCmd::List {
+                page_size,
+                page_token,
+            } => {
+                commands::team_groups::run_list(
+                    &targets,
+                    page_size.as_deref(),
+                    page_token.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            TeamGroupsCmd::Get { id } => {
+                commands::team_groups::run_get(&targets, &id, output).await?;
+            }
+            TeamGroupsCmd::GetByName { name } => {
+                commands::team_groups::run_get_by_name(&targets, &name, output).await?;
+            }
+            TeamGroupsCmd::Users {
+                group_id,
+                page_size,
+                page_token,
+            } => {
+                commands::team_groups::run_users(
+                    &targets,
+                    &group_id,
+                    page_size.as_deref(),
+                    page_token.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            TeamGroupsCmd::Create { from_file } => {
+                commands::team_groups::run_create(&targets, &from_file, output).await?;
+            }
+            TeamGroupsCmd::Update { from_file, id } => {
+                commands::team_groups::run_update(&targets, &id, &from_file, output).await?;
+            }
+            TeamGroupsCmd::Delete { id } => {
+                commands::team_groups::run_delete(&targets, &id).await?;
+            }
+        },
+
+        Commands::Saml { cmd } => match cmd {
+            SamlCmd::Get => {
+                commands::saml::run_get(&targets, output).await?;
+            }
+            SamlCmd::SpParams => {
+                commands::saml::run_sp_params(&targets, output).await?;
+            }
+            SamlCmd::SetIdp { from_file } => {
+                commands::saml::run_set_idp(&targets, &from_file, output).await?;
+            }
+            SamlCmd::SetActive { active } => {
+                commands::saml::run_set_active(&targets, active).await?;
+            }
+        },
+
+        Commands::IpAccess { cmd } => match cmd {
+            IpAccessCmd::Get => {
+                commands::ip_access::run_get(&targets, output).await?;
+            }
+            IpAccessCmd::Create { from_file } => {
+                commands::ip_access::run_create(&targets, &from_file, output).await?;
+            }
+            IpAccessCmd::Update { from_file } => {
+                commands::ip_access::run_update(&targets, &from_file, output).await?;
+            }
+            IpAccessCmd::Delete => {
+                commands::ip_access::run_delete(&targets).await?;
+            }
         },
 
         Commands::Slos { cmd } => match cmd {

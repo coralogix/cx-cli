@@ -16,6 +16,8 @@ mod harness;
 
 #[path = "e2e/alerts.rs"]
 mod alerts;
+#[path = "e2e/api_keys.rs"]
+mod api_keys;
 #[path = "e2e/connectors.rs"]
 mod connectors;
 #[path = "e2e/dashboards.rs"]
@@ -40,6 +42,8 @@ mod quota_rules;
 mod recording_rules;
 #[path = "e2e/retentions.rs"]
 mod retentions;
+#[path = "e2e/roles.rs"]
+mod roles;
 #[path = "e2e/contextual_data.rs"]
 mod contextual_data;
 #[path = "e2e/custom_enrichments.rs"]
@@ -50,10 +54,16 @@ mod enrichments;
 mod extensions;
 #[path = "e2e/integrations.rs"]
 mod integrations;
+#[path = "e2e/ip_access.rs"]
+mod ip_access;
 #[path = "e2e/rule_groups.rs"]
 mod rule_groups;
 #[path = "e2e/routers.rs"]
 mod routers;
+#[path = "e2e/saml.rs"]
+mod saml;
+#[path = "e2e/scopes.rs"]
+mod scopes;
 #[path = "e2e/search_fields.rs"]
 mod search_fields;
 #[path = "e2e/slos.rs"]
@@ -62,6 +72,10 @@ mod slos;
 mod spans;
 #[path = "e2e/tco_policies.rs"]
 mod tco_policies;
+#[path = "e2e/team_groups.rs"]
+mod team_groups;
+#[path = "e2e/users.rs"]
+mod users;
 #[path = "e2e/views.rs"]
 mod views;
 #[path = "e2e/webhooks.rs"]

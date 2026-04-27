@@ -920,13 +920,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 7.1
 
-### 7.1b [ ] Add `api-keys` integration tests (wiremock)
+### 7.1b [x] Add `api-keys` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/api_keys.rs`
 - **What:** Wiremock-based integration tests for list and send-data-keys handlers.
 - **Acceptance:** `cargo test --test api_keys` passes
 - **Dependencies:** 7.1a
 
-### 7.1c [ ] Wire `api-keys` into CLI and add E2E tests
+### 7.1c [x] Wire `api-keys` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/api_keys.rs`, `tests/e2e.rs`
 - **What:** Add `ApiKeys` variant to `Commands` enum with subcommands including nested `Admin` group. Wire match arms. Add E2E tests for list and send-data-keys (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx api-keys --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 api_keys` passes against real Coralogix
@@ -944,13 +944,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 7.2
 
-### 7.2b [ ] Add `roles` integration tests (wiremock)
+### 7.2b [x] Add `roles` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/roles.rs`
 - **What:** Wiremock-based integration tests for list and system handlers.
 - **Acceptance:** `cargo test --test roles` passes
 - **Dependencies:** 7.2a
 
-### 7.2c [ ] Wire `roles` into CLI and add E2E tests
+### 7.2c [x] Wire `roles` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/roles.rs`, `tests/e2e.rs`
 - **What:** Add `Roles` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list and system (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx roles --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 roles` passes against real Coralogix
@@ -968,13 +968,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 7.3
 
-### 7.3b [ ] Add `scopes` integration tests (wiremock)
+### 7.3b [x] Add `scopes` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/scopes.rs`
 - **What:** Wiremock-based integration tests for list handler.
 - **Acceptance:** `cargo test --test scopes` passes
 - **Dependencies:** 7.3a
 
-### 7.3c [ ] Wire `scopes` into CLI and add E2E tests
+### 7.3c [x] Wire `scopes` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/scopes.rs`, `tests/e2e.rs`
 - **What:** Add `Scopes` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx scopes --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 scopes` passes against real Coralogix
@@ -992,13 +992,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 7.4
 
-### 7.4b [ ] Add `users` integration tests (wiremock)
+### 7.4b [x] Add `users` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/users.rs`
 - **What:** Wiremock-based integration tests for search handler.
 - **Acceptance:** `cargo test --test users` passes
 - **Dependencies:** 7.4a
 
-### 7.4c [ ] Wire `users` into CLI and add E2E tests
+### 7.4c [x] Wire `users` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/users.rs`, `tests/e2e.rs`
 - **What:** Add `Users` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for search (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx users --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 users` passes against real Coralogix
@@ -1016,13 +1016,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 7.5
 
-### 7.5b [ ] Add `team-groups` integration tests (wiremock)
+### 7.5b [x] Add `team-groups` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/team_groups.rs`
 - **What:** Wiremock-based integration tests for list handler.
 - **Acceptance:** `cargo test --test team_groups` passes
 - **Dependencies:** 7.5a
 
-### 7.5c [ ] Wire `team-groups` into CLI and add E2E tests
+### 7.5c [x] Wire `team-groups` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/team_groups.rs`, `tests/e2e.rs`
 - **What:** Add `TeamGroups` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for list (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx team-groups --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 team_groups` passes against real Coralogix
@@ -1040,13 +1040,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 7.6
 
-### 7.6b [ ] Add `saml` integration tests (wiremock)
+### 7.6b [x] Add `saml` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/saml.rs`
 - **What:** Wiremock-based integration tests for get and sp-params handlers.
 - **Acceptance:** `cargo test --test saml` passes
 - **Dependencies:** 7.6a
 
-### 7.6c [ ] Wire `saml` into CLI and add E2E tests
+### 7.6c [x] Wire `saml` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/saml.rs`, `tests/e2e.rs`
 - **What:** Add `Saml` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for get and sp-params (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx saml --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 saml` passes against real Coralogix
@@ -1064,13 +1064,13 @@ cargo test --test e2e -- --ignored --test-threads=1
 - **Acceptance:** Module compiles, `cargo clippy` clean
 - **Dependencies:** 7.7
 
-### 7.7b [ ] Add `ip-access` integration tests (wiremock)
+### 7.7b [x] Add `ip-access` integration tests (wiremock) *(completed 2026-04-28)*
 - **Files:** `tests/ip_access.rs`
 - **What:** Wiremock-based integration tests for get handler.
 - **Acceptance:** `cargo test --test ip_access` passes
 - **Dependencies:** 7.7a
 
-### 7.7c [ ] Wire `ip-access` into CLI and add E2E tests
+### 7.7c [x] Wire `ip-access` into CLI and add E2E tests *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `tests/e2e/ip_access.rs`, `tests/e2e.rs`
 - **What:** Add `IpAccess` variant to `Commands` enum with subcommands. Wire match arms. Add E2E tests for get (read-only). Register in `tests/e2e.rs`.
 - **Acceptance:** `cx ip-access --help` works, `cargo test` passes, `cargo test --test e2e -- --ignored --test-threads=1 ip_access` passes against real Coralogix

@@ -148,10 +148,7 @@ pub fn assert_array_of_objects_with_keys(v: &Value, required_keys: &[&str]) {
 pub fn assert_array_of_strings(v: &Value) {
     let arr = assert_array(v);
     for (i, item) in arr.iter().enumerate() {
-        assert!(
-            item.is_string(),
-            "element {i} is not a string: {item}"
-        );
+        assert!(item.is_string(), "element {i} is not a string: {item}");
     }
 }
 
@@ -161,10 +158,7 @@ pub fn assert_object_with_keys(v: &Value, required_keys: &[&str]) {
         .as_object()
         .unwrap_or_else(|| panic!("expected JSON object, got: {v}"));
     for key in required_keys {
-        assert!(
-            obj.contains_key(*key),
-            "object missing key '{key}': {v}"
-        );
+        assert!(obj.contains_key(*key), "object missing key '{key}': {v}");
     }
 }
 

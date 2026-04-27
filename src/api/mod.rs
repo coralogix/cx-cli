@@ -9,6 +9,7 @@ pub mod dataprime;
 pub mod e2m;
 pub mod enrichments;
 pub mod incidents;
+pub mod integrations;
 pub mod metrics;
 pub mod notification_testing;
 pub mod presets;

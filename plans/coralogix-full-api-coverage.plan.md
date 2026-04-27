@@ -700,7 +700,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 
 **E2E skip list:** all `create`, `update`, `delete`, `deploy`, `undeploy`, `test` subcommands
 
-### 5.1 [ ] Add `integrations` API module
+### 5.1 [x] Add `integrations` API module *(completed 2026-04-28)*
 - **Files:** `src/api/integrations.rs`, `src/api/mod.rs`
 - **What:** Create `IntegrationsApi<'a>` with methods: list, get_details, get_definition, get_deployed, save, update, delete, test, get_template. Define response structs with fields for text table: id, name, type, status, version. Register in api/mod.rs. Add `#[cfg(test)] mod tests` for response deserialization.
 - **Acceptance:** `cargo test` passes, unit tests cover deserialization

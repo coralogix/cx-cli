@@ -57,7 +57,7 @@ pub struct SetDefaultPresetResponse {}
 
 // --- API ---
 
-const PRESETS_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1/presets";
+const PRESETS_BASE: &str = "/mgmt/openapi/5/notifications/notification-center/v1/presets";
 
 pub struct PresetsApi<'a> {
     client: &'a CxClient,
@@ -69,7 +69,8 @@ impl<'a> PresetsApi<'a> {
     }
 
     pub async fn list(&self) -> Result<ListPresetsResponse> {
-        self.client.get(PRESETS_BASE, &[]).await
+        let path = format!("{PRESETS_BASE}/summaries");
+        self.client.get(&path, &[]).await
     }
 
     pub async fn get(&self, id: &str) -> Result<Value> {

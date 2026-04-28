@@ -5,7 +5,8 @@ use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::users::{User, UsersApi};
+use crate::api::saml::SamlApi;
+use crate::api::users::{SearchUsersResponse, User, UsersApi};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
@@ -43,6 +44,17 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+async fn resolve_team_id(client: &crate::api::client::CxClient) -> String {
+    let saml = SamlApi::new(client);
+    match saml.get_config().await {
+        Ok(config) => config
+            .team_id
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    }
+}
+
 pub async fn run_search(
     targets: &[Arc<ExecutionTarget>],
     query: Option<&str>,
@@ -66,7 +78,15 @@ pub async fn run_search(
         let page_token = page_token.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = "";
+            let team_id = resolve_team_id(&t.client).await;
+            if team_id.is_empty() {
+                return Ok(SearchUsersResponse {
+                    users: vec![],
+                    next_page_token: None,
+                    total_count: None,
+                });
+            }
+            let team_id = team_id.as_str();
             let mut params: Vec<(&str, String)> = Vec::new();
             if let Some(ref q) = query {
                 params.push(("query", q.clone()));
@@ -153,7 +173,8 @@ pub async fn run_get(
         let user_id = user_id.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = "";
+            let team_id = resolve_team_id(&t.client).await;
+            let team_id = team_id.as_str();
             Ok(api.get(team_id, &user_id).await?)
         }
     })
@@ -203,7 +224,8 @@ pub async fn run_create(
         let body = body.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = "";
+            let team_id = resolve_team_id(&t.client).await;
+            let team_id = team_id.as_str();
             api.create(team_id, &body).await?;
             Ok(())
         }
@@ -240,7 +262,8 @@ pub async fn run_update(
         let body = body.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = "";
+            let team_id = resolve_team_id(&t.client).await;
+            let team_id = team_id.as_str();
             Ok(api.update(team_id, &body).await?)
         }
     })
@@ -302,7 +325,8 @@ pub async fn run_set_status(
         let body = body.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = "";
+            let team_id = resolve_team_id(&t.client).await;
+            let team_id = team_id.as_str();
             api.update_statuses(team_id, &body).await?;
             Ok(())
         }

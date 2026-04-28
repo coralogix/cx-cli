@@ -56,7 +56,7 @@ pub struct DeleteConnectorResponse {}
 
 // --- API ---
 
-const CONNECTORS_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1/connectors";
+const CONNECTORS_BASE: &str = "/mgmt/openapi/5/notifications/notification-center/v1/connectors";
 
 pub struct ConnectorsApi<'a> {
     client: &'a CxClient,

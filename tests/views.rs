@@ -18,7 +18,7 @@ async fn list_views_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/views/views/v1"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -35,7 +35,7 @@ async fn list_views_empty() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/views/views/v1"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "views": [] })))
         .expect(1)
         .mount(&server)
@@ -58,7 +58,7 @@ async fn list_view_folders_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/views/folders/v1"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/folders"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

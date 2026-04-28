@@ -32,7 +32,7 @@ async fn list_tco_policies_returns_items_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/dataplans/policies/v1"))
+        .and(path("/mgmt/openapi/5/dataplans/policies/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -60,7 +60,7 @@ async fn get_tco_policy_by_id() {
 
     Mock::given(method("GET"))
         .and(path(
-            "/mgmt/openapi/latest/dataplans/policies/v1/policy-001",
+            "/mgmt/openapi/5/dataplans/policies/v1/policy-001",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
@@ -85,7 +85,7 @@ async fn get_tco_settings() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/dataplans/policy-settings/v1"))
+        .and(path("/mgmt/openapi/5/dataplans/policy-settings/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

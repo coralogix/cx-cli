@@ -72,8 +72,8 @@ pub struct DeleteViewFolderResponse {}
 
 // --- API ---
 
-const VIEWS_BASE: &str = "/mgmt/openapi/latest/views/views/v1";
-const VIEWS_FOLDERS_BASE: &str = "/mgmt/openapi/latest/views/folders/v1";
+const VIEWS_BASE: &str = "/mgmt/openapi/5/data-exploration/views/v1/views";
+const VIEWS_FOLDERS_BASE: &str = "/mgmt/openapi/5/data-exploration/views/v1/folders";
 
 pub struct ViewsApi<'a> {
     client: &'a CxClient,

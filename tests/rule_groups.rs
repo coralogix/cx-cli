@@ -25,7 +25,7 @@ async fn list_rule_groups_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/rule-groups/rule-groups/v1"))
+        .and(path("/mgmt/openapi/5/parsing-rules/rule-groups/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -42,7 +42,7 @@ async fn list_rule_groups_empty() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/rule-groups/rule-groups/v1"))
+        .and(path("/mgmt/openapi/5/parsing-rules/rule-groups/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
         .mount(&server)
@@ -62,7 +62,7 @@ async fn usage_limits_from_mock() {
 
     Mock::given(method("GET"))
         .and(path(
-            "/mgmt/openapi/latest/rule-groups/rule-groups/v1/usage-limits",
+            "/mgmt/openapi/5/parsing-rules/rule-groups/v1/usage-limits",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)

@@ -58,7 +58,7 @@ pub struct DeleteRecordingRuleGroupResponse {}
 
 // --- API ---
 
-const RECORDING_RULES_BASE: &str = "/mgmt/openapi/latest/recording-rules/recording-rules/v1";
+const RECORDING_RULES_BASE: &str = "/mgmt/openapi/5/recording-rules/recording-rules/v1";
 
 pub struct RecordingRulesApi<'a> {
     client: &'a CxClient,

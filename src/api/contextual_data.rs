@@ -50,7 +50,7 @@ pub struct DeleteContextualDataResponse {}
 
 // --- API ---
 
-const CONTEXTUAL_DATA_BASE: &str = "/mgmt/openapi/latest/contextual-data/contextual-data/v1";
+const CONTEXTUAL_DATA_BASE: &str = "/mgmt/openapi/5/integrations/contextual-data/v1";
 
 pub struct ContextualDataApi<'a> {
     client: &'a CxClient,

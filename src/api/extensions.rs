@@ -43,7 +43,7 @@ pub struct ListDeployedExtensionsResponse {
 
 // --- API ---
 
-const EXTENSIONS_BASE: &str = "/mgmt/openapi/latest/extensions/extensions/v1";
+const EXTENSIONS_BASE: &str = "/mgmt/openapi/5/integrations/extensions/v1";
 
 pub struct ExtensionsApi<'a> {
     client: &'a CxClient,
@@ -55,7 +55,9 @@ impl<'a> ExtensionsApi<'a> {
     }
 
     pub async fn list_all(&self) -> Result<ListExtensionsResponse> {
-        self.client.get(EXTENSIONS_BASE, &[]).await
+        self.client
+            .post(EXTENSIONS_BASE, &serde_json::json!({}))
+            .await
     }
 
     pub async fn get(&self, id: &str) -> Result<Value> {

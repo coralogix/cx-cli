@@ -18,8 +18,8 @@ pub struct MetricsArchiveConfig {
 
 // --- API ---
 
-const METRICS_BASE: &str = "/mgmt/openapi/latest/data-archive/metrics/v1";
-const LOGS_BASE: &str = "/mgmt/openapi/latest/data-archive/logs/v1";
+const METRICS_BASE: &str = "/mgmt/openapi/5/metrics/data-setup/v1";
+const LOGS_BASE: &str = "/mgmt/openapi/5/logs/data-setup/v2";
 
 pub struct DataArchiveApi<'a> {
     client: &'a CxClient,

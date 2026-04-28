@@ -18,7 +18,7 @@ async fn list_webhooks_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/webhooks/outbound/v1"))
+        .and(path("/mgmt/openapi/5/integrations/webhooks/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -35,7 +35,7 @@ async fn list_webhook_types_from_mock() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/webhooks/outbound/v1/types"))
+        .and(path("/mgmt/openapi/5/integrations/webhook-types/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"types": ["slack", "pagerduty"]})))
         .expect(1)
         .mount(&server)

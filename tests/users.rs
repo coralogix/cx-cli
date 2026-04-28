@@ -11,6 +11,14 @@ use cx::config::OutputFormat;
 async fn search_users_from_mock() {
     let server = MockServer::start().await;
 
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-saml/v1/configuration"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"teamId": 12345, "enabled": false})),
+        )
+        .mount(&server)
+        .await;
+
     let body = json!({
         "users": [
             { "userId": "u-001", "firstName": "Jane", "lastName": "Doe", "email": "jane@example.com", "status": "active" }
@@ -18,7 +26,7 @@ async fn search_users_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/aaa/teams/v2//search"))
+        .and(path("/mgmt/openapi/5/aaa/teams/v2/12345/search"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

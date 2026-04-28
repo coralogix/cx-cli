@@ -14,7 +14,7 @@ async fn metrics_get_from_mock() {
     let body = json!({ "enabled": false, "bucket": "my-bucket" });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/data-archive/metrics/v1"))
+        .and(path("/mgmt/openapi/5/metrics/data-setup/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -33,7 +33,7 @@ async fn logs_get_from_mock() {
     let body = json!({ "target": { "bucket": "logs-archive" } });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/data-archive/logs/v1"))
+        .and(path("/mgmt/openapi/5/logs/data-setup/v2"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

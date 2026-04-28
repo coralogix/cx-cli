@@ -53,7 +53,7 @@ pub struct DeleteRuleGroupResponse {}
 
 // --- API ---
 
-const RULE_GROUPS_BASE: &str = "/mgmt/openapi/latest/rule-groups/rule-groups/v1";
+const RULE_GROUPS_BASE: &str = "/mgmt/openapi/5/parsing-rules/rule-groups/v1";
 
 pub struct RuleGroupsApi<'a> {
     client: &'a CxClient,

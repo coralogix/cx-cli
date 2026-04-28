@@ -50,7 +50,8 @@ pub struct DeleteWebhookResponse {}
 
 // --- API ---
 
-const WEBHOOKS_BASE: &str = "/mgmt/openapi/latest/webhooks/outbound/v1";
+const WEBHOOKS_BASE: &str = "/mgmt/openapi/5/integrations/webhooks/v1";
+const WEBHOOK_TYPES_BASE: &str = "/mgmt/openapi/5/integrations/webhook-types/v1";
 
 pub struct WebhooksApi<'a> {
     client: &'a CxClient,
@@ -90,8 +91,7 @@ impl<'a> WebhooksApi<'a> {
     }
 
     pub async fn list_types(&self) -> Result<Value> {
-        let path = format!("{WEBHOOKS_BASE}/types");
-        self.client.get(&path, &[]).await
+        self.client.get(WEBHOOK_TYPES_BASE, &[]).await
     }
 }
 

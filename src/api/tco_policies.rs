@@ -95,8 +95,8 @@ pub struct TcoSettingsResponse {
 
 // --- API ---
 
-const TCO_POLICIES_BASE: &str = "/mgmt/openapi/latest/dataplans/policies/v1";
-const TCO_POLICY_SETTINGS_BASE: &str = "/mgmt/openapi/latest/dataplans/policy-settings/v1";
+const TCO_POLICIES_BASE: &str = "/mgmt/openapi/5/dataplans/policies/v1";
+const TCO_POLICY_SETTINGS_BASE: &str = "/mgmt/openapi/5/dataplans/policy-settings/v1";
 
 pub struct TcoPoliciesApi<'a> {
     client: &'a CxClient,

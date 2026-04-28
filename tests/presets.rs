@@ -18,7 +18,7 @@ async fn list_presets_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/notifications/notification-center/v1/presets"))
+        .and(path("/mgmt/openapi/5/notifications/notification-center/v1/presets/summaries"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

@@ -38,7 +38,7 @@ pub struct ListEnrichmentsResponse {
 
 // --- API ---
 
-const ENRICHMENTS_BASE: &str = "/mgmt/openapi/latest/enrichments/enrichments/v1";
+const ENRICHMENTS_BASE: &str = "/mgmt/openapi/5/enrichment-rules/enrichment-rules/v1";
 
 pub struct EnrichmentsApi<'a> {
     client: &'a CxClient,

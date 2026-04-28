@@ -18,7 +18,7 @@ async fn list_custom_enrichments_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/enrichments/custom-enrichments/v1"))
+        .and(path("/mgmt/openapi/5/enrichment-rules/custom-enrichment-rules/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -35,7 +35,7 @@ async fn list_custom_enrichments_empty() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/enrichments/custom-enrichments/v1"))
+        .and(path("/mgmt/openapi/5/enrichment-rules/custom-enrichment-rules/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"customEnrichments": []})))
         .expect(1)
         .mount(&server)
@@ -60,7 +60,7 @@ async fn get_custom_enrichment_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/enrichments/custom-enrichments/v1/ce-001"))
+        .and(path("/mgmt/openapi/5/enrichment-rules/custom-enrichment-rules/v1/ce-001"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

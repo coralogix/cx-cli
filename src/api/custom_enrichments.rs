@@ -60,7 +60,7 @@ pub struct DeleteCustomEnrichmentResponse {}
 
 // --- API ---
 
-const CUSTOM_ENRICHMENTS_BASE: &str = "/mgmt/openapi/latest/enrichments/custom-enrichments/v1";
+const CUSTOM_ENRICHMENTS_BASE: &str = "/mgmt/openapi/5/enrichment-rules/custom-enrichment-rules/v1";
 
 pub struct CustomEnrichmentsApi<'a> {
     client: &'a CxClient,

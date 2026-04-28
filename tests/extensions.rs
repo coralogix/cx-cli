@@ -17,8 +17,8 @@ async fn list_extensions_from_mock() {
         ]
     });
 
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/extensions/extensions/v1"))
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/integrations/extensions/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -37,7 +37,7 @@ async fn list_deployed_extensions_from_mock() {
     let body = json!({ "deployedExtensions": [] });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/extensions/extensions/v1/deployed"))
+        .and(path("/mgmt/openapi/5/integrations/extensions/v1/deployed"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

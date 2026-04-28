@@ -258,7 +258,7 @@ graph TD
 | `cx notifications` | `connectors list/get/create/update/delete/types/entity-types/entity-subtypes`, `routers list/get/create/update/delete/validate-matcher`, `presets list/get/create/update/delete/set-default`, `test connector/destination/preset/routing-condition/template-render` | Notification channel configuration |
 | `cx integrations` | `list`, `get`, `create`, `update`, `delete`, `test`, `template`, `definition`, `deployed`, `extensions list/get/deployed`, `contextual-data list/get/create/update/delete/definition/test` | External integration management |
 
-### 5.1 [ ] Create observability-setup skill directory and SKILL.md
+### 5.1 [x] Create observability-setup skill directory and SKILL.md *(completed 2026-04-29)*
 
 - **Files:** `skills/observability-setup/SKILL.md`
 - **What:** Create the skill directory and SKILL.md. The frontmatter description must include 15+ trigger phrases covering: setup intents ("set up monitoring", "configure observability", "onboard new service", "create saved view", "set up notifications"), webhooks ("configure webhook", "set up Slack integration", "outgoing webhook", "automation action", "webhook for alerts"), views ("create view", "saved view", "view folder", "organize dashboards"), integrations ("install integration", "configure extension", "contextual data", "connect external service"), and notifications setup ("create notification connector", "set up email alerts", "configure PagerDuty", "notification routing"). The body must include:

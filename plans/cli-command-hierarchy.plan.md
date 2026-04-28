@@ -152,7 +152,7 @@ Local:
 - **Acceptance:** `cx --help` shows all commands under labeled headings in the correct order. Every existing command still works. `cargo build` succeeds.
 - **Dependencies:** 1.1
 
-### 1.3 [ ] Rename 5 commands to shorter names
+### 1.3 [x] Rename 5 commands to shorter names *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** Add `#[command(name = "rules")]` to `RuleGroups` variant, `#[command(name = "tco")]` to `TcoPolicies`, `#[command(name = "quotas")]` to `QuotaRules`, `#[command(name = "usage")]` to `DataUsage`, `#[command(name = "archive")]` to `DataArchive`. Update the `after_help` examples in each to use the new names. The dispatch `match` arms don't change since they match on Rust variant names.
 - **Acceptance:** `cx rules list`, `cx tco list`, `cx quotas get`, `cx usage summary`, `cx archive metrics get` all work. Old names (`cx rule-groups`, etc.) no longer work. `cargo build` succeeds.

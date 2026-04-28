@@ -49,18 +49,18 @@ Notifications:
   actions            Manage actions (automation hooks)
 
 Data Pipeline:
-  rule-groups        Manage log parsing rule groups
+  rules              Manage log parsing rule groups
   enrichments        Manage enrichment rules
   custom-enrichments Manage custom enrichment tables
   e2m                Manage Events2Metrics definitions
   recording-rules    Manage Prometheus recording rule groups
 
 Cost & Storage:
-  data-usage         View data usage and consumption metrics
-  tco-policies       Manage TCO policies and settings
+  usage              View data usage and consumption metrics
+  tco                Manage TCO policies and settings
   retentions         Manage data retention settings
-  quota-rules        Manage quota rules
-  data-archive       Manage data archive storage configuration
+  quotas             Manage quota rules
+  archive            Manage data archive storage configuration
 
 Integrations:
   integrations       Manage third-party integrations
@@ -270,24 +270,24 @@ Examples:
     },
 
     /// View data usage and consumption metrics.
-    #[command(after_help = "\
+    #[command(name = "usage", after_help = "\
 Examples:
-  cx data-usage summary
-  cx data-usage daily --type processed-gbs
-  cx data-usage logs-count
-  cx data-usage spans-count")]
+  cx usage summary
+  cx usage daily --type processed-gbs
+  cx usage logs-count
+  cx usage spans-count")]
     DataUsage {
         #[command(subcommand)]
         cmd: DataUsageCmd,
     },
 
     /// Manage TCO (Total Cost of Ownership) policies.
-    #[command(after_help = "\
+    #[command(name = "tco", after_help = "\
 Examples:
-  cx tco-policies list
-  cx tco-policies get <policy-id>
-  cx tco-policies create --from-file policy.json
-  cx tco-policies settings")]
+  cx tco list
+  cx tco get <policy-id>
+  cx tco create --from-file policy.json
+  cx tco settings")]
     TcoPolicies {
         #[command(subcommand)]
         cmd: TcoPoliciesCmd,
@@ -305,12 +305,12 @@ Examples:
     },
 
     /// Manage quota rules.
-    #[command(after_help = "\
+    #[command(name = "quotas", after_help = "\
 Examples:
-  cx quota-rules get
-  cx quota-rules create --from-file rules.json
-  cx quota-rules update --from-file rules.json
-  cx quota-rules delete")]
+  cx quotas get
+  cx quotas create --from-file rules.json
+  cx quotas update --from-file rules.json
+  cx quotas delete")]
     QuotaRules {
         #[command(subcommand)]
         cmd: QuotaRulesCmd,
@@ -345,14 +345,14 @@ Examples:
     },
 
     /// Manage log parsing rule groups.
-    #[command(after_help = "\
+    #[command(name = "rules", after_help = "\
 Examples:
-  cx rule-groups list
-  cx rule-groups get <group-id>
-  cx rule-groups create --from-file group.json
-  cx rule-groups update --from-file group.json <group-id>
-  cx rule-groups delete <group-id>
-  cx rule-groups usage-limits")]
+  cx rules list
+  cx rules get <group-id>
+  cx rules create --from-file group.json
+  cx rules update --from-file group.json <group-id>
+  cx rules delete <group-id>
+  cx rules usage-limits")]
     RuleGroups {
         #[command(subcommand)]
         cmd: RuleGroupsCmd,
@@ -535,10 +535,10 @@ Examples:
     },
 
     /// Manage data archive storage configuration.
-    #[command(after_help = "\
+    #[command(name = "archive", after_help = "\
 Examples:
-  cx data-archive metrics get
-  cx data-archive logs get")]
+  cx archive metrics get
+  cx archive logs get")]
     DataArchive {
         #[command(subcommand)]
         cmd: DataArchiveCmd,

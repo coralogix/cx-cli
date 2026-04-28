@@ -8,6 +8,7 @@ description: |
   DataPrime support", "how does extract work in DataPrime". This skill is the language reference,
   not the execution guide — if the user wants to actually run a query against a specific data
   source, use the appropriate source-specific skill instead.
+version: 0.1.0
 ---
 
 # DataPrime Query Language

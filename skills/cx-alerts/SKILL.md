@@ -17,6 +17,13 @@ Use this skill to list, inspect, create, enable, and disable Coralogix alert def
 | `cx alerts create` | Create an alert from a JSON definition | `--from-file <path>` (default: stdin) |
 | `cx alerts enable <id>` | Enable an alert | — |
 | `cx alerts disable <id>` | Disable an alert | — |
+| `cx alerts events` | List alert trigger events | `--alert-id`, `--start`, `--end` |
+| `cx alerts event-stats` | Get alert event statistics | — |
+| `cx alerts schedulers list` | List suppression rules | — |
+| `cx alerts schedulers get <id>` | Get a suppression rule | — |
+| `cx alerts schedulers create` | Create a suppression rule | `--from-file <path>` |
+| `cx alerts schedulers update` | Update a suppression rule | `--from-file <path>` |
+| `cx alerts schedulers delete <id>` | Delete a suppression rule | — |
 
 **Output format:** append `-o json` or `-o agents` to `list`, `get`, and `create` commands for machine-readable output.
 
@@ -170,6 +177,28 @@ cx alerts get <alert-id> -o json
 cx alerts disable <alert-id>
 # Later, re-enable:
 cx alerts enable <alert-id>
+```
+
+## Alert Schedulers (Suppression Rules)
+
+Manage alert suppression rules that mute alerts during maintenance windows or known noisy periods.
+
+| Command | Purpose |
+|---|---|
+| `cx alerts schedulers list` | List all scheduler rules |
+| `cx alerts schedulers get <id>` | Get a scheduler rule by ID |
+| `cx alerts schedulers create --from-file` | Create a scheduler rule |
+| `cx alerts schedulers update --from-file` | Update a scheduler rule |
+| `cx alerts schedulers delete <id>` | Delete a scheduler rule |
+
+```bash
+# List suppression rules
+cx alerts schedulers list -o json
+
+# Create from template
+cx alerts schedulers get <existing-id> -o json > scheduler.json
+# Edit scheduler.json
+cx alerts schedulers create --from-file scheduler.json
 ```
 
 ## Key Principles

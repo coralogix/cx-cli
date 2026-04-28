@@ -19,7 +19,7 @@ All metrics operations use `cx metrics` with four subcommands:
 | `cx metrics query '<expr>'` | Instant PromQL query (single point in time) | `--time <timestamp>` |
 | `cx metrics query-range '<expr>'` | Range PromQL query (time series) | `--start`, `--end`, `--step` |
 
-**Output format:** append `--output json` or `--output agents` to any command for machine-readable output.
+**Output format:** append `-o json` or `-o agents` to any command for machine-readable output.
 
 ### Search examples
 
@@ -44,7 +44,7 @@ cx metrics query 'up'
 cx metrics query 'rate(http_requests_total[5m])' --time 2024-01-01T12:00:00Z
 
 # With output for further processing
-cx metrics query 'sum by (service) (rate(http_errors_total[5m]))' --output agents
+cx metrics query 'sum by (service) (rate(http_errors_total[5m]))' -o agents
 ```
 
 ### Range query examples

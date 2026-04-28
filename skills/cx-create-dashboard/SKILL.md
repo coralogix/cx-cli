@@ -9,6 +9,7 @@ description: >
   the user asks to create, build, generate, or deploy a Coralogix dashboard,
   monitoring dashboard, or observability dashboard for a service, app, or
   pipeline.
+version: 0.1.0
 ---
 
 # Create Coralogix Dashboard

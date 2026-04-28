@@ -221,7 +221,7 @@ graph TD
 | `cx iam saml` | `get`, `sp-params`, `set-idp`, `set-active` | SSO configuration |
 | `cx iam ip-access` | `get`, `create`, `update`, `delete` | IP restriction management |
 
-### 4.1 [ ] Create platform-admin skill directory and SKILL.md
+### 4.1 [x] Create platform-admin skill directory and SKILL.md *(completed 2026-04-29)*
 
 - **Files:** `skills/platform-admin/SKILL.md`
 - **What:** Create the skill directory and SKILL.md. The frontmatter description must include 15+ trigger phrases covering: access intents ("who has access", "audit permissions", "check user roles", "list API keys", "review access controls"), key management ("rotate API keys", "create API key", "delete expired keys", "send data keys"), SSO/security ("configure SAML", "set up SSO", "IP allowlist", "IP access restrictions", "check IP whitelist"), and user management ("add user", "deactivate user", "manage team groups", "user permissions", "role-based access"). The body must include:

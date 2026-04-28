@@ -188,3 +188,9 @@ cx alerts enable <alert-id>
 ### Reference Files
 
 - **`references/alert-schemas.md`** — Complete JSON schema reference for all 12 alert types: field names, enum values (condition types, time windows, filter operations), common sub-objects (logs filter, tracing filter, notification groups, activity schedules), and important gotchas
+
+### Related Skills
+
+- **`incident-management`** — incident triage workflows that involve alerts, SLO monitoring, and notification verification
+- **`observability-setup`** — setting up notification routing and webhook integrations for alerts
+- **`telemetry-querying`** — gateway for deciding which telemetry pillar to query

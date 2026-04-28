@@ -289,21 +289,21 @@ graph TD
 
 Currently, `telemetry-querying` only routes to investigation skills (logs, spans, metrics, RUM, alerts). After this milestone, it also routes to all 5 operational workflow skills, and `create-dashboard` includes dashboard CRUD operations alongside the creation workflow.
 
-### 6.1 [ ] Update telemetry-querying with new skill cross-references
+### 6.1 [x] Update telemetry-querying with new skill cross-references *(completed 2026-04-29)*
 
 - **Files:** `skills/telemetry-querying/SKILL.md`
 - **What:** Update the Related Skills section to include all 5 new workflow skills. Add a new section "Beyond Investigation" after the existing content that routes operational intents to the right skill: "Reducing costs? → `cost-optimization`", "Incident triage? → `incident-management`", "Setting up monitoring? → `observability-setup`", "Configuring data pipeline? → `data-pipeline`", "Access audit? → `platform-admin`". Also ensure the CLI Commands Reference table includes `cx search-fields` with both `--dataset logs` and `--dataset spans` examples (it's already there but verify completeness). Add `cx schema` reference if not already present.
 - **Acceptance:** Related Skills section lists all 13 skills (8 existing + 5 new), "Beyond Investigation" section routes to all 5 new skills, file still under 250 lines
 - **Dependencies:** 1.1, 2.1, 3.1, 4.1, 5.1
 
-### 6.2 [ ] Update create-dashboard with dashboard management commands
+### 6.2 [x] Update create-dashboard with dashboard management commands *(completed 2026-04-29)*
 
 - **Files:** `skills/create-dashboard/SKILL.md`
 - **What:** Add a "Dashboard Management" section before the existing workflow content covering `cx dashboards list`, `cx dashboards get <id>`, `cx dashboards delete <id>`, and `cx dashboards folders list/get/create/delete`. Include these in the CLI Commands table. Add cross-references to new skills in the Related Skills / references section: `observability-setup` for the full monitoring setup workflow, `incident-management` for alert-connected dashboards.
 - **Acceptance:** CLI Commands table includes list/get/delete/folders subcommands, Dashboard Management section exists, cross-references to new skills present
 - **Dependencies:** 5.1
 
-### 6.3 [ ] Update cx-alerts with cross-references to incident-management
+### 6.3 [x] Update cx-alerts with cross-references to incident-management *(completed 2026-04-29)*
 
 - **Files:** `skills/cx-alerts/SKILL.md`
 - **What:** Add to the Related Skills / Additional Resources section: reference `incident-management` skill for incident triage workflows that involve alerts. Add reference to `observability-setup` for setting up notification routing for alerts. Keep changes minimal — cx-alerts is already a comprehensive skill.

@@ -36,6 +36,28 @@ Coralogix-dashboard-specific pitfalls (`${__range}`, `promqlQueryType`, widget-f
 
 ---
 
+## Dashboard Management
+
+Beyond creating dashboards, use these commands to manage existing ones:
+
+| Command | Purpose |
+|---|---|
+| `cx dashboards catalog -o json` | List all dashboards in the catalog |
+| `cx dashboards get <id> -o json` | Get a dashboard definition (useful as a template) |
+| `cx dashboards folders list -o json` | List dashboard folders |
+| `cx dashboards folders create --name "Name"` | Create a dashboard folder |
+| `cx dashboards folders create --name "Sub" --parent-id <id>` | Create a nested folder |
+
+To duplicate or modify an existing dashboard:
+
+```bash
+cx dashboards get <dashboard-id> -o json > dashboard.json
+# Edit dashboard.json (change name, modify widgets, etc.)
+cx dashboards create --from-file dashboard.json
+```
+
+---
+
 ## Workflow
 
 Track progress through this checklist:
@@ -250,3 +272,9 @@ The dashboard is live in Coralogix. Adjust filter values (e.g. `account_id`) aft
 - Full DataPrime language: `dataprime` skill → `skills/dataprime/references/dataprime-reference.md`
 - Full PromQL reference: `metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`
 - Inline DataPrime help: `cx dataprime list`, `cx dataprime show <command>`
+
+### Related Skills
+
+- **`observability-setup`** — full monitoring setup workflow (views, webhooks, notifications, integrations)
+- **`incident-management`** — SLO and alert-connected dashboards, incident triage
+- **`telemetry-querying`** — discover the right telemetry signal before building dashboards

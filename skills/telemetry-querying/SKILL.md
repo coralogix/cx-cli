@@ -159,6 +159,21 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 ---
 
+## Beyond Investigation
+
+Not every question is answered by querying data. If the user's intent is operational rather than investigative, route to the appropriate workflow skill:
+
+| User Intent | Route To |
+|---|---|
+| Reducing costs, checking usage, TCO policies | `cost-optimization` |
+| Incident triage, SLO breaching, who got paged | `incident-management` |
+| Setting up monitoring, webhooks, notifications | `observability-setup` |
+| Configuring parsing rules, enrichments, E2M | `data-pipeline` |
+| Access audit, API keys, user management | `platform-admin` |
+| Creating or managing dashboards | `create-dashboard` |
+
+---
+
 ## Key Principles
 
 - **Discover before querying**: always run search/discovery to find the right source
@@ -171,9 +186,18 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 ## Related Skills
 
+### Investigation Skills
 - **`dataprime`** — DataPrime query language reference (syntax, operators, aggregations, functions)
 - **`metrics-query`** — PromQL queries, metric discovery, instant and range queries
 - **`query-logs`** — DataPrime log queries, log field exploration
 - **`query-spans`** — Trace search, span analysis, distributed tracing
 - **`rum`** — Frontend performance, user sessions, page loads
-- **`cx-alerts`** — Creating alerts on metrics, logs, or traces
+- **`cx-alerts`** — Creating and managing alert definitions
+- **`create-dashboard`** — Dashboard creation and management
+
+### Workflow Skills
+- **`cost-optimization`** — Analyze and reduce Coralogix data costs
+- **`incident-management`** — Incident triage, SLO monitoring, notification verification
+- **`data-pipeline`** — Parsing rules, enrichments, E2M, recording rules
+- **`platform-admin`** — Access audit, API keys, user and role management
+- **`observability-setup`** — Views, webhooks, notifications, integrations setup

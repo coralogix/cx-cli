@@ -206,7 +206,7 @@ Local:
 - **Acceptance:** `cx iam api-keys list`, `cx iam roles list`, `cx iam scopes list`, `cx iam users search`, `cx iam groups list`, `cx iam saml get`, `cx iam ip-access get` all work. `cargo build` succeeds.
 - **Dependencies:** 1.3
 
-### 2.7 [ ] Final cleanup: consolidate groups and verify help output
+### 2.7 [x] Final cleanup: consolidate groups and verify help output *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** After all merges, the flatten-group sub-enums from M1 need updating. Some groups will have lost variants (e.g., the temporary "Notifications" heading group had `Connectors`, `Routers`, `Presets`, `NotificationTest` — now they're gone, replaced by a single `Notifications` wrapper). Others gained new wrapper variants (`notifications`, `iam`). Consolidate the group enums to match the final target: `QueryGroup` (logs, spans, metrics, dataprime, search-fields), `ObserveGroup` (dashboards, views, slos), `DetectGroup` (alerts, incidents), `NotificationsGroup` (notifications, webhooks), `PipelineGroup` (rules, enrichments, e2m, recording-rules), `CostGroup` (usage, tco, retentions, quotas, archive), `IntegrationsGroup` (integrations), `AccessGroup` (iam), `LocalGroup` (profiles, cleanup). Remove any empty or temporary groups. Ensure the variant order within each group matches the target `--help` output. Run `cargo fmt`, `cargo clippy`, fix any warnings.
 - **Acceptance:** `cx --help` matches the target output in this plan exactly. `cargo clippy` and `cargo fmt` clean. `cargo build` succeeds.

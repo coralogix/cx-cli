@@ -220,24 +220,30 @@ Examples:
     },
 
     /// View data usage and consumption metrics.
-    #[command(name = "usage", after_help = "\
+    #[command(
+        name = "usage",
+        after_help = "\
 Examples:
   cx usage summary
   cx usage daily --type processed-gbs
   cx usage logs-count
-  cx usage spans-count")]
+  cx usage spans-count"
+    )]
     DataUsage {
         #[command(subcommand)]
         cmd: DataUsageCmd,
     },
 
     /// Manage TCO (Total Cost of Ownership) policies.
-    #[command(name = "tco", after_help = "\
+    #[command(
+        name = "tco",
+        after_help = "\
 Examples:
   cx tco list
   cx tco get <policy-id>
   cx tco create --from-file policy.json
-  cx tco settings")]
+  cx tco settings"
+    )]
     TcoPolicies {
         #[command(subcommand)]
         cmd: TcoPoliciesCmd,
@@ -255,12 +261,15 @@ Examples:
     },
 
     /// Manage quota rules.
-    #[command(name = "quotas", after_help = "\
+    #[command(
+        name = "quotas",
+        after_help = "\
 Examples:
   cx quotas get
   cx quotas create --from-file rules.json
   cx quotas update --from-file rules.json
-  cx quotas delete")]
+  cx quotas delete"
+    )]
     QuotaRules {
         #[command(subcommand)]
         cmd: QuotaRulesCmd,
@@ -295,14 +304,17 @@ Examples:
     },
 
     /// Manage log parsing rule groups.
-    #[command(name = "rules", after_help = "\
+    #[command(
+        name = "rules",
+        after_help = "\
 Examples:
   cx rules list
   cx rules get <group-id>
   cx rules create --from-file group.json
   cx rules update --from-file group.json <group-id>
   cx rules delete <group-id>
-  cx rules usage-limits")]
+  cx rules usage-limits"
+    )]
     RuleGroups {
         #[command(subcommand)]
         cmd: RuleGroupsCmd,
@@ -373,10 +385,13 @@ Examples:
     },
 
     /// Manage data archive storage configuration.
-    #[command(name = "archive", after_help = "\
+    #[command(
+        name = "archive",
+        after_help = "\
 Examples:
   cx archive metrics get
-  cx archive logs get")]
+  cx archive logs get"
+    )]
     DataArchive {
         #[command(subcommand)]
         cmd: DataArchiveCmd,
@@ -1536,12 +1551,15 @@ Examples:
         cmd: UsersCmd,
     },
     /// Manage team groups.
-    #[command(name = "groups", after_help = "\
+    #[command(
+        name = "groups",
+        after_help = "\
 Examples:
   cx iam groups list
   cx iam groups get <id>
   cx iam groups get-by-name <name>
-  cx iam groups users <group-id>")]
+  cx iam groups users <group-id>"
+    )]
     TeamGroups {
         #[command(subcommand)]
         cmd: TeamGroupsCmd,

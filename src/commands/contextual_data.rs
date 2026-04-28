@@ -10,17 +10,13 @@ use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
 
-fn item_to_json(
-    item: &ContextualDataIntegration,
-    include_profile: bool,
-    profile: &str,
-) -> Value {
+fn item_to_json(item: &ContextualDataIntegration, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
         "id": item.id,
         "name": item.name,
-        "type": item.display_type(),
-        "status": item.display_status(),
-        "created_at": item.created_at,
+        "description": item.description,
+        "deprecated": item.is_deprecated,
+        "instances": item.amount_integrations,
     });
     if include_profile {
         if let Value::Object(ref mut m) = v {
@@ -65,7 +61,8 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {
-                for item in resp.integrations {
+                for wrapper in resp.integrations {
+                    let item: ContextualDataIntegration = wrapper.into();
                     all_json.push(item_to_json(&item, include_profile, &profile));
                     all_items.push((profile.clone(), item));
                 }
@@ -93,14 +90,20 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                         profile.clone(),
                         item.id.clone().unwrap_or_default(),
                         item.name.clone().unwrap_or_default(),
-                        item.display_type().to_string(),
-                        item.display_status().to_string(),
-                        item.created_at.clone().unwrap_or_default(),
+                        item.display_description().to_string(),
+                        if item.is_deprecated {
+                            "deprecated".to_string()
+                        } else {
+                            "active".to_string()
+                        },
+                        item.amount_integrations
+                            .map(|n| n.to_string())
+                            .unwrap_or_default(),
                     ]
                 })
                 .collect();
             render::render_table(
-                &["ID", "Name", "Type", "Status", "Created At"],
+                &["ID", "Name", "Description", "Status", "Instances"],
                 rows,
                 include_profile,
             );
@@ -134,6 +137,17 @@ pub async fn run_get(
     for (profile, result) in per_profile {
         match result {
             Ok(mut val) => {
+                // Normalize: API returns {integrationDetail: {integration: {...}, ...}}
+                // Extract the inner integration and flatten to match list output.
+                if let Some(detail) = val.get("integrationDetail") {
+                    if let Some(inner) = detail.get("integration") {
+                        val = json!({
+                            "id": inner.get("id"),
+                            "name": inner.get("name"),
+                            "description": inner.get("description"),
+                        });
+                    }
+                }
                 if include_profile {
                     render::tag_get_result(&mut val, &profile);
                 }
@@ -184,18 +198,21 @@ pub async fn run_create(
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {
-                if let Some(item) = resp.integration {
-                    let name = item.name.clone().unwrap_or_default();
-                    let id = item.id.as_deref().unwrap_or("unknown");
-                    eprintln!(
-                        "{}",
-                        format!(
-                            "Created contextual data integration '{name}' (ID: {id}) in profile '{profile}'."
-                        )
-                        .green()
-                    );
-                    all_results.push(item_to_json(&item, include_profile, &profile));
+                let id = resp.integration_id.as_deref().unwrap_or("unknown");
+                eprintln!(
+                    "{}",
+                    format!(
+                        "Created contextual data integration (ID: {id}) in profile '{profile}'."
+                    )
+                    .green()
+                );
+                let mut v = json!({ "id": resp.integration_id });
+                if include_profile {
+                    if let Value::Object(ref mut m) = v {
+                        m.insert("profile".to_string(), Value::String(profile.to_string()));
+                    }
                 }
+                all_results.push(v);
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
@@ -242,10 +259,8 @@ pub async fn run_update(
             Ok(val) => {
                 eprintln!(
                     "{}",
-                    format!(
-                        "Updated contextual data integration {id} in profile '{profile}'."
-                    )
-                    .green()
+                    format!("Updated contextual data integration {id} in profile '{profile}'.")
+                        .green()
                 );
                 all_results.push(val);
             }
@@ -284,10 +299,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         match result {
             Ok(()) => eprintln!(
                 "{}",
-                format!(
-                    "Contextual data integration {id} deleted in profile '{profile}'."
-                )
-                .green()
+                format!("Contextual data integration {id} deleted in profile '{profile}'.").green()
             ),
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }

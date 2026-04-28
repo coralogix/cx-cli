@@ -24,6 +24,10 @@ mod alerts;
 mod api_keys;
 #[path = "e2e/connectors.rs"]
 mod connectors;
+#[path = "e2e/contextual_data.rs"]
+mod contextual_data;
+#[path = "e2e/custom_enrichments.rs"]
+mod custom_enrichments;
 #[path = "e2e/dashboards.rs"]
 mod dashboards;
 #[path = "e2e/data_archive.rs"]
@@ -34,8 +38,16 @@ mod data_usage;
 mod dataprime_query;
 #[path = "e2e/e2m.rs"]
 mod e2m;
+#[path = "e2e/enrichments.rs"]
+mod enrichments;
+#[path = "e2e/extensions.rs"]
+mod extensions;
 #[path = "e2e/incidents.rs"]
 mod incidents;
+#[path = "e2e/integrations.rs"]
+mod integrations;
+#[path = "e2e/ip_access.rs"]
+mod ip_access;
 #[path = "e2e/logs.rs"]
 mod logs;
 #[path = "e2e/metrics.rs"]
@@ -52,22 +64,10 @@ mod recording_rules;
 mod retentions;
 #[path = "e2e/roles.rs"]
 mod roles;
-#[path = "e2e/contextual_data.rs"]
-mod contextual_data;
-#[path = "e2e/custom_enrichments.rs"]
-mod custom_enrichments;
-#[path = "e2e/enrichments.rs"]
-mod enrichments;
-#[path = "e2e/extensions.rs"]
-mod extensions;
-#[path = "e2e/integrations.rs"]
-mod integrations;
-#[path = "e2e/ip_access.rs"]
-mod ip_access;
-#[path = "e2e/rule_groups.rs"]
-mod rule_groups;
 #[path = "e2e/routers.rs"]
 mod routers;
+#[path = "e2e/rule_groups.rs"]
+mod rule_groups;
 #[path = "e2e/saml.rs"]
 mod saml;
 #[path = "e2e/scopes.rs"]

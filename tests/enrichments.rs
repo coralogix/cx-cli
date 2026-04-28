@@ -52,7 +52,9 @@ async fn enrichment_limit_from_mock() {
     let body = json!({ "maxEnrichmentsPerAccount": 500 });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/enrichment-rules/enrichment-rules/v1/limit"))
+        .and(path(
+            "/mgmt/openapi/5/enrichment-rules/enrichment-rules/v1/limit",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -71,7 +73,9 @@ async fn enrichment_settings_from_mock() {
     let body = json!({ "enabled": true });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/enrichment-rules/enrichment-rules/v1/settings"))
+        .and(path(
+            "/mgmt/openapi/5/enrichment-rules/enrichment-rules/v1/settings",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

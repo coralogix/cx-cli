@@ -188,9 +188,18 @@ mod tests {
 
     #[test]
     fn display_missing_fields() {
-        let v = View { id: None, name: None, folder_id: None, created_at: None };
+        let v = View {
+            id: None,
+            name: None,
+            folder_id: None,
+            created_at: None,
+        };
         assert_eq!(v.display_name(), "-");
-        let f = ViewFolder { id: None, name: None, parent_id: None };
+        let f = ViewFolder {
+            id: None,
+            name: None,
+            parent_id: None,
+        };
         assert_eq!(f.display_name(), "-");
     }
 }

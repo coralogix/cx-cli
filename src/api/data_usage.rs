@@ -44,7 +44,7 @@ pub struct ExportStatusResponse {
 
 // --- API ---
 
-const DATA_USAGE_BASE: &str = "/mgmt/openapi/latest/dataplans/data-usage/v2";
+const DATA_USAGE_BASE: &str = "/mgmt/openapi/5/dataplans/data-usage/v2";
 
 pub struct DataUsageApi<'a> {
     client: &'a CxClient,

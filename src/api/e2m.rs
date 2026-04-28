@@ -116,7 +116,7 @@ impl<'a> E2mApi<'a> {
     pub async fn labels_cardinality(&self) -> Result<E2mLabelsCardinalityResponse> {
         self.client
             .get(
-                "/mgmt/openapi/latest/events2metrics/labels/v2/cardinalities",
+                "/mgmt/openapi/5/events2metrics/labels/v2/cardinalities",
                 &[],
             )
             .await
@@ -124,7 +124,7 @@ impl<'a> E2mApi<'a> {
 
     pub async fn limits(&self) -> Result<E2mLimitsResponse> {
         self.client
-            .get("/mgmt/openapi/latest/events2metrics/limits/v2", &[])
+            .get("/mgmt/openapi/5/events2metrics/limits/v2", &[])
             .await
     }
 }

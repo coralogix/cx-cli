@@ -107,7 +107,7 @@ impl<'a> RolesApi<'a> {
     }
 
     /// Get a single custom role by ID.
-    pub async fn get_custom(&self, role_id: &str) -> Result<Value> {
+    pub async fn get_custom(&self, role_id: &str) -> Result<GetCustomRoleResponse> {
         let path = format!("{CUSTOM_ROLES_BASE}/{role_id}");
         self.client.get(&path, &[]).await
     }

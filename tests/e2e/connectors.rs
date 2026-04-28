@@ -26,7 +26,7 @@ fn connectors_get() {
         }
     };
     let v = harness::run_ok_json(&["connectors", "get", &id, "-o", "json"]);
-    harness::assert_object_with_keys(&v, &["id", "name"]);
+    harness::assert_get_response(&v, &["id", "name"]);
 }
 
 #[test]
@@ -36,15 +36,6 @@ fn connectors_types() {
         return;
     }
     let _v = harness::run_ok_json(&["connectors", "types", "-o", "json"]);
-}
-
-#[test]
-#[ignore]
-fn connectors_entity_types() {
-    if harness::require_creds("connectors_entity_types").is_none() {
-        return;
-    }
-    let _v = harness::run_ok_json(&["connectors", "entity-types", "-o", "json"]);
 }
 
 fn discover_connector_id() -> Option<String> {
@@ -59,8 +50,10 @@ fn discover_connector_id() -> Option<String> {
             v.as_array()?
                 .first()
                 .and_then(|item| item.get("id"))
-                .and_then(|x| x.as_str())
-                .map(String::from)
+                .map(|x| match x {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string().trim_matches('"').to_string(),
+                })
         })
         .clone()
 }

@@ -82,9 +82,7 @@ pub async fn run_sp_params(targets: &[Arc<ExecutionTarget>], output: OutputForma
     let per_profile = fan_out(targets, |t| async move {
         let api = SamlApi::new(&t.client);
         let resp = api.get_sp_params().await?;
-        Ok(resp
-            .params
-            .unwrap_or_else(|| json!({})))
+        Ok(resp.params.unwrap_or_else(|| json!({})))
     })
     .await;
 

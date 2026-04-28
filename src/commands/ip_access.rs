@@ -12,10 +12,7 @@ use crate::render;
 
 fn read_from_file(path: &str) -> Result<Value> {
     let raw = if path == "-" {
-        eprintln!(
-            "{}",
-            "Reading IP access definition from stdin...".dimmed()
-        );
+        eprintln!("{}", "Reading IP access definition from stdin...".dimmed());
         use std::io::Read;
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
@@ -97,10 +94,8 @@ pub async fn run_create(
                     let id = settings.display_id();
                     eprintln!(
                         "{}",
-                        format!(
-                            "Created IP access settings (ID: {id}) in profile '{profile}'."
-                        )
-                        .green()
+                        format!("Created IP access settings (ID: {id}) in profile '{profile}'.")
+                            .green()
                     );
                     all_results.push(json!({
                         "id": settings.id,

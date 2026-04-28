@@ -266,7 +266,10 @@ mod tests {
         });
         let resp: GetTeamMembersApiKeysResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.keys.len(), 1);
-        assert_eq!(resp.keys[0].api_key.as_ref().unwrap().display_name(), "team_key");
+        assert_eq!(
+            resp.keys[0].api_key.as_ref().unwrap().display_name(),
+            "team_key"
+        );
     }
 
     #[test]

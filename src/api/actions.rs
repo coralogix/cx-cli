@@ -129,7 +129,10 @@ mod tests {
         assert_eq!(resp.actions.len(), 2);
         assert_eq!(resp.actions[0].display_name(), "Send to Slack");
         assert_eq!(resp.actions[0].display_type(), "slack");
-        assert_eq!(resp.actions[0].display_url(), "https://hooks.slack.com/services/xxx");
+        assert_eq!(
+            resp.actions[0].display_url(),
+            "https://hooks.slack.com/services/xxx"
+        );
         assert_eq!(resp.actions[0].is_active, Some(true));
         assert_eq!(resp.actions[1].display_type(), "pagerduty");
     }

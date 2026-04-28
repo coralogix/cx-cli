@@ -97,7 +97,10 @@ mod tests {
 
         let resp: GetIpAccessResponse = serde_json::from_value(json).unwrap();
         let settings = resp.settings.unwrap();
-        assert_eq!(settings.display_id(), "d662a2f1-21c3-493c-8f8a-595d3ab05ef3");
+        assert_eq!(
+            settings.display_id(),
+            "d662a2f1-21c3-493c-8f8a-595d3ab05ef3"
+        );
         assert!(settings.ip_access.is_some());
     }
 

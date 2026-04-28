@@ -18,10 +18,7 @@ fn read_from_file(path: &str) -> Result<Value> {
         std::io::stdin().read_to_string(&mut buf)?;
         buf
     } else {
-        eprintln!(
-            "{}",
-            format!("Reading definition from {path}...").dimmed()
-        );
+        eprintln!("{}", format!("Reading definition from {path}...").dimmed());
         std::fs::read_to_string(path)?
     };
     Ok(serde_json::from_str(&raw)?)
@@ -29,10 +26,7 @@ fn read_from_file(path: &str) -> Result<Value> {
 
 // --- Metrics ---
 
-pub async fn run_metrics_get(
-    targets: &[Arc<ExecutionTarget>],
-    output: OutputFormat,
-) -> Result<()> {
+pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching metrics archive config...".dimmed());
     let include_profile = targets.len() > 1;
 
@@ -257,10 +251,7 @@ pub async fn run_metrics_validate(
 
 // --- Logs ---
 
-pub async fn run_logs_get(
-    targets: &[Arc<ExecutionTarget>],
-    output: OutputFormat,
-) -> Result<()> {
+pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching logs archive target...".dimmed());
     let include_profile = targets.len() > 1;
 

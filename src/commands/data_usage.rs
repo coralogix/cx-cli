@@ -21,11 +21,12 @@ pub async fn run_summary(
     eprintln!("{}", "Fetching data usage summary...".dimmed());
 
     let include_profile = targets.len() > 1;
-    let from = start
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| chrono::Utc::now().checked_sub_signed(chrono::Duration::hours(24))
+    let from = start.map(|s| s.to_string()).unwrap_or_else(|| {
+        chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::hours(24))
             .unwrap_or_else(chrono::Utc::now)
-            .to_rfc3339());
+            .to_rfc3339()
+    });
     let to = end
         .map(|s| s.to_string())
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
@@ -94,8 +95,8 @@ pub async fn run_daily(
 
     let include_profile = targets.len() > 1;
     let data_type = data_type.to_string();
-    let start = start.map(|s| s.to_string());
-    let end = end.map(|s| s.to_string());
+    let start = start.map(|s| crate::time::parse_timestamp(s)).transpose()?;
+    let end = end.map(|s| crate::time::parse_timestamp(s)).transpose()?;
 
     let per_profile = fan_out(targets, |t| {
         let data_type = data_type.clone();
@@ -104,11 +105,15 @@ pub async fn run_daily(
         async move {
             let api = DataUsageApi::new(&t.client);
             let mut body = serde_json::Map::new();
+            let mut date_range = serde_json::Map::new();
             if let Some(ref s) = start {
-                body.insert("start".into(), Value::String(s.clone()));
+                date_range.insert("fromDate".into(), Value::String(s.clone()));
             }
             if let Some(ref e) = end {
-                body.insert("end".into(), Value::String(e.clone()));
+                date_range.insert("toDate".into(), Value::String(e.clone()));
+            }
+            if !date_range.is_empty() {
+                body.insert("date_range".into(), Value::Object(date_range));
             }
             Ok(api.daily(&data_type, &Value::Object(body)).await?)
         }

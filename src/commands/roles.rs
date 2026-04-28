@@ -110,7 +110,13 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                 })
                 .collect();
             render::render_table(
-                &["Role ID", "Name", "Description", "Parent Role", "Permissions"],
+                &[
+                    "Role ID",
+                    "Name",
+                    "Description",
+                    "Parent Role",
+                    "Permissions",
+                ],
                 rows,
                 include_profile,
             );
@@ -140,11 +146,10 @@ pub async fn run_get(
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
+            Ok(resp) => {
+                if let Some(role) = resp.role {
+                    all_results.push(custom_role_to_json(&role, include_profile, &profile));
                 }
-                all_results.push(val);
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }

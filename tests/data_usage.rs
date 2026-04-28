@@ -18,7 +18,7 @@ async fn data_usage_summary_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/dataplans/data-usage/v2"))
+        .and(path("/mgmt/openapi/5/dataplans/data-usage/v2"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

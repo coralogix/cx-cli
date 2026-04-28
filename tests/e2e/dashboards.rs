@@ -24,7 +24,7 @@ fn dashboards_get() {
     };
     let v = harness::run_ok_json(&["dashboards", "get", &id, "-o", "json"]);
     // Shape varies (top-level vs nested under "dashboard") — only assert object.
-    harness::assert_object_with_keys(&v, &[]);
+    harness::assert_get_response(&v, &[]);
 }
 
 /// Discover a dashboard id from `dashboards catalog -o json`.

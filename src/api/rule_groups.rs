@@ -56,6 +56,7 @@ pub struct DeleteRuleGroupResponse {}
 // --- API ---
 
 const RULE_GROUPS_BASE: &str = "/mgmt/openapi/5/parsing-rules/rule-groups/v1";
+const PARSING_RULES_LIMITS_BASE: &str = "/mgmt/openapi/5/parsing-rules/limits/v1";
 
 pub struct RuleGroupsApi<'a> {
     client: &'a CxClient,
@@ -95,8 +96,7 @@ impl<'a> RuleGroupsApi<'a> {
     }
 
     pub async fn usage_limits(&self) -> Result<Value> {
-        let path = format!("{RULE_GROUPS_BASE}/usage-limits");
-        self.client.get(&path, &[]).await
+        self.client.get(PARSING_RULES_LIMITS_BASE, &[]).await
     }
 }
 

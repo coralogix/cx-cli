@@ -271,7 +271,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
     Ok(())
 }
 
-pub async fn run_test(targets: &[Arc<ExecutionTarget>], id: &str, output: OutputFormat) -> Result<()> {
+pub async fn run_test(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
     eprintln!("{}", format!("Testing webhook {id}...").dimmed());
     let id = id.to_string();
 

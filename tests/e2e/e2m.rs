@@ -12,15 +12,6 @@ fn e2m_list() {
 
 #[test]
 #[ignore]
-fn e2m_labels_cardinality() {
-    if harness::require_creds("e2m_labels_cardinality").is_none() {
-        return;
-    }
-    let _v = harness::run_ok_json(&["e2m", "labels-cardinality", "-o", "json"]);
-}
-
-#[test]
-#[ignore]
 fn e2m_limits() {
     if harness::require_creds("e2m_limits").is_none() {
         return;

@@ -8,16 +8,45 @@ use super::serde_helpers::string_or_number;
 
 // --- Response types ---
 
+/// The inner integration definition returned by the API.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContextualDataIntegration {
+pub struct ContextualDataIntegrationDef {
     #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
     pub name: Option<String>,
-    #[serde(rename = "type")]
-    pub integration_type: Option<String>,
-    pub status: Option<String>,
-    pub created_at: Option<String>,
+    pub description: Option<String>,
+    pub integration_type: Option<Value>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub versions: Vec<String>,
+}
+
+/// Wrapper returned in the list response: contains the integration definition
+/// plus metadata like counts and deprecation flags.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntegrationWithCounts {
+    pub integration: Option<ContextualDataIntegrationDef>,
+    pub amount_integrations: Option<i64>,
+    #[serde(default)]
+    pub is_deprecated: bool,
+    #[serde(default)]
+    pub is_new: bool,
+    #[serde(default)]
+    pub upgrade_available: bool,
+    #[serde(default)]
+    pub errors: Vec<String>,
+}
+
+/// Flattened view used by the command layer for display and JSON output.
+pub struct ContextualDataIntegration {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub is_deprecated: bool,
+    pub amount_integrations: Option<i64>,
 }
 
 impl ContextualDataIntegration {
@@ -25,12 +54,24 @@ impl ContextualDataIntegration {
         self.name.as_deref().unwrap_or("-")
     }
 
-    pub fn display_type(&self) -> &str {
-        self.integration_type.as_deref().unwrap_or("-")
+    pub fn display_description(&self) -> &str {
+        self.description.as_deref().unwrap_or("-")
     }
+}
 
-    pub fn display_status(&self) -> &str {
-        self.status.as_deref().unwrap_or("-")
+impl From<IntegrationWithCounts> for ContextualDataIntegration {
+    fn from(w: IntegrationWithCounts) -> Self {
+        let (id, name, description) = match w.integration {
+            Some(def) => (def.id, def.name, def.description),
+            None => (None, None, None),
+        };
+        Self {
+            id,
+            name,
+            description,
+            is_deprecated: w.is_deprecated,
+            amount_integrations: w.amount_integrations,
+        }
     }
 }
 
@@ -38,13 +79,13 @@ impl ContextualDataIntegration {
 #[serde(rename_all = "camelCase")]
 pub struct ListContextualDataResponse {
     #[serde(default)]
-    pub integrations: Vec<ContextualDataIntegration>,
+    pub integrations: Vec<IntegrationWithCounts>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveContextualDataResponse {
-    pub integration: Option<ContextualDataIntegration>,
+    pub integration_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,13 +149,27 @@ mod tests {
     fn deserialize_list_response() {
         let json = json!({
             "integrations": [
-                { "id": "cd-001", "name": "GitHub Commits", "type": "github", "status": "active" }
+                {
+                    "integration": {
+                        "id": "cd-001",
+                        "name": "GitHub Commits",
+                        "description": "Enrich logs with GitHub commit data"
+                    },
+                    "amountIntegrations": 2,
+                    "isDeprecated": false,
+                    "isNew": true,
+                    "upgradeAvailable": false,
+                    "errors": []
+                }
             ]
         });
         let resp: ListContextualDataResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.integrations.len(), 1);
-        assert_eq!(resp.integrations[0].display_name(), "GitHub Commits");
-        assert_eq!(resp.integrations[0].display_status(), "active");
+        let item: ContextualDataIntegration = resp.integrations.into_iter().next().unwrap().into();
+        assert_eq!(item.display_name(), "GitHub Commits");
+        assert_eq!(item.id.as_deref(), Some("cd-001"));
+        assert_eq!(item.amount_integrations, Some(2));
+        assert!(!item.is_deprecated);
     }
 
     #[test]
@@ -126,9 +181,9 @@ mod tests {
 
     #[test]
     fn deserialize_save_response() {
-        let json = json!({ "integration": { "id": "cd-001", "name": "GitHub Commits" } });
+        let json = json!({ "integrationId": "cd-001" });
         let resp: SaveContextualDataResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.integration.unwrap().id.as_deref(), Some("cd-001"));
+        assert_eq!(resp.integration_id.as_deref(), Some("cd-001"));
     }
 
     #[test]
@@ -136,12 +191,11 @@ mod tests {
         let c = ContextualDataIntegration {
             id: None,
             name: None,
-            integration_type: None,
-            status: None,
-            created_at: None,
+            description: None,
+            is_deprecated: false,
+            amount_integrations: None,
         };
         assert_eq!(c.display_name(), "-");
-        assert_eq!(c.display_type(), "-");
-        assert_eq!(c.display_status(), "-");
+        assert_eq!(c.display_description(), "-");
     }
 }

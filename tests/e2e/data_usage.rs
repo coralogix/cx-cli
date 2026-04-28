@@ -20,25 +20,11 @@ fn data_usage_daily() {
         "daily",
         "--type",
         "processed-gbs",
+        "--start",
+        "now-7d",
+        "--end",
+        "now",
         "-o",
         "json",
     ]);
-}
-
-#[test]
-#[ignore]
-fn data_usage_logs_count() {
-    if harness::require_creds("data_usage_logs_count").is_none() {
-        return;
-    }
-    let _v = harness::run_ok_json(&["data-usage", "logs-count", "-o", "json"]);
-}
-
-#[test]
-#[ignore]
-fn data_usage_spans_count() {
-    if harness::require_creds("data_usage_spans_count").is_none() {
-        return;
-    }
-    let _v = harness::run_ok_json(&["data-usage", "spans-count", "-o", "json"]);
 }

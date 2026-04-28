@@ -32,9 +32,7 @@ async fn list_recording_rules_returns_items_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path(
-            "/mgmt/openapi/5/recording-rules/recording-rules/v1",
-        ))
+        .and(path("/mgmt/openapi/5/recording-rules/recording-rules/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

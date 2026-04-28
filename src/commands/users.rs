@@ -47,10 +47,7 @@ fn read_from_file(path: &str) -> Result<Value> {
 async fn resolve_team_id(client: &crate::api::client::CxClient) -> String {
     let saml = SamlApi::new(client);
     match saml.get_config().await {
-        Ok(config) => config
-            .team_id
-            .map(|id| id.to_string())
-            .unwrap_or_default(),
+        Ok(config) => config.team_id.map(|id| id.to_string()).unwrap_or_default(),
         Err(_) => String::new(),
     }
 }

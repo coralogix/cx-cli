@@ -36,7 +36,9 @@ async fn list_webhook_types_from_mock() {
 
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/integrations/webhook-types/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"types": ["slack", "pagerduty"]})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"types": ["slack", "pagerduty"]})),
+        )
         .expect(1)
         .mount(&server)
         .await;

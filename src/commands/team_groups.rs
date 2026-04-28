@@ -97,10 +97,7 @@ pub async fn run_list(
                 .map(|(profile, group)| {
                     vec![
                         profile.clone(),
-                        group
-                            .group_id
-                            .map(|id| id.to_string())
-                            .unwrap_or_default(),
+                        group.group_id.map(|id| id.to_string()).unwrap_or_default(),
                         group.display_name().to_string(),
                         String::new(), // Members count not available in list response
                         group.display_description().to_string(),
@@ -122,10 +119,7 @@ pub async fn run_get(
     group_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!(
-        "{}",
-        format!("Fetching team group {group_id}...").dimmed()
-    );
+    eprintln!("{}", format!("Fetching team group {group_id}...").dimmed());
     let include_profile = targets.len() > 1;
     let group_id = group_id.to_string();
 
@@ -138,33 +132,49 @@ pub async fn run_get(
     })
     .await;
 
-    let mut all_results: Vec<Value> = Vec::new();
+    let mut all_json: Vec<Value> = Vec::new();
+    let mut all_items: Vec<(String, TeamGroup)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
+            Ok(resp) => {
+                if let Some(group) = resp.group {
+                    all_json.push(group_to_json(&group, include_profile, &profile));
+                    all_items.push((profile.clone(), group));
                 }
-                all_results.push(val);
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
     }
 
     match output {
-        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Json => render::render_json_auto(&all_json)?,
         OutputFormat::Agents => {
-            let toon = toon_encode(&all_results)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {
-            render::render_get_text(
-                &all_results,
+            if all_items.is_empty() {
+                render::print_no_results("Team group not found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, group)| {
+                    vec![
+                        profile.clone(),
+                        group.group_id.map(|id| id.to_string()).unwrap_or_default(),
+                        group.display_name().to_string(),
+                        group.display_description().to_string(),
+                        group.group_type.clone().unwrap_or_default(),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["Group ID", "Name", "Description", "Type"],
+                rows,
                 include_profile,
-                "Team group not found.",
-                None::<&dyn Fn(&Value)>,
-            )?;
+            );
         }
     }
     Ok(())
@@ -191,33 +201,49 @@ pub async fn run_get_by_name(
     })
     .await;
 
-    let mut all_results: Vec<Value> = Vec::new();
+    let mut all_json: Vec<Value> = Vec::new();
+    let mut all_items: Vec<(String, TeamGroup)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
+            Ok(resp) => {
+                if let Some(group) = resp.group {
+                    all_json.push(group_to_json(&group, include_profile, &profile));
+                    all_items.push((profile.clone(), group));
                 }
-                all_results.push(val);
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
     }
 
     match output {
-        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Json => render::render_json_auto(&all_json)?,
         OutputFormat::Agents => {
-            let toon = toon_encode(&all_results)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {
-            render::render_get_text(
-                &all_results,
+            if all_items.is_empty() {
+                render::print_no_results("Team group not found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, group)| {
+                    vec![
+                        profile.clone(),
+                        group.group_id.map(|id| id.to_string()).unwrap_or_default(),
+                        group.display_name().to_string(),
+                        group.display_description().to_string(),
+                        group.group_type.clone().unwrap_or_default(),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["Group ID", "Name", "Description", "Type"],
+                rows,
                 include_profile,
-                "Team group not found.",
-                None::<&dyn Fn(&Value)>,
-            )?;
+            );
         }
     }
     Ok(())
@@ -340,10 +366,7 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
-    eprintln!(
-        "{}",
-        format!("Updating team group {group_id}...").dimmed()
-    );
+    eprintln!("{}", format!("Updating team group {group_id}...").dimmed());
     let group_id = group_id.to_string();
 
     let per_profile = fan_out(targets, |t| {
@@ -385,10 +408,7 @@ pub async fn run_update(
 }
 
 pub async fn run_delete(targets: &[Arc<ExecutionTarget>], group_id: &str) -> Result<()> {
-    eprintln!(
-        "{}",
-        format!("Deleting team group {group_id}...").dimmed()
-    );
+    eprintln!("{}", format!("Deleting team group {group_id}...").dimmed());
     let group_id = group_id.to_string();
     let per_profile = fan_out(targets, |t| {
         let group_id = group_id.clone();

@@ -61,9 +61,7 @@ async fn usage_limits_from_mock() {
     let body = json!({ "maxRuleGroupsPerAccount": 100, "maxRulesPerRuleGroup": 15 });
 
     Mock::given(method("GET"))
-        .and(path(
-            "/mgmt/openapi/5/parsing-rules/rule-groups/v1/usage-limits",
-        ))
+        .and(path("/mgmt/openapi/5/parsing-rules/limits/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

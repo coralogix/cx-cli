@@ -26,7 +26,7 @@ fn roles_get() {
         }
     };
     let v = harness::run_ok_json(&["roles", "get", &id, "-o", "json"]);
-    harness::assert_object_with_keys(&v, &["role_id", "name"]);
+    harness::assert_get_response(&v, &["role_id", "name"]);
 }
 
 #[test]

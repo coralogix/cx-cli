@@ -21,14 +21,12 @@ fn custom_enrichments_get() {
     let id = match discover_custom_enrichment_id() {
         Some(id) => id,
         None => {
-            eprintln!(
-                "[e2e] skipping custom_enrichments_get: no custom enrichments on test team"
-            );
+            eprintln!("[e2e] skipping custom_enrichments_get: no custom enrichments on test team");
             return;
         }
     };
     let v = harness::run_ok_json(&["custom-enrichments", "get", &id, "-o", "json"]);
-    harness::assert_object_with_keys(&v, &["id", "name"]);
+    harness::assert_get_response(&v, &["id", "name"]);
 }
 
 fn discover_custom_enrichment_id() -> Option<String> {
@@ -43,8 +41,10 @@ fn discover_custom_enrichment_id() -> Option<String> {
             v.as_array()?
                 .first()
                 .and_then(|item| item.get("id"))
-                .and_then(|x| x.as_str())
-                .map(String::from)
+                .map(|x| match x {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string().trim_matches('"').to_string(),
+                })
         })
         .clone()
 }

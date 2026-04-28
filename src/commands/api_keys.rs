@@ -95,9 +95,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                         owner,
                         key.display_active().to_string(),
                         String::new(),
-                        key.hashed
-                            .map(|h| h.to_string())
-                            .unwrap_or_default(),
+                        key.hashed.map(|h| h.to_string()).unwrap_or_default(),
                     ]
                 })
                 .collect();

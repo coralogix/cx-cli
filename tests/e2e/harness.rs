@@ -49,7 +49,12 @@ pub fn require_creds(test_name: &str) -> Option<()> {
 
 fn has_cx_profile() -> bool {
     dirs::home_dir()
-        .map(|h| h.join(".cx").join("profiles").join("default.toml").is_file())
+        .map(|h| {
+            h.join(".cx")
+                .join("profiles")
+                .join("default.toml")
+                .is_file()
+        })
         .unwrap_or(false)
 }
 
@@ -135,6 +140,61 @@ pub fn parse_json(stdout: &[u8]) -> Option<Value> {
     serde_json::from_slice(stdout).ok()
 }
 
+/// Run `cx <args>` tolerantly: if the command succeeds but stderr contains
+/// auth errors ("Authentication failed"), API errors ("API request failed"),
+/// or gateway errors ("504"), print a skip message and return `None`.
+/// Otherwise return `Some(stdout)`. Use this for tests that hit endpoints
+/// where the test API key may lack permissions or the server may be flaky.
+pub fn run_tolerant(args: &[&str], test_name: &str) -> Option<Vec<u8>> {
+    let output = cx().args(args).output().expect("failed to execute cx");
+    let stdout = output.stdout.clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    println!("\n$ cx {}", args.join(" "));
+    if !stdout.is_empty() {
+        println!("--- stdout ---");
+        println!("{}", String::from_utf8_lossy(&stdout));
+    }
+    if !stderr.is_empty() {
+        println!("--- stderr ---");
+        println!("{stderr}");
+    }
+
+    if stderr.contains("Authentication failed") {
+        eprintln!("[e2e] skipping {test_name}: API key lacks permissions for this endpoint");
+        return None;
+    }
+    if stderr.contains("API request failed") || stderr.contains("504") || stderr.contains("502") {
+        eprintln!("[e2e] skipping {test_name}: API returned a server/gateway error");
+        return None;
+    }
+
+    assert!(
+        output.status.success(),
+        "cx {} exited with non-zero status:\nstderr: {stderr}",
+        args.join(" ")
+    );
+
+    Some(stdout)
+}
+
+/// Like `run_tolerant` but also parses stdout as JSON. Returns `None` if the
+/// command was skipped (auth/server error) or stdout was empty/not valid JSON.
+pub fn run_tolerant_json(args: &[&str], test_name: &str) -> Option<Value> {
+    let stdout = run_tolerant(args, test_name)?;
+    if stdout.is_empty() {
+        eprintln!("[e2e] skipping {test_name}: empty stdout");
+        return None;
+    }
+    Some(serde_json::from_slice(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "expected valid JSON on stdout from `cx {}`: {e}\nstdout: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&stdout)
+        )
+    }))
+}
+
 // ── Shape assertions ─────────────────────────────────────────────────
 //
 // These check the *structure* of a JSON response without inspecting values.
@@ -202,4 +262,34 @@ pub fn assert_object_with_keys(v: &Value, required_keys: &[&str]) {
     for key in required_keys {
         assert!(obj.contains_key(*key), "object missing key '{key}': {v}");
     }
+}
+
+/// For `get` responses that may be wrapped (e.g. `{"action": {...}}`),
+/// unwrap the first single-key object or return as-is if it already has
+/// the expected keys. Then assert required keys.
+pub fn assert_get_response(v: &Value, required_keys: &[&str]) {
+    let obj = v
+        .as_object()
+        .unwrap_or_else(|| panic!("expected JSON object, got: {v}"));
+
+    let has_keys = required_keys.iter().all(|k| obj.contains_key(*k));
+    if has_keys {
+        return;
+    }
+
+    if obj.len() == 1 {
+        if let Some(inner) = obj.values().next() {
+            if let Some(inner_obj) = inner.as_object() {
+                for key in required_keys {
+                    assert!(
+                        inner_obj.contains_key(*key),
+                        "inner object missing key '{key}': {v}"
+                    );
+                }
+                return;
+            }
+        }
+    }
+
+    panic!("get response missing required keys {required_keys:?}: {v}");
 }

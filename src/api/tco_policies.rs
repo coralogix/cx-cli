@@ -142,15 +142,11 @@ impl<'a> TcoPoliciesApi<'a> {
     }
 
     pub async fn get_settings(&self) -> Result<Value> {
-        self.client
-            .get(TCO_POLICY_SETTINGS_BASE, &[])
-            .await
+        self.client.get(TCO_POLICY_SETTINGS_BASE, &[]).await
     }
 
     pub async fn replace_settings(&self, body: &Value) -> Result<Value> {
-        self.client
-            .put(TCO_POLICY_SETTINGS_BASE, body)
-            .await
+        self.client.put(TCO_POLICY_SETTINGS_BASE, body).await
     }
 }
 

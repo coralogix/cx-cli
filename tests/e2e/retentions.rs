@@ -7,7 +7,13 @@ fn retentions_list() {
         return;
     }
     let v = harness::run_ok_json(&["retentions", "list", "-o", "json"]);
-    harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
+    // Response may be a flat array or wrapped in {"retentions": [...]}
+    let arr = if v.is_array() {
+        v
+    } else {
+        v.get("retentions").cloned().unwrap_or(v)
+    };
+    harness::assert_nonempty_array_of_objects_with_keys(&arr, &["id", "name"]);
 }
 
 #[test]

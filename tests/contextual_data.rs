@@ -13,7 +13,18 @@ async fn list_contextual_data_from_mock() {
 
     let body = json!({
         "integrations": [
-            { "id": "cd-001", "name": "GitHub Commits", "type": "github", "status": "active" }
+            {
+                "integration": {
+                    "id": "cd-001",
+                    "name": "GitHub Commits",
+                    "description": "Enrich logs with GitHub commit data"
+                },
+                "amountIntegrations": 2,
+                "isDeprecated": false,
+                "isNew": true,
+                "upgradeAvailable": false,
+                "errors": []
+            }
         ]
     });
 

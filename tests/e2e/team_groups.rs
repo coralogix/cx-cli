@@ -26,7 +26,7 @@ fn team_groups_get() {
         }
     };
     let v = harness::run_ok_json(&["team-groups", "get", &id, "-o", "json"]);
-    harness::assert_object_with_keys(&v, &["group_id", "name"]);
+    harness::assert_get_response(&v, &["group_id", "name"]);
 }
 
 fn discover_team_group_id() -> Option<String> {

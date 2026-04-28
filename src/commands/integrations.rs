@@ -28,7 +28,10 @@ fn rg_to_json(integration: &Integration, include_profile: bool, profile: &str) -
 
 fn read_from_file(path: &str) -> Result<Value> {
     let raw = if path == "-" {
-        eprintln!("{}", "Reading integration definition from stdin...".dimmed());
+        eprintln!(
+            "{}",
+            "Reading integration definition from stdin...".dimmed()
+        );
         use std::io::Read;
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
@@ -182,10 +185,8 @@ pub async fn run_create(
                     let id = integration.id.as_deref().unwrap_or("unknown");
                     eprintln!(
                         "{}",
-                        format!(
-                            "Created integration '{name}' (ID: {id}) in profile '{profile}'."
-                        )
-                        .green()
+                        format!("Created integration '{name}' (ID: {id}) in profile '{profile}'.")
+                            .green()
                     );
                     all_results.push(rg_to_json(&integration, include_profile, &profile));
                 }

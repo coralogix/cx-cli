@@ -100,13 +100,13 @@ impl<'a> TeamGroupsApi<'a> {
     }
 
     /// Get a team group by ID.
-    pub async fn get_by_id(&self, group_id: &str) -> Result<Value> {
+    pub async fn get_by_id(&self, group_id: &str) -> Result<GetTeamGroupResponse> {
         let path = format!("{TEAM_GROUPS_BASE}/id/{group_id}");
         self.client.get(&path, &[]).await
     }
 
     /// Get a team group by name.
-    pub async fn get_by_name(&self, name: &str) -> Result<Value> {
+    pub async fn get_by_name(&self, name: &str) -> Result<GetTeamGroupByNameResponse> {
         let path = format!("{TEAM_GROUPS_BASE}/name/{name}");
         self.client.get(&path, &[]).await
     }

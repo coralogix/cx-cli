@@ -87,10 +87,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                         scope.id.clone().unwrap_or_default(),
                         scope.display_name().to_string(),
                         scope.display_description().to_string(),
-                        scope
-                            .default_expression
-                            .clone()
-                            .unwrap_or_default(),
+                        scope.default_expression.clone().unwrap_or_default(),
                     ]
                 })
                 .collect();
@@ -118,7 +115,10 @@ pub async fn run_get(
         async move {
             let api = ScopesApi::new(&t.client);
             let resp = api.list().await?;
-            let matched = resp.scopes.into_iter().find(|s| s.id.as_deref() == Some(&id));
+            let matched = resp
+                .scopes
+                .into_iter()
+                .find(|s| s.id.as_deref() == Some(&id));
             match matched {
                 Some(scope) => Ok(serde_json::to_value(json!({
                     "scope": {
@@ -203,11 +203,7 @@ pub async fn run_create(
                         format!("Created scope '{name}' (ID: {id}) in profile '{profile}'.")
                             .green()
                     );
-                    all_results.push(scope_to_json(
-                        &scope,
-                        targets.len() > 1,
-                        &profile,
-                    ));
+                    all_results.push(scope_to_json(&scope, targets.len() > 1, &profile));
                 }
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),

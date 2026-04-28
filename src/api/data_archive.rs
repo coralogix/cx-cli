@@ -48,12 +48,16 @@ impl<'a> DataArchiveApi<'a> {
 
     pub async fn enable(&self) -> Result<Value> {
         let path = format!("{METRICS_BASE}/enable");
-        self.client.post(&path, &Value::Object(Default::default())).await
+        self.client
+            .post(&path, &Value::Object(Default::default()))
+            .await
     }
 
     pub async fn disable(&self) -> Result<Value> {
         let path = format!("{METRICS_BASE}/disable");
-        self.client.post(&path, &Value::Object(Default::default())).await
+        self.client
+            .post(&path, &Value::Object(Default::default()))
+            .await
     }
 
     pub async fn validate(&self, body: &Value) -> Result<Value> {

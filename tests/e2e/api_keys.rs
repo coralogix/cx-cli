@@ -26,7 +26,7 @@ fn api_keys_get() {
         }
     };
     let v = harness::run_ok_json(&["api-keys", "get", &id, "-o", "json"]);
-    harness::assert_object_with_keys(&v, &["id", "name"]);
+    harness::assert_get_response(&v, &["id", "name"]);
 }
 
 #[test]
@@ -49,22 +49,26 @@ fn discover_api_key_id() -> Option<String> {
             let v = harness::parse_json(&stdout)?;
             // The list response may be a flat array with "id" field,
             // or wrapped in a "keys" array with nested "keyInfo.keyId".
+            let val_to_string = |x: &serde_json::Value| match x {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string().trim_matches('"').to_string(),
+            };
             if let Some(arr) = v.as_array() {
                 if let Some(id) = arr
                     .first()
                     .and_then(|item| item.get("id"))
-                    .and_then(|x| x.as_str())
+                    .map(&val_to_string)
                 {
-                    return Some(id.to_string());
+                    return Some(id);
                 }
                 // Try nested keyInfo.keyId pattern
                 if let Some(id) = arr
                     .first()
                     .and_then(|item| item.get("keyInfo"))
                     .and_then(|ki| ki.get("keyId"))
-                    .and_then(|x| x.as_str())
+                    .map(&val_to_string)
                 {
-                    return Some(id.to_string());
+                    return Some(id);
                 }
             }
             // Try wrapped "keys" array
@@ -74,10 +78,9 @@ fn discover_api_key_id() -> Option<String> {
                 .and_then(|item| {
                     item.get("keyInfo")
                         .and_then(|ki| ki.get("keyId"))
-                        .and_then(|x| x.as_str())
-                        .or_else(|| item.get("id").and_then(|x| x.as_str()))
+                        .map(&val_to_string)
+                        .or_else(|| item.get("id").map(&val_to_string))
                 })
-                .map(String::from)
         })
         .clone()
 }

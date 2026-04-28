@@ -1,6 +1,6 @@
 [package]
 name = "cx"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Coralogix CLI — query observability data from the command line"
 repository = "https://github.com/coralogix/cx-cli"

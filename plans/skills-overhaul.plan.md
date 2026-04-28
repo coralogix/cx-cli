@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | complete |
 | Created | 2026-04-28 |
 | Ticket | N/A |
 | Branch | liranhason/implement-all |
@@ -341,7 +341,7 @@ Currently there is no automated way to verify skill correctness, and `skills/REA
 - **Acceptance:** Script runs cleanly, all 13 skills pass all checks, any issues found are fixed in the skill files
 - **Dependencies:** 6.1, 6.2, 6.3
 
-### 7.2 [ ] Review trigger phrases for intent coverage gaps
+### 7.2 [x] Review trigger phrases for intent coverage gaps *(completed 2026-04-29)*
 
 - **Files:** All `skills/*/SKILL.md` files (trigger descriptions only)
 - **What:** Review each of the 5 new skills' trigger descriptions against these common user questions and verify at least one skill would activate for each:
@@ -364,14 +364,14 @@ Currently there is no automated way to verify skill correctness, and `skills/REA
 - **Acceptance:** Every question in the list maps to at least one skill's trigger phrases, any gaps have been addressed
 - **Dependencies:** 7.1
 
-### 7.3 [ ] Update skills/README.md with all new skills
+### 7.3 [x] Update skills/README.md with all new skills *(completed 2026-04-29)*
 
 - **Files:** `skills/README.md`
 - **What:** Add all 5 new skills to the Available Skills table in alphabetical order. Update the Usage section's example list to include examples from the new domains: "How can we reduce our Coralogix costs?", "Help me triage this incident", "Set up parsing rules for our new service", "Who has access to production?", "Configure Slack notifications for critical alerts". Ensure the installation instructions are unchanged.
 - **Acceptance:** Available Skills table has 13 rows (8 existing + 5 new), Usage section has representative examples for all skill domains, descriptions are accurate and concise
 - **Dependencies:** 7.2
 
-### 7.4 [ ] Update CLAUDE.md skill coverage table
+### 7.4 [x] Update CLAUDE.md skill coverage table *(completed 2026-04-29)*
 
 - **Files:** `CLAUDE.md`
 - **What:** Update the "Skill Coverage" table in the Contributing section to reflect the new skill structure. Replace the 1:1 command-to-skill mapping with the workflow skill mapping. Each new command should show which workflow skill covers it. Mark all commands as "Covered" with the skill name. Remove the "Not covered" entries.

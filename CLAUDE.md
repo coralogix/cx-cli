@@ -161,27 +161,27 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx dataprime` | `dataprime` | Covered |
 | `cx logs` (RUM) | `rum` | Covered |
 | _(cross-signal)_ | `telemetry-querying` | Gateway skill |
-| `cx dashboards` | — | Not covered |
-| `cx search-fields` | — | Not covered |
-| `cx profiles` | — | Not covered |
-| `cx cleanup` | — | Not covered |
-| `cx notifications` | — | Not covered |
-| `cx webhooks` | — | Not covered |
-| `cx enrichments` | — | Not covered |
-| `cx rules` | — | Not covered |
-| `cx tco` | — | Not covered |
-| `cx quotas` | — | Not covered |
-| `cx usage` | — | Not covered |
-| `cx archive` | — | Not covered |
-| `cx integrations` | — | Not covered |
-| `cx iam` | — | Not covered |
-| `cx slos` | — | Not covered |
-| `cx views` | — | Not covered |
-| `cx incidents` | — | Not covered |
-| `cx e2m` | — | Not covered |
-| `cx recording-rules` | — | Not covered |
-| `cx retentions` | — | Not covered |
-| `cx schema` | — | Not covered |
+| `cx dashboards` | `create-dashboard` | Covered |
+| `cx search-fields` | `telemetry-querying` | Covered (via gateway) |
+| `cx usage` | `cost-optimization` | Covered |
+| `cx tco` | `cost-optimization` | Covered |
+| `cx retentions` | `cost-optimization` | Covered |
+| `cx quotas` | `cost-optimization` | Covered |
+| `cx archive` | `cost-optimization` | Covered |
+| `cx incidents` | `incident-management` | Covered |
+| `cx slos` | `incident-management` | Covered |
+| `cx rules` | `data-pipeline` | Covered |
+| `cx enrichments` | `data-pipeline` | Covered |
+| `cx e2m` | `data-pipeline` | Covered |
+| `cx recording-rules` | `data-pipeline` | Covered |
+| `cx iam` | `platform-admin` | Covered |
+| `cx views` | `observability-setup` | Covered |
+| `cx webhooks` | `observability-setup` | Covered |
+| `cx notifications` | `observability-setup` | Covered |
+| `cx integrations` | `observability-setup` | Covered |
+| `cx schema` | `telemetry-querying` | Covered (via gateway) |
+| `cx profiles` | — | Local command |
+| `cx cleanup` | — | Local command |
 
 ### Testing Expectations
 

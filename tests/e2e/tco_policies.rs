@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::harness;
 
 #[test]
@@ -7,7 +9,26 @@ fn tco_policies_list() {
         return;
     }
     let v = harness::run_ok_json(&["tco-policies", "list", "-o", "json"]);
-    harness::assert_array_of_objects_with_keys(&v, &["id", "name"]);
+    harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
+}
+
+#[test]
+#[ignore]
+fn tco_policies_get() {
+    if harness::require_creds("tco_policies_get").is_none() {
+        return;
+    }
+    let id = match discover_tco_policy_id() {
+        Some(id) => id,
+        None => {
+            eprintln!(
+                "[e2e] skipping tco_policies_get: no TCO policies available on test team"
+            );
+            return;
+        }
+    };
+    let v = harness::run_ok_json(&["tco-policies", "get", &id, "-o", "json"]);
+    harness::assert_object_with_keys(&v, &["id", "name"]);
 }
 
 #[test]
@@ -16,6 +37,23 @@ fn tco_policies_settings() {
     if harness::require_creds("tco_policies_settings").is_none() {
         return;
     }
-    // Settings endpoint returns a JSON object; just assert it succeeds
-    harness::run_ok_nonempty(&["tco-policies", "settings", "-o", "json"]);
+    let _v = harness::run_ok_json(&["tco-policies", "settings", "-o", "json"]);
+}
+
+fn discover_tco_policy_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            if harness::require_creds("tco_policies_discover").is_none() {
+                return None;
+            }
+            let stdout = harness::run_ok(&["tco-policies", "list", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?
+                .first()
+                .and_then(|item| item.get("id"))
+                .and_then(|x| x.as_str())
+                .map(String::from)
+        })
+        .clone()
 }

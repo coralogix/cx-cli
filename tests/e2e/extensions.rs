@@ -7,7 +7,7 @@ fn extensions_list() {
         return;
     }
     let v = harness::run_ok_json(&["extensions", "list", "-o", "json"]);
-    harness::assert_array_of_objects_with_keys(&v, &["id", "name"]);
+    harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
 #[test]
@@ -16,5 +16,5 @@ fn extensions_deployed() {
     if harness::require_creds("extensions_deployed").is_none() {
         return;
     }
-    harness::run_ok_nonempty(&["extensions", "deployed", "-o", "json"]);
+    let _v = harness::run_ok_json(&["extensions", "deployed", "-o", "json"]);
 }

@@ -6,7 +6,7 @@ fn data_archive_metrics_get() {
     if harness::require_creds("data_archive_metrics_get").is_none() {
         return;
     }
-    harness::run_ok_nonempty(&["data-archive", "metrics", "get", "-o", "json"]);
+    let _v = harness::run_ok_json(&["data-archive", "metrics", "get", "-o", "json"]);
 }
 
 #[test]
@@ -15,5 +15,5 @@ fn data_archive_logs_get() {
     if harness::require_creds("data_archive_logs_get").is_none() {
         return;
     }
-    harness::run_ok_nonempty(&["data-archive", "logs", "get", "-o", "json"]);
+    let _v = harness::run_ok_json(&["data-archive", "logs", "get", "-o", "json"]);
 }

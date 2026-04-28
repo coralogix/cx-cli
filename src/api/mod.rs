@@ -1,3 +1,5 @@
+pub mod serde_helpers;
+
 pub mod actions;
 pub mod alert_schedulers;
 pub mod alerts;

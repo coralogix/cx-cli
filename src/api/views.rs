@@ -4,14 +4,17 @@ use serde_json::Value;
 use crate::error::Result;
 
 use super::client::CxClient;
+use super::serde_helpers::string_or_number;
 
 // --- Response types ---
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+    #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "string_or_number")]
     pub folder_id: Option<String>,
     pub created_at: Option<String>,
 }
@@ -43,8 +46,10 @@ pub struct DeleteViewResponse {}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewFolder {
+    #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "string_or_number")]
     pub parent_id: Option<String>,
 }
 

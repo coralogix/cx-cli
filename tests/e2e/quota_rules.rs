@@ -6,5 +6,5 @@ fn quota_rules_get() {
     if harness::require_creds("quota_rules_get").is_none() {
         return;
     }
-    harness::run_ok_nonempty(&["quota-rules", "get", "-o", "json"]);
+    let _v = harness::run_ok_json(&["quota-rules", "get", "-o", "json"]);
 }

@@ -4,12 +4,14 @@ use serde_json::Value;
 use crate::error::Result;
 
 use super::client::CxClient;
+use super::serde_helpers::string_or_number;
 
 // --- Response types ---
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertDef {
+    #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
@@ -136,7 +138,9 @@ pub struct SetActiveResponse {}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertEvent {
+    #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
+    #[serde(default, deserialize_with = "string_or_number")]
     pub alert_def_id: Option<String>,
     pub alert_name: Option<String>,
     pub severity: Option<String>,

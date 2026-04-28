@@ -16,6 +16,8 @@ mod harness;
 
 #[path = "e2e/actions.rs"]
 mod actions;
+#[path = "e2e/alert_schedulers.rs"]
+mod alert_schedulers;
 #[path = "e2e/alerts.rs"]
 mod alerts;
 #[path = "e2e/api_keys.rs"]
@@ -32,6 +34,8 @@ mod data_usage;
 mod dataprime_query;
 #[path = "e2e/e2m.rs"]
 mod e2m;
+#[path = "e2e/incidents.rs"]
+mod incidents;
 #[path = "e2e/logs.rs"]
 mod logs;
 #[path = "e2e/metrics.rs"]

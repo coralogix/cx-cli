@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::harness;
 
 #[test]
@@ -7,5 +9,42 @@ fn custom_enrichments_list() {
         return;
     }
     let v = harness::run_ok_json(&["custom-enrichments", "list", "-o", "json"]);
-    harness::assert_array_of_objects_with_keys(&v, &["id", "name"]);
+    harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
+}
+
+#[test]
+#[ignore]
+fn custom_enrichments_get() {
+    if harness::require_creds("custom_enrichments_get").is_none() {
+        return;
+    }
+    let id = match discover_custom_enrichment_id() {
+        Some(id) => id,
+        None => {
+            eprintln!(
+                "[e2e] skipping custom_enrichments_get: no custom enrichments on test team"
+            );
+            return;
+        }
+    };
+    let v = harness::run_ok_json(&["custom-enrichments", "get", &id, "-o", "json"]);
+    harness::assert_object_with_keys(&v, &["id", "name"]);
+}
+
+fn discover_custom_enrichment_id() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            if harness::require_creds("custom_enrichments_discover").is_none() {
+                return None;
+            }
+            let stdout = harness::run_ok(&["custom-enrichments", "list", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?
+                .first()
+                .and_then(|item| item.get("id"))
+                .and_then(|x| x.as_str())
+                .map(String::from)
+        })
+        .clone()
 }

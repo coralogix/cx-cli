@@ -4,12 +4,14 @@ use serde_json::Value;
 use crate::error::Result;
 
 use super::client::CxClient;
+use super::serde_helpers::string_or_number;
 
 // --- Response types ---
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Enrichment {
+    #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
     pub field_name: Option<String>,
     pub enrichment_type: Option<String>,

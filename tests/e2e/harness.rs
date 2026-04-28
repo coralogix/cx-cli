@@ -93,6 +93,12 @@ pub fn run_ok(args: &[&str]) -> Vec<u8> {
         args.join(" ")
     );
 
+    assert!(
+        !stderr.contains("Authentication failed"),
+        "cx {} returned auth errors on stderr (expired token or insufficient key permissions):\n{stderr}",
+        args.join(" ")
+    );
+
     stdout
 }
 
@@ -141,6 +147,25 @@ pub fn parse_json(stdout: &[u8]) -> Option<Value> {
 pub fn assert_array(v: &Value) -> &[Value] {
     v.as_array()
         .unwrap_or_else(|| panic!("expected JSON array, got: {v}"))
+}
+
+/// Like `assert_array_of_objects_with_keys` but also asserts the array is
+/// non-empty. Use this for list commands where the test team is expected to
+/// always have at least one resource.
+pub fn assert_nonempty_array_of_objects_with_keys(v: &Value, required_keys: &[&str]) {
+    let arr = assert_array(v);
+    assert!(!arr.is_empty(), "expected non-empty array, got empty []");
+    for (i, item) in arr.iter().enumerate() {
+        let obj = item
+            .as_object()
+            .unwrap_or_else(|| panic!("element {i} is not an object: {item}"));
+        for key in required_keys {
+            assert!(
+                obj.contains_key(*key),
+                "element {i} missing key '{key}': {item}"
+            );
+        }
+    }
 }
 
 /// Asserts `v` is an array, and every element is an object containing

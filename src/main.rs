@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use config::OutputFormat;
 
 use cx::commands;
@@ -62,6 +62,9 @@ Integrations:
 
 Access:
   iam                Manage API keys, roles, scopes, users, groups, SAML, and IP access
+
+Agent:
+  schema             Output the full command tree as JSON for agent consumption
 
 Local:
   profiles           Manage profiles (list, add, delete, set-default)
@@ -433,6 +436,9 @@ Examples:
         #[command(subcommand)]
         cmd: DataprimeCmd,
     },
+
+    /// Output the full command tree as JSON for agent consumption.
+    Schema,
 }
 
 #[derive(Subcommand)]
@@ -2003,6 +2009,11 @@ async fn main() -> Result<()> {
         return commands::cleanup::run();
     }
 
+    // Schema command doesn't need API credentials — outputs command tree as JSON.
+    if let Commands::Schema = cli.command {
+        return commands::schema::run(Cli::command());
+    }
+
     // Dataprime list/show don't need API credentials — handle them early.
     if let Commands::Dataprime { ref cmd } = cli.command {
         if matches!(cmd, DataprimeCmd::List { .. } | DataprimeCmd::Show { .. }) {
@@ -2049,6 +2060,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
         Commands::Cleanup => unreachable!("handled above"),
+        Commands::Schema => unreachable!("handled above"),
 
         Commands::Dataprime { cmd } => match cmd {
             DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {

@@ -28,6 +28,7 @@ pub mod roles;
 pub mod routers;
 pub mod rule_groups;
 pub mod saml;
+pub mod schema;
 pub mod scopes;
 pub mod search_fields;
 pub mod slos;

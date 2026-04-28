@@ -222,7 +222,7 @@ Local:
 
 **Key decisions:** Build the schema by walking Clap's `Command` structure at runtime (using `Cli::command()` to get the top-level `Command`, then recursing through subcommands). No hand-maintained schema file — the JSON is always in sync with the actual CLI. Output format is a JSON object with a `commands` array.
 
-### 3.1 [ ] Implement `cx schema` command
+### 3.1 [x] Implement `cx schema` command *(completed 2026-04-28)*
 - **Files:** `src/main.rs`, `src/commands/schema.rs`, `src/commands/mod.rs`
 - **What:** Create `src/commands/schema.rs` with a function that takes a `clap::Command` and recursively builds a JSON tree. Add a `Schema` variant to `Commands` in `main.rs` (in `LocalGroup`, or a new `AgentGroup` with heading "Agent"). The command should NOT require API credentials (it's local-only). Handle it before `build_targets()` like `Profiles` and `Cleanup` are handled. Add to `src/commands/mod.rs`. The JSON output format should look like:
   ```json
@@ -268,7 +268,7 @@ Local:
 - **Acceptance:** `cx schema` outputs valid JSON. `cx schema | jq .` parses successfully. The output includes all 26 commands with their subcommands and arguments. `cargo test` passes.
 - **Dependencies:** 2.7
 
-### 3.2 [ ] Add unit test for schema output
+### 3.2 [x] Add unit test for schema output *(completed 2026-04-28)*
 - **Files:** `tests/schema.rs`
 - **What:** Add a test that calls the schema generation function and verifies: (1) output is valid JSON, (2) top-level has the expected number of commands (26 including schema itself), (3) key commands have expected subcommands (e.g., `alerts` has `list`, `get`, `create`, `enable`, `disable`, `events`, `event-stats`, `schedulers`; `iam` has `api-keys`, `roles`, `scopes`, `users`, `groups`, `saml`, `ip-access`).
 - **Acceptance:** `cargo test schema` passes.

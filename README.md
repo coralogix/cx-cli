@@ -1,4 +1,4 @@
-# cx
+# cx-cli
 
 The Coralogix CLI. Query logs, metrics, spans, and Real User Monitoring (RUM) data from the terminal using DataPrime and PromQL—built for humans and AI agents.
 

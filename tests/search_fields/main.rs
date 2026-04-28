@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::search_fields;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::search_fields;
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn semantic_field_search_returns_results() {

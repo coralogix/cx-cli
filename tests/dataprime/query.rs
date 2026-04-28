@@ -4,11 +4,11 @@ mod common;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::dataprime::run_query;
-use cx::commands::logs;
-use cx::commands::spans;
-use cx::config::OutputFormat;
-use cx::Tier;
+use coralogix_cli::commands::dataprime::run_query;
+use coralogix_cli::commands::logs;
+use coralogix_cli::commands::spans;
+use coralogix_cli::config::OutputFormat;
+use coralogix_cli::Tier;
 
 /// Build a realistic NDJSON response string for the dataprime query endpoint.
 fn make_ndjson_response(rows: &[&str]) -> String {

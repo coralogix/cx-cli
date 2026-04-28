@@ -3,6 +3,7 @@ pub mod alert_schedulers;
 pub mod alerts;
 pub mod api_keys;
 pub mod cleanup;
+pub mod completions;
 pub mod connectors;
 pub mod contextual_data;
 pub mod custom_enrichments;

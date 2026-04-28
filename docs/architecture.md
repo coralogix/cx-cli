@@ -20,7 +20,7 @@ CLI parsing ──> Config resolution ──> Target building ──> Fan-out
 | 2. Config resolution | `src/config.rs` | `resolve_all()` → `Vec<ResolvedConfig>` |
 | 3. Target building | `src/execution.rs` | `build_targets()` → `Vec<Arc<ExecutionTarget>>` |
 | 4. Fan-out | `src/execution.rs` | `fan_out(targets, \|t\| async { ... })` |
-| 5. Result merging | `src/execution.rs` or `src/commands/dataprime.rs` | `merge_tagged_results()` / `merge_results()` |
+| 5. Result merging | `src/execution.rs` or `src/commands/dataprime/mod.rs` | `merge_tagged_results()` / `merge_results()` |
 | 6. Output rendering | Command module | `match output { Text \| Json \| Agents }` |
 | 7. Spilling | `src/spill.rs` | `maybe_spill()` (agents mode, DataPrime only) |
 
@@ -57,11 +57,11 @@ commands::logs::run()
 ```
 
 **Adding a new DataPrime command** requires:
-1. A command module (e.g., `src/commands/logs.rs`) with a text renderer function matching `fn(&MergedResults) -> Result<()>`
+1. A command directory (e.g., `src/commands/logs/`) with a `mod.rs` containing a text renderer function matching `fn(&MergedResults) -> Result<()>`
 2. A `run()` function that calls `dataprime::run_query()` with the source name and renderer
 3. CLI definition in `main.rs` and dispatch in the `match cli.command` block
 
-**Reference:** `src/commands/logs.rs` -- the entire module is ~130 lines, most of which is the text renderer. The `run()` function is a single delegation call.
+**Reference:** `src/commands/logs/mod.rs` -- the entire module is ~130 lines, most of which is the text renderer. The `run()` function is a single delegation call.
 
 ### Archetype B: REST-based
 
@@ -98,11 +98,12 @@ pub async fn run_list(targets, ..., output) -> Result<()> {
 ```
 
 **Adding a new REST command** requires:
-1. An API module (`src/api/<resource>.rs`) with a `<Resource>Api` struct wrapping `&CxClient`
-2. A command module (`src/commands/<resource>.rs`) with `run_<subcommand>()` functions
-3. CLI definition in `main.rs` and dispatch
+1. A command directory (`src/commands/<resource>/`) with:
+   - `api.rs` -- a `<Resource>Api` struct wrapping `&CxClient`
+   - `mod.rs` -- `run_<subcommand>()` functions, with `pub mod api;` at the top
+2. CLI definition in `main.rs` and dispatch
 
-**Reference:** `src/commands/dashboards.rs` -- clean example using `render::*` helpers for all three output formats.
+**Reference:** `src/commands/dashboards/` -- clean example using `render::*` helpers for all three output formats.
 
 ### Wrapper enum pattern
 
@@ -221,7 +222,7 @@ Errors during fan-out are **per-profile** and **non-fatal**:
 
 ## The API client
 
-`CxClient` (`src/api/client.rs`) is a thin `reqwest` wrapper pre-configured with Bearer auth:
+`CxClient` (`src/api_client.rs`) is a thin `reqwest` wrapper pre-configured with Bearer auth:
 
 | Method | Use case |
 |--------|----------|
@@ -232,7 +233,7 @@ Errors during fan-out are **per-profile** and **non-fatal**:
 
 All methods run through `checked_text()` which maps HTTP status codes to `CxError` variants.
 
-API modules (`src/api/<resource>.rs`) wrap `CxClient` in domain-specific structs:
+API modules (`src/commands/<resource>/api.rs`) wrap `CxClient` in domain-specific structs:
 
 ```rust
 pub struct AlertsApi<'a> {
@@ -253,15 +254,18 @@ impl<'a> AlertsApi<'a> {
 | Command functions | `run_<subcommand>()` | `run_list()`, `run_get()`, `run_query()` |
 | API structs | `<Resource>Api` | `AlertsApi`, `MetricsApi` |
 | Render helpers | `render::render_table`, `render::render_json`, etc. | Shared text/JSON output |
-| Command modules | `src/commands/<resource>.rs` | mirrors `src/api/<resource>.rs` |
+| Command directory | `src/commands/<resource>/` | `mod.rs` for the handler, `api.rs` for REST commands |
 | Error types | `CxError` for API, `anyhow::Result` for commands | -- |
 
 ## Module map
+
+Each CLI command owns a directory under `src/commands/`. REST commands keep their HTTP client alongside the handler in `api.rs`. Cross-cutting infrastructure stays at the top of `src/`. The shared HTTP base lives at `src/api_client.rs`.
 
 ```
 src/
 ├── main.rs              # CLI definition (Clap) + dispatch + help_template/after_help
 ├── lib.rs               # Module re-exports
+├── api_client.rs        # CxClient HTTP wrapper (Bearer auth, REST + NDJSON)
 ├── config.rs            # Config/profile loading, resolution, Region enum
 ├── execution.rs         # ExecutionTarget, fan_out(), tag_rows(), merge_tagged_results()
 ├── render.rs            # Shared rendering helpers (render_table, render_json, bool_display, etc.)
@@ -271,25 +275,27 @@ src/
 ├── tier.rs              # Tier enum (FrequentSearch | Archive)
 ├── oauth.rs             # OAuth 2.0 + OIDC browser login flow
 ├── keyring_store.rs     # OS keyring read/write
-├── api/
-│   ├── client.rs        # CxClient HTTP wrapper
-│   ├── dataprime.rs     # DataPrime query API (NDJSON streaming)
-│   ├── metrics.rs       # PromQL query APIs
-│   ├── alerts.rs        # Alerts CRUD API
-│   ├── dashboards.rs    # Dashboards API
-│   ├── semantic_search.rs  # Semantic field search API
-│   └── ...              # One module per REST domain (incidents, notifications, rules, etc.)
+├── api_client.rs        # CxClient HTTP wrapper
 └── commands/
-    ├── dataprime.rs     # Shared DataPrime pipeline + docs subcommands
-    ├── logs.rs          # Log query (DataPrime archetype)
-    ├── spans.rs         # Span query (DataPrime archetype)
-    ├── metrics.rs       # PromQL commands (REST archetype)
-    ├── alerts.rs        # Alert management (REST archetype)
-    ├── dashboards.rs    # Dashboard commands (REST archetype)
-    ├── search_fields.rs # Semantic search (REST archetype)
+    ├── dataprime/       # Shared DataPrime pipeline + docs subcommands
+    │   ├── mod.rs       #   handler + docs (list/show)
+    │   ├── api.rs       #   DataPrime query API (NDJSON streaming)
+    │   └── semantic_search.rs  # Semantic search API (used by metrics + search-fields)
+    ├── logs/mod.rs      # Log query (DataPrime archetype)
+    ├── spans/mod.rs     # Span query (DataPrime archetype)
+    ├── metrics/         # PromQL commands (REST archetype)
+    │   ├── mod.rs
+    │   └── api.rs       #   PromQL query APIs
+    ├── alerts/          # Alert management (REST archetype)
+    │   ├── mod.rs
+    │   └── api.rs       #   Alerts CRUD API
+    ├── dashboards/      # Dashboard commands (REST archetype)
+    │   ├── mod.rs
+    │   └── api.rs       #   Dashboards API
+    ├── search_fields/mod.rs  # Semantic field lookup (uses dataprime::semantic_search)
     ├── schema.rs        # cx schema — JSON command tree for agent discovery
-    ├── profiles.rs      # Profile management (no API calls)
-    ├── cleanup.rs       # Temp file cleanup (no API calls)
+    ├── profiles/mod.rs  # Profile management (no API calls)
+    ├── cleanup/mod.rs   # Temp file cleanup (no API calls)
     └── ...              # One module per REST domain (incidents, notifications,
                          #   webhooks, rules, enrichments, integrations, iam,
                          #   usage, tco, retentions, quotas, archive, slos,

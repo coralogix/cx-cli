@@ -1,12 +1,30 @@
+use std::ffi::OsStr;
+use std::path::PathBuf;
+
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::aot::Shell;
+use clap_complete::engine::ArgValueCompleter;
+use clap_complete::env::CompleteEnv;
+use clap_complete::CompletionCandidate;
 use config::OutputFormat;
 
-use cx::commands;
-use cx::commands::dataprime::DataprimeFilter;
-use cx::config;
-use cx::execution::build_targets;
-use cx::Tier;
+use coralogix_cli::commands;
+use coralogix_cli::commands::dataprime::DataprimeFilter;
+use coralogix_cli::config;
+use coralogix_cli::execution::build_targets;
+use coralogix_cli::Tier;
+
+/// Returns profile names from `~/.cx/profiles/` as completion candidates.
+fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
+    let prefix = current.to_str().unwrap_or("");
+    config::list_profile_names()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|name| name.starts_with(prefix))
+        .map(CompletionCandidate::new)
+        .collect()
+}
 
 /// Dataset choice for `search-fields`.
 #[derive(Debug, Clone, ValueEnum)]
@@ -73,7 +91,7 @@ Local:
 struct Cli {
     /// Profile(s) to use. Repeat to fan out across multiple profiles simultaneously.
     /// Overrides the default profile set in config.
-    #[arg(long, short = 'p', global = true, env = "CX_PROFILE")]
+    #[arg(long, short = 'p', global = true, env = "CX_PROFILE", add = ArgValueCompleter::new(complete_profile_names))]
     profile: Vec<String>,
 
     /// Coralogix API key (overrides a single profile; incompatible with multiple --profile).
@@ -114,11 +132,54 @@ enum ProfilesTopLevel {
 }
 
 #[derive(Subcommand)]
+enum CompletionsCmd {
+    /// Print a completion script to stdout.
+    ///
+    /// Pipe to a file to install manually, or use `cx completions install` to
+    /// let cx choose a default path and track it for future refreshes.
+    #[command(after_help = "\
+Examples:
+  cx completions generate zsh > ~/.zfunc/_cx
+  cx completions generate bash > ~/.local/share/bash-completion/completions/cx
+  cx completions generate fish > ~/.config/fish/completions/cx.fish")]
+    Generate {
+        /// Shell to generate completions for.
+        shell: Shell,
+    },
+    /// Install a completion script to a standard path and register it for refresh.
+    ///
+    /// Default install paths:
+    ///   zsh:   ~/.zfunc/_cx
+    ///   bash:  ~/.local/share/bash-completion/completions/cx
+    ///   fish:  ~/.config/fish/completions/cx.fish
+    #[command(after_help = "\
+Examples:
+  cx completions install zsh
+  cx completions install bash
+  cx completions install zsh --path /usr/local/share/zsh/site-functions/_cx")]
+    Install {
+        /// Shell to install completions for.
+        shell: Shell,
+        /// Override the default install path.
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
+    /// Regenerate all completion scripts previously installed by cx.
+    Refresh,
+}
+
+#[derive(Subcommand)]
 enum Commands {
     /// Manage profiles (list, add, delete, set-default).
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
+    },
+
+    /// Generate, install, or refresh shell completion scripts.
+    Completions {
+        #[command(subcommand)]
+        cmd: CompletionsCmd,
     },
 
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
@@ -448,11 +509,13 @@ enum ProfilesCmd {
     /// Add or reconfigure a profile interactively.
     Add {
         /// Profile name to configure (default: "default").
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: Option<String>,
     },
     /// Delete a profile and its stored credentials.
     Delete {
         /// Profile name to delete.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
         /// Skip confirmation prompt.
         #[arg(long, short = 'f')]
@@ -461,6 +524,7 @@ enum ProfilesCmd {
     /// Set the default profile.
     SetDefault {
         /// Profile name to set as default.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
     },
 }
@@ -1981,6 +2045,11 @@ Examples:
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Handle shell completions before any stdout output.
+    // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
+    // completion scripts and exits. Otherwise it is a no-op.
+    CompleteEnv::with_factory(Cli::command).complete();
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
@@ -2012,6 +2081,19 @@ async fn main() -> Result<()> {
     // Schema command doesn't need API credentials — outputs command tree as JSON.
     if let Commands::Schema = cli.command {
         return commands::schema::run(Cli::command());
+    }
+
+    // Completions commands don't need API credentials.
+    if let Commands::Completions { cmd } = cli.command {
+        return match cmd {
+            CompletionsCmd::Generate { shell } => {
+                commands::completions::run_generate(shell, &mut Cli::command())
+            }
+            CompletionsCmd::Install { shell, path } => {
+                commands::completions::run_install(shell, path, &mut Cli::command())
+            }
+            CompletionsCmd::Refresh => commands::completions::run_refresh(Cli::command),
+        };
     }
 
     // Dataprime list/show don't need API credentials — handle them early.
@@ -2061,6 +2143,7 @@ async fn main() -> Result<()> {
         Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
         Commands::Cleanup => unreachable!("handled above"),
         Commands::Schema => unreachable!("handled above"),
+        Commands::Completions { .. } => unreachable!("handled above"),
 
         Commands::Dataprime { cmd } => match cmd {
             DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {

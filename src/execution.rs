@@ -12,7 +12,7 @@ use anyhow::Result;
 use futures::future::join_all;
 use serde_json::Value;
 
-use crate::api::client::CxClient;
+use crate::api_client::CxClient;
 use crate::config::ResolvedConfig;
 
 // ── Execution target ──────────────────────────────────────────────────────────

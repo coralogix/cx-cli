@@ -8,8 +8,8 @@ Every command falls into one of two patterns:
 
 | Archetype | When to use | Reference implementation |
 |-----------|------------|--------------------------|
-| **A: DataPrime-based** | Querying logs, spans, or any DataPrime source | `logs` (`src/commands/logs.rs`) |
-| **B: REST-based** | Wrapping a Coralogix REST API | `alerts` (`src/commands/alerts.rs`, `src/api/alerts.rs`) |
+| **A: DataPrime-based** | Querying logs, spans, or any DataPrime source | `logs` (`src/commands/logs/mod.rs`) |
+| **B: REST-based** | Wrapping a Coralogix REST API | `alerts` (`src/commands/alerts/mod.rs`, `src/commands/alerts/api.rs`) |
 
 > **Important:** All API integrations must use REST (HTTP). Do not use gRPC — the CLI is HTTP-only by design.
 
@@ -22,13 +22,13 @@ DataPrime commands delegate to the shared pipeline and require minimal code. RES
 Use this when your command queries a DataPrime source. The shared pipeline in `commands::dataprime` handles fan-out, merge, render, and spilling — you provide only a text renderer and a thin `run()` wrapper.
 
 **Files to create/modify:**
-- `src/commands/your_domain.rs` (new)
+- `src/commands/your_domain/mod.rs` (new)
 - `src/commands/mod.rs` (add module)
 - `src/main.rs` (CLI definition + dispatch)
 
 ### Step 1: Command module
 
-Create `src/commands/your_domain.rs`:
+Create `src/commands/your_domain/mod.rs`:
 
 ```rust
 use std::sync::Arc;
@@ -114,7 +114,7 @@ pub async fn run(
 
 The text renderer signature must be `fn(&MergedResults) -> Result<()>`. The shared pipeline calls it only for `OutputFormat::Text` — JSON and Agents output are handled generically.
 
-**Reference:** `src/commands/logs.rs` — the entire module is ~130 lines.
+**Reference:** `src/commands/logs/mod.rs` — the entire module is ~130 lines.
 
 ### Step 2: Register the module
 
@@ -183,15 +183,14 @@ That's it for a DataPrime command. The shared pipeline handles fan-out, merge, a
 Use this when your command wraps a Coralogix REST API. You'll build the full pipeline: API client, fan-out, merge, and render.
 
 **Files to create/modify:**
-- `src/api/your_domain.rs` (new — API types + client)
-- `src/api/mod.rs` (add module)
-- `src/commands/your_domain.rs` (new — fan-out, merge, render)
-- `src/commands/mod.rs` (add module)
+- `src/commands/your_domain/api.rs` (new — API types + client)
+- `src/commands/your_domain/mod.rs` (new — handler with `pub mod api;` + fan-out, merge, render)
+- `src/commands/mod.rs` (add `pub mod your_domain;`)
 - `src/main.rs` (CLI definition + dispatch)
 
 ### Step 1: API module
 
-Create `src/api/your_domain.rs`:
+Create `src/commands/your_domain/api.rs`:
 
 ```rust
 use serde::Deserialize;
@@ -199,7 +198,7 @@ use serde_json::Value;
 
 use crate::error::Result;
 
-use super::client::CxClient;
+use crate::api_client::CxClient;
 
 // ── Response types ─────────────────────────────────────────────────
 
@@ -277,19 +276,11 @@ Key conventions:
 - The API struct borrows `&CxClient` — use the appropriate method (`get`, `post`, `post_raw`, `post_empty`) based on the endpoint
 - Always write deserialization tests against realistic JSON fixtures
 
-**Reference:** `src/api/alerts.rs` — full example with list, get, create, and state-change endpoints.
+**Reference:** `src/commands/alerts/api.rs` — full example with list, get, create, and state-change endpoints.
 
-### Step 2: Register the API module
+### Step 2: Command module
 
-Add to `src/api/mod.rs`:
-
-```rust
-pub mod your_domain;
-```
-
-### Step 3: Command module
-
-Create `src/commands/your_domain.rs`:
+Create `src/commands/your_domain/mod.rs`:
 
 ```rust
 use std::sync::Arc;
@@ -299,7 +290,10 @@ use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
-use crate::api::your_domain::YourDomainApi;
+pub mod api;
+
+use api::YourDomainApi;
+
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
@@ -377,9 +371,9 @@ Key patterns to follow:
 - **Fan-out errors are non-fatal** — print to stderr, continue with successful profiles
 - **Status messages go to stderr** — use `eprintln!` so they don't pollute piped output
 
-**Reference:** `src/commands/dashboards.rs` — clean example with list and get subcommands using `render::*` helpers.
+**Reference:** `src/commands/dashboards/mod.rs` — clean example with list and get subcommands using `render::*` helpers.
 
-### Step 4: Register the command module
+### Step 3: Register the command module
 
 Add to `src/commands/mod.rs`:
 
@@ -387,7 +381,7 @@ Add to `src/commands/mod.rs`:
 pub mod your_domain;
 ```
 
-### Step 5: CLI wiring
+### Step 4: CLI wiring
 
 In `src/main.rs`, define the subcommand enum and add to `Commands`:
 
@@ -492,7 +486,7 @@ skipping any of them leaves real holes.
 |-------|----------|------------------|---------|
 | Unit | `src/**/<file>.rs` `#[cfg(test)]` blocks | Pure logic — deserialization, formatting helpers, data transforms | None |
 | Integration | `tests/<domain>.rs` (wiremock) | Command runner end-to-end with mocked HTTP responses | None |
-| E2E | `tests/e2e/<domain>.rs` (assert_cmd) | Real `cx` binary runs against the Coralogix test team | Real |
+| E2E | `tests/e2e/<command>/mod.rs` (assert_cmd) | Real `cx` binary runs against the Coralogix test team | Real |
 
 ### Layer 1 — Unit tests
 
@@ -502,7 +496,7 @@ Every API module must have deserialization tests. These verify that your
 response types correctly parse the actual API JSON shape.
 
 ```rust
-// in src/api/your_domain.rs
+// in src/commands/your_domain/api.rs
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,18 +537,18 @@ Add `tests/<your_domain>.rs` using `wiremock` to spin up a fake Coralogix
 API and call your command runner directly. This catches regressions in
 fan-out, merge, rendering, and the wiring between command and API layer.
 
-Reference: `tests/alerts.rs`, `tests/metrics.rs`, `tests/search_fields.rs`.
+Reference: `tests/alerts/main.rs`, `tests/metrics/main.rs`, `tests/search_fields/main.rs`.
 
 ```rust
-// tests/your_domain.rs
+// tests/your_domain/main.rs
 mod common;
 
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::your_domain::run_list;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::your_domain::run_list;
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn list_returns_items_from_mock() {
@@ -581,7 +575,7 @@ case if your command supports one, and the JSON output path.
 
 ### Layer 3 — E2E tests (real test team)
 
-Add a sanity test in `tests/e2e/<your_domain>.rs` that invokes the
+Add a sanity test in `tests/e2e/<your_domain>/mod.rs` that invokes the
 compiled `cx` binary against a real Coralogix test team. The goal is
 **only** to verify that the command runs end-to-end: exits 0, produces
 non-empty stdout, and (for `-o json`) emits valid JSON. Don't assert on
@@ -591,7 +585,7 @@ All e2e tests are `#[ignore]`d, so they don't run in the default
 `cargo test`. CI invokes them via a separate workflow.
 
 ```rust
-// tests/e2e/your_domain.rs
+// tests/e2e/your_domain/mod.rs
 use std::sync::OnceLock;
 
 use crate::harness;
@@ -639,19 +633,19 @@ fn discover_your_domain_id() -> Option<String> {
 Then declare the module in `tests/e2e.rs`:
 
 ```rust
-#[path = "e2e/your_domain.rs"]
+#[path = "e2e/your_domain/mod.rs"]
 mod your_domain;
 ```
 
 Discovery helpers stay local to each test module — see
-`discover_alert_id` in `tests/e2e/alerts.rs` for the pattern. They
+`discover_alert_id` in `tests/e2e/alerts/mod.rs` for the pattern. They
 should cache via `OnceLock` and skip (return `None`) when the test team
 has no data, not panic.
 
 **Do not exercise mutating commands** in e2e (create/delete/enable/
 disable) until there's a paired-undo plan — they touch shared test team
 state. Use a comment to mark them as deliberately uncovered, like the
-existing block at the bottom of `tests/e2e/alerts.rs`.
+existing block at the bottom of `tests/e2e/alerts/mod.rs`.
 
 ### Running the suites
 
@@ -703,16 +697,16 @@ Copy this into your PR description:
 ## Checklist
 
 ### API layer (REST archetype only)
-- [ ] `src/api/your_domain.rs` — response types with `#[derive(Deserialize)]`
-- [ ] `src/api/your_domain.rs` — `YourDomainApi` struct with methods
-- [ ] `src/api/your_domain.rs` — deserialization tests for all response types
-- [ ] `src/api/mod.rs` — module registered
+- [ ] `src/commands/your_domain/api.rs` — response types with `#[derive(Deserialize)]`
+- [ ] `src/commands/your_domain/api.rs` — `YourDomainApi` struct with methods
+- [ ] `src/commands/your_domain/api.rs` — deserialization tests for all response types
+- [ ] `src/commands/your_domain/mod.rs` — `pub mod api;` declared at the top
 
 ### Command layer
-- [ ] `src/commands/your_domain.rs` — subcommand runner(s) with fan-out/merge/render
-- [ ] `src/commands/your_domain.rs` — dual row structs for text output (multi-profile + single)
-- [ ] `src/commands/your_domain.rs` — all three output formats handled (Text, Json, Agents)
-- [ ] `src/commands/mod.rs` — module registered
+- [ ] `src/commands/your_domain/mod.rs` — subcommand runner(s) with fan-out/merge/render
+- [ ] `src/commands/your_domain/mod.rs` — dual row structs for text output (multi-profile + single)
+- [ ] `src/commands/your_domain/mod.rs` — all three output formats handled (Text, Json, Agents)
+- [ ] `src/commands/mod.rs` — `pub mod your_domain;` registered
 
 ### CLI wiring
 - [ ] `src/main.rs` — `Commands` enum variant added
@@ -720,11 +714,11 @@ Copy this into your PR description:
 - [ ] `src/main.rs` — dispatch match arm added
 
 ### Tests
-- [ ] **Unit:** API deserialization tests in `src/api/your_domain.rs` (REST)
+- [ ] **Unit:** API deserialization tests in `src/commands/your_domain/api.rs` (REST)
 - [ ] **Unit:** helper/formatting tests if the command module has non-trivial logic
-- [ ] **Integration:** `tests/your_domain.rs` covering happy-path, empty response, and any filters via wiremock
-- [ ] **E2E:** sanity test(s) in `tests/e2e/your_domain.rs`, declared in `tests/e2e.rs` via `#[path]`
-- [ ] **E2E:** local `discover_*` fn added to `tests/e2e/<your_domain>.rs` if a subcommand needs an ID/name from the test team
+- [ ] **Integration:** `tests/your_domain/main.rs` covering happy-path, empty response, and any filters via wiremock
+- [ ] **E2E:** sanity test(s) in `tests/e2e/your_domain/mod.rs`, declared in `tests/e2e.rs` via `#[path]`
+- [ ] **E2E:** local `discover_*` fn added to `tests/e2e/<your_domain>/mod.rs` if a subcommand needs an ID/name from the test team
 
 ### User-facing skill
 - [ ] Command is covered by a skill in `skills/` (new or existing workflow skill)

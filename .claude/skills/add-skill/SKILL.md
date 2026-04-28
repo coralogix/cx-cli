@@ -32,16 +32,17 @@ Before writing any skill, read existing ones to internalize the project's patter
 | Skill | Why study it |
 |-------|-------------|
 | `skills/cx-alerts/SKILL.md` | REST-based command with rich examples, JSON payloads, investigation workflow, and reference files |
-| `skills/metrics-query/SKILL.md` | Investigation-oriented, multi-step workflow with retry logic and common patterns |
-| `skills/dataprime/SKILL.md` | Minimal body that delegates to a large reference file — good model for reference-heavy domains |
-| `skills/rum/SKILL.md` | Builds on other skills (references query-logs and dataprime) — good model for cross-skill integration |
-| `skills/telemetry-querying/SKILL.md` | Gateway/routing skill with no CLI commands of its own — delegates to other skills |
+| `skills/cx-metrics-query/SKILL.md` | Investigation-oriented, multi-step workflow with retry logic and common patterns |
+| `skills/cx-dataprime/SKILL.md` | Minimal body that delegates to a large reference file — good model for reference-heavy domains |
+| `skills/cx-rum/SKILL.md` | Builds on other skills (references cx-query-logs and cx-dataprime) — good model for cross-skill integration |
+| `skills/cx-telemetry-querying/SKILL.md` | Gateway/routing skill with no CLI commands of its own — delegates to other skills |
+| `skills/cx-cost-optimization/SKILL.md` | Workflow skill covering 5 commands unified by "reduce costs" intent — good model for multi-command skills |
 
 Pick the two closest to what you're building and read them completely.
 
 ## Step 2: Create Directory and Write SKILL.md
 
-Create `skills/<domain-name>/SKILL.md`. Use the directory structure, frontmatter format, and copy-pasteable template from `docs/adding-a-skill.md` § "Directory Structure" through "Complete Template".
+Create `skills/cx-<domain-name>/SKILL.md`. All skill directories use the `cx-` prefix. Use the directory structure, frontmatter format, and templates from `docs/adding-a-skill.md` § "Directory Structure" through "Complete Template" (single-command) or § "Workflow Skills" (multi-command).
 
 ### Writing effective trigger descriptions
 

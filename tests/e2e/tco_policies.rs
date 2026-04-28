@@ -8,7 +8,7 @@ fn tco_policies_list() {
     if harness::require_creds("tco_policies_list").is_none() {
         return;
     }
-    let v = harness::run_ok_json(&["tco-policies", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["tco", "list", "-o", "json"]);
     harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
@@ -25,7 +25,7 @@ fn tco_policies_get() {
             return;
         }
     };
-    let v = harness::run_ok_json(&["tco-policies", "get", &id, "-o", "json"]);
+    let v = harness::run_ok_json(&["tco", "get", &id, "-o", "json"]);
     harness::assert_get_response(&v, &["id", "name"]);
 }
 
@@ -35,7 +35,7 @@ fn tco_policies_settings() {
     if harness::require_creds("tco_policies_settings").is_none() {
         return;
     }
-    let _v = harness::run_ok_json(&["tco-policies", "settings", "-o", "json"]);
+    let _v = harness::run_ok_json(&["tco", "settings", "-o", "json"]);
 }
 
 fn discover_tco_policy_id() -> Option<String> {
@@ -45,7 +45,7 @@ fn discover_tco_policy_id() -> Option<String> {
             if harness::require_creds("tco_policies_discover").is_none() {
                 return None;
             }
-            let stdout = harness::run_ok(&["tco-policies", "list", "-o", "json"]);
+            let stdout = harness::run_ok(&["tco", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
                 .first()

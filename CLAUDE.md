@@ -22,6 +22,74 @@ cargo run -- <args>                 # Run CLI in dev mode
 
 Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
+## Command Hierarchy
+
+The CLI is organized into 26 commands grouped by domain. `cx --help` shows this layout:
+
+```
+Query:
+  logs               Query logs using DataPrime syntax
+  spans              Query spans using DataPrime syntax
+  metrics            Query metrics using PromQL
+  dataprime          DataPrime language reference and raw queries
+  search-fields      Search log/span fields semantically
+
+Observe:
+  dashboards         Manage dashboards and dashboard folders
+  views              Manage saved views and view folders
+  slos               Manage SLO definitions
+
+Detect & Respond:
+  alerts             Manage alert definitions and schedulers
+  incidents          Manage and triage incidents
+
+Notifications:
+  notifications      Manage connectors, routers, presets, and notification testing
+  webhooks           Manage outgoing webhooks and automation actions
+
+Data Pipeline:
+  rules              Manage log parsing rule groups
+  enrichments        Manage enrichment rules and custom enrichment tables
+  e2m                Manage Events2Metrics definitions
+  recording-rules    Manage Prometheus recording rule groups
+
+Cost & Storage:
+  usage              View data usage and consumption metrics
+  tco                Manage TCO policies and settings
+  retentions         Manage data retention settings
+  quotas             Manage quota rules
+  archive            Manage data archive storage configuration
+
+Integrations:
+  integrations       Manage integrations, extensions, and contextual data
+
+Access:
+  iam                Manage API keys, roles, scopes, users, groups, SAML, and IP access
+
+Agent:
+  schema             Output the full command tree as JSON for agent consumption
+
+Local:
+  profiles           Manage profiles (list, add, delete, set-default)
+  cleanup            Remove stale temp files
+```
+
+**Agent discovery:** `cx schema` outputs the full command tree (commands, subcommands, flags, descriptions) as JSON. Agents should call `cx schema` to discover available commands rather than parsing help text.
+
+**Key renames from prior flat layout:**
+- `rule-groups` -> `rules`
+- `tco-policies` -> `tco`
+- `quota-rules` -> `quotas`
+- `data-usage` -> `usage`
+- `data-archive` -> `archive`
+
+**Wrapper commands** (merged from multiple former top-level commands):
+- `notifications` = connectors + routers + presets + notification-test
+- `webhooks` = outgoing webhooks + actions (formerly `actions`)
+- `enrichments` = enrichment rules + custom enrichment tables (formerly `custom-enrichments`)
+- `integrations` = extensions + contextual-data
+- `iam` = api-keys + roles + scopes + users + team-groups + saml + ip-access
+
 ## Architecture
 
 ### Execution Flow
@@ -40,7 +108,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 - **`src/api/dataprime.rs`** — DataPrime query API (logs & traces via NDJSON)
 - **`src/api/metrics.rs`** — PromQL queries (instant, range, search, labels)
 - **`src/api/semantic_search.rs`** — Semantic Search HTTP API (fields + metrics)
-- **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, search-fields, profiles, cleanup, dataprime docs)
+- **`src/commands/*.rs`** — Command implementations (logs, metrics, traces, dashboards, alerts, notifications, webhooks, enrichments, rules, tco, quotas, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
 - **`src/time.rs`** — Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/render.rs`** — Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/agents output
 - **`src/spill.rs`** — Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)
@@ -97,6 +165,23 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx search-fields` | — | Not covered |
 | `cx profiles` | — | Not covered |
 | `cx cleanup` | — | Not covered |
+| `cx notifications` | — | Not covered |
+| `cx webhooks` | — | Not covered |
+| `cx enrichments` | — | Not covered |
+| `cx rules` | — | Not covered |
+| `cx tco` | — | Not covered |
+| `cx quotas` | — | Not covered |
+| `cx usage` | — | Not covered |
+| `cx archive` | — | Not covered |
+| `cx integrations` | — | Not covered |
+| `cx iam` | — | Not covered |
+| `cx slos` | — | Not covered |
+| `cx views` | — | Not covered |
+| `cx incidents` | — | Not covered |
+| `cx e2m` | — | Not covered |
+| `cx recording-rules` | — | Not covered |
+| `cx retentions` | — | Not covered |
+| `cx schema` | — | Not covered |
 
 ### Testing Expectations
 

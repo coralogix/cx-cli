@@ -105,6 +105,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 | Command | Purpose | When to Use |
 |---|---|---|
+| `cx schema` | Output the full command tree as JSON | Discover all available commands and their flags |
 | `cx metrics search --name <pattern>` | Find metrics by name | First step for metrics discovery |
 | `cx metrics search --description <text>` | Semantic metric search | When you know what you want but not the name |
 | `cx search-fields "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |

@@ -6,7 +6,7 @@ fn data_usage_summary() {
     if harness::require_creds("data_usage_summary").is_none() {
         return;
     }
-    let _v = harness::run_ok_json(&["data-usage", "summary", "-o", "json"]);
+    let _v = harness::run_ok_json(&["usage", "summary", "-o", "json"]);
 }
 
 #[test]
@@ -16,7 +16,7 @@ fn data_usage_daily() {
         return;
     }
     let _v = harness::run_ok_json(&[
-        "data-usage",
+        "usage",
         "daily",
         "--type",
         "processed-gbs",

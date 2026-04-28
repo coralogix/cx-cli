@@ -63,11 +63,25 @@ cx cleanup
 
 This deletes all `cx_results*` files in `temp_dir` that are older than 30 minutes.
 
+## Command discovery with `cx schema`
+
+`cx schema` outputs the full command tree as JSON, including all commands, subcommands, arguments, flags, and descriptions. Agents should use this to discover available commands programmatically rather than parsing help text.
+
+```bash
+cx schema
+```
+
+The output is a JSON object describing the entire CLI hierarchy. This is useful for:
+- Discovering which commands and subcommands exist
+- Learning the required and optional arguments for each command
+- Building dynamic tool interfaces around `cx`
+
 ## AI agent integration
 
 AI agents consuming `cx` output should:
 
-1. Use `-o agents` for all queries.
-2. Check whether the output is a file-path reference (spilled result) and read the file if so.
-3. Use `cx cleanup` periodically to remove stale result files.
-4. Reference fields using `$d`, `$l`, and `$m` notation in follow-up DataPrime queries.
+1. Run `cx schema` to discover available commands and their flags.
+2. Use `-o agents` for all queries.
+3. Check whether the output is a file-path reference (spilled result) and read the file if so.
+4. Use `cx cleanup` periodically to remove stale result files.
+5. Reference fields using `$d`, `$l`, and `$m` notation in follow-up DataPrime queries.

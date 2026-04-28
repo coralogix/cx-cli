@@ -16,7 +16,15 @@ Before writing any code, get clarity on the domain:
 
 1. **What Coralogix API are you wrapping?** Find the API docs or example responses. Understand the data model — what entities exist, what fields they have, what operations are supported.
 2. **What should the user be able to do?** List the subcommands (e.g., `list`, `get`, `create`) and what flags make sense.
-3. **Which archetype fits?**
+3. **Does this belong under a wrapper group?** The CLI organizes related commands into wrapper groups. Check if your command fits under an existing group before creating a top-level command:
+   - `cx alerts` — alert definitions + `schedulers`
+   - `cx notifications` — `connectors`, `routers`, `presets`, `test`
+   - `cx webhooks` — outgoing webhooks + `actions`
+   - `cx enrichments` — enrichment rules + `custom` enrichment tables
+   - `cx integrations` — integrations + `extensions`, `contextual-data`
+   - `cx iam` — `api-keys`, `roles`, `scopes`, `users`, `groups`, `saml`, `ip-access`
+   Run `cx schema` to see the full command tree as JSON.
+4. **Which archetype fits?**
 
 | Archetype | When to use | Reference implementation |
 |-----------|------------|--------------------------|
@@ -32,7 +40,7 @@ DataPrime commands delegate to a shared pipeline and require minimal code (~130 
 Before writing any code, read these files to internalize the existing patterns. This step is critical — agents that read existing code first produce implementations that are consistent with the codebase rather than inventing new patterns.
 
 **Always read:**
-- `src/main.rs` — study the `Commands` enum to see how variants are structured, and the `match cli.command` dispatch block to see where your new variant fits. Note which commands early-exit (no credentials needed) vs which go through the full config resolution flow.
+- `src/main.rs` — study the `Commands` enum to see how variants are structured, and the `match cli.command` dispatch block to see where your new variant fits. Note which commands early-exit (no credentials needed) vs which go through the full config resolution flow. Pay attention to **wrapper groups** (e.g., `Notifications`, `Iam`, `Webhooks`, `Integrations`) — these are top-level commands with nested subcommand enums that group related domains. If your command belongs under an existing group, add a new variant to that group's subcommand enum rather than creating a top-level command.
 - `src/commands/mod.rs` — see existing module registrations so you add yours in the right place
 - `docs/adding-a-command.md` — full guide with code templates for both archetypes
 

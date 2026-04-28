@@ -8,7 +8,7 @@ fn custom_enrichments_list() {
     if harness::require_creds("custom_enrichments_list").is_none() {
         return;
     }
-    let v = harness::run_ok_json(&["custom-enrichments", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["enrichments", "custom", "list", "-o", "json"]);
     harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
@@ -25,7 +25,7 @@ fn custom_enrichments_get() {
             return;
         }
     };
-    let v = harness::run_ok_json(&["custom-enrichments", "get", &id, "-o", "json"]);
+    let v = harness::run_ok_json(&["enrichments", "custom", "get", &id, "-o", "json"]);
     harness::assert_get_response(&v, &["id", "name"]);
 }
 
@@ -36,7 +36,7 @@ fn discover_custom_enrichment_id() -> Option<String> {
             if harness::require_creds("custom_enrichments_discover").is_none() {
                 return None;
             }
-            let stdout = harness::run_ok(&["custom-enrichments", "list", "-o", "json"]);
+            let stdout = harness::run_ok(&["enrichments", "custom", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
                 .first()

@@ -19,7 +19,9 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let schema: Value =
         serde_json::from_slice(&output.stdout).expect("schema output is not valid JSON");
 
-    let commands = schema["commands"].as_array().expect("commands should be an array");
+    let commands = schema["commands"]
+        .as_array()
+        .expect("commands should be an array");
     assert_eq!(commands.len(), 26, "expected 26 top-level commands");
 
     let names: Vec<&str> = commands

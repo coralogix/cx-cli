@@ -29,7 +29,7 @@ When multiple profiles are used, each result row includes an additional `"profil
 
 When a single profile is used, no `"profile"` field is added.
 
-Text output adds a `Profile` column to tables for REST commands (alerts, dashboards, metrics, search-fields). DataPrime commands (`logs`, `spans`, `dataprime query`) prefix each rendered row with `[<profile>]`.
+Text output adds a `Profile` column to tables for REST commands (alerts, dashboards, metrics, rules, iam, notifications, etc.). DataPrime commands (`logs`, `spans`, `dataprime query`) prefix each rendered row with `[<profile>]`.
 
 ## Restrictions
 

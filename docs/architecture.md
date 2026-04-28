@@ -26,7 +26,9 @@ CLI parsing ──> Config resolution ──> Target building ──> Fan-out
 
 ### Step details
 
-**1. CLI parsing** -- `main.rs` uses two separate Clap parsers. `ProfilesCli` handles `cx profiles` without global API flags (no credentials needed). `Cli` handles everything else with global `--profile`, `--api-key`, `--region`, and `--output` flags. Commands that don't need credentials (`cleanup`, `dataprime list/show`) are dispatched early before config resolution.
+**1. CLI parsing** -- `main.rs` uses two separate Clap parsers. `ProfilesCli` handles `cx profiles` without global API flags (no credentials needed). `Cli` handles everything else with global `--profile`, `--api-key`, `--region`, and `--output` flags. Commands that don't need credentials (`cleanup`, `dataprime list/show`, `schema`) are dispatched early before config resolution.
+
+The `Cli` struct uses a custom `help_template` with an `after_help` string to display grouped command categories (Query, Observe, Detect & Respond, etc.) instead of Clap's default flat subcommand listing. This provides a curated help experience without relying on `next_help_heading` or `flatten`.
 
 **2. Config resolution** -- `resolve_all()` resolves one or more profile names into `ResolvedConfig` values. Each resolution loads `~/.cx/profiles/<name>.toml`, applies CLI/env overrides, and obtains a bearer token (API key from file/keyring, or OAuth with automatic refresh). Precedence: CLI flags > env vars > profile file > global config defaults.
 
@@ -63,7 +65,7 @@ commands::logs::run()
 
 ### Archetype B: REST-based
 
-**Commands:** `alerts`, `dashboards`, `metrics`, `search-fields`
+**Commands:** `alerts`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `quotas`, `archive`, `slos`, `views`, `incidents`, `e2m`, `recording-rules`
 
 These manage their own fan-out, merge, and render inline. Each subcommand function follows the same shape:
 
@@ -101,6 +103,38 @@ pub async fn run_list(targets, ..., output) -> Result<()> {
 3. CLI definition in `main.rs` and dispatch
 
 **Reference:** `src/commands/dashboards.rs` -- clean example using `render::*` helpers for all three output formats.
+
+### Wrapper enum pattern
+
+Several CLI commands group multiple related domains under a single top-level command. These use a **wrapper enum** in `main.rs` that nests further subcommand enums:
+
+```rust
+// Top-level wrapper in Commands enum
+Iam {
+    #[command(subcommand)]
+    cmd: IamCmd,
+},
+
+// Wrapper enum groups related sub-domains
+#[derive(Subcommand)]
+enum IamCmd {
+    ApiKeys { #[command(subcommand)] cmd: ApiKeysCmd },
+    Roles { #[command(subcommand)] cmd: RolesCmd },
+    Scopes { #[command(subcommand)] cmd: ScopesCmd },
+    Users { #[command(subcommand)] cmd: UsersCmd },
+    Groups { #[command(subcommand)] cmd: GroupsCmd },
+    Saml { #[command(subcommand)] cmd: SamlCmd },
+    IpAccess { #[command(subcommand)] cmd: IpAccessCmd },
+}
+```
+
+This pattern is used by: `notifications` (connectors, routers, presets, test), `webhooks` (list/get/types + actions), `enrichments` (rules + custom), `integrations` (list/get + extensions + contextual-data), and `iam` (api-keys, roles, scopes, users, groups, saml, ip-access).
+
+Each sub-domain still has its own API module (`src/api/<sub_domain>.rs`) and command module (`src/commands/<sub_domain>.rs`). The wrapper only affects CLI wiring and dispatch in `main.rs`.
+
+### Help display
+
+The `Cli` struct uses a custom `help_template` with an `after_help` string to display grouped command categories rather than Clap's default flat subcommand listing. The `after_help` text is a manually maintained string that mirrors the `Commands` enum. When adding a new command, update the `after_help` string to place it in the correct category group.
 
 ## Output rendering
 
@@ -226,7 +260,7 @@ impl<'a> AlertsApi<'a> {
 
 ```
 src/
-├── main.rs              # CLI definition (Clap) + dispatch
+├── main.rs              # CLI definition (Clap) + dispatch + help_template/after_help
 ├── lib.rs               # Module re-exports
 ├── config.rs            # Config/profile loading, resolution, Region enum
 ├── execution.rs         # ExecutionTarget, fan_out(), tag_rows(), merge_tagged_results()
@@ -243,7 +277,8 @@ src/
 │   ├── metrics.rs       # PromQL query APIs
 │   ├── alerts.rs        # Alerts CRUD API
 │   ├── dashboards.rs    # Dashboards API
-│   └── semantic_search.rs  # Semantic field search API
+│   ├── semantic_search.rs  # Semantic field search API
+│   └── ...              # One module per REST domain (incidents, notifications, rules, etc.)
 └── commands/
     ├── dataprime.rs     # Shared DataPrime pipeline + docs subcommands
     ├── logs.rs          # Log query (DataPrime archetype)
@@ -252,6 +287,11 @@ src/
     ├── alerts.rs        # Alert management (REST archetype)
     ├── dashboards.rs    # Dashboard commands (REST archetype)
     ├── search_fields.rs # Semantic search (REST archetype)
+    ├── schema.rs        # cx schema — JSON command tree for agent discovery
     ├── profiles.rs      # Profile management (no API calls)
-    └── cleanup.rs       # Temp file cleanup (no API calls)
+    ├── cleanup.rs       # Temp file cleanup (no API calls)
+    └── ...              # One module per REST domain (incidents, notifications,
+                         #   webhooks, rules, enrichments, integrations, iam,
+                         #   usage, tco, retentions, quotas, archive, slos,
+                         #   views, e2m, recording_rules)
 ```

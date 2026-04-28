@@ -8,7 +8,7 @@ fn contextual_data_list() {
     if harness::require_creds("contextual_data_list").is_none() {
         return;
     }
-    let v = harness::run_ok_json(&["contextual-data", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["integrations", "contextual-data", "list", "-o", "json"]);
     harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
@@ -27,7 +27,7 @@ fn contextual_data_get() {
             return;
         }
     };
-    let v = harness::run_ok_json(&["contextual-data", "get", &id, "-o", "json"]);
+    let v = harness::run_ok_json(&["integrations", "contextual-data", "get", &id, "-o", "json"]);
     harness::assert_get_response(&v, &["id", "name"]);
 }
 
@@ -38,7 +38,8 @@ fn discover_contextual_data_id() -> Option<String> {
             if harness::require_creds("contextual_data_discover").is_none() {
                 return None;
             }
-            let stdout = harness::run_ok(&["contextual-data", "list", "-o", "json"]);
+            let stdout =
+                harness::run_ok(&["integrations", "contextual-data", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
                 .first()

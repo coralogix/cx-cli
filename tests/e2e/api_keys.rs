@@ -8,7 +8,7 @@ fn api_keys_list() {
     if harness::require_creds("api_keys_list").is_none() {
         return;
     }
-    let v = harness::run_ok_json(&["api-keys", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["iam", "api-keys", "list", "-o", "json"]);
     harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
@@ -25,7 +25,7 @@ fn api_keys_get() {
             return;
         }
     };
-    let v = harness::run_ok_json(&["api-keys", "get", &id, "-o", "json"]);
+    let v = harness::run_ok_json(&["iam", "api-keys", "get", &id, "-o", "json"]);
     harness::assert_get_response(&v, &["id", "name"]);
 }
 
@@ -35,7 +35,7 @@ fn api_keys_send_data_keys() {
     if harness::require_creds("api_keys_send_data_keys").is_none() {
         return;
     }
-    let _v = harness::run_ok_json(&["api-keys", "send-data-keys", "-o", "json"]);
+    let _v = harness::run_ok_json(&["iam", "api-keys", "send-data-keys", "-o", "json"]);
 }
 
 fn discover_api_key_id() -> Option<String> {
@@ -45,7 +45,7 @@ fn discover_api_key_id() -> Option<String> {
             if harness::require_creds("api_keys_discover").is_none() {
                 return None;
             }
-            let stdout = harness::run_ok(&["api-keys", "list", "-o", "json"]);
+            let stdout = harness::run_ok(&["iam", "api-keys", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             // The list response may be a flat array with "id" field,
             // or wrapped in a "keys" array with nested "keyInfo.keyId".

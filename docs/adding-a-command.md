@@ -428,6 +428,58 @@ Commands::YourDomain { cmd } => match cmd {
 },
 ```
 
+### Step 6: Update the help display
+
+The `Cli` struct uses a custom `after_help` string (not Clap's `next_help_heading` or `flatten`) to display grouped command categories. After adding a command to the `Commands` enum, add a line for it in the `after_help` string under the appropriate category group:
+
+```rust
+#[command(
+    help_template = "{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
+    after_help = "\
+Query:
+  logs               Query logs using DataPrime syntax
+  ...
+Data Pipeline:
+  rules              Manage log parsing rule groups
+  your-domain        Your domain description        <-- add here
+  ..."
+)]
+```
+
+Place the command in the category that best fits its purpose. See `main.rs` for the full list of categories: Query, Observe, Detect & Respond, Notifications, Data Pipeline, Cost & Storage, Integrations, Access, Agent, Local.
+
+---
+
+## Adding a subcommand to a wrapper command
+
+Some commands group multiple related domains under a single CLI entry point using a **wrapper enum**. Examples: `iam` (api-keys, roles, scopes, users, groups, saml, ip-access), `notifications` (connectors, routers, presets, test), `integrations` (extensions, contextual-data).
+
+If your new functionality belongs under an existing wrapper, you do not create a new top-level command. Instead:
+
+1. **Create your API and command modules** as usual (`src/api/your_sub.rs`, `src/commands/your_sub.rs`)
+2. **Add a variant to the wrapper enum** (e.g., `IamCmd`, `NotificationsCmd`) in `main.rs`:
+
+```rust
+#[derive(Subcommand)]
+enum IamCmd {
+    // ... existing variants ...
+
+    /// Manage your-sub resources.
+    YourSub {
+        #[command(subcommand)]
+        cmd: YourSubCmd,
+    },
+}
+```
+
+3. **Add the leaf subcommand enum** (`YourSubCmd`) with its operations (list, get, etc.)
+4. **Add dispatch** in the existing wrapper's match arm
+5. **Update the wrapper's `after_help`** in the `Commands` enum variant to include the new sub-domain in its examples
+
+The wrapper variant in `Commands` already appears in the top-level `after_help`, so no change is needed there unless the wrapper's description should be updated.
+
+**Reference:** See `IamCmd` in `main.rs` for a wrapper with seven sub-domains, or `NotificationsCmd` for a wrapper with four.
+
 ---
 
 ## Testing

@@ -8,5 +8,5 @@ fn quota_rules_get() {
     }
     // The quota-rules endpoint requires elevated permissions that the test
     // API key may not have. Skip gracefully on auth errors.
-    let _v = harness::run_tolerant_json(&["quota-rules", "get", "-o", "json"], "quota_rules_get");
+    let _v = harness::run_tolerant_json(&["quotas", "get", "-o", "json"], "quota_rules_get");
 }

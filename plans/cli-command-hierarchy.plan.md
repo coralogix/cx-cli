@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | complete |
 | Created | 2026-04-28 |
 | Ticket | N/A |
 | Branch | liranhason/cli-hierarchy |
@@ -284,50 +284,50 @@ Local:
 
 **Key decisions:** Unit/integration tests call `commands::*::run_*()` directly and should still compile unchanged since handler functions weren't modified. Only E2E tests (string-based CLI invocations) need path updates. Test updates and doc updates are independent and can be executed in parallel.
 
-### 4.1 [ ] Update E2E tests for merged commands: alerts, webhooks, enrichments
+### 4.1 [x] Update E2E tests for merged commands: alerts, webhooks, enrichments *(completed 2026-04-28)*
 - **Files:** `tests/e2e/alert_schedulers.rs`, `tests/e2e/actions.rs`, `tests/e2e/custom_enrichments.rs`
 - **What:** Update command path arrays. `&["alert-schedulers", ...]` → `&["alerts", "schedulers", ...]`. `&["actions", ...]` → `&["webhooks", "actions", ...]`. `&["custom-enrichments", ...]` → `&["enrichments", "custom", ...]`.
 - **Acceptance:** E2E tests compile.
 - **Dependencies:** 2.7
 
-### 4.2 [ ] Update E2E tests for `notifications` (connectors, routers, presets, notification-test)
+### 4.2 [x] Update E2E tests for `notifications` (connectors, routers, presets, notification-test) *(completed 2026-04-28)*
 - **Files:** `tests/e2e/connectors.rs`, `tests/e2e/routers.rs`, `tests/e2e/presets.rs`, `tests/e2e/notification_testing.rs`
 - **What:** Prepend `"notifications"` to all command arrays. `&["connectors", ...]` → `&["notifications", "connectors", ...]`. etc.
 - **Acceptance:** E2E tests compile.
 - **Dependencies:** 2.7
 
-### 4.3 [ ] Update E2E tests for `integrations` (extensions, contextual-data)
+### 4.3 [x] Update E2E tests for `integrations` (extensions, contextual-data) *(completed 2026-04-28)*
 - **Files:** `tests/e2e/extensions.rs`, `tests/e2e/contextual_data.rs`
 - **What:** Prepend `"integrations"` to command arrays. `&["extensions", ...]` → `&["integrations", "extensions", ...]`. `&["contextual-data", ...]` → `&["integrations", "contextual-data", ...]`.
 - **Acceptance:** E2E tests compile.
 - **Dependencies:** 2.7
 
-### 4.4 [ ] Update E2E tests for `iam` (api-keys, roles, scopes, users, team-groups, saml, ip-access)
+### 4.4 [x] Update E2E tests for `iam` (api-keys, roles, scopes, users, team-groups, saml, ip-access) *(completed 2026-04-28)*
 - **Files:** `tests/e2e/api_keys.rs`, `tests/e2e/roles.rs`, `tests/e2e/scopes.rs`, `tests/e2e/users.rs`, `tests/e2e/team_groups.rs`, `tests/e2e/saml.rs`, `tests/e2e/ip_access.rs`
 - **What:** Prepend `"iam"` to command arrays. `&["api-keys", ...]` → `&["iam", "api-keys", ...]`. `&["team-groups", ...]` → `&["iam", "groups", ...]` (note: also renamed to `groups`).
 - **Acceptance:** E2E tests compile.
 - **Dependencies:** 2.7
 
-### 4.5 [ ] Update E2E tests for renamed commands
+### 4.5 [x] Update E2E tests for renamed commands *(completed 2026-04-28)*
 - **Files:** `tests/e2e/rule_groups.rs`, `tests/e2e/tco_policies.rs`, `tests/e2e/quota_rules.rs`, `tests/e2e/data_usage.rs`, `tests/e2e/data_archive.rs`
 - **What:** Update command names in arrays. `&["rule-groups", ...]` → `&["rules", ...]`. `&["tco-policies", ...]` → `&["tco", ...]`. `&["quota-rules", ...]` → `&["quotas", ...]`. `&["data-usage", ...]` → `&["usage", ...]`. `&["data-archive", ...]` → `&["archive", ...]`.
 - **Acceptance:** E2E tests compile.
 - **Dependencies:** 2.7
 
-### 4.6 [ ] Update skills
+### 4.6 [x] Update skills *(completed 2026-04-28)*
 - **Files:** `skills/cx-alerts/SKILL.md`, `skills/*/SKILL.md`, `.claude/skills/add-command/SKILL.md`, `.claude/skills/add-skill/SKILL.md`
 - **What:** Update all references to old command paths. Key changes: `cx alert-schedulers` → `cx alerts schedulers` in the cx-alerts skill. Search all other skill files for references to removed/renamed commands. The `add-command` skill should be updated to explain how to add a command under an existing wrapper (e.g., adding to `iam`) vs. at the top level, and how to add to a flatten-group for help-text headings.
 - **Acceptance:** `grep -r "cx alert-schedulers\|cx connectors\|cx routers\|cx presets\|cx notification-test\|cx actions\|cx custom-enrichments\|cx rule-groups\|cx tco-policies\|cx quota-rules\|cx data-usage\|cx data-archive\|cx extensions\|cx contextual-data\|cx api-keys\b\|cx roles\b\|cx scopes\b\|cx users\b\|cx team-groups\|cx saml\b\|cx ip-access" skills/ .claude/skills/` returns no matches.
 - **Acceptance:** Skill files have no stale command paths.
 - **Dependencies:** 2.7
 
-### 4.7 [ ] Update CLAUDE.md and docs/
+### 4.7 [x] Update CLAUDE.md and docs/ *(completed 2026-04-28)*
 - **Files:** `CLAUDE.md`, `docs/architecture.md`, `docs/adding-a-command.md`, `docs/adding-a-skill.md`, `docs/development.md`, `docs/configuration.md`, `docs/agents-output.md`
 - **What:** Add a "Command Hierarchy" section to CLAUDE.md showing the new structure (headings + commands). Update the architecture section to explain the flatten-group and wrapper enum patterns. Update the "Skill Coverage" table. Update example commands throughout. Mention `cx schema` as an agent discovery tool. In docs/: search all files for old command paths and update. Update `adding-a-command.md` to explain how to add a command to a wrapper (e.g., `iam`) vs. top-level vs. flatten-group. Add `cx schema` to `agents-output.md`.
 - **Acceptance:** `grep` for old flat paths returns no hits in CLAUDE.md or docs/. CLAUDE.md accurately describes the CLI structure.
 - **Dependencies:** 3.1
 
-### 4.8 [ ] Verify all tests pass and final install
+### 4.8 [x] Verify all tests pass and final install *(completed 2026-04-28)*
 - **Files:** N/A
 - **What:** Run `cargo fmt`, `cargo clippy`, `cargo test` (this includes the schema test from 3.2). Verify zero failures. Run `cargo install --path .`. Run `cx --help`, `cx alerts --help`, `cx iam --help`, `cx notifications --help`, `cx schema | jq .` to verify everything works. Visually confirm the `--help` output matches the target.
 - **Acceptance:** All checks pass. `cx --help` output matches the plan. `cx schema` outputs valid JSON with all 26 commands.

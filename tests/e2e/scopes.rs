@@ -8,7 +8,7 @@ fn scopes_list() {
     if harness::require_creds("scopes_list").is_none() {
         return;
     }
-    let v = harness::run_ok_json(&["scopes", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["iam", "scopes", "list", "-o", "json"]);
     harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
@@ -25,7 +25,7 @@ fn scopes_get() {
             return;
         }
     };
-    let v = harness::run_ok_json(&["scopes", "get", &id, "-o", "json"]);
+    let v = harness::run_ok_json(&["iam", "scopes", "get", &id, "-o", "json"]);
     harness::assert_get_response(&v, &["id"]);
 }
 
@@ -36,7 +36,7 @@ fn discover_scope_id() -> Option<String> {
             if harness::require_creds("scopes_discover").is_none() {
                 return None;
             }
-            let stdout = harness::run_ok(&["scopes", "list", "-o", "json"]);
+            let stdout = harness::run_ok(&["iam", "scopes", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
                 .first()

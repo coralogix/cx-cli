@@ -8,7 +8,7 @@ fn roles_list() {
     if harness::require_creds("roles_list").is_none() {
         return;
     }
-    let v = harness::run_ok_json(&["roles", "list", "-o", "json"]);
+    let v = harness::run_ok_json(&["iam", "roles", "list", "-o", "json"]);
     harness::assert_nonempty_array_of_objects_with_keys(&v, &["role_id", "name"]);
 }
 
@@ -25,7 +25,7 @@ fn roles_get() {
             return;
         }
     };
-    let v = harness::run_ok_json(&["roles", "get", &id, "-o", "json"]);
+    let v = harness::run_ok_json(&["iam", "roles", "get", &id, "-o", "json"]);
     harness::assert_get_response(&v, &["role_id", "name"]);
 }
 
@@ -35,7 +35,7 @@ fn roles_system() {
     if harness::require_creds("roles_system").is_none() {
         return;
     }
-    let v = harness::run_ok_json(&["roles", "system", "-o", "json"]);
+    let v = harness::run_ok_json(&["iam", "roles", "system", "-o", "json"]);
     harness::assert_nonempty_array_of_objects_with_keys(&v, &["role_id", "name"]);
 }
 
@@ -46,7 +46,7 @@ fn discover_role_id() -> Option<String> {
             if harness::require_creds("roles_discover").is_none() {
                 return None;
             }
-            let stdout = harness::run_ok(&["roles", "list", "-o", "json"]);
+            let stdout = harness::run_ok(&["iam", "roles", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             // Try flat array with "role_id"
             if let Some(arr) = v.as_array() {

@@ -15,7 +15,7 @@ pub fn build_schema(cmd: &Command) -> Value {
         "version": version,
         "commands": cmd.get_subcommands()
             .filter(|sub| !sub.is_hide_set() && sub.get_name() != "help")
-            .map(|sub| build_command(sub))
+            .map(build_command)
             .collect::<Vec<_>>()
     })
 }
@@ -24,7 +24,7 @@ fn build_command(cmd: &Command) -> Value {
     let subcommands: Vec<Value> = cmd
         .get_subcommands()
         .filter(|sub| !sub.is_hide_set() && sub.get_name() != "help")
-        .map(|sub| build_command(sub))
+        .map(build_command)
         .collect();
 
     let arguments: Vec<Value> = cmd

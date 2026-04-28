@@ -15,7 +15,7 @@ pub enum SearchFieldsDataset {
     Spans,
 }
 
-/// Coralogix CLI — query observability data from the terminal.
+/// Coralogix CLI — the observability backbone for AI agents and engineering teams.
 #[derive(Parser)]
 #[command(
     name = "cx",
@@ -97,7 +97,7 @@ struct Cli {
 #[command(
     name = "cx",
     version,
-    about = "Coralogix CLI — query observability data from the terminal."
+    about = "Coralogix CLI — the observability backbone for AI agents and engineering teams."
 )]
 struct ProfilesCli {
     #[command(subcommand)]

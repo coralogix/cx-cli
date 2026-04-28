@@ -2,7 +2,7 @@
 name = "cx"
 version = "0.1.0"
 edition = "2021"
-description = "Coralogix CLI — query observability data from the command line"
+description = "Coralogix CLI — the observability backbone for AI agents and engineering teams."
 repository = "https://github.com/coralogix/cx-cli"
 license = "Apache-2.0"
 default-run = "cx"

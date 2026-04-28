@@ -201,22 +201,10 @@ Examples:
         cmd: DashboardsCmd,
     },
 
-    /// Manage alerts.
+    /// Manage alert definitions and schedulers.
     Alerts {
         #[command(subcommand)]
         cmd: AlertsCmd,
-    },
-
-    /// Manage alert scheduler (suppression) rules.
-    #[command(after_help = "\
-Examples:
-  cx alert-schedulers list
-  cx alert-schedulers get <rule-id>
-  cx alert-schedulers create --from-file rule.json
-  cx alert-schedulers delete <rule-id>")]
-    AlertSchedulers {
-        #[command(subcommand)]
-        cmd: AlertSchedulersCmd,
     },
 
     /// Manage and triage incidents.
@@ -843,6 +831,17 @@ Examples:
     },
     /// Get alert event statistics.
     EventStats,
+    /// Manage alert scheduler (suppression) rules.
+    #[command(after_help = "\
+Examples:
+  cx alerts schedulers list
+  cx alerts schedulers get <rule-id>
+  cx alerts schedulers create --from-file rule.json
+  cx alerts schedulers delete <rule-id>")]
+    Schedulers {
+        #[command(subcommand)]
+        cmd: AlertSchedulersCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -931,8 +930,8 @@ enum AlertSchedulersCmd {
     /// Create an alert scheduler rule from a JSON definition file.
     #[command(after_help = "\
 Examples:
-  cx alert-schedulers create --from-file rule.json
-  cat rule.json | cx alert-schedulers create")]
+  cx alerts schedulers create --from-file rule.json
+  cat rule.json | cx alerts schedulers create")]
     Create {
         /// Path to JSON file with the rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -2166,24 +2165,23 @@ async fn main() -> Result<()> {
             AlertsCmd::EventStats => {
                 commands::alerts::run_event_stats(&targets, output).await?;
             }
-        },
-
-        Commands::AlertSchedulers { cmd } => match cmd {
-            AlertSchedulersCmd::List => {
-                commands::alert_schedulers::run_list(&targets, output).await?;
-            }
-            AlertSchedulersCmd::Get { id } => {
-                commands::alert_schedulers::run_get(&targets, &id, output).await?;
-            }
-            AlertSchedulersCmd::Create { from_file } => {
-                commands::alert_schedulers::run_create(&targets, &from_file, output).await?;
-            }
-            AlertSchedulersCmd::Update { from_file } => {
-                commands::alert_schedulers::run_update(&targets, &from_file, output).await?;
-            }
-            AlertSchedulersCmd::Delete { id } => {
-                commands::alert_schedulers::run_delete(&targets, &id).await?;
-            }
+            AlertsCmd::Schedulers { cmd } => match cmd {
+                AlertSchedulersCmd::List => {
+                    commands::alert_schedulers::run_list(&targets, output).await?;
+                }
+                AlertSchedulersCmd::Get { id } => {
+                    commands::alert_schedulers::run_get(&targets, &id, output).await?;
+                }
+                AlertSchedulersCmd::Create { from_file } => {
+                    commands::alert_schedulers::run_create(&targets, &from_file, output).await?;
+                }
+                AlertSchedulersCmd::Update { from_file } => {
+                    commands::alert_schedulers::run_update(&targets, &from_file, output).await?;
+                }
+                AlertSchedulersCmd::Delete { id } => {
+                    commands::alert_schedulers::run_delete(&targets, &id).await?;
+                }
+            },
         },
 
         Commands::Incidents { cmd } => match cmd {

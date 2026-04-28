@@ -170,7 +170,7 @@ Local:
 
 **Important: each M2 task modifies `main.rs` heavily.** Tasks 2.1–2.6 are independent of each other but all edit the same file. The implementing agent must **read the current state of `main.rs` at the start of each task** — do not rely on line numbers or code snippets from the plan. After each merge, variants move between group enums (from the flatten pattern in M1), so the dispatch match structure will look different than when the plan was written.
 
-### 2.1 [ ] Merge `alert-schedulers` into `alerts`
+### 2.1 [x] Merge `alert-schedulers` into `alerts` *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** Add a `Schedulers` variant to `AlertsCmd` (or create a new wrapper `NewAlertsCmd` enum with the existing alert subcommands + `Schedulers { cmd: AlertSchedulersCmd }`). Remove the `AlertSchedulers` variant from `Commands`. Rewire the dispatch: `Commands::Alerts { cmd } => match cmd { ... NewAlertsCmd::Schedulers { cmd } => match cmd { AlertSchedulersCmd::* => commands::alert_schedulers::run_*(...) } }`. Update `after_help` examples.
 - **Acceptance:** `cx alerts list` works. `cx alerts schedulers list` works. `cx alert-schedulers` no longer exists. `cargo build` succeeds.

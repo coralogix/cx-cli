@@ -687,11 +687,11 @@ cx -p prod -p staging your-domain list
 
 ## User-facing skill (required)
 
-Every command must have a corresponding skill in `skills/`. Skills teach AI agents how to use your command effectively — including CLI syntax, workflows, and behavioral guidelines.
+Every command must be covered by a skill in `skills/`. This can be a dedicated skill for the command, or a workflow skill that covers multiple related commands (e.g., `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx quotas`, `cx retentions`, and `cx archive`). Check the existing workflow skills before creating a new one — your command may already be covered.
 
-See **[Adding a Skill](adding-a-skill.md)** for the complete guide covering directory structure, frontmatter conventions, trigger phrases, reference files, and a copy-pasteable template.
+See **[Adding a Skill](adding-a-skill.md)** for the complete guide covering directory structure, frontmatter conventions, trigger phrases, reference files, and templates for both single-command and workflow skills.
 
-**Reference:** `skills/cx-alerts/SKILL.md` and `skills/metrics-query/SKILL.md` — full examples.
+**Reference:** `skills/cx-alerts/SKILL.md` (single-command) and `skills/cx-cost-optimization/SKILL.md` (workflow skill) — full examples.
 
 ---
 
@@ -727,7 +727,8 @@ Copy this into your PR description:
 - [ ] **E2E:** local `discover_*` fn added to `tests/e2e/<your_domain>.rs` if a subcommand needs an ID/name from the test team
 
 ### User-facing skill
-- [ ] `skills/your-domain/SKILL.md` — created with frontmatter, command table, workflow, examples
+- [ ] Command is covered by a skill in `skills/` (new or existing workflow skill)
+- [ ] `scripts/verify-skills.sh` — all skills pass
 
 ### Verification
 - [ ] `cargo build` succeeds

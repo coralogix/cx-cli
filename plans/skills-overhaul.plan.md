@@ -327,7 +327,7 @@ Currently, `telemetry-querying` only routes to investigation skills (logs, spans
 
 Currently there is no automated way to verify skill correctness, and `skills/README.md` lists 8 skills. After this milestone, a verification script catches broken command references and cross-links, trigger phrases are reviewed against 15 common user questions, and the README lists all 13 skills.
 
-### 7.1 [ ] Create skill verification script and run it
+### 7.1 [x] Create skill verification script and run it *(completed 2026-04-29)*
 
 - **Files:** `scripts/verify-skills.sh` (new)
 - **What:** Write a bash script that verifies all skills in `skills/`:

@@ -110,7 +110,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx metrics search --description <text>` | Semantic metric search | When you know what you want but not the name |
 | `cx search-fields "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |
 | `cx search-fields "<text>" --dataset spans` | Find span fields by description | Discovery for trace-based questions |
-| `cx traces search <service>` | Search traces by service | When investigating a specific service |
+| `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log queries |
 
 ---
@@ -136,7 +136,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 **Approach:**
 1. First try metrics: `cx metrics search --name '*checkout*latency*'` or `cx metrics search --name '*http*duration*'`
 2. If a histogram metric exists, use `metrics-query` skill with `histogram_quantile`
-3. If no metric, fall back to traces: `cx traces search checkout-service` and aggregate span durations
+3. If no metric, fall back to traces: `cx spans "filter $l.serviceName == 'checkout-service'" --limit 10` and aggregate span durations
 
 ### Example 3: Frontend Performance (RUM)
 
@@ -154,7 +154,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 **Approach:**
 1. Check error rate metrics: `cx metrics search --name '*error*'` → `metrics-query` skill
 2. Search for error logs: `cx search-fields "error message" --dataset logs` → `query-logs` skill
-3. Get traces for failed requests: `cx traces search payment-service` → `query-spans` skill
+3. Get traces for failed requests: `cx spans "filter $l.serviceName == 'payment-service'" --limit 10` → `query-spans` skill
 4. Cross-reference: find trace IDs in logs, then fetch full traces for root cause
 
 ---

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | draft |
+| Status | in-progress |
 | Created | 2026-04-28 |
 | Ticket | N/A |
 | Branch | liranhason/implement-all |
@@ -105,7 +105,7 @@ graph TD
 | `cx quotas` | `get`, `create`, `update`, `delete` | Step 4: Set ingestion guardrails |
 | `cx archive` | `logs get/set`, `metrics get/create/update/enable/disable/validate` | Step 5: Configure cold storage |
 
-### 1.1 [ ] Create cost-optimization skill directory and SKILL.md
+### 1.1 [x] Create cost-optimization skill directory and SKILL.md *(completed 2026-04-29)*
 
 - **Files:** `skills/cost-optimization/SKILL.md`
 - **What:** Create the skill directory and SKILL.md. The frontmatter description must include 15+ trigger phrases covering: explicit command names ("check data usage", "list TCO policies", "view quotas"), user intents ("reduce Coralogix costs", "optimize observability spend", "lower our logging bill", "data budget exceeded"), and domain jargon ("TCO policy", "retention tier", "archive storage", "ingestion costs", "frequent search vs archive"). The body must include:

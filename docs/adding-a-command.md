@@ -495,8 +495,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::your_domain::run_list;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::your_domain::run_list;
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn list_returns_items_from_mock() {

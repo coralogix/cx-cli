@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::metrics::{run_get_labels, run_query, run_query_range, run_search};
-use cx::config::OutputFormat;
+use coralogix_cli::commands::metrics::{run_get_labels, run_query, run_query_range, run_search};
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn instant_query_returns_samples() {

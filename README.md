@@ -44,7 +44,7 @@ brew install coralogix/tap/cx
 ### Cargo
 
 ```bash
-cargo install cx
+cargo install coralogix-cli
 ```
 
 ### Pre-built binaries

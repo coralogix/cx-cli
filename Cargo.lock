@@ -352,6 +352,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "coralogix-cli"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "base64",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "colored",
+ "dirs",
+ "dotenvy",
+ "futures",
+ "humantime",
+ "indicatif",
+ "inquire",
+ "keyring",
+ "open",
+ "rand",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tabled",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "toon-format",
+ "url",
+ "wiremock",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -420,41 +455,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77727bb15fa921304124b128af125e7e3b968275d1b108b379190264f4423710"
 dependencies = [
  "hybrid-array",
-]
-
-[[package]]
-name = "cx"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "base64",
- "chrono",
- "clap",
- "clap_complete",
- "colored",
- "dirs",
- "dotenvy",
- "futures",
- "humantime",
- "indicatif",
- "inquire",
- "keyring",
- "open",
- "rand",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "tabled",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "toon-format",
- "url",
- "wiremock",
 ]
 
 [[package]]

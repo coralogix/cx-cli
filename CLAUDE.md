@@ -154,32 +154,32 @@ Which CLI commands have user-facing skills in `skills/`:
 
 | CLI Command | User-Facing Skill | Status |
 |-------------|-------------------|--------|
-| `cx logs` | `query-logs` | Covered |
-| `cx spans` | `query-spans` | Covered |
-| `cx metrics` | `metrics-query` | Covered |
+| `cx logs` | `cx-query-logs` | Covered |
+| `cx spans` | `cx-query-spans` | Covered |
+| `cx metrics` | `cx-metrics-query` | Covered |
 | `cx alerts` | `cx-alerts` | Covered |
-| `cx dataprime` | `dataprime` | Covered |
-| `cx logs` (RUM) | `rum` | Covered |
-| _(cross-signal)_ | `telemetry-querying` | Gateway skill |
-| `cx dashboards` | `create-dashboard` | Covered |
-| `cx search-fields` | `telemetry-querying` | Covered (via gateway) |
-| `cx usage` | `cost-optimization` | Covered |
-| `cx tco` | `cost-optimization` | Covered |
-| `cx retentions` | `cost-optimization` | Covered |
-| `cx quotas` | `cost-optimization` | Covered |
-| `cx archive` | `cost-optimization` | Covered |
-| `cx incidents` | `incident-management` | Covered |
-| `cx slos` | `incident-management` | Covered |
-| `cx rules` | `data-pipeline` | Covered |
-| `cx enrichments` | `data-pipeline` | Covered |
-| `cx e2m` | `data-pipeline` | Covered |
-| `cx recording-rules` | `data-pipeline` | Covered |
-| `cx iam` | `platform-admin` | Covered |
-| `cx views` | `observability-setup` | Covered |
-| `cx webhooks` | `observability-setup` | Covered |
-| `cx notifications` | `observability-setup` | Covered |
-| `cx integrations` | `observability-setup` | Covered |
-| `cx schema` | `telemetry-querying` | Covered (via gateway) |
+| `cx dataprime` | `cx-dataprime` | Covered |
+| `cx logs` (RUM) | `cx-rum` | Covered |
+| _(cross-signal)_ | `cx-telemetry-querying` | Gateway skill |
+| `cx dashboards` | `cx-create-dashboard` | Covered |
+| `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
+| `cx usage` | `cx-cost-optimization` | Covered |
+| `cx tco` | `cx-cost-optimization` | Covered |
+| `cx retentions` | `cx-cost-optimization` | Covered |
+| `cx quotas` | `cx-cost-optimization` | Covered |
+| `cx archive` | `cx-cost-optimization` | Covered |
+| `cx incidents` | `cx-incident-management` | Covered |
+| `cx slos` | `cx-incident-management` | Covered |
+| `cx rules` | `cx-data-pipeline` | Covered |
+| `cx enrichments` | `cx-data-pipeline` | Covered |
+| `cx e2m` | `cx-data-pipeline` | Covered |
+| `cx recording-rules` | `cx-data-pipeline` | Covered |
+| `cx iam` | `cx-platform-admin` | Covered |
+| `cx views` | `cx-observability-setup` | Covered |
+| `cx webhooks` | `cx-observability-setup` | Covered |
+| `cx notifications` | `cx-observability-setup` | Covered |
+| `cx integrations` | `cx-observability-setup` | Covered |
+| `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx profiles` | — | Local command |
 | `cx cleanup` | — | Local command |
 

@@ -1,5 +1,5 @@
 ---
-name: query-logs
+name: cx-query-logs
 description: |
   Query and analyze Coralogix logs using DataPrime syntax. Use this skill whenever the user wants to
   search logs, find errors, investigate log data, debug application issues, check error logs, find
@@ -159,7 +159,7 @@ If a query returns no results, change **one thing at a time**:
 
 ## References
 
-- **`dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
+- **`cx-dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
 - **[Advanced Usage](references/advanced-usage.md)** — Investigation workflows, common query patterns, performance tips, production debugging
 
 For inline DataPrime help:
@@ -173,7 +173,7 @@ cx dataprime show filter           # Detailed help for a specific command
 
 ## Related Skills
 
-- **`metrics-query`** — Aggregated counters, gauges, and histograms (PromQL)
-- **`query-spans`** — Distributed traces and service latency (DataPrime)
-- **`telemetry-querying`** — Gateway skill for choosing the right data source
+- **`cx-metrics-query`** — Aggregated counters, gauges, and histograms (PromQL)
+- **`cx-query-spans`** — Distributed traces and service latency (DataPrime)
+- **`cx-telemetry-querying`** — Gateway skill for choosing the right data source
 - **`cx-alerts`** — Create and manage alerts based on log patterns

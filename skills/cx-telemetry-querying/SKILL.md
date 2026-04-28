@@ -1,5 +1,5 @@
 ---
-name: telemetry-querying
+name: cx-telemetry-querying
 description: This skill should be used when the user asks to "investigate an issue", "debug a problem", "find out why something is slow", "check error rates", "analyze user behavior", "understand a production incident", "query telemetry data", "look at logs", "check traces", "examine spans", "analyze RUM data", "check frontend performance", "investigate backend latency", "find transaction data", "check payment metrics", "analyze user journeys", or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM — this is the gateway skill for deciding where to look first.
 version: 0.1.0
 ---
@@ -46,7 +46,7 @@ cx metrics search --name '*revenue*'
 cx metrics search --description "total purchase amount"
 ```
 
-If a matching metric is found, continue with the `metrics-query` skill.
+If a matching metric is found, continue with the `cx-metrics-query` skill.
 
 ### Step 2: Search Log and Span Fields
 
@@ -61,8 +61,8 @@ cx search-fields "purchase value" --dataset logs --limit 10
 **Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add`.
 
 If matching fields are found:
-- For **logs**: continue with the `query-logs` skill using DataPrime
-- For **spans**: continue with the `query-spans` skill
+- For **logs**: continue with the `cx-query-logs` skill using DataPrime
+- For **spans**: continue with the `cx-query-spans` skill
 
 ### Step 3: Search the Codebase
 
@@ -80,10 +80,10 @@ Based on discovery results, pick the pillar with the clearest signal and delegat
 
 | Pillar | Skill to Use |
 |---|---|
-| Metrics | `metrics-query` |
-| Logs | `query-logs` |
-| Traces/Spans | `query-spans` |
-| RUM | `rum` |
+| Metrics | `cx-metrics-query` |
+| Logs | `cx-query-logs` |
+| Traces/Spans | `cx-query-spans` |
+| RUM | `cx-rum` |
 | APM | APM-specific guidance |
 
 ---
@@ -125,9 +125,9 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 1. Search metrics: `cx metrics search --name '*revenue*'` and `cx metrics search --name '*transaction*'`
 2. Search log fields: `cx search-fields "transaction amount" --dataset logs`
 3. Search span fields: `cx search-fields "payment total" --dataset spans`
-4. If a metric like `payment_total_usd` exists, use `metrics-query` skill with a range query
-5. If only logs have the data, use `query-logs` skill with DataPrime aggregation
-6. If traces have `purchase.amount` attribute, use `query-spans` skill
+4. If a metric like `payment_total_usd` exists, use `cx-metrics-query` skill with a range query
+5. If only logs have the data, use `cx-query-logs` skill with DataPrime aggregation
+6. If traces have `purchase.amount` attribute, use `cx-query-spans` skill
 
 ### Example 2: Latency Question (Clear First Choice)
 
@@ -135,7 +135,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 **Approach:**
 1. First try metrics: `cx metrics search --name '*checkout*latency*'` or `cx metrics search --name '*http*duration*'`
-2. If a histogram metric exists, use `metrics-query` skill with `histogram_quantile`
+2. If a histogram metric exists, use `cx-metrics-query` skill with `histogram_quantile`
 3. If no metric, fall back to traces: `cx spans "filter $l.serviceName == 'checkout-service'" --limit 10` and aggregate span durations
 
 ### Example 3: Frontend Performance (RUM)
@@ -144,17 +144,17 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 **Approach:**
 1. This is clearly a RUM question — frontend page load data
-2. Use `rum` skill directly
-3. If RUM shows backend calls are slow, pivot to `query-spans` for the API calls
+2. Use `cx-rum` skill directly
+3. If RUM shows backend calls are slow, pivot to `cx-query-spans` for the API calls
 
 ### Example 4: Error Investigation (Logs + Traces)
 
 **Question:** "Why are users getting 500 errors on the payment endpoint?"
 
 **Approach:**
-1. Check error rate metrics: `cx metrics search --name '*error*'` → `metrics-query` skill
-2. Search for error logs: `cx search-fields "error message" --dataset logs` → `query-logs` skill
-3. Get traces for failed requests: `cx spans "filter $l.serviceName == 'payment-service'" --limit 10` → `query-spans` skill
+1. Check error rate metrics: `cx metrics search --name '*error*'` → `cx-metrics-query` skill
+2. Search for error logs: `cx search-fields "error message" --dataset logs` → `cx-query-logs` skill
+3. Get traces for failed requests: `cx spans "filter $l.serviceName == 'payment-service'" --limit 10` → `cx-query-spans` skill
 4. Cross-reference: find trace IDs in logs, then fetch full traces for root cause
 
 ---
@@ -165,12 +165,12 @@ Not every question is answered by querying data. If the user's intent is operati
 
 | User Intent | Route To |
 |---|---|
-| Reducing costs, checking usage, TCO policies | `cost-optimization` |
-| Incident triage, SLO breaching, who got paged | `incident-management` |
-| Setting up monitoring, webhooks, notifications | `observability-setup` |
-| Configuring parsing rules, enrichments, E2M | `data-pipeline` |
-| Access audit, API keys, user management | `platform-admin` |
-| Creating or managing dashboards | `create-dashboard` |
+| Reducing costs, checking usage, TCO policies | `cx-cost-optimization` |
+| Incident triage, SLO breaching, who got paged | `cx-incident-management` |
+| Setting up monitoring, webhooks, notifications | `cx-observability-setup` |
+| Configuring parsing rules, enrichments, E2M | `cx-data-pipeline` |
+| Access audit, API keys, user management | `cx-platform-admin` |
+| Creating or managing dashboards | `cx-create-dashboard` |
 
 ---
 
@@ -187,17 +187,17 @@ Not every question is answered by querying data. If the user's intent is operati
 ## Related Skills
 
 ### Investigation Skills
-- **`dataprime`** — DataPrime query language reference (syntax, operators, aggregations, functions)
-- **`metrics-query`** — PromQL queries, metric discovery, instant and range queries
-- **`query-logs`** — DataPrime log queries, log field exploration
-- **`query-spans`** — Trace search, span analysis, distributed tracing
-- **`rum`** — Frontend performance, user sessions, page loads
+- **`cx-dataprime`** — DataPrime query language reference (syntax, operators, aggregations, functions)
+- **`cx-metrics-query`** — PromQL queries, metric discovery, instant and range queries
+- **`cx-query-logs`** — DataPrime log queries, log field exploration
+- **`cx-query-spans`** — Trace search, span analysis, distributed tracing
+- **`cx-rum`** — Frontend performance, user sessions, page loads
 - **`cx-alerts`** — Creating and managing alert definitions
-- **`create-dashboard`** — Dashboard creation and management
+- **`cx-create-dashboard`** — Dashboard creation and management
 
 ### Workflow Skills
-- **`cost-optimization`** — Analyze and reduce Coralogix data costs
-- **`incident-management`** — Incident triage, SLO monitoring, notification verification
-- **`data-pipeline`** — Parsing rules, enrichments, E2M, recording rules
-- **`platform-admin`** — Access audit, API keys, user and role management
-- **`observability-setup`** — Views, webhooks, notifications, integrations setup
+- **`cx-cost-optimization`** — Analyze and reduce Coralogix data costs
+- **`cx-incident-management`** — Incident triage, SLO monitoring, notification verification
+- **`cx-data-pipeline`** — Parsing rules, enrichments, E2M, recording rules
+- **`cx-platform-admin`** — Access audit, API keys, user and role management
+- **`cx-observability-setup`** — Views, webhooks, notifications, integrations setup

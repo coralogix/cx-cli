@@ -1,5 +1,5 @@
 ---
-name: metrics-query
+name: cx-metrics-query
 description: This skill should be used when the user asks to "query metrics", "investigate a metrics issue", "check CPU usage", "find slow services", "investigate production issues using metrics", "search for metrics", "search metric names", "run a PromQL query", "check error rate", "check latency", "look up a metric", "analyze system load", "check memory usage", "investigate infrastructure issues", "analyze custom metrics", "check node health", "investigate disk usage", or wants to explore Coralogix metrics data — including application, infrastructure, and custom metrics — using the cx CLI.
 version: 0.1.0
 ---

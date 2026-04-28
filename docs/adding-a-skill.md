@@ -63,11 +63,11 @@ Use `references/` for dense reference material that would bloat `SKILL.md` but t
 | Skill | Reference file | Content |
 |-------|---------------|---------|
 | `cx-alerts` | `alert-schemas.md` | JSON schemas for all 12 alert types, enum values |
-| `metrics-query` | `promql-guidelines.md` | PromQL value types, counter vs gauge, histogram patterns |
-| `dataprime` | `dataprime-reference.md` | Complete DataPrime language reference |
-| `query-logs` | `advanced-usage.md` | Investigation workflow, field discovery, advanced queries |
-| `query-spans` | `advanced-usage.md` | Span-specific investigation patterns |
-| `rum` | `rum-fields.md` | Complete RUM field catalog by event type |
+| `cx-metrics-query` | `promql-guidelines.md` | PromQL value types, counter vs gauge, histogram patterns |
+| `cx-dataprime` | `dataprime-reference.md` | Complete DataPrime language reference |
+| `cx-query-logs` | `advanced-usage.md` | Investigation workflow, field discovery, advanced queries |
+| `cx-query-spans` | `advanced-usage.md` | Span-specific investigation patterns |
+| `cx-rum` | `rum-fields.md` | Complete RUM field catalog by event type |
 
 ### Naming and linking
 

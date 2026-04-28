@@ -5,8 +5,8 @@ Copy these templates when generating a dashboard. **Always replace every UUID** 
 For query-language rules:
 
 - Dashboard-specific gotchas (`${__range}`, `promqlQueryType`, widget filters): [`query-syntax.md`](query-syntax.md).
-- Full DataPrime syntax: `dataprime` skill → `skills/dataprime/references/dataprime-reference.md`.
-- Full PromQL reference: `metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`.
+- Full DataPrime syntax: `cx-dataprime` skill → `skills/dataprime/references/dataprime-reference.md`.
+- Full PromQL reference: `cx-metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`.
 
 > A "stat" widget in Coralogix docs is actually emitted as `gauge` in the JSON. There is no separate stat type.
 

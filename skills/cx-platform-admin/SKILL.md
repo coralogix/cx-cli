@@ -1,5 +1,5 @@
 ---
-name: platform-admin
+name: cx-platform-admin
 description: >
   Use this skill when the user asks "who has access", "audit permissions",
   "check user roles", "list API keys", "review access controls",
@@ -189,4 +189,4 @@ Safe key rotation workflow:
 
 ## Related Skills
 
-- **`cost-optimization`** — review what API keys are used for and whether they're still needed
+- **`cx-cost-optimization`** — review what API keys are used for and whether they're still needed

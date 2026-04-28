@@ -1,5 +1,5 @@
 ---
-name: rum
+name: cx-rum
 description: |
   Query and analyze Coralogix Real User Monitoring (RUM) data. Use this skill when the user asks about
   frontend errors, page load times, web vitals, user interactions, browser errors, mobile crashes,
@@ -22,7 +22,7 @@ This means:
 - **User data (`$d.cx_rum.*`)** contains all RUM-specific fields — event types, errors, sessions, web vitals, interactions, and more. See the **[RUM Fields Reference](references/rum-fields.md)** for the complete field catalog.
 - **Session replay and session flows are not available** — only individual RUM log events can be queried.
 
-For general log querying concepts and field discovery, see the **`query-logs`** skill. For DataPrime query language syntax, see the **`dataprime`** skill.
+For general log querying concepts and field discovery, see the **`cx-query-logs`** skill. For DataPrime query language syntax, see the **`cx-dataprime`** skill.
 
 ---
 
@@ -189,8 +189,8 @@ If a query returns no results, change **one thing at a time**:
 ## References
 
 - **[RUM Fields Reference](references/rum-fields.md)** — Complete field reference for all RUM contexts (session, network, web vitals, mobile, etc.)
-- **`query-logs` skill** — General log querying, field discovery, investigation workflows, wildfind policy
-- **`dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
+- **`cx-query-logs` skill** — General log querying, field discovery, investigation workflows, wildfind policy
+- **`cx-dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
 
 For inline DataPrime help:
 
@@ -203,8 +203,8 @@ cx dataprime show filter           # Detailed help for a specific command
 
 ## Related Skills
 
-- **`query-logs`** — General log querying with DataPrime (RUM data is logs)
-- **`query-spans`** — Distributed traces and service latency
-- **`metrics-query`** — Aggregated counters, gauges, and histograms (PromQL)
-- **`telemetry-querying`** — Gateway skill for choosing the right data source
+- **`cx-query-logs`** — General log querying with DataPrime (RUM data is logs)
+- **`cx-query-spans`** — Distributed traces and service latency
+- **`cx-metrics-query`** — Aggregated counters, gauges, and histograms (PromQL)
+- **`cx-telemetry-querying`** — Gateway skill for choosing the right data source
 - **`cx-alerts`** — Create and manage alerts based on log patterns

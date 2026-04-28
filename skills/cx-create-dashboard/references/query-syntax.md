@@ -4,8 +4,8 @@ This file documents **only** the non-obvious rules specific to authoring a Coral
 
 For the underlying query languages, use the sibling skills:
 
-- **DataPrime** (filters, aggregations, operators, type conversions, `extract`, `roundTime`): `dataprime` skill → `skills/dataprime/references/dataprime-reference.md`.
-- **PromQL** (counters vs gauges, histograms, label matching, temporal reductions, full function list): `metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`.
+- **DataPrime** (filters, aggregations, operators, type conversions, `extract`, `roundTime`): `cx-dataprime` skill → `skills/dataprime/references/dataprime-reference.md`.
+- **PromQL** (counters vs gauges, histograms, label matching, temporal reductions, full function list): `cx-metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`.
 - **Inline help**: `cx dataprime list` and `cx dataprime show <command>`.
 
 ---
@@ -39,11 +39,11 @@ Leaving an instant widget in time-series mode makes the panel render a single av
 
 ## 3. DataPrime inside widget JSON
 
-The DataPrime language itself is documented in the `dataprime` skill. A few rules matter specifically inside dashboard widgets:
+The DataPrime language itself is documented in the `cx-dataprime` skill. A few rules matter specifically inside dashboard widgets:
 
 - DataPrime widget queries **must** start with `source logs` or `source spans` — Coralogix doesn't infer the source for DataPrime widgets the way it does for metrics. Example: `source logs | filter $m.severity == ERROR | agg count()`.
 - The JSON key is `dataprimeQuery.text` (a string), not `dataprimeQuery.value`.
-- `filter` / `groupby` / aggregate forms use the same syntax as the CLI — the `dataprime` skill is authoritative.
+- `filter` / `groupby` / aggregate forms use the same syntax as the CLI — the `cx-dataprime` skill is authoritative.
 - Severity enums are unquoted in DataPrime: `$m.severity == ERROR`, not `"ERROR"`.
 
 ### Widget-side gotchas that commonly appear in reviews
@@ -52,13 +52,13 @@ The DataPrime language itself is documented in the `dataprime` skill. A few rule
 - `contains` is a method on the field: `$d.message.contains('timeout')`, not `$d.message contains 'timeout'`.
 - Application filter uses `$l.applicationname` (lowercase), not `$m.applicationName`.
 
-If you're unsure, consult the `dataprime` skill reference rather than guessing.
+If you're unsure, consult the `cx-dataprime` skill reference rather than guessing.
 
 ---
 
 ## 4. PromQL idioms that recur in dashboards
 
-The full PromQL reference is in the `metrics-query` skill. The patterns below show up in almost every dashboard and are the ones to copy-paste.
+The full PromQL reference is in the `cx-metrics-query` skill. The patterns below show up in almost every dashboard and are the ones to copy-paste.
 
 **Histogram average over the dashboard range**:
 
@@ -143,7 +143,7 @@ Prefer these exact field names over synonyms. Keys outside this list are dropped
 
 ### Allowed query languages in a widget
 
-Source: `olly-knowledge-base/common/src/common/models/dashboard_context_models.py` (`QueryEmbedding.query_type`): only `dataprime`, `promql`, or `lucene`. Nothing else will be indexed or embedded downstream.
+Source: `olly-knowledge-base/common/src/common/models/dashboard_context_models.py` (`QueryEmbedding.query_type`): only `cx-dataprime`, `promql`, or `lucene`. Nothing else will be indexed or embedded downstream.
 
 ### Sibling Olly skill
 
@@ -169,5 +169,5 @@ The dashboard-analysis counterpart to this skill lives at `cx-olly/apps/api/src/
 - [ ] Histogram queries use the correct suffix (`_sum`, `_count`, `_bucket`).
 - [ ] No invented metric names — every PromQL metric appeared in `cx metrics search` during Phase 1.
 - [ ] Widget queries remain valid **without** the dashboard-level `filters` (Coralogix/Olly inject them at render time).
-- [ ] Widget query language is one of `dataprime`, `promql`, or `lucene` — nothing else.
+- [ ] Widget query language is one of `cx-dataprime`, `promql`, or `lucene` — nothing else.
 - [ ] `relativeTimeFrame` in the final JSON matches the window used for Phase 5 verification.

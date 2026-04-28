@@ -191,6 +191,6 @@ cx alerts enable <alert-id>
 
 ### Related Skills
 
-- **`incident-management`** — incident triage workflows that involve alerts, SLO monitoring, and notification verification
-- **`observability-setup`** — setting up notification routing and webhook integrations for alerts
-- **`telemetry-querying`** — gateway for deciding which telemetry pillar to query
+- **`cx-incident-management`** — incident triage workflows that involve alerts, SLO monitoring, and notification verification
+- **`cx-observability-setup`** — setting up notification routing and webhook integrations for alerts
+- **`cx-telemetry-querying`** — gateway for deciding which telemetry pillar to query

@@ -1,5 +1,5 @@
 ---
-name: incident-management
+name: cx-incident-management
 description: >
   Use this skill when the user asks to "investigate incident", "triage this alert",
   "what's firing", "who got paged", "incident response", "check incident status",
@@ -14,7 +14,7 @@ version: 0.1.0
 
 # Incident Management Skill
 
-Use this skill as the gateway for incident triage, SLO monitoring, and notification verification. It orchestrates the full triage workflow — from detection through resolution — and cross-references `cx-alerts` for deep alert management and `telemetry-querying` for root cause investigation.
+Use this skill as the gateway for incident triage, SLO monitoring, and notification verification. It orchestrates the full triage workflow — from detection through resolution — and cross-references `cx-alerts` for deep alert management and `cx-telemetry-querying` for root cause investigation.
 
 ---
 
@@ -99,7 +99,7 @@ Confirm the right people were notified through the correct channels.
 
 ### Step 6: Pivot to Root Cause
 
-Switch to the `telemetry-querying` skill to investigate the underlying cause using logs, traces, and metrics.
+Switch to the `cx-telemetry-querying` skill to investigate the underlying cause using logs, traces, and metrics.
 
 ---
 
@@ -205,7 +205,7 @@ Use this to understand incident frequency, MTTR trends, and severity distributio
 - **Triage before deep-dive** — check incidents, alerts, and SLOs before querying telemetry data
 - **Check SLO burn rate, not just status** — a slowly burning SLO needs attention before it breaches
 - **Verify notification chain end-to-end** — connector exists → router maps correctly → test delivery works
-- **Cross-reference with telemetry** — use `telemetry-querying` skill for root cause after triage
+- **Cross-reference with telemetry** — use `cx-telemetry-querying` skill for root cause after triage
 - **Acknowledge promptly** — acknowledge incidents to signal ownership and stop re-notifications
 - **Use incident events for timeline** — `cx incidents events` shows the full incident lifecycle
 
@@ -214,8 +214,8 @@ Use this to understand incident frequency, MTTR trends, and severity distributio
 ## Related Skills
 
 - **`cx-alerts`** — deep alert management: creating, updating, and inspecting alert definitions
-- **`telemetry-querying`** — root cause investigation using logs, metrics, traces, and RUM
-- **`query-logs`** — search logs for error messages and stack traces
-- **`query-spans`** — trace request flows and find latency bottlenecks
-- **`metrics-query`** — check error rates, latency percentiles, and throughput
-- **`observability-setup`** — configure notification channels and routing for alerts
+- **`cx-telemetry-querying`** — root cause investigation using logs, metrics, traces, and RUM
+- **`cx-query-logs`** — search logs for error messages and stack traces
+- **`cx-query-spans`** — trace request flows and find latency bottlenecks
+- **`cx-metrics-query`** — check error rates, latency percentiles, and throughput
+- **`cx-observability-setup`** — configure notification channels and routing for alerts

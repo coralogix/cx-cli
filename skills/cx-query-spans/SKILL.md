@@ -1,5 +1,5 @@
 ---
-name: query-spans
+name: cx-query-spans
 description: |
   Query and analyze distributed traces and spans using DataPrime syntax. Use this skill whenever the
   user wants to investigate request latency, find slow operations, debug service-to-service calls,
@@ -179,7 +179,7 @@ If a query returns no results, change **one thing at a time**:
 
 ## References
 
-- **`dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
+- **`cx-dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
 - **[Advanced Usage](references/advanced-usage.md)** — Investigation workflows, common query patterns, latency analysis, trace debugging
 
 For inline DataPrime help:
@@ -193,6 +193,6 @@ cx dataprime show filter           # Detailed help for a specific command
 
 ## Related Skills
 
-- **`metrics-query`** — Aggregated latency metrics, histograms, counters (PromQL)
-- **`query-logs`** — Detailed log messages correlated with spans (DataPrime)
-- **`telemetry-querying`** — Gateway skill for choosing the right data source
+- **`cx-metrics-query`** — Aggregated latency metrics, histograms, counters (PromQL)
+- **`cx-query-logs`** — Detailed log messages correlated with spans (DataPrime)
+- **`cx-telemetry-querying`** — Gateway skill for choosing the right data source

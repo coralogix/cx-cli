@@ -1,9 +1,9 @@
 ---
-name: create-dashboard
+name: cx-create-dashboard
 description: >
   Build and deploy a Coralogix dashboard for a given service from its logs,
   spans, metrics, and service specs. Discovers telemetry through the sibling
-  `metrics-query` / `query-logs` / `query-spans` skills, emits importable
+  `cx-metrics-query` / `cx-query-logs` / `cx-query-spans` skills, emits importable
   Coralogix JSON, verifies every PromQL and DataPrime query live through the
   `cx` CLI, and creates the dashboard via `cx dashboards create`. Use whenever
   the user asks to create, build, generate, or deploy a Coralogix dashboard,
@@ -25,12 +25,12 @@ This skill orchestrates; the skills below own their domain.
 
 | Task | Skill |
 |---|---|
-| Write / understand a DataPrime query | `dataprime` |
-| Write / understand a PromQL query, find a metric, list labels | `metrics-query` |
-| Run a DataPrime query against logs | `query-logs` |
-| Run a DataPrime query against spans | `query-spans` |
-| Choose the right signal (metrics / logs / traces) | `telemetry-querying` |
-| Semantic field search (`cx search-fields`) | `query-logs` or `query-spans` |
+| Write / understand a DataPrime query | `cx-dataprime` |
+| Write / understand a PromQL query, find a metric, list labels | `cx-metrics-query` |
+| Run a DataPrime query against logs | `cx-query-logs` |
+| Run a DataPrime query against spans | `cx-query-spans` |
+| Choose the right signal (metrics / logs / traces) | `cx-telemetry-querying` |
+| Semantic field search (`cx search-fields`) | `cx-query-logs` or `cx-query-spans` |
 
 Coralogix-dashboard-specific pitfalls (`${__range}`, `promqlQueryType`, widget-filter syntax, threshold types) live in [`references/query-syntax.md`](references/query-syntax.md); widget JSON templates live in [`references/widget-templates.md`](references/widget-templates.md).
 
@@ -91,7 +91,7 @@ For the target service, gather:
    - Tenant/account/team identifiers used as metric or log labels.
    - Deployment environments (`prod`, `staging`, `dev`, …).
 
-If the signal for a question is ambiguous (e.g. "how much revenue last week"), delegate to `telemetry-querying` first.
+If the signal for a question is ambiguous (e.g. "how much revenue last week"), delegate to `cx-telemetry-querying` first.
 
 Produce a short internal summary before moving on. If critical telemetry is missing (e.g. no metrics), surface that to the user and ask whether they want a log-only or trace-only dashboard.
 
@@ -182,7 +182,7 @@ Produce a single JSON document following [`references/widget-templates.md`](refe
 5. **Filters** — one entry per slicing dimension from Phase 2. Default operator `equals` with empty `values` so users can fill in. Use `notEquals` for environment exclusions (see [`references/widget-templates.md`](references/widget-templates.md)).
 6. **relativeTimeFrame** — default `"172800s"` (48h) unless the user specified otherwise.
 
-For query syntax follow [`references/query-syntax.md`](references/query-syntax.md); for the full query languages delegate to the `dataprime` and `metrics-query` skills.
+For query syntax follow [`references/query-syntax.md`](references/query-syntax.md); for the full query languages delegate to the `cx-dataprime` and `cx-metrics-query` skills.
 
 ---
 
@@ -205,7 +205,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 ### Query syntax (dashboard-specific)
 - [ ] Every PromQL range vector in a metrics widget uses `[${__range}]` — never `[$__range]`, never `[5m]` (unless the panel is intentionally a sliding window).
 - [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dataTable). Omitted for `lineChart`.
-- [ ] DataPrime log queries use `$d.message` / `$l.applicationname` / unquoted severity enums (full rules: `dataprime` skill).
+- [ ] DataPrime log queries use `$d.message` / `$l.applicationname` / unquoted severity enums (full rules: `cx-dataprime` skill).
 - [ ] Every DataPrime widget query starts with `source logs` or `source spans` (dashboard widgets require the source prefix; Phase 5 verification strips it before handing the pipeline to `cx logs` / `cx spans`).
 - [ ] Success-rate denominators wrapped in `clamp_min(..., 1)`.
 - [ ] Histogram queries use the correct suffix (`_sum`, `_count`, `_bucket`).
@@ -269,12 +269,12 @@ The dashboard is live in Coralogix. Adjust filter values (e.g. `account_id`) aft
 - Live-verification procedure: [`references/verification.md`](references/verification.md)
 - Deploy procedure: [`references/deploy.md`](references/deploy.md)
 - Coralogix Custom Dashboards docs: <https://www.coralogix.com/docs/user-guides/custom-dashboards/introduction/>
-- Full DataPrime language: `dataprime` skill → `skills/dataprime/references/dataprime-reference.md`
-- Full PromQL reference: `metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`
+- Full DataPrime language: `cx-dataprime` skill → `skills/dataprime/references/dataprime-reference.md`
+- Full PromQL reference: `cx-metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`
 - Inline DataPrime help: `cx dataprime list`, `cx dataprime show <command>`
 
 ### Related Skills
 
-- **`observability-setup`** — full monitoring setup workflow (views, webhooks, notifications, integrations)
-- **`incident-management`** — SLO and alert-connected dashboards, incident triage
-- **`telemetry-querying`** — discover the right telemetry signal before building dashboards
+- **`cx-observability-setup`** — full monitoring setup workflow (views, webhooks, notifications, integrations)
+- **`cx-incident-management`** — SLO and alert-connected dashboards, incident triage
+- **`cx-telemetry-querying`** — discover the right telemetry signal before building dashboards

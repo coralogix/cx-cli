@@ -1,5 +1,5 @@
 ---
-name: observability-setup
+name: cx-observability-setup
 description: >
   Use this skill when the user asks to "set up monitoring", "configure observability",
   "onboard new service", "create saved view", "set up notifications",
@@ -169,11 +169,11 @@ cx integrations extensions deploy --from-file extension.json
 
 ### 6. Create Dashboard
 
-Use the `create-dashboard` skill for the full dashboard creation workflow.
+Use the `cx-create-dashboard` skill for the full dashboard creation workflow.
 
 ### 7. Create SLOs
 
-Use the `incident-management` skill for SLO creation and monitoring.
+Use the `cx-incident-management` skill for SLO creation and monitoring.
 
 ---
 
@@ -260,7 +260,7 @@ cx webhooks actions reorder --from-file order.json
 
 ## Related Skills
 
-- **`create-dashboard`** — dashboard creation workflow for new services
-- **`incident-management`** — SLO creation and alert triage workflows
+- **`cx-create-dashboard`** — dashboard creation workflow for new services
+- **`cx-incident-management`** — SLO creation and alert triage workflows
 - **`cx-alerts`** — alert definitions that trigger notifications
-- **`telemetry-querying`** — verify data flows after setup
+- **`cx-telemetry-querying`** — verify data flows after setup

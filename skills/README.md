@@ -10,24 +10,24 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 
 | Skill | Description |
 |---|---|
-| `telemetry-querying` | Gateway skill for telemetry-driven investigation — decide where to look (metrics, logs, traces, RUM, APM) before querying |
-| `query-logs` | Query and analyze Coralogix logs using DataPrime syntax via `cx logs` |
-| `query-spans` | Query distributed traces and analyze span latency via `cx spans` |
-| `metrics-query` | Investigate production issues by searching metrics, constructing PromQL queries, and analyzing results via `cx metrics` |
-| `rum` | Query and analyze Real User Monitoring data — frontend errors, web vitals, user interactions, page performance via `cx logs` |
-| `dataprime` | DataPrime query language reference — syntax, commands, operators, aggregations, text extraction |
+| `cx-telemetry-querying` | Gateway skill for telemetry-driven investigation — decide where to look (metrics, logs, traces, RUM, APM) before querying |
+| `cx-query-logs` | Query and analyze Coralogix logs using DataPrime syntax via `cx logs` |
+| `cx-query-spans` | Query distributed traces and analyze span latency via `cx spans` |
+| `cx-metrics-query` | Investigate production issues by searching metrics, constructing PromQL queries, and analyzing results via `cx metrics` |
+| `cx-rum` | Query and analyze Real User Monitoring data — frontend errors, web vitals, user interactions, page performance via `cx logs` |
+| `cx-dataprime` | DataPrime query language reference — syntax, commands, operators, aggregations, text extraction |
 | `cx-alerts` | Manage Coralogix alert definitions — list, inspect, create, enable/disable via `cx alerts` |
-| `create-dashboard` | Build and deploy Coralogix dashboards — telemetry discovery, PromQL/DataPrime verification, JSON generation |
+| `cx-create-dashboard` | Build and deploy Coralogix dashboards — telemetry discovery, PromQL/DataPrime verification, JSON generation |
 
 ### Workflow Skills
 
 | Skill | Description |
 |---|---|
-| `cost-optimization` | Analyze and reduce Coralogix data costs — usage analysis, TCO policies, retention, quotas, archive |
-| `incident-management` | Triage incidents end-to-end — incidents, SLOs, alerts, notification verification |
-| `data-pipeline` | Configure data processing — parsing rules, enrichments, Events2Metrics, recording rules |
-| `platform-admin` | Manage access and security — API keys, roles, users, groups, SAML, IP access |
-| `observability-setup` | Set up monitoring — saved views, webhooks, notifications, integrations |
+| `cx-cost-optimization` | Analyze and reduce Coralogix data costs — usage analysis, TCO policies, retention, quotas, archive |
+| `cx-incident-management` | Triage incidents end-to-end — incidents, SLOs, alerts, notification verification |
+| `cx-data-pipeline` | Configure data processing — parsing rules, enrichments, Events2Metrics, recording rules |
+| `cx-platform-admin` | Manage access and security — API keys, roles, users, groups, SAML, IP access |
+| `cx-observability-setup` | Set up monitoring — saved views, webhooks, notifications, integrations |
 
 ## Installation
 

@@ -40,7 +40,7 @@ Pick `<step>` proportional to `$RANGE`: `1m` for 1–6h, `5m` for 24h, `1h` for 
 
 A query **passes** when the CLI returns a 200 response and either has data or an empty-but-well-formed result. **Fails** include unknown metric names, parse errors, non-200 responses, or `cx` error output.
 
-On failure: consult the `metrics-query` skill for PromQL help, re-search for the real metric name with `cx metrics search`, re-list labels with `cx metrics get-labels`, and fix the query in the draft JSON. Budget ≤5 retry attempts per query.
+On failure: consult the `cx-metrics-query` skill for PromQL help, re-search for the real metric name with `cx metrics search`, re-list labels with `cx metrics get-labels`, and fix the query in the draft JSON. Budget ≤5 retry attempts per query.
 
 ---
 
@@ -67,7 +67,7 @@ cx logs '<pipeline-without-leading-source-logs>' --start now-$RANGE --end now --
 cx spans '<pipeline-without-leading-source-spans>' --start now-$RANGE --end now --limit 1
 ```
 
-A query **passes** when the CLI returns without a parse error. Empty results are acceptable. On failure: consult the `dataprime` skill (`cx dataprime show <command>` for inline help), re-discover fields with `cx search-fields`, fix, retry. Budget ≤5 retry attempts per query.
+A query **passes** when the CLI returns without a parse error. Empty results are acceptable. On failure: consult the `cx-dataprime` skill (`cx dataprime show <command>` for inline help), re-discover fields with `cx search-fields`, fix, retry. Budget ≤5 retry attempts per query.
 
 ---
 

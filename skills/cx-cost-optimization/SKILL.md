@@ -1,5 +1,5 @@
 ---
-name: cost-optimization
+name: cx-cost-optimization
 description: >
   Use this skill when the user asks to "check data usage", "list TCO policies", "view quotas",
   "reduce Coralogix costs", "optimize observability spend", "lower our logging bill",
@@ -201,6 +201,6 @@ When modifying TCO policies, retention, quotas, or archive:
 
 ## Related Skills
 
-- **`telemetry-querying`** — investigate what data is being ingested (understand usage before cutting)
-- **`query-logs`** — query logs to identify high-volume sources
-- **`metrics-query`** — check metric cardinality and usage
+- **`cx-telemetry-querying`** — investigate what data is being ingested (understand usage before cutting)
+- **`cx-query-logs`** — query logs to identify high-volume sources
+- **`cx-metrics-query`** — check metric cardinality and usage

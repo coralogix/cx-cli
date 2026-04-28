@@ -1,5 +1,5 @@
 ---
-name: dataprime
+name: cx-dataprime
 description: |
   DataPrime query language reference for Coralogix. This is a companion skill for detailed syntax
   help. It triggers when the user needs help with DataPrime syntax specifically — how to write

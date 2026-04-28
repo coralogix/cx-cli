@@ -1,5 +1,5 @@
 ---
-name: data-pipeline
+name: cx-data-pipeline
 description: >
   Use this skill when the user asks to "set up parsing", "create parsing rule",
   "extract fields from logs", "regex extraction", "log parsing",
@@ -83,7 +83,7 @@ cx rules create --from-file rule-template.json
 
 ### 4. Verify Parsing
 
-Use the `query-logs` skill to query recent logs and confirm fields are extracted:
+Use the `cx-query-logs` skill to query recent logs and confirm fields are extracted:
 
 ```bash
 cx logs --query 'source logs | filter $d.subsystem == "my-service" | limit 10' -o json
@@ -164,7 +164,7 @@ cx e2m create --from-file e2m-definition.json
 
 ### 5. Verify Metric
 
-Use the `metrics-query` skill to confirm the new metric appears:
+Use the `cx-metrics-query` skill to confirm the new metric appears:
 
 ```bash
 cx metrics search --name "new_metric_name"
@@ -195,7 +195,7 @@ cx recording-rules create --from-file recording-rule-group.json
 
 ### 4. Verify with PromQL
 
-Use the `metrics-query` skill to confirm the precomputed metric is available:
+Use the `cx-metrics-query` skill to confirm the precomputed metric is available:
 
 ```bash
 cx metrics query --promql "new_precomputed_metric" --time now
@@ -215,7 +215,7 @@ cx metrics query --promql "new_precomputed_metric" --time now
 
 ## Related Skills
 
-- **`query-logs`** — verify parsing results and enriched fields in log data
-- **`metrics-query`** — verify E2M and recording rule output metrics
-- **`dataprime`** — DataPrime syntax reference for rule expressions
-- **`telemetry-querying`** — discover what data is available before configuring pipeline
+- **`cx-query-logs`** — verify parsing results and enriched fields in log data
+- **`cx-metrics-query`** — verify E2M and recording rule output metrics
+- **`cx-dataprime`** — DataPrime syntax reference for rule expressions
+- **`cx-telemetry-querying`** — discover what data is available before configuring pipeline

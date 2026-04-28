@@ -142,7 +142,7 @@ graph TD
 | `cx alerts` | `list` (reference to `cx-alerts` skill for full coverage) | Step 3: Find related firing alerts |
 | `cx notifications` | `connectors list/get`, `routers list/get`, `presets list/get`, `test connector/destination/preset` | Step 5: Verify notification delivery |
 
-### 2.1 [ ] Create incident-management skill directory and SKILL.md
+### 2.1 [x] Create incident-management skill directory and SKILL.md *(completed 2026-04-29)*
 
 - **Files:** `skills/incident-management/SKILL.md`
 - **What:** Create the skill directory and SKILL.md. The frontmatter description must include 15+ trigger phrases covering: incident intents ("investigate incident", "triage this alert", "what's firing", "who got paged", "incident response", "check incident status"), SLO intents ("SLO breaching", "error budget burned", "check service level", "SLI status"), notification intents ("who was notified", "check notification delivery", "verify alert routing"), and domain jargon ("MTTR", "incident severity", "error budget", "burn rate"). The body must include:

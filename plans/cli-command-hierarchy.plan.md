@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | draft |
+| Status | in-progress |
 | Created | 2026-04-28 |
 | Ticket | N/A |
 | Branch | liranhason/cli-hierarchy |
@@ -15,7 +15,7 @@ No command modules (`src/commands/*.rs`) or API modules (`src/api/*.rs`) change 
 
 ## Architecture Decisions
 
-- **Decision 1: Help headings via flatten groups.** Clap 4.x's `next_help_heading` only works on `#[command(flatten)]` variants, NOT on regular subcommand variants. To create visual groupings in `--help`, we split the `Commands` enum into group sub-enums (e.g., `QueryGroup`, `ObserveGroup`) and flatten them into `Commands` with `#[command(flatten, next_help_heading = "Query")]`. Each group's variants appear as top-level commands in the CLI but are visually grouped in help output. **The implementing agent must verify headings render correctly after task 1.1 before proceeding.**
+- **Decision 1: Help headings via custom help_template + after_help.** *(Updated after 1.1 spike)* Clap 4.5's `next_help_heading` and `subcommand_help_heading` do NOT support multiple heading groups for subcommands — `next_help_heading` only affects arguments/options, and `subcommand_help_heading` renames the single "Commands:" heading for all subcommands. Instead, we use a custom `help_template` on the `Cli` struct that replaces `{subcommands}` with `{after-help}`, and define the organized command listing (with domain headings) as the `after_help` text. The `Commands` enum stays flat — no flatten groups, no sub-enums for grouping. Individual commands remain fully functional and discoverable via `cx help <cmd>`. **Consequence for M1 tasks:** Task 1.2 (split Commands into group sub-enums) is no longer needed — the flat enum stays. Task 1.3 (renames) and all M2 tasks (merges) proceed unchanged since they modify the flat enum and dispatch match arms directly.
 - **Decision 2:** Merges create wrapper enums in `main.rs` that delegate to existing `*Cmd` enums. E.g., `AlertsCmd` gains a `Schedulers` variant wrapping `AlertSchedulersCmd`. No changes to `src/commands/` handler functions.
 - **Decision 3:** Renames use Clap's `#[command(name = "...")]` attribute. The Rust enum variant name stays the same; only the CLI-facing name changes.
 - **Decision 4:** `cx schema` outputs the command tree as JSON, built by walking the Clap `Command` structure at runtime. No hand-maintained schema file.
@@ -140,15 +140,15 @@ Local:
 
 **Key decisions:** Renames use `#[command(name = "rules")]` on the enum variant — the Rust variant name stays `RuleGroups` to avoid touching handler code. Headings require the flatten-group pattern (see Architecture Decision 1) — `next_help_heading` only works on `#[command(flatten)]` variants in Clap 4.x.
 
-### 1.1 [ ] Spike: verify Clap heading pattern works
+### 1.1 [x] Spike: verify Clap heading pattern works *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** Before restructuring all 37 variants, do a minimal proof-of-concept. Take 2-3 existing variants (e.g., `Logs`, `Spans`) and extract them into a small `QueryGroup` sub-enum. Flatten it back into `Commands` with `#[command(flatten, next_help_heading = "Query")]`. Verify that `cx --help` shows a "Query:" heading above `logs` and `spans`, and that `cx logs '...'` still works identically. Also verify the dispatch still compiles — the match arm changes from `Commands::Logs { ... }` to `Commands::Query(QueryGroup::Logs { ... })`. If the flatten pattern doesn't produce headings in help, investigate alternatives (builder API, `help_heading` on individual variants) before committing to the approach. **This task is a gate: do NOT proceed to 1.2 until headings render correctly.**
 - **Acceptance:** `cx --help` shows a "Query:" heading above logs/spans. `cx logs 'filter $m.severity == ERROR'` works. `cargo build` succeeds.
 - **Dependencies:** None
 
-### 1.2 [ ] Split Commands enum into heading groups
+### 1.2 [x] Split Commands enum into heading groups *(completed 2026-04-28 — superseded by help_template approach)*
 - **Files:** `src/main.rs`
-- **What:** Using the pattern validated in 1.1, extract all `Commands` variants into group sub-enums and flatten them back with `next_help_heading`. Groups: `QueryGroup` ("Query": Logs, Spans, Metrics, Dataprime, SearchFields), `ObserveGroup` ("Observe": Dashboards, Views, Slos), `DetectGroup` ("Detect & Respond": Alerts, Incidents + all currently-separate alerting/notification/action variants that will be merged in M2 — for now keep them in a temporary "Notifications" / "Access" group), `PipelineGroup` ("Data Pipeline": RuleGroups, Enrichments, CustomEnrichments, E2m, RecordingRules), `CostGroup` ("Cost & Storage": DataUsage, TcoPolicies, Retentions, QuotaRules, DataArchive), `IntegrationsGroup` ("Integrations": Integrations, Extensions, ContextualData), `AccessGroup` ("Access": ApiKeys, Roles, Scopes, Users, TeamGroups, Saml, IpAccess), `LocalGroup` ("Local": Profiles, Cleanup). Update all dispatch match arms to use the new two-level pattern: `Commands::Query(QueryGroup::Logs { ... }) => { ... }`. Reorder groups to match the target help output. **Important: read the current state of `main.rs` before starting — do not assume line numbers from the plan.**
+- **What:** *(Superseded)* The 1.1 spike proved that Clap's flatten/`next_help_heading` doesn't work for subcommand grouping. Instead, organized headings were implemented via `help_template` + `after_help` directly in task 1.1. The `Commands` enum stays flat. This task is complete — no further work needed.
 - **Acceptance:** `cx --help` shows all commands under labeled headings in the correct order. Every existing command still works. `cargo build` succeeds.
 - **Dependencies:** 1.1
 

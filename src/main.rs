@@ -17,7 +17,69 @@ pub enum SearchFieldsDataset {
 
 /// Coralogix CLI — query observability data from the terminal.
 #[derive(Parser)]
-#[command(name = "cx", version, about, long_about = None)]
+#[command(
+    name = "cx",
+    version,
+    about,
+    long_about = None,
+    help_template = "{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
+    after_help = "\
+Query:
+  logs               Query logs using DataPrime syntax
+  spans              Query spans using DataPrime syntax
+  metrics            Query metrics using PromQL
+  dataprime          DataPrime language reference and raw queries
+  search-fields      Search log/span fields semantically
+
+Observe:
+  dashboards         Manage dashboards and dashboard folders
+  views              Manage saved views and view folders
+  slos               Manage SLO definitions
+
+Detect & Respond:
+  alerts             Manage alert definitions and schedulers
+  incidents          Manage and triage incidents
+
+Notifications:
+  connectors         Manage notification connectors
+  routers            Manage notification routers
+  presets            Manage notification presets
+  notification-test  Test notification configurations
+  webhooks           Manage outgoing webhooks
+  actions            Manage actions (automation hooks)
+
+Data Pipeline:
+  rule-groups        Manage log parsing rule groups
+  enrichments        Manage enrichment rules
+  custom-enrichments Manage custom enrichment tables
+  e2m                Manage Events2Metrics definitions
+  recording-rules    Manage Prometheus recording rule groups
+
+Cost & Storage:
+  data-usage         View data usage and consumption metrics
+  tco-policies       Manage TCO policies and settings
+  retentions         Manage data retention settings
+  quota-rules        Manage quota rules
+  data-archive       Manage data archive storage configuration
+
+Integrations:
+  integrations       Manage third-party integrations
+  extensions         Manage extensions
+  contextual-data    Manage contextual data integrations
+
+Access:
+  api-keys           Manage API keys
+  roles              Manage custom and system roles
+  scopes             Manage team scopes
+  users              Search and manage team users
+  team-groups        Manage team groups
+  saml               Manage SAML configuration
+  ip-access          Manage IP access restrictions
+
+Local:
+  profiles           Manage profiles (list, add, delete, set-default)
+  cleanup            Remove stale temp files"
+)]
 struct Cli {
     /// Profile(s) to use. Repeat to fan out across multiple profiles simultaneously.
     /// Overrides the default profile set in config.

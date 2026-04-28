@@ -15,7 +15,7 @@ The observability backbone for AI agents and engineering teams. `cx` gives you�
 ## Features
 
 - DataPrime and PromQL at the terminal—Coralogix's proprietary query languages work end-to-end without leaving the shell.
-- 26 commands across 9 domains—from querying signals to managing IAM, notifications, TCO, and archiving—all in one binary.
+- 27 commands across 9 domains—from querying signals to managing IAM, notifications, TCO, and archiving—all in one binary.
 - Multi-profile fan-out with `-p prod-eu -p prod-us <command>`—run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
 - `agents` output format—token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
 - `cx schema`—outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
@@ -105,8 +105,6 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 | Command | Purpose |
 |---|---|
-| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
-| `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx logs` | Query logs using DataPrime |
 | `cx spans` | Query distributed spans |
 | `cx metrics` | Query metrics using PromQL: `query`, `query-range`, `search`, `get-labels` |
@@ -172,6 +170,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 |---|---|
 | `cx schema` | Output the full command tree as JSON for agent consumption |
 | `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
 ### Global options
@@ -232,7 +231,7 @@ Install globally for all projects:
 npx skills add coralogix/cx-cli -g
 ```
 
-Available skills: `query-logs`, `query-spans`, `metrics-query`, `cx-alerts`, `dataprime`, `rum`, `telemetry-querying`. See [skills/README.md](skills/README.md) for per-skill usage.
+Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-create-dashboard`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](skills/README.md) for per-skill usage.
 
 ## Multi-profile fan-out
 

@@ -179,7 +179,7 @@ graph TD
 | `cx e2m` | `list`, `get`, `create`, `update`, `delete`, `labels-cardinality`, `limits` | Events2Metrics: derive metrics from logs |
 | `cx recording-rules` | `list`, `get`, `create`, `update`, `delete` | Recording rules: precompute PromQL expressions |
 
-### 3.1 [ ] Create data-pipeline skill directory and SKILL.md
+### 3.1 [x] Create data-pipeline skill directory and SKILL.md *(completed 2026-04-29)*
 
 - **Files:** `skills/data-pipeline/SKILL.md`
 - **What:** Create the skill directory and SKILL.md. The frontmatter description must include 15+ trigger phrases covering: rules intents ("set up parsing", "create parsing rule", "extract fields from logs", "regex extraction", "log parsing"), enrichment intents ("enrich logs", "add context to logs", "custom enrichment table", "lookup table", "geo enrichment"), E2M intents ("create metric from logs", "events to metrics", "convert logs to metrics", "generate metrics from events"), recording rules intents ("recording rule", "precomputed metrics", "PromQL recording"), and general ("configure data pipeline", "transform log data", "data processing rules"). The body must include:

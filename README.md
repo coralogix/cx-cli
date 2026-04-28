@@ -96,16 +96,77 @@ Run `cx <command> --help` for full syntax and examples on any command.
 
 ## Commands
 
+Commands are grouped by domain. Run `cx --help` for the full organized listing, or `cx schema` for a machine-readable JSON tree.
+
+**Query**
+
 | Command | Purpose |
 |---|---|
-| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
 | `cx logs` | Query logs using DataPrime |
 | `cx spans` | Query distributed spans |
 | `cx metrics` | Query metrics using PromQL: `query`, `query-range`, `search`, `get-labels` |
-| `cx dashboards` | List and inspect dashboards: `catalog`, `get` |
-| `cx alerts` | Manage alerts: `list`, `get`, `create`, `enable`, `disable` |
-| `cx search-fields` | Find log or span fields by description |
-| `cx dataprime` | Browse the DataPrime language reference offline, or run raw queries: `list`, `show`, `query` |
+| `cx dataprime` | DataPrime language reference and raw queries: `list`, `show`, `query` |
+| `cx search-fields` | Find log or span fields by natural-language description |
+
+**Observe**
+
+| Command | Purpose |
+|---|---|
+| `cx dashboards` | Manage dashboards and folders |
+| `cx views` | Manage saved views and view folders |
+| `cx slos` | Manage SLO definitions |
+
+**Detect & Respond**
+
+| Command | Purpose |
+|---|---|
+| `cx alerts` | Manage alerts and schedulers: `list`, `get`, `create`, `enable`, `disable`, `schedulers` |
+| `cx incidents` | Manage and triage incidents |
+
+**Notifications**
+
+| Command | Purpose |
+|---|---|
+| `cx notifications` | Manage connectors, routers, presets, and notification testing |
+| `cx webhooks` | Manage outgoing webhooks and automation actions |
+
+**Data Pipeline**
+
+| Command | Purpose |
+|---|---|
+| `cx rules` | Manage log parsing rule groups |
+| `cx enrichments` | Manage enrichment rules and custom enrichment tables |
+| `cx e2m` | Manage Events2Metrics definitions |
+| `cx recording-rules` | Manage Prometheus recording rule groups |
+
+**Cost & Storage**
+
+| Command | Purpose |
+|---|---|
+| `cx usage` | View data usage and consumption metrics |
+| `cx tco` | Manage TCO policies and settings |
+| `cx retentions` | Manage data retention settings |
+| `cx quotas` | Manage quota rules |
+| `cx archive` | Manage data archive storage configuration |
+
+**Integrations**
+
+| Command | Purpose |
+|---|---|
+| `cx integrations` | Manage integrations, extensions, and contextual data |
+
+**Access**
+
+| Command | Purpose |
+|---|---|
+| `cx iam` | Manage API keys, roles, scopes, users, groups, SAML, and IP access |
+
+**Agent & Local**
+
+| Command | Purpose |
+|---|---|
+| `cx schema` | Output the full command tree as JSON for agent consumption |
+| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
 ### Global options
@@ -180,7 +241,7 @@ See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
 
 ## Migrating from cxctl
 
-`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail, SAML management, and account invite flows.
+`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
 
 ## Further reading
 

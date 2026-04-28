@@ -41,17 +41,12 @@ Detect & Respond:
   incidents          Manage and triage incidents
 
 Notifications:
-  connectors         Manage notification connectors
-  routers            Manage notification routers
-  presets            Manage notification presets
-  notification-test  Test notification configurations
-  webhooks           Manage outgoing webhooks
-  actions            Manage actions (automation hooks)
+  notifications      Manage connectors, routers, presets, and notification testing
+  webhooks           Manage outgoing webhooks and automation actions
 
 Data Pipeline:
   rules              Manage log parsing rule groups
-  enrichments        Manage enrichment rules
-  custom-enrichments Manage custom enrichment tables
+  enrichments        Manage enrichment rules and custom enrichment tables
   e2m                Manage Events2Metrics definitions
   recording-rules    Manage Prometheus recording rule groups
 
@@ -63,18 +58,10 @@ Cost & Storage:
   archive            Manage data archive storage configuration
 
 Integrations:
-  integrations       Manage third-party integrations
-  extensions         Manage extensions
-  contextual-data    Manage contextual data integrations
+  integrations       Manage integrations, extensions, and contextual data
 
 Access:
-  api-keys           Manage API keys
-  roles              Manage custom and system roles
-  scopes             Manage team scopes
-  users              Search and manage team users
-  team-groups        Manage team groups
-  saml               Manage SAML configuration
-  ip-access          Manage IP access restrictions
+  iam                Manage API keys, roles, scopes, users, groups, SAML, and IP access
 
 Local:
   profiles           Manage profiles (list, add, delete, set-default)
@@ -220,41 +207,16 @@ Examples:
         cmd: IncidentsCmd,
     },
 
-    /// Manage notification connectors.
+    /// Manage connectors, routers, presets, and notification testing.
     #[command(after_help = "\
 Examples:
-  cx connectors list
-  cx connectors get <connector-id>
-  cx connectors types")]
-    Connectors {
+  cx notifications connectors list
+  cx notifications routers list
+  cx notifications presets list
+  cx notifications test connector --from-file test.json")]
+    Notifications {
         #[command(subcommand)]
-        cmd: ConnectorsCmd,
-    },
-
-    /// Manage notification routers.
-    #[command(after_help = "\
-Examples:
-  cx routers list
-  cx routers get <router-id>")]
-    Routers {
-        #[command(subcommand)]
-        cmd: RoutersCmd,
-    },
-
-    /// Manage notification presets.
-    #[command(after_help = "\
-Examples:
-  cx presets list
-  cx presets get <preset-id>")]
-    Presets {
-        #[command(subcommand)]
-        cmd: PresetsCmd,
-    },
-
-    /// Test notification configurations.
-    NotificationTest {
-        #[command(subcommand)]
-        cmd: NotificationTestCmd,
+        cmd: NotificationsCmd,
     },
 
     /// View data usage and consumption metrics.
@@ -346,72 +308,41 @@ Examples:
         cmd: RuleGroupsCmd,
     },
 
-    /// Manage log enrichment rules.
+    /// Manage enrichment rules and custom enrichment tables.
     #[command(after_help = "\
 Examples:
   cx enrichments list
   cx enrichments add --from-file enrichments.json
   cx enrichments limit
-  cx enrichments settings")]
+  cx enrichments settings
+  cx enrichments custom list")]
     Enrichments {
         #[command(subcommand)]
         cmd: EnrichmentsCmd,
     },
 
-    /// Manage custom enrichment tables.
-    #[command(after_help = "\
-Examples:
-  cx custom-enrichments list
-  cx custom-enrichments get <id>
-  cx custom-enrichments create --from-file table.json
-  cx custom-enrichments delete <id>")]
-    CustomEnrichments {
-        #[command(subcommand)]
-        cmd: CustomEnrichmentsCmd,
-    },
-
-    /// Manage third-party integrations.
+    /// Manage integrations, extensions, and contextual data.
     #[command(after_help = "\
 Examples:
   cx integrations list
   cx integrations get <id>
-  cx integrations create --from-file integration.json
-  cx integrations delete <id>")]
+  cx integrations extensions list
+  cx integrations contextual-data list")]
     Integrations {
         #[command(subcommand)]
         cmd: IntegrationsCmd,
     },
 
-    /// Manage extensions.
-    #[command(after_help = "\
-Examples:
-  cx extensions list
-  cx extensions deployed
-  cx extensions get <id>")]
-    Extensions {
-        #[command(subcommand)]
-        cmd: ExtensionsCmd,
-    },
-
-    /// Manage outgoing webhooks.
+    /// Manage outgoing webhooks and automation actions.
     #[command(after_help = "\
 Examples:
   cx webhooks list
   cx webhooks get <id>
-  cx webhooks types")]
+  cx webhooks types
+  cx webhooks actions list")]
     Webhooks {
         #[command(subcommand)]
         cmd: WebhooksCmd,
-    },
-
-    /// Manage contextual data integrations.
-    #[command(after_help = "\
-Examples:
-  cx contextual-data list
-  cx contextual-data get <id>")]
-    ContextualData {
-        #[command(subcommand)]
-        cmd: ContextualDataCmd,
     },
 
     /// Manage saved views and view folders.
@@ -426,100 +357,19 @@ Examples:
         cmd: ViewsCmd,
     },
 
-    /// Manage API keys.
+    /// Manage API keys, roles, scopes, users, groups, SAML, and IP access.
     #[command(after_help = "\
 Examples:
-  cx api-keys list
-  cx api-keys get <id>
-  cx api-keys create --from-file key.json
-  cx api-keys send-data-keys
-  cx api-keys admin list")]
-    ApiKeys {
+  cx iam api-keys list
+  cx iam roles list
+  cx iam scopes list
+  cx iam users search
+  cx iam groups list
+  cx iam saml get
+  cx iam ip-access get")]
+    Iam {
         #[command(subcommand)]
-        cmd: ApiKeysCmd,
-    },
-
-    /// Manage custom and system roles.
-    #[command(after_help = "\
-Examples:
-  cx roles list
-  cx roles get <id>
-  cx roles create --from-file role.json
-  cx roles system")]
-    Roles {
-        #[command(subcommand)]
-        cmd: RolesCmd,
-    },
-
-    /// Manage team scopes.
-    #[command(after_help = "\
-Examples:
-  cx scopes list
-  cx scopes get <id>
-  cx scopes create --from-file scope.json")]
-    Scopes {
-        #[command(subcommand)]
-        cmd: ScopesCmd,
-    },
-
-    /// Search and manage team users.
-    #[command(after_help = "\
-Examples:
-  cx users search
-  cx users get <user-id>
-  cx users create --from-file users.json
-  cx users set-status --user-ids <id> --status ACTIVE")]
-    Users {
-        #[command(subcommand)]
-        cmd: UsersCmd,
-    },
-
-    /// Manage team groups.
-    #[command(after_help = "\
-Examples:
-  cx team-groups list
-  cx team-groups get <id>
-  cx team-groups get-by-name <name>
-  cx team-groups users <group-id>")]
-    TeamGroups {
-        #[command(subcommand)]
-        cmd: TeamGroupsCmd,
-    },
-
-    /// Manage SAML configuration.
-    #[command(after_help = "\
-Examples:
-  cx saml get
-  cx saml sp-params
-  cx saml set-idp --from-file idp.json
-  cx saml set-active --active")]
-    Saml {
-        #[command(subcommand)]
-        cmd: SamlCmd,
-    },
-
-    /// Manage IP access restrictions.
-    #[command(after_help = "\
-Examples:
-  cx ip-access get
-  cx ip-access create --from-file access.json
-  cx ip-access update --from-file access.json
-  cx ip-access delete")]
-    IpAccess {
-        #[command(subcommand)]
-        cmd: IpAccessCmd,
-    },
-
-    /// Manage actions (automation hooks).
-    #[command(after_help = "\
-Examples:
-  cx actions list
-  cx actions get <id>
-  cx actions create --from-file action.json
-  cx actions delete <id>")]
-    Actions {
-        #[command(subcommand)]
-        cmd: ActionsCmd,
+        cmd: IamCmd,
     },
 
     /// Manage data archive storage configuration.
@@ -951,6 +801,43 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum NotificationsCmd {
+    /// Manage notification connectors.
+    #[command(after_help = "\
+Examples:
+  cx notifications connectors list
+  cx notifications connectors get <connector-id>
+  cx notifications connectors types")]
+    Connectors {
+        #[command(subcommand)]
+        cmd: ConnectorsCmd,
+    },
+    /// Manage notification routers.
+    #[command(after_help = "\
+Examples:
+  cx notifications routers list
+  cx notifications routers get <router-id>")]
+    Routers {
+        #[command(subcommand)]
+        cmd: RoutersCmd,
+    },
+    /// Manage notification presets.
+    #[command(after_help = "\
+Examples:
+  cx notifications presets list
+  cx notifications presets get <preset-id>")]
+    Presets {
+        #[command(subcommand)]
+        cmd: PresetsCmd,
+    },
+    /// Test notification configurations.
+    Test {
+        #[command(subcommand)]
+        cmd: NotificationTestCmd,
+    },
+}
+
+#[derive(Subcommand)]
 enum ConnectorsCmd {
     /// List all notification connectors.
     List,
@@ -1301,6 +1188,17 @@ enum EnrichmentsCmd {
     Limit,
     /// Show enrichment settings.
     Settings,
+    /// Manage custom enrichment tables.
+    #[command(after_help = "\
+Examples:
+  cx enrichments custom list
+  cx enrichments custom get <id>
+  cx enrichments custom create --from-file table.json
+  cx enrichments custom delete <id>")]
+    Custom {
+        #[command(subcommand)]
+        cmd: CustomEnrichmentsCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1386,6 +1284,25 @@ enum IntegrationsCmd {
     },
     /// Get integration template.
     Template,
+    /// Manage extensions.
+    #[command(after_help = "\
+Examples:
+  cx integrations extensions list
+  cx integrations extensions deployed
+  cx integrations extensions get <id>")]
+    Extensions {
+        #[command(subcommand)]
+        cmd: ExtensionsCmd,
+    },
+    /// Manage contextual data integrations.
+    #[command(after_help = "\
+Examples:
+  cx integrations contextual-data list
+  cx integrations contextual-data get <id>")]
+    ContextualData {
+        #[command(subcommand)]
+        cmd: ContextualDataCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1454,6 +1371,17 @@ enum WebhooksCmd {
     },
     /// List available webhook types.
     Types,
+    /// Manage actions (automation hooks).
+    #[command(after_help = "\
+Examples:
+  cx webhooks actions list
+  cx webhooks actions get <id>
+  cx webhooks actions create --from-file action.json
+  cx webhooks actions delete <id>")]
+    Actions {
+        #[command(subcommand)]
+        cmd: ActionsCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1558,6 +1486,87 @@ enum ViewFoldersCmd {
     Delete {
         /// Folder ID.
         id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum IamCmd {
+    /// Manage API keys.
+    #[command(after_help = "\
+Examples:
+  cx iam api-keys list
+  cx iam api-keys get <id>
+  cx iam api-keys create --from-file key.json
+  cx iam api-keys send-data-keys
+  cx iam api-keys admin list")]
+    ApiKeys {
+        #[command(subcommand)]
+        cmd: ApiKeysCmd,
+    },
+    /// Manage custom and system roles.
+    #[command(after_help = "\
+Examples:
+  cx iam roles list
+  cx iam roles get <id>
+  cx iam roles create --from-file role.json
+  cx iam roles system")]
+    Roles {
+        #[command(subcommand)]
+        cmd: RolesCmd,
+    },
+    /// Manage team scopes.
+    #[command(after_help = "\
+Examples:
+  cx iam scopes list
+  cx iam scopes get <id>
+  cx iam scopes create --from-file scope.json")]
+    Scopes {
+        #[command(subcommand)]
+        cmd: ScopesCmd,
+    },
+    /// Search and manage team users.
+    #[command(after_help = "\
+Examples:
+  cx iam users search
+  cx iam users get <user-id>
+  cx iam users create --from-file users.json
+  cx iam users set-status --user-ids <id> --status ACTIVE")]
+    Users {
+        #[command(subcommand)]
+        cmd: UsersCmd,
+    },
+    /// Manage team groups.
+    #[command(name = "groups", after_help = "\
+Examples:
+  cx iam groups list
+  cx iam groups get <id>
+  cx iam groups get-by-name <name>
+  cx iam groups users <group-id>")]
+    TeamGroups {
+        #[command(subcommand)]
+        cmd: TeamGroupsCmd,
+    },
+    /// Manage SAML configuration.
+    #[command(after_help = "\
+Examples:
+  cx iam saml get
+  cx iam saml sp-params
+  cx iam saml set-idp --from-file idp.json
+  cx iam saml set-active --active")]
+    Saml {
+        #[command(subcommand)]
+        cmd: SamlCmd,
+    },
+    /// Manage IP access restrictions.
+    #[command(after_help = "\
+Examples:
+  cx iam ip-access get
+  cx iam ip-access create --from-file access.json
+  cx iam ip-access update --from-file access.json
+  cx iam ip-access delete")]
+    IpAccess {
+        #[command(subcommand)]
+        cmd: IpAccessCmd,
     },
 }
 
@@ -2225,100 +2234,103 @@ async fn main() -> Result<()> {
             }
         },
 
-        Commands::Connectors { cmd } => match cmd {
-            ConnectorsCmd::List => {
-                commands::connectors::run_list(&targets, output).await?;
-            }
-            ConnectorsCmd::Get { id } => {
-                commands::connectors::run_get(&targets, &id, output).await?;
-            }
-            ConnectorsCmd::Create { from_file } => {
-                commands::connectors::run_create(&targets, &from_file, output).await?;
-            }
-            ConnectorsCmd::Update { from_file } => {
-                commands::connectors::run_update(&targets, &from_file, output).await?;
-            }
-            ConnectorsCmd::Delete { id } => {
-                commands::connectors::run_delete(&targets, &id).await?;
-            }
-            ConnectorsCmd::Types => {
-                commands::connectors::run_types(&targets, output).await?;
-            }
-            ConnectorsCmd::EntityTypes => {
-                commands::connectors::run_entity_types(&targets, output).await?;
-            }
-            ConnectorsCmd::EntitySubtypes { r#type } => {
-                commands::connectors::run_entity_subtypes(&targets, &r#type, output).await?;
-            }
-        },
-
-        Commands::Routers { cmd } => match cmd {
-            RoutersCmd::List => {
-                commands::routers::run_list(&targets, output).await?;
-            }
-            RoutersCmd::Get { id } => {
-                commands::routers::run_get(&targets, &id, output).await?;
-            }
-            RoutersCmd::Create { from_file } => {
-                commands::routers::run_create(&targets, &from_file, output).await?;
-            }
-            RoutersCmd::Update { from_file } => {
-                commands::routers::run_update(&targets, &from_file, output).await?;
-            }
-            RoutersCmd::Delete { id } => {
-                commands::routers::run_delete(&targets, &id).await?;
-            }
-            RoutersCmd::ValidateMatcher { from_file } => {
-                commands::routers::run_validate_matcher(&targets, &from_file, output).await?;
-            }
-        },
-
-        Commands::Presets { cmd } => match cmd {
-            PresetsCmd::List => {
-                commands::presets::run_list(&targets, output).await?;
-            }
-            PresetsCmd::Get { id } => {
-                commands::presets::run_get(&targets, &id, output).await?;
-            }
-            PresetsCmd::Create { from_file } => {
-                commands::presets::run_create(&targets, &from_file, output).await?;
-            }
-            PresetsCmd::Update { from_file } => {
-                commands::presets::run_update(&targets, &from_file, output).await?;
-            }
-            PresetsCmd::Delete { id } => {
-                commands::presets::run_delete(&targets, &id).await?;
-            }
-            PresetsCmd::SetDefault { id } => {
-                commands::presets::run_set_default(&targets, &id).await?;
-            }
-        },
-
-        Commands::NotificationTest { cmd } => match cmd {
-            NotificationTestCmd::Connector { from_file } => {
-                commands::notification_testing::run_test_connector(&targets, &from_file, output)
+        Commands::Notifications { cmd } => match cmd {
+            NotificationsCmd::Connectors { cmd } => match cmd {
+                ConnectorsCmd::List => {
+                    commands::connectors::run_list(&targets, output).await?;
+                }
+                ConnectorsCmd::Get { id } => {
+                    commands::connectors::run_get(&targets, &id, output).await?;
+                }
+                ConnectorsCmd::Create { from_file } => {
+                    commands::connectors::run_create(&targets, &from_file, output).await?;
+                }
+                ConnectorsCmd::Update { from_file } => {
+                    commands::connectors::run_update(&targets, &from_file, output).await?;
+                }
+                ConnectorsCmd::Delete { id } => {
+                    commands::connectors::run_delete(&targets, &id).await?;
+                }
+                ConnectorsCmd::Types => {
+                    commands::connectors::run_types(&targets, output).await?;
+                }
+                ConnectorsCmd::EntityTypes => {
+                    commands::connectors::run_entity_types(&targets, output).await?;
+                }
+                ConnectorsCmd::EntitySubtypes { r#type } => {
+                    commands::connectors::run_entity_subtypes(&targets, &r#type, output).await?;
+                }
+            },
+            NotificationsCmd::Routers { cmd } => match cmd {
+                RoutersCmd::List => {
+                    commands::routers::run_list(&targets, output).await?;
+                }
+                RoutersCmd::Get { id } => {
+                    commands::routers::run_get(&targets, &id, output).await?;
+                }
+                RoutersCmd::Create { from_file } => {
+                    commands::routers::run_create(&targets, &from_file, output).await?;
+                }
+                RoutersCmd::Update { from_file } => {
+                    commands::routers::run_update(&targets, &from_file, output).await?;
+                }
+                RoutersCmd::Delete { id } => {
+                    commands::routers::run_delete(&targets, &id).await?;
+                }
+                RoutersCmd::ValidateMatcher { from_file } => {
+                    commands::routers::run_validate_matcher(&targets, &from_file, output).await?;
+                }
+            },
+            NotificationsCmd::Presets { cmd } => match cmd {
+                PresetsCmd::List => {
+                    commands::presets::run_list(&targets, output).await?;
+                }
+                PresetsCmd::Get { id } => {
+                    commands::presets::run_get(&targets, &id, output).await?;
+                }
+                PresetsCmd::Create { from_file } => {
+                    commands::presets::run_create(&targets, &from_file, output).await?;
+                }
+                PresetsCmd::Update { from_file } => {
+                    commands::presets::run_update(&targets, &from_file, output).await?;
+                }
+                PresetsCmd::Delete { id } => {
+                    commands::presets::run_delete(&targets, &id).await?;
+                }
+                PresetsCmd::SetDefault { id } => {
+                    commands::presets::run_set_default(&targets, &id).await?;
+                }
+            },
+            NotificationsCmd::Test { cmd } => match cmd {
+                NotificationTestCmd::Connector { from_file } => {
+                    commands::notification_testing::run_test_connector(
+                        &targets, &from_file, output,
+                    )
                     .await?;
-            }
-            NotificationTestCmd::Destination { from_file } => {
-                commands::notification_testing::run_test_destination(&targets, &from_file, output)
+                }
+                NotificationTestCmd::Destination { from_file } => {
+                    commands::notification_testing::run_test_destination(
+                        &targets, &from_file, output,
+                    )
                     .await?;
-            }
-            NotificationTestCmd::Preset { from_file } => {
-                commands::notification_testing::run_test_preset(&targets, &from_file, output)
+                }
+                NotificationTestCmd::Preset { from_file } => {
+                    commands::notification_testing::run_test_preset(&targets, &from_file, output)
+                        .await?;
+                }
+                NotificationTestCmd::RoutingCondition { from_file } => {
+                    commands::notification_testing::run_test_routing_condition(
+                        &targets, &from_file, output,
+                    )
                     .await?;
-            }
-            NotificationTestCmd::RoutingCondition { from_file } => {
-                commands::notification_testing::run_test_routing_condition(
-                    &targets, &from_file, output,
-                )
-                .await?;
-            }
-            NotificationTestCmd::TemplateRender { from_file } => {
-                commands::notification_testing::run_test_template_render(
-                    &targets, &from_file, output,
-                )
-                .await?;
-            }
+                }
+                NotificationTestCmd::TemplateRender { from_file } => {
+                    commands::notification_testing::run_test_template_render(
+                        &targets, &from_file, output,
+                    )
+                    .await?;
+                }
+            },
         },
 
         Commands::DataUsage { cmd } => match cmd {
@@ -2497,27 +2509,26 @@ async fn main() -> Result<()> {
             EnrichmentsCmd::Settings => {
                 commands::enrichments::run_settings(&targets, output).await?;
             }
-        },
-
-        Commands::CustomEnrichments { cmd } => match cmd {
-            CustomEnrichmentsCmd::List => {
-                commands::custom_enrichments::run_list(&targets, output).await?;
-            }
-            CustomEnrichmentsCmd::Get { id } => {
-                commands::custom_enrichments::run_get(&targets, &id, output).await?;
-            }
-            CustomEnrichmentsCmd::Create { from_file } => {
-                commands::custom_enrichments::run_create(&targets, &from_file, output).await?;
-            }
-            CustomEnrichmentsCmd::Update { from_file } => {
-                commands::custom_enrichments::run_update(&targets, &from_file, output).await?;
-            }
-            CustomEnrichmentsCmd::Delete { id } => {
-                commands::custom_enrichments::run_delete(&targets, &id).await?;
-            }
-            CustomEnrichmentsCmd::Search { id, query } => {
-                commands::custom_enrichments::run_search(&targets, &id, &query, output).await?;
-            }
+            EnrichmentsCmd::Custom { cmd } => match cmd {
+                CustomEnrichmentsCmd::List => {
+                    commands::custom_enrichments::run_list(&targets, output).await?;
+                }
+                CustomEnrichmentsCmd::Get { id } => {
+                    commands::custom_enrichments::run_get(&targets, &id, output).await?;
+                }
+                CustomEnrichmentsCmd::Create { from_file } => {
+                    commands::custom_enrichments::run_create(&targets, &from_file, output).await?;
+                }
+                CustomEnrichmentsCmd::Update { from_file } => {
+                    commands::custom_enrichments::run_update(&targets, &from_file, output).await?;
+                }
+                CustomEnrichmentsCmd::Delete { id } => {
+                    commands::custom_enrichments::run_delete(&targets, &id).await?;
+                }
+                CustomEnrichmentsCmd::Search { id, query } => {
+                    commands::custom_enrichments::run_search(&targets, &id, &query, output).await?;
+                }
+            },
         },
 
         Commands::Integrations { cmd } => match cmd {
@@ -2548,27 +2559,50 @@ async fn main() -> Result<()> {
             IntegrationsCmd::Template => {
                 commands::integrations::run_template(&targets, output).await?;
             }
-        },
-
-        Commands::Extensions { cmd } => match cmd {
-            ExtensionsCmd::List => {
-                commands::extensions::run_list(&targets, output).await?;
-            }
-            ExtensionsCmd::Get { id } => {
-                commands::extensions::run_get(&targets, &id, output).await?;
-            }
-            ExtensionsCmd::Deployed => {
-                commands::extensions::run_deployed(&targets, output).await?;
-            }
-            ExtensionsCmd::Deploy { from_file } => {
-                commands::extensions::run_deploy(&targets, &from_file, output).await?;
-            }
-            ExtensionsCmd::Update { from_file } => {
-                commands::extensions::run_update(&targets, &from_file, output).await?;
-            }
-            ExtensionsCmd::Undeploy { from_file } => {
-                commands::extensions::run_undeploy(&targets, &from_file, output).await?;
-            }
+            IntegrationsCmd::Extensions { cmd } => match cmd {
+                ExtensionsCmd::List => {
+                    commands::extensions::run_list(&targets, output).await?;
+                }
+                ExtensionsCmd::Get { id } => {
+                    commands::extensions::run_get(&targets, &id, output).await?;
+                }
+                ExtensionsCmd::Deployed => {
+                    commands::extensions::run_deployed(&targets, output).await?;
+                }
+                ExtensionsCmd::Deploy { from_file } => {
+                    commands::extensions::run_deploy(&targets, &from_file, output).await?;
+                }
+                ExtensionsCmd::Update { from_file } => {
+                    commands::extensions::run_update(&targets, &from_file, output).await?;
+                }
+                ExtensionsCmd::Undeploy { from_file } => {
+                    commands::extensions::run_undeploy(&targets, &from_file, output).await?;
+                }
+            },
+            IntegrationsCmd::ContextualData { cmd } => match cmd {
+                ContextualDataCmd::List => {
+                    commands::contextual_data::run_list(&targets, output).await?;
+                }
+                ContextualDataCmd::Get { id } => {
+                    commands::contextual_data::run_get(&targets, &id, output).await?;
+                }
+                ContextualDataCmd::Create { from_file } => {
+                    commands::contextual_data::run_create(&targets, &from_file, output).await?;
+                }
+                ContextualDataCmd::Update { id, from_file } => {
+                    commands::contextual_data::run_update(&targets, &id, &from_file, output)
+                        .await?;
+                }
+                ContextualDataCmd::Delete { id } => {
+                    commands::contextual_data::run_delete(&targets, &id).await?;
+                }
+                ContextualDataCmd::Definition { id } => {
+                    commands::contextual_data::run_definition(&targets, &id, output).await?;
+                }
+                ContextualDataCmd::Test { id } => {
+                    commands::contextual_data::run_test(&targets, &id, output).await?;
+                }
+            },
         },
 
         Commands::Webhooks { cmd } => match cmd {
@@ -2593,30 +2627,29 @@ async fn main() -> Result<()> {
             WebhooksCmd::Types => {
                 commands::webhooks::run_types(&targets, output).await?;
             }
-        },
-
-        Commands::ContextualData { cmd } => match cmd {
-            ContextualDataCmd::List => {
-                commands::contextual_data::run_list(&targets, output).await?;
-            }
-            ContextualDataCmd::Get { id } => {
-                commands::contextual_data::run_get(&targets, &id, output).await?;
-            }
-            ContextualDataCmd::Create { from_file } => {
-                commands::contextual_data::run_create(&targets, &from_file, output).await?;
-            }
-            ContextualDataCmd::Update { id, from_file } => {
-                commands::contextual_data::run_update(&targets, &id, &from_file, output).await?;
-            }
-            ContextualDataCmd::Delete { id } => {
-                commands::contextual_data::run_delete(&targets, &id).await?;
-            }
-            ContextualDataCmd::Definition { id } => {
-                commands::contextual_data::run_definition(&targets, &id, output).await?;
-            }
-            ContextualDataCmd::Test { id } => {
-                commands::contextual_data::run_test(&targets, &id, output).await?;
-            }
+            WebhooksCmd::Actions { cmd } => match cmd {
+                ActionsCmd::List => {
+                    commands::actions::run_list(&targets, output).await?;
+                }
+                ActionsCmd::Get { id } => {
+                    commands::actions::run_get(&targets, &id, output).await?;
+                }
+                ActionsCmd::Create { from_file } => {
+                    commands::actions::run_create(&targets, &from_file, output).await?;
+                }
+                ActionsCmd::Update { from_file } => {
+                    commands::actions::run_update(&targets, &from_file, output).await?;
+                }
+                ActionsCmd::Delete { id } => {
+                    commands::actions::run_delete(&targets, &id).await?;
+                }
+                ActionsCmd::Batch { from_file } => {
+                    commands::actions::run_batch(&targets, &from_file, output).await?;
+                }
+                ActionsCmd::Reorder { from_file } => {
+                    commands::actions::run_reorder(&targets, &from_file, output).await?;
+                }
+            },
         },
 
         Commands::Views { cmd } => match cmd {
@@ -2654,204 +2687,176 @@ async fn main() -> Result<()> {
             },
         },
 
-        Commands::ApiKeys { cmd } => match cmd {
-            ApiKeysCmd::List => {
-                commands::api_keys::run_list(&targets, output).await?;
-            }
-            ApiKeysCmd::Get { id } => {
-                commands::api_keys::run_get(&targets, &id, output).await?;
-            }
-            ApiKeysCmd::Create { from_file } => {
-                commands::api_keys::run_create(&targets, &from_file, output).await?;
-            }
-            ApiKeysCmd::Update { from_file, id } => {
-                commands::api_keys::run_update(&targets, &id, &from_file, output).await?;
-            }
-            ApiKeysCmd::Delete { id } => {
-                commands::api_keys::run_delete(&targets, &id).await?;
-            }
-            ApiKeysCmd::SendDataKeys => {
-                commands::api_keys::run_send_data_keys(&targets, output).await?;
-            }
-            ApiKeysCmd::Admin { cmd } => match cmd {
-                ApiKeysAdminCmd::List => {
-                    commands::api_keys::run_admin_list(&targets, output).await?;
+        Commands::Iam { cmd } => match cmd {
+            IamCmd::ApiKeys { cmd } => match cmd {
+                ApiKeysCmd::List => {
+                    commands::api_keys::run_list(&targets, output).await?;
                 }
-                ApiKeysAdminCmd::Delete { ids } => {
-                    commands::api_keys::run_admin_delete(&targets, &ids).await?;
+                ApiKeysCmd::Get { id } => {
+                    commands::api_keys::run_get(&targets, &id, output).await?;
                 }
-                ApiKeysAdminCmd::SetStatus { ids, active } => {
-                    commands::api_keys::run_admin_set_status(&targets, &ids, active).await?;
+                ApiKeysCmd::Create { from_file } => {
+                    commands::api_keys::run_create(&targets, &from_file, output).await?;
+                }
+                ApiKeysCmd::Update { from_file, id } => {
+                    commands::api_keys::run_update(&targets, &id, &from_file, output).await?;
+                }
+                ApiKeysCmd::Delete { id } => {
+                    commands::api_keys::run_delete(&targets, &id).await?;
+                }
+                ApiKeysCmd::SendDataKeys => {
+                    commands::api_keys::run_send_data_keys(&targets, output).await?;
+                }
+                ApiKeysCmd::Admin { cmd } => match cmd {
+                    ApiKeysAdminCmd::List => {
+                        commands::api_keys::run_admin_list(&targets, output).await?;
+                    }
+                    ApiKeysAdminCmd::Delete { ids } => {
+                        commands::api_keys::run_admin_delete(&targets, &ids).await?;
+                    }
+                    ApiKeysAdminCmd::SetStatus { ids, active } => {
+                        commands::api_keys::run_admin_set_status(&targets, &ids, active).await?;
+                    }
+                },
+            },
+            IamCmd::Roles { cmd } => match cmd {
+                RolesCmd::List => {
+                    commands::roles::run_list(&targets, output).await?;
+                }
+                RolesCmd::Get { id } => {
+                    commands::roles::run_get(&targets, &id, output).await?;
+                }
+                RolesCmd::Create { from_file } => {
+                    commands::roles::run_create(&targets, &from_file, output).await?;
+                }
+                RolesCmd::Update { from_file, id } => {
+                    commands::roles::run_update(&targets, &id, &from_file, output).await?;
+                }
+                RolesCmd::Delete { id } => {
+                    commands::roles::run_delete(&targets, &id).await?;
+                }
+                RolesCmd::System => {
+                    commands::roles::run_system(&targets, output).await?;
                 }
             },
-        },
-
-        Commands::Roles { cmd } => match cmd {
-            RolesCmd::List => {
-                commands::roles::run_list(&targets, output).await?;
-            }
-            RolesCmd::Get { id } => {
-                commands::roles::run_get(&targets, &id, output).await?;
-            }
-            RolesCmd::Create { from_file } => {
-                commands::roles::run_create(&targets, &from_file, output).await?;
-            }
-            RolesCmd::Update { from_file, id } => {
-                commands::roles::run_update(&targets, &id, &from_file, output).await?;
-            }
-            RolesCmd::Delete { id } => {
-                commands::roles::run_delete(&targets, &id).await?;
-            }
-            RolesCmd::System => {
-                commands::roles::run_system(&targets, output).await?;
-            }
-        },
-
-        Commands::Scopes { cmd } => match cmd {
-            ScopesCmd::List => {
-                commands::scopes::run_list(&targets, output).await?;
-            }
-            ScopesCmd::Get { id } => {
-                commands::scopes::run_get(&targets, &id, output).await?;
-            }
-            ScopesCmd::Create { from_file } => {
-                commands::scopes::run_create(&targets, &from_file, output).await?;
-            }
-            ScopesCmd::Update { from_file } => {
-                commands::scopes::run_update(&targets, &from_file, output).await?;
-            }
-            ScopesCmd::Delete { id } => {
-                commands::scopes::run_delete(&targets, &id).await?;
-            }
-        },
-
-        Commands::Users { cmd } => match cmd {
-            UsersCmd::Search {
-                query,
-                status,
-                page_size,
-                page_token,
-            } => {
-                commands::users::run_search(
-                    &targets,
-                    query.as_deref(),
-                    status.as_deref(),
-                    page_size.as_deref(),
-                    page_token.as_deref(),
-                    output,
-                )
-                .await?;
-            }
-            UsersCmd::Get { user_id } => {
-                commands::users::run_get(&targets, &user_id, output).await?;
-            }
-            UsersCmd::Create { from_file } => {
-                commands::users::run_create(&targets, &from_file, output).await?;
-            }
-            UsersCmd::Update { from_file } => {
-                commands::users::run_update(&targets, &from_file, output).await?;
-            }
-            UsersCmd::SetStatus { user_ids, status } => {
-                commands::users::run_set_status(&targets, &user_ids, &status).await?;
-            }
-        },
-
-        Commands::TeamGroups { cmd } => match cmd {
-            TeamGroupsCmd::List {
-                page_size,
-                page_token,
-            } => {
-                commands::team_groups::run_list(
-                    &targets,
-                    page_size.as_deref(),
-                    page_token.as_deref(),
-                    output,
-                )
-                .await?;
-            }
-            TeamGroupsCmd::Get { id } => {
-                commands::team_groups::run_get(&targets, &id, output).await?;
-            }
-            TeamGroupsCmd::GetByName { name } => {
-                commands::team_groups::run_get_by_name(&targets, &name, output).await?;
-            }
-            TeamGroupsCmd::Users {
-                group_id,
-                page_size,
-                page_token,
-            } => {
-                commands::team_groups::run_users(
-                    &targets,
-                    &group_id,
-                    page_size.as_deref(),
-                    page_token.as_deref(),
-                    output,
-                )
-                .await?;
-            }
-            TeamGroupsCmd::Create { from_file } => {
-                commands::team_groups::run_create(&targets, &from_file, output).await?;
-            }
-            TeamGroupsCmd::Update { from_file, id } => {
-                commands::team_groups::run_update(&targets, &id, &from_file, output).await?;
-            }
-            TeamGroupsCmd::Delete { id } => {
-                commands::team_groups::run_delete(&targets, &id).await?;
-            }
-        },
-
-        Commands::Saml { cmd } => match cmd {
-            SamlCmd::Get => {
-                commands::saml::run_get(&targets, output).await?;
-            }
-            SamlCmd::SpParams => {
-                commands::saml::run_sp_params(&targets, output).await?;
-            }
-            SamlCmd::SetIdp { from_file } => {
-                commands::saml::run_set_idp(&targets, &from_file, output).await?;
-            }
-            SamlCmd::SetActive { active } => {
-                commands::saml::run_set_active(&targets, active).await?;
-            }
-        },
-
-        Commands::IpAccess { cmd } => match cmd {
-            IpAccessCmd::Get => {
-                commands::ip_access::run_get(&targets, output).await?;
-            }
-            IpAccessCmd::Create { from_file } => {
-                commands::ip_access::run_create(&targets, &from_file, output).await?;
-            }
-            IpAccessCmd::Update { from_file } => {
-                commands::ip_access::run_update(&targets, &from_file, output).await?;
-            }
-            IpAccessCmd::Delete => {
-                commands::ip_access::run_delete(&targets).await?;
-            }
-        },
-
-        Commands::Actions { cmd } => match cmd {
-            ActionsCmd::List => {
-                commands::actions::run_list(&targets, output).await?;
-            }
-            ActionsCmd::Get { id } => {
-                commands::actions::run_get(&targets, &id, output).await?;
-            }
-            ActionsCmd::Create { from_file } => {
-                commands::actions::run_create(&targets, &from_file, output).await?;
-            }
-            ActionsCmd::Update { from_file } => {
-                commands::actions::run_update(&targets, &from_file, output).await?;
-            }
-            ActionsCmd::Delete { id } => {
-                commands::actions::run_delete(&targets, &id).await?;
-            }
-            ActionsCmd::Batch { from_file } => {
-                commands::actions::run_batch(&targets, &from_file, output).await?;
-            }
-            ActionsCmd::Reorder { from_file } => {
-                commands::actions::run_reorder(&targets, &from_file, output).await?;
-            }
+            IamCmd::Scopes { cmd } => match cmd {
+                ScopesCmd::List => {
+                    commands::scopes::run_list(&targets, output).await?;
+                }
+                ScopesCmd::Get { id } => {
+                    commands::scopes::run_get(&targets, &id, output).await?;
+                }
+                ScopesCmd::Create { from_file } => {
+                    commands::scopes::run_create(&targets, &from_file, output).await?;
+                }
+                ScopesCmd::Update { from_file } => {
+                    commands::scopes::run_update(&targets, &from_file, output).await?;
+                }
+                ScopesCmd::Delete { id } => {
+                    commands::scopes::run_delete(&targets, &id).await?;
+                }
+            },
+            IamCmd::Users { cmd } => match cmd {
+                UsersCmd::Search {
+                    query,
+                    status,
+                    page_size,
+                    page_token,
+                } => {
+                    commands::users::run_search(
+                        &targets,
+                        query.as_deref(),
+                        status.as_deref(),
+                        page_size.as_deref(),
+                        page_token.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                UsersCmd::Get { user_id } => {
+                    commands::users::run_get(&targets, &user_id, output).await?;
+                }
+                UsersCmd::Create { from_file } => {
+                    commands::users::run_create(&targets, &from_file, output).await?;
+                }
+                UsersCmd::Update { from_file } => {
+                    commands::users::run_update(&targets, &from_file, output).await?;
+                }
+                UsersCmd::SetStatus { user_ids, status } => {
+                    commands::users::run_set_status(&targets, &user_ids, &status).await?;
+                }
+            },
+            IamCmd::TeamGroups { cmd } => match cmd {
+                TeamGroupsCmd::List {
+                    page_size,
+                    page_token,
+                } => {
+                    commands::team_groups::run_list(
+                        &targets,
+                        page_size.as_deref(),
+                        page_token.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                TeamGroupsCmd::Get { id } => {
+                    commands::team_groups::run_get(&targets, &id, output).await?;
+                }
+                TeamGroupsCmd::GetByName { name } => {
+                    commands::team_groups::run_get_by_name(&targets, &name, output).await?;
+                }
+                TeamGroupsCmd::Users {
+                    group_id,
+                    page_size,
+                    page_token,
+                } => {
+                    commands::team_groups::run_users(
+                        &targets,
+                        &group_id,
+                        page_size.as_deref(),
+                        page_token.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                TeamGroupsCmd::Create { from_file } => {
+                    commands::team_groups::run_create(&targets, &from_file, output).await?;
+                }
+                TeamGroupsCmd::Update { from_file, id } => {
+                    commands::team_groups::run_update(&targets, &id, &from_file, output).await?;
+                }
+                TeamGroupsCmd::Delete { id } => {
+                    commands::team_groups::run_delete(&targets, &id).await?;
+                }
+            },
+            IamCmd::Saml { cmd } => match cmd {
+                SamlCmd::Get => {
+                    commands::saml::run_get(&targets, output).await?;
+                }
+                SamlCmd::SpParams => {
+                    commands::saml::run_sp_params(&targets, output).await?;
+                }
+                SamlCmd::SetIdp { from_file } => {
+                    commands::saml::run_set_idp(&targets, &from_file, output).await?;
+                }
+                SamlCmd::SetActive { active } => {
+                    commands::saml::run_set_active(&targets, active).await?;
+                }
+            },
+            IamCmd::IpAccess { cmd } => match cmd {
+                IpAccessCmd::Get => {
+                    commands::ip_access::run_get(&targets, output).await?;
+                }
+                IpAccessCmd::Create { from_file } => {
+                    commands::ip_access::run_create(&targets, &from_file, output).await?;
+                }
+                IpAccessCmd::Update { from_file } => {
+                    commands::ip_access::run_update(&targets, &from_file, output).await?;
+                }
+                IpAccessCmd::Delete => {
+                    commands::ip_access::run_delete(&targets).await?;
+                }
+            },
         },
 
         Commands::DataArchive { cmd } => match cmd {

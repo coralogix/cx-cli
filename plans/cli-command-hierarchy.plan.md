@@ -176,31 +176,31 @@ Local:
 - **Acceptance:** `cx alerts list` works. `cx alerts schedulers list` works. `cx alert-schedulers` no longer exists. `cargo build` succeeds.
 - **Dependencies:** 1.3
 
-### 2.2 [ ] Merge `actions` into `webhooks`
+### 2.2 [x] Merge `actions` into `webhooks` *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** Add an `Actions` variant wrapping `ActionsCmd` to `WebhooksCmd` (or create a wrapper). Remove the `Actions` variant from `Commands`. Rewire dispatch. Update `after_help`.
 - **Acceptance:** `cx webhooks list` works. `cx webhooks actions list` works. `cx actions` no longer exists. `cargo build` succeeds.
 - **Dependencies:** 1.3
 
-### 2.3 [ ] Merge `custom-enrichments` into `enrichments`
+### 2.3 [x] Merge `custom-enrichments` into `enrichments` *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** Add a `Custom` variant wrapping `CustomEnrichmentsCmd` to `EnrichmentsCmd` (or create a wrapper). Remove the `CustomEnrichments` variant from `Commands`. Rewire dispatch. Update `after_help`.
 - **Acceptance:** `cx enrichments list` works. `cx enrichments custom list` works. `cx custom-enrichments` no longer exists. `cargo build` succeeds.
 - **Dependencies:** 1.3
 
-### 2.4 [ ] Create `notifications` command (merge connectors + routers + presets + notification-test)
+### 2.4 [x] Create `notifications` command (merge connectors + routers + presets + notification-test) *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** Create a new `NotificationsCmd` enum with variants: `Connectors { cmd: ConnectorsCmd }`, `Routers { cmd: RoutersCmd }`, `Presets { cmd: PresetsCmd }`, `Test { cmd: NotificationTestCmd }`. Add a `Notifications` variant to `Commands`. Remove the individual `Connectors`, `Routers`, `Presets`, `NotificationTest` variants from `Commands`. Rewire dispatch. Add `after_help` examples showing `cx notifications connectors list`, etc.
 - **Acceptance:** `cx notifications connectors list`, `cx notifications routers list`, `cx notifications presets list`, `cx notifications test ...` all work. Old flat commands no longer exist. `cargo build` succeeds.
 - **Dependencies:** 1.3
 
-### 2.5 [ ] Merge `extensions` + `contextual-data` into `integrations`
+### 2.5 [x] Merge `extensions` + `contextual-data` into `integrations` *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** The existing `IntegrationsCmd` already has CRUD subcommands (`List`, `Get`, `Create`, `Delete`). Create a new `IntegrationsCmdExpanded` enum that **copies all existing variants from `IntegrationsCmd`** (List, Get, Create, Delete) and adds `Extensions { cmd: ExtensionsCmd }` and `ContextualData { cmd: ContextualDataCmd }`. Replace `IntegrationsCmd` with this new enum in the `Commands` variant (or rename it). Do NOT nest the old enum — the CRUD subcommands must stay at the same level as `extensions` and `contextual-data` so the user sees `cx integrations list` alongside `cx integrations extensions list`. Remove the `Extensions` and `ContextualData` variants from `Commands`. Rewire dispatch. Update `after_help`.
 - **Acceptance:** `cx integrations list` still works. `cx integrations extensions list` works. `cx integrations contextual-data list` works. `cargo build` succeeds.
 - **Dependencies:** 1.3
 
-### 2.6 [ ] Create `iam` command (merge api-keys + roles + scopes + users + team-groups + saml + ip-access)
+### 2.6 [x] Create `iam` command (merge api-keys + roles + scopes + users + team-groups + saml + ip-access) *(completed 2026-04-28)*
 - **Files:** `src/main.rs`
 - **What:** Create a new `IamCmd` enum with variants: `ApiKeys { cmd: ApiKeysCmd }`, `Roles { cmd: RolesCmd }`, `Scopes { cmd: ScopesCmd }`, `Users { cmd: UsersCmd }`, `Groups { cmd: TeamGroupsCmd }` (note: renamed from `team-groups` to `groups` via `#[command(name = "groups")]`), `Saml { cmd: SamlCmd }`, `IpAccess { cmd: IpAccessCmd }`. Add `Iam` variant to `Commands`. Remove `ApiKeys`, `Roles`, `Scopes`, `Users`, `TeamGroups`, `Saml`, `IpAccess` from `Commands`. Rewire dispatch. Add comprehensive `after_help`.
 - **Acceptance:** `cx iam api-keys list`, `cx iam roles list`, `cx iam scopes list`, `cx iam users search`, `cx iam groups list`, `cx iam saml get`, `cx iam ip-access get` all work. `cargo build` succeeds.

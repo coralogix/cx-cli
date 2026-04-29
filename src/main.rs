@@ -12,6 +12,7 @@ use config::OutputFormat;
 use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
+use coralogix_cli::confirm::confirm_destructive;
 use coralogix_cli::execution::build_targets;
 use coralogix_cli::Tier;
 
@@ -105,6 +106,10 @@ struct Cli {
     /// Output format: text, json, or agents. Overrides the default set in config.
     #[arg(long, short = 'o', global = true)]
     output: Option<OutputFormat>,
+
+    /// Skip confirmation prompts for destructive operations.
+    #[arg(long, global = true)]
+    yes: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -2125,6 +2130,7 @@ async fn main() -> Result<()> {
         })?;
 
     let targets = build_targets(configs)?;
+    let yes = cli.yes;
 
     match cli.command {
         Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),

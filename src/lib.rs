@@ -1,5 +1,6 @@
 pub mod api_client;
 pub mod commands;
+pub mod confirm;
 pub mod config;
 pub mod error;
 pub mod execution;

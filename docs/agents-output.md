@@ -14,7 +14,7 @@ For DataPrime results (logs and spans), the following keys are renamed:
 | `labels` | `$l` | Application labels (`applicationname`, `subsystemname`, `serviceName`, etc.) |
 | `userData` | `$d` | User data / log body |
 
-The aliases `$m`, `$l`, and `$d` are also valid in DataPrime query syntax itself — for example, `cx logs 'filter $m.severity == ERROR'` works regardless of output mode.
+The aliases `$m`, `$l`, and `$d` are also valid in DataPrime query syntax itself - for example, `cx logs 'filter $m.severity == ERROR'` works regardless of output mode.
 
 ## Metadata stripping
 
@@ -28,7 +28,7 @@ The following metadata fields are removed from `$m`:
 
 ## Metrics output
 
-For `cx metrics query`, agents output includes only the metric definition (labels) and sample value — timestamps are omitted.
+For `cx metrics query`, agents output includes only the metric definition (labels) and sample value - timestamps are omitted.
 
 ## Result spilling
 

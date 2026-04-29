@@ -171,7 +171,7 @@ fn wait_for_callback_blocking(listener: TcpListener, expected_state: String) -> 
         if let Some(code) = extract_and_respond(stream, &expected_state)? {
             return Ok(code);
         }
-        // Not an OAuth callback (e.g. favicon request) — keep waiting.
+        // Not an OAuth callback (e.g. favicon request) - keep waiting.
     }
 }
 
@@ -191,7 +191,7 @@ fn extract_and_respond(stream: TcpStream, expected_state: &str) -> Result<Option
         .context("Malformed HTTP request in OAuth callback")?;
 
     let Some(query) = path.split('?').nth(1) else {
-        // No query string — not an OAuth redirect (e.g. GET / or GET /favicon.ico).
+        // No query string - not an OAuth redirect (e.g. GET / or GET /favicon.ico).
         send_http_response(&stream, 204, "");
         return Ok(None);
     };
@@ -204,7 +204,7 @@ fn extract_and_respond(stream: TcpStream, expected_state: &str) -> Result<Option
     let (code, returned_state) = match (params.get("code"), params.get("state")) {
         (Some(c), Some(s)) => (c.clone(), s.clone()),
         _ => {
-            // Query string present but missing code/state — not an OAuth redirect.
+            // Query string present but missing code/state - not an OAuth redirect.
             send_http_response(&stream, 204, "");
             return Ok(None);
         }
@@ -326,7 +326,7 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
     let (verifier, challenge) = generate_pkce();
 
     // Generate an independent random state for CSRF protection.
-    // Must NOT reuse the PKCE challenge — state and code_challenge serve
+    // Must NOT reuse the PKCE challenge - state and code_challenge serve
     // distinct roles and using the same value leaks information.
     let state = {
         let mut rng = rand::rng();

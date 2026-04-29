@@ -11,7 +11,7 @@ use crate::commands::saml::api::SamlApi;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
-use api::{SearchUsersResponse, User, UsersApi};
+use api::{User, UsersApi};
 
 fn user_to_json(user: &User, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
@@ -46,12 +46,16 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
-async fn resolve_team_id(client: &crate::api_client::CxClient) -> String {
+async fn resolve_team_id(client: &crate::api_client::CxClient) -> anyhow::Result<String> {
     let saml = SamlApi::new(client);
-    match saml.get_config().await {
-        Ok(config) => config.team_id.map(|id| id.to_string()).unwrap_or_default(),
-        Err(_) => String::new(),
-    }
+    let config = saml
+        .get_config()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to resolve team ID from SAML config: {e}"))?;
+    config
+        .team_id
+        .map(|id| id.to_string())
+        .ok_or_else(|| anyhow::anyhow!("SAML config returned no team ID"))
 }
 
 pub async fn run_search(
@@ -77,14 +81,7 @@ pub async fn run_search(
         let page_token = page_token.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = resolve_team_id(&t.client).await;
-            if team_id.is_empty() {
-                return Ok(SearchUsersResponse {
-                    users: vec![],
-                    next_page_token: None,
-                    total_count: None,
-                });
-            }
+            let team_id = resolve_team_id(&t.client).await?;
             let team_id = team_id.as_str();
             let mut params: Vec<(&str, String)> = Vec::new();
             if let Some(ref q) = query {
@@ -172,7 +169,7 @@ pub async fn run_get(
         let user_id = user_id.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = resolve_team_id(&t.client).await;
+            let team_id = resolve_team_id(&t.client).await?;
             let team_id = team_id.as_str();
             Ok(api.get(team_id, &user_id).await?)
         }
@@ -223,7 +220,7 @@ pub async fn run_create(
         let body = body.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = resolve_team_id(&t.client).await;
+            let team_id = resolve_team_id(&t.client).await?;
             let team_id = team_id.as_str();
             api.create(team_id, &body).await?;
             Ok(())
@@ -261,7 +258,7 @@ pub async fn run_update(
         let body = body.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = resolve_team_id(&t.client).await;
+            let team_id = resolve_team_id(&t.client).await?;
             let team_id = team_id.as_str();
             Ok(api.update(team_id, &body).await?)
         }
@@ -324,7 +321,7 @@ pub async fn run_set_status(
         let body = body.clone();
         async move {
             let api = UsersApi::new(&t.client);
-            let team_id = resolve_team_id(&t.client).await;
+            let team_id = resolve_team_id(&t.client).await?;
             let team_id = team_id.as_str();
             api.update_statuses(team_id, &body).await?;
             Ok(())

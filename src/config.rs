@@ -312,7 +312,7 @@ fn list_profile_names_from(dir: &PathBuf) -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// Load the global config (non-fatal if missing — returns default).
+/// Load the global config (non-fatal if missing - returns default).
 pub fn load_config() -> Result<Config> {
     let path = config_file()?;
     if !path.exists() {
@@ -347,8 +347,8 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 ///
 /// Resolution order for the bearer token:
 ///   1. `--api-key` / `CX_API_KEY` CLI override (always wins, any auth mode)
-///   2. `AuthKind::ApiKey` — reads the key from OS keyring or profile file
-///   3. `AuthKind::OAuth`  — loads the cached access token; refreshes via the
+///   2. `AuthKind::ApiKey` - reads the key from OS keyring or profile file
+///   3. `AuthKind::OAuth`  - loads the cached access token; refreshes via the
 ///      refresh token if the access token has expired (or is missing)
 ///
 /// Env-only mode: when no profile file exists on disk but both an API key
@@ -439,7 +439,7 @@ pub async fn resolve(
 ///
 /// When `profiles` is empty, falls back to the single default profile from config.
 /// Overrides (`api_key_override`, `region_override`) are applied uniformly to every
-/// resolved profile — the caller should reject these when `profiles.len() > 1`.
+/// resolved profile - the caller should reject these when `profiles.len() > 1`.
 pub async fn resolve_all(
     profiles: &[String],
     api_key_override: Option<&str>,

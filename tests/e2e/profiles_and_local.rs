@@ -1,7 +1,7 @@
 //! Sanity tests for commands that don't hit the Coralogix API.
 //!
 //! These still gate on `require_creds` so the entire e2e suite is uniformly
-//! opt-in — running e2e without test team access doesn't make sense even
+//! opt-in - running e2e without test team access doesn't make sense even
 //! for local-only commands.
 
 use crate::harness;

@@ -293,7 +293,7 @@ src/
     │   ├── mod.rs
     │   └── api.rs       #   Dashboards API
     ├── search_fields/mod.rs  # Semantic field lookup (uses dataprime::semantic_search)
-    ├── schema.rs        # cx schema — JSON command tree for agent discovery
+    ├── schema.rs        # cx schema - JSON command tree for agent discovery
     ├── profiles/mod.rs  # Profile management (no API calls)
     ├── cleanup/mod.rs   # Temp file cleanup (no API calls)
     └── ...              # One module per REST domain (incidents, notifications,

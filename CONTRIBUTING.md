@@ -4,9 +4,9 @@ Thank you for your interest in contributing to `cx`, the Coralogix CLI. This gui
 
 ## Who Can Contribute
 
-**Coralogix teams** — Each team is encouraged to add commands and skills for the observability domains they own. This is the primary contribution path.
+**Coralogix teams** - Each team is encouraged to add commands and skills for the observability domains they own. This is the primary contribution path.
 
-**External contributors** — Contributions from outside Coralogix are welcome. The same process applies: open an issue first, then follow the lifecycle below.
+**External contributors** - Contributions from outside Coralogix are welcome. The same process applies: open an issue first, then follow the lifecycle below.
 
 ## Ownership Model
 
@@ -40,12 +40,12 @@ All PRs require at least one approving review before merge. PRs that touch share
 
 Adding a new command follows this lifecycle:
 
-1. **Proposal** — Open an issue describing the command, its target API, and the intended user workflow.
-2. **Design review** — The core team reviews the proposal and confirms the archetype (DataPrime-based or REST-based). See [architecture.md](docs/architecture.md) for the two archetypes.
-3. **Implementation** — Follow the step-by-step guide in [adding-a-command.md](docs/adding-a-command.md). Every new command **must** ship with a corresponding user-facing skill — see [adding-a-skill.md](docs/adding-a-skill.md).
-4. **PR review** — Open a PR. Dual review applies (domain team + core team).
-5. **Merge** — Squash-merge into `master` after approval.
-6. **Release** — The release workflow builds and publishes binaries automatically.
+1. **Proposal** - Open an issue describing the command, its target API, and the intended user workflow.
+2. **Design review** - The core team reviews the proposal and confirms the archetype (DataPrime-based or REST-based). See [architecture.md](docs/architecture.md) for the two archetypes.
+3. **Implementation** - Follow the step-by-step guide in [adding-a-command.md](docs/adding-a-command.md). Every new command **must** ship with a corresponding user-facing skill - see [adding-a-skill.md](docs/adding-a-skill.md).
+4. **PR review** - Open a PR. Dual review applies (domain team + core team).
+5. **Merge** - Squash-merge into `master` after approval.
+6. **Release** - The release workflow builds and publishes binaries automatically.
 
 ## Security Rules
 
@@ -55,7 +55,7 @@ Adding a new command follows this lifecycle:
 
 ## Skill Requirement
 
-**Every new command must ship with a corresponding user-facing skill in `skills/`.** Skills teach AI agents how to use your command effectively — they are a required part of every command PR, not optional.
+**Every new command must ship with a corresponding user-facing skill in `skills/`.** Skills teach AI agents how to use your command effectively - they are a required part of every command PR, not optional.
 
 See [Adding a Skill](docs/adding-a-skill.md) for directory structure, frontmatter conventions, and a copy-pasteable template.
 

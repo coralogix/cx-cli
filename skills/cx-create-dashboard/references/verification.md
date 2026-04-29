@@ -16,13 +16,13 @@ Parse `relativeTimeFrame` from the draft (default `"172800s"` = 48h) into a huma
 | `172800s` | `48h` |
 | `604800s` | `7d` |
 
-Every verification query uses `$RANGE` so the CLI check matches what the dashboard will evaluate post-import. Don't substitute a hard-coded `[5m]` — that would test a different window than the dashboard runs.
+Every verification query uses `$RANGE` so the CLI check matches what the dashboard will evaluate post-import. Don't substitute a hard-coded `[5m]` - that would test a different window than the dashboard runs.
 
 ---
 
 ## 2. Verify each PromQL query
 
-For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`). Leave any other fixed window (`[5m]`, `[1h]`) untouched — those were placed intentionally for sliding-rate panels.
+For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`). Leave any other fixed window (`[5m]`, `[1h]`) untouched - those were placed intentionally for sliding-rate panels.
 
 **Instant-style widgets** (`gauge` / `pieChart` / `dataTable` with `promqlQueryType: PROM_QL_QUERY_TYPE_INSTANT`):
 
@@ -53,7 +53,7 @@ For every widget whose definition contains a `dataprimeQuery`, pick the CLI comm
 | `source logs \| …` | `cx logs` | everything after `source logs \|` (trim the leading `\|` and whitespace) |
 | `source spans \| …` | `cx spans` | everything after `source spans \|` |
 
-The dashboard runtime requires the `source …` prefix inside the widget JSON (see `query-syntax.md` §3), but `cx logs` and `cx spans` both inject the source themselves and will reject a pipeline that starts with `source …`. Strip it only for verification; restore nothing — the widget JSON keeps the prefix.
+The dashboard runtime requires the `source …` prefix inside the widget JSON (see `query-syntax.md` §3), but `cx logs` and `cx spans` both inject the source themselves and will reject a pipeline that starts with `source …`. Strip it only for verification; restore nothing - the widget JSON keeps the prefix.
 
 **Log-backed widgets:**
 
@@ -75,4 +75,4 @@ A query **passes** when the CLI returns without a parse error. Empty results are
 
 Once every PromQL and DataPrime query passes, restore `${__range}` (and any other variables) in the emitted JSON. The verification step uses the concrete `$RANGE`; the final JSON keeps the injected variables intact.
 
-If any query can't be made to pass within the retry budget, surface it to the user with the CLI error verbatim — don't silently ship a broken widget.
+If any query can't be made to pass within the retry budget, surface it to the user with the CLI error verbatim - don't silently ship a broken widget.

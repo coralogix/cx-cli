@@ -16,7 +16,7 @@ Every query targets a **source** (`logs`, `spans`, etc.). The source is set by w
 source <logs|spans> | filter ... | groupby ...
 ```
 
-When running via a source-specific command (e.g. `cx logs`, `cx spans`), the source is injected automatically — omit it from the query. When running via `cx dataprime query`, use the `--source` flag or include `source` in the query itself.
+When running via a source-specific command (e.g. `cx logs`, `cx spans`), the source is injected automatically - omit it from the query. When running via `cx dataprime query`, use the `--source` flag or include `source` in the query itself.
 
 The examples below focus on the DataPrime query language and omit the source and CLI command prefix.
 
@@ -66,7 +66,7 @@ All fields are accessed through three namespaces:
 | `wildfind` | Search all fields for a string (see note below) | `wildfind 'connection refused'` |
 | `lucene` | Filter using Lucene syntax | `lucene 'key:field:"value"'` |
 
-> **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions — use it as its own pipeline stage.
+> **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions - use it as its own pipeline stage.
 
 ### Aggregation
 
@@ -136,14 +136,14 @@ filter $d.http['status/code'] == 500
 | `any_value($field)` | Random sample value |
 | `collect($field)` | Collect values into an array |
 
-Example — full CLI invocation:
+Example - full CLI invocation:
 ```bash
 cx dataprime query --source logs 'groupby $l.subsystemname aggregate count() as error_count, avg($d.response_time) as avg_response | orderby error_count desc'
 ```
 
 ## Utility Functions
 
-### firstNonNull — Field Coalescing
+### firstNonNull - Field Coalescing
 
 Return the first non-null value from a list of fields. Useful when the same data may appear in different fields across log sources:
 

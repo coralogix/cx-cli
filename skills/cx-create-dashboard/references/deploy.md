@@ -1,6 +1,6 @@
 # Phase 7: Deploy via `cx dashboards create`
 
-Don't tell the user to paste JSON into the Coralogix UI — deploy the dashboard directly.
+Don't tell the user to paste JSON into the Coralogix UI - deploy the dashboard directly.
 
 ---
 
@@ -14,10 +14,10 @@ cx dashboards folders list -o json
 
 Rank the existing folders by relevance (service name, team, product area) and present the top matches with `AskQuestion`:
 
-- "Folder X (id: `<id>`) — best match by name"
+- "Folder X (id: `<id>`) - best match by name"
 - "Folder Y (id: `<id>`)"
 - "Root (no folder)"
-- "None of these — I'll create a folder in the Coralogix UI first"
+- "None of these - I'll create a folder in the Coralogix UI first"
 
 Default to "Root" if nothing fits.
 
@@ -25,7 +25,7 @@ Default to "Root" if nothing fits.
 
 ## 2. If the user wants a new folder
 
-Ask them for a folder name (and an optional parent folder id — omit for a top-level folder), then create it directly:
+Ask them for a folder name (and an optional parent folder id - omit for a top-level folder), then create it directly:
 
 ```bash
 cx dashboards folders create --name "<Folder Name>"
@@ -35,7 +35,7 @@ cx dashboards folders create --name "<Sub-folder>" --parent-id <parent-folder-id
 
 The command prints the new folder id. Use that id as `--folder` in step 3.
 
-If folder creation fails (most common cause: API key missing the `team-dashboards:Update` permission), fall back to the Coralogix UI — **Dashboards → Folders → + New folder** — then rerun `cx dashboards folders list -o json` and proceed with the chosen id.
+If folder creation fails (most common cause: API key missing the `team-dashboards:Update` permission), fall back to the Coralogix UI - **Dashboards → Folders → + New folder** - then rerun `cx dashboards folders list -o json` and proceed with the chosen id.
 
 ---
 
@@ -58,4 +58,4 @@ On success: emit the summary defined in the main `SKILL.md` "Output format for t
 
 ## 4. Idempotency note
 
-Each run generates a fresh top-level `id` (21-char nanoid), so re-running this skill creates a *new* dashboard rather than overwriting an existing one. If the user wants to replace an existing dashboard, point them at the Coralogix API's "replace dashboard" endpoint — that's outside this skill's current scope.
+Each run generates a fresh top-level `id` (21-char nanoid), so re-running this skill creates a *new* dashboard rather than overwriting an existing one. If the user wants to replace an existing dashboard, point them at the Coralogix API's "replace dashboard" endpoint - that's outside this skill's current scope.

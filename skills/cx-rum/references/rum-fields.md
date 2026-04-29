@@ -44,7 +44,7 @@ Top-level error grouping fields:
 
 | Field | Description |
 |-------|-------------|
-| `rum_template_id` | Error fingerprint — groups similar errors into distinct issues |
+| `rum_template_id` | Error fingerprint - groups similar errors into distinct issues |
 | `fingerPrint` | Additional fingerprint field |
 
 ## Session Context
@@ -78,7 +78,7 @@ Top-level error grouping fields:
 | Field | Description |
 |-------|-------------|
 | `page_url` | Full page URL |
-| `page_fragments` | URL path — **always use this for groupby** |
+| `page_fragments` | URL path - **always use this for groupby** |
 | `referrer` | Referring page |
 | `page_url_blueprint` | URL pattern/template |
 
@@ -117,7 +117,7 @@ Top-level error grouping fields:
 |-------|-------------|
 | `event_name` | Interaction event type |
 | `target_element` | HTML element tag |
-| `target_element_inner_text` | User-visible button/link text — **use this for groupby** |
+| `target_element_inner_text` | User-visible button/link text - **use this for groupby** |
 | `target_element_type` | Element type |
 | `element_id`, `element_classes` | Element identifiers |
 

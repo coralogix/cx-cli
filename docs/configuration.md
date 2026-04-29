@@ -15,7 +15,7 @@
 
 ## Quick start
 
-Run `cx profiles add` to create or update the default profile. OAuth (browser login) is selected by default and is the recommended option — it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
+Run `cx profiles add` to create or update the default profile. OAuth (browser login) is selected by default and is the recommended option - it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
 
 ```
 $ cx profiles add
@@ -34,7 +34,7 @@ Profile 'default' saved to /Users/you/.cx
 Credentials stored in OS credential store (OAuth tokens)
 ```
 
-To use a plain API key instead, select `API key (paste manually)` at the first prompt. The API key must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or a [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys) — see [API Key](#api-key) below for where to generate one. [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work for querying.
+To use a plain API key instead, select `API key (paste manually)` at the first prompt. The API key must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or a [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys) - see [API Key](#api-key) below for where to generate one. [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work for querying.
 
 ## Authentication methods
 
@@ -64,10 +64,10 @@ The base URL is used both as the API endpoint and for OpenID Connect discovery (
 
 ### API key
 
-A static Coralogix API key. The key **must be one of the following types** — `cx` uses it as a Bearer token when calling the query APIs, so ingress ("Send-Your-Data") keys will not work:
+A static Coralogix API key. The key **must be one of the following types** - `cx` uses it as a Bearer token when calling the query APIs, so ingress ("Send-Your-Data") keys will not work:
 
-- **[Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys)** — generated in the Coralogix UI under *Data Flow → API Keys → Team Keys*. Scoped to a team; typical choice for shared/CI usage.
-- **[Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys)** — generated in the Coralogix UI under the user menu (top-right) → *Personal Keys*. Scoped to your user account.
+- **[Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys)** - generated in the Coralogix UI under *Data Flow → API Keys → Team Keys*. Scoped to a team; typical choice for shared/CI usage.
+- **[Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys)** - generated in the Coralogix UI under the user menu (top-right) → *Personal Keys*. Scoped to your user account.
 
 The key can be stored either in the profile TOML file (permissions set to `0600` on Unix) or in the OS keyring.
 
@@ -80,7 +80,7 @@ Credentials stored in the OS keyring use the following backends:
 | macOS | Keychain |
 | Windows | Credential Manager |
 | Linux (glibc) | D-Bus Secret Service (GNOME Keyring, KWallet) |
-| Linux (musl) | No keyring backend — fall back to file-based storage |
+| Linux (musl) | No keyring backend - fall back to file-based storage |
 
 The default install script and release binaries are built for musl on Linux, so keyring support is only available when you build from source against glibc. Script-installed Linux users must use file-based credential storage.
 
@@ -186,7 +186,7 @@ Environment variables override profile file values:
 | Variable | Overrides |
 |---|---|
 | `CX_PROFILE` | `-p` flag / `default_profile` |
-| `CX_API_KEY` | `api_key` in profile (also overrides OAuth — sets the bearer token directly) |
+| `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.

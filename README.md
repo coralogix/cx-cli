@@ -1,10 +1,10 @@
 # cx-cli
 
-The observability backbone for AI agents and engineering teams. `cx` gives you—and your AI agents—direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
+The observability backbone for AI agents and engineering teams. `cx` gives you-and your AI agents-direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
 
 ## What you can do
 
-- Query any signal—logs, metrics, spans, and RUM data—with DataPrime or PromQL, and render results as tables, raw JSON, or a token-efficient format for AI agents.
+- Query any signal-logs, metrics, spans, and RUM data-with DataPrime or PromQL, and render results as tables, raw JSON, or a token-efficient format for AI agents.
 - Manage the full Coralogix stack: alerts, incidents, notifications, IAM, SLOs, dashboards, data pipeline rules, TCO policies, and more.
 - Run the same command across multiple profiles or regions in a single invocation with multi-profile fan-out.
 - Give your AI agent a single entry point to production observability: `cx schema` dumps the entire command tree as JSON so agents can self-discover capabilities without manual documentation.
@@ -14,12 +14,12 @@ The observability backbone for AI agents and engineering teams. `cx` gives you�
 
 ## Features
 
-- DataPrime and PromQL at the terminal—Coralogix's proprietary query languages work end-to-end without leaving the shell.
-- 27 commands across 9 domains—from querying signals to managing IAM, notifications, TCO, and archiving—all in one binary.
-- Multi-profile fan-out with `-p prod-eu -p prod-us <command>`—run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
-- `agents` output format—token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
-- `cx schema`—outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
-- Semantic field search—find the right log or span field by describing it in natural language.
+- DataPrime and PromQL at the terminal-Coralogix's proprietary query languages work end-to-end without leaving the shell.
+- 27 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
+- Multi-profile fan-out with `-p prod-eu -p prod-us <command>`-run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
+- `agents` output format-token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
+- `cx schema`-outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
+- Semantic field search-find the right log or span field by describing it in natural language.
 - Bundled skills for Claude Code, Cursor, Codex, OpenCode, and 40+ more agents, distributed via `npx skills add`.
 
 ## Installation
@@ -193,7 +193,7 @@ Configuration lives in `~/.cx/`:
     default.toml           # Credentials and region per profile
 ```
 
-Credentials are stored in the OS keyring on macOS (Keychain) and Windows (Credential Manager). On Linux, keyring support (Secret Service) requires a glibc build; the default install script and release binaries use musl, which has no keyring backend—credentials fall back to file storage. If you need keyring support on Linux, build from source with a glibc toolchain.
+Credentials are stored in the OS keyring on macOS (Keychain) and Windows (Credential Manager). On Linux, keyring support (Secret Service) requires a glibc build; the default install script and release binaries use musl, which has no keyring backend-credentials fall back to file storage. If you need keyring support on Linux, build from source with a glibc toolchain.
 
 Environment variables override profile settings: `CX_PROFILE`, `CX_API_KEY`, and `CX_REGION`.
 
@@ -203,15 +203,15 @@ See [docs/configuration.md](docs/configuration.md) for the full reference.
 
 Choose an output format with `-o` or by setting the profile default.
 
-- `text`—human-readable tables with color. Default.
-- `json`—raw, pretty-printed API responses for scripting.
-- `agents`—token-efficient format for AI agents. Large responses automatically spill to a temporary file and the path is returned.
+- `text`-human-readable tables with color. Default.
+- `json`-raw, pretty-printed API responses for scripting.
+- `agents`-token-efficient format for AI agents. Large responses automatically spill to a temporary file and the path is returned.
 
 See [docs/agents-output.md](docs/agents-output.md) for the `agents` format specification.
 
 ## AI agent skills
 
-`cx` ships a companion skill bundle for Claude Code, Cursor, Codex, OpenCode, and [40+ other agents](https://github.com/vercel-labs/skills#supported-agents). The skills teach your agent how to investigate issues by querying Coralogix—without memorizing DataPrime syntax or API endpoints.
+`cx` ships a companion skill bundle for Claude Code, Cursor, Codex, OpenCode, and [40+ other agents](https://github.com/vercel-labs/skills#supported-agents). The skills teach your agent how to investigate issues by querying Coralogix-without memorizing DataPrime syntax or API endpoints.
 
 Install all skills:
 
@@ -301,19 +301,19 @@ cx completions generate fish > ~/.config/fish/completions/cx.fish
 
 For profile names to update automatically on every Tab press without running `refresh`, source completions dynamically on each shell start. This calls back into `cx` at completion time:
 
-**zsh** — add to `~/.zshrc`:
+**zsh** - add to `~/.zshrc`:
 
 ```bash
 source <(COMPLETE=zsh cx)
 ```
 
-**bash** — add to `~/.bashrc`:
+**bash** - add to `~/.bashrc`:
 
 ```bash
 source <(COMPLETE=bash cx)
 ```
 
-**fish** — add to `~/.config/fish/config.fish`:
+**fish** - add to `~/.config/fish/config.fish`:
 
 ```fish
 COMPLETE=fish cx | source

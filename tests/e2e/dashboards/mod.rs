@@ -23,7 +23,7 @@ fn dashboards_get() {
         return;
     };
     let v = harness::run_ok_json(&["dashboards", "get", &id, "-o", "json"]);
-    // Shape varies (top-level vs nested under "dashboard") — only assert object.
+    // Shape varies (top-level vs nested under "dashboard") - only assert object.
     harness::assert_get_response(&v, &[]);
 }
 

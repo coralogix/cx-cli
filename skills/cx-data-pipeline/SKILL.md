@@ -205,17 +205,17 @@ cx metrics query --promql "new_precomputed_metric" --time now
 
 ## Key Principles
 
-- **Always template from existing** — `cx <command> get <id> -o json > template.json` before any create
-- **Verify after create** — query logs/metrics to confirm the pipeline change took effect
-- **Use `-o json`** — all payload inspection and creation should use JSON output
-- **Check limits first** — `cx rules usage-limits` and `cx e2m limits` before creating to avoid hitting caps
-- **Bulk operations** — use `cx rules bulk-delete --ids` for cleanup, not individual deletes
+- **Always template from existing** - `cx <command> get <id> -o json > template.json` before any create
+- **Verify after create** - query logs/metrics to confirm the pipeline change took effect
+- **Use `-o json`** - all payload inspection and creation should use JSON output
+- **Check limits first** - `cx rules usage-limits` and `cx e2m limits` before creating to avoid hitting caps
+- **Bulk operations** - use `cx rules bulk-delete --ids` for cleanup, not individual deletes
 
 ---
 
 ## Related Skills
 
-- **`cx-query-logs`** — verify parsing results and enriched fields in log data
-- **`cx-metrics-query`** — verify E2M and recording rule output metrics
-- **`cx-dataprime`** — DataPrime syntax reference for rule expressions
-- **`cx-telemetry-querying`** — discover what data is available before configuring pipeline
+- **`cx-query-logs`** - verify parsing results and enriched fields in log data
+- **`cx-metrics-query`** - verify E2M and recording rule output metrics
+- **`cx-dataprime`** - DataPrime syntax reference for rule expressions
+- **`cx-telemetry-querying`** - discover what data is available before configuring pipeline

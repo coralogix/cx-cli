@@ -1,6 +1,6 @@
 ---
 name: cx-telemetry-querying
-description: This skill should be used when the user asks to "investigate an issue", "debug a problem", "find out why something is slow", "check error rates", "analyze user behavior", "understand a production incident", "query telemetry data", "look at logs", "check traces", "examine spans", "analyze RUM data", "check frontend performance", "investigate backend latency", "find transaction data", "check payment metrics", "analyze user journeys", or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM — this is the gateway skill for deciding where to look first.
+description: This skill should be used when the user asks to "investigate an issue", "debug a problem", "find out why something is slow", "check error rates", "analyze user behavior", "understand a production incident", "query telemetry data", "look at logs", "check traces", "examine spans", "analyze RUM data", "check frontend performance", "investigate backend latency", "find transaction data", "check payment metrics", "analyze user journeys", or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM - this is the gateway skill for deciding where to look first.
 version: 0.1.0
 ---
 
@@ -24,8 +24,8 @@ Use this table for obvious cases where one pillar is the clear first choice:
 | Endpoint latency, throughput, error rates | Metrics | Traces (for per-request detail) |
 | Service-to-service dependencies, request flow | Traces | Logs (for debug output) |
 | Specific error messages, stack traces | Logs | Traces (for request context) |
-| Infrastructure health (CPU, memory, disk) | Metrics | — |
-| Business events (purchases, signups) | Depends — see Discovery Workflow | — |
+| Infrastructure health (CPU, memory, disk) | Metrics | - |
+| Business events (purchases, signups) | Depends - see Discovery Workflow | - |
 
 For **ambiguous questions** (e.g., "How much money did users spend last week?"), the signal could live in any pillar. Follow the Discovery Workflow below.
 
@@ -143,7 +143,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 **Question:** "Why is the dashboard page loading slowly for users?"
 
 **Approach:**
-1. This is clearly a RUM question — frontend page load data
+1. This is clearly a RUM question - frontend page load data
 2. Use `cx-rum` skill directly
 3. If RUM shows backend calls are slow, pivot to `cx-query-spans` for the API calls
 
@@ -187,17 +187,17 @@ Not every question is answered by querying data. If the user's intent is operati
 ## Related Skills
 
 ### Investigation Skills
-- **`cx-dataprime`** — DataPrime query language reference (syntax, operators, aggregations, functions)
-- **`cx-metrics-query`** — PromQL queries, metric discovery, instant and range queries
-- **`cx-query-logs`** — DataPrime log queries, log field exploration
-- **`cx-query-spans`** — Trace search, span analysis, distributed tracing
-- **`cx-rum`** — Frontend performance, user sessions, page loads
-- **`cx-alerts`** — Creating and managing alert definitions
-- **`cx-create-dashboard`** — Dashboard creation and management
+- **`cx-dataprime`** - DataPrime query language reference (syntax, operators, aggregations, functions)
+- **`cx-metrics-query`** - PromQL queries, metric discovery, instant and range queries
+- **`cx-query-logs`** - DataPrime log queries, log field exploration
+- **`cx-query-spans`** - Trace search, span analysis, distributed tracing
+- **`cx-rum`** - Frontend performance, user sessions, page loads
+- **`cx-alerts`** - Creating and managing alert definitions
+- **`cx-create-dashboard`** - Dashboard creation and management
 
 ### Workflow Skills
-- **`cx-cost-optimization`** — Analyze and reduce Coralogix data costs
-- **`cx-incident-management`** — Incident triage, SLO monitoring, notification verification
-- **`cx-data-pipeline`** — Parsing rules, enrichments, E2M, recording rules
-- **`cx-platform-admin`** — Access audit, API keys, user and role management
-- **`cx-observability-setup`** — Views, webhooks, notifications, integrations setup
+- **`cx-cost-optimization`** - Analyze and reduce Coralogix data costs
+- **`cx-incident-management`** - Incident triage, SLO monitoring, notification verification
+- **`cx-data-pipeline`** - Parsing rules, enrichments, E2M, recording rules
+- **`cx-platform-admin`** - Access audit, API keys, user and role management
+- **`cx-observability-setup`** - Views, webhooks, notifications, integrations setup

@@ -1,5 +1,5 @@
 class Cx < Formula
-  desc "Coralogix CLI — query observability data from the command line"
+  desc "Coralogix CLI - query observability data from the command line"
   homepage "https://github.com/coralogix/cx-cli"
   version "@@VERSION@@"
   license "Apache-2.0"

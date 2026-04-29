@@ -29,11 +29,11 @@ e2e tests are `#[ignore]`d, so the default `cargo test` run skips them.
 Set credentials one of two ways:
 
 ```bash
-# Option A — environment
+# Option A - environment
 export CX_API_KEY=cxtp_...
 export CX_REGION=stg1
 
-# Option B — .env file in the repo root (gitignored)
+# Option B - .env file in the repo root (gitignored)
 cp .env.example .env
 # edit values
 ```
@@ -47,7 +47,7 @@ cargo test --test e2e -- --ignored --test-threads=1
 Tests skip gracefully (with a `[e2e] skipping ...` log line) when
 credentials are absent, or when the test team has no data for a
 discovery step (e.g. no alerts to fetch). The suite is read-only
-against the test team — mutating commands (`alerts create`,
+against the test team - mutating commands (`alerts create`,
 `alerts enable`/`disable`) are intentionally not covered.
 
 CI runs the suite on every push to `master` and via manual

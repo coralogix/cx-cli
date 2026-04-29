@@ -138,7 +138,7 @@ pub async fn run_get(
     })
     .await;
 
-    // Merge — collect raw API responses
+    // Merge - collect raw API responses
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {

@@ -33,7 +33,7 @@ pub enum SearchFieldsDataset {
     Spans,
 }
 
-/// Coralogix CLI — the observability backbone for AI agents and engineering teams.
+/// Coralogix CLI - the observability backbone for AI agents and engineering teams.
 #[derive(Parser)]
 #[command(
     name = "cx",
@@ -110,12 +110,12 @@ struct Cli {
     command: Commands,
 }
 
-/// Separate CLI parser for the `profiles` command — no global API flags.
+/// Separate CLI parser for the `profiles` command - no global API flags.
 #[derive(Parser)]
 #[command(
     name = "cx",
     version,
-    about = "Coralogix CLI — the observability backbone for AI agents and engineering teams."
+    about = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 )]
 struct ProfilesCli {
     #[command(subcommand)]
@@ -1824,14 +1824,7 @@ enum UsersCmd {
 #[derive(Subcommand)]
 enum TeamGroupsCmd {
     /// List all team groups.
-    List {
-        /// Maximum number of results per page.
-        #[arg(long)]
-        page_size: Option<String>,
-        /// Pagination token.
-        #[arg(long)]
-        page_token: Option<String>,
-    },
+    List {},
     /// Get a single team group by ID.
     Get {
         /// Team group ID.
@@ -1846,12 +1839,6 @@ enum TeamGroupsCmd {
     Users {
         /// Team group ID.
         group_id: String,
-        /// Maximum number of results per page.
-        #[arg(long)]
-        page_size: Option<String>,
-        /// Pagination token.
-        #[arg(long)]
-        page_token: Option<String>,
     },
     /// Create a team group from a JSON definition file.
     Create {
@@ -2054,7 +2041,7 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    // Check if this is a profiles command — use separate parser without global API flags.
+    // Check if this is a profiles command - use separate parser without global API flags.
     if std::env::args().nth(1).as_deref() == Some("profiles") {
         let profiles_cli = ProfilesCli::parse();
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
@@ -2078,7 +2065,7 @@ async fn main() -> Result<()> {
         return commands::cleanup::run();
     }
 
-    // Schema command doesn't need API credentials — outputs command tree as JSON.
+    // Schema command doesn't need API credentials - outputs command tree as JSON.
     if let Commands::Schema = cli.command {
         return commands::schema::run(Cli::command());
     }
@@ -2096,7 +2083,7 @@ async fn main() -> Result<()> {
         };
     }
 
-    // Dataprime list/show don't need API credentials — handle them early.
+    // Dataprime list/show don't need API credentials - handle them early.
     if let Commands::Dataprime { ref cmd } = cli.command {
         if matches!(cmd, DataprimeCmd::List { .. } | DataprimeCmd::Show { .. }) {
             let global_config = config::load_config().unwrap_or_default();
@@ -2106,11 +2093,11 @@ async fn main() -> Result<()> {
                     commands::dataprime::run_list(*filter, name.as_deref(), output)
                 }
                 DataprimeCmd::Show { name } => commands::dataprime::run_help(name, output),
-                // Query needs credentials — handled in the main match below.
+                // Query needs credentials - handled in the main match below.
                 DataprimeCmd::Query { .. } => unreachable!(),
             };
         }
-        // DataprimeCmd::Query needs credentials — fall through.
+        // DataprimeCmd::Query needs credentials - fall through.
     }
 
     // Reject --api-key / --region when more than one --profile is supplied,
@@ -2122,7 +2109,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Load global config for defaults (non-fatal — fall back to defaults).
+    // Load global config for defaults (non-fatal - fall back to defaults).
     let global_config = config::load_config().unwrap_or_default();
     let output = cli.output.unwrap_or(global_config.default_output_format);
     let max_direct = global_config.max_dataprime_direct_output_size;
@@ -2900,17 +2887,8 @@ async fn main() -> Result<()> {
                 }
             },
             IamCmd::TeamGroups { cmd } => match cmd {
-                TeamGroupsCmd::List {
-                    page_size,
-                    page_token,
-                } => {
-                    commands::team_groups::run_list(
-                        &targets,
-                        page_size.as_deref(),
-                        page_token.as_deref(),
-                        output,
-                    )
-                    .await?;
+                TeamGroupsCmd::List {} => {
+                    commands::team_groups::run_list(&targets, output).await?;
                 }
                 TeamGroupsCmd::Get { id } => {
                     commands::team_groups::run_get(&targets, &id, output).await?;
@@ -2918,19 +2896,8 @@ async fn main() -> Result<()> {
                 TeamGroupsCmd::GetByName { name } => {
                     commands::team_groups::run_get_by_name(&targets, &name, output).await?;
                 }
-                TeamGroupsCmd::Users {
-                    group_id,
-                    page_size,
-                    page_token,
-                } => {
-                    commands::team_groups::run_users(
-                        &targets,
-                        &group_id,
-                        page_size.as_deref(),
-                        page_token.as_deref(),
-                        output,
-                    )
-                    .await?;
+                TeamGroupsCmd::Users { group_id } => {
+                    commands::team_groups::run_users(&targets, &group_id, output).await?;
                 }
                 TeamGroupsCmd::Create { from_file } => {
                     commands::team_groups::run_create(&targets, &from_file, output).await?;

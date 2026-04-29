@@ -11,15 +11,15 @@ Every command falls into one of two patterns:
 | **A: DataPrime-based** | Querying logs, spans, or any DataPrime source | `logs` (`src/commands/logs/mod.rs`) |
 | **B: REST-based** | Wrapping a Coralogix REST API | `alerts` (`src/commands/alerts/mod.rs`, `src/commands/alerts/api.rs`) |
 
-> **Important:** All API integrations must use REST (HTTP). Do not use gRPC — the CLI is HTTP-only by design.
+> **Important:** All API integrations must use REST (HTTP). Do not use gRPC - the CLI is HTTP-only by design.
 
-DataPrime commands delegate to the shared pipeline and require minimal code. REST commands manage their own fan-out, merge, and render — more code, but more control.
+DataPrime commands delegate to the shared pipeline and require minimal code. REST commands manage their own fan-out, merge, and render - more code, but more control.
 
 ---
 
 ## Archetype A: DataPrime-based command
 
-Use this when your command queries a DataPrime source. The shared pipeline in `commands::dataprime` handles fan-out, merge, render, and spilling — you provide only a text renderer and a thin `run()` wrapper.
+Use this when your command queries a DataPrime source. The shared pipeline in `commands::dataprime` handles fan-out, merge, render, and spilling - you provide only a text renderer and a thin `run()` wrapper.
 
 **Files to create/modify:**
 - `src/commands/your_domain/mod.rs` (new)
@@ -50,7 +50,7 @@ pub fn render_your_domain_text(merged: &MergedResults) -> Result<()> {
         return Ok(());
     }
 
-    // Aggregate queries return raw JSON — no custom rendering.
+    // Aggregate queries return raw JSON - no custom rendering.
     if merged.is_aggregate {
         for row in &merged.rows {
             println!("{}", serde_json::to_string_pretty(row)?);
@@ -112,9 +112,9 @@ pub async fn run(
 }
 ```
 
-The text renderer signature must be `fn(&MergedResults) -> Result<()>`. The shared pipeline calls it only for `OutputFormat::Text` — JSON and Agents output are handled generically.
+The text renderer signature must be `fn(&MergedResults) -> Result<()>`. The shared pipeline calls it only for `OutputFormat::Text` - JSON and Agents output are handled generically.
 
-**Reference:** `src/commands/logs/mod.rs` — the entire module is ~130 lines.
+**Reference:** `src/commands/logs/mod.rs` - the entire module is ~130 lines.
 
 ### Step 2: Register the module
 
@@ -183,8 +183,8 @@ That's it for a DataPrime command. The shared pipeline handles fan-out, merge, a
 Use this when your command wraps a Coralogix REST API. You'll build the full pipeline: API client, fan-out, merge, and render.
 
 **Files to create/modify:**
-- `src/commands/your_domain/api.rs` (new — API types + client)
-- `src/commands/your_domain/mod.rs` (new — handler with `pub mod api;` + fan-out, merge, render)
+- `src/commands/your_domain/api.rs` (new - API types + client)
+- `src/commands/your_domain/mod.rs` (new - handler with `pub mod api;` + fan-out, merge, render)
 - `src/commands/mod.rs` (add `pub mod your_domain;`)
 - `src/main.rs` (CLI definition + dispatch)
 
@@ -273,10 +273,10 @@ mod tests {
 Key conventions:
 - Response types derive `Deserialize` with `#[serde(rename_all = "camelCase")]`
 - Use `#[serde(default)]` on Vec fields so missing keys deserialize to empty
-- The API struct borrows `&CxClient` — use the appropriate method (`get`, `post`, `post_raw`, `post_empty`) based on the endpoint
+- The API struct borrows `&CxClient` - use the appropriate method (`get`, `post`, `post_raw`, `post_empty`) based on the endpoint
 - Always write deserialization tests against realistic JSON fixtures
 
-**Reference:** `src/commands/alerts/api.rs` — full example with list, get, create, and state-change endpoints.
+**Reference:** `src/commands/alerts/api.rs` - full example with list, get, create, and state-change endpoints.
 
 ### Step 2: Command module
 
@@ -365,13 +365,13 @@ pub async fn run_list(
 ```
 
 Key patterns to follow:
-- **`include_profile = targets.len() > 1`** — this boolean controls all multi-profile behavior
-- **`render::render_table`** handles the Profile column automatically — pass headers without "Profile", and put the profile name as the first element of each row. The helper conditionally includes/excludes it based on `include_profile`.
-- **Agents output is command-owned** — each command calls `toon_encode` directly after any post-processing it needs
-- **Fan-out errors are non-fatal** — print to stderr, continue with successful profiles
-- **Status messages go to stderr** — use `eprintln!` so they don't pollute piped output
+- **`include_profile = targets.len() > 1`** - this boolean controls all multi-profile behavior
+- **`render::render_table`** handles the Profile column automatically - pass headers without "Profile", and put the profile name as the first element of each row. The helper conditionally includes/excludes it based on `include_profile`.
+- **Agents output is command-owned** - each command calls `toon_encode` directly after any post-processing it needs
+- **Fan-out errors are non-fatal** - print to stderr, continue with successful profiles
+- **Status messages go to stderr** - use `eprintln!` so they don't pollute piped output
 
-**Reference:** `src/commands/dashboards/mod.rs` — clean example with list and get subcommands using `render::*` helpers.
+**Reference:** `src/commands/dashboards/mod.rs` - clean example with list and get subcommands using `render::*` helpers.
 
 ### Step 3: Register the command module
 
@@ -479,16 +479,16 @@ The wrapper variant in `Commands` already appears in the top-level `after_help`,
 ## Testing
 
 Every new command must add tests at three layers: **unit**, **integration**,
-and **e2e**. Each layer catches different categories of regressions —
+and **e2e**. Each layer catches different categories of regressions -
 skipping any of them leaves real holes.
 
 | Layer | Location | What it verifies | Network |
 |-------|----------|------------------|---------|
-| Unit | `src/**/<file>.rs` `#[cfg(test)]` blocks | Pure logic — deserialization, formatting helpers, data transforms | None |
+| Unit | `src/**/<file>.rs` `#[cfg(test)]` blocks | Pure logic - deserialization, formatting helpers, data transforms | None |
 | Integration | `tests/<domain>.rs` (wiremock) | Command runner end-to-end with mocked HTTP responses | None |
 | E2E | `tests/e2e/<command>/mod.rs` (assert_cmd) | Real `cx` binary runs against the Coralogix test team | Real |
 
-### Layer 1 — Unit tests
+### Layer 1 - Unit tests
 
 #### Deserialization tests (REST archetype, mandatory)
 
@@ -527,11 +527,11 @@ fields, fallback values. These are the cases that break in production.
 
 #### Helper/formatting tests (any archetype, when applicable)
 
-If your command module has non-trivial mapping logic — building tabular
-rows, transforming JSON shapes, parsing user input — add unit tests for
+If your command module has non-trivial mapping logic - building tabular
+rows, transforming JSON shapes, parsing user input - add unit tests for
 those helpers. See `src/commands/metrics/tests.rs` for an example.
 
-### Layer 2 — Integration tests (wiremock)
+### Layer 2 - Integration tests (wiremock)
 
 Add `tests/<your_domain>.rs` using `wiremock` to spin up a fake Coralogix
 API and call your command runner directly. This catches regressions in
@@ -573,13 +573,13 @@ async fn list_returns_items_from_mock() {
 Cover at minimum: happy-path list/get, an empty response, a `--name`/filter
 case if your command supports one, and the JSON output path.
 
-### Layer 3 — E2E tests (real test team)
+### Layer 3 - E2E tests (real test team)
 
 Add a sanity test in `tests/e2e/<your_domain>/mod.rs` that invokes the
 compiled `cx` binary against a real Coralogix test team. The goal is
 **only** to verify that the command runs end-to-end: exits 0, produces
 non-empty stdout, and (for `-o json`) emits valid JSON. Don't assert on
-output content — test team data drifts.
+output content - test team data drifts.
 
 All e2e tests are `#[ignore]`d, so they don't run in the default
 `cargo test`. CI invokes them via a separate workflow.
@@ -637,13 +637,13 @@ Then declare the module in `tests/e2e.rs`:
 mod your_domain;
 ```
 
-Discovery helpers stay local to each test module — see
+Discovery helpers stay local to each test module - see
 `discover_alert_id` in `tests/e2e/alerts/mod.rs` for the pattern. They
 should cache via `OnceLock` and skip (return `None`) when the test team
 has no data, not panic.
 
 **Do not exercise mutating commands** in e2e (create/delete/enable/
-disable) until there's a paired-undo plan — they touch shared test team
+disable) until there's a paired-undo plan - they touch shared test team
 state. Use a comment to mark them as deliberately uncovered, like the
 existing block at the bottom of `tests/e2e/alerts/mod.rs`.
 
@@ -681,11 +681,11 @@ cx -p prod -p staging your-domain list
 
 ## User-facing skill (required)
 
-Every command must be covered by a skill in `skills/`. This can be a dedicated skill for the command, or a workflow skill that covers multiple related commands (e.g., `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx quotas`, `cx retentions`, and `cx archive`). Check the existing workflow skills before creating a new one — your command may already be covered.
+Every command must be covered by a skill in `skills/`. This can be a dedicated skill for the command, or a workflow skill that covers multiple related commands (e.g., `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx quotas`, `cx retentions`, and `cx archive`). Check the existing workflow skills before creating a new one - your command may already be covered.
 
 See **[Adding a Skill](adding-a-skill.md)** for the complete guide covering directory structure, frontmatter conventions, trigger phrases, reference files, and templates for both single-command and workflow skills.
 
-**Reference:** `skills/cx-alerts/SKILL.md` (single-command) and `skills/cx-cost-optimization/SKILL.md` (workflow skill) — full examples.
+**Reference:** `skills/cx-alerts/SKILL.md` (single-command) and `skills/cx-cost-optimization/SKILL.md` (workflow skill) - full examples.
 
 ---
 
@@ -697,21 +697,21 @@ Copy this into your PR description:
 ## Checklist
 
 ### API layer (REST archetype only)
-- [ ] `src/commands/your_domain/api.rs` — response types with `#[derive(Deserialize)]`
-- [ ] `src/commands/your_domain/api.rs` — `YourDomainApi` struct with methods
-- [ ] `src/commands/your_domain/api.rs` — deserialization tests for all response types
-- [ ] `src/commands/your_domain/mod.rs` — `pub mod api;` declared at the top
+- [ ] `src/commands/your_domain/api.rs` - response types with `#[derive(Deserialize)]`
+- [ ] `src/commands/your_domain/api.rs` - `YourDomainApi` struct with methods
+- [ ] `src/commands/your_domain/api.rs` - deserialization tests for all response types
+- [ ] `src/commands/your_domain/mod.rs` - `pub mod api;` declared at the top
 
 ### Command layer
-- [ ] `src/commands/your_domain/mod.rs` — subcommand runner(s) with fan-out/merge/render
-- [ ] `src/commands/your_domain/mod.rs` — dual row structs for text output (multi-profile + single)
-- [ ] `src/commands/your_domain/mod.rs` — all three output formats handled (Text, Json, Agents)
-- [ ] `src/commands/mod.rs` — `pub mod your_domain;` registered
+- [ ] `src/commands/your_domain/mod.rs` - subcommand runner(s) with fan-out/merge/render
+- [ ] `src/commands/your_domain/mod.rs` - dual row structs for text output (multi-profile + single)
+- [ ] `src/commands/your_domain/mod.rs` - all three output formats handled (Text, Json, Agents)
+- [ ] `src/commands/mod.rs` - `pub mod your_domain;` registered
 
 ### CLI wiring
-- [ ] `src/main.rs` — `Commands` enum variant added
-- [ ] `src/main.rs` — subcommand enum added (REST) or args defined (DataPrime)
-- [ ] `src/main.rs` — dispatch match arm added
+- [ ] `src/main.rs` - `Commands` enum variant added
+- [ ] `src/main.rs` - subcommand enum added (REST) or args defined (DataPrime)
+- [ ] `src/main.rs` - dispatch match arm added
 
 ### Tests
 - [ ] **Unit:** API deserialization tests in `src/commands/your_domain/api.rs` (REST)
@@ -722,7 +722,7 @@ Copy this into your PR description:
 
 ### User-facing skill
 - [ ] Command is covered by a skill in `skills/` (new or existing workflow skill)
-- [ ] `scripts/verify-skills.sh` — all skills pass
+- [ ] `scripts/verify-skills.sh` - all skills pass
 
 ### Verification
 - [ ] `cargo build` succeeds

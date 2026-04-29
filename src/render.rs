@@ -7,7 +7,7 @@
 //!
 //! List commands inject a `"profile"` key into JSON rows via `execution::tag_rows`.
 //! Get commands use `"_profile"` (underscore-prefixed) as a rendering hint that
-//! should not appear in user-facing JSON output — see [`tag_get_result`].
+//! should not appear in user-facing JSON output - see [`tag_get_result`].
 
 use anyhow::Result;
 use colored::Colorize;
@@ -61,7 +61,7 @@ pub fn bool_display(v: Option<bool>) -> String {
 
 /// Build a text table string with an optional "Profile" column.
 ///
-/// `headers` should **not** include "Profile" — it is prepended automatically
+/// `headers` should **not** include "Profile" - it is prepended automatically
 /// when `include_profile` is true.
 ///
 /// Each element of `rows` is a `Vec<String>` whose **first** element is the

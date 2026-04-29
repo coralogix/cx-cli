@@ -23,15 +23,17 @@ pub async fn run_summary(
     eprintln!("{}", "Fetching data usage summary...".dimmed());
 
     let include_profile = targets.len() > 1;
-    let from = start.map(|s| s.to_string()).unwrap_or_else(|| {
-        chrono::Utc::now()
+    let from = match start.map(crate::time::parse_timestamp).transpose()? {
+        Some(s) => s,
+        None => chrono::Utc::now()
             .checked_sub_signed(chrono::Duration::hours(24))
             .unwrap_or_else(chrono::Utc::now)
-            .to_rfc3339()
-    });
-    let to = end
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+            .to_rfc3339(),
+    };
+    let to = match end.map(crate::time::parse_timestamp).transpose()? {
+        Some(s) => s,
+        None => chrono::Utc::now().to_rfc3339(),
+    };
 
     let per_profile = fan_out(targets, |t| {
         let from = from.clone();

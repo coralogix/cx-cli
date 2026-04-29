@@ -190,17 +190,17 @@ When modifying TCO policies, retention, quotas, or archive:
 
 ## Key Principles
 
-- **Measure before changing** — always run usage/summary commands before modifying policies
-- **Use `-o json` with jq** — structured output enables precise analysis
-- **Verify changes** — re-query after every modification to confirm it took effect
-- **Multi-profile awareness** — use `-p <profile>` or `--all-profiles` to compare costs across environments
-- **Template from existing** — get current config as JSON before creating or updating
-- **TCO is the biggest lever** — moving logs from Frequent Search to Archive tier has the largest cost impact
+- **Measure before changing** - always run usage/summary commands before modifying policies
+- **Use `-o json` with jq** - structured output enables precise analysis
+- **Verify changes** - re-query after every modification to confirm it took effect
+- **Multi-profile awareness** - use `-p <profile>` or `--all-profiles` to compare costs across environments
+- **Template from existing** - get current config as JSON before creating or updating
+- **TCO is the biggest lever** - moving logs from Frequent Search to Archive tier has the largest cost impact
 
 ---
 
 ## Related Skills
 
-- **`cx-telemetry-querying`** — investigate what data is being ingested (understand usage before cutting)
-- **`cx-query-logs`** — query logs to identify high-volume sources
-- **`cx-metrics-query`** — check metric cardinality and usage
+- **`cx-telemetry-querying`** - investigate what data is being ingested (understand usage before cutting)
+- **`cx-query-logs`** - query logs to identify high-volume sources
+- **`cx-metrics-query`** - check metric cardinality and usage

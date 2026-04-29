@@ -3,19 +3,19 @@
 ## Core Principles
 
 1. **Pick the right query type**
-   - **Instant queries** (`cx metrics query`) evaluate an expression at a single timestamp (now, or a given `--time`). Use when the question requires **one number or one vector** *as of* a moment — essentially any query that does not require results over different timeframes.
+   - **Instant queries** (`cx metrics query`) evaluate an expression at a single timestamp (now, or a given `--time`). Use when the question requires **one number or one vector** *as of* a moment - essentially any query that does not require results over different timeframes.
    - **Range queries** (`cx metrics query-range`) evaluate the expression **repeatedly** across `[--start, --end]` at a given `--step`. Use for **time series** over a period (e.g., daily active users per day).
-     - Note: Range queries **evaluate the expression repeatedly** at each step. If `--step=1d`, `--start=now-1d`, `--end=now`, and the query is `max_over_time(metric[1d])`, the query evaluates at `now-1d` and `now` — two evaluations covering two days of data.
+     - Note: Range queries **evaluate the expression repeatedly** at each step. If `--step=1d`, `--start=now-1d`, `--end=now`, and the query is `max_over_time(metric[1d])`, the query evaluates at `now-1d` and `now` - two evaluations covering two days of data.
    - Prefer instant queries over range queries for most questions, except when comparing different timeframes.
 
 2. **Understand PromQL value types**
-   - **Instant vector** — set of series with 1 sample each at eval time
-   - **Range vector** — series with many samples over a window `[t-range, t]`
-   - **Scalar** — single number
-   - **String** — rare
+   - **Instant vector** - set of series with 1 sample each at eval time
+   - **Range vector** - series with many samples over a window `[t-range, t]`
+   - **Scalar** - single number
+   - **String** - rare
    - Functions like `*_over_time()` **require a range vector**. Aggregations like `sum/max/min/avg ... by(...)` **consume instant vectors**.
    - **Important**: When using `*_over_time()` functions with range queries, be aware that the query also evaluates at the `--start` time and includes the window specified in the function.
-   - **Example**: If `max_over_time(metric[1d])` is used with `--start=now-1d`, `--end=now`, `--step=1d`, the query evaluates at `now-1d` and `now` — the result is the max over `[now-2d, now]`. This is a common mistake. If a user asks "What is the max of x between 2025-01-01 and 2025-01-07?" and `max_over_time(x[7d])` is used with `--start=2025-01-01`, `--end=2025-01-07`, `--step=1d`, the evaluation at `2025-01-01` includes `[2024-12-25, 2025-01-01]` — which is wrong. Use an instant query with `--time` to avoid this.
+   - **Example**: If `max_over_time(metric[1d])` is used with `--start=now-1d`, `--end=now`, `--step=1d`, the query evaluates at `now-1d` and `now` - the result is the max over `[now-2d, now]`. This is a common mistake. If a user asks "What is the max of x between 2025-01-01 and 2025-01-07?" and `max_over_time(x[7d])` is used with `--start=2025-01-01`, `--end=2025-01-07`, `--step=1d`, the evaluation at `2025-01-01` includes `[2024-12-25, 2025-01-01]` - which is wrong. Use an instant query with `--time` to avoid this.
 
 3. **Separation of concerns**
    - Use `*_over_time()` for **temporal reductions** across a window (e.g., `max_over_time`, `avg_over_time`, `quantile_over_time`).
@@ -121,7 +121,7 @@ sum(rate(req_duration_seconds_count[5m]))
 
 ### Max over a Period
 
-Correct — temporal reduction, then aggregation:
+Correct - temporal reduction, then aggregation:
 ```promql
 max by () (max_over_time(metric[4d]))
 ```
@@ -131,7 +131,7 @@ Per-label max:
 max by (label) (max_over_time(metric[4d]))
 ```
 
-Incorrect — `max()` cannot take a range vector:
+Incorrect - `max()` cannot take a range vector:
 ```promql
 max(metric[4d])   ← error
 ```
@@ -152,7 +152,7 @@ topk(5, sum by (instance) (rate(http_requests_total[5m])))
 topk(1, max by (instance) (max_over_time(my_metric[7d])))
 ```
 
-Run as instant query (no `--time` needed — defaults to now).
+Run as instant query (no `--time` needed - defaults to now).
 
 2. **Global CPU usage % (avg across cores & hosts)**
 

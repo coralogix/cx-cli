@@ -25,7 +25,7 @@ pub fn default_install_path(shell: Shell) -> Option<PathBuf> {
             .join("fish")
             .join("completions")
             .join("cx.fish"),
-        // PowerShell has no single canonical user path — require --path.
+        // PowerShell has no single canonical user path - require --path.
         _ => return None,
     };
     Some(path)
@@ -49,7 +49,7 @@ fn setup_note(shell: Shell, path: &Path) -> Option<String> {
 /// Write the dynamic env-completion registration stub for the given shell.
 ///
 /// Unlike `clap_complete::aot::generate`, this emits a small bootstrap that
-/// calls back into `cx` at completion time — which means runtime completers
+/// calls back into `cx` at completion time - which means runtime completers
 /// like `ArgValueCompleter` (used for `--profile=`) work correctly.
 fn write_registration_for_shell(shell: Shell, buf: &mut dyn std::io::Write) -> Result<()> {
     // The shell-specific completer adapters all share the same registration

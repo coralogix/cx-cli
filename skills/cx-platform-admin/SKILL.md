@@ -179,14 +179,14 @@ Safe key rotation workflow:
 
 ## Key Principles
 
-- **Audit before modifying** — run the full access audit workflow before making changes
-- **Never delete keys without replacement** — create new key → deploy → verify → delete old
-- **Use `-o json` for structured reports** — enables jq filtering for precise access analysis
-- **Multi-profile for cross-environment audits** — use `-p <profile>` or `--all-profiles` to audit staging + production
-- **Template from existing** — `cx iam roles get <id> -o json > role.json` before creating new roles
+- **Audit before modifying** - run the full access audit workflow before making changes
+- **Never delete keys without replacement** - create new key → deploy → verify → delete old
+- **Use `-o json` for structured reports** - enables jq filtering for precise access analysis
+- **Multi-profile for cross-environment audits** - use `-p <profile>` or `--all-profiles` to audit staging + production
+- **Template from existing** - `cx iam roles get <id> -o json > role.json` before creating new roles
 
 ---
 
 ## Related Skills
 
-- **`cx-cost-optimization`** — review what API keys are used for and whether they're still needed
+- **`cx-cost-optimization`** - review what API keys are used for and whether they're still needed

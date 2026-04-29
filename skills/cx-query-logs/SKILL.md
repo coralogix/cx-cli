@@ -4,7 +4,7 @@ description: |
   Query and analyze Coralogix logs using DataPrime syntax. Use this skill whenever the user wants to
   search logs, find errors, investigate log data, debug application issues, check error logs, find
   stack traces, analyze log patterns, filter by severity, look up specific log entries, or query
-  Coralogix logs in any way — even if they don't explicitly mention "DataPrime" or "cx logs".
+  Coralogix logs in any way - even if they don't explicitly mention "DataPrime" or "cx logs".
 version: 0.1.0
 ---
 
@@ -14,11 +14,11 @@ Query and analyze Coralogix logs using the `cx logs` command with DataPrime synt
 
 ## Understanding Logs in Coralogix
 
-Logs in Coralogix are **largely unstructured**. Every log entry has a small structured envelope — metadata and labels — but the actual application payload (`userData`) is free-form and varies entirely by application. There is no universal schema for `$d.*` fields.
+Logs in Coralogix are **largely unstructured**. Every log entry has a small structured envelope - metadata and labels - but the actual application payload (`userData`) is free-form and varies entirely by application. There is no universal schema for `$d.*` fields.
 
 This means:
-- **Metadata (`$m.*`)** and **labels (`$l.*`)** are predictable — you can always filter on severity, timestamp, application name, and subsystem name without discovery.
-- **User data (`$d.*`)** is not predictable — field names, nesting, and types depend on whatever the application chose to log. Always verify `$d` fields before assuming they exist.
+- **Metadata (`$m.*`)** and **labels (`$l.*`)** are predictable - you can always filter on severity, timestamp, application name, and subsystem name without discovery.
+- **User data (`$d.*`)** is not predictable - field names, nesting, and types depend on whatever the application chose to log. Always verify `$d` fields before assuming they exist.
 
 ---
 
@@ -51,9 +51,9 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 | `$m.timestamp` | Log timestamp |
 | `$m.severity` | Severity level (see below) |
 | `$m.templateid` | Log template identifier (groups structurally similar logs) |
-| `$l.applicationname` | Application name — the highest-level label. All data in Coralogix is tagged with it. Meaning varies by customer (environment, team, region) but it always exists. |
-| `$l.subsystemname` | Subsystem name — second highest-level label. All data is tagged with it. Typically maps to a service or component. |
-| `$d.*` | User data — free-form, application-specific (see [Field Discovery](#field-discovery)) |
+| `$l.applicationname` | Application name - the highest-level label. All data in Coralogix is tagged with it. Meaning varies by customer (environment, team, region) but it always exists. |
+| `$l.subsystemname` | Subsystem name - second highest-level label. All data is tagged with it. Typically maps to a service or component. |
+| `$d.*` | User data - free-form, application-specific (see [Field Discovery](#field-discovery)) |
 
 ### Severity Values
 
@@ -109,7 +109,7 @@ In all other cases, use `filter` with known fields (`$m.severity`, `$l.subsystem
 **Skip discovery when:**
 - The query only uses standard fields (`$m.severity`, `$m.timestamp`, `$l.applicationname`, `$l.subsystemname`)
 - The user explicitly names the fields they want (e.g., "filter by `$d.customer_id`")
-- You're searching for a specific error message — use `wildfind` directly
+- You're searching for a specific error message - use `wildfind` directly
 - The fields have already been discovered earlier in the conversation
 
 For customer-specific `$d.*` fields that need discovery, use one of these approaches:
@@ -159,8 +159,8 @@ If a query returns no results, change **one thing at a time**:
 
 ## References
 
-- **`cx-dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
-- **[Advanced Usage](references/advanced-usage.md)** — Investigation workflows, common query patterns, performance tips, production debugging
+- **`cx-dataprime` skill** - Full query language reference: commands, operators, aggregations, text extraction, type conversions
+- **[Advanced Usage](references/advanced-usage.md)** - Investigation workflows, common query patterns, performance tips, production debugging
 
 For inline DataPrime help:
 
@@ -173,7 +173,7 @@ cx dataprime show filter           # Detailed help for a specific command
 
 ## Related Skills
 
-- **`cx-metrics-query`** — Aggregated counters, gauges, and histograms (PromQL)
-- **`cx-query-spans`** — Distributed traces and service latency (DataPrime)
-- **`cx-telemetry-querying`** — Gateway skill for choosing the right data source
-- **`cx-alerts`** — Create and manage alerts based on log patterns
+- **`cx-metrics-query`** - Aggregated counters, gauges, and histograms (PromQL)
+- **`cx-query-spans`** - Distributed traces and service latency (DataPrime)
+- **`cx-telemetry-querying`** - Gateway skill for choosing the right data source
+- **`cx-alerts`** - Create and manage alerts based on log patterns

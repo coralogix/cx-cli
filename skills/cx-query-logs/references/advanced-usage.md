@@ -1,4 +1,4 @@
-# Logs — Advanced Usage
+# Logs - Advanced Usage
 
 ## Investigation Workflow
 
@@ -14,7 +14,7 @@ Identify:
 For basic queries, use standard fields directly:
 
 ```bash
-# Recent errors — no discovery needed
+# Recent errors - no discovery needed
 cx logs 'filter $m.severity == ERROR | limit 20'
 
 # Errors in a specific subsystem

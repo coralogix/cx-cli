@@ -1,4 +1,4 @@
-# Spans — Advanced Usage
+# Spans - Advanced Usage
 
 ## Investigation Workflow
 
@@ -11,17 +11,17 @@ Identify:
 
 ### 2. Start with Known Information
 
-**If you have a trace ID** — go straight to it:
+**If you have a trace ID** - go straight to it:
 ```bash
 cx spans "filter \$d.traceID == '<trace_id>'"
 ```
 
-**If you have a service name** — query its spans:
+**If you have a service name** - query its spans:
 ```bash
 cx spans "filter \$l.serviceName == '<service>'" --limit 50
 ```
 
-**If you have neither** — start broad to find entry points:
+**If you have neither** - start broad to find entry points:
 ```bash
 # Find recent error spans
 cx spans 'filter $d.tags.error == true' --limit 20
@@ -73,7 +73,7 @@ After investigation, provide:
 - Root cause or narrowed-down suspects
 - Key queries that led to findings
 - Recommended next steps (e.g. check related logs, examine a specific service)
-- Always include relevant application/subsystem/service names — this helps correlate with source code
+- Always include relevant application/subsystem/service names - this helps correlate with source code
 
 ---
 
@@ -211,7 +211,7 @@ cx spans 'filter $d.tags.error == true | groupby roundTime($m.timestamp, 15m) as
 - Use `groupby` with aggregations instead of fetching raw spans when possible
 - Filter by time first when dealing with large datasets
 - Use specific filters (service name, operation) to reduce scan scope
-- Don't rely solely on aggregations — retrieve sample spans to find information you didn't anticipate
+- Don't rely solely on aggregations - retrieve sample spans to find information you didn't anticipate
 
 ## Debugging a Request
 

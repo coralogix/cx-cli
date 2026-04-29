@@ -1,16 +1,16 @@
-# Coralogix Dashboard JSON — Widget Templates
+# Coralogix Dashboard JSON - Widget Templates
 
 Copy these templates when generating a dashboard. **Always replace every UUID** (`id.value`, query `id`) with a freshly generated UUID, and adapt queries to the target service.
 
 For query-language rules:
 
 - Dashboard-specific gotchas (`${__range}`, `promqlQueryType`, widget filters): [`query-syntax.md`](query-syntax.md).
-- Full DataPrime syntax: `cx-dataprime` skill → `skills/dataprime/references/dataprime-reference.md`.
-- Full PromQL reference: `cx-metrics-query` skill → `skills/metrics-query/references/promql-guidelines.md`.
+- Full DataPrime syntax: `cx-dataprime` skill → `skills/cx-dataprime/references/dataprime-reference.md`.
+- Full PromQL reference: `cx-metrics-query` skill → `skills/cx-metrics-query/references/promql-guidelines.md`.
 
 > A "stat" widget in Coralogix docs is actually emitted as `gauge` in the JSON. There is no separate stat type.
 
-> Every query below must pass live verification via `cx metrics query` / `cx logs` / `cx spans` before deploy — see SKILL.md Phase 5.
+> Every query below must pass live verification via `cx metrics query` / `cx logs` / `cx spans` before deploy - see SKILL.md Phase 5.
 
 ---
 
@@ -19,7 +19,7 @@ For query-language rules:
 ```json
 {
   "id": "<21-char-nanoid>",
-  "name": "<Service> — <Purpose>",
+  "name": "<Service> - <Purpose>",
   "layout": {
     "sections": [
       { "id": {"value": "<uuid>"}, "rows": [ ... ], "options": { "custom": { "name": "Section name", "collapsed": false, "color": {"predefined": "SECTION_PREDEFINED_COLOR_UNSPECIFIED"} } } }
@@ -336,7 +336,7 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 
 ## Threshold type
 
-- `THRESHOLD_TYPE_ABSOLUTE` — thresholds compared against the raw value. Use for success rates and fixed-meaning counts.
-- `THRESHOLD_TYPE_RELATIVE` — thresholds as % of min/max. Use when the scale is arbitrary.
+- `THRESHOLD_TYPE_ABSOLUTE` - thresholds compared against the raw value. Use for success rates and fixed-meaning counts.
+- `THRESHOLD_TYPE_RELATIVE` - thresholds as % of min/max. Use when the scale is arbitrary.
 
 Default to `ABSOLUTE` for rates and DLQ counts; `RELATIVE` only when the absolute scale is unknown.

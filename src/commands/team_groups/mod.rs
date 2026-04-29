@@ -46,25 +46,13 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
-pub async fn run_list(
-    targets: &[Arc<ExecutionTarget>],
-    page_size: Option<&str>,
-    page_token: Option<&str>,
-    output: OutputFormat,
-) -> Result<()> {
+pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching team groups...".dimmed());
     let include_profile = targets.len() > 1;
 
-    let page_size = page_size.map(String::from);
-    let page_token = page_token.map(String::from);
-
-    let per_profile = fan_out(targets, |t| {
-        let _page_size = page_size.clone();
-        let _page_token = page_token.clone();
-        async move {
-            let api = TeamGroupsApi::new(&t.client);
-            Ok(api.list().await?)
-        }
+    let per_profile = fan_out(targets, |t| async move {
+        let api = TeamGroupsApi::new(&t.client);
+        Ok(api.list().await?)
     })
     .await;
 
@@ -254,8 +242,6 @@ pub async fn run_get_by_name(
 pub async fn run_users(
     targets: &[Arc<ExecutionTarget>],
     group_id: &str,
-    page_size: Option<&str>,
-    page_token: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
     eprintln!(
@@ -264,8 +250,6 @@ pub async fn run_users(
     );
     let include_profile = targets.len() > 1;
     let group_id = group_id.to_string();
-    let _page_size = page_size.map(String::from);
-    let _page_token = page_token.map(String::from);
 
     let per_profile = fan_out(targets, |t| {
         let group_id = group_id.clone();

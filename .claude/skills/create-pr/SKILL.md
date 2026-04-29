@@ -1,6 +1,6 @@
 ---
 name: create-pr
-description: Creates GitHub pull requests with auto-generated summaries. Use this skill whenever the user wants to create a PR, open a pull request, submit changes for review, or push their branch for review — even if they don't explicitly say "PR".
+description: Creates GitHub pull requests with auto-generated summaries. Use this skill whenever the user wants to create a PR, open a pull request, submit changes for review, or push their branch for review - even if they don't explicitly say "PR".
 ---
 
 # Create Pull Request
@@ -16,10 +16,10 @@ Verify `gh` is installed and authenticated by running `gh auth status`. If it fa
 ### 1. Understand the current state
 
 Run these in parallel:
-- `git status` — check for uncommitted changes
-- `git log --oneline -20` — recent commit history
-- `git rev-parse --abbrev-ref HEAD` — current branch name
-- `git remote show origin | grep 'HEAD branch'` — detect the default base branch (usually `main` or `master`)
+- `git status` - check for uncommitted changes
+- `git log --oneline -20` - recent commit history
+- `git rev-parse --abbrev-ref HEAD` - current branch name
+- `git remote show origin | grep 'HEAD branch'` - detect the default base branch (usually `main` or `master`)
 
 ### 2. Handle uncommitted changes
 
@@ -36,7 +36,7 @@ If the branch isn't pushed or is ahead of the remote, ask the user before pushin
 
 ### 4. Analyze changes
 
-Get the full picture of what the PR will contain — look at ALL commits on the branch, not just the latest one:
+Get the full picture of what the PR will contain - look at ALL commits on the branch, not just the latest one:
 ```bash
 git log --oneline <base-branch>..HEAD
 git diff <base-branch>...HEAD

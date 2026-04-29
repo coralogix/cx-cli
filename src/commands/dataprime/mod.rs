@@ -363,7 +363,7 @@ pub fn render_results(
             if let Some(renderer) = text_renderer {
                 return renderer(merged);
             }
-            // Generic text rendering — pretty-print each row.
+            // Generic text rendering - pretty-print each row.
             if merged.rows.is_empty() {
                 println!("{}", "No results found.".yellow());
                 return Ok(());

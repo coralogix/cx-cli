@@ -206,7 +206,7 @@ impl<'a> AlertsApi<'a> {
         self.client.get(ALERTS_BASE, &[]).await
     }
 
-    /// Get a single alert definition by alert def ID (returns raw JSON — preserves the full API response).
+    /// Get a single alert definition by alert def ID (returns raw JSON - preserves the full API response).
     pub async fn get(&self, id: &str) -> Result<Value> {
         let path = format!("{ALERTS_BASE}/{id}");
         self.client.get(&path, &[]).await

@@ -4,7 +4,7 @@ description: |
   Query and analyze Coralogix Real User Monitoring (RUM) data. Use this skill when the user asks about
   frontend errors, page load times, web vitals, user interactions, browser errors, mobile crashes,
   Core Web Vitals (LCP, CLS, FID, INP, TTFB), JavaScript exceptions, page performance, session errors,
-  RUM data, real user monitoring, or any frontend/client-side observability question — even if they
+  RUM data, real user monitoring, or any frontend/client-side observability question - even if they
   don't explicitly say "RUM".
 version: 0.1.0
 ---
@@ -15,12 +15,12 @@ Query and analyze Coralogix Real User Monitoring data using the `cx logs` comman
 
 ## Understanding RUM in Coralogix
 
-RUM captures real user interactions from browsers and mobile apps — errors, performance metrics, network requests, web vitals, and user interactions. **RUM data is stored as regular logs** in the `cx_rum` subsystem, queried with the same `cx logs` command and DataPrime syntax used for any other logs.
+RUM captures real user interactions from browsers and mobile apps - errors, performance metrics, network requests, web vitals, and user interactions. **RUM data is stored as regular logs** in the `cx_rum` subsystem, queried with the same `cx logs` command and DataPrime syntax used for any other logs.
 
 This means:
-- **Metadata (`$m.*`)** and **labels (`$l.*`)** work the same as regular logs — you can filter on timestamp, severity, etc.
-- **User data (`$d.cx_rum.*`)** contains all RUM-specific fields — event types, errors, sessions, web vitals, interactions, and more. See the **[RUM Fields Reference](references/rum-fields.md)** for the complete field catalog.
-- **Session replay and session flows are not available** — only individual RUM log events can be queried.
+- **Metadata (`$m.*`)** and **labels (`$l.*`)** work the same as regular logs - you can filter on timestamp, severity, etc.
+- **User data (`$d.cx_rum.*`)** contains all RUM-specific fields - event types, errors, sessions, web vitals, interactions, and more. See the **[RUM Fields Reference](references/rum-fields.md)** for the complete field catalog.
+- **Session replay and session flows are not available** - only individual RUM log events can be queried.
 
 For general log querying concepts and field discovery, see the **`cx-query-logs`** skill. For DataPrime query language syntax, see the **`cx-dataprime`** skill.
 
@@ -44,7 +44,7 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 | `--tier` | `frequent` | Storage tier: `frequent` or `archive` |
 | `-o, --output` | `text` | Output format: `text`, `json`, or `agents` |
 
-**Note:** Use `--start now-7d` (or wider) for web vitals and page performance queries. Short time ranges produce unreliable percentiles — low-traffic pages have too few data points.
+**Note:** Use `--start now-7d` (or wider) for web vitals and page performance queries. Short time ranges produce unreliable percentiles - low-traffic pages have too few data points.
 
 ---
 
@@ -54,7 +54,7 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 
 Every RUM query must include `$l.subsystemname == 'cx_rum'`.
 
-Application filtering in RUM uses dedicated fields — `$l.applicationname` does not map to the RUM application name:
+Application filtering in RUM uses dedicated fields - `$l.applicationname` does not map to the RUM application name:
 
 ```bash
 # RUM application name
@@ -63,7 +63,7 @@ cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.version_metadata.app
 # Micro-frontend app label
 cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.labels.mfeApp == 'my-app'"
 
-# WRONG — $l.applicationname is not the RUM application name
+# WRONG - $l.applicationname is not the RUM application name
 cx logs "filter \$l.subsystemname == 'cx_rum' && \$l.applicationname == 'my-app'"
 ```
 
@@ -108,13 +108,13 @@ For the complete field reference including resource context, mobile contexts, an
 
 RUM errors can come from multiple event types (`error`, `network-request`, `custom-log`). The universal error marker is `event_context.severity == 5`, which applies regardless of event type.
 
-The `rum_template_id` field groups similar error events into distinct issues — always group by it when analyzing errors, and filter out nulls:
+The `rum_template_id` field groups similar error events into distinct issues - always group by it when analyzing errors, and filter out nulls:
 
 ```bash
 cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5 && \$d.cx_rum.rum_template_id != null | groupby \$d.cx_rum.rum_template_id aggregate count() as error_count, any_value(\$d.cx_rum.version_metadata.app_name) as app_name, any_value(\$d.cx_rum.event_context.type) as event_type, any_value(\$d.cx_rum.error_context.error_message) as error_message, any_value(\$d.cx_rum.network_request_context.method) as method, any_value(\$d.cx_rum.network_request_context.fragments) as url_fragments, any_value(\$d.cx_rum.network_request_context.status_code) as status_code, any_value(\$d.cx_rum.custom_log_context.message) as custom_log_message, distinct_count(\$d.cx_rum.session_context.user_id) as affected_users | orderby error_count desc" --start now-7d
 ```
 
-Include `any_value()` for descriptive fields from all error types — irrelevant fields will be null. When composing error descriptions from grouped results, the relevant fields depend on the event type:
+Include `any_value()` for descriptive fields from all error types - irrelevant fields will be null. When composing error descriptions from grouped results, the relevant fields depend on the event type:
 - `error` → `error_message`
 - `network-request` → `"<method> <url_fragments> (status <status_code>)"`
 - `custom-log` → `custom_log_context.message`
@@ -147,7 +147,7 @@ cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type =
 
 ### Web Vitals Querying
 
-Web vitals use `percentile(0.75, ...)` for p75 values — `avg` is skewed by outliers. Use `$d.cx_rum.web_vitals_context.value` without `:num` cast.
+Web vitals use `percentile(0.75, ...)` for p75 values - `avg` is skewed by outliers. Use `$d.cx_rum.web_vitals_context.value` without `:num` cast.
 
 Only query the specific vitals the user asks about. For "loading times" query `LT`, for "LCP" query `LCP`. Include all vitals only when the user explicitly asks for a full overview.
 
@@ -159,9 +159,9 @@ cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type =
 
 ### User Interaction Querying
 
-User interaction queries should always aggregate results — raw interaction events are noisy. Group by `interaction_context.target_element_inner_text` (the button/link text the user sees), and filter out null/empty values.
+User interaction queries should always aggregate results - raw interaction events are noisy. Group by `interaction_context.target_element_inner_text` (the button/link text the user sees), and filter out null/empty values.
 
-Do not group by `target_element` (HTML tag like DIV, SPAN) or `target_selector` — these are not meaningful to users. The correct field prefix is `interaction_context`, not `user_interaction_context`.
+Do not group by `target_element` (HTML tag like DIV, SPAN) or `target_selector` - these are not meaningful to users. The correct field prefix is `interaction_context`, not `user_interaction_context`.
 
 ### Network Requests
 
@@ -188,9 +188,9 @@ If a query returns no results, change **one thing at a time**:
 
 ## References
 
-- **[RUM Fields Reference](references/rum-fields.md)** — Complete field reference for all RUM contexts (session, network, web vitals, mobile, etc.)
-- **`cx-query-logs` skill** — General log querying, field discovery, investigation workflows, wildfind policy
-- **`cx-dataprime` skill** — Full query language reference: commands, operators, aggregations, text extraction, type conversions
+- **[RUM Fields Reference](references/rum-fields.md)** - Complete field reference for all RUM contexts (session, network, web vitals, mobile, etc.)
+- **`cx-query-logs` skill** - General log querying, field discovery, investigation workflows, wildfind policy
+- **`cx-dataprime` skill** - Full query language reference: commands, operators, aggregations, text extraction, type conversions
 
 For inline DataPrime help:
 
@@ -203,8 +203,8 @@ cx dataprime show filter           # Detailed help for a specific command
 
 ## Related Skills
 
-- **`cx-query-logs`** — General log querying with DataPrime (RUM data is logs)
-- **`cx-query-spans`** — Distributed traces and service latency
-- **`cx-metrics-query`** — Aggregated counters, gauges, and histograms (PromQL)
-- **`cx-telemetry-querying`** — Gateway skill for choosing the right data source
-- **`cx-alerts`** — Create and manage alerts based on log patterns
+- **`cx-query-logs`** - General log querying with DataPrime (RUM data is logs)
+- **`cx-query-spans`** - Distributed traces and service latency
+- **`cx-metrics-query`** - Aggregated counters, gauges, and histograms (PromQL)
+- **`cx-telemetry-querying`** - Gateway skill for choosing the right data source
+- **`cx-alerts`** - Create and manage alerts based on log patterns

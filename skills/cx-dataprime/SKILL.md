@@ -2,11 +2,11 @@
 name: cx-dataprime
 description: |
   DataPrime query language reference for Coralogix. This is a companion skill for detailed syntax
-  help. It triggers when the user needs help with DataPrime syntax specifically — how to write
+  help. It triggers when the user needs help with DataPrime syntax specifically - how to write
   filters, groupby, aggregations, extract fields with regex, use type conversions, time bucketing
   with roundTime, arrayContains, or asks "how do I write a DataPrime query", "what operators does
   DataPrime support", "how does extract work in DataPrime". This skill is the language reference,
-  not the execution guide — if the user wants to actually run a query against a specific data
+  not the execution guide - if the user wants to actually run a query against a specific data
   source, use the appropriate source-specific skill instead.
 version: 0.1.0
 ---

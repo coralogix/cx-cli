@@ -1,6 +1,6 @@
 ---
 name: cx-metrics-query
-description: This skill should be used when the user asks to "query metrics", "investigate a metrics issue", "check CPU usage", "find slow services", "investigate production issues using metrics", "search for metrics", "search metric names", "run a PromQL query", "check error rate", "check latency", "look up a metric", "analyze system load", "check memory usage", "investigate infrastructure issues", "analyze custom metrics", "check node health", "investigate disk usage", or wants to explore Coralogix metrics data — including application, infrastructure, and custom metrics — using the cx CLI.
+description: This skill should be used when the user asks to "query metrics", "investigate a metrics issue", "check CPU usage", "find slow services", "investigate production issues using metrics", "search for metrics", "search metric names", "run a PromQL query", "check error rate", "check latency", "look up a metric", "analyze system load", "check memory usage", "investigate infrastructure issues", "analyze custom metrics", "check node health", "investigate disk usage", or wants to explore Coralogix metrics data - including application, infrastructure, and custom metrics - using the cx CLI.
 version: 0.1.0
 ---
 
@@ -15,7 +15,7 @@ All metrics operations use `cx metrics` with four subcommands:
 | Command | Purpose | Key flags |
 |---|---|---|
 | `cx metrics search --name <pattern>` | Find metrics by name (wildcard or substring) | `--name` |
-| `cx metrics get-labels <metric>` | List available label names for a metric | — |
+| `cx metrics get-labels <metric>` | List available label names for a metric | - |
 | `cx metrics query '<expr>'` | Instant PromQL query (single point in time) | `--time <timestamp>` |
 | `cx metrics query-range '<expr>'` | Range PromQL query (time series) | `--start`, `--end`, `--step` |
 
@@ -73,7 +73,7 @@ cx metrics get-labels http_requests_total
 
 All time arguments accept:
 - Relative: `now`, `now-1h`, `now-30m`, `now-2d`, `now-1w`
-- Absolute: RFC3339/ISO 8601 — `2024-01-01T00:00:00Z`
+- Absolute: RFC3339/ISO 8601 - `2024-01-01T00:00:00Z`
 
 ---
 
@@ -104,7 +104,7 @@ cx metrics search --name '*request*'
 cx metrics search --name '*'   # full list as last resort
 ```
 
-When two similar metrics are found and one is suffixed with `_count`, prefer the one without the suffix — `_count` typically tracks the number of observations, not the measured value itself.
+When two similar metrics are found and one is suffixed with `_count`, prefer the one without the suffix - `_count` typically tracks the number of observations, not the measured value itself.
 
 ### 3. Label Discovery
 
@@ -114,14 +114,14 @@ Once a relevant metric is identified, discover its labels before filtering:
 cx metrics get-labels <metric_name>
 ```
 
-Use the returned label names to build precise PromQL filters. Note: label *values* are not directly queryable via the CLI — infer them from query results or domain knowledge.
+Use the returned label names to build precise PromQL filters. Note: label *values* are not directly queryable via the CLI - infer them from query results or domain knowledge.
 
 ### 4. Query Construction & Execution
 
 Choose the right query type:
 
-- **Instant query** (`cx metrics query`) — use for current state, single values, or absolute aggregations over a window. Use `--time` to query historical data at a specific moment.
-- **Range query** (`cx metrics query-range`) — use when comparing across time periods (e.g., per-day DAU, hourly error rate trend). Set `--step` to match any `[window]` used in temporal functions.
+- **Instant query** (`cx metrics query`) - use for current state, single values, or absolute aggregations over a window. Use `--time` to query historical data at a specific moment.
+- **Range query** (`cx metrics query-range`) - use when comparing across time periods (e.g., per-day DAU, hourly error rate trend). Set `--step` to match any `[window]` used in temporal functions.
 
 Start simple, add complexity as needed:
 
@@ -139,8 +139,8 @@ cx metrics query 'sum by (service) (rate(http_requests_total{status=~"5.."}[5m])
 ### 5. Retry Logic
 
 If a query returns no results or an error:
-1. Check metric name — run `cx metrics search --name '*<keyword>*'` with a broader term
-2. Check label names — run `cx metrics get-labels <metric>` to verify filter keys
+1. Check metric name - run `cx metrics search --name '*<keyword>*'` with a broader term
+2. Check label names - run `cx metrics get-labels <metric>` to verify filter keys
 3. Widen the time range or shorten the rate window
 4. If filtering on a label that may be empty, exclude empty values: `{label!=""}`
 5. Try an alternative metric name or structure
@@ -151,7 +151,7 @@ Maximum 5 retry attempts per query, each with a concrete improvement.
 
 After collecting results:
 - Correlate across metrics (e.g., error spike matches CPU spike?)
-- Look for temporal patterns — recurring peaks, sudden step changes
+- Look for temporal patterns - recurring peaks, sudden step changes
 - Cross-layer analysis: app → services → infrastructure → dependencies
 - Provide actionable next steps, not just data
 
@@ -201,4 +201,4 @@ PromQL results can be large. After every few queries, summarize:
 
 ### Reference Files
 
-- **`references/promql-guidelines.md`** — Complete PromQL reference: value types, counter vs gauge, histograms, common tasks, gotchas, and a mini cheat-sheet
+- **`references/promql-guidelines.md`** - Complete PromQL reference: value types, counter vs gauge, histograms, common tasks, gotchas, and a mini cheat-sheet

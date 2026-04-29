@@ -567,7 +567,7 @@ pub async fn run_get_labels(
                 render::print_no_results("No labels found.");
                 return Ok(());
             }
-            // Labels table doesn't use profile column — it's a flat list
+            // Labels table doesn't use profile column - it's a flat list
             let rows: Vec<Vec<String>> = all_labels.iter().map(|(_, l)| vec![l.clone()]).collect();
             render::render_table(&["Label"], rows, false);
         }

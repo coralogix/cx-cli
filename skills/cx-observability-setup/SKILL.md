@@ -16,7 +16,7 @@ version: 0.1.0
 
 # Observability Setup Skill
 
-Use this skill when setting up or configuring the observability stack — saved views, webhook integrations, notification channels, and external integrations. This is the "day 1 setup" skill for onboarding a new service or reconfiguring notification pipelines.
+Use this skill when setting up or configuring the observability stack - saved views, webhook integrations, notification channels, and external integrations. This is the "day 1 setup" skill for onboarding a new service or reconfiguring notification pipelines.
 
 ---
 
@@ -251,16 +251,16 @@ cx webhooks actions reorder --from-file order.json
 
 ## Key Principles
 
-- **Always test after setup** — use `cx notifications test`, `cx webhooks test`, `cx integrations test`
-- **Use `--from-file`** for complex JSON payloads — pipe from stdin or use a file
-- **Template from existing** — `cx <command> get <id> -o json > template.json` before creating
-- **Check connector types first** — `cx notifications connectors types` and `cx webhooks types` before creating
+- **Always test after setup** - use `cx notifications test`, `cx webhooks test`, `cx integrations test`
+- **Use `--from-file`** for complex JSON payloads - pipe from stdin or use a file
+- **Template from existing** - `cx <command> get <id> -o json > template.json` before creating
+- **Check connector types first** - `cx notifications connectors types` and `cx webhooks types` before creating
 
 ---
 
 ## Related Skills
 
-- **`cx-create-dashboard`** — dashboard creation workflow for new services
-- **`cx-incident-management`** — SLO creation and alert triage workflows
-- **`cx-alerts`** — alert definitions that trigger notifications
-- **`cx-telemetry-querying`** — verify data flows after setup
+- **`cx-create-dashboard`** - dashboard creation workflow for new services
+- **`cx-incident-management`** - SLO creation and alert triage workflows
+- **`cx-alerts`** - alert definitions that trigger notifications
+- **`cx-telemetry-querying`** - verify data flows after setup

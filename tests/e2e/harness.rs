@@ -2,7 +2,7 @@
 //!
 //! Resolves credentials and builds `cx` subprocess invocations via
 //! `assert_cmd`. Per-domain ID discovery (e.g. picking a real alert id to
-//! pass to `alerts get`) lives in each test module — see
+//! pass to `alerts get`) lives in each test module - see
 //! `tests/e2e/alerts.rs` for the pattern.
 //!
 //! All e2e tests are gated by `#[ignore]` and additionally skip with a clear
@@ -121,7 +121,7 @@ pub fn run_ok_nonempty(args: &[&str]) -> Vec<u8> {
 }
 
 /// Run `cx <args> -o json`-style command, assert success, and parse stdout
-/// as JSON. Empty arrays/objects are valid — we only fail on malformed
+/// as JSON. Empty arrays/objects are valid - we only fail on malformed
 /// payloads or empty stdout. Returns the parsed value.
 pub fn run_ok_json(args: &[&str]) -> Value {
     let stdout = run_ok_nonempty(args);
@@ -134,7 +134,7 @@ pub fn run_ok_json(args: &[&str]) -> Value {
     })
 }
 
-/// Parse stdout bytes as JSON. Returns `None` if not valid JSON — used by
+/// Parse stdout bytes as JSON. Returns `None` if not valid JSON - used by
 /// discovery helpers that treat malformed payloads as a skip condition.
 pub fn parse_json(stdout: &[u8]) -> Option<Value> {
     serde_json::from_slice(stdout).ok()
@@ -198,8 +198,8 @@ pub fn run_tolerant_json(args: &[&str], test_name: &str) -> Option<Value> {
 // ── Shape assertions ─────────────────────────────────────────────────
 //
 // These check the *structure* of a JSON response without inspecting values.
-// Empty arrays pass vacuously — that's intentional, since the test team
-// may genuinely have no data — but they catch field renames, type changes
+// Empty arrays pass vacuously - that's intentional, since the test team
+// may genuinely have no data - but they catch field renames, type changes
 // (array → object, string → number), and missing keys whenever data is
 // present.
 

@@ -335,7 +335,7 @@ fn group_spans_preserves_insertion_order() {
 
 #[test]
 fn group_spans_from_example_traces() {
-    // All 5 spans from example_dataprime_traces_response.json — all belong to one trace
+    // All 5 spans from example_dataprime_traces_response.json - all belong to one trace
     let rows = vec![
         json!({"traceID": "7e11b3be4f2f57a1d3f97648d7f59b64", "spanID": "0cd3201c4b783729", "operationName": "PING",                          "duration": 26142}),
         json!({"traceID": "7e11b3be4f2f57a1d3f97648d7f59b64", "spanID": "d3ab341e5239f7f0", "operationName": "GET",                           "duration": 10383}),

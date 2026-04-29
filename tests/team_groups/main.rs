@@ -26,7 +26,7 @@ async fn list_team_groups_from_mock() {
         .await;
 
     let target = common::test_target("test-profile", &server.uri());
-    run_list(&[target], None, None, OutputFormat::Json)
+    run_list(&[target], OutputFormat::Json)
         .await
         .expect("run_list should succeed");
 }

@@ -74,13 +74,13 @@ Cost & Storage:
   tco                Manage TCO policies and settings
   retentions         Manage data retention settings
   quotas             Manage quota rules
-  archive            Manage data archive storage configuration
+  archive (risky)    Manage data archive storage configuration
 
 Integrations:
   integrations       Manage integrations, extensions, and contextual data
 
 Access:
-  iam                Manage API keys, roles, scopes, users, groups, SAML, and IP access
+  iam (risky)        Manage API keys, roles, scopes, users, groups, SAML, and IP access
 
 Agent:
   schema             Output the full command tree as JSON for agent consumption

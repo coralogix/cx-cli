@@ -50,11 +50,12 @@
 **/archive/                            @coralogix/team-cxai
 /skills/cx-cost-optimization/          @coralogix/team-cxai
 
-# === data pipeline (rules, enrichments, e2m, recording-rules) ===
-**/rules/                              @coralogix/team-cxai
+# === data pipeline (parsing-rules, enrichments, e2m, recording-rules) ===
+**/parsing_rules/                      @coralogix/team-cxai
 **/enrichments/                        @coralogix/team-cxai
 **/e2m/                                @coralogix/team-cxai
-**/recording-rules/                    @coralogix/team-cxai
+**/recording_rules/                    @coralogix/team-cxai
+**/suppression_rules/                  @coralogix/team-cxai
 /skills/cx-data-pipeline/              @coralogix/team-cxai
 
 # === observability setup (views, webhooks, notifications, integrations) ===

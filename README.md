@@ -137,7 +137,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 | Command | Purpose |
 |---|---|
-| `cx rules` | Manage log parsing rule groups |
+| `cx parsing-rules` | Manage log parsing rules |
 | `cx enrichments` | Manage enrichment rules and custom enrichment tables |
 | `cx e2m` | Manage Events2Metrics definitions |
 | `cx recording-rules` | Manage Prometheus recording rule groups |

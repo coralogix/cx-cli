@@ -19,11 +19,11 @@ Use this skill to list, inspect, create, enable, and disable Coralogix alert def
 | `cx alerts disable <id>` | Disable an alert | - |
 | `cx alerts events` | List alert trigger events | `--alert-id`, `--start`, `--end` |
 | `cx alerts event-stats` | Get alert event statistics | - |
-| `cx alerts schedulers list` | List suppression rules | - |
-| `cx alerts schedulers get <id>` | Get a suppression rule | - |
-| `cx alerts schedulers create` | Create a suppression rule | `--from-file <path>` |
-| `cx alerts schedulers update` | Update a suppression rule | `--from-file <path>` |
-| `cx alerts schedulers delete <id>` | Delete a suppression rule | - |
+| `cx alerts suppression-rules list` | List suppression rules | - |
+| `cx alerts suppression-rules get <id>` | Get a suppression rule | - |
+| `cx alerts suppression-rules create` | Create a suppression rule | `--from-file <path>` |
+| `cx alerts suppression-rules update` | Update a suppression rule | `--from-file <path>` |
+| `cx alerts suppression-rules delete <id>` | Delete a suppression rule | - |
 
 **Output format:** append `-o json` or `-o agents` to `list`, `get`, and `create` commands for machine-readable output.
 

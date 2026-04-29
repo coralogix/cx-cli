@@ -1672,13 +1672,13 @@ enum ApiKeysCmd {
         /// API key ID.
         id: String,
     },
-    /// Create an API key from a JSON definition file.
+    /// Create an API key from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the API key definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update an API key from a JSON definition file.
+    /// Update an API key from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated API key definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1686,7 +1686,7 @@ enum ApiKeysCmd {
         /// API key ID.
         id: String,
     },
-    /// Delete an API key.
+    /// Delete an API key [requires --yes].
     Delete {
         /// API key ID.
         id: String,
@@ -1704,13 +1704,13 @@ enum ApiKeysCmd {
 enum ApiKeysAdminCmd {
     /// List all team members' API keys.
     List,
-    /// Bulk delete API keys by IDs.
+    /// Bulk delete API keys by IDs [requires --yes].
     Delete {
         /// API key IDs to delete.
         #[arg(long, num_args = 1..)]
         ids: Vec<String>,
     },
-    /// Set active/inactive status for API keys.
+    /// Set active/inactive status for API keys [requires --yes].
     SetStatus {
         /// API key IDs to update.
         #[arg(long, num_args = 1..)]
@@ -1730,13 +1730,13 @@ enum RolesCmd {
         /// Role ID.
         id: String,
     },
-    /// Create a custom role from a JSON definition file.
+    /// Create a custom role from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the role definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a custom role from a JSON definition file.
+    /// Update a custom role from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated role definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1744,7 +1744,7 @@ enum RolesCmd {
         /// Role ID.
         id: String,
     },
-    /// Delete a custom role.
+    /// Delete a custom role [requires --yes].
     Delete {
         /// Role ID.
         id: String,
@@ -1762,19 +1762,19 @@ enum ScopesCmd {
         /// Scope ID.
         id: String,
     },
-    /// Create a scope from a JSON definition file.
+    /// Create a scope from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the scope definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a scope from a JSON definition file.
+    /// Update a scope from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated scope definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a scope.
+    /// Delete a scope [requires --yes].
     Delete {
         /// Scope ID.
         id: String,
@@ -1803,19 +1803,19 @@ enum UsersCmd {
         /// User ID.
         user_id: String,
     },
-    /// Create user(s) from a JSON definition file.
+    /// Create user(s) from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the user definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update user(s) from a JSON definition file.
+    /// Update user(s) from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated user definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Set status for one or more users.
+    /// Set status for one or more users [requires --yes].
     SetStatus {
         /// User IDs to update.
         #[arg(long, num_args = 1..)]
@@ -1845,13 +1845,13 @@ enum TeamGroupsCmd {
         /// Team group ID.
         group_id: String,
     },
-    /// Create a team group from a JSON definition file.
+    /// Create a team group from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a team group from a JSON definition file.
+    /// Update a team group from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1859,7 +1859,7 @@ enum TeamGroupsCmd {
         /// Team group ID.
         id: String,
     },
-    /// Delete a team group.
+    /// Delete a team group [requires --yes].
     Delete {
         /// Team group ID.
         id: String,
@@ -1872,13 +1872,13 @@ enum SamlCmd {
     Get,
     /// Get SAML service provider parameters.
     SpParams,
-    /// Set SAML IDP parameters from a JSON file.
+    /// Set SAML IDP parameters from a JSON file [requires --yes].
     SetIdp {
         /// Path to JSON file with IDP parameters. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Activate or deactivate SAML.
+    /// Activate or deactivate SAML [requires --yes].
     SetActive {
         /// Whether to activate SAML.
         #[arg(long)]
@@ -1890,19 +1890,19 @@ enum SamlCmd {
 enum IpAccessCmd {
     /// Get IP access settings.
     Get,
-    /// Create IP access settings from a JSON file.
+    /// Create IP access settings from a JSON file [requires --yes].
     Create {
         /// Path to JSON file with IP access settings. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update IP access settings from a JSON file.
+    /// Update IP access settings from a JSON file [requires --yes].
     Update {
         /// Path to JSON file with updated IP access settings. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete IP access settings.
+    /// Delete IP access settings [requires --yes].
     Delete,
 }
 
@@ -1964,21 +1964,21 @@ enum DataArchiveCmd {
 enum DataArchiveMetricsCmd {
     /// Get metrics archive configuration.
     Get,
-    /// Create metrics archive from a JSON file.
+    /// Create metrics archive from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update metrics archive from a JSON file.
+    /// Update metrics archive from a JSON file [requires --yes].
     Update {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Enable metrics archiving.
+    /// Enable metrics archiving [requires --yes].
     Enable,
-    /// Disable metrics archiving.
+    /// Disable metrics archiving [requires --yes].
     Disable,
     /// Validate metrics archive configuration from a JSON file.
     Validate {
@@ -1992,7 +1992,7 @@ enum DataArchiveMetricsCmd {
 enum DataArchiveLogsCmd {
     /// Get logs archive target.
     Get,
-    /// Set logs archive target from a JSON file.
+    /// Set logs archive target from a JSON file [requires --yes].
     Set {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]

@@ -2825,7 +2825,10 @@ async fn main() -> Result<()> {
                         commands::api_keys::run_admin_delete(&targets, &ids).await?;
                     }
                     ApiKeysAdminCmd::SetStatus { ids, active } => {
-                        confirm_destructive(&format!("Set API key status to active={active}?"), yes)?;
+                        confirm_destructive(
+                            &format!("Set API key status to active={active}?"),
+                            yes,
+                        )?;
                         commands::api_keys::run_admin_set_status(&targets, &ids, active).await?;
                     }
                 },
@@ -2940,11 +2943,17 @@ async fn main() -> Result<()> {
                     commands::saml::run_sp_params(&targets, output).await?;
                 }
                 SamlCmd::SetIdp { from_file } => {
-                    confirm_destructive("Update SAML IDP configuration? This may affect SSO for all users.", yes)?;
+                    confirm_destructive(
+                        "Update SAML IDP configuration? This may affect SSO for all users.",
+                        yes,
+                    )?;
                     commands::saml::run_set_idp(&targets, &from_file, output).await?;
                 }
                 SamlCmd::SetActive { active } => {
-                    confirm_destructive(&format!("Set SAML active to {active}? This may affect SSO for all users."), yes)?;
+                    confirm_destructive(
+                        &format!("Set SAML active to {active}? This may affect SSO for all users."),
+                        yes,
+                    )?;
                     commands::saml::run_set_active(&targets, active).await?;
                 }
             },
@@ -2961,7 +2970,10 @@ async fn main() -> Result<()> {
                     commands::ip_access::run_update(&targets, &from_file, output).await?;
                 }
                 IpAccessCmd::Delete => {
-                    confirm_destructive("Delete all IP access rules? This removes all IP restrictions.", yes)?;
+                    confirm_destructive(
+                        "Delete all IP access rules? This removes all IP restrictions.",
+                        yes,
+                    )?;
                     commands::ip_access::run_delete(&targets).await?;
                 }
             },

@@ -152,7 +152,7 @@ Archive: `get`, `validate`
 - **Acceptance:** `cargo build` succeeds. `cargo clippy` passes. Test manually: `cargo run -- iam api-keys list` does NOT prompt. `cargo run -- iam api-keys create --from-file -` shows confirmation prompt. `cargo run -- iam api-keys create --from-file - --yes` skips prompt.
 - **Dependencies:** 1.1
 
-### 1.3 [ ] Build and install
+### 1.3 [x] Build and install *(completed 2026-04-29)*
 
 - **Files:** None (build step)
 - **What:** Run `cargo fmt`, `cargo clippy`, `cargo build`, and `cargo install --path .`

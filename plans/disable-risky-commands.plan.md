@@ -192,7 +192,7 @@ Archive: `get`, `validate`
 - **Acceptance:** Skill file contains safety section before CLI commands. Write operation guidance is clear.
 - **Dependencies:** 1.2
 
-### 2.2 [ ] Add safety instructions to cx-cost-optimization skill
+### 2.2 [x] Add safety instructions to cx-cost-optimization skill *(completed 2026-04-29)*
 
 - **Files:** `skills/cx-cost-optimization/SKILL.md`
 - **What:** Add a `## Destructive Operation Safety` section in the "Applying Changes" section (~line 179), since that's where the skill transitions from read to write operations. Content follows the same pattern as 2.1:

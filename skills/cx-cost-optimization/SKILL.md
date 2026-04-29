@@ -176,6 +176,10 @@ cx archive metrics get -o json | jq '{enabled: .enabled, bucket: .bucket}'
 
 ## Applying Changes
 
+**IMPORTANT: NEVER pass `--yes` without explicit user approval.** Archive write operations (`cx archive logs set`, `cx archive metrics create/update/enable/disable`) require interactive confirmation and the `--yes` flag to execute non-interactively. Before executing any write operation, describe the exact change to the user and wait for their approval before passing `--yes`.
+
+TCO, retention, and quota write operations are also impactful changes. Always confirm with the user before modifying policies, retention settings, or quota rules - even though these commands do not currently require `--yes`.
+
 When modifying TCO policies, retention, quotas, or archive:
 
 1. **Template from existing:** Get the current configuration as JSON, modify it, then apply:

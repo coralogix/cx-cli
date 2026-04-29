@@ -2802,12 +2802,15 @@ async fn main() -> Result<()> {
                     commands::api_keys::run_get(&targets, &id, output).await?;
                 }
                 ApiKeysCmd::Create { from_file } => {
+                    confirm_destructive("Create a new API key?", yes)?;
                     commands::api_keys::run_create(&targets, &from_file, output).await?;
                 }
                 ApiKeysCmd::Update { from_file, id } => {
+                    confirm_destructive(&format!("Update API key '{id}'?"), yes)?;
                     commands::api_keys::run_update(&targets, &id, &from_file, output).await?;
                 }
                 ApiKeysCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete API key '{id}'?"), yes)?;
                     commands::api_keys::run_delete(&targets, &id).await?;
                 }
                 ApiKeysCmd::SendDataKeys => {
@@ -2818,9 +2821,11 @@ async fn main() -> Result<()> {
                         commands::api_keys::run_admin_list(&targets, output).await?;
                     }
                     ApiKeysAdminCmd::Delete { ids } => {
+                        confirm_destructive("Bulk delete API keys?", yes)?;
                         commands::api_keys::run_admin_delete(&targets, &ids).await?;
                     }
                     ApiKeysAdminCmd::SetStatus { ids, active } => {
+                        confirm_destructive(&format!("Set API key status to active={active}?"), yes)?;
                         commands::api_keys::run_admin_set_status(&targets, &ids, active).await?;
                     }
                 },
@@ -2833,12 +2838,15 @@ async fn main() -> Result<()> {
                     commands::roles::run_get(&targets, &id, output).await?;
                 }
                 RolesCmd::Create { from_file } => {
+                    confirm_destructive("Create a new custom role?", yes)?;
                     commands::roles::run_create(&targets, &from_file, output).await?;
                 }
                 RolesCmd::Update { from_file, id } => {
+                    confirm_destructive(&format!("Update role '{id}'?"), yes)?;
                     commands::roles::run_update(&targets, &id, &from_file, output).await?;
                 }
                 RolesCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete role '{id}'?"), yes)?;
                     commands::roles::run_delete(&targets, &id).await?;
                 }
                 RolesCmd::System => {
@@ -2853,12 +2861,15 @@ async fn main() -> Result<()> {
                     commands::scopes::run_get(&targets, &id, output).await?;
                 }
                 ScopesCmd::Create { from_file } => {
+                    confirm_destructive("Create a new scope?", yes)?;
                     commands::scopes::run_create(&targets, &from_file, output).await?;
                 }
                 ScopesCmd::Update { from_file } => {
+                    confirm_destructive("Update scope?", yes)?;
                     commands::scopes::run_update(&targets, &from_file, output).await?;
                 }
                 ScopesCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete scope '{id}'?"), yes)?;
                     commands::scopes::run_delete(&targets, &id).await?;
                 }
             },
@@ -2883,12 +2894,15 @@ async fn main() -> Result<()> {
                     commands::users::run_get(&targets, &user_id, output).await?;
                 }
                 UsersCmd::Create { from_file } => {
+                    confirm_destructive("Create user(s)?", yes)?;
                     commands::users::run_create(&targets, &from_file, output).await?;
                 }
                 UsersCmd::Update { from_file } => {
+                    confirm_destructive("Update user(s)?", yes)?;
                     commands::users::run_update(&targets, &from_file, output).await?;
                 }
                 UsersCmd::SetStatus { user_ids, status } => {
+                    confirm_destructive(&format!("Set user status to '{status}'?"), yes)?;
                     commands::users::run_set_status(&targets, &user_ids, &status).await?;
                 }
             },
@@ -2906,12 +2920,15 @@ async fn main() -> Result<()> {
                     commands::team_groups::run_users(&targets, &group_id, output).await?;
                 }
                 TeamGroupsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new team group?", yes)?;
                     commands::team_groups::run_create(&targets, &from_file, output).await?;
                 }
                 TeamGroupsCmd::Update { from_file, id } => {
+                    confirm_destructive(&format!("Update team group '{id}'?"), yes)?;
                     commands::team_groups::run_update(&targets, &id, &from_file, output).await?;
                 }
                 TeamGroupsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete team group '{id}'?"), yes)?;
                     commands::team_groups::run_delete(&targets, &id).await?;
                 }
             },
@@ -2923,9 +2940,11 @@ async fn main() -> Result<()> {
                     commands::saml::run_sp_params(&targets, output).await?;
                 }
                 SamlCmd::SetIdp { from_file } => {
+                    confirm_destructive("Update SAML IDP configuration? This may affect SSO for all users.", yes)?;
                     commands::saml::run_set_idp(&targets, &from_file, output).await?;
                 }
                 SamlCmd::SetActive { active } => {
+                    confirm_destructive(&format!("Set SAML active to {active}? This may affect SSO for all users."), yes)?;
                     commands::saml::run_set_active(&targets, active).await?;
                 }
             },
@@ -2934,12 +2953,15 @@ async fn main() -> Result<()> {
                     commands::ip_access::run_get(&targets, output).await?;
                 }
                 IpAccessCmd::Create { from_file } => {
+                    confirm_destructive("Create IP access rules?", yes)?;
                     commands::ip_access::run_create(&targets, &from_file, output).await?;
                 }
                 IpAccessCmd::Update { from_file } => {
+                    confirm_destructive("Update IP access rules?", yes)?;
                     commands::ip_access::run_update(&targets, &from_file, output).await?;
                 }
                 IpAccessCmd::Delete => {
+                    confirm_destructive("Delete all IP access rules? This removes all IP restrictions.", yes)?;
                     commands::ip_access::run_delete(&targets).await?;
                 }
             },
@@ -2951,17 +2973,21 @@ async fn main() -> Result<()> {
                     commands::data_archive::run_metrics_get(&targets, output).await?;
                 }
                 DataArchiveMetricsCmd::Create { from_file } => {
+                    confirm_destructive("Create metrics archive configuration?", yes)?;
                     commands::data_archive::run_metrics_create(&targets, &from_file, output)
                         .await?;
                 }
                 DataArchiveMetricsCmd::Update { from_file } => {
+                    confirm_destructive("Update metrics archive configuration?", yes)?;
                     commands::data_archive::run_metrics_update(&targets, &from_file, output)
                         .await?;
                 }
                 DataArchiveMetricsCmd::Enable => {
+                    confirm_destructive("Enable metrics archiving?", yes)?;
                     commands::data_archive::run_metrics_enable(&targets).await?;
                 }
                 DataArchiveMetricsCmd::Disable => {
+                    confirm_destructive("Disable metrics archiving?", yes)?;
                     commands::data_archive::run_metrics_disable(&targets).await?;
                 }
                 DataArchiveMetricsCmd::Validate { from_file } => {
@@ -2974,6 +3000,7 @@ async fn main() -> Result<()> {
                     commands::data_archive::run_logs_get(&targets, output).await?;
                 }
                 DataArchiveLogsCmd::Set { from_file } => {
+                    confirm_destructive("Set logs archive target?", yes)?;
                     commands::data_archive::run_logs_set(&targets, &from_file, output).await?;
                 }
             },

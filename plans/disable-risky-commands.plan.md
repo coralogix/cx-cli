@@ -87,7 +87,7 @@ Archive: `get`, `validate`
 - **Acceptance:** `cargo build` succeeds. `cx --help` shows `--yes` flag under options. No behavioral changes yet.
 - **Dependencies:** None
 
-### 1.2 [ ] Add confirmation prompts to all IAM and archive write operations
+### 1.2 [x] Add confirmation prompts to all IAM and archive write operations *(completed 2026-04-29)*
 
 - **Files:** `src/main.rs`
 - **What:** In the `Commands::Iam` match arm (~lines 2790-2939) and `Commands::DataArchive` match arm (~lines 2942-2974), add a `confirm_destructive("...", yes)?;` call BEFORE each write operation's handler invocation.

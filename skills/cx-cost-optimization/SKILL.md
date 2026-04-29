@@ -7,6 +7,8 @@ description: >
   "frequent search vs archive", "why is our bill so high", "spending too much on logs",
   "data retention settings", "quota rules", "cost analysis", "usage breakdown",
   "optimize log volume", "control data ingestion", "archive cold data",
+  "billing units", "plan consumption", "daily plan", "overage", "PAYG",
+  "usage anomaly", "usage trend", "cx_data_usage_units",
   or wants to investigate, analyze, or reduce Coralogix data costs.
 version: 0.1.0
 ---
@@ -27,6 +29,7 @@ Use this skill when investigating or reducing Coralogix data costs. It covers th
 | `cx quotas` | `get`, `create`, `update`, `delete` | Set ingestion guardrails |
 | `cx archive logs` | `get`, `set` | Configure logs archive target |
 | `cx archive metrics` | `get`, `create`, `update`, `enable`, `disable`, `validate` | Configure metrics archive storage |
+| `cx metrics query` | `--promql`, `--time`, `--start`/`--end` | Query billing and usage metrics via PromQL |
 
 Key flags:
 - All commands support `-o json` for structured output and `-p <profile>` for profile selection
@@ -185,6 +188,74 @@ When modifying TCO policies, retention, quotas, or archive:
 2. **Verify after changes:** Re-run the diagnosis commands to confirm the change took effect.
 
 3. **TCO policy ordering matters:** Use `cx tco reorder --from-file` to set priority order. Policies are evaluated top-to-bottom; the first match wins.
+
+---
+
+## Metrics-Based Cost Analysis
+
+The `cx usage` API gives summaries, but for billing-accurate analysis, anomaly detection, and breakdown by pillar/feature, query the customer metrics exporter via PromQL.
+
+### Key Metrics
+
+| Metric | Meaning | Query suffix |
+|---|---|---|
+| `cx_data_usage_units` | Daily billable usage in units (canonical billing metric) | No `_total` |
+| `cx_data_plan_units_per_day` | Current daily plan quota in units (snapshot) | No `_total` |
+| `cx_data_usage_payg_units` | Daily overage/PAYG usage in units | No `_total` |
+| `cx_data_usage_total` | Processed data size in bytes | `_total` |
+| `cx_data_usage_tokens_total` | AI evaluation tokens | `_total` |
+| `cx_data_usage_samples_total` | Processed metric samples | `_total` |
+
+### Concept-to-Metric Mapping
+
+- **Billing / plan usage / consumption** -> `cx_data_usage_units` + `cx_data_plan_units_per_day`
+- **Processed bytes / data volume** -> `cx_data_usage_total`
+- **AI evaluation tokens** -> `cx_data_usage_tokens_total`
+- **Metric samples** -> `cx_data_usage_samples_total`
+- **Overage / PAYG** -> `cx_data_usage_payg_units`
+
+### Common PromQL Queries
+
+```bash
+# Today's billable units consumed so far
+cx metrics query --promql 'sum(cx_data_usage_units)' --time now -o json
+
+# Units breakdown by pillar
+cx metrics query --promql 'sum by (pillar) (cx_data_usage_units)' --time now -o json
+
+# Daily plan quota
+cx metrics query --promql 'cx_data_plan_units_per_day' --time now -o json
+
+# Plan consumption percentage
+cx metrics query --promql '100 * sum(cx_data_usage_units) / cx_data_plan_units_per_day' --time now -o json
+
+# Units by feature group
+cx metrics query --promql 'sum by (feature_group_id) (cx_data_usage_units)' --time now -o json
+
+# PAYG overage (if any)
+cx metrics query --promql 'cx_data_usage_payg_units' --time now -o json
+```
+
+### UTC-Day Bucketing Rules
+
+All usage metrics accumulate from UTC midnight and reset at `00:00 UTC`:
+- An instant query during the day returns "today so far"
+- For completed-day totals, use the last sample before midnight
+- Never subtract values across a UTC midnight boundary
+- For weekly/monthly analysis, derive completed daily totals first, then roll up
+- Exclude the current partial UTC day when computing trends or averages
+
+### Anomaly Detection
+
+When investigating usage anomalies:
+1. Compare completed UTC days (exclude current partial day)
+2. Break down by: `measurement_type` -> `pillar` -> `entity_type` -> `priority` -> `feature_group_id` -> `application_name` -> `subsystem_name`
+3. Prefer same-weekday comparisons for seasonal traffic
+4. Use `cx_data_usage_units` for billing anomalies, `cx_data_usage_total` for volume anomalies
+
+### Breakdown Labels
+
+Usage metrics support these grouping dimensions: `pillar`, `entity_type`, `priority`, `measurement_type`, `feature_group_id`, `feature_id`, `application_name`, `subsystem_name`.
 
 ---
 

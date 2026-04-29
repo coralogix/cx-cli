@@ -55,7 +55,7 @@ Observe:
   slos               Manage SLO definitions
 
 Detect & Respond:
-  alerts             Manage alert definitions and schedulers
+  alerts             Manage alert definitions and suppression rules
   incidents          Manage and triage incidents
 
 Notifications:
@@ -63,7 +63,7 @@ Notifications:
   webhooks           Manage outgoing webhooks and automation actions
 
 Data Pipeline:
-  rules              Manage log parsing rule groups
+  parsing-rules      Manage log parsing rules
   enrichments        Manage enrichment rules and custom enrichment tables
   e2m                Manage Events2Metrics definitions
   recording-rules    Manage Prometheus recording rule groups
@@ -252,7 +252,7 @@ Examples:
         cmd: DashboardsCmd,
     },
 
-    /// Manage alert definitions and schedulers.
+    /// Manage alert definitions and suppression rules.
     Alerts {
         #[command(subcommand)]
         cmd: AlertsCmd,
@@ -367,21 +367,21 @@ Examples:
         cmd: RecordingRulesCmd,
     },
 
-    /// Manage log parsing rule groups.
+    /// Manage log parsing rules.
     #[command(
-        name = "rules",
+        name = "parsing-rules",
         after_help = "\
 Examples:
-  cx rules list
-  cx rules get <group-id>
-  cx rules create --from-file group.json
-  cx rules update --from-file group.json <group-id>
-  cx rules delete <group-id>
-  cx rules usage-limits"
+  cx parsing-rules list
+  cx parsing-rules get <group-id>
+  cx parsing-rules create --from-file group.json
+  cx parsing-rules update --from-file group.json <group-id>
+  cx parsing-rules delete <group-id>
+  cx parsing-rules usage-limits"
     )]
-    RuleGroups {
+    ParsingRules {
         #[command(subcommand)]
-        cmd: RuleGroupsCmd,
+        cmd: ParsingRulesCmd,
     },
 
     /// Manage enrichment rules and custom enrichment tables.
@@ -766,16 +766,16 @@ Examples:
     },
     /// Get alert event statistics.
     EventStats,
-    /// Manage alert scheduler (suppression) rules.
+    /// Manage alert suppression rules.
     #[command(after_help = "\
 Examples:
-  cx alerts schedulers list
-  cx alerts schedulers get <rule-id>
-  cx alerts schedulers create --from-file rule.json
-  cx alerts schedulers delete <rule-id>")]
-    Schedulers {
+  cx alerts suppression-rules list
+  cx alerts suppression-rules get <rule-id>
+  cx alerts suppression-rules create --from-file rule.json
+  cx alerts suppression-rules delete <rule-id>")]
+    SuppressionRules {
         #[command(subcommand)]
-        cmd: AlertSchedulersCmd,
+        cmd: SuppressionRulesCmd,
     },
 }
 
@@ -854,33 +854,33 @@ Examples:
 }
 
 #[derive(Subcommand)]
-enum AlertSchedulersCmd {
-    /// List all alert scheduler rules.
+enum SuppressionRulesCmd {
+    /// List all suppression rules.
     List,
-    /// Get a single alert scheduler rule by ID.
+    /// Get a single suppression rule by ID.
     Get {
-        /// Alert scheduler rule ID.
+        /// Suppression rule ID.
         id: String,
     },
-    /// Create an alert scheduler rule from a JSON definition file.
+    /// Create a suppression rule from a JSON definition file.
     #[command(after_help = "\
 Examples:
-  cx alerts schedulers create --from-file rule.json
-  cat rule.json | cx alerts schedulers create")]
+  cx alerts suppression-rules create --from-file rule.json
+  cat rule.json | cx alerts suppression-rules create")]
     Create {
         /// Path to JSON file with the rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update an alert scheduler rule from a JSON definition file.
+    /// Update a suppression rule from a JSON definition file.
     Update {
         /// Path to JSON file with the updated rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete an alert scheduler rule.
+    /// Delete a suppression rule.
     Delete {
-        /// Alert scheduler rule ID.
+        /// Suppression rule ID.
         id: String,
     },
 }
@@ -1210,40 +1210,40 @@ enum RecordingRulesCmd {
 }
 
 #[derive(Subcommand)]
-enum RuleGroupsCmd {
-    /// List all rule groups.
+enum ParsingRulesCmd {
+    /// List all parsing rule groups.
     List,
-    /// Get a single rule group by ID.
+    /// Get a single parsing rule group by ID.
     Get {
-        /// Rule group ID.
+        /// Parsing rule group ID.
         id: String,
     },
-    /// Create a rule group from a JSON definition file.
+    /// Create a parsing rule group from a JSON definition file.
     Create {
-        /// Path to JSON file with the rule group definition. Use '-' for stdin.
+        /// Path to JSON file with the parsing rule group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a rule group from a JSON definition file.
+    /// Update a parsing rule group from a JSON definition file.
     Update {
-        /// Path to JSON file with the updated rule group definition. Use '-' for stdin.
+        /// Path to JSON file with the updated parsing rule group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
-        /// Rule group ID.
+        /// Parsing rule group ID.
         id: String,
     },
-    /// Delete a rule group.
+    /// Delete a parsing rule group.
     Delete {
-        /// Rule group ID.
+        /// Parsing rule group ID.
         id: String,
     },
-    /// Bulk delete rule groups by IDs.
+    /// Bulk delete parsing rule groups by IDs.
     BulkDelete {
-        /// Rule group IDs to delete.
+        /// Parsing rule group IDs to delete.
         #[arg(long, num_args = 1..)]
         ids: Vec<String>,
     },
-    /// Show rule group usage limits.
+    /// Show parsing rule usage limits.
     UsageLimits,
 }
 
@@ -2274,21 +2274,21 @@ async fn main() -> Result<()> {
             AlertsCmd::EventStats => {
                 commands::alerts::run_event_stats(&targets, output).await?;
             }
-            AlertsCmd::Schedulers { cmd } => match cmd {
-                AlertSchedulersCmd::List => {
-                    commands::alert_schedulers::run_list(&targets, output).await?;
+            AlertsCmd::SuppressionRules { cmd } => match cmd {
+                SuppressionRulesCmd::List => {
+                    commands::suppression_rules::run_list(&targets, output).await?;
                 }
-                AlertSchedulersCmd::Get { id } => {
-                    commands::alert_schedulers::run_get(&targets, &id, output).await?;
+                SuppressionRulesCmd::Get { id } => {
+                    commands::suppression_rules::run_get(&targets, &id, output).await?;
                 }
-                AlertSchedulersCmd::Create { from_file } => {
-                    commands::alert_schedulers::run_create(&targets, &from_file, output).await?;
+                SuppressionRulesCmd::Create { from_file } => {
+                    commands::suppression_rules::run_create(&targets, &from_file, output).await?;
                 }
-                AlertSchedulersCmd::Update { from_file } => {
-                    commands::alert_schedulers::run_update(&targets, &from_file, output).await?;
+                SuppressionRulesCmd::Update { from_file } => {
+                    commands::suppression_rules::run_update(&targets, &from_file, output).await?;
                 }
-                AlertSchedulersCmd::Delete { id } => {
-                    commands::alert_schedulers::run_delete(&targets, &id).await?;
+                SuppressionRulesCmd::Delete { id } => {
+                    commands::suppression_rules::run_delete(&targets, &id).await?;
                 }
             },
         },
@@ -2566,27 +2566,27 @@ async fn main() -> Result<()> {
             }
         },
 
-        Commands::RuleGroups { cmd } => match cmd {
-            RuleGroupsCmd::List => {
-                commands::rule_groups::run_list(&targets, output).await?;
+        Commands::ParsingRules { cmd } => match cmd {
+            ParsingRulesCmd::List => {
+                commands::parsing_rules::run_list(&targets, output).await?;
             }
-            RuleGroupsCmd::Get { id } => {
-                commands::rule_groups::run_get(&targets, &id, output).await?;
+            ParsingRulesCmd::Get { id } => {
+                commands::parsing_rules::run_get(&targets, &id, output).await?;
             }
-            RuleGroupsCmd::Create { from_file } => {
-                commands::rule_groups::run_create(&targets, &from_file, output).await?;
+            ParsingRulesCmd::Create { from_file } => {
+                commands::parsing_rules::run_create(&targets, &from_file, output).await?;
             }
-            RuleGroupsCmd::Update { from_file, id } => {
-                commands::rule_groups::run_update(&targets, &id, &from_file, output).await?;
+            ParsingRulesCmd::Update { from_file, id } => {
+                commands::parsing_rules::run_update(&targets, &id, &from_file, output).await?;
             }
-            RuleGroupsCmd::Delete { id } => {
-                commands::rule_groups::run_delete(&targets, &id).await?;
+            ParsingRulesCmd::Delete { id } => {
+                commands::parsing_rules::run_delete(&targets, &id).await?;
             }
-            RuleGroupsCmd::BulkDelete { ids } => {
-                commands::rule_groups::run_bulk_delete(&targets, &ids).await?;
+            ParsingRulesCmd::BulkDelete { ids } => {
+                commands::parsing_rules::run_bulk_delete(&targets, &ids).await?;
             }
-            RuleGroupsCmd::UsageLimits => {
-                commands::rule_groups::run_usage_limits(&targets, output).await?;
+            ParsingRulesCmd::UsageLimits => {
+                commands::parsing_rules::run_usage_limits(&targets, output).await?;
             }
         },
 

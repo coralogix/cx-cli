@@ -36,7 +36,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(names.contains(&"webhooks"), "missing webhooks");
     assert!(names.contains(&"enrichments"), "missing enrichments");
     assert!(names.contains(&"integrations"), "missing integrations");
-    assert!(names.contains(&"rules"), "missing rules");
+    assert!(names.contains(&"parsing-rules"), "missing parsing-rules");
     assert!(names.contains(&"tco"), "missing tco");
     assert!(names.contains(&"quotas"), "missing quotas");
     assert!(names.contains(&"usage"), "missing usage");
@@ -63,7 +63,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
         .map(|s| s["name"].as_str().unwrap())
         .collect();
     assert!(alert_subs.contains(&"list"));
-    assert!(alert_subs.contains(&"schedulers"));
+    assert!(alert_subs.contains(&"suppression-rules"));
 
     // Verify iam subcommands
     let iam = commands.iter().find(|c| c["name"] == "iam").unwrap();

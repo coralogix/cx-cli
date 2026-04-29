@@ -24,7 +24,7 @@ Use this skill when configuring how Coralogix processes, enriches, and transform
 
 | Command | Subcommands | Purpose |
 |---|---|---|
-| `cx rules` | `list`, `get`, `create`, `update`, `delete`, `bulk-delete`, `usage-limits` | Manage log parsing rule groups |
+| `cx parsing-rules` | `list`, `get`, `create`, `update`, `delete`, `bulk-delete`, `usage-limits` | Manage log parsing rules |
 | `cx enrichments` | `list`, `add`, `remove`, `overwrite`, `limit`, `settings` | Manage enrichment rules |
 | `cx enrichments custom` | `list`, `get`, `create`, `update`, `delete`, `search` | Manage custom enrichment tables |
 | `cx e2m` | `list`, `get`, `create`, `update`, `delete`, `labels-cardinality`, `limits` | Manage Events2Metrics definitions |
@@ -33,9 +33,9 @@ Use this skill when configuring how Coralogix processes, enriches, and transform
 Key flags:
 - All create/update operations use `--from-file <path>` (or `-` for stdin)
 - All commands support `-o json` for structured output and `-p <profile>` for profile selection
-- `cx rules update` and `cx recording-rules update` require both `--from-file` and the rule group ID
+- `cx parsing-rules update` and `cx recording-rules update` require both `--from-file` and the rule group ID
 - `cx enrichments custom search` requires `--id <table-id>` and `--query <text>`
-- `cx rules bulk-delete` requires `--ids <id1> <id2> ...`
+- `cx parsing-rules bulk-delete` requires `--ids <id1> <id2> ...`
 
 ---
 
@@ -45,13 +45,13 @@ These commands use complex JSON structures. **Always template from an existing r
 
 ```bash
 # 1. Get an existing resource as a template
-cx rules get <rule-group-id> -o json > template.json
+cx parsing-rules get <rule-group-id> -o json > template.json
 
 # 2. Modify the template (change fields, remove the ID for create operations)
 
 # 3. Create or update
-cx rules create --from-file template.json
-cx rules update --from-file template.json <rule-group-id>
+cx parsing-rules create --from-file template.json
+cx parsing-rules update --from-file template.json <rule-group-id>
 ```
 
 This pattern applies to all create/update operations across all 4 commands. It prevents payload format errors that are the #1 cause of failed attempts.
@@ -63,14 +63,14 @@ This pattern applies to all create/update operations across all 4 commands. It p
 ### 1. List Existing Rules
 
 ```bash
-cx rules list -o json
-cx rules list -o json | jq '[.[] | {id, name, enabled, rule_count: (.rules | length)}]'
+cx parsing-rules list -o json
+cx parsing-rules list -o json | jq '[.[] | {id, name, enabled, rule_count: (.rules | length)}]'
 ```
 
 ### 2. Get a Template
 
 ```bash
-cx rules get <existing-rule-group-id> -o json > rule-template.json
+cx parsing-rules get <existing-rule-group-id> -o json > rule-template.json
 ```
 
 ### 3. Create New Rule Group
@@ -78,7 +78,7 @@ cx rules get <existing-rule-group-id> -o json > rule-template.json
 Edit the template for your new service, then:
 
 ```bash
-cx rules create --from-file rule-template.json
+cx parsing-rules create --from-file rule-template.json
 ```
 
 ### 4. Verify Parsing
@@ -92,7 +92,7 @@ cx logs --query 'source logs | filter $d.subsystem == "my-service" | limit 10' -
 ### 5. Check Usage Limits
 
 ```bash
-cx rules usage-limits -o json
+cx parsing-rules usage-limits -o json
 ```
 
 ---
@@ -128,7 +128,7 @@ cx enrichments custom search --id <table-id> --query "search term"
 
 ### 5. Verify Enriched Fields
 
-Query logs to confirm enriched fields appear:
+Query logs on hot storage (FrequentSearch tier) to confirm enriched fields appear. Avoid querying archive for verification - ingestion delays can cause false negatives.
 
 ```bash
 cx logs --query 'source logs | filter $d.enriched_field != null | limit 5' -o json
@@ -208,8 +208,8 @@ cx metrics query --promql "new_precomputed_metric" --time now
 - **Always template from existing** - `cx <command> get <id> -o json > template.json` before any create
 - **Verify after create** - query logs/metrics to confirm the pipeline change took effect
 - **Use `-o json`** - all payload inspection and creation should use JSON output
-- **Check limits first** - `cx rules usage-limits` and `cx e2m limits` before creating to avoid hitting caps
-- **Bulk operations** - use `cx rules bulk-delete --ids` for cleanup, not individual deletes
+- **Check limits first** - `cx parsing-rules usage-limits` and `cx e2m limits` before creating to avoid hitting caps
+- **Bulk operations** - use `cx parsing-rules bulk-delete --ids` for cleanup, not individual deletes
 
 ---
 

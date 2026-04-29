@@ -33,7 +33,7 @@ pub fn require_creds(test_name: &str) -> Option<()> {
             ensure_region();
             return true;
         }
-        if has_cx_profile() {
+        if has_default_profile() {
             return true;
         }
         false
@@ -47,7 +47,7 @@ pub fn require_creds(test_name: &str) -> Option<()> {
     Some(())
 }
 
-fn has_cx_profile() -> bool {
+fn has_default_profile() -> bool {
     dirs::home_dir()
         .map(|h| {
             h.join(".cx")
@@ -165,7 +165,11 @@ pub fn run_tolerant(args: &[&str], test_name: &str) -> Option<Vec<u8>> {
         return None;
     }
     if stderr.contains("API request failed") || stderr.contains("504") || stderr.contains("502") {
-        eprintln!("[e2e] skipping {test_name}: API returned a server/gateway error");
+        eprintln!(
+            "[e2e] WARNING: skipping {test_name}: transient server/gateway error (502/504). \
+            E2E tests run against shared infrastructure where transient failures are expected. \
+            Re-run to confirm this is not a persistent issue."
+        );
         return None;
     }
 

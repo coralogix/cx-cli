@@ -179,26 +179,26 @@ cx alerts disable <alert-id>
 cx alerts enable <alert-id>
 ```
 
-## Alert Schedulers (Suppression Rules)
+## Suppression Rules
 
 Manage alert suppression rules that mute alerts during maintenance windows or known noisy periods.
 
 | Command | Purpose |
 |---|---|
-| `cx alerts schedulers list` | List all scheduler rules |
-| `cx alerts schedulers get <id>` | Get a scheduler rule by ID |
-| `cx alerts schedulers create --from-file` | Create a scheduler rule |
-| `cx alerts schedulers update --from-file` | Update a scheduler rule |
-| `cx alerts schedulers delete <id>` | Delete a scheduler rule |
+| `cx alerts suppression-rules list` | List all suppression rules |
+| `cx alerts suppression-rules get <id>` | Get a suppression rule by ID |
+| `cx alerts suppression-rules create --from-file` | Create a suppression rule |
+| `cx alerts suppression-rules update --from-file` | Update a suppression rule |
+| `cx alerts suppression-rules delete <id>` | Delete a suppression rule |
 
 ```bash
 # List suppression rules
-cx alerts schedulers list -o json
+cx alerts suppression-rules list -o json
 
 # Create from template
-cx alerts schedulers get <existing-id> -o json > scheduler.json
-# Edit scheduler.json
-cx alerts schedulers create --from-file scheduler.json
+cx alerts suppression-rules get <existing-id> -o json > suppression-rule.json
+# Edit suppression-rule.json
+cx alerts suppression-rules create --from-file suppression-rule.json
 ```
 
 ## Key Principles

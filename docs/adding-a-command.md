@@ -434,7 +434,7 @@ Query:
   logs               Query logs using DataPrime syntax
   ...
 Data Pipeline:
-  rules              Manage log parsing rule groups
+  parsing-rules      Manage log parsing rules
   your-domain        Your domain description        <-- add here
   ..."
 )]

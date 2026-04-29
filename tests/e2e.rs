@@ -16,8 +16,6 @@ mod harness;
 
 #[path = "e2e/actions.rs"]
 mod actions;
-#[path = "e2e/alert_schedulers.rs"]
-mod alert_schedulers;
 #[path = "e2e/alerts/mod.rs"]
 mod alerts;
 #[path = "e2e/api_keys.rs"]
@@ -54,8 +52,8 @@ mod logs;
 mod metrics;
 #[path = "e2e/output_formats.rs"]
 mod output_formats;
-#[path = "e2e/presets.rs"]
-mod presets;
+#[path = "e2e/parsing_rules.rs"]
+mod parsing_rules;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
 #[path = "e2e/quota_rules.rs"]
@@ -68,8 +66,6 @@ mod retentions;
 mod roles;
 #[path = "e2e/routers.rs"]
 mod routers;
-#[path = "e2e/rule_groups.rs"]
-mod rule_groups;
 #[path = "e2e/saml.rs"]
 mod saml;
 #[path = "e2e/scopes.rs"]
@@ -80,6 +76,8 @@ mod search_fields;
 mod slos;
 #[path = "e2e/spans/mod.rs"]
 mod spans;
+#[path = "e2e/suppression_rules.rs"]
+mod suppression_rules;
 #[path = "e2e/tco_policies.rs"]
 mod tco_policies;
 #[path = "e2e/team_groups.rs"]

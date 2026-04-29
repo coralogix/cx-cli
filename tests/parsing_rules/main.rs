@@ -5,7 +5,7 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::rule_groups::{run_list, run_usage_limits};
+use coralogix_cli::commands::parsing_rules::{run_list, run_usage_limits};
 use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]

@@ -40,7 +40,7 @@ Observe:
   slos               Manage SLO definitions
 
 Detect & Respond:
-  alerts             Manage alert definitions and schedulers
+  alerts             Manage alert definitions and suppression rules
   incidents          Manage and triage incidents
 
 Notifications:
@@ -48,7 +48,7 @@ Notifications:
   webhooks           Manage outgoing webhooks and automation actions
 
 Data Pipeline:
-  rules              Manage log parsing rule groups
+  parsing-rules      Manage log parsing rules
   enrichments        Manage enrichment rules and custom enrichment tables
   e2m                Manage Events2Metrics definitions
   recording-rules    Manage Prometheus recording rule groups
@@ -77,7 +77,7 @@ Local:
 **Agent discovery:** `cx schema` outputs the full command tree (commands, subcommands, flags, descriptions) as JSON. Agents should call `cx schema` to discover available commands rather than parsing help text.
 
 **Key renames from prior flat layout:**
-- `rule-groups` -> `rules`
+- `rule-groups` -> `parsing-rules`
 - `tco-policies` -> `tco`
 - `quota-rules` -> `quotas`
 - `data-usage` -> `usage`
@@ -114,7 +114,7 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 - **`src/commands/dataprime/api.rs`** - DataPrime query API (logs & traces via NDJSON)
 - **`src/commands/dataprime/semantic_search.rs`** - Semantic Search HTTP API (fields + metrics)
 - **`src/commands/metrics/api.rs`** - PromQL queries (instant, range, search, labels)
-- **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, rules, tco, quotas, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
+- **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, parsing-rules, tco, quotas, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
 - **`src/time.rs`** - Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/render.rs`** - Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/agents output
 - **`src/spill.rs`** - Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)
@@ -176,7 +176,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx archive` | `cx-cost-optimization` | Covered |
 | `cx incidents` | `cx-incident-management` | Covered |
 | `cx slos` | `cx-incident-management` | Covered |
-| `cx rules` | `cx-data-pipeline` | Covered |
+| `cx parsing-rules` | `cx-data-pipeline` | Covered |
 | `cx enrichments` | `cx-data-pipeline` | Covered |
 | `cx e2m` | `cx-data-pipeline` | Covered |
 | `cx recording-rules` | `cx-data-pipeline` | Covered |

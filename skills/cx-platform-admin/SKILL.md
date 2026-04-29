@@ -18,6 +18,19 @@ Use this skill for managing access, authentication, and authorization in Coralog
 
 ---
 
+## Destructive Operation Safety
+
+All write operations (create, update, delete, set-idp, set-active, set-status) require interactive confirmation. The CLI will prompt before executing. To skip the prompt in scripts, pass `--yes`.
+
+**IMPORTANT: NEVER pass `--yes` without explicit user approval.** Before executing any write operation:
+1. Describe the exact operation to the user (what will be created/modified/deleted)
+2. Wait for the user to confirm
+3. Only then execute with `--yes`
+
+Read-only operations (list, get, search, system, sp-params, send-data-keys) do not require confirmation and can be run freely.
+
+---
+
 ## CLI Commands
 
 ### API Keys
@@ -156,10 +169,10 @@ Safe key rotation workflow:
 
 1. **List current keys:** `cx iam api-keys list -o json`
 2. **Identify keys to rotate:** filter by age or name
-3. **Create replacement key:** `cx iam api-keys create --from-file new-key.json`
+3. **Create replacement key:** `cx iam api-keys create --from-file new-key.json --yes` (after user approval)
 4. **Deploy the new key** to all systems using the old key
 5. **Verify the new key works** in all integrations
-6. **Delete the old key:** `cx iam api-keys delete <old-key-id>`
+6. **Delete the old key:** `cx iam api-keys delete <old-key-id> --yes` (after user approval)
 
 > **WARNING:** Never delete an API key before its replacement is deployed and verified. Deleting an active key immediately breaks all integrations using it.
 

@@ -169,7 +169,7 @@ Archive: `get`, `validate`
 
 **Key decisions:** Safety section goes early in the skill file (right after intro, before command tables) so agents see it before executing any commands.
 
-### 2.1 [ ] Add safety instructions to cx-platform-admin skill
+### 2.1 [x] Add safety instructions to cx-platform-admin skill *(completed 2026-04-29)*
 
 - **Files:** `skills/cx-platform-admin/SKILL.md`
 - **What:** Add a `## Destructive Operation Safety` section right after the intro paragraph (line 17, before `## CLI Commands`). Content:

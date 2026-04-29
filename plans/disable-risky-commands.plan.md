@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | complete |
 | Created | 2026-04-29 |
 | Ticket | N/A |
 | Branch | liranhason/age-813-add-all-cx-apis-to-cli |
@@ -218,7 +218,7 @@ Archive: `get`, `validate`
 
 Currently E2E tests for `cx iam` and `cx archive` run commands directly. After this milestone, any E2E tests that invoke write operations pass `--yes` to bypass the confirmation prompt.
 
-### 3.1 [ ] Update E2E tests to pass --yes flag and run full suite
+### 3.1 [x] Update E2E tests to pass --yes flag and run full suite *(completed 2026-04-29)*
 
 - **Files:** `tests/e2e/api_keys.rs`, `tests/e2e/roles.rs`, `tests/e2e/scopes.rs`, `tests/e2e/users.rs`, `tests/e2e/team_groups.rs`, `tests/e2e/saml.rs`, `tests/e2e/ip_access.rs`, `tests/e2e/data_archive.rs`
 - **What:**

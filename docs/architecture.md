@@ -137,6 +137,18 @@ Each sub-domain still has its own API module (`src/api/<sub_domain>.rs`) and com
 
 The `Cli` struct uses a custom `help_template` with an `after_help` string to display grouped command categories rather than Clap's default flat subcommand listing. The `after_help` text is a manually maintained string that mirrors the `Commands` enum. When adding a new command, update the `after_help` string to place it in the correct category group.
 
+## Destructive operation confirmation
+
+Commands marked `(risky)` in `cx --help` (`iam`, `archive`) require interactive confirmation for write operations (create, update, delete, enable, disable, set). The confirmation logic lives in `src/confirm.rs`:
+
+1. If `--yes` is passed, the operation proceeds immediately
+2. If stdin is not a terminal, the operation fails with a message directing the user to pass `--yes`
+3. Otherwise, `inquire::Confirm` prompts the user (default: No)
+
+The `--yes` flag is global on the `Cli` struct and available as `yes` in all match arms. Each destructive subcommand is tagged `[requires --yes]` in its doc comment, which surfaces in `--help` output.
+
+When adding new destructive operations, call `confirm_destructive(message, yes)` before the handler invocation. See [adding-a-command.md](adding-a-command.md) for the full pattern.
+
 ## Output rendering
 
 All commands support three output formats controlled by `--output` / `OutputFormat`:
@@ -266,6 +278,7 @@ src/
 ├── main.rs              # CLI definition (Clap) + dispatch + help_template/after_help
 ├── lib.rs               # Module re-exports
 ├── api_client.rs        # CxClient HTTP wrapper (Bearer auth, REST + NDJSON)
+├── confirm.rs           # Destructive operation confirmation (--yes flag handling)
 ├── config.rs            # Config/profile loading, resolution, Region enum
 ├── execution.rs         # ExecutionTarget, fan_out(), tag_rows(), merge_tagged_results()
 ├── render.rs            # Shared rendering helpers (render_table, render_json, bool_display, etc.)

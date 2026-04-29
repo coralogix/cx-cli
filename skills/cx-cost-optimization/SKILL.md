@@ -111,8 +111,8 @@ Based on findings, recommend changes in priority order (highest impact first).
 | High-volume low-value logs | `cx usage summary -o json` | Move to archive tier via `cx tco create --from-file policy.json` |
 | Long retention on cold data | `cx retentions list -o json` | Reduce retention with `cx retentions update --from-file` |
 | Burst ingestion spikes | `cx usage daily -o json` | Add quota rules with `cx quotas create --from-file` |
-| No cold storage configured | `cx archive logs get -o json` | Enable archive with `cx archive logs set --from-file` |
-| Expensive metrics not queried | `cx archive metrics get -o json` | Enable metrics archiving with `cx archive metrics create --from-file` |
+| No cold storage configured | `cx archive logs get -o json` | Enable archive with `cx archive logs set --from-file --yes` (after user approval) |
+| Expensive metrics not queried | `cx archive metrics get -o json` | Enable metrics archiving with `cx archive metrics create --from-file --yes` (after user approval) |
 
 ---
 

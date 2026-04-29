@@ -150,7 +150,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx tco` | Manage TCO policies and settings |
 | `cx retentions` | Manage data retention settings |
 | `cx quotas` | Manage quota rules |
-| `cx archive` | Manage data archive storage configuration |
+| `cx archive` (risky) | Manage data archive storage configuration |
 
 **Integrations**
 
@@ -162,7 +162,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 | Command | Purpose |
 |---|---|
-| `cx iam` | Manage API keys, roles, scopes, users, groups, SAML, and IP access |
+| `cx iam` (risky) | Manage API keys, roles, scopes, users, groups, SAML, and IP access |
 
 **Agent & Local**
 
@@ -180,6 +180,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
     --api-key <API_KEY>      Override the profile API key
     --region <REGION>        Override the profile region
 -o, --output <FORMAT>        text | json | agents (default: text)
+    --yes                    Skip confirmation prompts for destructive operations
 ```
 
 ## Configuration

@@ -85,3 +85,4 @@ AI agents consuming `cx` output should:
 3. Check whether the output is a file-path reference (spilled result) and read the file if so.
 4. Use `cx cleanup` periodically to remove stale result files.
 5. Reference fields using `$d`, `$l`, and `$m` notation in follow-up DataPrime queries.
+6. Pass `--yes` for destructive operations (create, update, delete, etc.) under `iam` and `archive` commands. Without `--yes`, these commands require interactive confirmation and will fail on non-interactive terminals with: `"This operation requires confirmation but stdin is not a terminal. Pass --yes to skip the confirmation prompt."` Subcommands tagged `[requires --yes]` in their help text are the ones that need it. Always confirm with the user before running destructive operations.

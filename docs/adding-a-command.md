@@ -442,6 +442,33 @@ Data Pipeline:
 
 Place the command in the category that best fits its purpose. See `main.rs` for the full list of categories: Query, Observe, Detect & Respond, Notifications, Data Pipeline, Cost & Storage, Integrations, Access, Agent, Local.
 
+### Step 7: Guard destructive operations (REST archetype)
+
+If your command has write operations (create, update, delete, enable, disable, etc.), guard them with a confirmation prompt using `confirm_destructive()` from `src/confirm.rs`. This prevents accidental execution in interactive terminals and blocks non-interactive callers unless they pass `--yes`.
+
+1. Tag the subcommand doc comment with `[requires --yes]`:
+
+```rust
+/// Delete an item [requires --yes].
+Delete {
+    /// Item ID.
+    id: String,
+},
+```
+
+2. Add a `confirm_destructive()` call in the dispatch match arm, before the handler:
+
+```rust
+YourDomainCmd::Delete { id } => {
+    confirm_destructive(&format!("Delete item '{id}'?"), yes)?;
+    commands::your_domain::run_delete(&targets, &id).await?;
+}
+```
+
+The `yes` variable is the global `--yes` flag, already available in the match scope. Read-only operations (list, get, search) should NOT have confirmation prompts.
+
+If your command is risky enough to warrant a `(risky)` tag on the parent command in `cx --help`, add it to the `after_help` string (e.g., `your-domain (risky)`).
+
 ---
 
 ## Adding a subcommand to a wrapper command
@@ -712,6 +739,7 @@ Copy this into your PR description:
 - [ ] `src/main.rs` - `Commands` enum variant added
 - [ ] `src/main.rs` - subcommand enum added (REST) or args defined (DataPrime)
 - [ ] `src/main.rs` - dispatch match arm added
+- [ ] `src/main.rs` - destructive subcommands (create/update/delete) guarded with `confirm_destructive()` and tagged `[requires --yes]` in their doc comment (see `src/confirm.rs`)
 
 ### Tests
 - [ ] **Unit:** API deserialization tests in `src/commands/your_domain/api.rs` (REST)

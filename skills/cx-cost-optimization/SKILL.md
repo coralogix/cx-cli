@@ -176,9 +176,11 @@ cx archive metrics get -o json | jq '{enabled: .enabled, bucket: .bucket}'
 
 ## Applying Changes
 
-**IMPORTANT: NEVER pass `--yes` without explicit user approval.** Archive write operations (`cx archive logs set`, `cx archive metrics create/update/enable/disable`) require interactive confirmation and the `--yes` flag to execute non-interactively. Before executing any write operation, describe the exact change to the user and wait for their approval before passing `--yes`.
+**IMPORTANT: NEVER pass `--yes` without explicit user approval.** All write operations across archive, TCO, retentions, and quotas require interactive confirmation and the `--yes` flag to execute non-interactively. Before executing any write operation, describe the exact change to the user and wait for their approval before passing `--yes`.
 
-TCO, retention, and quota write operations are also impactful changes. Always confirm with the user before modifying policies, retention settings, or quota rules - even though these commands do not currently require `--yes`.
+**Read-only mode:** Use `--read-only` (or `CX_READ_ONLY=1`) to safely explore cost data without risk of accidental writes. All query commands (usage, tco list/get, retentions list, quotas get, archive get) work normally in read-only mode.
+
+**Agent mode:** When running inside an AI agent, cx fails fast on write operations instead of hanging on a stdin prompt. Get user confirmation first, then re-run with `--yes`.
 
 When modifying TCO policies, retention, quotas, or archive:
 

@@ -29,6 +29,14 @@ All write operations (create, update, delete, set-idp, set-active, set-status) r
 
 Read-only operations (list, get, search, system, sp-params, send-data-keys) do not require confirmation and can be run freely.
 
+### Read-Only Mode
+
+Use `--read-only` (or `CX_READ_ONLY=1`) to block all write operations at the CLI level. This is useful for safe exploration - you can query any IAM resource without risk of accidental modifications.
+
+### Agent Mode
+
+When running inside an AI agent (Claude Code, Cursor, Codex, etc.), cx automatically detects the agent environment and fails fast on write operations instead of hanging on a stdin prompt. The error message instructs you to get user confirmation first, then re-run with `--yes`.
+
 ---
 
 ## CLI Commands

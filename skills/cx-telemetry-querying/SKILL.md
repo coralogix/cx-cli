@@ -14,6 +14,14 @@ Use this skill as the entry point for any investigation, debugging, or data ques
 
 ---
 
+## Safety
+
+All query commands (`cx logs`, `cx spans`, `cx metrics`, `cx dataprime`, `cx search-fields`) are read-only and work in `--read-only` mode. They never modify data and can be run freely without `--yes`.
+
+When running inside an AI agent, read commands are unaffected by agent mode detection - no confirmation is needed for queries.
+
+---
+
 ## Quick Routing Guide
 
 Use this table for obvious cases where one pillar is the clear first choice:

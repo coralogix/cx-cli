@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | complete |
 | Created | 2026-04-29 |
 | Ticket | N/A |
 | Branch | liranhason/age-813-add-all-cx-apis-to-cli |
@@ -385,7 +385,7 @@ Currently there are no tests for confirmation behavior, read-only mode, or agent
 - **Acceptance:** `cx --help` and `cx schema` both show the new flags. Help text is accurate.
 - **Dependencies:** 4.1
 
-### 4.3 [ ] Update affected skills with read-only and agent mode guidance
+### 4.3 [x] Update affected skills with read-only and agent mode guidance *(completed 2026-04-30)*
 
 - **Files:** `skills/cx-platform-admin/SKILL.md`, `skills/cx-cost-optimization/SKILL.md`, `skills/cx-telemetry-querying/SKILL.md`
 - **What:**

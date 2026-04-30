@@ -63,9 +63,41 @@ pub fn enforce_read_only(verb: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn confirm_destructive(action: &str, yes: bool) -> Result<()> {
+const AGENT_ENV_VARS: &[&str] = &[
+    "AIDER",
+    "AMAZON_Q",
+    "AWS_Q_DEVELOPER",
+    "CLAUDECODE",
+    "CLAUDE_CODE",
+    "CLINE",
+    "CODEX",
+    "COPILOT_AGENT",
+    "CURSOR_AGENT",
+    "CX_AGENT_MODE",
+    "GEMINI_CODE_ASSIST",
+    "GITHUB_COPILOT",
+    "OPENAI_CODEX",
+    "SRC_CODY",
+    "WINDSURF_AGENT",
+];
+
+pub fn is_agent_mode() -> bool {
+    AGENT_ENV_VARS
+        .iter()
+        .any(|var| std::env::var(var).is_ok())
+}
+
+pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<()> {
     if yes {
+        eprintln!("[auto-approved via --yes] {action}");
         return Ok(());
+    }
+    if agent_mode {
+        bail!(
+            "This operation requires user confirmation: {action}\n\
+             You are running in agent mode. Ask the user to confirm this \
+             operation, then re-run with --yes to proceed."
+        );
     }
     if !std::io::stdin().is_terminal() {
         bail!(

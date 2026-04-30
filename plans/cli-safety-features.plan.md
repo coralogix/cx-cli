@@ -202,7 +202,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 | `is_agent_mode() -> bool` | Table-driven detection: checks `CLAUDECODE`/`CLAUDE_CODE`, `CURSOR_AGENT`, `CODEX`/`OPENAI_CODEX`, `COPILOT_AGENT`/`GITHUB_COPILOT`, `AIDER`, `CLINE`, `WINDSURF_AGENT`, `AMAZON_Q`/`AWS_Q_DEVELOPER`, `GEMINI_CODE_ASSIST`, `SRC_CODY`, `CX_AGENT_MODE` |
 | `CX_AGENT_MODE=1` | Explicit env var to force agent mode |
 
-### 3.1 [ ] Add agent mode detection and update confirm_destructive signature
+### 3.1 [x] Add agent mode detection and update confirm_destructive signature *(completed 2026-04-30)*
 
 - **Files:** `src/safety.rs`, `src/main.rs`
 - **What:**

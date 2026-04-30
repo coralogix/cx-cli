@@ -304,7 +304,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 - **Acceptance:** `cargo test agent_mode` passes.
 - **Dependencies:** 3.1, 2.1
 
-### 3.5 [ ] Add wiring verification test - all write commands are gated
+### 3.5 [x] Add wiring verification test - all write commands are gated *(completed 2026-04-30)*
 
 - **Files:** `tests/write_command_gating/main.rs` (new)
 - **What:** Create an integration test that systematically verifies every category of write command actually hits the safety gate. Run each command without `--yes` in a non-interactive context (pipe stdin or set `CX_AGENT_MODE=1`) and assert it fails with the confirmation error - NOT with a usage error or by silently proceeding.

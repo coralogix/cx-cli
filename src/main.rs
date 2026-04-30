@@ -2246,6 +2246,7 @@ async fn main() -> Result<()> {
                 commands::dashboards::run_get(&targets, &dashboard_id, output).await?;
             }
             DashboardsCmd::Create { from_file, folder } => {
+                confirm_destructive("Create a new dashboard?", yes, agent_mode)?;
                 commands::dashboards::run_create(&targets, &from_file, folder.as_deref(), output)
                     .await?;
             }
@@ -2254,6 +2255,7 @@ async fn main() -> Result<()> {
                     commands::dashboards::run_folders_list(&targets, output).await?;
                 }
                 FoldersCmd::Create { name, parent_id } => {
+                    confirm_destructive("Create a new dashboard folder?", yes, agent_mode)?;
                     commands::dashboards::run_folders_create(
                         &targets,
                         &name,
@@ -2273,12 +2275,15 @@ async fn main() -> Result<()> {
                 commands::alerts::run_get(&targets, &alert_id, output).await?;
             }
             AlertsCmd::Create { from_file } => {
+                confirm_destructive("Create a new alert?", yes, agent_mode)?;
                 commands::alerts::run_create(&targets, &from_file, output).await?;
             }
             AlertsCmd::Enable { alert_id } => {
+                confirm_destructive(&format!("Enable alert '{alert_id}'?"), yes, agent_mode)?;
                 commands::alerts::run_enable(&targets, &alert_id).await?;
             }
             AlertsCmd::Disable { alert_id } => {
+                confirm_destructive(&format!("Disable alert '{alert_id}'?"), yes, agent_mode)?;
                 commands::alerts::run_disable(&targets, &alert_id).await?;
             }
             AlertsCmd::Events {
@@ -2306,12 +2311,15 @@ async fn main() -> Result<()> {
                     commands::suppression_rules::run_get(&targets, &id, output).await?;
                 }
                 SuppressionRulesCmd::Create { from_file } => {
+                    confirm_destructive("Create a new suppression rule?", yes, agent_mode)?;
                     commands::suppression_rules::run_create(&targets, &from_file, output).await?;
                 }
                 SuppressionRulesCmd::Update { from_file } => {
+                    confirm_destructive("Update suppression rule?", yes, agent_mode)?;
                     commands::suppression_rules::run_update(&targets, &from_file, output).await?;
                 }
                 SuppressionRulesCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete suppression rule '{id}'?"), yes, agent_mode)?;
                     commands::suppression_rules::run_delete(&targets, &id).await?;
                 }
             },
@@ -2336,18 +2344,23 @@ async fn main() -> Result<()> {
                 commands::incidents::run_get(&targets, &id, output).await?;
             }
             IncidentsCmd::Acknowledge { ids } => {
+                confirm_destructive("Acknowledge incident(s)?", yes, agent_mode)?;
                 commands::incidents::run_acknowledge(&targets, &ids).await?;
             }
             IncidentsCmd::Resolve { ids } => {
+                confirm_destructive("Resolve incident(s)?", yes, agent_mode)?;
                 commands::incidents::run_resolve(&targets, &ids).await?;
             }
             IncidentsCmd::Close { ids } => {
+                confirm_destructive("Close incident(s)?", yes, agent_mode)?;
                 commands::incidents::run_close(&targets, &ids).await?;
             }
             IncidentsCmd::Assign { ids, user_id } => {
+                confirm_destructive(&format!("Assign incident(s) to '{user_id}'?"), yes, agent_mode)?;
                 commands::incidents::run_assign(&targets, &ids, &user_id).await?;
             }
             IncidentsCmd::Unassign { ids } => {
+                confirm_destructive("Unassign incident(s)?", yes, agent_mode)?;
                 commands::incidents::run_unassign(&targets, &ids).await?;
             }
             IncidentsCmd::Events { incident_id } => {
@@ -2367,12 +2380,15 @@ async fn main() -> Result<()> {
                     commands::connectors::run_get(&targets, &id, output).await?;
                 }
                 ConnectorsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new connector?", yes, agent_mode)?;
                     commands::connectors::run_create(&targets, &from_file, output).await?;
                 }
                 ConnectorsCmd::Update { from_file } => {
+                    confirm_destructive("Update connector?", yes, agent_mode)?;
                     commands::connectors::run_update(&targets, &from_file, output).await?;
                 }
                 ConnectorsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete connector '{id}'?"), yes, agent_mode)?;
                     commands::connectors::run_delete(&targets, &id).await?;
                 }
                 ConnectorsCmd::Types => {
@@ -2393,12 +2409,15 @@ async fn main() -> Result<()> {
                     commands::routers::run_get(&targets, &id, output).await?;
                 }
                 RoutersCmd::Create { from_file } => {
+                    confirm_destructive("Create a new router?", yes, agent_mode)?;
                     commands::routers::run_create(&targets, &from_file, output).await?;
                 }
                 RoutersCmd::Update { from_file } => {
+                    confirm_destructive("Update router?", yes, agent_mode)?;
                     commands::routers::run_update(&targets, &from_file, output).await?;
                 }
                 RoutersCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete router '{id}'?"), yes, agent_mode)?;
                     commands::routers::run_delete(&targets, &id).await?;
                 }
                 RoutersCmd::ValidateMatcher { from_file } => {
@@ -2413,15 +2432,19 @@ async fn main() -> Result<()> {
                     commands::presets::run_get(&targets, &id, output).await?;
                 }
                 PresetsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new preset?", yes, agent_mode)?;
                     commands::presets::run_create(&targets, &from_file, output).await?;
                 }
                 PresetsCmd::Update { from_file } => {
+                    confirm_destructive("Update preset?", yes, agent_mode)?;
                     commands::presets::run_update(&targets, &from_file, output).await?;
                 }
                 PresetsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete preset '{id}'?"), yes, agent_mode)?;
                     commands::presets::run_delete(&targets, &id).await?;
                 }
                 PresetsCmd::SetDefault { id } => {
+                    confirm_destructive(&format!("Set preset '{id}' as default?"), yes, agent_mode)?;
                     commands::presets::run_set_default(&targets, &id).await?;
                 }
             },
@@ -2496,15 +2519,19 @@ async fn main() -> Result<()> {
                 commands::tco_policies::run_get(&targets, &id, output).await?;
             }
             TcoPoliciesCmd::Create { from_file } => {
+                confirm_destructive("Create a new TCO policy?", yes, agent_mode)?;
                 commands::tco_policies::run_create(&targets, &from_file, output).await?;
             }
             TcoPoliciesCmd::Update { from_file } => {
+                confirm_destructive("Update TCO policy?", yes, agent_mode)?;
                 commands::tco_policies::run_update(&targets, &from_file, output).await?;
             }
             TcoPoliciesCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete TCO policy '{id}'?"), yes, agent_mode)?;
                 commands::tco_policies::run_delete(&targets, &id).await?;
             }
             TcoPoliciesCmd::Reorder { from_file } => {
+                confirm_destructive("Reorder TCO policies?", yes, agent_mode)?;
                 commands::tco_policies::run_reorder(&targets, &from_file, output).await?;
             }
             TcoPoliciesCmd::Test { from_file } => {
@@ -2514,6 +2541,7 @@ async fn main() -> Result<()> {
                 commands::tco_policies::run_settings(&targets, output).await?;
             }
             TcoPoliciesCmd::SettingsUpdate { from_file } => {
+                confirm_destructive("Update TCO settings?", yes, agent_mode)?;
                 commands::tco_policies::run_settings_update(&targets, &from_file, output).await?;
             }
         },
@@ -2523,9 +2551,11 @@ async fn main() -> Result<()> {
                 commands::retentions::run_list(&targets, output).await?;
             }
             RetentionsCmd::Update { from_file } => {
+                confirm_destructive("Update retention settings?", yes, agent_mode)?;
                 commands::retentions::run_update(&targets, &from_file, output).await?;
             }
             RetentionsCmd::Activate => {
+                confirm_destructive("Activate retention settings?", yes, agent_mode)?;
                 commands::retentions::run_activate(&targets).await?;
             }
             RetentionsCmd::Status => {
@@ -2538,12 +2568,15 @@ async fn main() -> Result<()> {
                 commands::quota_rules::run_get(&targets, output).await?;
             }
             QuotaRulesCmd::Create { from_file } => {
+                confirm_destructive("Create a new quota rule?", yes, agent_mode)?;
                 commands::quota_rules::run_create(&targets, &from_file, output).await?;
             }
             QuotaRulesCmd::Update { from_file } => {
+                confirm_destructive("Update quota rule?", yes, agent_mode)?;
                 commands::quota_rules::run_update(&targets, &from_file, output).await?;
             }
             QuotaRulesCmd::Delete => {
+                confirm_destructive("Delete quota rules?", yes, agent_mode)?;
                 commands::quota_rules::run_delete(&targets).await?;
             }
         },
@@ -2556,12 +2589,15 @@ async fn main() -> Result<()> {
                 commands::e2m::run_get(&targets, &id, output).await?;
             }
             E2mCmd::Create { from_file } => {
+                confirm_destructive("Create a new E2M definition?", yes, agent_mode)?;
                 commands::e2m::run_create(&targets, &from_file, output).await?;
             }
             E2mCmd::Update { from_file } => {
+                confirm_destructive("Update E2M definition?", yes, agent_mode)?;
                 commands::e2m::run_update(&targets, &from_file, output).await?;
             }
             E2mCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete E2M definition '{id}'?"), yes, agent_mode)?;
                 commands::e2m::run_delete(&targets, &id).await?;
             }
             E2mCmd::LabelsCardinality => {
@@ -2580,12 +2616,15 @@ async fn main() -> Result<()> {
                 commands::recording_rules::run_get(&targets, &id, output).await?;
             }
             RecordingRulesCmd::Create { from_file } => {
+                confirm_destructive("Create a new recording rule group?", yes, agent_mode)?;
                 commands::recording_rules::run_create(&targets, &from_file, output).await?;
             }
             RecordingRulesCmd::Update { from_file, id } => {
+                confirm_destructive(&format!("Update recording rule group '{id}'?"), yes, agent_mode)?;
                 commands::recording_rules::run_update(&targets, &id, &from_file, output).await?;
             }
             RecordingRulesCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete recording rule group '{id}'?"), yes, agent_mode)?;
                 commands::recording_rules::run_delete(&targets, &id).await?;
             }
         },
@@ -2598,15 +2637,19 @@ async fn main() -> Result<()> {
                 commands::parsing_rules::run_get(&targets, &id, output).await?;
             }
             ParsingRulesCmd::Create { from_file } => {
+                confirm_destructive("Create a new parsing rule?", yes, agent_mode)?;
                 commands::parsing_rules::run_create(&targets, &from_file, output).await?;
             }
             ParsingRulesCmd::Update { from_file, id } => {
+                confirm_destructive(&format!("Update parsing rule '{id}'?"), yes, agent_mode)?;
                 commands::parsing_rules::run_update(&targets, &id, &from_file, output).await?;
             }
             ParsingRulesCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete parsing rule '{id}'?"), yes, agent_mode)?;
                 commands::parsing_rules::run_delete(&targets, &id).await?;
             }
             ParsingRulesCmd::BulkDelete { ids } => {
+                confirm_destructive("Bulk delete parsing rules?", yes, agent_mode)?;
                 commands::parsing_rules::run_bulk_delete(&targets, &ids).await?;
             }
             ParsingRulesCmd::UsageLimits => {
@@ -2619,12 +2662,15 @@ async fn main() -> Result<()> {
                 commands::enrichments::run_list(&targets, output).await?;
             }
             EnrichmentsCmd::Add { from_file } => {
+                confirm_destructive("Add enrichment rules?", yes, agent_mode)?;
                 commands::enrichments::run_add(&targets, &from_file, output).await?;
             }
             EnrichmentsCmd::Remove { from_file } => {
+                confirm_destructive("Remove enrichment rules?", yes, agent_mode)?;
                 commands::enrichments::run_remove(&targets, &from_file, output).await?;
             }
             EnrichmentsCmd::Overwrite { from_file } => {
+                confirm_destructive("Overwrite enrichment rules?", yes, agent_mode)?;
                 commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
             }
             EnrichmentsCmd::Limit => {
@@ -2641,12 +2687,15 @@ async fn main() -> Result<()> {
                     commands::custom_enrichments::run_get(&targets, &id, output).await?;
                 }
                 CustomEnrichmentsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new custom enrichment?", yes, agent_mode)?;
                     commands::custom_enrichments::run_create(&targets, &from_file, output).await?;
                 }
                 CustomEnrichmentsCmd::Update { from_file } => {
+                    confirm_destructive("Update custom enrichment?", yes, agent_mode)?;
                     commands::custom_enrichments::run_update(&targets, &from_file, output).await?;
                 }
                 CustomEnrichmentsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete custom enrichment '{id}'?"), yes, agent_mode)?;
                     commands::custom_enrichments::run_delete(&targets, &id).await?;
                 }
                 CustomEnrichmentsCmd::Search { id, query } => {
@@ -2669,15 +2718,19 @@ async fn main() -> Result<()> {
                 commands::integrations::run_deployed(&targets, &id, output).await?;
             }
             IntegrationsCmd::Create { from_file } => {
+                confirm_destructive("Create a new integration?", yes, agent_mode)?;
                 commands::integrations::run_create(&targets, &from_file, output).await?;
             }
             IntegrationsCmd::Update { id, from_file } => {
+                confirm_destructive(&format!("Update integration '{id}'?"), yes, agent_mode)?;
                 commands::integrations::run_update(&targets, &id, &from_file, output).await?;
             }
             IntegrationsCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete integration '{id}'?"), yes, agent_mode)?;
                 commands::integrations::run_delete(&targets, &id).await?;
             }
             IntegrationsCmd::Test { from_file } => {
+                confirm_destructive("Test integration?", yes, agent_mode)?;
                 commands::integrations::run_test(&targets, &from_file, output).await?;
             }
             IntegrationsCmd::Template => {
@@ -2694,12 +2747,15 @@ async fn main() -> Result<()> {
                     commands::extensions::run_deployed(&targets, output).await?;
                 }
                 ExtensionsCmd::Deploy { from_file } => {
+                    confirm_destructive("Deploy extension?", yes, agent_mode)?;
                     commands::extensions::run_deploy(&targets, &from_file, output).await?;
                 }
                 ExtensionsCmd::Update { from_file } => {
+                    confirm_destructive("Update extension?", yes, agent_mode)?;
                     commands::extensions::run_update(&targets, &from_file, output).await?;
                 }
                 ExtensionsCmd::Undeploy { from_file } => {
+                    confirm_destructive("Undeploy extension?", yes, agent_mode)?;
                     commands::extensions::run_undeploy(&targets, &from_file, output).await?;
                 }
             },
@@ -2711,13 +2767,16 @@ async fn main() -> Result<()> {
                     commands::contextual_data::run_get(&targets, &id, output).await?;
                 }
                 ContextualDataCmd::Create { from_file } => {
+                    confirm_destructive("Create contextual data integration?", yes, agent_mode)?;
                     commands::contextual_data::run_create(&targets, &from_file, output).await?;
                 }
                 ContextualDataCmd::Update { id, from_file } => {
+                    confirm_destructive(&format!("Update contextual data '{id}'?"), yes, agent_mode)?;
                     commands::contextual_data::run_update(&targets, &id, &from_file, output)
                         .await?;
                 }
                 ContextualDataCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete contextual data '{id}'?"), yes, agent_mode)?;
                     commands::contextual_data::run_delete(&targets, &id).await?;
                 }
                 ContextualDataCmd::Definition { id } => {
@@ -2737,15 +2796,19 @@ async fn main() -> Result<()> {
                 commands::webhooks::run_get(&targets, &id, output).await?;
             }
             WebhooksCmd::Create { from_file } => {
+                confirm_destructive("Create a new webhook?", yes, agent_mode)?;
                 commands::webhooks::run_create(&targets, &from_file, output).await?;
             }
             WebhooksCmd::Update { id, from_file } => {
+                confirm_destructive(&format!("Update webhook '{id}'?"), yes, agent_mode)?;
                 commands::webhooks::run_update(&targets, &id, &from_file, output).await?;
             }
             WebhooksCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete webhook '{id}'?"), yes, agent_mode)?;
                 commands::webhooks::run_delete(&targets, &id).await?;
             }
             WebhooksCmd::Test { id } => {
+                confirm_destructive(&format!("Test webhook '{id}'?"), yes, agent_mode)?;
                 commands::webhooks::run_test(&targets, &id, output).await?;
             }
             WebhooksCmd::Types => {
@@ -2759,18 +2822,23 @@ async fn main() -> Result<()> {
                     commands::actions::run_get(&targets, &id, output).await?;
                 }
                 ActionsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new webhook action?", yes, agent_mode)?;
                     commands::actions::run_create(&targets, &from_file, output).await?;
                 }
                 ActionsCmd::Update { from_file } => {
+                    confirm_destructive("Update webhook action?", yes, agent_mode)?;
                     commands::actions::run_update(&targets, &from_file, output).await?;
                 }
                 ActionsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete webhook action '{id}'?"), yes, agent_mode)?;
                     commands::actions::run_delete(&targets, &id).await?;
                 }
                 ActionsCmd::Batch { from_file } => {
+                    confirm_destructive("Batch execute webhook actions?", yes, agent_mode)?;
                     commands::actions::run_batch(&targets, &from_file, output).await?;
                 }
                 ActionsCmd::Reorder { from_file } => {
+                    confirm_destructive("Reorder webhook actions?", yes, agent_mode)?;
                     commands::actions::run_reorder(&targets, &from_file, output).await?;
                 }
             },
@@ -2784,12 +2852,15 @@ async fn main() -> Result<()> {
                 commands::views::run_get(&targets, &id, output).await?;
             }
             ViewsCmd::Create { from_file } => {
+                confirm_destructive("Create a new view?", yes, agent_mode)?;
                 commands::views::run_create(&targets, &from_file, output).await?;
             }
             ViewsCmd::Update { id, from_file } => {
+                confirm_destructive(&format!("Update view '{id}'?"), yes, agent_mode)?;
                 commands::views::run_update(&targets, &id, &from_file, output).await?;
             }
             ViewsCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete view '{id}'?"), yes, agent_mode)?;
                 commands::views::run_delete(&targets, &id).await?;
             }
             ViewsCmd::Folders { cmd } => match cmd {
@@ -2800,12 +2871,15 @@ async fn main() -> Result<()> {
                     commands::views::run_folders_get(&targets, &id, output).await?;
                 }
                 ViewFoldersCmd::Create { from_file } => {
+                    confirm_destructive("Create a new view folder?", yes, agent_mode)?;
                     commands::views::run_folders_create(&targets, &from_file, output).await?;
                 }
                 ViewFoldersCmd::Update { id, from_file } => {
+                    confirm_destructive(&format!("Update view folder '{id}'?"), yes, agent_mode)?;
                     commands::views::run_folders_update(&targets, &id, &from_file, output).await?;
                 }
                 ViewFoldersCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete view folder '{id}'?"), yes, agent_mode)?;
                     commands::views::run_folders_delete(&targets, &id).await?;
                 }
             },
@@ -3048,12 +3122,15 @@ async fn main() -> Result<()> {
                 commands::slos::run_get(&targets, &id, output).await?;
             }
             SlosCmd::Create { from_file } => {
+                confirm_destructive("Create a new SLO?", yes, agent_mode)?;
                 commands::slos::run_create(&targets, &from_file, output).await?;
             }
             SlosCmd::Update { from_file } => {
+                confirm_destructive("Update SLO?", yes, agent_mode)?;
                 commands::slos::run_update(&targets, &from_file, output).await?;
             }
             SlosCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete SLO '{id}'?"), yes, agent_mode)?;
                 commands::slos::run_delete(&targets, &id).await?;
             }
         },

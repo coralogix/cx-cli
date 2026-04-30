@@ -244,7 +244,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 - **Acceptance:** `cargo build` succeeds. All existing confirmations work unchanged in interactive mode. `CLAUDECODE=1 cargo run -- iam api-keys delete abc` fails with "requires user confirmation" error. `CLAUDECODE=1 cargo run -- iam api-keys delete abc --yes` logs `[auto-approved via --yes]` and proceeds.
 - **Dependencies:** 1.1
 
-### 3.2 [ ] Wire confirm_destructive to all unguarded write commands
+### 3.2 [x] Wire confirm_destructive to all unguarded write commands *(completed 2026-04-30)*
 
 - **Files:** `src/main.rs`
 - **What:**

@@ -173,7 +173,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 - **Acceptance:** `cargo test read_only` passes. Tests verify both flag and env var paths.
 - **Dependencies:** 2.1
 
-### 2.3 [ ] Add E2E tests for read-only mode
+### 2.3 [x] Add E2E tests for read-only mode *(completed 2026-04-30)*
 
 - **Files:** `tests/e2e/read_only.rs` (new), `tests/e2e/main.rs` (register module)
 - **What:**

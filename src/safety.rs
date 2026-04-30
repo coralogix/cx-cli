@@ -82,9 +82,7 @@ const AGENT_ENV_VARS: &[&str] = &[
 ];
 
 pub fn is_agent_mode() -> bool {
-    AGENT_ENV_VARS
-        .iter()
-        .any(|var| std::env::var(var).is_ok())
+    AGENT_ENV_VARS.iter().any(|var| std::env::var(var).is_ok())
 }
 
 pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<()> {
@@ -120,37 +118,82 @@ mod tests {
     fn test_write_verbs_sorted() {
         let mut sorted = WRITE_VERBS.to_vec();
         sorted.sort();
-        assert_eq!(WRITE_VERBS, &sorted[..], "WRITE_VERBS must be sorted for binary_search");
+        assert_eq!(
+            WRITE_VERBS,
+            &sorted[..],
+            "WRITE_VERBS must be sorted for binary_search"
+        );
     }
 
     #[test]
     fn test_write_verbs_detected() {
         let verbs = [
-            "create", "update", "delete", "set", "enable", "disable", "deploy", "undeploy",
-            "reorder", "overwrite", "remove", "add", "acknowledge", "resolve", "close", "assign",
-            "unassign", "bulk-delete", "set-status", "set-idp", "set-active", "set-default",
-            "batch", "activate", "settings-update",
+            "create",
+            "update",
+            "delete",
+            "set",
+            "enable",
+            "disable",
+            "deploy",
+            "undeploy",
+            "reorder",
+            "overwrite",
+            "remove",
+            "add",
+            "acknowledge",
+            "resolve",
+            "close",
+            "assign",
+            "unassign",
+            "bulk-delete",
+            "set-status",
+            "set-idp",
+            "set-active",
+            "set-default",
+            "batch",
+            "activate",
+            "settings-update",
         ];
         for verb in verbs {
-            assert!(is_write_verb(verb), "{verb} should be detected as a write verb");
+            assert!(
+                is_write_verb(verb),
+                "{verb} should be detected as a write verb"
+            );
         }
     }
 
     #[test]
     fn test_read_verbs_not_detected() {
         let verbs = [
-            "list", "get", "search", "catalog", "show", "system", "sp-params", "validate",
-            "settings", "deployed", "query", "test", "send-data-keys",
+            "list",
+            "get",
+            "search",
+            "catalog",
+            "show",
+            "system",
+            "sp-params",
+            "validate",
+            "settings",
+            "deployed",
+            "query",
+            "test",
+            "send-data-keys",
         ];
         for verb in verbs {
-            assert!(!is_write_verb(verb), "{verb} should NOT be detected as a write verb");
+            assert!(
+                !is_write_verb(verb),
+                "{verb} should NOT be detected as a write verb"
+            );
         }
     }
 
     #[test]
     fn test_unknown_verbs_not_detected() {
         for verb in ["foo", "bar", "", "unknown-verb"] {
-            assert!(!is_write_verb(verb), "{verb} should NOT be detected as a write verb");
+            assert!(
+                !is_write_verb(verb),
+                "{verb} should NOT be detected as a write verb"
+            );
         }
     }
 

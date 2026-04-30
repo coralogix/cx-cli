@@ -7,7 +7,17 @@ fn cx() -> Command {
 #[test]
 fn read_only_flag_blocks_write_command() {
     let output = cx()
-        .args(["--read-only", "iam", "api-keys", "delete", "abc", "--api-key", "fake", "--region", "us1"])
+        .args([
+            "--read-only",
+            "iam",
+            "api-keys",
+            "delete",
+            "abc",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(!output.status.success());
@@ -19,7 +29,16 @@ fn read_only_flag_blocks_write_command() {
 fn read_only_env_var_blocks_write_command() {
     let output = cx()
         .env("CX_READ_ONLY", "1")
-        .args(["iam", "api-keys", "delete", "abc", "--api-key", "fake", "--region", "us1"])
+        .args([
+            "iam",
+            "api-keys",
+            "delete",
+            "abc",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(!output.status.success());
@@ -30,7 +49,16 @@ fn read_only_env_var_blocks_write_command() {
 #[test]
 fn read_only_flag_allows_read_command() {
     let output = cx()
-        .args(["--read-only", "iam", "api-keys", "list", "--api-key", "fake", "--region", "us1"])
+        .args([
+            "--read-only",
+            "iam",
+            "api-keys",
+            "list",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
         .output()
         .expect("failed to run cx");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -44,7 +72,16 @@ fn read_only_flag_allows_read_command() {
 fn read_only_env_true_blocks_write() {
     let output = cx()
         .env("CX_READ_ONLY", "true")
-        .args(["iam", "api-keys", "delete", "abc", "--api-key", "fake", "--region", "us1"])
+        .args([
+            "iam",
+            "api-keys",
+            "delete",
+            "abc",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(!output.status.success());
@@ -56,7 +93,16 @@ fn read_only_env_true_blocks_write() {
 fn read_only_env_yes_blocks_write() {
     let output = cx()
         .env("CX_READ_ONLY", "yes")
-        .args(["iam", "api-keys", "delete", "abc", "--api-key", "fake", "--region", "us1"])
+        .args([
+            "iam",
+            "api-keys",
+            "delete",
+            "abc",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(!output.status.success());

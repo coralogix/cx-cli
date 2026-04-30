@@ -12,7 +12,18 @@ fn read_only_allows_read_command() {
 #[test]
 fn read_only_blocks_write_command() {
     let output = harness::cx()
-        .args(["--read-only", "iam", "api-keys", "delete", "nonexistent", "--yes", "--api-key", "fake", "--region", "us1"])
+        .args([
+            "--read-only",
+            "iam",
+            "api-keys",
+            "delete",
+            "nonexistent",
+            "--yes",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(!output.status.success());
@@ -27,7 +38,17 @@ fn read_only_blocks_write_command() {
 fn read_only_env_blocks_write_command() {
     let output = harness::cx()
         .env("CX_READ_ONLY", "1")
-        .args(["iam", "api-keys", "delete", "nonexistent", "--yes", "--api-key", "fake", "--region", "us1"])
+        .args([
+            "iam",
+            "api-keys",
+            "delete",
+            "nonexistent",
+            "--yes",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(!output.status.success());

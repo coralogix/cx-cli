@@ -360,7 +360,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 
 Currently there are no tests for confirmation behavior, read-only mode, or agent mode. After this milestone, all safety features have unit and integration test coverage, help text is updated, and skills reflect the new safety model.
 
-### 4.1 [ ] Run full test suite and fix any issues
+### 4.1 [x] Run full test suite and fix any issues *(completed 2026-04-30)*
 
 - **Files:** Any files that need fixing
 - **What:**

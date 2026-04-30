@@ -22,35 +22,58 @@ fn assert_gated(args: &[&str], label: &str) {
 
 #[test]
 fn iam_api_keys_delete() {
-    assert_gated(&["iam", "api-keys", "delete", "nonexistent"], "iam api-keys delete");
+    assert_gated(
+        &["iam", "api-keys", "delete", "nonexistent"],
+        "iam api-keys delete",
+    );
 }
 
 #[test]
 fn iam_roles_delete() {
-    assert_gated(&["iam", "roles", "delete", "nonexistent"], "iam roles delete");
+    assert_gated(
+        &["iam", "roles", "delete", "nonexistent"],
+        "iam roles delete",
+    );
 }
 
 #[test]
 fn iam_scopes_delete() {
-    assert_gated(&["iam", "scopes", "delete", "nonexistent"], "iam scopes delete");
+    assert_gated(
+        &["iam", "scopes", "delete", "nonexistent"],
+        "iam scopes delete",
+    );
 }
 
 #[test]
 fn iam_users_set_status() {
     assert_gated(
-        &["iam", "users", "set-status", "--user-ids", "nonexistent", "--status", "active"],
+        &[
+            "iam",
+            "users",
+            "set-status",
+            "--user-ids",
+            "nonexistent",
+            "--status",
+            "active",
+        ],
         "iam users set-status",
     );
 }
 
 #[test]
 fn iam_team_groups_delete() {
-    assert_gated(&["iam", "groups", "delete", "nonexistent"], "iam groups delete");
+    assert_gated(
+        &["iam", "groups", "delete", "nonexistent"],
+        "iam groups delete",
+    );
 }
 
 #[test]
 fn iam_saml_set_active() {
-    assert_gated(&["iam", "saml", "set-active", "--active"], "iam saml set-active");
+    assert_gated(
+        &["iam", "saml", "set-active", "--active"],
+        "iam saml set-active",
+    );
 }
 
 #[test]
@@ -65,17 +88,26 @@ fn archive_metrics_enable() {
 
 #[test]
 fn archive_logs_set() {
-    assert_gated(&["archive", "logs", "set", "--from-file", "/dev/null"], "archive logs set");
+    assert_gated(
+        &["archive", "logs", "set", "--from-file", "/dev/null"],
+        "archive logs set",
+    );
 }
 
 #[test]
 fn dashboards_create() {
-    assert_gated(&["dashboards", "create", "--from-file", "/dev/null"], "dashboards create");
+    assert_gated(
+        &["dashboards", "create", "--from-file", "/dev/null"],
+        "dashboards create",
+    );
 }
 
 #[test]
 fn alerts_create() {
-    assert_gated(&["alerts", "create", "--from-file", "/dev/null"], "alerts create");
+    assert_gated(
+        &["alerts", "create", "--from-file", "/dev/null"],
+        "alerts create",
+    );
 }
 
 #[test]
@@ -88,7 +120,10 @@ fn alerts_suppression_rules_delete() {
 
 #[test]
 fn incidents_acknowledge() {
-    assert_gated(&["incidents", "acknowledge", "nonexistent"], "incidents acknowledge");
+    assert_gated(
+        &["incidents", "acknowledge", "nonexistent"],
+        "incidents acknowledge",
+    );
 }
 
 #[test]
@@ -122,7 +157,10 @@ fn tco_delete() {
 
 #[test]
 fn retentions_update() {
-    assert_gated(&["retentions", "update", "--from-file", "/dev/null"], "retentions update");
+    assert_gated(
+        &["retentions", "update", "--from-file", "/dev/null"],
+        "retentions update",
+    );
 }
 
 #[test]
@@ -137,17 +175,26 @@ fn e2m_delete() {
 
 #[test]
 fn recording_rules_delete() {
-    assert_gated(&["recording-rules", "delete", "nonexistent"], "recording-rules delete");
+    assert_gated(
+        &["recording-rules", "delete", "nonexistent"],
+        "recording-rules delete",
+    );
 }
 
 #[test]
 fn parsing_rules_delete() {
-    assert_gated(&["parsing-rules", "delete", "nonexistent"], "parsing-rules delete");
+    assert_gated(
+        &["parsing-rules", "delete", "nonexistent"],
+        "parsing-rules delete",
+    );
 }
 
 #[test]
 fn enrichments_add() {
-    assert_gated(&["enrichments", "add", "--from-file", "/dev/null"], "enrichments add");
+    assert_gated(
+        &["enrichments", "add", "--from-file", "/dev/null"],
+        "enrichments add",
+    );
 }
 
 #[test]
@@ -160,13 +207,22 @@ fn enrichments_custom_delete() {
 
 #[test]
 fn integrations_delete() {
-    assert_gated(&["integrations", "delete", "nonexistent"], "integrations delete");
+    assert_gated(
+        &["integrations", "delete", "nonexistent"],
+        "integrations delete",
+    );
 }
 
 #[test]
 fn integrations_extensions_deploy() {
     assert_gated(
-        &["integrations", "extensions", "deploy", "--from-file", "/dev/null"],
+        &[
+            "integrations",
+            "extensions",
+            "deploy",
+            "--from-file",
+            "/dev/null",
+        ],
         "integrations extensions deploy",
     );
 }
@@ -186,7 +242,10 @@ fn webhooks_delete() {
 
 #[test]
 fn webhooks_actions_delete() {
-    assert_gated(&["webhooks", "actions", "delete", "nonexistent"], "webhooks actions delete");
+    assert_gated(
+        &["webhooks", "actions", "delete", "nonexistent"],
+        "webhooks actions delete",
+    );
 }
 
 #[test]
@@ -196,7 +255,10 @@ fn views_delete() {
 
 #[test]
 fn views_folders_delete() {
-    assert_gated(&["views", "folders", "delete", "nonexistent"], "views folders delete");
+    assert_gated(
+        &["views", "folders", "delete", "nonexistent"],
+        "views folders delete",
+    );
 }
 
 #[test]

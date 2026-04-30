@@ -12,9 +12,9 @@ use config::OutputFormat;
 use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
+use coralogix_cli::execution::build_targets;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
-use coralogix_cli::execution::build_targets;
 use coralogix_cli::Tier;
 
 /// Returns profile names from `~/.cx/profiles/` as completion candidates.
@@ -2069,7 +2069,10 @@ async fn main() -> Result<()> {
     let read_only = cli.read_only || safety::env_is_truthy("CX_READ_ONLY");
     if read_only {
         let top = safety::get_top_level_subcommand_name(&matches);
-        let is_local = matches!(top.as_deref(), Some("profiles") | Some("cleanup") | Some("completions"));
+        let is_local = matches!(
+            top.as_deref(),
+            Some("profiles") | Some("cleanup") | Some("completions")
+        );
         if !is_local {
             if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
                 safety::enforce_read_only(&leaf)?;
@@ -2319,7 +2322,11 @@ async fn main() -> Result<()> {
                     commands::suppression_rules::run_update(&targets, &from_file, output).await?;
                 }
                 SuppressionRulesCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete suppression rule '{id}'?"), yes, agent_mode)?;
+                    confirm_destructive(
+                        &format!("Delete suppression rule '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::suppression_rules::run_delete(&targets, &id).await?;
                 }
             },
@@ -2356,7 +2363,11 @@ async fn main() -> Result<()> {
                 commands::incidents::run_close(&targets, &ids).await?;
             }
             IncidentsCmd::Assign { ids, user_id } => {
-                confirm_destructive(&format!("Assign incident(s) to '{user_id}'?"), yes, agent_mode)?;
+                confirm_destructive(
+                    &format!("Assign incident(s) to '{user_id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
                 commands::incidents::run_assign(&targets, &ids, &user_id).await?;
             }
             IncidentsCmd::Unassign { ids } => {
@@ -2444,7 +2455,11 @@ async fn main() -> Result<()> {
                     commands::presets::run_delete(&targets, &id).await?;
                 }
                 PresetsCmd::SetDefault { id } => {
-                    confirm_destructive(&format!("Set preset '{id}' as default?"), yes, agent_mode)?;
+                    confirm_destructive(
+                        &format!("Set preset '{id}' as default?"),
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::presets::run_set_default(&targets, &id).await?;
                 }
             },
@@ -2620,11 +2635,19 @@ async fn main() -> Result<()> {
                 commands::recording_rules::run_create(&targets, &from_file, output).await?;
             }
             RecordingRulesCmd::Update { from_file, id } => {
-                confirm_destructive(&format!("Update recording rule group '{id}'?"), yes, agent_mode)?;
+                confirm_destructive(
+                    &format!("Update recording rule group '{id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
                 commands::recording_rules::run_update(&targets, &id, &from_file, output).await?;
             }
             RecordingRulesCmd::Delete { id } => {
-                confirm_destructive(&format!("Delete recording rule group '{id}'?"), yes, agent_mode)?;
+                confirm_destructive(
+                    &format!("Delete recording rule group '{id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
                 commands::recording_rules::run_delete(&targets, &id).await?;
             }
         },
@@ -2695,7 +2718,11 @@ async fn main() -> Result<()> {
                     commands::custom_enrichments::run_update(&targets, &from_file, output).await?;
                 }
                 CustomEnrichmentsCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete custom enrichment '{id}'?"), yes, agent_mode)?;
+                    confirm_destructive(
+                        &format!("Delete custom enrichment '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::custom_enrichments::run_delete(&targets, &id).await?;
                 }
                 CustomEnrichmentsCmd::Search { id, query } => {
@@ -2771,12 +2798,20 @@ async fn main() -> Result<()> {
                     commands::contextual_data::run_create(&targets, &from_file, output).await?;
                 }
                 ContextualDataCmd::Update { id, from_file } => {
-                    confirm_destructive(&format!("Update contextual data '{id}'?"), yes, agent_mode)?;
+                    confirm_destructive(
+                        &format!("Update contextual data '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::contextual_data::run_update(&targets, &id, &from_file, output)
                         .await?;
                 }
                 ContextualDataCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete contextual data '{id}'?"), yes, agent_mode)?;
+                    confirm_destructive(
+                        &format!("Delete contextual data '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::contextual_data::run_delete(&targets, &id).await?;
                 }
                 ContextualDataCmd::Definition { id } => {
@@ -2830,7 +2865,11 @@ async fn main() -> Result<()> {
                     commands::actions::run_update(&targets, &from_file, output).await?;
                 }
                 ActionsCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete webhook action '{id}'?"), yes, agent_mode)?;
+                    confirm_destructive(
+                        &format!("Delete webhook action '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::actions::run_delete(&targets, &id).await?;
                 }
                 ActionsCmd::Batch { from_file } => {
@@ -2998,7 +3037,11 @@ async fn main() -> Result<()> {
                     commands::users::run_update(&targets, &from_file, output).await?;
                 }
                 UsersCmd::SetStatus { user_ids, status } => {
-                    confirm_destructive(&format!("Set user status to '{status}'?"), yes, agent_mode)?;
+                    confirm_destructive(
+                        &format!("Set user status to '{status}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::users::run_set_status(&targets, &user_ids, &status).await?;
                 }
             },

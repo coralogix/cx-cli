@@ -668,7 +668,7 @@ Examples:
         /// Dashboard ID.
         dashboard_id: String,
     },
-    /// Create a new dashboard from a JSON definition file.
+    /// Create a new dashboard from a JSON definition file [requires --yes].
     #[command(after_help = "\
 Examples:
   cx dashboards create --from-file dashboard.json
@@ -701,7 +701,7 @@ Examples:
   cx dashboards folders list
   cx dashboards folders list -o json")]
     List,
-    /// Create a new dashboard folder.
+    /// Create a new dashboard folder [requires --yes].
     #[command(after_help = "\
 Examples:
   cx dashboards folders create --name \"My Service\"
@@ -735,7 +735,7 @@ Examples:
         /// first; if not found, the ID is retried as an alert version ID.
         alert_id: String,
     },
-    /// Create an alert from a JSON definition file.
+    /// Create an alert from a JSON definition file [requires --yes].
     #[command(after_help = "\
 Examples:
   cx alerts create --from-file alert.json
@@ -745,12 +745,12 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Enable an alert.
+    /// Enable an alert [requires --yes].
     Enable {
         /// Alert definition ID (UUID).
         alert_id: String,
     },
-    /// Disable an alert.
+    /// Disable an alert [requires --yes].
     Disable {
         /// Alert definition ID (UUID).
         alert_id: String,
@@ -815,25 +815,25 @@ Examples:
         /// Incident ID.
         id: String,
     },
-    /// Acknowledge one or more incidents.
+    /// Acknowledge one or more incidents [requires --yes].
     Acknowledge {
         /// Incident IDs to acknowledge.
         #[arg(required = true)]
         ids: Vec<String>,
     },
-    /// Resolve one or more incidents.
+    /// Resolve one or more incidents [requires --yes].
     Resolve {
         /// Incident IDs to resolve.
         #[arg(required = true)]
         ids: Vec<String>,
     },
-    /// Close one or more incidents.
+    /// Close one or more incidents [requires --yes].
     Close {
         /// Incident IDs to close.
         #[arg(required = true)]
         ids: Vec<String>,
     },
-    /// Assign one or more incidents to a user.
+    /// Assign one or more incidents to a user [requires --yes].
     Assign {
         /// Incident IDs to assign.
         #[arg(required = true)]
@@ -843,7 +843,7 @@ Examples:
         #[arg(long)]
         user_id: String,
     },
-    /// Unassign one or more incidents.
+    /// Unassign one or more incidents [requires --yes].
     Unassign {
         /// Incident IDs to unassign.
         #[arg(required = true)]
@@ -872,7 +872,7 @@ enum SuppressionRulesCmd {
         /// Suppression rule ID.
         id: String,
     },
-    /// Create a suppression rule from a JSON definition file.
+    /// Create a suppression rule from a JSON definition file [requires --yes].
     #[command(after_help = "\
 Examples:
   cx alerts suppression-rules create --from-file rule.json
@@ -882,13 +882,13 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a suppression rule from a JSON definition file.
+    /// Update a suppression rule from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a suppression rule.
+    /// Delete a suppression rule [requires --yes].
     Delete {
         /// Suppression rule ID.
         id: String,
@@ -938,17 +938,17 @@ enum ConnectorsCmd {
     List,
     /// Get a single connector by ID.
     Get { id: String },
-    /// Create a connector from a JSON definition file.
+    /// Create a connector from a JSON definition file [requires --yes].
     Create {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace a connector definition from a JSON file.
+    /// Replace a connector definition from a JSON file [requires --yes].
     Update {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a connector.
+    /// Delete a connector [requires --yes].
     Delete { id: String },
     /// List connector type summaries.
     Types,
@@ -968,17 +968,17 @@ enum RoutersCmd {
     List,
     /// Get a single router by ID.
     Get { id: String },
-    /// Create a router from a JSON definition file.
+    /// Create a router from a JSON definition file [requires --yes].
     Create {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace a router definition from a JSON file.
+    /// Replace a router definition from a JSON file [requires --yes].
     Update {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a router.
+    /// Delete a router [requires --yes].
     Delete { id: String },
     /// Test entity label matcher.
     ValidateMatcher {
@@ -993,19 +993,19 @@ enum PresetsCmd {
     List,
     /// Get a single preset by ID.
     Get { id: String },
-    /// Create a custom preset from a JSON definition file.
+    /// Create a custom preset from a JSON definition file [requires --yes].
     Create {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace a custom preset from a JSON file.
+    /// Replace a custom preset from a JSON file [requires --yes].
     Update {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a custom preset.
+    /// Delete a custom preset [requires --yes].
     Delete { id: String },
-    /// Set default preset.
+    /// Set default preset [requires --yes].
     SetDefault { id: String },
 }
 
@@ -1081,24 +1081,24 @@ enum TcoPoliciesCmd {
         /// TCO policy ID.
         id: String,
     },
-    /// Create a TCO policy from a JSON definition file.
+    /// Create a TCO policy from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the policy definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a TCO policy from a JSON definition file.
+    /// Update a TCO policy from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated policy definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a TCO policy.
+    /// Delete a TCO policy [requires --yes].
     Delete {
         /// TCO policy ID.
         id: String,
     },
-    /// Reorder TCO policies by priority.
+    /// Reorder TCO policies by priority [requires --yes].
     Reorder {
         /// Path to JSON file with the reorder definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1112,7 +1112,7 @@ enum TcoPoliciesCmd {
     },
     /// Show TCO settings.
     Settings,
-    /// Replace TCO settings from a JSON file.
+    /// Replace TCO settings from a JSON file [requires --yes].
     SettingsUpdate {
         /// Path to JSON file with the settings. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1124,13 +1124,13 @@ enum TcoPoliciesCmd {
 enum RetentionsCmd {
     /// List retention settings.
     List,
-    /// Update retention settings from a JSON file.
+    /// Update retention settings from a JSON file [requires --yes].
     Update {
         /// Path to JSON file with retention settings. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Activate retention.
+    /// Activate retention [requires --yes].
     Activate,
     /// Check retention enabled status.
     Status,
@@ -1140,13 +1140,13 @@ enum RetentionsCmd {
 enum QuotaRulesCmd {
     /// Get quota rule set.
     Get,
-    /// Create quota rules from a JSON file.
+    /// Create quota rules from a JSON file [requires --yes].
     Create {
         /// Path to JSON file with quota rules. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace quota rules from a JSON file.
+    /// Replace quota rules from a JSON file [requires --yes].
     Update {
         /// Path to JSON file with quota rules. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1165,19 +1165,19 @@ enum E2mCmd {
         /// E2M definition ID.
         id: String,
     },
-    /// Create an E2M definition from a JSON file.
+    /// Create an E2M definition from a JSON file [requires --yes].
     Create {
         /// Path to JSON file with the E2M definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace an E2M definition from a JSON file.
+    /// Replace an E2M definition from a JSON file [requires --yes].
     Update {
         /// Path to JSON file with the updated E2M definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete an E2M definition.
+    /// Delete an E2M definition [requires --yes].
     Delete {
         /// E2M definition ID.
         id: String,
@@ -1197,13 +1197,13 @@ enum RecordingRulesCmd {
         /// Recording rule group ID.
         id: String,
     },
-    /// Create a recording rule group from a JSON definition file.
+    /// Create a recording rule group from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the rule group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a recording rule group from a JSON definition file.
+    /// Update a recording rule group from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated rule group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1212,7 +1212,7 @@ enum RecordingRulesCmd {
         /// Recording rule group ID.
         id: String,
     },
-    /// Delete a recording rule group.
+    /// Delete a recording rule group [requires --yes].
     Delete {
         /// Recording rule group ID.
         id: String,
@@ -1228,13 +1228,13 @@ enum ParsingRulesCmd {
         /// Parsing rule group ID.
         id: String,
     },
-    /// Create a parsing rule group from a JSON definition file.
+    /// Create a parsing rule group from a JSON definition file [requires --yes].
     Create {
         /// Path to JSON file with the parsing rule group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a parsing rule group from a JSON definition file.
+    /// Update a parsing rule group from a JSON definition file [requires --yes].
     Update {
         /// Path to JSON file with the updated parsing rule group definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1242,12 +1242,12 @@ enum ParsingRulesCmd {
         /// Parsing rule group ID.
         id: String,
     },
-    /// Delete a parsing rule group.
+    /// Delete a parsing rule group [requires --yes].
     Delete {
         /// Parsing rule group ID.
         id: String,
     },
-    /// Bulk delete parsing rule groups by IDs.
+    /// Bulk delete parsing rule groups by IDs [requires --yes].
     BulkDelete {
         /// Parsing rule group IDs to delete.
         #[arg(long, num_args = 1..)]
@@ -1261,19 +1261,19 @@ enum ParsingRulesCmd {
 enum EnrichmentsCmd {
     /// List all enrichment rules.
     List,
-    /// Add enrichment rules from a JSON file.
+    /// Add enrichment rules from a JSON file [requires --yes].
     Add {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Remove enrichment rules from a JSON file.
+    /// Remove enrichment rules from a JSON file [requires --yes].
     Remove {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Overwrite all enrichment rules from a JSON file.
+    /// Overwrite all enrichment rules from a JSON file [requires --yes].
     Overwrite {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1305,19 +1305,19 @@ enum CustomEnrichmentsCmd {
         /// Custom enrichment table ID.
         id: String,
     },
-    /// Create a custom enrichment table from a JSON file.
+    /// Create a custom enrichment table from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a custom enrichment table from a JSON file.
+    /// Update a custom enrichment table from a JSON file [requires --yes].
     Update {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a custom enrichment table.
+    /// Delete a custom enrichment table [requires --yes].
     Delete {
         /// Custom enrichment table ID.
         id: String,
@@ -1352,13 +1352,13 @@ enum IntegrationsCmd {
         /// Integration ID.
         id: String,
     },
-    /// Create an integration from a JSON file.
+    /// Create an integration from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update an integration from a JSON file.
+    /// Update an integration from a JSON file [requires --yes].
     Update {
         /// Integration ID.
         id: String,
@@ -1366,7 +1366,7 @@ enum IntegrationsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete an integration.
+    /// Delete an integration [requires --yes].
     Delete {
         /// Integration ID.
         id: String,
@@ -1411,19 +1411,19 @@ enum ExtensionsCmd {
     },
     /// List deployed extensions.
     Deployed,
-    /// Deploy an extension from a JSON file.
+    /// Deploy an extension from a JSON file [requires --yes].
     Deploy {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a deployed extension from a JSON file.
+    /// Update a deployed extension from a JSON file [requires --yes].
     Update {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Undeploy an extension from a JSON file.
+    /// Undeploy an extension from a JSON file [requires --yes].
     Undeploy {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1440,13 +1440,13 @@ enum WebhooksCmd {
         /// Webhook ID.
         id: String,
     },
-    /// Create a webhook from a JSON file.
+    /// Create a webhook from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update a webhook from a JSON file.
+    /// Update a webhook from a JSON file [requires --yes].
     Update {
         /// Webhook ID.
         id: String,
@@ -1454,7 +1454,7 @@ enum WebhooksCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a webhook.
+    /// Delete a webhook [requires --yes].
     Delete {
         /// Webhook ID.
         id: String,
@@ -1488,13 +1488,13 @@ enum ContextualDataCmd {
         /// Integration ID.
         id: String,
     },
-    /// Create an integration from a JSON file.
+    /// Create an integration from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Update an integration from a JSON file.
+    /// Update an integration from a JSON file [requires --yes].
     Update {
         /// Integration ID.
         id: String,
@@ -1502,7 +1502,7 @@ enum ContextualDataCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete an integration.
+    /// Delete an integration [requires --yes].
     Delete {
         /// Integration ID.
         id: String,
@@ -1528,13 +1528,13 @@ enum ViewsCmd {
         /// View ID.
         id: String,
     },
-    /// Create a view from a JSON file.
+    /// Create a view from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace a view from a JSON file.
+    /// Replace a view from a JSON file [requires --yes].
     Update {
         /// View ID.
         id: String,
@@ -1542,7 +1542,7 @@ enum ViewsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a view.
+    /// Delete a view [requires --yes].
     Delete {
         /// View ID.
         id: String,
@@ -1563,13 +1563,13 @@ enum ViewFoldersCmd {
         /// Folder ID.
         id: String,
     },
-    /// Create a folder from a JSON file.
+    /// Create a folder from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace a folder from a JSON file.
+    /// Replace a folder from a JSON file [requires --yes].
     Update {
         /// Folder ID.
         id: String,
@@ -1577,7 +1577,7 @@ enum ViewFoldersCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete a folder.
+    /// Delete a folder [requires --yes].
     Delete {
         /// Folder ID.
         id: String,
@@ -1920,30 +1920,30 @@ enum ActionsCmd {
         /// Action ID.
         id: String,
     },
-    /// Create an action from a JSON file.
+    /// Create an action from a JSON file [requires --yes].
     Create {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace an action from a JSON file.
+    /// Replace an action from a JSON file [requires --yes].
     Update {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete an action.
+    /// Delete an action [requires --yes].
     Delete {
         /// Action ID.
         id: String,
     },
-    /// Batch execute actions from a JSON file.
+    /// Batch execute actions from a JSON file [requires --yes].
     Batch {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Reorder actions from a JSON file.
+    /// Reorder actions from a JSON file [requires --yes].
     Reorder {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -2014,7 +2014,7 @@ enum SlosCmd {
         /// SLO ID (UUID).
         id: String,
     },
-    /// Create an SLO from a JSON definition file.
+    /// Create an SLO from a JSON definition file [requires --yes].
     #[command(after_help = "\
 Examples:
   cx slos create --from-file slo.json
@@ -2033,7 +2033,7 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete an SLO.
+    /// Delete an SLO [requires --yes].
     Delete {
         /// SLO ID (UUID).
         id: String,

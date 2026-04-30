@@ -374,7 +374,7 @@ Currently there are no tests for confirmation behavior, read-only mode, or agent
 - **Acceptance:** All CI checks pass. Binary installs successfully.
 - **Dependencies:** 3.5
 
-### 4.2 [ ] Update help text and schema for new safety features
+### 4.2 [x] Update help text and schema for new safety features *(completed 2026-04-30)*
 
 - **Files:** `src/main.rs` (help text), `src/commands/schema/mod.rs` (if needed)
 - **What:**

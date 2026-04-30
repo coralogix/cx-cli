@@ -46,6 +46,23 @@ pub fn get_top_level_subcommand_name(matches: &clap::ArgMatches) -> Option<Strin
     matches.subcommand().map(|(name, _)| name.to_string())
 }
 
+pub fn env_is_truthy(var: &str) -> bool {
+    matches!(
+        std::env::var(var).as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+pub fn enforce_read_only(verb: &str) -> Result<()> {
+    if is_write_verb(verb) {
+        bail!(
+            "Write operation '{verb}' is blocked in read-only mode \
+             (--read-only flag or CX_READ_ONLY env var)."
+        );
+    }
+    Ok(())
+}
+
 pub fn confirm_destructive(action: &str, yes: bool) -> Result<()> {
     if yes {
         return Ok(());

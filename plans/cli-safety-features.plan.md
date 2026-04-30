@@ -128,7 +128,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 | `--read-only` | bool | false | Block all write operations |
 | `CX_READ_ONLY` | env var | unset | Same as `--read-only` when set to `1`/`true` |
 
-### 2.1 [ ] Add `--read-only` flag and enforcement
+### 2.1 [x] Add `--read-only` flag and enforcement *(completed 2026-04-30)*
 
 - **Files:** `src/main.rs`, `src/safety.rs`
 - **What:**

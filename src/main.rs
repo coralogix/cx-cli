@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
 use clap_complete::env::CompleteEnv;
@@ -12,6 +12,7 @@ use config::OutputFormat;
 use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
+use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
 use coralogix_cli::execution::build_targets;
 use coralogix_cli::Tier;
@@ -110,6 +111,10 @@ struct Cli {
     /// Skip confirmation prompts for destructive operations.
     #[arg(long, global = true)]
     yes: bool,
+
+    /// Block all write operations. Useful for safe agent/automation access.
+    #[arg(long, global = true)]
+    read_only: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -2058,7 +2063,19 @@ async fn main() -> Result<()> {
         };
     }
 
-    let cli = Cli::parse();
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
+
+    let read_only = cli.read_only || safety::env_is_truthy("CX_READ_ONLY");
+    if read_only {
+        let top = safety::get_top_level_subcommand_name(&matches);
+        let is_local = matches!(top.as_deref(), Some("profiles") | Some("cleanup") | Some("completions"));
+        if !is_local {
+            if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
+                safety::enforce_read_only(&leaf)?;
+            }
+        }
+    }
 
     // Profiles command is handled above; this branch is unreachable but needed for exhaustiveness.
     if let Commands::Profiles { cmd: _ } = cli.command {

@@ -169,4 +169,33 @@ mod tests {
         assert!(enforce_read_only("get").is_ok());
         assert!(enforce_read_only("query").is_ok());
     }
+
+    #[test]
+    fn test_confirm_destructive_fails_in_agent_mode_without_yes() {
+        let err = confirm_destructive("test action?", false, true).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("requires user confirmation"), "got: {msg}");
+        assert!(msg.contains("--yes"), "should mention --yes, got: {msg}");
+    }
+
+    #[test]
+    fn test_confirm_destructive_succeeds_with_yes_in_agent_mode() {
+        assert!(confirm_destructive("test action?", true, true).is_ok());
+    }
+
+    #[test]
+    fn test_confirm_destructive_succeeds_with_yes_no_agent() {
+        assert!(confirm_destructive("test action?", true, false).is_ok());
+    }
+
+    #[test]
+    fn test_agent_env_vars_sorted() {
+        let mut sorted = AGENT_ENV_VARS.to_vec();
+        sorted.sort();
+        assert_eq!(
+            AGENT_ENV_VARS,
+            &sorted[..],
+            "AGENT_ENV_VARS must be sorted alphabetically"
+        );
+    }
 }

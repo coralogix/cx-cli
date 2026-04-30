@@ -277,7 +277,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 - **Acceptance:** Every write command across the CLI is now gated by `confirm_destructive`. No silent auto-approval path exists. `cargo build` succeeds. `cargo test` passes.
 - **Dependencies:** 3.1
 
-### 3.3 [ ] Add unit tests for agent mode
+### 3.3 [x] Add unit tests for agent mode *(completed 2026-04-30)*
 
 - **Files:** `src/safety.rs` (test module)
 - **What:** Add tests:
@@ -291,7 +291,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 - **Acceptance:** `cargo test safety` passes.
 - **Dependencies:** 3.1
 
-### 3.4 [ ] Add integration tests for agent mode and auto-approve logging
+### 3.4 [x] Add integration tests for agent mode and auto-approve logging *(completed 2026-04-30)*
 
 - **Files:** `tests/agent_mode/main.rs` (new)
 - **What:** Create integration tests using `assert_cmd`:

@@ -121,4 +121,20 @@ mod tests {
             assert!(!is_write_verb(verb), "{verb} should NOT be detected as a write verb");
         }
     }
+
+    #[test]
+    fn test_enforce_read_only_blocks_write_verb() {
+        let err = enforce_read_only("delete").unwrap_err();
+        assert!(
+            err.to_string().contains("read-only mode"),
+            "expected read-only error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_enforce_read_only_allows_read_verb() {
+        assert!(enforce_read_only("list").is_ok());
+        assert!(enforce_read_only("get").is_ok());
+        assert!(enforce_read_only("query").is_ok());
+    }
 }

@@ -159,7 +159,7 @@ Note: `test` (notifications/webhooks) is read-only because it sends a test notif
 - **Acceptance:** `cargo build` succeeds. `cx --read-only --help` shows the flag. `cx --read-only iam api-keys list` (or any read command) works. `cx --read-only iam api-keys delete abc` fails with read-only error. `CX_READ_ONLY=1 cx iam api-keys delete abc` fails.
 - **Dependencies:** 1.1
 
-### 2.2 [ ] Add unit and integration tests for read-only mode
+### 2.2 [x] Add unit and integration tests for read-only mode *(completed 2026-04-30)*
 
 - **Files:** `src/safety.rs` (unit tests), `tests/read_only/main.rs` (new integration test)
 - **What:**

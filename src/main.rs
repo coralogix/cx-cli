@@ -12,7 +12,7 @@ use config::OutputFormat;
 use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
-use coralogix_cli::confirm::confirm_destructive;
+use coralogix_cli::safety::confirm_destructive;
 use coralogix_cli::execution::build_targets;
 use coralogix_cli::Tier;
 

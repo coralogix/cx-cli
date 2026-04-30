@@ -1,7 +1,7 @@
 pub mod api_client;
 pub mod commands;
 pub mod config;
-pub mod confirm;
+pub mod safety;
 pub mod error;
 pub mod execution;
 pub mod keyring_store;

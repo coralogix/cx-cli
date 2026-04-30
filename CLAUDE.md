@@ -90,7 +90,7 @@ Local:
 - `integrations` = extensions + contextual-data
 - `iam` = api-keys + roles + scopes + users + team-groups + saml + ip-access
 
-**Risky commands:** `iam` and `archive` are marked `(risky)` in help output. All write operations (create, update, delete, enable, disable, set, set-idp, set-active, set-status) under these commands require interactive confirmation. Pass `--yes` to skip the prompt (e.g., in scripts or CI). Non-interactive terminals without `--yes` get a clear error. The confirmation logic lives in `src/confirm.rs`.
+**Risky commands:** `iam` and `archive` are marked `(risky)` in help output. All write operations (create, update, delete, enable, disable, set, set-idp, set-active, set-status) under these commands require interactive confirmation. Pass `--yes` to skip the prompt (e.g., in scripts or CI). Non-interactive terminals without `--yes` get a clear error. The confirmation logic lives in `src/safety.rs`.
 
 ## Architecture
 
@@ -112,7 +112,7 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 
 ### Key Modules
 
-- **`src/confirm.rs`** - `confirm_destructive()`: interactive confirmation for risky write operations (used by `iam` and `archive` commands)
+- **`src/safety.rs`** - `confirm_destructive()`: interactive confirmation for risky write operations; `is_write_verb()`: centralized write command detection; `get_leaf_subcommand_name()` / `get_top_level_subcommand_name()`: ArgMatches tree walking
 - **`src/api_client.rs`** - `CxClient`: HTTP wrapper with Bearer auth, methods for REST (post/get) and NDJSON streaming
 - **`src/commands/dataprime/api.rs`** - DataPrime query API (logs & traces via NDJSON)
 - **`src/commands/dataprime/semantic_search.rs`** - Semantic Search HTTP API (fields + metrics)

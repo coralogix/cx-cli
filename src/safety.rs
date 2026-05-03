@@ -47,10 +47,10 @@ pub fn get_top_level_subcommand_name(matches: &clap::ArgMatches) -> Option<Strin
 }
 
 pub fn env_is_truthy(var: &str) -> bool {
-    matches!(
-        std::env::var(var).as_deref(),
-        Ok("1") | Ok("true") | Ok("yes")
-    )
+    std::env::var(var)
+        .ok()
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
 }
 
 pub fn enforce_read_only(verb: &str) -> Result<()> {

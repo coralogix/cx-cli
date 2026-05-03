@@ -1152,7 +1152,7 @@ enum QuotaRulesCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Delete quota rules.
+    /// Delete quota rules [requires --yes].
     Delete,
 }
 
@@ -2024,7 +2024,7 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Replace an SLO definition from a JSON file.
+    /// Replace an SLO definition from a JSON file [requires --yes].
     #[command(after_help = "\
 Examples:
   cx slos update --from-file slo.json")]
@@ -2052,6 +2052,7 @@ async fn main() -> Result<()> {
         .expect("Failed to install rustls crypto provider");
 
     // Check if this is a profiles command - use separate parser without global API flags.
+    // Only works when `profiles` is the first arg (no global flags before it).
     if std::env::args().nth(1).as_deref() == Some("profiles") {
         let profiles_cli = ProfilesCli::parse();
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
@@ -2062,6 +2063,8 @@ async fn main() -> Result<()> {
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
     }
+    // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
+    // the early check above misses it. The main Cli parser handles it below.
 
     let matches = Cli::command().get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
@@ -2080,9 +2083,16 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Profiles command is handled above; this branch is unreachable but needed for exhaustiveness.
-    if let Commands::Profiles { cmd: _ } = cli.command {
-        unreachable!("profiles command handled above");
+    // Profiles command is usually handled by the early ProfilesCli parser above,
+    // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
+    // it falls through to here.
+    if let Commands::Profiles { cmd } = cli.command {
+        return match cmd {
+            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::Add { name } => commands::profiles::run_add(name).await,
+            ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
+            ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+        };
     }
 
     // Cleanup command doesn't need API credentials.

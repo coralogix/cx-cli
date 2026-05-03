@@ -86,7 +86,7 @@ cx parsing-rules create --from-file rule-template.json
 Use the `cx-query-logs` skill to query recent logs and confirm fields are extracted:
 
 ```bash
-cx logs --query 'source logs | filter $d.subsystem == "my-service" | limit 10' -o json
+cx logs 'source logs | filter $d.subsystem == "my-service" | limit 10' -o json
 ```
 
 ### 5. Check Usage Limits
@@ -131,7 +131,7 @@ cx enrichments custom search --id <table-id> --query "search term"
 Query logs on hot storage (FrequentSearch tier) to confirm enriched fields appear. Avoid querying archive for verification - ingestion delays can cause false negatives.
 
 ```bash
-cx logs --query 'source logs | filter $d.enriched_field != null | limit 5' -o json
+cx logs 'source logs | filter $d.enriched_field != null | limit 5' -o json
 ```
 
 ---
@@ -198,7 +198,7 @@ cx recording-rules create --from-file recording-rule-group.json
 Use the `cx-metrics-query` skill to confirm the precomputed metric is available:
 
 ```bash
-cx metrics query --promql "new_precomputed_metric" --time now
+cx metrics query "new_precomputed_metric" --time now
 ```
 
 ---

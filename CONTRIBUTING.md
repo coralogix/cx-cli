@@ -14,13 +14,21 @@ Every command domain has a designated owning team. The owning team is responsibl
 
 | Domain | Scope | Owner |
 |--------|-------|-------|
-| Core infrastructure | `src/execution.rs`, `src/config.rs`, `src/spill.rs`, `src/main.rs`, `src/error.rs`, `src/api/client.rs` | `@coralogix/team-cxai` |
-| Logs | `src/commands/logs.rs`, `skills/query-logs/` | Domain team |
-| Metrics | `src/commands/metrics.rs`, `src/commands/metrics/`, `skills/metrics-query/` | Domain team |
-| Traces | `src/commands/spans.rs`, `skills/query-spans/` | Domain team |
-| Alerts | `src/commands/alerts.rs`, `src/api/alerts.rs`, `skills/cx-alerts/` | Domain team |
-| Dashboards | `src/commands/dashboards.rs`, `src/api/dashboards.rs` | Domain team |
-| Search fields | `src/commands/search_fields.rs`, `src/api/semantic_search.rs` | Domain team |
+| Core infrastructure | `src/main.rs`, `src/execution.rs`, `src/config.rs`, `src/safety.rs`, `src/api_client.rs`, `src/spill.rs`, `src/error.rs` | `@coralogix/team-cxai` |
+| Logs | `src/commands/logs/`, `skills/cx-query-logs/` | Domain team |
+| Metrics | `src/commands/metrics/`, `skills/cx-metrics-query/` | Domain team |
+| Traces | `src/commands/spans/`, `skills/cx-query-spans/` | Domain team |
+| Alerts | `src/commands/alerts/`, `skills/cx-alerts/` | Domain team |
+| Dashboards | `src/commands/dashboards/`, `skills/cx-create-dashboard/` | Domain team |
+| Search fields | `src/commands/search_fields/`, `src/commands/dataprime/semantic_search.rs` | Domain team |
+| Incidents & SLOs | `src/commands/incidents/`, `src/commands/slos/`, `skills/cx-incident-management/` | Domain team |
+| Notifications | `src/commands/connectors/`, `src/commands/routers/`, `src/commands/presets/`, `src/commands/notification_testing/` | Domain team |
+| Webhooks | `src/commands/webhooks/`, `src/commands/actions/` | Domain team |
+| IAM | `src/commands/api_keys/`, `src/commands/roles/`, `src/commands/scopes/`, `src/commands/users/`, `src/commands/team_groups/`, `src/commands/saml/`, `src/commands/ip_access/`, `skills/cx-platform-admin/` | Domain team |
+| Data pipeline | `src/commands/parsing_rules/`, `src/commands/enrichments/`, `src/commands/custom_enrichments/`, `src/commands/e2m/`, `src/commands/recording_rules/`, `skills/cx-data-pipeline/` | Domain team |
+| Cost & storage | `src/commands/data_usage/`, `src/commands/tco_policies/`, `src/commands/retentions/`, `src/commands/quota_rules/`, `src/commands/data_archive/`, `skills/cx-cost-optimization/` | Domain team |
+| Integrations | `src/commands/integrations/`, `src/commands/extensions/`, `src/commands/contextual_data/`, `skills/cx-observability-setup/` | Domain team |
+| Views | `src/commands/views/`, `skills/cx-observability-setup/` | Domain team |
 | Documentation | `docs/*` | `@coralogix/team-cxai` |
 
 > **Note:** `@coralogix/team-cxai` is the core team and has final review authority on all changes. Domain ownership will be formally encoded in `CODEOWNERS` as teams onboard.
@@ -29,8 +37,8 @@ Every command domain has a designated owning team. The owning team is responsibl
 
 | What you're changing | Required reviewers |
 |----------------------|--------------------|
-| Command files (`src/commands/*`, `src/api/*`, `skills/*`) | Domain owning team **+** `@coralogix/team-cxai` |
-| Shared infrastructure (`src/execution.rs`, `src/config.rs`, `src/spill.rs`, `src/main.rs`, `src/error.rs`, `src/api/client.rs`) | `@coralogix/team-cxai` only |
+| Command files (`src/commands/*`, `skills/*`) | Domain owning team **+** `@coralogix/team-cxai` |
+| Shared infrastructure (`src/main.rs`, `src/execution.rs`, `src/config.rs`, `src/safety.rs`, `src/api_client.rs`, `src/spill.rs`, `src/error.rs`) | `@coralogix/team-cxai` only |
 | Documentation (`docs/*`, `CONTRIBUTING.md`, `README.md`) | `@coralogix/team-cxai` |
 | CI / GitHub workflows (`.github/*`) | `@coralogix/team-cxai` |
 

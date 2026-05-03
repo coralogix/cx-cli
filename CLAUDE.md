@@ -24,7 +24,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 26 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 27 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:

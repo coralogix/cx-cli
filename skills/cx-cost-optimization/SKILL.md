@@ -29,7 +29,8 @@ Use this skill when investigating or reducing Coralogix data costs. It covers th
 | `cx quotas` | `get`, `create`, `update`, `delete` | Set ingestion guardrails |
 | `cx archive logs` | `get`, `set` | Configure logs archive target |
 | `cx archive metrics` | `get`, `create`, `update`, `enable`, `disable`, `validate` | Configure metrics archive storage |
-| `cx metrics query` | `--promql`, `--time`, `--start`/`--end` | Query billing and usage metrics via PromQL |
+| `cx metrics query` | `<promql>` (positional), `--time` | Query billing and usage metrics via PromQL (instant) |
+| `cx metrics query-range` | `<promql>` (positional), `--start`/`--end` | Query billing and usage metrics via PromQL (range) |
 
 Key flags:
 - All commands support `-o json` for structured output and `-p <profile>` for profile selection
@@ -224,22 +225,22 @@ The `cx usage` API gives summaries, but for billing-accurate analysis, anomaly d
 
 ```bash
 # Today's billable units consumed so far
-cx metrics query --promql 'sum(cx_data_usage_units)' --time now -o json
+cx metrics query 'sum(cx_data_usage_units)' --time now -o json
 
 # Units breakdown by pillar
-cx metrics query --promql 'sum by (pillar) (cx_data_usage_units)' --time now -o json
+cx metrics query 'sum by (pillar) (cx_data_usage_units)' --time now -o json
 
 # Daily plan quota
-cx metrics query --promql 'cx_data_plan_units_per_day' --time now -o json
+cx metrics query 'cx_data_plan_units_per_day' --time now -o json
 
 # Plan consumption percentage
-cx metrics query --promql '100 * sum(cx_data_usage_units) / cx_data_plan_units_per_day' --time now -o json
+cx metrics query '100 * sum(cx_data_usage_units) / cx_data_plan_units_per_day' --time now -o json
 
 # Units by feature group
-cx metrics query --promql 'sum by (feature_group_id) (cx_data_usage_units)' --time now -o json
+cx metrics query 'sum by (feature_group_id) (cx_data_usage_units)' --time now -o json
 
 # PAYG overage (if any)
-cx metrics query --promql 'cx_data_usage_payg_units' --time now -o json
+cx metrics query 'cx_data_usage_payg_units' --time now -o json
 ```
 
 ### UTC-Day Bucketing Rules

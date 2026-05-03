@@ -43,16 +43,17 @@
 /skills/cx-incident-management/        @coralogix/team-cxai
 
 # === cost & storage (usage, TCO, retentions, quotas, archive) ===
-**/usage/                              @coralogix/team-cxai
-**/tco/                                @coralogix/team-cxai
+**/data_usage/                         @coralogix/team-cxai
+**/tco_policies/                       @coralogix/team-cxai
 **/retentions/                         @coralogix/team-cxai
-**/quotas/                             @coralogix/team-cxai
-**/archive/                            @coralogix/team-cxai
+**/quota_rules/                        @coralogix/team-cxai
+**/data_archive/                       @coralogix/team-cxai
 /skills/cx-cost-optimization/          @coralogix/team-cxai
 
 # === data pipeline (parsing-rules, enrichments, e2m, recording-rules) ===
 **/parsing_rules/                      @coralogix/team-cxai
 **/enrichments/                        @coralogix/team-cxai
+**/custom_enrichments/                 @coralogix/team-cxai
 **/e2m/                                @coralogix/team-cxai
 **/recording_rules/                    @coralogix/team-cxai
 **/suppression_rules/                  @coralogix/team-cxai
@@ -61,12 +62,24 @@
 # === observability setup (views, webhooks, notifications, integrations) ===
 **/views/                              @coralogix/team-cxai
 **/webhooks/                           @coralogix/team-cxai
-**/notifications/                      @coralogix/team-cxai
+**/actions/                            @coralogix/team-cxai
+**/connectors/                         @coralogix/team-cxai
+**/routers/                            @coralogix/team-cxai
+**/presets/                            @coralogix/team-cxai
+**/notification_testing/               @coralogix/team-cxai
 **/integrations/                       @coralogix/team-cxai
+**/extensions/                         @coralogix/team-cxai
+**/contextual_data/                    @coralogix/team-cxai
 /skills/cx-observability-setup/        @coralogix/team-cxai
 
 # === platform & access (IAM) ===
-**/iam/                                @coralogix/team-cxai
+**/api_keys/                           @coralogix/team-cxai
+**/roles/                              @coralogix/team-cxai
+**/scopes/                             @coralogix/team-cxai
+**/users/                              @coralogix/team-cxai
+**/team_groups/                        @coralogix/team-cxai
+**/saml/                               @coralogix/team-cxai
+**/ip_access/                          @coralogix/team-cxai
 /skills/cx-platform-admin/             @coralogix/team-cxai
 
 # === docs ===

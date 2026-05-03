@@ -444,7 +444,7 @@ Place the command in the category that best fits its purpose. See `main.rs` for 
 
 ### Step 7: Guard destructive operations (REST archetype)
 
-If your command has write operations (create, update, delete, enable, disable, etc.), guard them with a confirmation prompt using `confirm_destructive()` from `src/confirm.rs`. This prevents accidental execution in interactive terminals and blocks non-interactive callers unless they pass `--yes`.
+If your command has write operations (create, update, delete, enable, disable, etc.), guard them with a confirmation prompt using `confirm_destructive()` from `src/safety.rs`. This prevents accidental execution in interactive terminals and blocks non-interactive callers unless they pass `--yes`.
 
 1. Tag the subcommand doc comment with `[requires --yes]`:
 
@@ -460,7 +460,7 @@ Delete {
 
 ```rust
 YourDomainCmd::Delete { id } => {
-    confirm_destructive(&format!("Delete item '{id}'?"), yes)?;
+    confirm_destructive(&format!("Delete item '{id}'?"), yes, agent_mode)?;
     commands::your_domain::run_delete(&targets, &id).await?;
 }
 ```
@@ -477,7 +477,7 @@ Some commands group multiple related domains under a single CLI entry point usin
 
 If your new functionality belongs under an existing wrapper, you do not create a new top-level command. Instead:
 
-1. **Create your API and command modules** as usual (`src/api/your_sub.rs`, `src/commands/your_sub.rs`)
+1. **Create your API and command modules** as usual (`src/commands/your_sub/api.rs`, `src/commands/your_sub/mod.rs`)
 2. **Add a variant to the wrapper enum** (e.g., `IamCmd`, `NotificationsCmd`) in `main.rs`:
 
 ```rust
@@ -739,7 +739,7 @@ Copy this into your PR description:
 - [ ] `src/main.rs` - `Commands` enum variant added
 - [ ] `src/main.rs` - subcommand enum added (REST) or args defined (DataPrime)
 - [ ] `src/main.rs` - dispatch match arm added
-- [ ] `src/main.rs` - destructive subcommands (create/update/delete) guarded with `confirm_destructive()` and tagged `[requires --yes]` in their doc comment (see `src/confirm.rs`)
+- [ ] `src/main.rs` - destructive subcommands (create/update/delete) guarded with `confirm_destructive()` and tagged `[requires --yes]` in their doc comment (see `src/safety.rs`)
 
 ### Tests
 - [ ] **Unit:** API deserialization tests in `src/commands/your_domain/api.rs` (REST)

@@ -65,7 +65,7 @@ commands::logs::run()
 
 ### Archetype B: REST-based
 
-**Commands:** `alerts`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `quotas`, `archive`, `slos`, `views`, `incidents`, `e2m`, `recording-rules`
+**Commands:** `alerts`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `parsing-rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `quotas`, `archive`, `slos`, `views`, `incidents`, `e2m`, `recording-rules`
 
 These manage their own fan-out, merge, and render inline. Each subcommand function follows the same shape:
 
@@ -131,7 +131,7 @@ enum IamCmd {
 
 This pattern is used by: `notifications` (connectors, routers, presets, test), `webhooks` (list/get/types + actions), `enrichments` (rules + custom), `integrations` (list/get + extensions + contextual-data), and `iam` (api-keys, roles, scopes, users, groups, saml, ip-access).
 
-Each sub-domain still has its own API module (`src/api/<sub_domain>.rs`) and command module (`src/commands/<sub_domain>.rs`). The wrapper only affects CLI wiring and dispatch in `main.rs`.
+Each sub-domain still has its own directory (`src/commands/<sub_domain>/`) with `mod.rs` (handler) and `api.rs` (HTTP client). The wrapper only affects CLI wiring and dispatch in `main.rs`.
 
 ### Help display
 
@@ -139,7 +139,7 @@ The `Cli` struct uses a custom `help_template` with an `after_help` string to di
 
 ## Destructive operation confirmation
 
-Commands marked `(risky)` in `cx --help` (`iam`, `archive`) require interactive confirmation for write operations (create, update, delete, enable, disable, set). The confirmation logic lives in `src/confirm.rs`:
+All write operations (create, update, delete, enable, disable, set) require interactive confirmation. The confirmation logic lives in `src/safety.rs`:
 
 1. If `--yes` is passed, the operation proceeds immediately
 2. If stdin is not a terminal, the operation fails with a message directing the user to pass `--yes`
@@ -147,7 +147,7 @@ Commands marked `(risky)` in `cx --help` (`iam`, `archive`) require interactive 
 
 The `--yes` flag is global on the `Cli` struct and available as `yes` in all match arms. Each destructive subcommand is tagged `[requires --yes]` in its doc comment, which surfaces in `--help` output.
 
-When adding new destructive operations, call `confirm_destructive(message, yes)` before the handler invocation. See [adding-a-command.md](adding-a-command.md) for the full pattern.
+When adding new destructive operations, call `confirm_destructive(action, yes, agent_mode)` before the handler invocation. See [adding-a-command.md](adding-a-command.md) for the full pattern.
 
 ## Output rendering
 
@@ -197,7 +197,7 @@ Two error systems coexist, each serving a different layer:
 
 ### API layer: `CxError`
 
-Defined in `src/error.rs`. A typed enum used throughout `src/api/`:
+Defined in `src/error.rs`. A typed enum used throughout command `api.rs` modules:
 
 | Variant | When | Example |
 |---------|------|---------|
@@ -278,7 +278,7 @@ src/
 ├── main.rs              # CLI definition (Clap) + dispatch + help_template/after_help
 ├── lib.rs               # Module re-exports
 ├── api_client.rs        # CxClient HTTP wrapper (Bearer auth, REST + NDJSON)
-├── confirm.rs           # Destructive operation confirmation (--yes flag handling)
+├── safety.rs            # Read-only enforcement, agent-mode detection, destructive op confirmation
 ├── config.rs            # Config/profile loading, resolution, Region enum
 ├── execution.rs         # ExecutionTarget, fan_out(), tag_rows(), merge_tagged_results()
 ├── render.rs            # Shared rendering helpers (render_table, render_json, bool_display, etc.)
@@ -288,7 +288,7 @@ src/
 ├── tier.rs              # Tier enum (FrequentSearch | Archive)
 ├── oauth.rs             # OAuth 2.0 + OIDC browser login flow
 ├── keyring_store.rs     # OS keyring read/write
-├── api_client.rs        # CxClient HTTP wrapper
+├── serde_helpers.rs     # Shared serde deserializers (string_or_number, etc.)
 └── commands/
     ├── dataprime/       # Shared DataPrime pipeline + docs subcommands
     │   ├── mod.rs       #   handler + docs (list/show)
@@ -306,7 +306,7 @@ src/
     │   ├── mod.rs
     │   └── api.rs       #   Dashboards API
     ├── search_fields/mod.rs  # Semantic field lookup (uses dataprime::semantic_search)
-    ├── schema.rs        # cx schema - JSON command tree for agent discovery
+    ├── schema/mod.rs    # cx schema - JSON command tree for agent discovery
     ├── profiles/mod.rs  # Profile management (no API calls)
     ├── cleanup/mod.rs   # Temp file cleanup (no API calls)
     └── ...              # One module per REST domain (incidents, notifications,

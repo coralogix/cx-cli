@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use coralogix_cli::config::ResolvedConfig;
-use coralogix_cli::execution::ExecutionTarget;
+use cx::config::ResolvedConfig;
+use cx::execution::ExecutionTarget;
 
 /// Build an [`ExecutionTarget`] that sends all HTTP traffic to `base_url`.
 ///

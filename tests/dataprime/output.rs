@@ -1,6 +1,6 @@
 /// Tests that verify Dataprime API responses are correctly parsed into typed
 /// records and formatted output.
-use coralogix_cli::commands::dataprime::api::{
+use cx::commands::dataprime::api::{
     extract_severity, group_spans_into_traces, is_aggregation_query, normalize_aggregate_row,
     normalize_row, parse_log_record, parse_ndjson_response, parse_span_record,
 };

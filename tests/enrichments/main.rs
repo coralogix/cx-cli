@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::enrichments::{run_limit, run_list, run_settings};
-use coralogix_cli::config::OutputFormat;
+use cx::commands::enrichments::{run_limit, run_list, run_settings};
+use cx::config::OutputFormat;
 
 #[tokio::test]
 async fn list_enrichments_from_mock() {

@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::data_usage::run_summary;
-use coralogix_cli::config::OutputFormat;
+use cx::commands::data_usage::run_summary;
+use cx::config::OutputFormat;
 
 #[tokio::test]
 async fn data_usage_summary_from_mock() {

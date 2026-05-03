@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::ip_access::run_get;
-use coralogix_cli::config::OutputFormat;
+use cx::commands::ip_access::run_get;
+use cx::config::OutputFormat;
 
 #[tokio::test]
 async fn get_ip_access_from_mock() {

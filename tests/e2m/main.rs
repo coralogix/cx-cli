@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::e2m::{run_get, run_list};
-use coralogix_cli::config::OutputFormat;
+use cx::commands::e2m::{run_get, run_list};
+use cx::config::OutputFormat;
 
 #[tokio::test]
 async fn list_e2m_returns_items_from_mock() {

@@ -5,9 +5,9 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::dashboards::api::DashboardsApi;
-use coralogix_cli::commands::dashboards::{run_catalog, run_delete, run_folders_delete};
-use coralogix_cli::config::OutputFormat;
+use cx::commands::dashboards::api::DashboardsApi;
+use cx::commands::dashboards::{run_catalog, run_delete, run_folders_delete};
+use cx::config::OutputFormat;
 
 /// Verify that `DashboardsApi::catalog()` correctly deserializes a mocked
 /// response from the dashboard catalog endpoint.

@@ -1,6 +1,6 @@
 /// Tests that verify commands translate to the correct Dataprime API call structure.
-use coralogix_cli::commands::dataprime::api::build_dataprime_body;
-use coralogix_cli::Tier;
+use cx::commands::dataprime::api::build_dataprime_body;
+use cx::Tier;
 
 // ── Request body construction ─────────────────────────────────────────────────
 

@@ -28,3 +28,5 @@
 
 # Claude Code
 .claude/scheduled_tasks.lock
+# Ephemeral worktrees created by Claude Code / Cursor (must never be committed)
+.claude/worktrees/

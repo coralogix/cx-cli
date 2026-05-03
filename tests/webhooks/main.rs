@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::webhooks::{run_list, run_types};
-use coralogix_cli::config::OutputFormat;
+use cx::commands::webhooks::{run_list, run_types};
+use cx::config::OutputFormat;
 
 #[tokio::test]
 async fn list_webhooks_from_mock() {

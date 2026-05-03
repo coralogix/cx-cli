@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::connectors::{run_list, run_types};
-use coralogix_cli::config::OutputFormat;
+use cx::commands::connectors::{run_list, run_types};
+use cx::config::OutputFormat;
 
 #[tokio::test]
 async fn list_connectors_from_mock() {

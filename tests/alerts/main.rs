@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::alerts::{run_disable, run_enable, run_get, run_list};
-use coralogix_cli::config::OutputFormat;
+use cx::commands::alerts::{run_disable, run_enable, run_get, run_list};
+use cx::config::OutputFormat;
 
 #[tokio::test]
 async fn list_alerts_returns_items_from_mock() {

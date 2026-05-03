@@ -24,28 +24,29 @@ Before writing anything, answer these questions:
 Before writing any skill, read existing ones to internalize the project's patterns. Agents that study existing skills first produce consistent, high-quality results rather than inventing new formats.
 
 **Always read:**
-- `docs/adding-a-skill.md` — full guide with directory structure, frontmatter conventions, reference file rules, and a copy-pasteable template
-- `skills/README.md` — the public catalog you'll update in Step 4
+- `docs/adding-a-skill.md` - full guide with directory structure, frontmatter conventions, reference file rules, and a copy-pasteable template
+- `skills/README.md` - the public catalog you'll update in Step 4
 
 **Study at least two existing skills:**
 
 | Skill | Why study it |
 |-------|-------------|
 | `skills/cx-alerts/SKILL.md` | REST-based command with rich examples, JSON payloads, investigation workflow, and reference files |
-| `skills/metrics-query/SKILL.md` | Investigation-oriented, multi-step workflow with retry logic and common patterns |
-| `skills/dataprime/SKILL.md` | Minimal body that delegates to a large reference file — good model for reference-heavy domains |
-| `skills/rum/SKILL.md` | Builds on other skills (references query-logs and dataprime) — good model for cross-skill integration |
-| `skills/telemetry-querying/SKILL.md` | Gateway/routing skill with no CLI commands of its own — delegates to other skills |
+| `skills/cx-metrics-query/SKILL.md` | Investigation-oriented, multi-step workflow with retry logic and common patterns |
+| `skills/cx-dataprime/SKILL.md` | Minimal body that delegates to a large reference file - good model for reference-heavy domains |
+| `skills/cx-rum/SKILL.md` | Builds on other skills (references cx-query-logs and cx-dataprime) - good model for cross-skill integration |
+| `skills/cx-telemetry-querying/SKILL.md` | Gateway/routing skill with no CLI commands of its own - delegates to other skills |
+| `skills/cx-cost-optimization/SKILL.md` | Workflow skill covering 5 commands unified by "reduce costs" intent - good model for multi-command skills |
 
 Pick the two closest to what you're building and read them completely.
 
 ## Step 2: Create Directory and Write SKILL.md
 
-Create `skills/<domain-name>/SKILL.md`. Use the directory structure, frontmatter format, and copy-pasteable template from `docs/adding-a-skill.md` § "Directory Structure" through "Complete Template".
+Create `skills/cx-<domain-name>/SKILL.md`. All skill directories use the `cx-` prefix. Use the directory structure, frontmatter format, and templates from `docs/adding-a-skill.md` § "Directory Structure" through "Complete Template" (single-command) or § "Workflow Skills" (multi-command).
 
 ### Writing effective trigger descriptions
 
-The `description` frontmatter field is the primary trigger mechanism — agents use it to decide when to activate a skill. This is the single most important line in the file. Write at least **10 trigger phrases** covering:
+The `description` frontmatter field is the primary trigger mechanism - agents use it to decide when to activate a skill. This is the single most important line in the file. Write at least **10 trigger phrases** covering:
 - Explicit command names (`"list alerts"`, `"get alert by ID"`)
 - User intents (`"investigate alert failures"`, `"debug noisy alerts"`)
 - Synonyms and variations (`"check"`, `"find"`, `"search"`, `"analyze"`)
@@ -55,15 +56,15 @@ The `description` frontmatter field is the primary trigger mechanism — agents 
 
 Follow this order (see `docs/adding-a-skill.md` § "Complete Template" for a starting point):
 
-1. **Title and intro** — one sentence explaining what the skill covers and which `cx` commands it uses
-2. **CLI Commands table** — `| Command | Purpose | Key flags |` for every subcommand. Include `-o json`/`-o agents` and `-p <profile>` notes.
-3. **Workflow / Investigation steps** — numbered steps an agent should follow. Start with discovery, end with verification.
-4. **Key Principles** — 4-6 bullet points: use `-o json` with `jq`, multi-profile behavior, always verify, etc.
-5. **Additional Resources** — links to `references/` files and related skills
+1. **Title and intro** - one sentence explaining what the skill covers and which `cx` commands it uses
+2. **CLI Commands table** - `| Command | Purpose | Key flags |` for every subcommand. Include `-o json`/`-o agents` and `-p <profile>` notes.
+3. **Workflow / Investigation steps** - numbered steps an agent should follow. Start with discovery, end with verification.
+4. **Key Principles** - 4-6 bullet points: use `-o json` with `jq`, multi-profile behavior, always verify, etc.
+5. **Additional Resources** - links to `references/` files and related skills
 
 ### Style guidelines
 
-- Write for an AI agent — be explicit about what to run and in what order
+- Write for an AI agent - be explicit about what to run and in what order
 - Use code blocks for every CLI invocation
 - Include realistic examples with actual flag values, not placeholders
 - Show `jq` filtering examples when the command supports `-o json`
@@ -75,12 +76,12 @@ Follow `docs/adding-a-skill.md` § "Reference Files" for when and how to create 
 
 ## Step 4: Verify
 
-1. **Frontmatter** — `name` matches directory, `description` has 10+ trigger phrases, `version` is `0.1.0`
-2. **Body completeness** — has CLI Commands table, workflow steps, key principles, and additional resources (if references exist)
-3. **Reference links** — any `references/` paths in SKILL.md point to files that actually exist
-4. **README updated** — `skills/README.md` has the new row
-5. **No bloat** — SKILL.md doesn't duplicate >100 lines of material that belongs in `references/`
-6. **Agent readability** — would an AI agent know exactly what to do after reading this skill? If not, add missing steps or examples
+1. **Frontmatter** - `name` matches directory, `description` has 10+ trigger phrases, `version` is `0.1.0`
+2. **Body completeness** - has CLI Commands table, workflow steps, key principles, and additional resources (if references exist)
+3. **Reference links** - any `references/` paths in SKILL.md point to files that actually exist
+4. **README updated** - `skills/README.md` has the new row
+5. **No bloat** - SKILL.md doesn't duplicate >100 lines of material that belongs in `references/`
+6. **Agent readability** - would an AI agent know exactly what to do after reading this skill? If not, add missing steps or examples
 
 For advanced trigger optimization, use the `/skill-creator` skill to run eval-driven description testing and iterate on your trigger phrases.
 

@@ -1,6 +1,6 @@
 # Adding a Skill
 
-> Step-by-step guide for creating a user-facing skill in `skills/`. Read [adding-a-command.md](adding-a-command.md) first if you're adding a new CLI command — every command needs a skill, and the command guide links here.
+> Step-by-step guide for creating a user-facing skill in `skills/`. Read [adding-a-command.md](adding-a-command.md) first if you're adding a new CLI command - every command must be covered by a skill (either its own or a workflow skill that covers multiple commands), and the command guide links here.
 
 ## Directory structure
 
@@ -9,7 +9,7 @@ Each skill lives in its own directory under `skills/`:
 ```
 skills/
 ├── README.md                      ← public catalog (update when adding a skill)
-├── your-domain/
+├── cx-your-domain/
 │   ├── SKILL.md                   ← required: frontmatter + body
 │   └── references/                ← optional: deep-dive reference files
 │       └── your-reference.md
@@ -17,10 +17,10 @@ skills/
 
 | File | Required | Purpose |
 |------|----------|---------|
-| `SKILL.md` | Yes | Main skill definition — frontmatter metadata + markdown instructions |
+| `SKILL.md` | Yes | Main skill definition - frontmatter metadata + markdown instructions |
 | `references/*.md` | No | Dense reference material (schemas, enum catalogs, syntax guides) |
 
-Directory name must be **kebab-case** and match the frontmatter `name` field (e.g., `cx-alerts/` → `name: cx-alerts`).
+Directory name must be **`cx-` prefixed kebab-case** and match the frontmatter `name` field (e.g., `cx-alerts/` → `name: cx-alerts`). All skills use the `cx-` prefix for consistency.
 
 ---
 
@@ -39,10 +39,10 @@ version: 0.1.0
 | Field | Convention |
 |-------|------------|
 | `name` | kebab-case, matches the directory name |
-| `description` | Trigger phrase list — this is how agents decide when to activate the skill |
+| `description` | Trigger phrase list - this is how agents decide when to activate the skill |
 | `version` | Semver, start at `0.1.0` |
 
-The `description` field is how agents decide when to activate a skill. Follow the pattern used by existing skills — see `skills/cx-alerts/SKILL.md` and `skills/metrics-query/SKILL.md` for examples.
+The `description` field is how agents decide when to activate a skill. Follow the pattern used by existing skills - see `skills/cx-alerts/SKILL.md` and `skills/cx-metrics-query/SKILL.md` for examples.
 
 ---
 
@@ -63,11 +63,15 @@ Use `references/` for dense reference material that would bloat `SKILL.md` but t
 | Skill | Reference file | Content |
 |-------|---------------|---------|
 | `cx-alerts` | `alert-schemas.md` | JSON schemas for all 12 alert types, enum values |
-| `metrics-query` | `promql-guidelines.md` | PromQL value types, counter vs gauge, histogram patterns |
-| `dataprime` | `dataprime-reference.md` | Complete DataPrime language reference |
-| `query-logs` | `advanced-usage.md` | Investigation workflow, field discovery, advanced queries |
-| `query-spans` | `advanced-usage.md` | Span-specific investigation patterns |
-| `rum` | `rum-fields.md` | Complete RUM field catalog by event type |
+| `cx-metrics-query` | `promql-guidelines.md` | PromQL value types, counter vs gauge, histogram patterns |
+| `cx-dataprime` | `dataprime-reference.md` | Complete DataPrime language reference |
+| `cx-query-logs` | `advanced-usage.md` | Investigation workflow, field discovery, advanced queries |
+| `cx-query-spans` | `advanced-usage.md` | Span-specific investigation patterns |
+| `cx-rum` | `rum-fields.md` | Complete RUM field catalog by event type |
+| `cx-create-dashboard` | `query-syntax.md` | Coralogix dashboard query gotchas and cross-references |
+| `cx-create-dashboard` | `widget-templates.md` | Widget JSON templates for all widget types |
+| `cx-create-dashboard` | `verification.md` | Live-verification procedure for dashboard queries |
+| `cx-create-dashboard` | `deploy.md` | Dashboard deployment procedure via `cx dashboards create` |
 
 ### Naming and linking
 
@@ -79,7 +83,7 @@ Use `references/` for dense reference material that would bloat `SKILL.md` but t
 
 ### Reference files
 
-- **`references/your-reference.md`** — One-line description of what it contains
+- **`references/your-reference.md`** - One-line description of what it contains
 ```
 
 ---
@@ -89,7 +93,7 @@ Use `references/` for dense reference material that would bloat `SKILL.md` but t
 Add a row to the "Available Skills" table in `skills/README.md`:
 
 ```markdown
-| `your-domain` | One-line description of what the skill covers |
+| `cx-your-domain` | One-line description of what the skill covers |
 ```
 
 Also add a representative user query to the "Usage" section's example list if it illustrates a new use case.
@@ -106,7 +110,7 @@ For example, if `cx your-domain get <id> -o json` produces large payloads, the s
 
 ## Complete template
 
-Copy this as a starting point for `skills/your-domain/SKILL.md`:
+Copy this as a starting point for a single-command skill (`skills/cx-your-domain/SKILL.md`):
 
 ```markdown
 ---
@@ -124,7 +128,7 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 | Command | Purpose | Key flags |
 |---|---|---|
 | `cx your-domain list` | List all items | `--name <filter>` |
-| `cx your-domain get <id>` | Get a single item by ID | — |
+| `cx your-domain get <id>` | Get a single item by ID | - |
 
 **Output format:** append `-o json` or `-o agents` for machine-readable output.
 
@@ -140,10 +144,67 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 
 - **Use `-o json` with `jq`** for filtering and transformation
 - **Multi-profile queries** add a Profile column automatically
-- **Always verify** — confirm operations with a follow-up list or get
+- **Always verify** - confirm operations with a follow-up list or get
 ```
 
-**Reference implementations:** `skills/cx-alerts/SKILL.md` (REST-based command with rich examples) and `skills/metrics-query/SKILL.md` (investigation-oriented workflow).
+**Reference implementations:** `skills/cx-alerts/SKILL.md` (REST-based command with rich examples) and `skills/cx-metrics-query/SKILL.md` (investigation-oriented workflow).
+
+---
+
+## Workflow skills
+
+Not every skill maps 1:1 to a CLI command. **Workflow skills** cover multiple commands unified by a user intent. For example, `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx quotas`, `cx retentions`, and `cx archive` - all under the "reduce costs" intent.
+
+When adding a new command, check whether an existing workflow skill already covers it. If so, add your command to that skill rather than creating a new one. If the command serves a new intent not covered by any existing skill, create a workflow skill.
+
+### Workflow skill template
+
+```markdown
+---
+name: cx-your-workflow
+description: >
+  Use this skill when the user asks to "intent phrase 1", "intent phrase 2",
+  "intent phrase 3", "domain term 1", "domain term 2",
+  or wants to <broad intent summary>.
+version: 0.1.0
+---
+
+# Your Workflow Skill
+
+Use this skill when <intent description>. It covers <command 1>, <command 2>,
+and <command 3>.
+
+## CLI Commands
+
+| Command | Subcommands | Purpose |
+|---|---|---|
+| `cx command-a` | `list`, `get`, `create` | Step 1 purpose |
+| `cx command-b` | `list`, `get`, `update` | Step 2 purpose |
+
+## Workflow
+
+### Step 1: Description
+\`\`\`bash
+cx command-a list -o json
+\`\`\`
+
+### Step 2: Description
+\`\`\`bash
+cx command-b list -o json
+\`\`\`
+
+## Key Principles
+
+- **Always measure before changing**
+- **Use `-o json` with `jq`** for structured analysis
+- **Verify changes** with follow-up queries
+
+## Related Skills
+
+- **`cx-other-skill`** - description of relationship
+```
+
+**Reference implementations:** `skills/cx-cost-optimization/SKILL.md` (5-command workflow) and `skills/cx-incident-management/SKILL.md` (cross-skill orchestrator).
 
 ---
 
@@ -153,14 +214,17 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 ## Checklist
 
 ### Skill definition
-- [ ] `skills/your-domain/SKILL.md` — valid frontmatter (name, description, version)
+- [ ] `skills/cx-your-domain/SKILL.md` - valid frontmatter (name, description, version)
 - [ ] Frontmatter `description` includes 10+ trigger phrases covering commands, intents, and synonyms
 - [ ] Body includes CLI Commands table, workflow, and key principles
 
 ### Reference files (if applicable)
-- [ ] `skills/your-domain/references/` — deep-dive reference material
+- [ ] `skills/cx-your-domain/references/` - deep-dive reference material
 - [ ] SKILL.md links to reference files in "Additional Resources" section
 
 ### Integration
-- [ ] `skills/README.md` — new skill added to the "Available Skills" table
+- [ ] `skills/README.md` - new skill added to the "Available Skills" table
+
+### Verification
+- [ ] `scripts/verify-skills.sh` - all skills pass (frontmatter, triggers, commands, cross-refs)
 ```

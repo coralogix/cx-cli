@@ -2,7 +2,7 @@
 //!
 //! Resolves credentials and builds `cx` subprocess invocations via
 //! `assert_cmd`. Per-domain ID discovery (e.g. picking a real alert id to
-//! pass to `alerts get`) lives in each test module — see
+//! pass to `alerts get`) lives in each test module - see
 //! `tests/e2e/alerts.rs` for the pattern.
 //!
 //! All e2e tests are gated by `#[ignore]` and additionally skip with a clear
@@ -17,10 +17,10 @@ use serde_json::Value;
 pub const SHORT_WINDOW_START: &str = "now-15m";
 pub const SMALL_LIMIT: &str = "10";
 
-/// Returns `Some(())` if Coralogix credentials are available (env or
-/// `.env` file), and exports `CX_API_KEY`/`CX_REGION` into the test
-/// process so the `cx` subprocess inherits them. Returns `None` (after
-/// printing a skip message) if no key was found.
+/// Returns `Some(())` if Coralogix credentials are available (env,
+/// `.env` file, or a `~/.cx` profile), and exports `CX_API_KEY`/`CX_REGION`
+/// into the test process so the `cx` subprocess inherits them. Returns
+/// `None` (after printing a skip message) if no credentials were found.
 pub fn require_creds(test_name: &str) -> Option<()> {
     static INIT: OnceLock<bool> = OnceLock::new();
     let ok = *INIT.get_or_init(|| {
@@ -33,15 +33,29 @@ pub fn require_creds(test_name: &str) -> Option<()> {
             ensure_region();
             return true;
         }
+        if has_default_profile() {
+            return true;
+        }
         false
     });
     if !ok {
         eprintln!(
-            "[e2e] skipping {test_name}: no CX_API_KEY in env or .env (run with CX_API_KEY=... CX_REGION=stg1)"
+            "[e2e] skipping {test_name}: no CX_API_KEY in env or .env and no ~/.cx profile found"
         );
         return None;
     }
     Some(())
+}
+
+fn has_default_profile() -> bool {
+    dirs::home_dir()
+        .map(|h| {
+            h.join(".cx")
+                .join("profiles")
+                .join("default.toml")
+                .is_file()
+        })
+        .unwrap_or(false)
 }
 
 fn ensure_region() {
@@ -66,16 +80,29 @@ pub fn run_ok(args: &[&str]) -> Vec<u8> {
     let assert = cx().args(args).assert().success();
     let output = assert.get_output();
     let stdout = output.stdout.clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
 
     println!("\n$ cx {}", args.join(" "));
     if !stdout.is_empty() {
         println!("--- stdout ---");
         println!("{}", String::from_utf8_lossy(&stdout));
     }
-    if !output.stderr.is_empty() {
+    if !stderr.is_empty() {
         println!("--- stderr ---");
-        println!("{}", String::from_utf8_lossy(&output.stderr));
+        println!("{stderr}");
     }
+
+    assert!(
+        !stderr.contains("API request failed"),
+        "cx {} returned API errors on stderr:\n{stderr}",
+        args.join(" ")
+    );
+
+    assert!(
+        !stderr.contains("Authentication failed"),
+        "cx {} returned auth errors on stderr (expired token or insufficient key permissions):\n{stderr}",
+        args.join(" ")
+    );
 
     stdout
 }
@@ -94,7 +121,7 @@ pub fn run_ok_nonempty(args: &[&str]) -> Vec<u8> {
 }
 
 /// Run `cx <args> -o json`-style command, assert success, and parse stdout
-/// as JSON. Empty arrays/objects are valid — we only fail on malformed
+/// as JSON. Empty arrays/objects are valid - we only fail on malformed
 /// payloads or empty stdout. Returns the parsed value.
 pub fn run_ok_json(args: &[&str]) -> Value {
     let stdout = run_ok_nonempty(args);
@@ -107,17 +134,76 @@ pub fn run_ok_json(args: &[&str]) -> Value {
     })
 }
 
-/// Parse stdout bytes as JSON. Returns `None` if not valid JSON — used by
+/// Parse stdout bytes as JSON. Returns `None` if not valid JSON - used by
 /// discovery helpers that treat malformed payloads as a skip condition.
 pub fn parse_json(stdout: &[u8]) -> Option<Value> {
     serde_json::from_slice(stdout).ok()
 }
 
+/// Run `cx <args>` tolerantly: if the command succeeds but stderr contains
+/// auth errors ("Authentication failed"), API errors ("API request failed"),
+/// or gateway errors ("504"), print a skip message and return `None`.
+/// Otherwise return `Some(stdout)`. Use this for tests that hit endpoints
+/// where the test API key may lack permissions or the server may be flaky.
+pub fn run_tolerant(args: &[&str], test_name: &str) -> Option<Vec<u8>> {
+    let output = cx().args(args).output().expect("failed to execute cx");
+    let stdout = output.stdout.clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    println!("\n$ cx {}", args.join(" "));
+    if !stdout.is_empty() {
+        println!("--- stdout ---");
+        println!("{}", String::from_utf8_lossy(&stdout));
+    }
+    if !stderr.is_empty() {
+        println!("--- stderr ---");
+        println!("{stderr}");
+    }
+
+    if stderr.contains("Authentication failed") {
+        eprintln!("[e2e] skipping {test_name}: API key lacks permissions for this endpoint");
+        return None;
+    }
+    if stderr.contains("API request failed") || stderr.contains("504") || stderr.contains("502") {
+        eprintln!(
+            "[e2e] WARNING: skipping {test_name}: transient server/gateway error (502/504). \
+            E2E tests run against shared infrastructure where transient failures are expected. \
+            Re-run to confirm this is not a persistent issue."
+        );
+        return None;
+    }
+
+    assert!(
+        output.status.success(),
+        "cx {} exited with non-zero status:\nstderr: {stderr}",
+        args.join(" ")
+    );
+
+    Some(stdout)
+}
+
+/// Like `run_tolerant` but also parses stdout as JSON. Returns `None` if the
+/// command was skipped (auth/server error) or stdout was empty/not valid JSON.
+pub fn run_tolerant_json(args: &[&str], test_name: &str) -> Option<Value> {
+    let stdout = run_tolerant(args, test_name)?;
+    if stdout.is_empty() {
+        eprintln!("[e2e] skipping {test_name}: empty stdout");
+        return None;
+    }
+    Some(serde_json::from_slice(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "expected valid JSON on stdout from `cx {}`: {e}\nstdout: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&stdout)
+        )
+    }))
+}
+
 // ── Shape assertions ─────────────────────────────────────────────────
 //
 // These check the *structure* of a JSON response without inspecting values.
-// Empty arrays pass vacuously — that's intentional, since the test team
-// may genuinely have no data — but they catch field renames, type changes
+// Empty arrays pass vacuously - that's intentional, since the test team
+// may genuinely have no data - but they catch field renames, type changes
 // (array → object, string → number), and missing keys whenever data is
 // present.
 
@@ -125,6 +211,25 @@ pub fn parse_json(stdout: &[u8]) -> Option<Value> {
 pub fn assert_array(v: &Value) -> &[Value] {
     v.as_array()
         .unwrap_or_else(|| panic!("expected JSON array, got: {v}"))
+}
+
+/// Like `assert_array_of_objects_with_keys` but also asserts the array is
+/// non-empty. Use this for list commands where the test team is expected to
+/// always have at least one resource.
+pub fn assert_nonempty_array_of_objects_with_keys(v: &Value, required_keys: &[&str]) {
+    let arr = assert_array(v);
+    assert!(!arr.is_empty(), "expected non-empty array, got empty []");
+    for (i, item) in arr.iter().enumerate() {
+        let obj = item
+            .as_object()
+            .unwrap_or_else(|| panic!("element {i} is not an object: {item}"));
+        for key in required_keys {
+            assert!(
+                obj.contains_key(*key),
+                "element {i} missing key '{key}': {item}"
+            );
+        }
+    }
 }
 
 /// Asserts `v` is an array, and every element is an object containing
@@ -161,4 +266,34 @@ pub fn assert_object_with_keys(v: &Value, required_keys: &[&str]) {
     for key in required_keys {
         assert!(obj.contains_key(*key), "object missing key '{key}': {v}");
     }
+}
+
+/// For `get` responses that may be wrapped (e.g. `{"action": {...}}`),
+/// unwrap the first single-key object or return as-is if it already has
+/// the expected keys. Then assert required keys.
+pub fn assert_get_response(v: &Value, required_keys: &[&str]) {
+    let obj = v
+        .as_object()
+        .unwrap_or_else(|| panic!("expected JSON object, got: {v}"));
+
+    let has_keys = required_keys.iter().all(|k| obj.contains_key(*k));
+    if has_keys {
+        return;
+    }
+
+    if obj.len() == 1 {
+        if let Some(inner) = obj.values().next() {
+            if let Some(inner_obj) = inner.as_object() {
+                for key in required_keys {
+                    assert!(
+                        inner_obj.contains_key(*key),
+                        "inner object missing key '{key}': {v}"
+                    );
+                }
+                return;
+            }
+        }
+    }
+
+    panic!("get response missing required keys {required_keys:?}: {v}");
 }

@@ -38,7 +38,7 @@ const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &["file", "os-store (encrypted)"];
 fn hint_completions_refresh() {
     if has_managed_completions() {
         println!(
-            "Tip: profile list changed — run `cx completions refresh` \
+            "Tip: profile list changed - run `cx completions refresh` \
              to update static completion scripts."
         );
     }
@@ -145,7 +145,7 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
         .with_help_message(
             "OAuth opens your browser for secure login. \
              API key lets you paste credentials directly \
-             (must be a Team Key or Personal Key — not a Send-Your-Data key).",
+             (must be a Team Key or Personal Key - not a Send-Your-Data key).",
         )
         .prompt()?;
 

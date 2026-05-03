@@ -25,3 +25,6 @@
 # Rust-specific
 **/*.rs.bk
 *.pdb
+
+# Claude Code
+.claude/scheduled_tasks.lock

@@ -16,7 +16,7 @@ cx metrics query 'up' -p us-prod -p eu-prod
 1. Each profile is resolved into an independent execution target with its own API client.
 2. The command runs concurrently against all targets.
 3. Results are merged into a single output, with each row tagged with a `"profile"` key identifying its source.
-4. Errors from individual profiles are printed to stderr but do not fail the entire operation — successful results are still returned. The command exits 0 if at least one profile succeeds.
+4. Errors from individual profiles are printed to stderr but do not fail the entire operation - successful results are still returned. The command exits 0 if at least one profile succeeds.
 
 ## Result tagging
 
@@ -29,7 +29,7 @@ When multiple profiles are used, each result row includes an additional `"profil
 
 When a single profile is used, no `"profile"` field is added.
 
-Text output adds a `Profile` column to tables for REST commands (alerts, dashboards, metrics, search-fields). DataPrime commands (`logs`, `spans`, `dataprime query`) prefix each rendered row with `[<profile>]`.
+Text output adds a `Profile` column to tables for REST commands (alerts, dashboards, metrics, rules, iam, notifications, etc.). DataPrime commands (`logs`, `spans`, `dataprime query`) prefix each rendered row with `[<profile>]`.
 
 ## Restrictions
 

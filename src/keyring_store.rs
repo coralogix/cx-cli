@@ -51,7 +51,7 @@ pub fn get_secret(profile: &str, key_name: &str) -> Result<Option<String>> {
     Ok(load_map(profile)?.and_then(|m| m.get(key_name).cloned()))
 }
 
-/// Delete a secret from the system keyring. Best-effort — does not fail if missing.
+/// Delete a secret from the system keyring. Best-effort - does not fail if missing.
 pub fn delete_secret(profile: &str, key_name: &str) {
     let Ok(Some(mut map)) = load_map(profile) else {
         return;

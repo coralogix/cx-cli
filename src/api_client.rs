@@ -59,6 +59,46 @@ impl CxClient {
         Ok(serde_json::from_str(&text)?)
     }
 
+    /// PUT JSON body, deserialize response into T.
+    pub async fn put<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self.inner.put(&url).json(body).send().await?;
+        let text = self.checked_text(resp).await?;
+        Ok(serde_json::from_str(&text)?)
+    }
+
+    /// DELETE a resource, deserialize response into T.
+    /// Falls back to deserializing `{}` when the response body is empty.
+    pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self.inner.delete(&url).send().await?;
+        let text = self.checked_text(resp).await?;
+        let json = if text.trim().is_empty() { "{}" } else { &text };
+        Ok(serde_json::from_str(json)?)
+    }
+
+    /// DELETE with a JSON body, deserialize response into T.
+    /// Falls back to deserializing `{}` when the response body is empty.
+    pub async fn delete_with_body<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Value,
+    ) -> Result<T> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self.inner.delete(&url).json(body).send().await?;
+        let text = self.checked_text(resp).await?;
+        let json = if text.trim().is_empty() { "{}" } else { &text };
+        Ok(serde_json::from_str(json)?)
+    }
+
+    /// PATCH JSON body, deserialize response into T.
+    pub async fn patch<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self.inner.patch(&url).json(body).send().await?;
+        let text = self.checked_text(resp).await?;
+        Ok(serde_json::from_str(&text)?)
+    }
+
     /// POST with query params but no body, deserialize response into T.
     /// Falls back to deserializing `{}` when the response body is empty
     /// (common for state-change endpoints that return 200/204 with no content).

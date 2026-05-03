@@ -7,12 +7,11 @@ use toon_format::encode_default as toon_encode;
 
 pub mod api;
 
-use api::{AlertDef, AlertsApi};
-
 use crate::config::OutputFormat;
 use crate::error::CxError;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
+use api::{AlertDef, AlertEvent, AlertsApi};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -139,7 +138,7 @@ pub async fn run_get(
     })
     .await;
 
-    // Merge — collect raw API responses
+    // Merge - collect raw API responses
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -334,6 +333,162 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
                 format!("Alert {alert_id} disabled in profile '{profile}'.").green()
             ),
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn run_events(
+    targets: &[Arc<ExecutionTarget>],
+    alert_id: Option<&str>,
+    start: Option<&str>,
+    end: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", "Fetching alert events...".dimmed());
+
+    let include_profile = targets.len() > 1;
+    let alert_id_owned = alert_id.map(|s| s.to_string());
+    let start_owned = start.map(|s| s.to_string());
+    let end_owned = end.map(|s| s.to_string());
+
+    let per_profile = fan_out(targets, |t| {
+        let alert_id = alert_id_owned.clone();
+        let start = start_owned.clone();
+        let end = end_owned.clone();
+        async move {
+            let api = AlertsApi::new(&t.client);
+            let mut params: Vec<(&str, String)> = Vec::new();
+            if let Some(ref id) = alert_id {
+                params.push(("alert_id", id.clone()));
+            }
+            if let Some(ref s) = start {
+                params.push(("start", s.clone()));
+            }
+            if let Some(ref e) = end {
+                params.push(("end", e.clone()));
+            }
+            let params_ref: Vec<(&str, &str)> =
+                params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            Ok(api.list_events(&params_ref).await?)
+        }
+    })
+    .await;
+
+    let mut all_json: Vec<Value> = Vec::new();
+    let mut all_items: Vec<(String, AlertEvent)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for event in resp.alert_events {
+                    let mut v = json!({
+                        "id": event.id,
+                        "alert_def_id": event.alert_def_id,
+                        "alert_name": event.alert_name,
+                        "severity": event.display_severity(),
+                        "status": event.display_status(),
+                        "triggered_at": event.triggered_at,
+                        "resolved_at": event.resolved_at,
+                    });
+                    if include_profile {
+                        if let Value::Object(ref mut m) = v {
+                            m.insert("profile".to_string(), Value::String(profile.clone()));
+                        }
+                    }
+                    all_json.push(v);
+                    all_items.push((profile.clone(), event));
+                }
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Agents => {
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_items.is_empty() {
+                render::print_no_results("No alert events found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, evt)| {
+                    vec![
+                        profile.clone(),
+                        evt.id.clone().unwrap_or_default(),
+                        evt.alert_name.clone().unwrap_or_default(),
+                        evt.display_severity(),
+                        evt.display_status(),
+                        evt.triggered_at.clone().unwrap_or_default(),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &[
+                    "Event ID",
+                    "Alert Name",
+                    "Severity",
+                    "Status",
+                    "Triggered At",
+                ],
+                rows,
+                include_profile,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
+    eprintln!("{}", "Fetching alert event statistics...".dimmed());
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| async move {
+        let api = AlertsApi::new(&t.client);
+        Ok(api.event_stats().await?)
+    })
+    .await;
+
+    let mut all_json: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for mut stat in resp.stats {
+                    if include_profile {
+                        if let Value::Object(ref mut m) = stat {
+                            m.insert("profile".to_string(), Value::String(profile.clone()));
+                        }
+                    }
+                    all_json.push(stat);
+                }
+            }
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Agents => {
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_json.is_empty() {
+                render::print_no_results("No alert event statistics found.");
+                return Ok(());
+            }
+            for val in &all_json {
+                println!("{}", serde_json::to_string_pretty(val)?);
+            }
         }
     }
 

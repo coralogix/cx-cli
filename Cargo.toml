@@ -2,7 +2,7 @@
 name = "coralogix-cli"
 version = "0.1.1"
 edition = "2021"
-description = "Coralogix CLI — query observability data from the command line"
+description = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 repository = "https://github.com/coralogix/cx-cli"
 license = "Apache-2.0"
 default-run = "cx"
@@ -58,7 +58,7 @@ humantime = "2"
 # URL building
 url = "2"
 
-# TOON format — agent-optimised, token-efficient serialisation
+# TOON format - agent-optimised, token-efficient serialisation
 toon-format = { version = "0.4.5", default-features = false }
 
 futures = "0.3.32"
@@ -73,7 +73,7 @@ keyring = { version = "3", features = ["apple-native"] }
 keyring = { version = "3", features = ["windows-native"] }
 
 # Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)
-# NOTE: musl builds have no keyring backend — users must use file-based credential storage
+# NOTE: musl builds have no keyring backend - users must use file-based credential storage
 [target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service"] }
 

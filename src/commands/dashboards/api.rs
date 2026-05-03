@@ -85,7 +85,7 @@ impl<'a> DashboardsApi<'a> {
             .await
     }
 
-    /// Get a single dashboard by ID (returns raw JSON — the schema is large).
+    /// Get a single dashboard by ID (returns raw JSON - the schema is large).
     pub async fn get(&self, id: &str) -> Result<Value> {
         self.client
             .get(&format!("{DASHBOARDS_BASE}/{id}"), &[])

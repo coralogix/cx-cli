@@ -4,12 +4,14 @@ use serde_json::Value;
 use crate::error::Result;
 
 use crate::api_client::CxClient;
+use crate::serde_helpers::string_or_number;
 
 // --- Response types ---
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertDef {
+    #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
@@ -133,6 +135,59 @@ pub struct CreateAlertResponse {
 #[derive(Debug, Deserialize)]
 pub struct SetActiveResponse {}
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertEvent {
+    #[serde(default, deserialize_with = "string_or_number")]
+    pub id: Option<String>,
+    #[serde(default, deserialize_with = "string_or_number")]
+    pub alert_def_id: Option<String>,
+    pub alert_name: Option<String>,
+    pub severity: Option<String>,
+    pub status: Option<String>,
+    pub triggered_at: Option<String>,
+    pub resolved_at: Option<String>,
+}
+
+impl AlertEvent {
+    pub fn display_severity(&self) -> String {
+        self.severity
+            .as_deref()
+            .map(|s| {
+                s.strip_prefix("ALERT_EVENT_SEVERITY_")
+                    .or_else(|| s.strip_prefix("ALERT_DEF_PRIORITY_"))
+                    .unwrap_or(s)
+                    .to_string()
+            })
+            .unwrap_or_else(|| "-".to_string())
+    }
+
+    pub fn display_status(&self) -> String {
+        self.status
+            .as_deref()
+            .map(|s| {
+                s.strip_prefix("ALERT_EVENT_STATUS_")
+                    .unwrap_or(s)
+                    .to_string()
+            })
+            .unwrap_or_else(|| "-".to_string())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListAlertEventsResponse {
+    #[serde(default)]
+    pub alert_events: Vec<AlertEvent>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetAlertEventStatsResponse {
+    #[serde(default)]
+    pub stats: Vec<serde_json::Value>,
+}
+
 // --- API ---
 
 const ALERTS_BASE: &str = "/mgmt/openapi/latest/alerts/alerts-general/v3";
@@ -151,7 +206,7 @@ impl<'a> AlertsApi<'a> {
         self.client.get(ALERTS_BASE, &[]).await
     }
 
-    /// Get a single alert definition by alert def ID (returns raw JSON — preserves the full API response).
+    /// Get a single alert definition by alert def ID (returns raw JSON - preserves the full API response).
     pub async fn get(&self, id: &str) -> Result<Value> {
         let path = format!("{ALERTS_BASE}/{id}");
         self.client.get(&path, &[]).await
@@ -173,6 +228,19 @@ impl<'a> AlertsApi<'a> {
         let path = format!("{ALERTS_BASE}/{id}:setActive");
         let val = if active { "true" } else { "false" };
         self.client.post_empty(&path, &[("active", val)]).await
+    }
+
+    /// List alert events.
+    pub async fn list_events(&self, params: &[(&str, &str)]) -> Result<ListAlertEventsResponse> {
+        let path = format!("{ALERTS_BASE}/all/events");
+        self.client.get(&path, params).await
+    }
+
+    /// Get alert event statistics.
+    pub async fn event_stats(&self) -> Result<GetAlertEventStatsResponse> {
+        self.client
+            .get("/mgmt/openapi/5/v3/alert-event-stats", &[])
+            .await
     }
 }
 

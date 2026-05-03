@@ -6,7 +6,7 @@ Complete JSON schema reference for all Coralogix alert types, using the **actual
 
 ## Common Structure
 
-Every alert definition has this top-level shape. The alert type config (e.g. `logsThreshold`) is a **sibling** of `type`, `name`, `priority`, etc. — NOT nested inside `type`.
+Every alert definition has this top-level shape. The alert type config (e.g. `logsThreshold`) is a **sibling** of `type`, `name`, `priority`, etc. - NOT nested inside `type`.
 
 ```json
 {

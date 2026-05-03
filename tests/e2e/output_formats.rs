@@ -1,6 +1,6 @@
 //! Smoke tests that exercise the three output formats on one representative
-//! read-only command. We don't sweep every command across every format — that
-//! would 3x the suite — but we want a tripwire that catches a broken
+//! read-only command. We don't sweep every command across every format - that
+//! would 3x the suite - but we want a tripwire that catches a broken
 //! rendering path in any of the three modes.
 
 use crate::harness;

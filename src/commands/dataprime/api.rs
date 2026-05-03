@@ -37,7 +37,7 @@ pub struct Trace {
 }
 
 /// Generic query response used by `cx dataprime query` and the shared
-/// execute/merge/render pipeline.  Source-agnostic — no log- or span-specific
+/// execute/merge/render pipeline.  Source-agnostic - no log- or span-specific
 /// fields.
 pub struct QueryGenericResponse {
     pub raw_results: Vec<Value>,

@@ -211,7 +211,7 @@ mod tests {
         let results: Vec<Value> = (0..50)
             .map(|i| json!({"index": i, "data": "payload"}))
             .collect();
-        // None means no limit — always direct regardless of size.
+        // None means no limit - always direct regardless of size.
         let outcome = maybe_spill(&results, None, "/tmp/").unwrap();
         match outcome {
             SpillOutcome::Direct(_) => {}

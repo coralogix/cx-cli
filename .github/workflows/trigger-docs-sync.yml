@@ -9,10 +9,10 @@ on:
       - master
     paths:
       - 'README.md'
-      - 'docs/configuration.md'
-      - 'docs/multi-profile.md'
-      - 'docs/time-syntax.md'
-      - 'docs/agents-output.md'
+      - 'docs/*.md'
+      - '!docs/architecture.md'
+      - '!docs/development.md'
+      - '!docs/adding-a-*.md'
 
 jobs:
   trigger_action:

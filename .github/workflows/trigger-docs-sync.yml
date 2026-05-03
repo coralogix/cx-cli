@@ -1,5 +1,7 @@
 name: Trigger Documentation Sync
 
+permissions: {}
+
 on:
   workflow_dispatch:
   push:

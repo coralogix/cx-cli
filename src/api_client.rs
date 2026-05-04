@@ -117,9 +117,14 @@ impl CxClient {
     /// Validate the HTTP status of a response and read the body as text.
     async fn checked_text(&self, resp: reqwest::Response) -> Result<String> {
         let status = resp.status();
-        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        if status == StatusCode::UNAUTHORIZED {
             return Err(CxError::Auth(
                 "Invalid or expired API key. Run `cx profiles add` to update credentials.".into(),
+            ));
+        }
+        if status == StatusCode::FORBIDDEN {
+            return Err(CxError::Auth(
+                "Permission denied: your API key does not have the required scope for this operation.".into(),
             ));
         }
         if !status.is_success() {

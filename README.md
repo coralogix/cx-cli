@@ -38,12 +38,6 @@ Pin a specific version:
 CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
-### Homebrew
-
-```bash
-brew install coralogix/tap/cx
-```
-
 ### Cargo
 
 ```bash
@@ -59,6 +53,44 @@ Download the latest release for your platform from [GitHub Releases](https://git
 ```bash
 cargo build --release
 cp target/release/cx /usr/local/bin/
+```
+
+### Nix
+
+```bash
+nix run    github:coralogix/cx-cli -- --help     # try without installing
+nix profile install github:coralogix/cx-cli      # install into your profile
+```
+
+Consume from another flake — both the `cx` binary and the agent skill bundle are exposed as outputs:
+
+```nix
+{
+  inputs.cx-cli.url = "github:coralogix/cx-cli";
+
+  outputs = { self, nixpkgs, cx-cli, ... }: {
+    # cx-cli.packages.${system}.default -> the `cx` binary
+    # cx-cli.packages.${system}.skills  -> store path with all cx-* skills
+  };
+}
+```
+
+#### Home Manager
+
+Symlink each skill into `~/.claude/skills/` (adjust the target path for other agents):
+
+```nix
+# home.nix
+{ inputs, pkgs, lib, ... }:
+let
+  skills = inputs.cx-cli.packages.${pkgs.system}.skills;
+in {
+  home.packages = [ inputs.cx-cli.packages.${pkgs.system}.default ];
+
+  home.file = lib.mapAttrs'
+    (name: _: lib.nameValuePair ".claude/skills/${name}" { source = "${skills}/${name}"; })
+    (lib.filterAttrs (_: t: t == "directory") (builtins.readDir skills));
+}
 ```
 
 ## Quick start

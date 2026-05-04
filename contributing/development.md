@@ -31,7 +31,7 @@ Set credentials one of two ways:
 ```bash
 # Option A - environment
 export CX_API_KEY=cxtp_...
-export CX_REGION=stg1
+export CX_REGION=eu2
 
 # Option B - .env file in the repo root (gitignored)
 cp .env.example .env

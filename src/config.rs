@@ -72,7 +72,6 @@ pub enum Region {
     Ap1,
     Ap2,
     Ap3,
-    Stg1,
     #[serde(untagged)]
     Custom(String),
 }
@@ -88,7 +87,6 @@ impl Region {
             Region::Ap1 => "https://api.ap1.coralogix.com",
             Region::Ap2 => "https://api.ap2.coralogix.com",
             Region::Ap3 => "https://api.ap3.coralogix.com",
-            Region::Stg1 => "https://api.stg1.coralogix.net",
             Region::Custom(url) => url.as_str(),
         }
     }
@@ -105,7 +103,6 @@ impl std::fmt::Display for Region {
             Region::Ap1 => write!(f, "ap1"),
             Region::Ap2 => write!(f, "ap2"),
             Region::Ap3 => write!(f, "ap3"),
-            Region::Stg1 => write!(f, "stg1"),
             Region::Custom(s) => write!(f, "{s}"),
         }
     }
@@ -124,7 +121,6 @@ impl std::str::FromStr for Region {
             "ap1" => Region::Ap1,
             "ap2" => Region::Ap2,
             "ap3" => Region::Ap3,
-            "stg1" => Region::Stg1,
             other => Region::Custom(other.to_string()),
         })
     }
@@ -707,14 +703,6 @@ default_profile = "my-profile"
     #[test]
     fn region_api_endpoint_us1() {
         assert_eq!(Region::Us1.api_endpoint(), "https://api.us1.coralogix.com");
-    }
-
-    #[test]
-    fn region_api_endpoint_stg1() {
-        assert_eq!(
-            Region::Stg1.api_endpoint(),
-            "https://api.stg1.coralogix.net"
-        );
     }
 
     #[test]

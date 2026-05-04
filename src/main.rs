@@ -37,6 +37,14 @@ pub enum SearchFieldsDataset {
     Spans,
 }
 
+/// Dataset choice for `search-by-value`.
+#[derive(Debug, Clone, ValueEnum)]
+pub enum SearchByValueDataset {
+    Logs,
+    Spans,
+    All,
+}
+
 /// Coralogix CLI - the observability backbone for AI agents and engineering teams.
 #[derive(Parser)]
 #[command(
@@ -52,6 +60,7 @@ Query:
   metrics            Query metrics using PromQL
   dataprime          DataPrime language reference and raw queries
   search-fields      Search log/span fields semantically
+  search-by-value    Search field keys by their value content
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -486,6 +495,29 @@ Examples:
         /// Maximum number of results to return.
         #[arg(long, default_value_t = 5)]
         limit: u32,
+    },
+
+    /// Fuzzy-search log/span field keys by their value content.
+    #[command(after_help = "\
+Examples:
+  cx search-by-value \"payment\"
+  cx search-by-value \"500 error\" --dataset spans --limit 10
+  cx search-by-value \"kubernetes pod\" --dataset all --limit 20 --offset 10")]
+    SearchByValue {
+        /// Value content to search for (e.g. "payment", "kubernetes pod name").
+        query: String,
+
+        /// Dataset to search: logs, spans, or all.
+        #[arg(long, default_value = "logs")]
+        dataset: SearchByValueDataset,
+
+        /// Maximum number of results to return.
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+
+        /// Number of results to skip (for pagination).
+        #[arg(long, default_value_t = 0)]
+        offset: u32,
     },
 
     /// DataPrime language reference and documentation.
@@ -3287,6 +3319,21 @@ async fn main() -> Result<()> {
                 }
             },
         },
+
+        Commands::SearchByValue {
+            query,
+            dataset,
+            limit,
+            offset,
+        } => {
+            let dataset_str = match dataset {
+                SearchByValueDataset::Logs => "logs",
+                SearchByValueDataset::Spans => "spans",
+                SearchByValueDataset::All => "all",
+            };
+            commands::search_by_value::run(&targets, &query, dataset_str, limit, offset, output)
+                .await?;
+        }
     }
 
     Ok(())

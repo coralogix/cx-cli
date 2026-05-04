@@ -60,7 +60,7 @@ fn has_default_profile() -> bool {
 
 fn ensure_region() {
     if std::env::var("CX_REGION").is_err() {
-        std::env::set_var("CX_REGION", "stg1");
+        std::env::set_var("CX_REGION", "eu2");
     }
 }
 

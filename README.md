@@ -38,6 +38,12 @@ Pin a specific version:
 CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
+### Homebrew
+
+```bash
+brew install coralogix/tap/cx
+```
+
 ### Cargo
 
 ```bash

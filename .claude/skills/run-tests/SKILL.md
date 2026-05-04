@@ -2,6 +2,8 @@
 name: run-tests
 description: Use this skill when the user asks to "run tests", "test this", "check if tests pass", "cargo test", "run clippy", "lint this", "check formatting", "cargo fmt", "CI checks", "verify changes", "does this pass tests", "run the full check", "pre-commit check", or wants to verify that code changes are correct. Use this even when the user says something like "make sure this works" or "check for issues" in the context of code changes.
 version: 0.1.0
+metadata:
+  internal: true
 ---
 
 # Run Tests & Verify

@@ -123,9 +123,30 @@ impl CxClient {
             ));
         }
         if status == StatusCode::FORBIDDEN {
-            return Err(CxError::Auth(
-                "Permission denied: your API key does not have the required scope for this operation.".into(),
-            ));
+            let body = resp.text().await.unwrap_or_default();
+            let detail = serde_json::from_str::<Value>(&body)
+                .ok()
+                .and_then(|v| v["message"].as_str().map(String::from));
+            let msg = match detail {
+                Some(d) => format!("Permission denied: {d}. Check your API key's scopes."),
+                None => "Permission denied: your API key does not have the required scope for this operation.".into(),
+            };
+            return Err(CxError::Auth(msg));
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = resp
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .map(String::from);
+            let msg = match retry_after {
+                Some(secs) => format!("Rate limited by the API. Retry after {secs} seconds."),
+                None => "Rate limited by the API. Wait and retry.".into(),
+            };
+            return Err(CxError::Api {
+                status: 429,
+                message: msg,
+            });
         }
         if !status.is_success() {
             let code = status.as_u16();

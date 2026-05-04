@@ -5,7 +5,7 @@
 //!
 //! ```bash
 //! export CX_API_KEY=...           # or populate .env
-//! export CX_REGION=eu2
+//! export CX_REGION=stg1
 //! cargo test --test e2e -- --ignored --test-threads=1
 //! ```
 //!

@@ -57,16 +57,27 @@ The dashboard runtime requires the `source …` prefix inside the widget JSON (s
 
 Verify against a **fixed short window** (`now-15m` → `now`), not the dashboard's `$RANGE`. The goal here is syntax / field / pipeline validation — proving the query parses and references real fields. The dashboard runs against `${__range}` itself at render time; we don't need to re-prove data presence on the dashboard's window during the build. A short window is faster, cheaper, and a clean fail signal (a query that fails on `now-15m` is broken regardless of range).
 
+Choose the tier to verify:
+
+- `--tier frequent` (default): hot storage, fast, recent data.
+- `--tier archive`: cold/long-term storage, older data.
+
+Use **Frequent Search** unless you have a reason to validate against Archive. Switch to **Archive** when:
+
+- The dashboard is intended for long lookbacks (weekly/monthly trends, retrospectives).
+- Frequent Search returns empty for known-good queries because the time range is beyond hot retention.
+- The user explicitly says “this dashboard should work on archived data.”
+
 **Log-backed widgets:**
 
 ```bash
-cx logs '<pipeline-without-leading-source-logs>' --start now-15m --end now --limit 1
+cx logs '<pipeline-without-leading-source-logs>' --start now-15m --end now --limit 1 --tier <frequent|archive>
 ```
 
 **Span-backed widgets:**
 
 ```bash
-cx spans '<pipeline-without-leading-source-spans>' --start now-15m --end now --limit 1
+cx spans '<pipeline-without-leading-source-spans>' --start now-15m --end now --limit 1 --tier <frequent|archive>
 ```
 
 Check both the exit code and the output — some errors surface only in the output. A query **passes** when `cx` exits 0 and the output is rows or `[]` with no error or warning lines (an empty result on a low-volume signal is fine). It **hard-fails** on a non-zero exit, an `error from profile '...': API request failed` line, or a `Compilation errors:` block — the query is broken. A `keypath does not exist` warning is a **soft fail**: the query parsed but no record in the window had the referenced field. Verify with `cx search-fields "<hint>" --dataset logs|spans`; if the field is real the query is fine (widen the window or accept the empty result), if it isn't, fix the field name. On failure: consult the `cx-dataprime` skill (`cx dataprime show <command>` for inline help), re-discover fields with `cx search-fields`, fix, retry. Budget ≤5 retry attempts per query.

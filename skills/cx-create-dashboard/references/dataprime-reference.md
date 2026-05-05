@@ -227,3 +227,28 @@ cx dataprime list --filter functions --name time # Search functions by name
 cx dataprime show filter                        # Detailed help for a specific command
 cx dataprime show groupby
 ```
+
+## Validating a DataPrime query
+
+A query that looks right can still fail on a typoed field path, an invented function, or a malformed pipeline stage. Validate before trusting the output — a short-window run through the CLI is cheap and catches almost all of these:
+
+```bash
+cx logs  '<pipeline>' --start now-15m --end now --limit 1
+cx spans '<pipeline>' --start now-15m --end now --limit 1
+```
+
+`now-15m` is a good default; widen it only if 15 minutes is unlikely to exercise the pipeline. Per "Source Handling" above, omit any leading `source logs` / `source spans` — `cx logs` and `cx spans` inject the source themselves.
+
+Check both the exit code and the output — some errors surface only in the output.
+
+**Pass** = exit 0 and the output is rows or `[]` with no error or warning lines.
+
+**Hard fail** — query is broken, fix it:
+- non-zero exit
+- `error from profile '...': API request failed` — HTTP error from the API
+- `Compilation errors:` — parse error, unknown function, malformed expression
+
+**Soft fail** (needs investigation):
+- `keypath does not exist` — the query parsed, but no record in the window had the referenced field. This is ambiguous: the field name might be a typo, or it might be real but absent from records in this 15-minute slice. Confirm with `cx search-fields "<field hint>" --dataset logs` (or `--dataset spans`). If the field is real, the query is fine — try a wider window or accept the empty result. If it isn't, fix the field name.
+
+On fail: re-discover fields with `cx search-fields`, look up command syntax with `cx dataprime show <command>`, fix, re-run.

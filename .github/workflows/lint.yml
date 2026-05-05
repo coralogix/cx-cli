@@ -3,6 +3,11 @@ name: Lint
 on:
   pull_request:
     branches: [master]
+    paths-ignore:
+      - 'skills/**'
+      - 'docs/**'
+      - 'contributing/**'
+      - '*.md'
 
 concurrency:
   group: lint-${{ github.ref }}

@@ -3,8 +3,18 @@ name: Build Verification
 on:
   pull_request:
     branches: [master]
+    paths-ignore:
+      - 'skills/**'
+      - 'docs/**'
+      - 'contributing/**'
+      - '*.md'
   push:
     branches: [master]
+    paths-ignore:
+      - 'skills/**'
+      - 'docs/**'
+      - 'contributing/**'
+      - '*.md'
 
 concurrency:
   group: build-${{ github.event_name == 'push' && github.sha || github.ref }}

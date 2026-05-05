@@ -10,6 +10,7 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 
 | Skill | Description |
 |---|---|
+| `cx-olly` | Interact with Coralogix's AI assistant (Olly) - chat, follow-up questions, retrieve generated artifacts |
 | `cx-telemetry-querying` | Gateway skill for telemetry-driven investigation - decide where to look (metrics, logs, traces, RUM, APM) before querying |
 | `cx-query-logs` | Query and analyze Coralogix logs using DataPrime syntax via `cx logs` |
 | `cx-query-spans` | Query distributed traces and analyze span latency via `cx spans` |
@@ -64,6 +65,7 @@ npx skills add coralogix/cx-cli -a claude-code -g -y
 
 Once installed, your agent will automatically use the relevant skill when you ask questions like:
 
+- "Ask Olly why the checkout service is slow"
 - "Investigate why we're seeing high error rates"
 - "Check CPU usage for the api service"
 - "What was the p99 latency over the last 24h?"

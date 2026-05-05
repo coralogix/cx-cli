@@ -19,6 +19,7 @@ pub mod ip_access;
 pub mod logs;
 pub mod metrics;
 pub mod notification_testing;
+pub mod olly;
 pub mod parsing_rules;
 pub mod presets;
 pub mod profiles;

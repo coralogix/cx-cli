@@ -92,6 +92,7 @@ impl Region {
             Region::Custom(url) => url.as_str(),
         }
     }
+
 }
 
 impl std::fmt::Display for Region {

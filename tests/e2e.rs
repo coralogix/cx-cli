@@ -50,6 +50,8 @@ mod ip_access;
 mod logs;
 #[path = "e2e/metrics/mod.rs"]
 mod metrics;
+#[path = "e2e/olly/mod.rs"]
+mod olly;
 #[path = "e2e/output_formats.rs"]
 mod output_formats;
 #[path = "e2e/parsing_rules.rs"]

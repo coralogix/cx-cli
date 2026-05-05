@@ -27,6 +27,7 @@ jobs:
               - '!docs/**'
               - '!contributing/**'
               - '!*.md'
+              - '!.github/workflows/**' # TEMP: verify lint skip path on this PR
 
   lint:
     name: Format & Clippy

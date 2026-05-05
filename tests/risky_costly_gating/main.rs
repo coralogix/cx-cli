@@ -137,10 +137,7 @@ fn costly_disabled_blocks_olly_ask() {
         .expect("failed to run cx");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("additional charges"),
-        "stderr: {stderr}"
-    );
+    assert!(stderr.contains("additional charges"), "stderr: {stderr}");
 }
 
 #[test]

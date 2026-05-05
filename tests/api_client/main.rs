@@ -80,9 +80,7 @@ async fn error_429_with_retry_after() {
 
     Mock::given(method("GET"))
         .and(path("/test"))
-        .respond_with(
-            ResponseTemplate::new(429).append_header("Retry-After", "30"),
-        )
+        .respond_with(ResponseTemplate::new(429).append_header("Retry-After", "30"))
         .mount(&server)
         .await;
 
@@ -123,8 +121,7 @@ async fn error_500_with_json_message() {
     Mock::given(method("GET"))
         .and(path("/test"))
         .respond_with(
-            ResponseTemplate::new(500)
-                .set_body_json(json!({"message": "internal error"})),
+            ResponseTemplate::new(500).set_body_json(json!({"message": "internal error"})),
         )
         .mount(&server)
         .await;
@@ -145,9 +142,7 @@ async fn error_500_with_raw_body() {
 
     Mock::given(method("GET"))
         .and(path("/test"))
-        .respond_with(
-            ResponseTemplate::new(500).set_body_string("something went wrong"),
-        )
+        .respond_with(ResponseTemplate::new(500).set_body_string("something went wrong"))
         .mount(&server)
         .await;
 

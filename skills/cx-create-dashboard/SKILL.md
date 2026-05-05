@@ -193,20 +193,12 @@ Every PromQL and DataPrime query in the draft has to successfully run through `c
 ### Frequent vs Archive (what / when / where in JSON)
 
 **What**:
-- **Frequent**: hot tier for fast search on recent logs/spans.
-- **Archive**: cold tier for older logs/spans (long-term).
+- **Frequent** (`TIER_FREQUENT_SEARCH`): hot tier for fast search on recent logs/spans.
+- **Archive** (`TIER_ARCHIVE`): cold tier for older logs/spans (long-term).
 
 **When to choose**:
 - Choose **Frequent** for on-call and recent investigations (hours/days).
 - Choose **Archive** for long lookbacks (weeks/months) or when the time range is beyond hot retention.
-
-**Where it is in the dashboard widget JSON**:
-- The tier is set **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dataTable.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`).
-- Values:
-  - `DATA_MODE_TYPE_HIGH_UNSPECIFIED` → default tier (frequent search).
-  - `DATA_MODE_TYPE_ARCHIVE` → archive tier.
-- Set `DATA_MODE_TYPE_ARCHIVE` on every widget when the user wants archive tier; otherwise leave the default.
-
 
 Map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` for the CLI call, verify, then restore `${__range}` in the JSON before Phase 6.
 

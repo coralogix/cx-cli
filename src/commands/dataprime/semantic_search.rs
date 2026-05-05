@@ -97,7 +97,7 @@ pub async fn semantic_field_lookup(
             }
             let top_level_key = first.clone();
             let path = r.path_array[1..].to_vec();
-            let dataprime_path = serialize_path_for_query(&r.path_array);
+            let dataprime_path = serialize_path_for_query(&r.path_array)?;
             Some(SemanticFieldResult {
                 dataprime_path,
                 top_level_key,
@@ -129,6 +129,83 @@ pub async fn semantic_metric_lookup(
     Ok(parsed.results)
 }
 
-fn serialize_path_for_query(path_array: &[String]) -> String {
-    path_array.join(".")
+fn serialize_path_for_query(path_array: &[String]) -> Option<String> {
+    let prefix = path_array.first()?;
+    if !matches!(prefix.as_str(), "$d" | "$m" | "$l") {
+        return None;
+    }
+
+    let mut path = prefix.clone();
+    for key in &path_array[1..] {
+        if is_complex_key(key) {
+            path.push_str("['");
+            path.push_str(&stringify_path_key(key));
+            path.push_str("']");
+        } else {
+            path.push('.');
+            path.push_str(key);
+        }
+    }
+
+    Some(path)
+}
+
+fn is_complex_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return true;
+    };
+
+    !(first.is_ascii_alphabetic() && chars.all(|c| c.is_ascii_alphanumeric() || c == '_'))
+}
+
+fn stringify_path_key(key: &str) -> String {
+    key.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|part| (*part).to_string()).collect()
+    }
+
+    #[test]
+    fn serializes_simple_path_with_dot_notation() {
+        assert_eq!(
+            serialize_path_for_query(&path(&["$d", "http", "status_code"])).as_deref(),
+            Some("$d.http.status_code")
+        );
+    }
+
+    #[test]
+    fn serializes_complex_keys_with_bracket_notation() {
+        assert_eq!(
+            serialize_path_for_query(&path(&["$d", "resource.type", "service name", "_id"]))
+                .as_deref(),
+            Some("$d['resource.type']['service name']['_id']")
+        );
+    }
+
+    #[test]
+    fn treats_letter_prefixed_keys_as_simple() {
+        assert_eq!(
+            serialize_path_for_query(&path(&["$l", "service_1"])).as_deref(),
+            Some("$l.service_1")
+        );
+    }
+
+    #[test]
+    fn escapes_complex_key_literals() {
+        assert_eq!(
+            serialize_path_for_query(&path(&["$d", "service's", r"path\key"])).as_deref(),
+            Some(r"$d['service\'s']['path\\key']")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_top_level_prefix() {
+        assert_eq!(serialize_path_for_query(&path(&["$x", "field"])), None);
+    }
 }

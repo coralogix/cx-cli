@@ -5,6 +5,7 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use coralogix_cli::commands::dataprime::semantic_search::semantic_field_lookup;
 use coralogix_cli::commands::search_fields;
 use coralogix_cli::config::OutputFormat;
 
@@ -71,6 +72,41 @@ async fn semantic_field_search_empty_results() {
     )
     .await
     .expect("search_fields with no results should succeed");
+}
+
+#[tokio::test]
+async fn semantic_field_lookup_serializes_complex_paths() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "results": [
+            {
+                "path_array": ["$d", "resource.type", "service name"],
+                "description": "Resource service name",
+                "similarity_score": 0.91,
+                "dataset_scope": null,
+                "labels": {}
+            }
+        ]
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/semantic-search/fields"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let results = semantic_field_lookup(&target.client, "service name", "logs", 10)
+        .await
+        .expect("semantic_field_lookup should succeed");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].dataprime_path,
+        "$d['resource.type']['service name']"
+    );
 }
 
 #[tokio::test]

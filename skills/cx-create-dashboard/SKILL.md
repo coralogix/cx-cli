@@ -200,6 +200,11 @@ Every PromQL and DataPrime query in the draft has to successfully run through `c
 - Choose **Frequent** for on-call and recent investigations (hours/days).
 - Choose **Archive** for long lookbacks (weeks/months) or when the time range is beyond hot retention.
 
+The two languages are verified against different windows:
+
+- **PromQL**: map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` for the CLI call, then restore `${__range}` in the JSON before Phase 6. Range vectors are window-sensitive, so the check has to match what the dashboard will evaluate.
+- **DataPrime**: verify against a fixed short window (`now-15m` → `now`, `--limit 1`). The goal is syntax / field / pipeline validation, not data-presence on the dashboard's window — a short window is faster and a cleaner fail signal.
+
 Map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` for the CLI call, verify, then restore `${__range}` in the JSON before Phase 6.
 
 Full procedure (CLI invocations, `$RANGE` mapping table, retry budget, failure modes): [`references/verification.md`](references/verification.md).

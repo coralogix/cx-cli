@@ -3,12 +3,6 @@ name: Lint
 on:
   pull_request:
     branches: [master]
-    paths-ignore:
-      - 'skills/**'
-      - 'docs/**'
-      - 'contributing/**'
-      - '*.md'
-      - '.github/workflows/**' # TEMP: verify lint-skip companion fires
 
 concurrency:
   group: lint-${{ github.ref }}
@@ -18,8 +12,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!skills/**'
+              - '!docs/**'
+              - '!contributing/**'
+              - '!*.md'
+
   lint:
     name: Format & Clippy
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

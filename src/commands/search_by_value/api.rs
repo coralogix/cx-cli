@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::api_client::CxClient;
 use crate::error::Result as CxResult;
 
-const SEARCH_BY_VALUE_PATH: &str = "/api/v1/semantic-search/values";
+const SEARCH_BY_VALUE_PATH: &str = "/api/v1/search-by-value";
 
 /// One result row returned by the values semantic-search API.
 #[derive(Debug, Serialize, Deserialize)]

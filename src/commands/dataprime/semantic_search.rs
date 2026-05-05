@@ -156,8 +156,7 @@ fn is_complex_key(key: &str) -> bool {
         return true;
     };
 
-    !(matches!(first, 'a'..='z' | 'A'..='Z')
-        && chars.all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')))
+    !(first.is_ascii_alphabetic() && chars.all(|c| c.is_ascii_alphanumeric() || c == '_'))
 }
 
 fn stringify_path_key(key: &str) -> String {

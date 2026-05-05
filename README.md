@@ -42,12 +42,6 @@ Most macOS users should use Homebrew. If you are not on macOS, use the cross-pla
 curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
-Pin a specific version:
-
-```bash
-CX_VERSION=0.1.0 curl -fsSL https://get.coralogix.dev/cli | sh
-```
-
 #### Recommended for macOS: Homebrew
 
 ```bash

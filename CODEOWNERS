@@ -82,8 +82,11 @@
 **/ip_access/                          @coralogix/team-cxai
 /skills/cx-platform-admin/             @coralogix/team-cxai
 
-# === docs ===
+# === user-facing docs (blocking review from technical writers) ===
+/README.md                             @coralogix/team-technical-writers @coralogix/team-cxai
 /docs/                                 @coralogix/team-technical-writers @coralogix/team-cxai
+
+# contributor/ falls through to the * catch-all (@coralogix/team-cxai only)
 
 # Everything else (shared infra, profiles, cleanup, search-fields, CI,
 # build files, dev tooling, etc.) is owned by platform via `*`.

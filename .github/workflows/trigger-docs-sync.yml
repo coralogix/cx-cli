@@ -10,9 +10,6 @@ on:
     paths:
       - 'README.md'
       - 'docs/*.md'
-      - '!docs/architecture.md'
-      - '!docs/development.md'
-      - '!docs/adding-a-*.md'
 
 jobs:
   trigger_action:

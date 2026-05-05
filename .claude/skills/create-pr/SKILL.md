@@ -1,6 +1,8 @@
 ---
 name: create-pr
 description: Creates GitHub pull requests with auto-generated summaries. Use this skill whenever the user wants to create a PR, open a pull request, submit changes for review, or push their branch for review - even if they don't explicitly say "PR".
+metadata:
+  internal: true
 ---
 
 # Create Pull Request

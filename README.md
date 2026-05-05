@@ -1,11 +1,12 @@
-# Coralogix CLI - CX
+# CX - Coralogix CLI
 
 [![CI](https://github.com/coralogix/cx-cli/actions/workflows/build.yml/badge.svg)](https://github.com/coralogix/cx-cli/actions/workflows/build.yml)
 [![Crates.io](https://img.shields.io/crates/v/coralogix-cli)](https://crates.io/crates/coralogix-cli)
 [![Homebrew](https://img.shields.io/badge/homebrew-coralogix%2Ftap%2Fcx-blue)](https://github.com/coralogix/homebrew-tap)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-The observability backbone for AI agents and engineering teams. `cx` gives you-and your AI agents-direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
+The observability backbone for AI agents and engineering teams.<br/>
+Connect your agents to live logs, traces, metrics, dashboards, and alerts so they can investigate incidents, explain what changed, and reason about production with real operational context.
 
 <p align="center">
   <img src="https://github.com/coralogix/cx-cli/raw/master/assets/demo.png" alt="cx logs demo" width="700">
@@ -31,88 +32,41 @@ The observability backbone for AI agents and engineering teams. `cx` gives you-a
 - Semantic field search-find the right log or span field by describing it in natural language.
 - Bundled skills for Claude Code, Cursor, Codex, OpenCode, and 40+ more agents, distributed via `npx skills add`.
 
-## Installation
+## Install cx for AI agents
 
-### macOS and Linux
+Most macOS users should use Homebrew. If you are not on macOS, use the cross-platform install script.
 
-Install the latest release with the install script:
+### 1. Install the CLI
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
-```
-
-Pin a specific version:
-
-```bash
-CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
-```
-
-### Homebrew
+#### Recommended for macOS: Homebrew
 
 ```bash
 brew install coralogix/tap/cx
 ```
 
-### Cargo
+#### Works on macOS and Linux: install script
 
 ```bash
-cargo install coralogix-cli
+curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
-### Pre-built binaries
+### 2. Install agent skills
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
-
-<details>
-<summary>Nix</summary>
+Skills teach your AI agent how to use `cx` for observability investigations.
 
 ```bash
-nix run    github:coralogix/cx-cli -- --help     # try without installing
-nix profile install github:coralogix/cx-cli      # install into your profile
+npx skills add coralogix/cx-cli
 ```
 
-Consume from another flake — both the `cx` binary and the agent skill bundle are exposed as outputs:
+### 3. Optional: install shell autocomplete
 
-```nix
-{
-  inputs.cx-cli.url = "github:coralogix/cx-cli";
-
-  outputs = { self, nixpkgs, cx-cli, ... }: {
-    # cx-cli.packages.${system}.default -> the `cx` binary
-    # cx-cli.packages.${system}.skills  -> store path with all cx-* skills
-  };
-}
-```
-
-#### Home Manager
-
-Symlink each skill into `~/.claude/skills/` (adjust the target path for other agents):
-
-```nix
-# home.nix
-{ inputs, pkgs, lib, ... }:
-let
-  skills = inputs.cx-cli.packages.${pkgs.system}.skills;
-in {
-  home.packages = [ inputs.cx-cli.packages.${pkgs.system}.default ];
-
-  home.file = lib.mapAttrs'
-    (name: _: lib.nameValuePair ".claude/skills/${name}" { source = "${skills}/${name}"; })
-    (lib.filterAttrs (_: t: t == "directory") (builtins.readDir skills));
-}
-```
-
-</details>
-
-<details>
-<summary>Build from source</summary>
+Most macOS users use `zsh`:
 
 ```bash
-cargo build --release
-cp target/release/cx /usr/local/bin/
+cx completions install zsh
 ```
 
-</details>
+For other shells, see [Shell completions](#shell-completions). For Cargo, pre-built binaries, Nix, and source builds, see [Installation reference](#installation-reference).
 
 ## Quick start
 
@@ -273,11 +227,7 @@ See [docs/agents-output.md](docs/agents-output.md) for the `agents` format speci
 
 `cx` ships a companion skill bundle for Claude Code, Cursor, Codex, OpenCode, and [40+ other agents](https://github.com/vercel-labs/skills#supported-agents). The skills teach your agent how to investigate issues by querying Coralogix-without memorizing DataPrime syntax or API endpoints.
 
-Install all skills:
-
-```bash
-npx skills add coralogix/cx-cli
-```
+The install flow above installs all skills. Use these variants if you want to customize where or what you install.
 
 Install selected skills:
 
@@ -303,8 +253,76 @@ cx -p prod-eu -p prod-us logs 'filter $m.severity == "ERROR"'
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
 
+## Installation reference
+
+### Pin a CLI version
+
+```bash
+CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
+```
+
+### Cargo
+
+```bash
+cargo install coralogix-cli
+```
+
+### Pre-built binaries
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
+
 <details>
-<summary><strong>Shell completions</strong></summary>
+<summary>Nix</summary>
+
+```bash
+nix run    github:coralogix/cx-cli -- --help     # try without installing
+nix profile install github:coralogix/cx-cli      # install into your profile
+```
+
+The flake exposes both the `cx` binary and the agent skill bundle:
+
+```nix
+{
+  inputs.cx-cli.url = "github:coralogix/cx-cli";
+
+  outputs = { self, nixpkgs, cx-cli, ... }: {
+    # cx-cli.packages.${system}.default -> the `cx` binary
+    # cx-cli.packages.${system}.skills  -> store path with all cx-* skills
+  };
+}
+```
+
+#### Home Manager
+
+Symlink each skill into `~/.claude/skills/` (adjust the target path for other agents):
+
+```nix
+# home.nix
+{ inputs, pkgs, lib, ... }:
+let
+  skills = inputs.cx-cli.packages.${pkgs.system}.skills;
+in {
+  home.packages = [ inputs.cx-cli.packages.${pkgs.system}.default ];
+
+  home.file = lib.mapAttrs'
+    (name: _: lib.nameValuePair ".claude/skills/${name}" { source = "${skills}/${name}"; })
+    (lib.filterAttrs (_: t: t == "directory") (builtins.readDir skills));
+}
+```
+
+</details>
+
+<details>
+<summary>Build from source</summary>
+
+```bash
+cargo build --release
+cp target/release/cx /usr/local/bin/
+```
+
+</details>
+
+## Shell completions
 
 `cx` supports tab-completion for all commands, flags, subcommands, and profile names.
 
@@ -375,8 +393,6 @@ source <(COMPLETE=bash cx)
 ```fish
 COMPLETE=fish cx | source
 ```
-
-</details>
 
 <details>
 <summary><strong>Migrating from cxctl</strong></summary>

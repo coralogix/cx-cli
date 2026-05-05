@@ -1,6 +1,15 @@
-# cx-cli
+# Coralogix CLI - CX
+
+[![CI](https://github.com/coralogix/cx-cli/actions/workflows/build.yml/badge.svg)](https://github.com/coralogix/cx-cli/actions/workflows/build.yml)
+[![Crates.io](https://img.shields.io/crates/v/coralogix-cli)](https://crates.io/crates/coralogix-cli)
+[![Homebrew](https://img.shields.io/badge/homebrew-coralogix%2Ftap%2Fcx-blue)](https://github.com/coralogix/homebrew-tap)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 The observability backbone for AI agents and engineering teams. `cx` gives you-and your AI agents-direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
+
+<p align="center">
+  <img src="assets/demo.png" alt="cx logs demo" width="700">
+</p>
 
 ## What you can do
 
@@ -54,14 +63,8 @@ cargo install coralogix-cli
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
 
-### Build from source
-
-```bash
-cargo build --release
-cp target/release/cx /usr/local/bin/
-```
-
-### Nix
+<details>
+<summary>Nix</summary>
 
 ```bash
 nix run    github:coralogix/cx-cli -- --help     # try without installing
@@ -99,6 +102,18 @@ in {
 }
 ```
 
+</details>
+
+<details>
+<summary>Build from source</summary>
+
+```bash
+cargo build --release
+cp target/release/cx /usr/local/bin/
+```
+
+</details>
+
 ## Quick start
 
 Follow these steps to go from a fresh install to a working query.
@@ -135,7 +150,8 @@ Follow these steps to go from a fresh install to a working query.
 
 Run `cx <command> --help` for full syntax and examples on any command.
 
-## Commands
+<details open>
+<summary><strong>Commands</strong></summary>
 
 Commands are grouped by domain. Run `cx --help` for the full organized listing, or `cx schema` for a machine-readable JSON tree.
 
@@ -211,7 +227,8 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
-### Global options
+<details>
+<summary>Global options</summary>
 
 ```
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
@@ -220,6 +237,10 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 -o, --output <FORMAT>        text | json | agents (default: text)
     --yes                    Skip confirmation prompts for destructive operations
 ```
+
+</details>
+
+</details>
 
 ## Configuration
 
@@ -282,11 +303,8 @@ cx -p prod-eu -p prod-us logs 'filter $m.severity == "ERROR"'
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
 
-## Migrating from cxctl
-
-`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
-
-## Shell completions
+<details>
+<summary><strong>Shell completions</strong></summary>
 
 `cx` supports tab-completion for all commands, flags, subcommands, and profile names.
 
@@ -357,6 +375,20 @@ source <(COMPLETE=bash cx)
 ```fish
 COMPLETE=fish cx | source
 ```
+
+</details>
+
+<details>
+<summary><strong>Migrating from cxctl</strong></summary>
+
+`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
+
+</details>
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the ownership model,
+PR review process, and step-by-step guides for adding commands and skills.
 
 ## Further reading
 

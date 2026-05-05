@@ -9,6 +9,7 @@ use clap_complete::env::CompleteEnv;
 use clap_complete::CompletionCandidate;
 use config::OutputFormat;
 
+use coralogix_cli::banner;
 use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
@@ -42,7 +43,7 @@ pub enum SearchFieldsDataset {
     version,
     about,
     long_about = None,
-    help_template = "{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
+    help_template = "{before-help}{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
     after_help = "\
 Query:
   logs               Query logs using DataPrime syntax
@@ -2076,7 +2077,13 @@ async fn main() -> Result<()> {
     // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // the early check above misses it. The main Cli parser handles it below.
 
-    let matches = Cli::command().get_matches();
+    let mut cmd = Cli::command();
+    if banner::should_show() {
+        cmd = cmd
+            .before_help(banner::render())
+            .help_template("{before-help}\nUsage: {usage}{after-help}\n\nOptions:\n{options}");
+    }
+    let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
     let read_only = cli.read_only || safety::env_is_truthy("CX_READ_ONLY");

@@ -50,6 +50,7 @@ open = "5"
 colored = "3"
 tabled = { version = "0.20", features = ["ansi"] }
 indicatif = "0.18"
+terminal_size = "0.4"
 
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }

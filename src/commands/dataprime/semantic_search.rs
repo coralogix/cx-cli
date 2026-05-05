@@ -287,10 +287,7 @@ mod tests {
             serialize_path_for_query(&["http".to_string(), "status_code".to_string()]),
             "http.status_code"
         );
-        assert_eq!(
-            serialize_path_for_query(&["d".to_string()]),
-            "d"
-        );
+        assert_eq!(serialize_path_for_query(&["d".to_string()]), "d");
         assert_eq!(serialize_path_for_query(&[]), "");
     }
 }

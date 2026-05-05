@@ -75,6 +75,8 @@ Local:
   cleanup            Remove stale temp files
 ```
 
+**`cx search-by-value`:** Calls Olly Knowledge Base `POST /api/v1/search-by-value` on the region API base URL. The platform ingress uses gateway permission `legacy-archive-queries:Execute` (AAA id 40); `dataset_type` in the JSON body (`logs` / `spans` / `all`) is still enforced in-app by the service. See `olly-knowledge-base` `apps/values-reader-service/AGENTS.md` and `platform/defaults/networking/defaults.yaml`.
+
 **Agent discovery:** `cx schema` outputs the full command tree (commands, subcommands, flags, descriptions) as JSON. Agents should call `cx schema` to discover available commands rather than parsing help text.
 
 **Key renames from prior flat layout:**

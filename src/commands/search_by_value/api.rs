@@ -1,3 +1,9 @@
+//! Olly Knowledge Base search-by-value HTTP client.
+//!
+//! - Path: [`SEARCH_BY_VALUE_PATH`] (`POST`), body: `query`, `dataset_type`, `limit`, `offset`.
+//! - Platform ingress (`olly-knowledge-base` values-reader): gateway permission
+//!   `legacy-archive-queries:Execute` (permission id 40). Dataset checks remain in the service.
+
 use serde::{Deserialize, Serialize};
 
 use crate::api_client::CxClient;

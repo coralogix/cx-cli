@@ -19,35 +19,33 @@ jobs:
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
-          predicate-quantifier: every
           filters: |
-            docs:
-              - 'skills/**'
-              - 'docs/**'
-              - 'contributing/**'
-              - '*.md'
-              - '.github/workflows/**' # TEMP: verify lint skip path on this PR
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        if: steps.filter.outputs.docs != 'true'
+        if: steps.filter.outputs.code == 'true'
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
-        if: steps.filter.outputs.docs != 'true'
+        if: steps.filter.outputs.code == 'true'
         with:
           toolchain: "1.94.1"
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        if: steps.filter.outputs.docs != 'true'
+        if: steps.filter.outputs.code == 'true'
 
       - name: Install Linux system dependencies
-        if: steps.filter.outputs.docs != 'true'
+        if: steps.filter.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Check formatting
-        if: steps.filter.outputs.docs != 'true'
+        if: steps.filter.outputs.code == 'true'
         run: cargo fmt --check
 
       - name: Clippy
-        if: steps.filter.outputs.docs != 'true'
+        if: steps.filter.outputs.code == 'true'
         run: cargo clippy --locked -- -D warnings

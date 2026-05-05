@@ -188,6 +188,8 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx webhooks` | `cx-observability-setup` | Covered |
 | `cx notifications` | `cx-observability-setup` | Covered |
 | `cx integrations` | `cx-observability-setup` | Covered |
+| `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
+| `cx olly` | `cx-olly` | Covered |
 | `cx profiles` | - | Local command |
 | `cx cleanup` | - | Local command |
 

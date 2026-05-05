@@ -86,6 +86,7 @@ Access:
 
 Agent:
   schema             Output the full command tree as JSON for agent consumption
+  olly               Interact with the AI assistant
 
 Local:
   profiles           Manage profiles (list, add, delete, set-default)
@@ -511,6 +512,18 @@ Examples:
 
     /// Output the full command tree as JSON for agent consumption.
     Schema,
+
+    /// Interact with the AI assistant (single-profile only).
+    #[command(after_help = "\
+Examples:
+  cx olly ask \"What alerts fired today?\"
+  cx olly ask \"Show me error logs\" --chat-id <id>
+  cx olly ask \"Analyze this metric\" --mode deep-research
+  cx olly artifacts get <artifact-id>")]
+    Olly {
+        #[command(subcommand)]
+        cmd: OllyCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -593,6 +606,62 @@ Examples:
         /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
         #[arg(long, default_value = "frequent")]
         tier: Tier,
+    },
+}
+
+#[derive(Subcommand)]
+enum OllyCmd {
+    /// Send a message to the AI assistant.
+    #[command(after_help = "\
+Examples:
+  cx olly ask \"What alerts fired today?\"
+  cx olly ask \"Show me error logs\" --chat-id <uuid>
+  cx olly ask \"Analyze this\" --mode skill --model claude-sonnet-4-5")]
+    Ask {
+        /// The message to send to the assistant.
+        message: String,
+
+        /// Continue an existing chat (omit to create a new chat).
+        #[arg(long)]
+        chat_id: Option<String>,
+
+        /// Interaction mode: fast, focus, or skill.
+        #[arg(long, default_value = "focus")]
+        mode: String,
+
+        /// Model choice (e.g., gpt-5.2, claude-sonnet-4-5, gpt-5.4, claude-haiku-4-5).
+        #[arg(long, default_value = "gpt-5.2")]
+        model: String,
+
+        /// Timeout in seconds for response.
+        #[arg(long, default_value_t = 900)]
+        timeout: u32,
+    },
+
+    /// Manage artifacts from assistant responses.
+    Artifacts {
+        #[command(subcommand)]
+        cmd: OllyArtifactsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OllyArtifactsCmd {
+    /// List all artifacts.
+    #[command(after_help = "\
+Examples:
+  cx olly artifacts list
+  cx olly artifacts list -o json")]
+    List,
+
+    /// Get an artifact's download URL.
+    #[command(after_help = "\
+Examples:
+  cx olly artifacts get <artifact-id>
+  cx olly artifacts get <artifact-id> -o json")]
+    Get {
+        /// Artifact ID (UUID from the assistant's response).
+        artifact_id: String,
     },
 }
 
@@ -3235,6 +3304,42 @@ async fn main() -> Result<()> {
             };
             commands::search_fields::run(&targets, &text, dataset_str, limit, output).await?;
         }
+
+        Commands::Olly { cmd } => match cmd {
+            OllyCmd::Ask {
+                message,
+                chat_id,
+                mode,
+                model,
+                timeout,
+            } => {
+                commands::olly::run_ask(
+                    &targets,
+                    &message,
+                    chat_id.as_deref(),
+                    &mode,
+                    &model,
+                    timeout,
+                    output,
+                )
+                .await?;
+            }
+            OllyCmd::Artifacts { cmd } => match cmd {
+                OllyArtifactsCmd::List => {
+                    commands::olly::run_artifacts_list(&targets, output).await?;
+                }
+                OllyArtifactsCmd::Get { artifact_id } => {
+                    commands::olly::run_artifacts_get(
+                        &targets,
+                        &artifact_id,
+                        output,
+                        max_direct,
+                        &temp_dir,
+                    )
+                    .await?;
+                }
+            },
+        },
     }
 
     Ok(())

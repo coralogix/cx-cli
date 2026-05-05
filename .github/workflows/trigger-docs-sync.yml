@@ -1,0 +1,23 @@
+name: Trigger Documentation Sync
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'README.md'
+      - 'docs/*.md'
+
+jobs:
+  trigger_action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger docs deploy
+        run: |
+          curl -X POST -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               https://api.github.com/repos/coralogix/documentation/dispatches \
+               -d '{"event_type": "trigger-deploy"}'

@@ -7,9 +7,6 @@ repository = "https://github.com/coralogix/cx-cli"
 license = "Apache-2.0"
 default-run = "cx"
 
-[lib]
-name = "cx"
-
 [[bin]]
 name = "cx"
 path = "src/main.rs"

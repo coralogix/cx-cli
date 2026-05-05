@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::presets::run_list;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::presets::run_list;
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn list_presets_from_mock() {

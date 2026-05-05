@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::team_groups::run_list;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::team_groups::run_list;
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn list_team_groups_from_mock() {

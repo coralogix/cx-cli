@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::recording_rules::{run_get, run_list};
-use cx::config::OutputFormat;
+use coralogix_cli::commands::recording_rules::{run_get, run_list};
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn list_recording_rules_returns_items_from_mock() {

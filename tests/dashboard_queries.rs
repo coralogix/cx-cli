@@ -4,8 +4,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::dashboards;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::dashboards;
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn dashboard_search_returns_results() {

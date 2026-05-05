@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::tco_policies::{run_get, run_list, run_settings};
-use cx::config::OutputFormat;
+use coralogix_cli::commands::tco_policies::{run_get, run_list, run_settings};
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn list_tco_policies_returns_items_from_mock() {

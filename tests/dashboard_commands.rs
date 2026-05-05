@@ -9,8 +9,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::dashboards;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::dashboards;
+use coralogix_cli::config::OutputFormat;
 
 fn temp_dashboard_json_path(label: &str) -> PathBuf {
     let mut p = std::env::temp_dir();

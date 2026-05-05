@@ -4,8 +4,8 @@ use serde_json::json;
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::search_by_value;
-use cx::config::OutputFormat;
+use coralogix_cli::commands::search_by_value;
+use coralogix_cli::config::OutputFormat;
 
 fn mock_matches_body() -> serde_json::Value {
     json!({

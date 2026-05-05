@@ -5,8 +5,8 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use cx::commands::roles::{run_list, run_system};
-use cx::config::OutputFormat;
+use coralogix_cli::commands::roles::{run_list, run_system};
+use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
 async fn list_custom_roles_from_mock() {

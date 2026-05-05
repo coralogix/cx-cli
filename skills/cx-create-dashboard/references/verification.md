@@ -33,7 +33,6 @@ Use **Frequent Search** unless you have a reason to validate against Archive. Sw
 - The widget's time range (via `$RANGE`) likely exceeds hot retention and Frequent Search returns empty for known-good queries.
 - The user explicitly says “this dashboard should work on archived data.”
 
-This tier choice affects only the **Phase 5 CLI verification commands** (execution-time). It does not modify the dashboard JSON.
 
 ---
 

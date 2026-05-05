@@ -57,7 +57,7 @@ pub fn enforce_read_only(verb: &str) -> Result<()> {
     if is_write_verb(verb) {
         bail!(
             "Write operation '{verb}' is blocked in read-only mode \
-             (--read-only flag or CX_READ_ONLY env var)."
+             (--read-only flag, CX_READ_ONLY env var, or read_only = true in ~/.cx/config.toml)."
         );
     }
     Ok(())

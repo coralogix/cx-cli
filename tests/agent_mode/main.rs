@@ -1,7 +1,21 @@
 use assert_cmd::Command;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+/// Return a fresh temporary directory to use as HOME, so that tests are not
+/// affected by the user's real `~/.cx/config.toml` (which may set `read_only`).
+fn temp_home() -> std::path::PathBuf {
+    let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("cx_agent_test_{}_{id}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
 
 fn cx() -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
+    cmd.env("CX_HOME", temp_home());
     cmd.env_remove("CLAUDECODE");
     cmd.env_remove("CLAUDE_CODE");
     cmd.env_remove("CX_AGENT_MODE");

@@ -38,13 +38,13 @@ The observability backbone for AI agents and engineering teams. `cx` gives you-a
 Install the latest release with the install script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
+curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 Pin a specific version:
 
 ```bash
-CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
+CX_VERSION=0.1.0 curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 ### Homebrew

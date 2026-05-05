@@ -10,7 +10,7 @@ metadata:
 
 End-to-end workflow for creating a skill in `skills/` that teaches AI agents how to use a cx CLI command. This skill is often invoked from `add-command` Step 6, but can also be used standalone when documenting an existing command.
 
-`docs/adding-a-skill.md` has the full reference guide and a copy-pasteable template. Read it alongside this workflow.
+`contributor/adding-a-skill.md` has the full reference guide and a copy-pasteable template. Read it alongside this workflow.
 
 ## Step 0: Understand the Domain
 
@@ -26,7 +26,7 @@ Before writing anything, answer these questions:
 Before writing any skill, read existing ones to internalize the project's patterns. Agents that study existing skills first produce consistent, high-quality results rather than inventing new formats.
 
 **Always read:**
-- `docs/adding-a-skill.md` - full guide with directory structure, frontmatter conventions, reference file rules, and a copy-pasteable template
+- `contributor/adding-a-skill.md` - full guide with directory structure, frontmatter conventions, reference file rules, and a copy-pasteable template
 - `skills/README.md` - the public catalog you'll update in Step 4
 
 **Study at least two existing skills:**
@@ -42,7 +42,7 @@ Pick the two closest to what you're building and read them completely.
 
 ## Step 2: Create Directory and Write SKILL.md
 
-Create `skills/cx-<domain-name>/SKILL.md`. All skill directories use the `cx-` prefix. Use the directory structure, frontmatter format, and templates from `docs/adding-a-skill.md` § "Directory Structure" through "Complete Template" (single-command) or § "Workflow Skills" (multi-command).
+Create `skills/cx-<domain-name>/SKILL.md`. All skill directories use the `cx-` prefix. Use the directory structure, frontmatter format, and templates from `contributor/adding-a-skill.md` § "Directory Structure" through "Complete Template" (single-command) or § "Workflow Skills" (multi-command).
 
 ### Writing effective trigger descriptions
 
@@ -54,7 +54,7 @@ The `description` frontmatter field is the primary trigger mechanism - agents us
 
 ### Body structure
 
-Follow this order (see `docs/adding-a-skill.md` § "Complete Template" for a starting point):
+Follow this order (see `contributor/adding-a-skill.md` § "Complete Template" for a starting point):
 
 1. **Title and intro** - one sentence explaining what the skill covers and which `cx` commands it uses
 2. **CLI Commands table** - `| Command | Purpose | Key flags |` for every subcommand. Include `-o json`/`-o agents` and `-p <profile>` notes.
@@ -72,7 +72,7 @@ Follow this order (see `docs/adding-a-skill.md` § "Complete Template" for a sta
 
 ## Step 3: Add Reference Files and Update README
 
-Follow `docs/adding-a-skill.md` § "Reference Files" for when and how to create `references/` files, and § "Updating skills/README.md" for adding the skill to the public catalog.
+Follow `contributor/adding-a-skill.md` § "Reference Files" for when and how to create `references/` files, and § "Updating skills/README.md" for adding the skill to the public catalog.
 
 ### Shared vs. skill-local references
 
@@ -104,4 +104,4 @@ If you're adding a new shared reference:
 
 For advanced trigger optimization, use the `/skill-creator` skill to run eval-driven description testing and iterate on your trigger phrases.
 
-Use the PR checklist from `docs/adding-a-skill.md` § "PR Checklist" in your PR description.
+Use the PR checklist from `contributor/adding-a-skill.md` § "PR Checklist" in your PR description.

@@ -140,7 +140,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 ### Documentation
 
-**Contributor guides:** [architecture](docs/architecture.md), [adding a command](docs/adding-a-command.md), [adding a skill](docs/adding-a-skill.md), [development](docs/development.md)
+**Contributor guides:** [architecture](contributor/architecture.md), [adding a command](contributor/adding-a-command.md), [adding a skill](contributor/adding-a-skill.md), [development](contributor/development.md)
 
 **Reference docs:** [configuration](docs/configuration.md), [agents output format](docs/agents-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md)
 
@@ -209,7 +209,7 @@ New commands must add tests at all three layers:
 
 E2E tests don't run by default; run them with
 `cargo test --test e2e -- --ignored --test-threads=1` (requires
-`CX_API_KEY`). See [docs/adding-a-command.md](docs/adding-a-command.md)
+`CX_API_KEY`). See [contributor/adding-a-command.md](contributor/adding-a-command.md)
 § "Testing" for templates.
 
 - **New skills** - verify skill triggers and reference file completeness

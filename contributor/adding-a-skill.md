@@ -9,10 +9,15 @@ Each skill lives in its own directory under `skills/`:
 ```
 skills/
 ├── README.md                      ← public catalog (update when adding a skill)
+├── shared/                        ← language guides and telemetry-pillar references (shared across skills)
+│   ├── dataprime-reference.md
+│   ├── promql-guidelines.md
+│   ├── logs-querying.md
+│   └── ...
 ├── cx-your-domain/
 │   ├── SKILL.md                   ← required: frontmatter + body
 │   └── references/                ← optional: deep-dive reference files
-│       └── your-reference.md
+│       └── your-reference.md      ← copies of shared/ files or skill-local references
 ```
 
 | File | Required | Purpose |
@@ -42,7 +47,7 @@ version: 0.1.0
 | `description` | Trigger phrase list - this is how agents decide when to activate the skill |
 | `version` | Semver, start at `0.1.0` |
 
-The `description` field is how agents decide when to activate a skill. Follow the pattern used by existing skills - see `skills/cx-alerts/SKILL.md` and `skills/cx-metrics-query/SKILL.md` for examples.
+The `description` field is how agents decide when to activate a skill. Follow the pattern used by existing skills - see `skills/cx-alerts/SKILL.md` and `skills/cx-telemetry-querying/SKILL.md` for examples.
 
 ---
 
@@ -58,16 +63,37 @@ Use `references/` for dense reference material that would bloat `SKILL.md` but t
 
 **Rule of thumb:** if it's >100 lines of pure reference material, move it to `references/`.
 
-### Existing reference files
+### Shared references
+
+Language-level references (DataPrime syntax, PromQL guidelines) and telemetry-pillar references (logs, spans, metrics, RUM querying) live in `skills/shared/` — not in individual skill directories. These files are the canonical source of truth and are distributed to consuming skills by the sync script.
+
+**To use a shared reference in your skill:**
+1. Add your skill and the file(s) it needs to `scripts/sync-shared-references.sh`
+2. Run `bash scripts/sync-shared-references.sh` to copy the files into your skill's `references/` directory
+3. Commit both the sync script change and the generated `references/` copies
+
+**To add a new shared reference:**
+1. Create the file in `skills/shared/`
+2. Register it in `scripts/sync-shared-references.sh` for every skill that needs it
+3. Run the script to generate copies, then commit everything together
+
+| Shared file | Content |
+|-------------|---------|
+| `skills/shared/dataprime-reference.md` | Complete DataPrime language reference (query structure, prefixes, operators, functions) |
+| `skills/shared/promql-guidelines.md` | PromQL value types, counter vs gauge, histogram patterns, cheat-sheet |
+| `skills/shared/logs-querying.md` | Log data model, field discovery, investigation workflow, common patterns |
+| `skills/shared/spans-querying.md` | Span data model, duration units, error detection, investigation patterns |
+| `skills/shared/metrics-querying.md` | Metrics CLI workflow (search → query → range), common patterns, principles |
+| `skills/shared/rum-querying.md` | RUM data model, event types, error detection, web vitals queries |
+| `skills/shared/rum-fields.md` | Complete RUM field catalog by event type (`$d.cx_rum.*`) |
+
+### Skill-local reference files
+
+Some reference files are unique to one skill and do not belong in `skills/shared/`:
 
 | Skill | Reference file | Content |
 |-------|---------------|---------|
 | `cx-alerts` | `alert-schemas.md` | JSON schemas for all 12 alert types, enum values |
-| `cx-metrics-query` | `promql-guidelines.md` | PromQL value types, counter vs gauge, histogram patterns |
-| `cx-dataprime` | `dataprime-reference.md` | Complete DataPrime language reference |
-| `cx-query-logs` | `advanced-usage.md` | Investigation workflow, field discovery, advanced queries |
-| `cx-query-spans` | `advanced-usage.md` | Span-specific investigation patterns |
-| `cx-rum` | `rum-fields.md` | Complete RUM field catalog by event type |
 | `cx-create-dashboard` | `query-syntax.md` | Coralogix dashboard query gotchas and cross-references |
 | `cx-create-dashboard` | `widget-templates.md` | Widget JSON templates for all widget types |
 | `cx-create-dashboard` | `verification.md` | Live-verification procedure for dashboard queries |
@@ -147,7 +173,7 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 - **Always verify** - confirm operations with a follow-up list or get
 ```
 
-**Reference implementations:** `skills/cx-alerts/SKILL.md` (REST-based command with rich examples) and `skills/cx-metrics-query/SKILL.md` (investigation-oriented workflow).
+**Reference implementations:** `skills/cx-alerts/SKILL.md` (REST-based command with rich examples, uses shared + local references) and `skills/cx-telemetry-querying/SKILL.md` (gateway skill that loads shared reference files per pillar).
 
 ---
 
@@ -204,7 +230,7 @@ cx command-b list -o json
 - **`cx-other-skill`** - description of relationship
 ```
 
-**Reference implementations:** `skills/cx-cost-optimization/SKILL.md` (5-command workflow) and `skills/cx-incident-management/SKILL.md` (cross-skill orchestrator).
+**Reference implementations:** `skills/cx-cost-optimization/SKILL.md` (5-command workflow) and `skills/cx-incident-management/SKILL.md` (multi-command orchestrator with cross-skill delegation).
 
 ---
 
@@ -221,10 +247,12 @@ cx command-b list -o json
 ### Reference files (if applicable)
 - [ ] `skills/cx-your-domain/references/` - deep-dive reference material
 - [ ] SKILL.md links to reference files in "Additional Resources" section
+- [ ] If the skill uses shared references: added to `scripts/sync-shared-references.sh` and ran the script
+- [ ] Shared reference copies committed alongside `scripts/sync-shared-references.sh` change
 
 ### Integration
 - [ ] `skills/README.md` - new skill added to the "Available Skills" table
 
 ### Verification
-- [ ] `scripts/verify-skills.sh` - all skills pass (frontmatter, triggers, commands, cross-refs)
+- [ ] `scripts/verify-skills.sh` - all skills pass (frontmatter, triggers, commands, cross-refs, reference sync)
 ```

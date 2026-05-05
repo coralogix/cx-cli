@@ -24,7 +24,8 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 26 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 28 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 28 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -33,6 +34,7 @@ Query:
   metrics            Query metrics using PromQL
   dataprime          DataPrime language reference and raw queries
   search-fields      Search log/span fields semantically
+  search-by-value    Search field keys by their value content
 
 Observe:
   dashboards         Manage dashboards and dashboard folders

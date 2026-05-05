@@ -2163,7 +2163,10 @@ async fn main() -> Result<()> {
 
     // Load global config for defaults (non-fatal - fall back to defaults).
     let global_config = config::load_config().unwrap_or_default();
-    let output = cli.output.unwrap_or(global_config.default_output_format);
+    let output = cli
+        .output
+        .or_else(|| config::first_profile_output_format(&cli.profile))
+        .unwrap_or(global_config.default_output_format);
     let max_direct = global_config.max_dataprime_direct_output_size;
     let temp_dir = global_config.temp_dir.clone();
 

@@ -83,26 +83,31 @@ pub fn run_list() -> Result<()> {
         .max()
         .unwrap_or(6)
         .max(6);
+    let output_w = 6; // "OUTPUT" header length
 
     println!(
-        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  DEFAULT",
+        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  DEFAULT",
         "NAME",
         "LABEL",
         "REGION",
         "AUTH",
+        "OUTPUT",
         name_w = name_w,
         label_w = label_w,
         region_w = region_w,
+        output_w = output_w,
     );
     println!(
-        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  -------",
+        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  -------",
         "-".repeat(name_w),
         "-".repeat(label_w),
         "-".repeat(region_w),
         "--------",
+        "-".repeat(output_w),
         name_w = name_w,
         label_w = label_w,
         region_w = region_w,
+        output_w = output_w,
     );
 
     for (name, profile) in &entries {
@@ -112,21 +117,27 @@ pub fn run_list() -> Result<()> {
             AuthKind::OAuth => "oauth",
             AuthKind::ApiKey => "api-key",
         };
+        let output_fmt = profile
+            .default_output_format
+            .map(|f| f.as_str())
+            .unwrap_or("-");
         let is_default = if *name == global_config.default_profile {
             "yes"
         } else {
             ""
         };
         println!(
-            "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {}",
+            "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  {}",
             name,
             label,
             region,
             auth,
+            output_fmt,
             is_default,
             name_w = name_w,
             label_w = label_w,
             region_w = region_w,
+            output_w = output_w,
         );
     }
 
@@ -151,29 +162,31 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
 
     let use_oauth = auth_choice.starts_with("OAuth");
 
-    let (profile, storage_desc) = if use_oauth {
+    let (mut profile, storage_desc) = if use_oauth {
         configure_oauth(&name).await?
     } else {
         configure_api_key(&name)?
     };
 
-    save_profile(&name, &profile)?;
-
-    // ── Common: default output format ──────────────────────────────────────────
-    let mut global_config = load_config().unwrap_or_default();
+    // ── Common: default output format (per-profile) ────────────────────────────
+    let global_config = load_config().unwrap_or_default();
+    let current_fmt = profile
+        .default_output_format
+        .unwrap_or(global_config.default_output_format);
     let current_idx = OUTPUT_FORMATS
         .iter()
-        .position(|&f| f == global_config.default_output_format.as_str())
+        .position(|&f| f == current_fmt.as_str())
         .unwrap_or(0);
     let format_str = Select::new("Default output format:", OUTPUT_FORMATS.to_vec())
         .with_starting_cursor(current_idx)
         .prompt()?;
-    global_config.default_output_format = match format_str {
+    profile.default_output_format = Some(match format_str {
         "json" => OutputFormat::Json,
         "agents" => OutputFormat::Agents,
         _ => OutputFormat::Text,
-    };
-    save_config(&global_config)?;
+    });
+
+    save_profile(&name, &profile)?;
 
     let cx_dir = crate::config::config_dir()?;
     println!(
@@ -316,6 +329,7 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         label,
         oauth_client_id: oauth_client_id_for_profile,
         oauth_base_url: oauth_base_url_for_profile,
+        default_output_format: None,
     };
 
     Ok((profile, "OS credential store (OAuth tokens)"))
@@ -371,6 +385,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 label,
                 oauth_client_id: None,
                 oauth_base_url: None,
+                default_output_format: None,
             };
             (profile, "OS credential store")
         }
@@ -385,6 +400,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 label,
                 oauth_client_id: None,
                 oauth_base_url: None,
+                default_output_format: None,
             };
             (profile, "profile file")
         }

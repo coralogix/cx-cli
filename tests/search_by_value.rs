@@ -7,9 +7,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use coralogix_cli::commands::search_by_value;
 use coralogix_cli::config::OutputFormat;
 
-const PATH_LOGS: &str = "/api/v1/search-by-value/logs";
-const PATH_SPANS: &str = "/api/v1/search-by-value/spans";
-
 fn mock_matches_body() -> serde_json::Value {
     json!({
         "matches": [
@@ -33,7 +30,7 @@ async fn search_by_value_returns_results() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .respond_with(ResponseTemplate::new(200).set_body_json(mock_matches_body()))
         .expect(1)
         .mount(&server)
@@ -59,7 +56,7 @@ async fn search_by_value_sends_correct_request_body() {
     });
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .and(body_json(expected_body))
         .respond_with(ResponseTemplate::new(200).set_body_json(mock_matches_body()))
         .expect(1)
@@ -86,7 +83,7 @@ async fn search_by_value_with_spans_dataset() {
     });
 
     Mock::given(method("POST"))
-        .and(path(PATH_SPANS))
+        .and(path("/api/v1/search-by-value"))
         .and(body_json(expected_body))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "matches": [],
@@ -116,7 +113,7 @@ async fn search_by_value_with_all_dataset() {
     });
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .and(body_json(expected_body))
         .respond_with(ResponseTemplate::new(200).set_body_json(mock_matches_body()))
         .expect(1)
@@ -143,7 +140,7 @@ async fn search_by_value_with_offset_for_pagination() {
     });
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .and(body_json(expected_body))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "matches": [],
@@ -173,7 +170,7 @@ async fn search_by_value_clamps_limit_to_100() {
     });
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .and(body_json(expected_body))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "matches": [],
@@ -203,7 +200,7 @@ async fn search_by_value_clamps_limit_zero_to_one() {
     });
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .and(body_json(expected_body))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "matches": [],
@@ -238,7 +235,7 @@ async fn search_by_value_empty_results_text_output() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "matches": [],
             "total_hits": 0
@@ -260,7 +257,7 @@ async fn search_by_value_agents_output() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .respond_with(ResponseTemplate::new(200).set_body_json(mock_matches_body()))
         .expect(1)
         .mount(&server)
@@ -290,7 +287,7 @@ async fn search_by_value_multi_profile_merges_results() {
 
     for (server, body) in [(&server_a, &body_a), (&server_b, &body_b)] {
         Mock::given(method("POST"))
-            .and(path(PATH_LOGS))
+            .and(path("/api/v1/search-by-value"))
             .respond_with(ResponseTemplate::new(200).set_body_json(body))
             .mount(server)
             .await;
@@ -311,7 +308,7 @@ async fn search_by_value_partial_profile_failure_returns_ok() {
     let server_fail = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "matches": [{"key_matched": "http.method", "value": "GET", "similarity_score": 0.9}],
             "total_hits": 1
@@ -319,7 +316,7 @@ async fn search_by_value_partial_profile_failure_returns_ok() {
         .mount(&server_ok)
         .await;
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .respond_with(ResponseTemplate::new(500))
         .mount(&server_fail)
         .await;
@@ -339,7 +336,7 @@ async fn search_by_value_all_profiles_fail_returns_error() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(PATH_LOGS))
+        .and(path("/api/v1/search-by-value"))
         .respond_with(ResponseTemplate::new(500))
         .mount(&server)
         .await;

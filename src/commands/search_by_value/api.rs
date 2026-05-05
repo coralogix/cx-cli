@@ -3,20 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::api_client::CxClient;
 use crate::error::Result as CxResult;
 
-/// Frequent Search logs high-read — gateway path (`dataset`: logs, or `all` via logs ingress).
-const SEARCH_BY_VALUE_PATH_LOGS: &str = "/api/v1/search-by-value/logs";
-/// Frequent Search spans high-read — gateway path (`dataset`: spans).
-const SEARCH_BY_VALUE_PATH_SPANS: &str = "/api/v1/search-by-value/spans";
-
-#[inline]
-fn path_for_dataset(dataset: &str) -> &'static str {
-    if dataset.trim().eq_ignore_ascii_case("spans") {
-        SEARCH_BY_VALUE_PATH_SPANS
-    } else {
-        // logs, all, or unknown → logs ingress (same gateway permission family as `logs`; unknown defaults safely).
-        SEARCH_BY_VALUE_PATH_LOGS
-    }
-}
+const SEARCH_BY_VALUE_PATH: &str = "/api/v1/search-by-value";
 
 /// One result row returned by the values semantic-search API.
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,7 +24,7 @@ pub struct SearchByValueResponse {
 
 /// Fuzzy-search log/span field keys by value content.
 ///
-/// * HTTP path: `.../search-by-value/logs` for `logs` and `all`; `.../search-by-value/spans` for `spans` (gateway permissions).
+/// * `dataset` must be `"logs"`, `"spans"`, or `"all"` (sent as `dataset_type` in the JSON body).
 /// * `limit` is clamped to 1–100.
 pub async fn search_by_value(
     client: &CxClient,
@@ -53,5 +40,5 @@ pub async fn search_by_value(
         "limit": limit,
         "offset": offset,
     });
-    client.post(path_for_dataset(dataset), &body).await
+    client.post(SEARCH_BY_VALUE_PATH, &body).await
 }

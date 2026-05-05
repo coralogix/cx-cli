@@ -190,6 +190,20 @@ For query syntax follow [`references/query-syntax.md`](references/query-syntax.m
 
 Every PromQL and DataPrime query in the draft has to successfully run through `cx` before Phase 7. This catches invented metric names, typoed field paths, and malformed pipelines.
 
+### Frequent vs Archive (what / when / where in JSON)
+
+**What**:
+- **Frequent** (`TIER_FREQUENT_SEARCH`): hot tier for fast search on recent logs/spans.
+- **Archive** (`TIER_ARCHIVE`): cold tier for older logs/spans (long-term).
+
+**When to choose**:
+- Choose **Frequent** for on-call and recent investigations (hours/days).
+- Choose **Archive** for long lookbacks (weeks/months) or when the time range is beyond hot retention.
+
+**Where it is in the JSON**:
+- It appears in the **DataPrime API request JSON** as `metadata.tier`:
+  - `metadata.tier: "TIER_FREQUENT_SEARCH"` or `metadata.tier: "TIER_ARCHIVE"`
+
 Map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` for the CLI call, verify, then restore `${__range}` in the JSON before Phase 6.
 
 Full procedure (CLI invocations, `$RANGE` mapping table, retry budget, failure modes): [`references/verification.md`](references/verification.md).

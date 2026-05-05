@@ -20,7 +20,24 @@ Every verification query uses `$RANGE` so the CLI check matches what the dashboa
 
 ---
 
-## 2. Verify each PromQL query
+## 2. Pick the storage tier for DataPrime verification (Frequent Search vs Archive)
+
+`cx logs` and `cx spans` support a `--tier` flag:
+
+- `--tier frequent` (default): hot storage, fast, recent data.
+- `--tier archive`: cold/long-term storage, older data.
+
+Use **Frequent Search** unless you have a reason to validate against Archive. Switch to **Archive** when:
+
+- The dashboard is intended for long lookbacks (weekly/monthly trends, retrospectives).
+- The widget's time range (via `$RANGE`) likely exceeds hot retention and Frequent Search returns empty for known-good queries.
+- The user explicitly says “this dashboard should work on archived data.”
+
+This tier choice affects only the **Phase 5 CLI verification commands** (execution-time). It does not modify the dashboard JSON.
+
+---
+
+## 3. Verify each PromQL query
 
 For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`). Leave any other fixed window (`[5m]`, `[1h]`) untouched - those were placed intentionally for sliding-rate panels.
 
@@ -44,7 +61,7 @@ On failure: consult the `cx-metrics-query` skill for PromQL help, re-search for 
 
 ---
 
-## 3. Verify each DataPrime query
+## 4. Verify each DataPrime query
 
 For every widget whose definition contains a `dataprimeQuery`, pick the CLI command from the widget's source prefix and **strip the leading `source logs` / `source spans`** before handing the pipeline to `cx`:
 
@@ -58,20 +75,20 @@ The dashboard runtime requires the `source …` prefix inside the widget JSON (s
 **Log-backed widgets:**
 
 ```bash
-cx logs '<pipeline-without-leading-source-logs>' --start now-$RANGE --end now --limit 1
+cx logs '<pipeline-without-leading-source-logs>' --start now-$RANGE --end now --limit 1 --tier <frequent|archive>
 ```
 
 **Span-backed widgets:**
 
 ```bash
-cx spans '<pipeline-without-leading-source-spans>' --start now-$RANGE --end now --limit 1
+cx spans '<pipeline-without-leading-source-spans>' --start now-$RANGE --end now --limit 1 --tier <frequent|archive>
 ```
 
 A query **passes** when the CLI returns without a parse error. Empty results are acceptable. On failure: consult the `cx-dataprime` skill (`cx dataprime show <command>` for inline help), re-discover fields with `cx search-fields`, fix, retry. Budget ≤5 retry attempts per query.
 
 ---
 
-## 4. Restore `${__range}` before Phase 6
+## 5. Restore `${__range}` before Phase 6
 
 Once every PromQL and DataPrime query passes, restore `${__range}` (and any other variables) in the emitted JSON. The verification step uses the concrete `$RANGE`; the final JSON keeps the injected variables intact.
 

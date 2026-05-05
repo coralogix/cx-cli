@@ -14,20 +14,13 @@ fn temp_home() -> PathBuf {
     dir
 }
 
-fn set_home(cmd: &mut Command, home: &std::path::Path) {
-    cmd.env("HOME", home);
-    // On Windows, dirs::home_dir() reads USERPROFILE instead of HOME.
-    #[cfg(windows)]
-    cmd.env("USERPROFILE", home);
-}
-
 fn cx_with_config(home: &std::path::Path, config_toml: &str) -> Command {
     let cx_dir = home.join(".cx");
     fs::create_dir_all(&cx_dir).unwrap();
     fs::write(cx_dir.join("config.toml"), config_toml).unwrap();
 
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    set_home(&mut cmd, home);
+    cmd.env("CX_HOME", home);
     cmd
 }
 
@@ -235,7 +228,7 @@ fn no_config_file_allows_everything() {
     let tmp = temp_home();
     // No config file at all - should default to permissive.
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    set_home(&mut cmd, &tmp);
+    cmd.env("CX_HOME", &tmp);
     let output = cmd
         .args([
             "iam",

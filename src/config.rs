@@ -317,6 +317,10 @@ pub struct ResolvedConfig {
 
 /// Returns the cx config directory: `~/.cx/`
 pub fn config_dir() -> Result<PathBuf> {
+    // CX_HOME overrides the home directory for testing and non-standard setups.
+    if let Ok(cx_home) = std::env::var("CX_HOME") {
+        return Ok(PathBuf::from(cx_home).join(".cx"));
+    }
     let home = dirs::home_dir().context("Could not determine home directory")?;
     Ok(home.join(".cx"))
 }

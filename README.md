@@ -81,7 +81,7 @@ Follow these steps to go from a fresh install to a working query.
 2. Query logs. The positional argument is a DataPrime query:
 
     ```bash
-    cx logs 'filter $m.severity == "ERROR"'
+    cx logs 'filter $m.severity == ERROR'
     ```
 
 3. Query metrics. `cx metrics query` takes a PromQL expression:
@@ -93,7 +93,7 @@ Follow these steps to go from a fresh install to a working query.
 4. Search distributed spans. The positional argument is a DataPrime filter; `source spans` is prepended automatically:
 
     ```bash
-    cx spans 'filter $l.serviceName == "checkout"' --start now-2h --limit 50
+    cx spans "filter \$l.serviceName == 'checkout'" --start now-2h --limit 50
     ```
 
 5. List dashboards to confirm the API is reachable:
@@ -104,7 +104,7 @@ Follow these steps to go from a fresh install to a working query.
 
 Run `cx <command> --help` for full syntax and examples on any command.
 
-<details open>
+<details open markdown="1">
 <summary><strong>Commands</strong></summary>
 
 Commands are grouped by domain. Run `cx --help` for the full organized listing, or `cx schema` for a machine-readable JSON tree.
@@ -181,7 +181,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
-<details>
+<details markdown="1">
 <summary>Global options</summary>
 
 ```
@@ -241,14 +241,14 @@ Install globally for all projects:
 npx skills add coralogix/cx-cli -g
 ```
 
-Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-create-dashboard`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](skills/README.md) for per-skill usage.
+Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-create-dashboard`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](https://github.com/coralogix/cx-cli/blob/master/skills/README.md) for per-skill usage.
 
 ## Multi-profile fan-out
 
 Repeat `-p` to run a command across multiple profiles in parallel. Results are merged and tagged with the profile name:
 
 ```bash
-cx -p prod-eu -p prod-us logs 'filter $m.severity == "ERROR"'
+cx -p prod-eu -p prod-us logs 'filter $m.severity == ERROR'
 ```
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
@@ -271,7 +271,7 @@ cargo install coralogix-cli
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
 
-<details>
+<details markdown="1">
 <summary>Nix</summary>
 
 ```bash
@@ -312,7 +312,7 @@ in {
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>Build from source</summary>
 
 ```bash
@@ -394,7 +394,7 @@ source <(COMPLETE=bash cx)
 COMPLETE=fish cx | source
 ```
 
-<details>
+<details markdown="1">
 <summary><strong>Migrating from cxctl</strong></summary>
 
 `cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.

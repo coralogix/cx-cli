@@ -76,7 +76,7 @@ cx logs "filter \$l.applicationname == 'api' && \$l.subsystemname == 'auth'"
 cx logs 'filter $m.severity == ERROR | groupby $l.subsystemname aggregate count() as errors | orderby errors desc'
 
 # Wider time range and archive tier
-cx logs "filter \$d.user_id == '12345'" --tier archive --start now-7d
+cx logs "filter \$l.subsystemname == 'payments'" --tier archive --start now-7d
 ```
 
 ### Wildfind Policy
@@ -226,16 +226,6 @@ cx logs 'filter $m.severity == ERROR | distinct $l.subsystemname'
 
 # List unique error types
 cx logs 'filter $m.severity == ERROR | distinct $d.error_type'
-```
-
-### Correlating by ID
-
-```bash
-# Find all logs for a request ID
-cx logs "filter \$d.request_id == 'abc-123-def'"
-
-# Find logs for a user
-cx logs "filter \$d.user_id == 'user_12345'" --start now-24h
 ```
 
 ### Fetching Sample Logs by Template

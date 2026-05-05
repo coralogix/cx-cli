@@ -686,6 +686,11 @@ Examples:
         #[arg(long)]
         folder: Option<String>,
     },
+    /// Delete a dashboard [requires --yes].
+    Delete {
+        /// Dashboard ID.
+        dashboard_id: String,
+    },
     /// Manage dashboard folders.
     Folders {
         #[command(subcommand)]
@@ -714,6 +719,11 @@ Examples:
         /// Optional parent folder ID. Omit to create a top-level folder.
         #[arg(long)]
         parent_id: Option<String>,
+    },
+    /// Delete a dashboard folder [requires --yes].
+    Delete {
+        /// Folder ID.
+        id: String,
     },
 }
 
@@ -2263,6 +2273,14 @@ async fn main() -> Result<()> {
                 commands::dashboards::run_create(&targets, &from_file, folder.as_deref(), output)
                     .await?;
             }
+            DashboardsCmd::Delete { dashboard_id } => {
+                confirm_destructive(
+                    &format!("Delete dashboard '{dashboard_id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
+                commands::dashboards::run_delete(&targets, &dashboard_id).await?;
+            }
             DashboardsCmd::Folders { cmd } => match cmd {
                 FoldersCmd::List => {
                     commands::dashboards::run_folders_list(&targets, output).await?;
@@ -2276,6 +2294,14 @@ async fn main() -> Result<()> {
                         output,
                     )
                     .await?;
+                }
+                FoldersCmd::Delete { id } => {
+                    confirm_destructive(
+                        &format!("Delete dashboard folder '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::dashboards::run_folders_delete(&targets, &id).await?;
                 }
             },
         },

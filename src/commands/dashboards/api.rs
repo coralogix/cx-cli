@@ -69,6 +69,12 @@ pub struct DashboardFoldersResponse {
 const DASHBOARDS_BASE: &str = "/mgmt/openapi/5/dashboards/dashboards/v1";
 const FOLDERS_BASE: &str = "/mgmt/openapi/5/dashboards/folders/v1";
 
+#[derive(Debug, Deserialize)]
+pub struct DeleteDashboardResponse {}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteDashboardFolderResponse {}
+
 pub struct DashboardsApi<'a> {
     client: &'a CxClient,
 }
@@ -109,5 +115,17 @@ impl<'a> DashboardsApi<'a> {
     /// payload expected by the Dashboard Folders Service.
     pub async fn folders_create(&self, body: &Value) -> Result<Value> {
         self.client.post(FOLDERS_BASE, body).await
+    }
+
+    /// Delete a dashboard by ID.
+    pub async fn delete(&self, id: &str) -> Result<DeleteDashboardResponse> {
+        let path = format!("{DASHBOARDS_BASE}/{id}");
+        self.client.delete(&path).await
+    }
+
+    /// Delete a dashboard folder by ID.
+    pub async fn folders_delete(&self, id: &str) -> Result<DeleteDashboardFolderResponse> {
+        let path = format!("{FOLDERS_BASE}/{id}");
+        self.client.delete(&path).await
     }
 }

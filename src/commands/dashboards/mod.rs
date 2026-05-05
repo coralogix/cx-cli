@@ -354,6 +354,32 @@ pub async fn run_create(
     Ok(())
 }
 
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
+    eprintln!("{}", format!("Deleting dashboard {id}...").dimmed());
+    let id = id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = DashboardsApi::new(&t.client);
+            api.delete(&id).await?;
+            Ok(())
+        }
+    })
+    .await;
+    for (profile, result) in per_profile {
+        match result {
+            Ok(()) => eprintln!(
+                "{}",
+                format!("Dashboard {id} deleted in profile '{profile}'.").green()
+            ),
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+    Ok(())
+}
+
 // ── Folders ───────────────────────────────────────────────────────────────────
 
 fn folder_item_to_json(item: &DashboardFolderItem, include_profile: bool, profile: &str) -> Value {
@@ -515,5 +541,29 @@ pub async fn run_folders_create(
         }
     }
 
+    Ok(())
+}
+
+pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
+    eprintln!("{}", format!("Deleting dashboard folder {id}...").dimmed());
+    let id = id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = DashboardsApi::new(&t.client);
+            api.folders_delete(&id).await?;
+            Ok(())
+        }
+    })
+    .await;
+    for (profile, result) in per_profile {
+        match result {
+            Ok(()) => eprintln!(
+                "{}",
+                format!("Folder {id} deleted in profile '{profile}'.").green()
+            ),
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
     Ok(())
 }

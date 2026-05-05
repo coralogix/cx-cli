@@ -6,7 +6,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::dashboards::api::DashboardsApi;
-use coralogix_cli::commands::dashboards::run_catalog;
+use coralogix_cli::commands::dashboards::{run_catalog, run_delete, run_folders_delete};
 use coralogix_cli::config::OutputFormat;
 
 /// Verify that `DashboardsApi::catalog()` correctly deserializes a mocked
@@ -109,4 +109,44 @@ async fn run_catalog_json_output_succeeds() {
     run_catalog(&targets, OutputFormat::Json)
         .await
         .expect("run_catalog with JSON output should succeed");
+}
+
+/// Verify that `run_delete` succeeds when the mock returns an empty response.
+#[tokio::test]
+async fn delete_dashboard_from_mock() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("DELETE"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/dash-abc"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    run_delete(&targets, "dash-abc")
+        .await
+        .expect("run_delete should succeed");
+}
+
+/// Verify that `run_folders_delete` succeeds when the mock returns an empty response.
+#[tokio::test]
+async fn delete_dashboard_folder_from_mock() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("DELETE"))
+        .and(path("/mgmt/openapi/5/dashboards/folders/v1/folder-xyz"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    run_folders_delete(&targets, "folder-xyz")
+        .await
+        .expect("run_folders_delete should succeed");
 }

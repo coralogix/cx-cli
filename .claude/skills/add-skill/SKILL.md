@@ -10,7 +10,7 @@ metadata:
 
 End-to-end workflow for creating a skill in `skills/` that teaches AI agents how to use a cx CLI command. This skill is often invoked from `add-command` Step 6, but can also be used standalone when documenting an existing command.
 
-`docs/adding-a-skill.md` has the full reference guide and a copy-pasteable template. Read it alongside this workflow.
+`contributing/adding-a-skill.md` has the full reference guide and a copy-pasteable template. Read it alongside this workflow.
 
 ## Step 0: Understand the Domain
 
@@ -26,25 +26,23 @@ Before writing anything, answer these questions:
 Before writing any skill, read existing ones to internalize the project's patterns. Agents that study existing skills first produce consistent, high-quality results rather than inventing new formats.
 
 **Always read:**
-- `docs/adding-a-skill.md` - full guide with directory structure, frontmatter conventions, reference file rules, and a copy-pasteable template
+- `contributing/adding-a-skill.md` - full guide with directory structure, frontmatter conventions, reference file rules, and a copy-pasteable template
 - `skills/README.md` - the public catalog you'll update in Step 4
 
 **Study at least two existing skills:**
 
 | Skill | Why study it |
 |-------|-------------|
-| `skills/cx-alerts/SKILL.md` | REST-based command with rich examples, JSON payloads, investigation workflow, and reference files |
-| `skills/cx-metrics-query/SKILL.md` | Investigation-oriented, multi-step workflow with retry logic and common patterns |
-| `skills/cx-dataprime/SKILL.md` | Minimal body that delegates to a large reference file - good model for reference-heavy domains |
-| `skills/cx-rum/SKILL.md` | Builds on other skills (references cx-query-logs and cx-dataprime) - good model for cross-skill integration |
-| `skills/cx-telemetry-querying/SKILL.md` | Gateway/routing skill with no CLI commands of its own - delegates to other skills |
-| `skills/cx-cost-optimization/SKILL.md` | Workflow skill covering 5 commands unified by "reduce costs" intent - good model for multi-command skills |
+| `skills/cx-alerts/SKILL.md` | REST-based command with rich examples, JSON payloads, investigation workflow; uses both shared and skill-local reference files |
+| `skills/cx-telemetry-querying/SKILL.md` | Gateway skill that loads shared reference files per pillar — good model for cross-pillar routing and reference-loading patterns |
+| `skills/cx-create-dashboard/SKILL.md` | Complex multi-step workflow; uses shared references (dataprime, promql, logs, spans) plus skill-local references |
+| `skills/cx-cost-optimization/SKILL.md` | Workflow skill covering 5 commands unified by "reduce costs" intent — good model for multi-command skills |
 
 Pick the two closest to what you're building and read them completely.
 
 ## Step 2: Create Directory and Write SKILL.md
 
-Create `skills/cx-<domain-name>/SKILL.md`. All skill directories use the `cx-` prefix. Use the directory structure, frontmatter format, and templates from `docs/adding-a-skill.md` § "Directory Structure" through "Complete Template" (single-command) or § "Workflow Skills" (multi-command).
+Create `skills/cx-<domain-name>/SKILL.md`. All skill directories use the `cx-` prefix. Use the directory structure, frontmatter format, and templates from `contributing/adding-a-skill.md` § "Directory Structure" through "Complete Template" (single-command) or § "Workflow Skills" (multi-command).
 
 ### Writing effective trigger descriptions
 
@@ -56,7 +54,7 @@ The `description` frontmatter field is the primary trigger mechanism - agents us
 
 ### Body structure
 
-Follow this order (see `docs/adding-a-skill.md` § "Complete Template" for a starting point):
+Follow this order (see `contributing/adding-a-skill.md` § "Complete Template" for a starting point):
 
 1. **Title and intro** - one sentence explaining what the skill covers and which `cx` commands it uses
 2. **CLI Commands table** - `| Command | Purpose | Key flags |` for every subcommand. Include `-o json`/`-o agents` and `-p <profile>` notes.
@@ -74,7 +72,25 @@ Follow this order (see `docs/adding-a-skill.md` § "Complete Template" for a sta
 
 ## Step 3: Add Reference Files and Update README
 
-Follow `docs/adding-a-skill.md` § "Reference Files" for when and how to create `references/` files, and § "Updating skills/README.md" for adding the skill to the public catalog.
+Follow `contributing/adding-a-skill.md` § "Reference Files" for when and how to create `references/` files, and § "Updating skills/README.md" for adding the skill to the public catalog.
+
+### Shared vs. skill-local references
+
+Before creating a new reference file, check whether the content is language-level or telemetry-pillar material:
+
+- **Language guides** (DataPrime syntax, PromQL guidelines) → `skills/shared/`
+- **Telemetry-pillar how-tos** (logs querying, spans querying, metrics workflow, RUM) → `skills/shared/`
+- **Skill-specific schemas or templates** (alert JSON schemas, dashboard widget templates) → `skills/cx-your-domain/references/`
+
+If your skill needs a file from `skills/shared/`:
+1. Add your skill and file list to `scripts/sync-shared-references.sh`
+2. Run `bash scripts/sync-shared-references.sh` — it copies the file(s) into your `references/`
+3. Commit the sync script change and the generated `references/` copies together
+
+If you're adding a new shared reference:
+1. Create it in `skills/shared/`
+2. Register it in the sync script for all consuming skills
+3. Run the script to generate copies, then commit everything
 
 ## Step 4: Verify
 
@@ -83,8 +99,9 @@ Follow `docs/adding-a-skill.md` § "Reference Files" for when and how to create 
 3. **Reference links** - any `references/` paths in SKILL.md point to files that actually exist
 4. **README updated** - `skills/README.md` has the new row
 5. **No bloat** - SKILL.md doesn't duplicate >100 lines of material that belongs in `references/`
-6. **Agent readability** - would an AI agent know exactly what to do after reading this skill? If not, add missing steps or examples
+6. **Shared references synced** - if the skill uses files from `skills/shared/`, confirm `bash scripts/sync-shared-references.sh` was run and the generated `references/` copies are committed
+7. **Agent readability** - would an AI agent know exactly what to do after reading this skill? If not, add missing steps or examples
 
 For advanced trigger optimization, use the `/skill-creator` skill to run eval-driven description testing and iterate on your trigger phrases.
 
-Use the PR checklist from `docs/adding-a-skill.md` § "PR Checklist" in your PR description.
+Use the PR checklist from `contributing/adding-a-skill.md` § "PR Checklist" in your PR description.

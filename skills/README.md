@@ -6,7 +6,7 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 
 ## Available Skills
 
-### Investigation Skills
+### Investigation
 
 | Skill | Description |
 |---|---|
@@ -17,10 +17,11 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 | `cx-metrics-query` | Investigate production issues by searching metrics, constructing PromQL queries, and analyzing results via `cx metrics` |
 | `cx-rum` | Query and analyze Real User Monitoring data - frontend errors, web vitals, user interactions, page performance via `cx logs` |
 | `cx-dataprime` | DataPrime query language reference - syntax, commands, operators, aggregations, text extraction |
+| `cx-telemetry-querying` | Gateway for all telemetry investigation — logs, spans, metrics, RUM, and DataPrime queries. Loads pillar-specific reference files (DataPrime syntax, PromQL guidelines, logs/spans/metrics/RUM how-tos) per query type. |
 | `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts` |
 | `cx-create-dashboard` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation |
 
-### Workflow Skills
+### Workflow
 
 | Skill | Description |
 |---|---|

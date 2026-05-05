@@ -322,6 +322,19 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 
 ---
 
+## Tier (`dataModeType`) quick-reference
+
+`dataModeType` lives **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dataTable.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`). It controls which storage tier the widget reads from at render time.
+
+| Value | When |
+|---|---|
+| `DATA_MODE_TYPE_HIGH_UNSPECIFIED` | default — frequent (hot) search tier |
+| `DATA_MODE_TYPE_ARCHIVE` | archive (cold) tier — for long lookbacks or when the user requests archive |
+
+The templates above ship with `DATA_MODE_TYPE_HIGH_UNSPECIFIED`. When the user wants archive, replace `DATA_MODE_TYPE_HIGH_UNSPECIFIED` → `DATA_MODE_TYPE_ARCHIVE` on **every** widget before deploy (not just the dashboard root).
+
+---
+
 ## Unit enum quick-reference
 
 | Value | When |

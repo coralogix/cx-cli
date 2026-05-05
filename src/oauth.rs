@@ -6,7 +6,8 @@
 //!   - Callback HTTP listener on a randomised port from a fixed allow-list
 //!   - Authorization code exchange
 //!   - Token refresh
-//!   - Keyring-backed token persistence
+//!   - Token persistence in either the OS keyring or the profile TOML
+//!     (selected by `Profile::credential_storage`)
 
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -18,6 +19,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
+use crate::config::{CredentialStorage, StoredOAuthTokens};
 use crate::keyring_store;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -104,6 +106,15 @@ pub fn client_id_for_region(region_name: &str) -> Option<&'static str> {
         .map(|e| e.client_id)
 }
 
+/// Current Unix timestamp in seconds. The system clock is assumed to be after
+/// 1970; if it isn't, OAuth refresh wouldn't work anyway.
+fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// Seconds until the JWT access token expires (`> 0` = still valid, `< 0` = expired).
 /// Returns `None` when the JWT structure or `exp` claim is not parseable.
 pub fn token_seconds_remaining(access_token: &str) -> Option<i64> {
@@ -114,11 +125,7 @@ pub fn token_seconds_remaining(access_token: &str) -> Option<i64> {
     let payload = URL_SAFE_NO_PAD.decode(parts[1]).ok()?;
     let json: serde_json::Value = serde_json::from_slice(&payload).ok()?;
     let exp = json.get("exp")?.as_u64()?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    Some(exp as i64 - now as i64)
+    Some(exp as i64 - unix_now_secs() as i64)
 }
 
 // ── OAuth protocol helpers ────────────────────────────────────────────────────
@@ -375,11 +382,26 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
     .await
 }
 
+/// Convert a freshly received `TokenResponse` into the form persisted in the
+/// profile TOML when `credential_storage = "file"`.
+///
+/// `expiry` is computed from `expires_in` when present. When absent, it stays
+/// `None` and `resolve_token` falls back to parsing the JWT `exp` claim.
+pub fn tokens_to_stored(tokens: &TokenResponse) -> StoredOAuthTokens {
+    let expiry = tokens.expires_in.map(|exp_in| unix_now_secs() + exp_in);
+    StoredOAuthTokens {
+        access_token: tokens.access_token.clone(),
+        refresh_token: tokens.refresh_token.clone(),
+        id_token: tokens.id_token.clone(),
+        expiry,
+    }
+}
+
 /// Persist an OAuth token set to the OS keyring for `profile`.
 ///
 /// Stores: `oauth_access_token`, `oauth_refresh_token`, `oauth_id_token`,
 /// `oauth_token_expiry` (Unix timestamp, computed from `expires_in`).
-pub fn store_tokens(profile: &str, tokens: &TokenResponse) -> Result<()> {
+pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()> {
     keyring_store::store_secret(profile, "oauth_access_token", &tokens.access_token)?;
     if let Some(ref rt) = tokens.refresh_token {
         keyring_store::store_secret(profile, "oauth_refresh_token", rt)?;
@@ -391,56 +413,75 @@ pub fn store_tokens(profile: &str, tokens: &TokenResponse) -> Result<()> {
     // When absent, `resolve_token` falls back to parsing the JWT `exp` claim directly.
     // Storing a sentinel `0` would make every cached token appear permanently expired.
     if let Some(exp_in) = tokens.expires_in {
-        let expiry = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            + exp_in;
+        let expiry = unix_now_secs() + exp_in;
         keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
     }
     Ok(())
 }
 
+fn cached_token_is_valid(token: &str, expiry: Option<u64>) -> bool {
+    if let Some(exp) = expiry {
+        exp > unix_now_secs() + 30
+    } else {
+        token_seconds_remaining(token)
+            .map(|s| s > 30)
+            .unwrap_or(false)
+    }
+}
+
 /// Resolve a usable bearer token for an OAuth profile.
 ///
-/// Returns the cached access token if it is still valid (≥ 30 s remaining).
-/// Otherwise, uses the stored refresh token to obtain a fresh token set,
-/// persists the new tokens, and returns the new access token.
+/// Reads the cached access token from the chosen storage backend and returns it
+/// if it is still valid (≥ 30 s remaining). Otherwise, uses the cached refresh
+/// token to obtain a fresh token set.
+///
+/// For `OsStore`, the keyring is updated in place and the returned
+/// `Option<StoredOAuthTokens>` is always `None`. For `File`, the caller is
+/// responsible for persisting the returned `Some(StoredOAuthTokens)` to the
+/// profile TOML when a refresh occurred.
 ///
 /// Errors with an actionable message when re-authentication is required.
-pub async fn resolve_token(profile_name: &str, base_url: &str, client_id: &str) -> Result<String> {
-    let access_token = keyring_store::get_secret(profile_name, "oauth_access_token")?;
-
-    let is_valid = if let Some(ref token) = access_token {
-        let expiry = keyring_store::get_secret(profile_name, "oauth_token_expiry")?
-            .and_then(|s| s.parse::<u64>().ok());
-        if let Some(exp) = expiry {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            exp > now + 30
-        } else {
-            // Fall back to parsing the JWT's `exp` claim.
-            token_seconds_remaining(token)
-                .map(|s| s > 30)
-                .unwrap_or(false)
+pub async fn resolve_token(
+    profile_name: &str,
+    base_url: &str,
+    client_id: &str,
+    storage: CredentialStorage,
+    file_tokens: Option<&StoredOAuthTokens>,
+) -> Result<(String, Option<StoredOAuthTokens>)> {
+    let (cached_access, cached_expiry, cached_refresh) = match storage {
+        CredentialStorage::OsStore => (
+            keyring_store::get_secret(profile_name, "oauth_access_token")?,
+            keyring_store::get_secret(profile_name, "oauth_token_expiry")?
+                .and_then(|s| s.parse::<u64>().ok()),
+            keyring_store::get_secret(profile_name, "oauth_refresh_token")?,
+        ),
+        CredentialStorage::File => {
+            let t = file_tokens.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "OAuth tokens missing for profile '{profile_name}'.\n\
+                     Run `cx profiles add {profile_name}` to re-authenticate."
+                )
+            })?;
+            (
+                Some(t.access_token.clone()),
+                t.expiry,
+                t.refresh_token.clone(),
+            )
         }
-    } else {
-        false
     };
 
-    if is_valid {
-        return Ok(access_token.unwrap());
+    if let Some(ref token) = cached_access {
+        if cached_token_is_valid(token, cached_expiry) {
+            return Ok((token.clone(), None));
+        }
     }
 
-    let refresh_token = keyring_store::get_secret(profile_name, "oauth_refresh_token")?
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "OAuth session expired for profile '{profile_name}'.\n\
-                 Run `cx profiles add {profile_name}` to re-authenticate."
-            )
-        })?;
+    let refresh_token = cached_refresh.ok_or_else(|| {
+        anyhow::anyhow!(
+            "OAuth session expired for profile '{profile_name}'.\n\
+             Run `cx profiles add {profile_name}` to re-authenticate."
+        )
+    })?;
 
     let oidc = fetch_openid_config(base_url).await.with_context(|| {
         format!(
@@ -457,6 +498,126 @@ pub async fn resolve_token(profile_name: &str, base_url: &str, client_id: &str) 
             )
         })?;
 
-    store_tokens(profile_name, &tokens)?;
-    Ok(tokens.access_token)
+    match storage {
+        CredentialStorage::OsStore => {
+            store_tokens_keyring(profile_name, &tokens)?;
+            Ok((tokens.access_token, None))
+        }
+        CredentialStorage::File => {
+            let stored = tokens_to_stored(&tokens);
+            Ok((tokens.access_token, Some(stored)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_token_response(expires_in: Option<u64>, refresh: Option<&str>) -> TokenResponse {
+        TokenResponse {
+            access_token: "access-abc".to_string(),
+            token_type: "Bearer".to_string(),
+            expires_in,
+            refresh_token: refresh.map(str::to_string),
+            id_token: Some("id-xyz".to_string()),
+            scope: None,
+        }
+    }
+
+    #[test]
+    fn tokens_to_stored_sets_expiry_when_expires_in_present() {
+        let before = unix_now_secs();
+        let stored = tokens_to_stored(&sample_token_response(Some(3600), Some("refresh-1")));
+        let after = unix_now_secs();
+
+        let expiry = stored.expiry.expect("expiry computed from expires_in");
+        assert!(expiry >= before + 3600 && expiry <= after + 3600);
+        assert_eq!(stored.access_token, "access-abc");
+        assert_eq!(stored.refresh_token.as_deref(), Some("refresh-1"));
+        assert_eq!(stored.id_token.as_deref(), Some("id-xyz"));
+    }
+
+    #[test]
+    fn tokens_to_stored_leaves_expiry_none_when_expires_in_absent() {
+        let stored = tokens_to_stored(&sample_token_response(None, None));
+        assert!(stored.expiry.is_none());
+        assert!(stored.refresh_token.is_none());
+    }
+
+    #[test]
+    fn cached_token_is_valid_uses_expiry_when_present() {
+        let now = unix_now_secs();
+        // 5 minutes left -> valid.
+        assert!(cached_token_is_valid("ignored", Some(now + 300)));
+        // Inside the 30 s skew window -> not valid.
+        assert!(!cached_token_is_valid("ignored", Some(now + 10)));
+        // Already expired.
+        assert!(!cached_token_is_valid("ignored", Some(now - 1)));
+    }
+
+    #[test]
+    fn cached_token_is_valid_falls_back_to_jwt_exp_without_expiry() {
+        // Token is not a JWT and there's no separate expiry -> conservatively invalid.
+        assert!(!cached_token_is_valid("not-a-jwt", None));
+    }
+
+    #[tokio::test]
+    async fn resolve_token_file_mode_errors_when_tokens_missing() {
+        let err = resolve_token(
+            "myprofile",
+            "https://example.invalid",
+            "client-id",
+            CredentialStorage::File,
+            None,
+        )
+        .await
+        .expect_err("missing file_tokens must error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("OAuth tokens missing"), "got: {msg}");
+        assert!(msg.contains("myprofile"), "got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn resolve_token_file_mode_returns_cached_when_valid() {
+        let tokens = StoredOAuthTokens {
+            access_token: "still-good".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            id_token: None,
+            expiry: Some(unix_now_secs() + 600),
+        };
+        // base_url is never contacted because the cached token is valid.
+        let (bearer, refreshed) = resolve_token(
+            "myprofile",
+            "https://example.invalid",
+            "client-id",
+            CredentialStorage::File,
+            Some(&tokens),
+        )
+        .await
+        .expect("cached path must not hit the network");
+        assert_eq!(bearer, "still-good");
+        assert!(refreshed.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_token_file_mode_errors_when_expired_without_refresh() {
+        let tokens = StoredOAuthTokens {
+            access_token: "expired".to_string(),
+            refresh_token: None,
+            id_token: None,
+            expiry: Some(unix_now_secs() - 1),
+        };
+        let err = resolve_token(
+            "myprofile",
+            "https://example.invalid",
+            "client-id",
+            CredentialStorage::File,
+            Some(&tokens),
+        )
+        .await
+        .expect_err("expired access + no refresh token must error");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("OAuth session expired"), "got: {msg}");
+    }
 }

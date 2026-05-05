@@ -15,7 +15,7 @@
 
 ## Quick start
 
-Run `cx profiles add` to create or update the default profile. OAuth (browser login) is selected by default and is the recommended option - it opens your browser, captures the callback automatically, and stores tokens securely in the OS keyring.
+Run `cx profiles add` to create or update the default profile. OAuth (browser login) is selected by default and is the recommended option - it opens your browser, captures the callback automatically, and persists the resulting tokens.
 
 ```
 $ cx profiles add
@@ -30,9 +30,12 @@ Waiting for browser callback...
 Authorization code received, exchanging for tokens...
 Login successful!
 
+Where should OAuth tokens be stored? file
 Profile 'default' saved to /Users/you/.cx
-Credentials stored in OS credential store (OAuth tokens)
+Credentials stored in profile file (OAuth tokens)
 ```
+
+You will be asked where to store the credentials: `file` (default - saved inline in the profile TOML with `0600` permissions) or `os-store` (the OS credential store - macOS Keychain, Windows Credential Manager, etc.). Pick `os-store` if your threat model assumes other processes running as your user could read the profile file.
 
 To use a plain API key instead, select `API key (paste manually)` at the first prompt. The API key must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or a [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys) - see [API Key](#api-key) below for where to generate one. [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work for querying.
 
@@ -42,8 +45,8 @@ To use a plain API key instead, select `API key (paste manually)` at the first p
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are stored in the OS keyring and are **never written to the profile TOML**.
-- The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry.
+- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend - either inline in the profile TOML (`file`, the default) or in the OS keyring (`os_store`).
+- The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
 - If the refresh token is also expired, `cx` exits with an actionable message:
 
   ```
@@ -104,7 +107,7 @@ temp_dir = "/tmp/"
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. Sensitive secrets (API key, OAuth tokens) live in the OS keyring when `credential_storage = "os_store"` and are **not** written to the TOML.
+Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` (the default) the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent.
 
 ### Common fields
 
@@ -121,8 +124,25 @@ Each profile stores credentials and endpoint configuration. Sensitive secrets (A
 |---|---|---|
 | `oauth_client_id` | Custom environments | OAuth client ID. Omitted for known regions (hard-coded in the binary). |
 | `oauth_base_url` | Rarely | Overrides the base URL for OpenID discovery. Defaults to `region.api_endpoint()`. |
+| `oauth_tokens` | `credential_storage = "file"` | Cached access/refresh/id tokens and expiry. Absent when tokens live in the OS keyring. |
 
-### Example: OAuth profile (known region)
+### Example: OAuth profile (known region, file storage - default)
+
+```toml
+auth = "oauth"
+credential_storage = "file"
+region = "eu2"
+label = "production"
+
+[oauth_tokens]
+access_token = "..."
+refresh_token = "..."
+expiry = 1700000000
+```
+
+The token set is rewritten in place each time `cx` refreshes. The file is created with `0600` permissions on Unix.
+
+### Example: OAuth profile (known region, OS keyring)
 
 ```toml
 auth = "oauth"
@@ -137,7 +157,7 @@ Tokens live in the OS keyring; nothing sensitive is in this file.
 
 ```toml
 auth = "oauth"
-credential_storage = "os_store"
+credential_storage = "file"
 region = "https://api.myenv.example.com"
 oauth_client_id = "abc123-my-client"
 label = "custom-env"

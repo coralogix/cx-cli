@@ -1,6 +1,16 @@
-# cx-cli
+# CX - Coralogix CLI
 
-The observability backbone for AI agents and engineering teams. `cx` gives you-and your AI agents-direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
+[![CI](https://github.com/coralogix/cx-cli/actions/workflows/build.yml/badge.svg)](https://github.com/coralogix/cx-cli/actions/workflows/build.yml)
+[![Crates.io](https://img.shields.io/crates/v/coralogix-cli)](https://crates.io/crates/coralogix-cli)
+[![Homebrew](https://img.shields.io/badge/homebrew-coralogix%2Ftap%2Fcx-blue)](https://github.com/coralogix/homebrew-tap)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+The observability backbone for AI agents and engineering teams.<br/>
+Connect your agents to live logs, traces, metrics, dashboards, and alerts so they can investigate incidents, explain what changed, and reason about production with real operational context.
+
+<p align="center">
+  <img src="https://github.com/coralogix/cx-cli/raw/master/assets/demo.png" alt="cx logs demo" width="700">
+</p>
 
 ## What you can do
 
@@ -22,82 +32,51 @@ The observability backbone for AI agents and engineering teams. `cx` gives you-a
 - Semantic field search-find the right log or span field by describing it in natural language.
 - Bundled skills for Claude Code, Cursor, Codex, OpenCode, and 40+ more agents, distributed via `npx skills add`.
 
-## Installation
+## Install cx for AI agents
 
-### macOS and Linux
+Most macOS users should use Homebrew. If you are not on macOS, use the cross-platform install script.
 
-Install the latest release with the install script:
+### 1. Install the CLI
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
+curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 Pin a specific version:
 
 ```bash
-CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
+CX_VERSION=0.1.0 curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
-### Homebrew
+#### Recommended for macOS: Homebrew
 
 ```bash
 brew install coralogix/tap/cx
 ```
 
-### Cargo
+#### Works on macOS and Linux: install script
 
 ```bash
-cargo install coralogix-cli
+curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
 ```
 
-### Pre-built binaries
+### 2. Install agent skills
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
-
-### Build from source
+Skills teach your AI agent how to use `cx` for observability investigations.
 
 ```bash
-cargo build --release
-cp target/release/cx /usr/local/bin/
+npx skills add coralogix/cx-cli
 ```
 
-### Nix
+### 3. Optional: install shell autocomplete
+
+Most macOS users use `zsh`:
 
 ```bash
-nix run    github:coralogix/cx-cli -- --help     # try without installing
-nix profile install github:coralogix/cx-cli      # install into your profile
+cx completions install zsh
 ```
 
-Consume from another flake — both the `cx` binary and the agent skill bundle are exposed as outputs:
-
-```nix
-{
-  inputs.cx-cli.url = "github:coralogix/cx-cli";
-
-  outputs = { self, nixpkgs, cx-cli, ... }: {
-    # cx-cli.packages.${system}.default -> the `cx` binary
-    # cx-cli.packages.${system}.skills  -> store path with all cx-* skills
-  };
-}
-```
-
-#### Home Manager
-
-Symlink each skill into `~/.claude/skills/` (adjust the target path for other agents):
-
-```nix
-# home.nix
-{ inputs, pkgs, lib, ... }:
-let
-  skills = inputs.cx-cli.packages.${pkgs.system}.skills;
-in {
-  home.packages = [ inputs.cx-cli.packages.${pkgs.system}.default ];
-
-  home.file = lib.mapAttrs'
-    (name: _: lib.nameValuePair ".claude/skills/${name}" { source = "${skills}/${name}"; })
-    (lib.filterAttrs (_: t: t == "directory") (builtins.readDir skills));
-}
-```
+For other shells, see [Shell completions](#shell-completions). For Cargo, pre-built binaries, Nix, and source builds, see [Installation reference](#installation-reference).
 
 ## Quick start
 
@@ -112,7 +91,7 @@ Follow these steps to go from a fresh install to a working query.
 2. Query logs. The positional argument is a DataPrime query:
 
     ```bash
-    cx logs 'filter $m.severity == "ERROR"'
+    cx logs 'filter $m.severity == ERROR'
     ```
 
 3. Query metrics. `cx metrics query` takes a PromQL expression:
@@ -124,7 +103,7 @@ Follow these steps to go from a fresh install to a working query.
 4. Search distributed spans. The positional argument is a DataPrime filter; `source spans` is prepended automatically:
 
     ```bash
-    cx spans 'filter $l.serviceName == "checkout"' --start now-2h --limit 50
+    cx spans "filter \$l.serviceName == 'checkout'" --start now-2h --limit 50
     ```
 
 5. List dashboards to confirm the API is reachable:
@@ -135,7 +114,8 @@ Follow these steps to go from a fresh install to a working query.
 
 Run `cx <command> --help` for full syntax and examples on any command.
 
-## Commands
+<details open markdown="1">
+<summary><strong>Commands</strong></summary>
 
 Commands are grouped by domain. Run `cx --help` for the full organized listing, or `cx schema` for a machine-readable JSON tree.
 
@@ -211,7 +191,8 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
-### Global options
+<details markdown="1">
+<summary>Global options</summary>
 
 ```
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
@@ -220,6 +201,10 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 -o, --output <FORMAT>        text | json | agents (default: text)
     --yes                    Skip confirmation prompts for destructive operations
 ```
+
+</details>
+
+</details>
 
 ## Configuration
 
@@ -232,7 +217,7 @@ Configuration lives in `~/.cx/`:
     default.toml           # Credentials and region per profile
 ```
 
-Credentials are stored in the OS keyring on macOS (Keychain) and Windows (Credential Manager). On Linux, keyring support (Secret Service) requires a glibc build; the default install script and release binaries use musl, which has no keyring backend-credentials fall back to file storage. If you need keyring support on Linux, build from source with a glibc toolchain.
+Credentials (API keys or OAuth tokens) are stored either inline in the profile TOML with `0600` permissions (`credential_storage = "file"`, the default) or in the OS keyring (`credential_storage = "os_store"` - macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). `cx profiles add` prompts for the choice. On Linux, keyring support requires a glibc build; the default install script and release binaries use musl, which has no keyring backend, so `os_store` is unavailable there.
 
 Environment variables override profile settings: `CX_PROFILE`, `CX_API_KEY`, and `CX_REGION`.
 
@@ -252,11 +237,7 @@ See [docs/agents-output.md](docs/agents-output.md) for the `agents` format speci
 
 `cx` ships a companion skill bundle for Claude Code, Cursor, Codex, OpenCode, and [40+ other agents](https://github.com/vercel-labs/skills#supported-agents). The skills teach your agent how to investigate issues by querying Coralogix-without memorizing DataPrime syntax or API endpoints.
 
-Install all skills:
-
-```bash
-npx skills add coralogix/cx-cli
-```
+The install flow above installs all skills. Use these variants if you want to customize where or what you install.
 
 Install selected skills:
 
@@ -270,21 +251,86 @@ Install globally for all projects:
 npx skills add coralogix/cx-cli -g
 ```
 
-Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-create-dashboard`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](skills/README.md) for per-skill usage.
+Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-create-dashboard`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](https://github.com/coralogix/cx-cli/blob/master/skills/README.md) for per-skill usage.
 
 ## Multi-profile fan-out
 
 Repeat `-p` to run a command across multiple profiles in parallel. Results are merged and tagged with the profile name:
 
 ```bash
-cx -p prod-eu -p prod-us logs 'filter $m.severity == "ERROR"'
+cx -p prod-eu -p prod-us logs 'filter $m.severity == ERROR'
 ```
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
 
-## Migrating from cxctl
+## Installation reference
 
-`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
+### Pin a CLI version
+
+```bash
+CX_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
+```
+
+### Cargo
+
+```bash
+cargo install coralogix-cli
+```
+
+### Pre-built binaries
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
+
+<details markdown="1">
+<summary>Nix</summary>
+
+```bash
+nix run    github:coralogix/cx-cli -- --help     # try without installing
+nix profile install github:coralogix/cx-cli      # install into your profile
+```
+
+The flake exposes both the `cx` binary and the agent skill bundle:
+
+```nix
+{
+  inputs.cx-cli.url = "github:coralogix/cx-cli";
+
+  outputs = { self, nixpkgs, cx-cli, ... }: {
+    # cx-cli.packages.${system}.default -> the `cx` binary
+    # cx-cli.packages.${system}.skills  -> store path with all cx-* skills
+  };
+}
+```
+
+#### Home Manager
+
+Symlink each skill into `~/.claude/skills/` (adjust the target path for other agents):
+
+```nix
+# home.nix
+{ inputs, pkgs, lib, ... }:
+let
+  skills = inputs.cx-cli.packages.${pkgs.system}.skills;
+in {
+  home.packages = [ inputs.cx-cli.packages.${pkgs.system}.default ];
+
+  home.file = lib.mapAttrs'
+    (name: _: lib.nameValuePair ".claude/skills/${name}" { source = "${skills}/${name}"; })
+    (lib.filterAttrs (_: t: t == "directory") (builtins.readDir skills));
+}
+```
+
+</details>
+
+<details markdown="1">
+<summary>Build from source</summary>
+
+```bash
+cargo build --release
+cp target/release/cx /usr/local/bin/
+```
+
+</details>
 
 ## Shell completions
 
@@ -357,6 +403,18 @@ source <(COMPLETE=bash cx)
 ```fish
 COMPLETE=fish cx | source
 ```
+
+<details markdown="1">
+<summary><strong>Migrating from cxctl</strong></summary>
+
+`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
+
+</details>
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the ownership model,
+PR review process, and step-by-step guides for adding commands and skills.
 
 ## Further reading
 

@@ -29,7 +29,8 @@ Every command domain has a designated owning team. The owning team is responsibl
 | Cost & storage | `src/commands/data_usage/`, `src/commands/tco_policies/`, `src/commands/retentions/`, `src/commands/quota_rules/`, `src/commands/data_archive/`, `skills/cx-cost-optimization/` | Domain team |
 | Integrations | `src/commands/integrations/`, `src/commands/extensions/`, `src/commands/contextual_data/`, `skills/cx-observability-setup/` | Domain team |
 | Views | `src/commands/views/`, `skills/cx-observability-setup/` | Domain team |
-| Documentation | `docs/*` | `@coralogix/team-cxai` |
+| User-facing docs | `README.md`, `docs/*` | `@coralogix/team-technical-writers`, `@coralogix/team-cxai` |
+| Contributor docs | `contributing/*`, `CONTRIBUTING.md` | `@coralogix/team-cxai` |
 
 > **Note:** `@coralogix/team-cxai` is the core team and has final review authority on all changes. Domain ownership will be formally encoded in `CODEOWNERS` as teams onboard.
 
@@ -39,8 +40,8 @@ Every command domain has a designated owning team. The owning team is responsibl
 |----------------------|--------------------|
 | Command files (`src/commands/*`, `skills/*`) | Domain owning team **+** `@coralogix/team-cxai` |
 | Shared infrastructure (`src/main.rs`, `src/execution.rs`, `src/config.rs`, `src/safety.rs`, `src/api_client.rs`, `src/spill.rs`, `src/error.rs`) | `@coralogix/team-cxai` only |
-| Documentation (`docs/*`, `CONTRIBUTING.md`, `README.md`) | `@coralogix/team-cxai` |
-| CI / GitHub workflows (`.github/*`) | `@coralogix/team-cxai` |
+| User-facing docs (`README.md`, `docs/*`) | `@coralogix/team-technical-writers` + `@coralogix/team-cxai` |
+| Contributor docs (`contributing/*`, `CONTRIBUTING.md`, `.github/*`) | `@coralogix/team-cxai` |
 
 All PRs require at least one approving review before merge. PRs that touch shared infrastructure require approval from the core team regardless of other approvals.
 
@@ -49,8 +50,8 @@ All PRs require at least one approving review before merge. PRs that touch share
 Adding a new command follows this lifecycle:
 
 1. **Proposal** - Open an issue describing the command, its target API, and the intended user workflow.
-2. **Design review** - The core team reviews the proposal and confirms the archetype (DataPrime-based or REST-based). See [architecture.md](docs/architecture.md) for the two archetypes.
-3. **Implementation** - Follow the step-by-step guide in [adding-a-command.md](docs/adding-a-command.md). Every new command **must** ship with a corresponding user-facing skill - see [adding-a-skill.md](docs/adding-a-skill.md).
+2. **Design review** - The core team reviews the proposal and confirms the archetype (DataPrime-based or REST-based). See [architecture.md](contributing/architecture.md) for the two archetypes.
+3. **Implementation** - Follow the step-by-step guide in [adding-a-command.md](contributing/adding-a-command.md). Every new command **must** ship with a corresponding user-facing skill - see [adding-a-skill.md](contributing/adding-a-skill.md).
 4. **PR review** - Open a PR. Dual review applies (domain team + core team).
 5. **Merge** - Squash-merge into `master` after approval.
 6. **Release** - The release workflow builds and publishes binaries automatically.
@@ -65,11 +66,11 @@ Adding a new command follows this lifecycle:
 
 **Every new command must ship with a corresponding user-facing skill in `skills/`.** Skills teach AI agents how to use your command effectively - they are a required part of every command PR, not optional.
 
-See [Adding a Skill](docs/adding-a-skill.md) for directory structure, frontmatter conventions, and a copy-pasteable template.
+See [Adding a Skill](contributing/adding-a-skill.md) for directory structure, frontmatter conventions, and a copy-pasteable template.
 
 ## Getting Started
 
-1. Read the [architecture overview](docs/architecture.md) to understand the execution pipeline
-2. Read the [development guide](docs/development.md) for build, test, and lint commands
-3. Follow [adding a command](docs/adding-a-command.md) for the step-by-step implementation guide
-4. Follow [adding a skill](docs/adding-a-skill.md) to create the required user-facing skill
+1. Read the [architecture overview](contributing/architecture.md) to understand the execution pipeline
+2. Read the [development guide](contributing/development.md) for build, test, and lint commands
+3. Follow [adding a command](contributing/adding-a-command.md) for the step-by-step implementation guide
+4. Follow [adding a skill](contributing/adding-a-skill.md) to create the required user-facing skill

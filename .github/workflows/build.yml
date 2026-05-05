@@ -21,21 +21,41 @@ jobs:
       contents: read
       actions: read
     steps:
+      # Path filter only applies on pull_request - on push to master we always
+      # build (so the binary-size baseline gets refreshed). dorny/paths-filter
+      # is unreliable outside the pull_request context.
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         with:
           toolchain: "1.94.1"
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
 
       - name: Install Linux system dependencies
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Build release binary
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: cargo build --release --locked
 
       - name: Report binary size
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: |
           BINARY="target/release/cx"
           SIZE_BYTES=$(stat -c%s "$BINARY")
@@ -55,7 +75,7 @@ jobs:
           retention-days: 90
 
       - name: Check binary size regression
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.filter.outputs.code == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -113,19 +133,35 @@ jobs:
           - x86_64-unknown-linux-musl
           - aarch64-unknown-linux-musl
     steps:
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         with:
           toolchain: "1.94.1"
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         with:
           key: ${{ matrix.target }}
 
       - name: Install cross
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: cross build --release --locked --target ${{ matrix.target }}

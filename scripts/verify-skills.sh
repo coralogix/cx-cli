@@ -117,6 +117,22 @@ for skill_dir in "$SKILLS_DIR"/*/; do
         skill_errors=$((skill_errors + 1))
     fi
 
+    # 6. Shared-reference sync check
+    refs_dir="$skill_dir/references"
+    if [ -d "$refs_dir" ]; then
+        for ref_file in "$refs_dir"/*.md; do
+            [ -f "$ref_file" ] || continue
+            ref_name=$(basename "$ref_file")
+            shared_file="$SKILLS_DIR/shared/$ref_name"
+            if [ -f "$shared_file" ]; then
+                if ! diff -q "$shared_file" "$ref_file" > /dev/null 2>&1; then
+                    fail "references/$ref_name is out of sync with shared/$ref_name — run scripts/sync-shared-references.sh"
+                    skill_errors=$((skill_errors + 1))
+                fi
+            fi
+        done
+    fi
+
     if [ "$skill_errors" -eq 0 ]; then
         echo "  $(green PASS) ($phrase_count triggers, $lines lines)"
         PASS=$((PASS + 1))

@@ -9,6 +9,7 @@ use clap_complete::env::CompleteEnv;
 use clap_complete::CompletionCandidate;
 use config::OutputFormat;
 
+use coralogix_cli::banner;
 use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
@@ -42,7 +43,7 @@ pub enum SearchFieldsDataset {
     version,
     about,
     long_about = None,
-    help_template = "{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
+    help_template = "{before-help}{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
     after_help = "\
 Query:
   logs               Query logs using DataPrime syntax
@@ -755,6 +756,11 @@ Examples:
         #[arg(long)]
         folder: Option<String>,
     },
+    /// Delete a dashboard [requires --yes].
+    Delete {
+        /// Dashboard ID.
+        dashboard_id: String,
+    },
     /// Manage dashboard folders.
     Folders {
         #[command(subcommand)]
@@ -783,6 +789,11 @@ Examples:
         /// Optional parent folder ID. Omit to create a top-level folder.
         #[arg(long)]
         parent_id: Option<String>,
+    },
+    /// Delete a dashboard folder [requires --yes].
+    Delete {
+        /// Folder ID.
+        id: String,
     },
 }
 
@@ -2135,7 +2146,13 @@ async fn main() -> Result<()> {
     // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // the early check above misses it. The main Cli parser handles it below.
 
-    let matches = Cli::command().get_matches();
+    let mut cmd = Cli::command();
+    if banner::should_show() {
+        cmd = cmd
+            .before_help(banner::render())
+            .help_template("{before-help}\nUsage: {usage}{after-help}\n\nOptions:\n{options}");
+    }
+    let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
     let read_only = cli.read_only || safety::env_is_truthy("CX_READ_ONLY");
@@ -2215,7 +2232,10 @@ async fn main() -> Result<()> {
 
     // Load global config for defaults (non-fatal - fall back to defaults).
     let global_config = config::load_config().unwrap_or_default();
-    let output = cli.output.unwrap_or(global_config.default_output_format);
+    let output = cli
+        .output
+        .or_else(|| config::first_profile_output_format(&cli.profile))
+        .unwrap_or(global_config.default_output_format);
     let max_direct = global_config.max_dataprime_direct_output_size;
     let temp_dir = global_config.temp_dir.clone();
 
@@ -2332,6 +2352,14 @@ async fn main() -> Result<()> {
                 commands::dashboards::run_create(&targets, &from_file, folder.as_deref(), output)
                     .await?;
             }
+            DashboardsCmd::Delete { dashboard_id } => {
+                confirm_destructive(
+                    &format!("Delete dashboard '{dashboard_id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
+                commands::dashboards::run_delete(&targets, &dashboard_id).await?;
+            }
             DashboardsCmd::Folders { cmd } => match cmd {
                 FoldersCmd::List => {
                     commands::dashboards::run_folders_list(&targets, output).await?;
@@ -2345,6 +2373,14 @@ async fn main() -> Result<()> {
                         output,
                     )
                     .await?;
+                }
+                FoldersCmd::Delete { id } => {
+                    confirm_destructive(
+                        &format!("Delete dashboard folder '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::dashboards::run_folders_delete(&targets, &id).await?;
                 }
             },
         },

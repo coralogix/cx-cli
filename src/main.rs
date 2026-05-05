@@ -526,6 +526,19 @@ Examples:
     },
 }
 
+impl Commands {
+    fn is_risky(&self) -> bool {
+        matches!(self, Self::Iam { .. } | Self::DataArchive { .. })
+    }
+
+    fn is_costly(&self) -> bool {
+        match self {
+            Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum ProfilesCmd {
     /// List all configured profiles.
@@ -2155,7 +2168,11 @@ async fn main() -> Result<()> {
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
-    let read_only = cli.read_only || safety::env_is_truthy("CX_READ_ONLY");
+    // Load global config early for read-only / risky / costly gating.
+    let global_cfg_early = config::load_config().unwrap_or_default();
+
+    let read_only =
+        cli.read_only || safety::env_is_truthy("CX_READ_ONLY") || global_cfg_early.read_only;
     if read_only {
         let top = safety::get_top_level_subcommand_name(&matches);
         let is_local = matches!(
@@ -2167,6 +2184,26 @@ async fn main() -> Result<()> {
                 safety::enforce_read_only(&leaf)?;
             }
         }
+    }
+
+    // Risky command gating (iam, archive write operations).
+    if cli.command.is_risky() && !global_cfg_early.allow_risky_commands {
+        if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
+            if safety::is_write_verb(&leaf) {
+                bail!(
+                    "Risky write operation blocked by global configuration.\n\
+                     Set allow_risky_commands = true in ~/.cx/config.toml to enable."
+                );
+            }
+        }
+    }
+
+    // Costly command gating (olly ask).
+    if cli.command.is_costly() && !global_cfg_early.allow_costly_commands {
+        bail!(
+            "Costly operation blocked by global configuration.\n\
+             Set allow_costly_commands = true in ~/.cx/config.toml to enable."
+        );
     }
 
     // Profiles command is usually handled by the early ProfilesCli parser above,

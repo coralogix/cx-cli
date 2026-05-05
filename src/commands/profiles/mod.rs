@@ -167,6 +167,7 @@ pub fn run_list() -> Result<()> {
 
 pub async fn run_add(profile_name: Option<String>) -> Result<()> {
     let name = profile_name.unwrap_or_else(|| "default".to_string());
+    let is_first_profile = list_profile_names()?.is_empty();
 
     println!("Configuring profile '{name}'\n");
 
@@ -206,6 +207,31 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
     });
 
     save_profile(&name, &profile)?;
+
+    // On first profile creation, prompt for global safety settings.
+    if is_first_profile {
+        println!("\n─── Global Safety Settings ───");
+        println!("These apply to all profiles. Change later in ~/.cx/config.toml\n");
+
+        let mut global_config = load_config().unwrap_or_default();
+
+        global_config.allow_risky_commands =
+            Confirm::new("Allow risky commands? (iam, archive write operations)")
+                .with_default(true)
+                .with_help_message(
+                    "When disabled, write operations under 'iam' and 'archive' are blocked. \
+             Read operations remain available.",
+                )
+                .prompt()?;
+
+        global_config.allow_costly_commands =
+            Confirm::new("Allow costly commands? (olly ask — AI assistant queries)")
+                .with_default(true)
+                .with_help_message("When disabled, 'olly ask' is blocked.")
+                .prompt()?;
+
+        save_config(&global_config)?;
+    }
 
     let cx_dir = crate::config::config_dir()?;
     println!(

@@ -166,6 +166,21 @@ pub struct Config {
     #[serde(default = "default_temp_dir")]
     pub temp_dir: String,
 
+    /// Whether to allow risky commands (iam, archive write operations).
+    /// When false, write operations under these commands are hard-blocked.
+    #[serde(default = "default_true")]
+    pub allow_risky_commands: bool,
+
+    /// Whether to allow costly commands (olly ask).
+    /// When false, these commands are hard-blocked.
+    #[serde(default = "default_true")]
+    pub allow_costly_commands: bool,
+
+    /// When true, ALL write operations are blocked globally.
+    /// Equivalent to always passing --read-only.
+    #[serde(default)]
+    pub read_only: bool,
+
     /// Shell completion scripts installed and tracked by `cx completions install`.
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -174,6 +189,10 @@ pub struct Config {
 
 fn default_profile() -> String {
     "default".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_max_dataprime_direct_output_size() -> Option<usize> {
@@ -191,6 +210,9 @@ impl Default for Config {
             default_output_format: OutputFormat::default(),
             max_dataprime_direct_output_size: default_max_dataprime_direct_output_size(),
             temp_dir: default_temp_dir(),
+            allow_risky_commands: true,
+            allow_costly_commands: true,
+            read_only: false,
             managed_completions: vec![],
         }
     }

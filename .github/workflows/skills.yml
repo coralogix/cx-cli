@@ -1,4 +1,4 @@
-name: Skills
+name: Validate Skills
 
 on:
   pull_request:

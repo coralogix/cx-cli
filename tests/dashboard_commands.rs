@@ -268,11 +268,17 @@ async fn dashboard_create_from_stdin_succeeds() {
     .await
     .expect("create should succeed");
 
-    let reqs = server.received_requests().await.expect("server should record requests");
+    let reqs = server
+        .received_requests()
+        .await
+        .expect("server should record requests");
     assert_eq!(reqs.len(), 1);
     let body: serde_json::Value =
         serde_json::from_slice(&reqs[0].body).expect("request body must be valid JSON");
-    assert!(body.get("requestId").is_some(), "requestId must be injected by run_create");
+    assert!(
+        body.get("requestId").is_some(),
+        "requestId must be injected by run_create"
+    );
     assert_eq!(
         body["dashboard"]["name"], "Test Dashboard",
         "dashboard body must be wrapped under 'dashboard' key"

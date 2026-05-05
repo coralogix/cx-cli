@@ -224,7 +224,10 @@ async fn search_by_value_empty_query_returns_error() {
     let targets = vec![target];
 
     let result = search_by_value::run(&targets, "   ", "logs", 10, 0, OutputFormat::Json).await;
-    assert!(result.is_err(), "empty/whitespace query must return Err before any HTTP call");
+    assert!(
+        result.is_err(),
+        "empty/whitespace query must return Err before any HTTP call"
+    );
 }
 
 #[tokio::test]

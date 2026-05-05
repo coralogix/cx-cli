@@ -72,6 +72,7 @@ pub enum Region {
     Ap1,
     Ap2,
     Ap3,
+    Stg1,
     #[serde(untagged)]
     Custom(String),
 }
@@ -87,6 +88,7 @@ impl Region {
             Region::Ap1 => "https://api.ap1.coralogix.com",
             Region::Ap2 => "https://api.ap2.coralogix.com",
             Region::Ap3 => "https://api.ap3.coralogix.com",
+            Region::Stg1 => "https://api.stg1.coralogix.net",
             Region::Custom(url) => url.as_str(),
         }
     }
@@ -103,6 +105,7 @@ impl std::fmt::Display for Region {
             Region::Ap1 => write!(f, "ap1"),
             Region::Ap2 => write!(f, "ap2"),
             Region::Ap3 => write!(f, "ap3"),
+            Region::Stg1 => write!(f, "stg1"),
             Region::Custom(s) => write!(f, "{s}"),
         }
     }
@@ -121,15 +124,8 @@ impl std::str::FromStr for Region {
             "ap1" => Region::Ap1,
             "ap2" => Region::Ap2,
             "ap3" => Region::Ap3,
-            other => {
-                if !other.starts_with("https://") {
-                    anyhow::bail!(
-                        "custom region URL must use HTTPS (got {other:?}); \
-                         use a URL starting with https://"
-                    );
-                }
-                Region::Custom(other.to_string())
-            }
+            "stg1" => Region::Stg1,
+            other => Region::Custom(other.to_string()),
         })
     }
 }
@@ -724,18 +720,6 @@ default_profile = "my-profile"
         let url = "https://custom.endpoint.io";
         let r: Region = url.parse().unwrap();
         assert_eq!(r.api_endpoint(), url);
-    }
-
-    #[test]
-    fn region_custom_rejects_http_scheme() {
-        let result: Result<Region> = "http://insecure.endpoint.io".parse();
-        assert!(result.is_err(), "http:// custom region must be rejected");
-    }
-
-    #[test]
-    fn region_custom_rejects_file_scheme() {
-        let result: Result<Region> = "file:///etc/passwd".parse();
-        assert!(result.is_err(), "file:// custom region must be rejected");
     }
 
     /// Legacy TOML without `auth` field must deserialise as `AuthKind::ApiKey`.

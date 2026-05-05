@@ -12,7 +12,9 @@ use crate::oauth;
 
 const AUTH_METHODS: &[&str] = &["OAuth (browser login)", "API key (paste manually)"];
 
-const REGIONS: &[&str] = &["us1", "us2", "us3", "eu1", "eu2", "ap1", "ap2", "ap3"];
+const REGIONS: &[&str] = &[
+    "us1", "us2", "us3", "eu1", "eu2", "ap1", "ap2", "ap3", "stg1",
+];
 
 /// Region list for OAuth mode: same as REGIONS plus a custom option.
 const OAUTH_REGIONS: &[&str] = &[
@@ -24,6 +26,7 @@ const OAUTH_REGIONS: &[&str] = &[
     "ap1",
     "ap2",
     "ap3",
+    "stg1",
     "Custom (specify URL + client ID)",
 ];
 

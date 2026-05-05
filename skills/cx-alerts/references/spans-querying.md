@@ -92,13 +92,13 @@ cx spans "filter \$d.traceID == '4f6a8f3c2e8a1b97'"
 cx spans "filter \$l.serviceName == 'checkout-service'"
 
 # Find slow spans (> 1 second)
-cx spans 'filter $m.duration > 1000000'
+cx spans "filter \$m.duration > 1000000"
 
 # Find error spans
-cx spans 'filter $d.tags.error == true'
+cx spans "filter \$d.tags.error == true"
 
 # Aggregate latency by operation
-cx spans 'groupby $l.operationName aggregate avg($m.duration) as avg_latency | orderby avg_latency desc'
+cx spans "groupby \$l.operationName aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc"
 
 # Wider time range
 cx spans "filter \$l.serviceName == 'api'" --start now-6h
@@ -173,10 +173,10 @@ cx spans "filter \$l.serviceName == '<service>'" --limit 50
 **If you have neither** - start broad to find entry points:
 ```bash
 # Find recent error spans
-cx spans 'filter $d.tags.error == true' --limit 20
+cx spans "filter \$d.tags.error == true" --limit 20
 
 # Find the slowest spans in the last hour
-cx spans 'groupby $l.serviceName, $l.operationName aggregate avg($m.duration) as avg_latency | orderby avg_latency desc | limit 10'
+cx spans "groupby \$l.serviceName, \$l.operationName aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc | limit 10"
 
 # Then extract trace IDs from interesting spans
 cx spans "filter \$l.serviceName == '<service>' && \$m.duration > 1000000 | distinct \$d.traceID"
@@ -204,7 +204,7 @@ If a query returns no results, change **one thing at a time**:
 cx spans "filter \$d.traceID == '4f6a8f3c2e8a1b97'"
 
 # Find root spans only (no parent)
-cx spans "filter \$l.serviceName == 'api-gateway' | filter \$d.parentSpanID == ''"
+cx spans "filter \$l.serviceName == 'api-gateway' | filter \$d.parentId == null"
 
 # Find trace IDs for a service
 cx spans "filter \$l.serviceName == 'payment-service' | distinct \$d.traceID"
@@ -214,16 +214,16 @@ cx spans "filter \$l.serviceName == 'payment-service' | distinct \$d.traceID"
 
 ```bash
 # Spans slower than 1 second
-cx spans 'filter $m.duration > 1000000'
+cx spans "filter \$m.duration > 1000000"
 
 # Top 10 slowest operations by average duration
-cx spans 'groupby $l.operationName aggregate avg($m.duration) as avg_latency | orderby avg_latency desc | limit 10'
+cx spans "groupby \$l.operationName aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc | limit 10"
 
 # Average latency by service
-cx spans 'groupby $l.serviceName aggregate avg($m.duration) as avg_latency'
+cx spans "groupby \$l.serviceName aggregate avg(\$m.duration) as avg_latency"
 
 # P95 latency by operation
-cx spans 'groupby $l.operationName aggregate percentile(0.95, $m.duration) as p95_latency'
+cx spans "groupby \$l.operationName aggregate percentile(0.95, \$m.duration) as p95_latency"
 ```
 
 ### Latency Spike Detection
@@ -240,47 +240,44 @@ cx spans "filter \$l.serviceName == 'api' | groupby roundTime(\$m.timestamp, 5m)
 
 ```bash
 # All error spans
-cx spans 'filter $d.tags.error == true'
+cx spans "filter \$d.tags.error == true"
 
 # Error spans for a specific service
 cx spans "filter \$l.serviceName == 'checkout' | filter \$d.tags.error == true"
 
 # Error rate by service
-cx spans 'filter $d.tags.error == true | groupby $l.serviceName aggregate count() as errors | orderby errors desc'
+cx spans "filter \$d.tags.error == true | groupby \$l.serviceName aggregate count() as errors | orderby errors desc"
 
 # Error rate over time
-cx spans 'filter $d.tags.error == true | groupby roundTime($m.timestamp, 15m) as interval aggregate count() as errors'
+cx spans "filter \$d.tags.error == true | groupby roundTime(\$m.timestamp, 15m) as interval aggregate count() as errors"
 ```
 
 ### Sampling Error Types
 
 ```bash
 # Group errors by operation with a sample
-cx spans 'filter $d.tags.error == true | groupby $l.operationName aggregate any_value($d) as sample, count() as total | orderby total desc | limit 5'
+cx spans "filter \$d.tags.error == true | groupby \$l.operationName aggregate any_value(\$d) as sample, count() as total | orderby total desc | limit 5"
 
 # Group by service and operation to see where errors concentrate
-cx spans 'filter $d.tags.error == true | groupby $l.serviceName, $l.operationName aggregate count() as errors | orderby errors desc | limit 10'
+cx spans "filter \$d.tags.error == true | groupby \$l.serviceName, \$l.operationName aggregate count() as errors | orderby errors desc | limit 10"
 ```
 
 ### Finding Unique Values
 
 ```bash
 # List all services with spans
-cx spans 'distinct $l.serviceName'
+cx spans "distinct \$l.serviceName"
 
 # List all operations for a service
 cx spans "filter \$l.serviceName == 'api' | distinct \$l.operationName"
 
 # Find unique trace IDs for error spans
-cx spans 'filter $d.tags.error == true | distinct $d.traceID'
+cx spans "filter \$d.tags.error == true | distinct \$d.traceID"
 ```
 
-### Correlating by ID
+### Correlating by Trace ID
 
 ```bash
-# Find spans for a specific user
-cx spans "filter \$d.user_id == 'user_12345'" --start now-24h
-
 # Find spans across services for the same trace
 cx spans "filter \$d.traceID == 'abc123' | groupby \$l.serviceName aggregate count() as span_count, avg(\$m.duration) as avg_latency"
 ```

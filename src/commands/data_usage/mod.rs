@@ -99,26 +99,29 @@ pub async fn run_daily(
 
     let include_profile = targets.len() > 1;
     let data_type = data_type.to_string();
-    let start = start.map(crate::time::parse_timestamp).transpose()?;
-    let end = end.map(crate::time::parse_timestamp).transpose()?;
+    let from = match start.map(crate::time::parse_timestamp).transpose()? {
+        Some(s) => s,
+        None => chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::hours(24))
+            .unwrap_or_else(chrono::Utc::now)
+            .to_rfc3339(),
+    };
+    let to = match end.map(crate::time::parse_timestamp).transpose()? {
+        Some(s) => s,
+        None => chrono::Utc::now().to_rfc3339(),
+    };
 
     let per_profile = fan_out(targets, |t| {
         let data_type = data_type.clone();
-        let start = start.clone();
-        let end = end.clone();
+        let from = from.clone();
+        let to = to.clone();
         async move {
             let api = DataUsageApi::new(&t.client);
             let mut body = serde_json::Map::new();
             let mut date_range = serde_json::Map::new();
-            if let Some(ref s) = start {
-                date_range.insert("fromDate".into(), Value::String(s.clone()));
-            }
-            if let Some(ref e) = end {
-                date_range.insert("toDate".into(), Value::String(e.clone()));
-            }
-            if !date_range.is_empty() {
-                body.insert("date_range".into(), Value::Object(date_range));
-            }
+            date_range.insert("fromDate".into(), Value::String(from));
+            date_range.insert("toDate".into(), Value::String(to));
+            body.insert("date_range".into(), Value::Object(date_range));
             Ok(api.daily(&data_type, &Value::Object(body)).await?)
         }
     })

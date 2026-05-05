@@ -62,10 +62,12 @@ copy_refs "cx-create-dashboard" \
     "logs-querying.md" \
     "spans-querying.md"
 
-# cx-alerts: DataPrime syntax and log querying for alert conditions
+# cx-alerts: DataPrime syntax and data-source references for alert conditions (logs, metrics, spans)
 copy_refs "cx-alerts" \
     "dataprime-reference.md" \
-    "logs-querying.md"
+    "logs-querying.md" \
+    "promql-guidelines.md" \
+    "spans-querying.md"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

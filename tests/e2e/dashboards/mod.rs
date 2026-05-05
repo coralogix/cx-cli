@@ -42,3 +42,47 @@ fn discover_dashboard_id() -> Option<String> {
         })
         .clone()
 }
+
+#[test]
+#[ignore]
+fn dashboards_delete_nonexistent() {
+    if harness::require_creds("dashboards_delete_nonexistent").is_none() {
+        return;
+    }
+    // Attempting to delete a non-existent dashboard - the CLI should at least
+    // parse the command and attempt the API call (we don't assert success since
+    // the resource won't exist).
+    let output = harness::cx()
+        .args(["dashboards", "delete", "nonexistent-id-000", "--yes"])
+        .output()
+        .expect("failed to execute cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Verify the CLI parsed the command (shows the "Deleting..." status line).
+    assert!(
+        stderr.contains("Deleting dashboard"),
+        "expected 'Deleting dashboard' on stderr, got: {stderr}"
+    );
+}
+
+#[test]
+#[ignore]
+fn dashboards_folders_delete_nonexistent() {
+    if harness::require_creds("dashboards_folders_delete_nonexistent").is_none() {
+        return;
+    }
+    let output = harness::cx()
+        .args([
+            "dashboards",
+            "folders",
+            "delete",
+            "nonexistent-id-000",
+            "--yes",
+        ])
+        .output()
+        .expect("failed to execute cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Deleting dashboard folder"),
+        "expected 'Deleting dashboard folder' on stderr, got: {stderr}"
+    );
+}

@@ -2201,8 +2201,8 @@ async fn main() -> Result<()> {
     // Costly command gating (olly ask).
     if cli.command.is_costly() && !global_cfg_early.allow_costly_commands {
         bail!(
-            "This operation can potentially incur additional costs and has been \
-             disabled by your global configuration.\n\
+            "This operation may result in additional charges and is currently \
+             disabled in your global configuration.\n\
              To enable it, set allow_costly_commands = true in ~/.cx/config.toml."
         );
     }

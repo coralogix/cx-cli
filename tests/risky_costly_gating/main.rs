@@ -138,7 +138,7 @@ fn costly_disabled_blocks_olly_ask() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("incur additional costs"),
+        stderr.contains("additional charges"),
         "stderr: {stderr}"
     );
 }
@@ -160,7 +160,7 @@ fn costly_disabled_allows_olly_artifacts() {
         .expect("failed to run cx");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("incur additional costs"),
+        !stderr.contains("additional charges"),
         "artifacts should not be blocked, stderr: {stderr}"
     );
 }
@@ -182,7 +182,7 @@ fn costly_enabled_allows_olly_ask() {
         .expect("failed to run cx");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("incur additional costs"),
+        !stderr.contains("additional charges"),
         "should not be blocked when enabled, stderr: {stderr}"
     );
 }

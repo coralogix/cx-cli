@@ -8,7 +8,7 @@
 The observability backbone for AI agents and engineering teams. `cx` gives you-and your AI agents-direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
 
 <p align="center">
-  <img src="assets/demo.png" alt="cx logs demo" width="700">
+  <img src="https://github.com/coralogix/cx-cli/raw/master/assets/demo.png" alt="cx logs demo" width="700">
 </p>
 
 ## What you can do

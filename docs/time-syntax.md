@@ -50,5 +50,5 @@ cx logs 'filter $m.severity == ERROR' \
   --end 2024-01-01T01:00:00Z
 
 # Last 3 days of spans for a specific service
-cx spans 'filter $l.serviceName == "checkout"' --start now-3d
+cx spans "filter \$l.serviceName == 'checkout'" --start now-3d
 ```

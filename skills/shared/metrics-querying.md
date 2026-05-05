@@ -1,12 +1,8 @@
----
-name: cx-metrics-query
-description: This skill should be used when the user asks to "query metrics", "investigate a metrics issue", "check CPU usage", "find slow services", "investigate production issues using metrics", "search for metrics", "search metric names", "run a PromQL query", "check error rate", "check latency", "look up a metric", "analyze system load", "check memory usage", "investigate infrastructure issues", "analyze custom metrics", "check node health", "investigate disk usage", or wants to explore Coralogix metrics data - including application, infrastructure, and custom metrics - using the cx CLI.
-version: 0.1.0
----
+# Metrics Querying Reference
 
-# Metrics Query Skill
+Query and analyze Coralogix metrics using the `cx metrics` CLI commands with PromQL.
 
-Use this skill to investigate production issues, answer performance questions, and explore metrics data using the `cx metrics` CLI commands. The workflow guides metric discovery, label exploration, and PromQL query construction.
+> **PromQL syntax:** See `promql-guidelines.md` for the full query language reference.
 
 ## CLI Commands
 
@@ -21,7 +17,7 @@ All metrics operations use `cx metrics` with four subcommands:
 
 **Output format:** append `-o json` or `-o agents` to any command for machine-readable output.
 
-### Search examples
+### Search Examples
 
 ```bash
 # Exact substring match
@@ -34,7 +30,7 @@ cx metrics search --name '*cpu*'
 cx metrics search --name '*'
 ```
 
-### Instant query examples
+### Instant Query Examples
 
 ```bash
 # Current state
@@ -47,7 +43,7 @@ cx metrics query 'rate(http_requests_total[5m])' --time 2024-01-01T12:00:00Z
 cx metrics query 'sum by (service) (rate(http_errors_total[5m]))' -o agents
 ```
 
-### Range query examples
+### Range Query Examples
 
 ```bash
 # Last hour, default step (1m)
@@ -62,7 +58,7 @@ cx metrics query-range 'max by () (max_over_time(cpu_usage[1d]))' \
   --start now-7d --end now --step 1d
 ```
 
-### Label discovery example
+### Label Discovery Example
 
 ```bash
 cx metrics get-labels http_requests_total
@@ -194,11 +190,3 @@ PromQL results can be large. After every few queries, summarize:
 - **Align step with window**: when using `max_over_time(metric[1d])`, set `--step 1d`
 - **Filter empty labels**: if results have blank label values, add `{label!=""}` to the filter
 - **Aggregate early**: use `sum by (...)` to reduce cardinality before further operations
-
----
-
-## Additional Resources
-
-### Reference Files
-
-- **`references/promql-guidelines.md`** - Complete PromQL reference: value types, counter vs gauge, histograms, common tasks, gotchas, and a mini cheat-sheet

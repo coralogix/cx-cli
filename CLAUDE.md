@@ -136,7 +136,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 ### Skills
 
-`skills/` contains Claude Code skill plugins for AI-driven observability investigation (alerts, metrics queries, telemetry querying).
+`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Eight skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-create-dashboard`, `cx-incident-management`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
 
 ### Documentation
 
@@ -163,15 +163,15 @@ Which CLI commands have user-facing skills in `skills/`:
 
 | CLI Command | User-Facing Skill | Status |
 |-------------|-------------------|--------|
-| `cx logs` | `cx-query-logs` | Covered |
-| `cx spans` | `cx-query-spans` | Covered |
-| `cx metrics` | `cx-metrics-query` | Covered |
-| `cx alerts` | `cx-alerts` | Covered |
-| `cx dataprime` | `cx-dataprime` | Covered |
-| `cx logs` (RUM) | `cx-rum` | Covered |
-| _(cross-signal)_ | `cx-telemetry-querying` | Gateway skill |
-| `cx dashboards` | `cx-create-dashboard` | Covered |
+| `cx logs` | `cx-telemetry-querying` | Covered (loads `logs-querying.md` + `dataprime-reference.md`) |
+| `cx spans` | `cx-telemetry-querying` | Covered (loads `spans-querying.md` + `dataprime-reference.md`) |
+| `cx metrics` | `cx-telemetry-querying` | Covered (loads `metrics-querying.md` + `promql-guidelines.md`) |
+| `cx dataprime` | `cx-telemetry-querying` | Covered (loads `dataprime-reference.md`) |
+| `cx logs` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
+| `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
+| `cx alerts` | `cx-alerts` | Covered |
+| `cx dashboards` | `cx-create-dashboard` | Covered |
 | `cx usage` | `cx-cost-optimization` | Covered |
 | `cx tco` | `cx-cost-optimization` | Covered |
 | `cx retentions` | `cx-cost-optimization` | Covered |
@@ -188,7 +188,6 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx webhooks` | `cx-observability-setup` | Covered |
 | `cx notifications` | `cx-observability-setup` | Covered |
 | `cx integrations` | `cx-observability-setup` | Covered |
-| `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx profiles` | - | Local command |
 | `cx cleanup` | - | Local command |
 

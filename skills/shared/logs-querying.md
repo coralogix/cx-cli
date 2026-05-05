@@ -1,16 +1,8 @@
----
-name: cx-query-logs
-description: |
-  Query and analyze Coralogix logs using DataPrime syntax. Use this skill whenever the user wants to
-  search logs, find errors, investigate log data, debug application issues, check error logs, find
-  stack traces, analyze log patterns, filter by severity, look up specific log entries, or query
-  Coralogix logs in any way - even if they don't explicitly mention "DataPrime" or "cx logs".
-version: 0.1.0
----
-
-# Logs Querying Skill
+# Log Querying Reference
 
 Query and analyze Coralogix logs using the `cx logs` command with DataPrime syntax.
+
+> **DataPrime syntax:** See `dataprime-reference.md` for the full query language reference.
 
 ## Understanding Logs in Coralogix
 
@@ -68,9 +60,7 @@ cx logs 'filter [ERROR, CRITICAL].arrayContains($m.severity)'
 
 ---
 
-## Querying Logs
-
-### Essential Examples
+## Essential Query Examples
 
 ```bash
 # Filter by severity
@@ -146,7 +136,43 @@ Inspect the JSON output to see all available fields in the actual data.
 
 ---
 
-## Troubleshooting
+## Investigation Workflow
+
+### 1. Understand the Request
+
+Identify:
+- What type of logs are needed (errors, info, specific events)
+- Time frame of interest
+- Key entities (services, users, transactions)
+
+### 2. Start with Standard Fields
+
+For basic queries, use standard fields directly:
+
+```bash
+# Recent errors - no discovery needed
+cx logs 'filter $m.severity == ERROR | limit 20'
+
+# Errors in a specific subsystem
+cx logs "filter \$m.severity == ERROR && \$l.subsystemname == 'payment-service'"
+```
+
+### 3. Build and Execute Query
+
+Start simple, add complexity:
+
+```bash
+# Step 1: Check if data exists
+cx logs "filter \$l.subsystemname == 'checkout'" --limit 10
+
+# Step 2: Add filters
+cx logs "filter \$l.subsystemname == 'checkout' && \$m.severity == ERROR"
+
+# Step 3: Add aggregation
+cx logs "filter \$l.subsystemname == 'checkout' && \$m.severity == ERROR | groupby \$d.error_type aggregate count() as occurrences"
+```
+
+### 4. Troubleshooting
 
 If a query returns no results, change **one thing at a time**:
 
@@ -157,23 +183,79 @@ If a query returns no results, change **one thing at a time**:
 
 ---
 
-## References
+## Common Query Patterns
 
-- **`cx-dataprime` skill** - Full query language reference: commands, operators, aggregations, text extraction, type conversions
-- **[Advanced Usage](references/advanced-usage.md)** - Investigation workflows, common query patterns, performance tips, production debugging
-
-For inline DataPrime help:
+### Error Investigation
 
 ```bash
-cx dataprime list                  # List all commands and functions
-cx dataprime show filter           # Detailed help for a specific command
+# All errors in last hour
+cx logs 'filter $m.severity == ERROR'
+
+# Critical errors only
+cx logs 'filter $m.severity == CRITICAL'
+
+# Errors with text search
+cx logs "filter \$m.severity == ERROR && \$d.message ~ 'database connection'"
+```
+
+### Aggregation by Service
+
+```bash
+# Error count by subsystem
+cx logs 'filter $m.severity == ERROR | groupby $l.subsystemname aggregate count() as errors | orderby errors desc'
+
+# Error count by application and subsystem
+cx logs 'filter $m.severity == ERROR | groupby $l.applicationname, $l.subsystemname aggregate count() as errors'
+```
+
+### Time-Based Analysis
+
+```bash
+# Errors per hour
+cx logs 'filter $m.severity == ERROR | groupby roundTime($m.timestamp, 1h) as hour aggregate count() as count'
+
+# Find error spikes in 5-minute windows
+cx logs 'filter $m.severity == ERROR | groupby roundTime($m.timestamp, 5m) as interval aggregate count() as count | orderby count desc | limit 10'
+```
+
+### Finding Unique Values
+
+```bash
+# List all subsystems with errors
+cx logs 'filter $m.severity == ERROR | distinct $l.subsystemname'
+
+# List unique error types
+cx logs 'filter $m.severity == ERROR | distinct $d.error_type'
+```
+
+### Correlating by ID
+
+```bash
+# Find all logs for a request ID
+cx logs "filter \$d.request_id == 'abc-123-def'"
+
+# Find logs for a user
+cx logs "filter \$d.user_id == 'user_12345'" --start now-24h
+```
+
+### Fetching Sample Logs by Template
+
+Find top error patterns with sample messages:
+
+```bash
+cx logs 'filter $m.severity == ERROR | groupby $m.templateid aggregate any_value($d) as sample, count() as total | orderby total desc | limit 5'
 ```
 
 ---
 
-## Related Skills
+## Performance Tips
 
-- **`cx-metrics-query`** - Aggregated counters, gauges, and histograms (PromQL)
-- **`cx-query-spans`** - Distributed traces and service latency (DataPrime)
-- **`cx-telemetry-querying`** - Gateway skill for choosing the right data source
-- **`cx-alerts`** - Create and manage alerts based on log patterns
+- Use `--limit` for exploratory queries
+- Use `groupby` with aggregations instead of fetching all raw logs
+- Filter by time first when dealing with large datasets
+- Use specific filters (application, subsystem) to reduce scan scope
+- For large result sets, use `--output agents` which spills to a temp file automatically:
+
+```bash
+cx logs 'filter $m.severity == ERROR' --start now-24h --limit 1000 -o agents
+```

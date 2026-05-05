@@ -33,12 +33,10 @@ Before writing any skill, read existing ones to internalize the project's patter
 
 | Skill | Why study it |
 |-------|-------------|
-| `skills/cx-alerts/SKILL.md` | REST-based command with rich examples, JSON payloads, investigation workflow, and reference files |
-| `skills/cx-metrics-query/SKILL.md` | Investigation-oriented, multi-step workflow with retry logic and common patterns |
-| `skills/cx-dataprime/SKILL.md` | Minimal body that delegates to a large reference file - good model for reference-heavy domains |
-| `skills/cx-rum/SKILL.md` | Builds on other skills (references cx-query-logs and cx-dataprime) - good model for cross-skill integration |
-| `skills/cx-telemetry-querying/SKILL.md` | Gateway/routing skill with no CLI commands of its own - delegates to other skills |
-| `skills/cx-cost-optimization/SKILL.md` | Workflow skill covering 5 commands unified by "reduce costs" intent - good model for multi-command skills |
+| `skills/cx-alerts/SKILL.md` | REST-based command with rich examples, JSON payloads, investigation workflow; uses both shared and skill-local reference files |
+| `skills/cx-telemetry-querying/SKILL.md` | Gateway skill that loads shared reference files per pillar — good model for cross-pillar routing and reference-loading patterns |
+| `skills/cx-create-dashboard/SKILL.md` | Complex multi-step workflow; uses shared references (dataprime, promql, logs, spans) plus skill-local references |
+| `skills/cx-cost-optimization/SKILL.md` | Workflow skill covering 5 commands unified by "reduce costs" intent — good model for multi-command skills |
 
 Pick the two closest to what you're building and read them completely.
 
@@ -76,6 +74,24 @@ Follow this order (see `docs/adding-a-skill.md` § "Complete Template" for a sta
 
 Follow `docs/adding-a-skill.md` § "Reference Files" for when and how to create `references/` files, and § "Updating skills/README.md" for adding the skill to the public catalog.
 
+### Shared vs. skill-local references
+
+Before creating a new reference file, check whether the content is language-level or telemetry-pillar material:
+
+- **Language guides** (DataPrime syntax, PromQL guidelines) → `skills/shared/`
+- **Telemetry-pillar how-tos** (logs querying, spans querying, metrics workflow, RUM) → `skills/shared/`
+- **Skill-specific schemas or templates** (alert JSON schemas, dashboard widget templates) → `skills/cx-your-domain/references/`
+
+If your skill needs a file from `skills/shared/`:
+1. Add your skill and file list to `scripts/sync-shared-references.sh`
+2. Run `bash scripts/sync-shared-references.sh` — it copies the file(s) into your `references/`
+3. Commit the sync script change and the generated `references/` copies together
+
+If you're adding a new shared reference:
+1. Create it in `skills/shared/`
+2. Register it in the sync script for all consuming skills
+3. Run the script to generate copies, then commit everything
+
 ## Step 4: Verify
 
 1. **Frontmatter** - `name` matches directory, `description` has 10+ trigger phrases, `version` is `0.1.0`
@@ -83,7 +99,8 @@ Follow `docs/adding-a-skill.md` § "Reference Files" for when and how to create 
 3. **Reference links** - any `references/` paths in SKILL.md point to files that actually exist
 4. **README updated** - `skills/README.md` has the new row
 5. **No bloat** - SKILL.md doesn't duplicate >100 lines of material that belongs in `references/`
-6. **Agent readability** - would an AI agent know exactly what to do after reading this skill? If not, add missing steps or examples
+6. **Shared references synced** - if the skill uses files from `skills/shared/`, confirm `bash scripts/sync-shared-references.sh` was run and the generated `references/` copies are committed
+7. **Agent readability** - would an AI agent know exactly what to do after reading this skill? If not, add missing steps or examples
 
 For advanced trigger optimization, use the `/skill-creator` skill to run eval-driven description testing and iterate on your trigger phrases.
 

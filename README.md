@@ -127,7 +127,7 @@ Follow these steps to go from a fresh install to a working query.
 2. Query logs. The positional argument is a DataPrime query:
 
     ```bash
-    cx logs 'filter $m.severity == "ERROR"'
+    cx logs 'filter $m.severity == ERROR'
     ```
 
 3. Query metrics. `cx metrics query` takes a PromQL expression:
@@ -139,7 +139,7 @@ Follow these steps to go from a fresh install to a working query.
 4. Search distributed spans. The positional argument is a DataPrime filter; `source spans` is prepended automatically:
 
     ```bash
-    cx spans 'filter $l.serviceName == "checkout"' --start now-2h --limit 50
+    cx spans "filter \$l.serviceName == 'checkout'" --start now-2h --limit 50
     ```
 
 5. List dashboards to confirm the API is reachable:
@@ -298,7 +298,7 @@ Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-ale
 Repeat `-p` to run a command across multiple profiles in parallel. Results are merged and tagged with the profile name:
 
 ```bash
-cx -p prod-eu -p prod-us logs 'filter $m.severity == "ERROR"'
+cx -p prod-eu -p prod-us logs 'filter $m.severity == ERROR'
 ```
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.

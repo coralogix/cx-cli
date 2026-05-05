@@ -7,7 +7,7 @@
 Repeat the `-p` (or `--profile`) flag to target multiple profiles:
 
 ```bash
-cx logs 'filter $m.severity == "ERROR"' -p prod -p staging
+cx logs 'filter $m.severity == ERROR' -p prod -p staging
 cx metrics query 'up' -p us-prod -p eu-prod
 ```
 
@@ -37,7 +37,7 @@ Text output adds a `Profile` column to tables for REST commands (alerts, dashboa
 
 ```bash
 # This will error
-cx logs 'filter $m.severity == "ERROR"' -p prod -p staging --api-key sk-...
+cx logs 'filter $m.severity == ERROR' -p prod -p staging --api-key sk-...
 ```
 
 Instead, store per-profile credentials ahead of time:

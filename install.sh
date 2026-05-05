@@ -3,6 +3,7 @@ set -eu
 
 REPO="coralogix/cx-cli"
 BINARY_NAME="cx"
+TMPDIR_CLEANUP=""
 
 main() {
     need_cmd curl || need_cmd wget
@@ -40,23 +41,22 @@ main() {
 
     say "Installing ${BINARY_NAME} v${version} (${target})..."
 
-    local tmpdir
-    tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
+    TMPDIR_CLEANUP="$(mktemp -d)"
+    trap 'rm -rf "$TMPDIR_CLEANUP"' EXIT
 
     local archive_name="cx-${version}-${target}.tar.gz"
     local archive_url="https://github.com/${REPO}/releases/download/v${version}/${archive_name}"
     local checksums_url="https://github.com/${REPO}/releases/download/v${version}/checksums-sha256.txt"
 
     say "Downloading ${archive_url}..."
-    download "$archive_url" "${tmpdir}/${archive_name}"
-    download "$checksums_url" "${tmpdir}/checksums-sha256.txt"
+    download "$archive_url" "${TMPDIR_CLEANUP}/${archive_name}"
+    download "$checksums_url" "${TMPDIR_CLEANUP}/checksums-sha256.txt"
 
     say "Verifying checksum..."
-    verify_checksum "${tmpdir}" "${archive_name}"
+    verify_checksum "${TMPDIR_CLEANUP}" "${archive_name}"
 
     say "Extracting..."
-    tar xzf "${tmpdir}/${archive_name}" -C "${tmpdir}"
+    tar xzf "${TMPDIR_CLEANUP}/${archive_name}" -C "${TMPDIR_CLEANUP}"
 
     install_dir="${CX_INSTALL_DIR:-}"
     if [ -z "$install_dir" ]; then
@@ -71,10 +71,10 @@ main() {
     fi
 
     if [ -w "$install_dir" ]; then
-        cp "${tmpdir}/${BINARY_NAME}" "${install_dir}/${BINARY_NAME}"
+        cp "${TMPDIR_CLEANUP}/${BINARY_NAME}" "${install_dir}/${BINARY_NAME}"
     else
         say "Elevated permissions required to install to ${install_dir}"
-        sudo cp "${tmpdir}/${BINARY_NAME}" "${install_dir}/${BINARY_NAME}"
+        sudo cp "${TMPDIR_CLEANUP}/${BINARY_NAME}" "${install_dir}/${BINARY_NAME}"
     fi
     chmod +x "${install_dir}/${BINARY_NAME}"
 

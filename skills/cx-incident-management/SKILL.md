@@ -215,7 +215,4 @@ Use this to understand incident frequency, MTTR trends, and severity distributio
 
 - **`cx-alerts`** - deep alert management: creating, updating, and inspecting alert definitions
 - **`cx-telemetry-querying`** - root cause investigation using logs, metrics, traces, and RUM
-- **`cx-query-logs`** - search logs for error messages and stack traces
-- **`cx-query-spans`** - trace request flows and find latency bottlenecks
-- **`cx-metrics-query`** - check error rates, latency percentiles, and throughput
 - **`cx-observability-setup`** - configure notification channels and routing for alerts

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "cx-telemetry-querying": {
+      "source": "coralogix/cx-cli",
+      "sourceType": "github",
+      "skillPath": "skills/cx-telemetry-querying/SKILL.md",
+      "computedHash": "3a5a373a25a6e92ca3ea88583f4f3f5c0d0558bce078e8951994970b6fccc64b"
+    }
+  }
+}

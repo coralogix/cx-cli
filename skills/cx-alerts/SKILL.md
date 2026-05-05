@@ -216,10 +216,14 @@ cx alerts suppression-rules create --from-file suppression-rule.json
 
 ### Reference Files
 
-- **`references/alert-schemas.md`** - Complete JSON schema reference for all 12 alert types: field names, enum values (condition types, time windows, filter operations), common sub-objects (logs filter, tracing filter, notification groups, activity schedules), and important gotchas
+- **[`references/alert-schemas.md`](references/alert-schemas.md)** - Complete JSON schema reference for all 12 alert types: field names, enum values (condition types, time windows, filter operations), common sub-objects (logs filter, tracing filter, notification groups, activity schedules), and important gotchas
+- **[`references/dataprime-reference.md`](references/dataprime-reference.md)** - DataPrime query language reference for log-based and span-based alert conditions (filter syntax, operators, severity values)
+- **[`references/logs-querying.md`](references/logs-querying.md)** - Log data model, field discovery, and query patterns for building log alert conditions
+- **[`references/promql-guidelines.md`](references/promql-guidelines.md)** - PromQL reference for metric-based alert conditions (counters, gauges, histograms, threshold patterns)
+- **[`references/spans-querying.md`](references/spans-querying.md)** - Span data model, duration units, and query patterns for building tracing alert conditions
 
 ### Related Skills
 
 - **`cx-incident-management`** - incident triage workflows that involve alerts, SLO monitoring, and notification verification
 - **`cx-observability-setup`** - setting up notification routing and webhook integrations for alerts
-- **`cx-telemetry-querying`** - gateway for deciding which telemetry pillar to query
+- **`cx-telemetry-querying`** - investigate the telemetry behind a firing alert

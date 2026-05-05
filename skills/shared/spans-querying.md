@@ -1,17 +1,8 @@
----
-name: cx-query-spans
-description: |
-  Query and analyze distributed traces and spans using DataPrime syntax. Use this skill whenever the
-  user wants to investigate request latency, find slow operations, debug service-to-service calls,
-  look up a trace ID, analyze span durations, check error spans, examine distributed traces,
-  investigate OpenTelemetry/Jaeger tracing data, or query Coralogix spans in any way - even if they
-  don't explicitly mention "DataPrime" or "cx spans".
-version: 0.1.0
----
-
-# Spans Query Skill
+# Span Querying Reference
 
 Query and analyze distributed tracing data using the `cx spans` command with DataPrime syntax.
+
+> **DataPrime syntax:** See `dataprime-reference.md` for the full query language reference.
 
 ## Understanding Spans in Coralogix
 
@@ -91,9 +82,7 @@ cx spans "filter \$l.serviceName == 'api'" --limit 5 -o json
 
 ---
 
-## Querying Spans
-
-### Essential Examples
+## Essential Query Examples
 
 ```bash
 # Get all spans for a trace
@@ -103,13 +92,13 @@ cx spans "filter \$d.traceID == '4f6a8f3c2e8a1b97'"
 cx spans "filter \$l.serviceName == 'checkout-service'"
 
 # Find slow spans (> 1 second)
-cx spans 'filter $m.duration > 1000000'
+cx spans "filter \$m.duration > 1000000"
 
 # Find error spans
-cx spans 'filter $d.tags.error == true'
+cx spans "filter \$d.tags.error == true"
 
 # Aggregate latency by operation
-cx spans 'groupby $l.operationName aggregate avg($m.duration) as avg_latency | orderby avg_latency desc'
+cx spans "groupby \$l.operationName aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc"
 
 # Wider time range
 cx spans "filter \$l.serviceName == 'api'" --start now-6h
@@ -125,8 +114,6 @@ The **one exception**: when the user provides a specific string and you don't kn
 cx spans "wildfind 'connection refused'"
 ```
 
-In all other cases, use `filter` with known fields or discover field names first with `cx search-fields`.
-
 > **Tip:** `wildfind` can also serve as a last-resort field discovery method - when `cx search-fields` doesn't find what you need, run `wildfind` with a known value, then inspect the matching spans to see which fields contain it.
 
 ---
@@ -137,8 +124,6 @@ In all other cases, use `filter` with known fields or discover field names first
 - The query only uses standard fields (`$m.duration`, `$l.serviceName`, `$l.operationName`, `$d.traceID`)
 - The user explicitly names the fields they want
 - The fields have already been discovered earlier in the conversation
-
-For customer-specific `$d.*` fields that need discovery, use one of these approaches:
 
 ### 1. Infer from Source Code (Preferred)
 
@@ -152,7 +137,7 @@ cx search-fields "order ID" --dataset spans
 cx search-fields "http response code" --dataset spans
 ```
 
-Returns DataPrime paths with similarity scores. Note: `cx search-fields` only has access to the most common fields. If it doesn't find what you need, fall back to sample query inspection.
+Note: `cx search-fields` only has access to the most common fields. If it doesn't find what you need, fall back to sample query inspection.
 
 ### 3. Sample Query Inspection
 
@@ -160,39 +145,154 @@ Returns DataPrime paths with similarity scores. Note: `cx search-fields` only ha
 cx spans "filter \$l.serviceName == 'api'" --limit 5 -o json
 ```
 
-Inspect the JSON output to see all available fields in the actual data. This is especially useful for discovering fields in unstructured or deeply nested data that semantic search may not cover.
+Inspect the JSON output to see all available fields. Especially useful for discovering fields in unstructured or deeply nested data.
 
 ---
 
-## Troubleshooting
+## Investigation Workflow
+
+### 1. Understand the Request
+
+Identify:
+- Whether you have a trace ID, service name, or error description
+- Time frame of interest
+- Whether the question is about latency, errors, or request flow
+
+### 2. Start with Known Information
+
+**If you have a trace ID** - go straight to it:
+```bash
+cx spans "filter \$d.traceID == '<trace_id>'"
+```
+
+**If you have a service name** - query its spans:
+```bash
+cx spans "filter \$l.serviceName == '<service>'" --limit 50
+```
+
+**If you have neither** - start broad to find entry points:
+```bash
+# Find recent error spans
+cx spans "filter \$d.tags.error == true" --limit 20
+
+# Find the slowest spans in the last hour
+cx spans "groupby \$l.serviceName, \$l.operationName aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc | limit 10"
+
+# Then extract trace IDs from interesting spans
+cx spans "filter \$l.serviceName == '<service>' && \$m.duration > 1000000 | distinct \$d.traceID"
+```
+
+### 3. Troubleshooting
 
 If a query returns no results, change **one thing at a time**:
 
 1. **Extend the time range**: `--start now-6h` or `--start now-24h`
 2. **Relax filters**: remove the most restrictive condition
-3. **Check field availability**: the field you're filtering by may only exist in a subset of spans - a span matching one filter may not have the field from another filter
+3. **Check field availability**: the field you're filtering by may only exist in a subset of spans
 4. **Verify field names**: run a sample query with `-o json` to inspect the actual schema
 5. **Check service names**: service names are case-sensitive
 6. **Try archive tier**: `--tier archive --start now-30d` for older data
 
 ---
 
-## References
+## Common Query Patterns
 
-- **`cx-dataprime` skill** - Full query language reference: commands, operators, aggregations, text extraction, type conversions
-- **[Advanced Usage](references/advanced-usage.md)** - Investigation workflows, common query patterns, latency analysis, trace debugging
-
-For inline DataPrime help:
+### Trace Reconstruction
 
 ```bash
-cx dataprime list                  # List all commands and functions
-cx dataprime show filter           # Detailed help for a specific command
+# All spans for a trace
+cx spans "filter \$d.traceID == '4f6a8f3c2e8a1b97'"
+
+# Find root spans only (no parent)
+cx spans "filter \$l.serviceName == 'api-gateway' | filter \$d.parentId == null"
+
+# Find trace IDs for a service
+cx spans "filter \$l.serviceName == 'payment-service' | distinct \$d.traceID"
+```
+
+### Latency Analysis
+
+```bash
+# Spans slower than 1 second
+cx spans "filter \$m.duration > 1000000"
+
+# Top 10 slowest operations by average duration
+cx spans "groupby \$l.operationName aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc | limit 10"
+
+# Average latency by service
+cx spans "groupby \$l.serviceName aggregate avg(\$m.duration) as avg_latency"
+
+# P95 latency by operation
+cx spans "groupby \$l.operationName aggregate percentile(0.95, \$m.duration) as p95_latency"
+```
+
+### Latency Spike Detection
+
+```bash
+# Average latency per 15-minute window
+cx spans "filter \$l.serviceName == 'api' | groupby roundTime(\$m.timestamp, 15m) as interval aggregate avg(\$m.duration) as avg_latency | orderby interval"
+
+# Find the time windows with highest latency
+cx spans "filter \$l.serviceName == 'api' | groupby roundTime(\$m.timestamp, 5m) as interval aggregate avg(\$m.duration) as avg_latency | orderby avg_latency desc | limit 10"
+```
+
+### Error Investigation
+
+```bash
+# All error spans
+cx spans "filter \$d.tags.error == true"
+
+# Error spans for a specific service
+cx spans "filter \$l.serviceName == 'checkout' | filter \$d.tags.error == true"
+
+# Error rate by service
+cx spans "filter \$d.tags.error == true | groupby \$l.serviceName aggregate count() as errors | orderby errors desc"
+
+# Error rate over time
+cx spans "filter \$d.tags.error == true | groupby roundTime(\$m.timestamp, 15m) as interval aggregate count() as errors"
+```
+
+### Sampling Error Types
+
+```bash
+# Group errors by operation with a sample
+cx spans "filter \$d.tags.error == true | groupby \$l.operationName aggregate any_value(\$d) as sample, count() as total | orderby total desc | limit 5"
+
+# Group by service and operation to see where errors concentrate
+cx spans "filter \$d.tags.error == true | groupby \$l.serviceName, \$l.operationName aggregate count() as errors | orderby errors desc | limit 10"
+```
+
+### Finding Unique Values
+
+```bash
+# List all services with spans
+cx spans "distinct \$l.serviceName"
+
+# List all operations for a service
+cx spans "filter \$l.serviceName == 'api' | distinct \$l.operationName"
+
+# Find unique trace IDs for error spans
+cx spans "filter \$d.tags.error == true | distinct \$d.traceID"
+```
+
+### Correlating by Trace ID
+
+```bash
+# Find spans across services for the same trace
+cx spans "filter \$d.traceID == 'abc123' | groupby \$l.serviceName aggregate count() as span_count, avg(\$m.duration) as avg_latency"
 ```
 
 ---
 
-## Related Skills
+## Performance Tips
 
-- **`cx-metrics-query`** - Aggregated latency metrics, histograms, counters (PromQL)
-- **`cx-query-logs`** - Detailed log messages correlated with spans (DataPrime)
-- **`cx-telemetry-querying`** - Gateway skill for choosing the right data source
+- Use `--limit` for exploratory queries
+- Use `groupby` with aggregations instead of fetching raw spans when possible
+- Filter by time first when dealing with large datasets
+- Use specific filters (service name, operation) to reduce scan scope
+- Don't rely solely on aggregations - retrieve sample spans to find information you didn't anticipate
+- For large result sets, use `--output agents` which spills automatically:
+
+```bash
+cx spans "filter \$l.serviceName == 'api'" --start now-24h --limit 1000 -o agents
+```

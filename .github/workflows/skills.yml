@@ -1,0 +1,26 @@
+name: Validate Skills
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'skills/**'
+      - 'scripts/verify-skills.sh'
+      - 'scripts/sync-shared-references.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skills-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate skills and reference sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Verify skills and reference sync
+        run: bash scripts/verify-skills.sh

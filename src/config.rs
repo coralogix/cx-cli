@@ -121,7 +121,15 @@ impl std::str::FromStr for Region {
             "ap1" => Region::Ap1,
             "ap2" => Region::Ap2,
             "ap3" => Region::Ap3,
-            other => Region::Custom(other.to_string()),
+            other => {
+                if !other.starts_with("https://") {
+                    anyhow::bail!(
+                        "custom region URL must use HTTPS (got {other:?}); \
+                         use a URL starting with https://"
+                    );
+                }
+                Region::Custom(other.to_string())
+            }
         })
     }
 }
@@ -716,6 +724,18 @@ default_profile = "my-profile"
         let url = "https://custom.endpoint.io";
         let r: Region = url.parse().unwrap();
         assert_eq!(r.api_endpoint(), url);
+    }
+
+    #[test]
+    fn region_custom_rejects_http_scheme() {
+        let result: Result<Region> = "http://insecure.endpoint.io".parse();
+        assert!(result.is_err(), "http:// custom region must be rejected");
+    }
+
+    #[test]
+    fn region_custom_rejects_file_scheme() {
+        let result: Result<Region> = "file:///etc/passwd".parse();
+        assert!(result.is_err(), "file:// custom region must be rejected");
     }
 
     /// Legacy TOML without `auth` field must deserialise as `AuthKind::ApiKey`.

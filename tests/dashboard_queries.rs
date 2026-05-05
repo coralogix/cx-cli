@@ -64,7 +64,7 @@ async fn dashboard_search_empty_results() {
 }
 
 #[tokio::test]
-async fn dashboard_search_post_body_includes_query_text_and_limit() {
+async fn dashboard_search_get_params_include_query_text_and_limit() {
     let server = MockServer::start().await;
 
     let body = json!({ "results": [], "total": 0 });
@@ -550,4 +550,131 @@ async fn dashboard_search_all_profiles_fail_returns_error() {
         result.is_err(),
         "when every profile fails, run_search should return Err for CI/scripts"
     );
+}
+
+// ── Text output rendering tests ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn dashboard_search_text_output_with_results() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "results": [{"query_text": "rate(http_requests[5m])", "similarity": 0.93,
+                     "dashboard_name": "API Overview", "dashboard_folder": null,
+                     "widget_title": "RPS", "widget_type": null,
+                     "query_context": null, "extracted_fields": []}],
+        "total": 1
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/olly-kb/dashboards/queries/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    dashboards::run_search(&[target], "request rate", 10, OutputFormat::Text)
+        .await
+        .expect("run_search text output with results should not panic");
+}
+
+#[tokio::test]
+async fn dashboard_search_text_output_empty_results() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/olly-kb/dashboards/queries/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"results": [], "total": 0})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    dashboards::run_search(&[target], "zzz", 10, OutputFormat::Text)
+        .await
+        .expect("run_search text output with no results should succeed");
+}
+
+#[tokio::test]
+async fn dashboard_queries_by_field_text_output_with_results() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "queries": [{"query_text": "filter $d.http.status == 500",
+                     "dashboard_name": "Errors", "widget_title": "5xx",
+                     "matched_fields": ["$d.http.status"]}],
+        "total": 1
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/olly-kb/queries/by-field"))
+        .and(query_param("field_path", "$d.http.status"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    dashboards::run_queries_by_field(&[target], "$d.http.status", 10, OutputFormat::Text)
+        .await
+        .expect("run_queries_by_field text output with results should not panic");
+}
+
+#[tokio::test]
+async fn dashboard_queries_by_field_text_output_empty_results() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/olly-kb/queries/by-field"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"queries": [], "total": 0})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    dashboards::run_queries_by_field(&[target], "$d.unknown", 10, OutputFormat::Text)
+        .await
+        .expect("run_queries_by_field text with no results should succeed");
+}
+
+#[tokio::test]
+async fn dashboard_semantic_search_text_output_with_results() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "results": [{"dashboard_id": "d1", "dashboard_name": "K8s Overview",
+                     "dashboard_folder": "Infra", "description": "Monitors pods",
+                     "semantic_description": null, "widget_count": 8, "similarity": 0.91}],
+        "total": 1
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/olly-kb/dashboards/semantic-search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    dashboards::run_semantic_search(&[target], "kubernetes pods", 10, OutputFormat::Text)
+        .await
+        .expect("run_semantic_search text output with results should not panic");
+}
+
+#[tokio::test]
+async fn dashboard_semantic_search_text_output_empty_results() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/olly-kb/dashboards/semantic-search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"results": [], "total": 0})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    dashboards::run_semantic_search(&[target], "zzz", 10, OutputFormat::Text)
+        .await
+        .expect("run_semantic_search text with no results should succeed");
 }

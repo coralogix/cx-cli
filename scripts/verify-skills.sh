@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Verify all skills in skills/ for correctness.
-# Checks: frontmatter fields, trigger phrase count, command validation,
-# cross-reference validation, and line count.
+# Checks: frontmatter fields, description length (≤1024 chars), trigger phrase count,
+# command validation, cross-reference validation, and line count.
 
 SKILLS_DIR="$(cd "$(dirname "$0")/../skills" && pwd)"
 ERRORS=0
@@ -64,7 +64,15 @@ for skill_dir in "$SKILLS_DIR"/*/; do
         skill_errors=$((skill_errors + 1))
     fi
 
-    # 2. Trigger phrase count (quoted strings in description)
+    # 2. Description length check (must be ≤1024 characters for Codex compatibility)
+    desc_raw=$(awk '/^description/,/^(version|---)/' "$skill_file" | sed '1s/^description: |//' | sed '$d' | sed 's/^  //')
+    desc_char_count=$(echo "$desc_raw" | wc -c | tr -d ' ')
+    if [ "$desc_char_count" -gt 1024 ]; then
+        fail "description is $desc_char_count characters (max 1024 for Codex)"
+        skill_errors=$((skill_errors + 1))
+    fi
+
+    # 3. Trigger phrase count (quoted strings in description)
     # Some skills use quoted trigger phrases, others use prose descriptions
     desc_block=$(awk '/^description/,/^(version|---)/' "$skill_file" | sed '$d')
     phrase_count=$(echo "$desc_block" | { grep -o '"[^"]*"' || true; } | wc -l | tr -d ' ')
@@ -74,10 +82,10 @@ for skill_dir in "$SKILLS_DIR"/*/; do
         skill_errors=$((skill_errors + 1))
     fi
 
-    # 3. Command validation (top-level command only)
+    # 4. Command validation (top-level command only)
     if $SCHEMA_AVAILABLE; then
-        top_cmds=$(grep -oE 'cx [a-z][-a-z0-9]+' "$skill_file" | \
-            awk '{print $2}' | sort -u)
+        top_cmds=$(grep -oE '`cx [a-z][-a-z0-9]+' "$skill_file" | \
+            sed 's/^`//' | awk '{print $2}' | sort -u)
 
         while IFS= read -r top_cmd; do
             [ -z "$top_cmd" ] && continue
@@ -92,7 +100,7 @@ for skill_dir in "$SKILLS_DIR"/*/; do
         done <<< "$top_cmds"
     fi
 
-    # 4. Cross-reference validation (skill references in Related Skills sections)
+    # 5. Cross-reference validation (skill references in Related Skills sections)
     referenced_skills=$(awk '/[Rr]elated [Ss]kills/,0' "$skill_file" | \
         grep -oE '`[a-z][-a-z0-9]+`' | tr -d '`' | sort -u || true)
 
@@ -110,14 +118,14 @@ for skill_dir in "$SKILLS_DIR"/*/; do
         done <<< "$referenced_skills"
     fi
 
-    # 5. Line count check
+    # 6. Line count check
     lines=$(wc -l < "$skill_file" | tr -d ' ')
     if [ "$lines" -gt 400 ]; then
         fail "SKILL.md is $lines lines (max 400)"
         skill_errors=$((skill_errors + 1))
     fi
 
-    # 6. Shared-reference sync check
+    # 7. Shared-reference sync check
     refs_dir="$skill_dir/references"
     if [ -d "$refs_dir" ]; then
         for ref_file in "$refs_dir"/*.md; do

@@ -224,24 +224,42 @@ mod max_size_serde {
     }
 }
 
+/// OAuth token set persisted inline in the profile TOML when
+/// `credential_storage = "file"`. Mirrors the keyring-backed layout used by
+/// `oauth::store_tokens_keyring`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct StoredOAuthTokens {
+    pub access_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_token: Option<String>,
+    /// Unix timestamp (seconds). Absent when the IdP did not return `expires_in`;
+    /// callers fall back to parsing the JWT `exp` claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expiry: Option<u64>,
+}
+
 /// A named profile storing credentials and endpoint info.
 ///
-/// API keys are stored inline in the TOML by default (`credential_storage = "file"`).
-/// When `credential_storage = "os_store"`, keys are stored in the OS credential
-/// store and `api_key` is `None` in the TOML.
-///
-/// OAuth profiles always use `credential_storage = "os_store"`; tokens are stored
-/// in the OS keyring and never written to the profile TOML.
+/// `credential_storage` selects where secrets live for both auth modes:
+///   - `"file"` (default): API keys / OAuth tokens are written inline in the
+///     TOML, which is created with `0600` permissions.
+///   - `"os_store"`: secrets are stored in the OS credential store
+///     (macOS Keychain, Windows Credential Manager, etc.) and the inline
+///     fields are absent from the TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     /// Authentication method for this profile.
     /// Defaults to `ApiKey` so that existing profiles without this field continue to work.
     #[serde(default)]
     pub auth: AuthKind,
-    /// Where API keys for this profile are stored.
+    /// Where credentials for this profile are stored (applies to both API keys
+    /// and OAuth tokens).
     #[serde(default)]
     pub credential_storage: CredentialStorage,
-    /// Coralogix API key. Present when `credential_storage = "file"`.
+    /// Coralogix API key. Present when `auth = "api_key"` and
+    /// `credential_storage = "file"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     pub region: Region,
@@ -256,6 +274,10 @@ pub struct Profile {
     /// When `None`, `region.api_endpoint()` is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth_base_url: Option<String>,
+    /// OAuth: cached token set. Present only when `auth = "oauth"` and
+    /// `credential_storage = "file"`. For `os_store`, tokens live in the OS keyring.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_tokens: Option<StoredOAuthTokens>,
     /// Per-profile default output format. When set, takes precedence over the
     /// global `default_output_format` in config.toml.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -413,12 +435,12 @@ async fn resolve_single(
                 let region_name = profile.region.to_string();
                 let base_url = profile
                     .oauth_base_url
-                    .as_deref()
-                    .unwrap_or_else(|| profile.region.api_endpoint());
+                    .clone()
+                    .unwrap_or_else(|| profile.region.api_endpoint().to_string());
                 let client_id = profile
                     .oauth_client_id
-                    .as_deref()
-                    .or_else(|| oauth::client_id_for_region(&region_name))
+                    .clone()
+                    .or_else(|| oauth::client_id_for_region(&region_name).map(str::to_string))
                     .ok_or_else(|| {
                         anyhow::anyhow!(
                             "No OAuth client ID configured for profile '{profile_name}' \
@@ -426,7 +448,21 @@ async fn resolve_single(
                              Run `cx profiles add {profile_name}` to reconfigure."
                         )
                     })?;
-                oauth::resolve_token(profile_name, base_url, client_id).await?
+                let storage = profile.credential_storage;
+                let (bearer, refreshed) = oauth::resolve_token(
+                    profile_name,
+                    &base_url,
+                    &client_id,
+                    storage,
+                    profile.oauth_tokens.as_ref(),
+                )
+                .await?;
+                if let Some(new_tokens) = refreshed {
+                    // File-storage profile: persist refreshed tokens back to disk.
+                    profile.oauth_tokens = Some(new_tokens);
+                    save_profile(profile_name, &profile)?;
+                }
+                bearer
             }
         }
     };
@@ -678,6 +714,7 @@ api_key = "mykey"
             label: Some("prod".to_string()),
             oauth_client_id: None,
             oauth_base_url: None,
+            oauth_tokens: None,
             default_output_format: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
@@ -687,6 +724,36 @@ api_key = "mykey"
         assert!(restored.api_key.is_none());
         // oauth_client_id / oauth_base_url are skip_serializing_if = None, so absent
         assert!(restored.oauth_client_id.is_none());
+        assert!(restored.oauth_tokens.is_none());
+    }
+
+    /// OAuth profile with file-stored tokens round-trips through TOML.
+    #[test]
+    fn oauth_profile_file_storage_round_trips() {
+        let profile = Profile {
+            auth: AuthKind::OAuth,
+            credential_storage: CredentialStorage::File,
+            api_key: None,
+            region: Region::Eu2,
+            label: Some("prod".to_string()),
+            oauth_client_id: None,
+            oauth_base_url: None,
+            oauth_tokens: Some(StoredOAuthTokens {
+                access_token: "access-abc".to_string(),
+                refresh_token: Some("refresh-xyz".to_string()),
+                id_token: None,
+                expiry: Some(1_700_000_000),
+            }),
+            default_output_format: None,
+        };
+        let toml = toml::to_string_pretty(&profile).unwrap();
+        let restored: Profile = toml::from_str(&toml).unwrap();
+        assert_eq!(restored.credential_storage, CredentialStorage::File);
+        let tokens = restored.oauth_tokens.expect("oauth_tokens persisted");
+        assert_eq!(tokens.access_token, "access-abc");
+        assert_eq!(tokens.refresh_token.as_deref(), Some("refresh-xyz"));
+        assert!(tokens.id_token.is_none());
+        assert_eq!(tokens.expiry, Some(1_700_000_000));
     }
 
     /// Custom OAuth profile (with explicit client ID) round-trips.
@@ -700,6 +767,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: Some("abc-123".to_string()),
             oauth_base_url: None,
+            oauth_tokens: None,
             default_output_format: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
@@ -763,6 +831,7 @@ api_key = "mykey"
                 label: None,
                 oauth_client_id: None,
                 oauth_base_url: None,
+                oauth_tokens: None,
                 default_output_format: None,
             };
             save_profile(name, &profile).unwrap();
@@ -798,6 +867,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            oauth_tokens: None,
             default_output_format: None,
         };
         save_profile("default", &profile).unwrap();
@@ -819,6 +889,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            oauth_tokens: None,
             default_output_format: None,
         };
         save_profile(name, &profile).unwrap();
@@ -841,6 +912,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            oauth_tokens: None,
             default_output_format: None,
         };
         save_profile(name, &profile).unwrap();
@@ -863,6 +935,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            oauth_tokens: None,
             default_output_format: None,
         };
         save_profile(name, &profile).unwrap();

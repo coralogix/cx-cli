@@ -30,13 +30,13 @@ pub async fn run(
 
     let include_profile = targets.len() > 1;
     let target_count = targets.len();
-    let q = query.to_string();
-    let ds = dataset.to_string();
-    let per_profile = fan_out(targets, |t| {
-        let q = q.clone();
-        let ds = ds.clone();
+    let query_owned = query.to_string();
+    let dataset_owned = dataset.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let query_clone = query_owned.clone();
+        let dataset_clone = dataset_owned.clone();
         async move {
-            api::search_by_value(&t.client, &q, &ds, limit, offset)
+            api::search_by_value(&target.client, &query_clone, &dataset_clone, limit, offset)
                 .await
                 .map_err(Into::into)
         }

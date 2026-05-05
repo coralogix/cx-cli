@@ -112,13 +112,13 @@ async fn collect_semantic_search_results(
     query_text: &str,
     limit: u32,
 ) -> Result<Vec<(String, DashboardSearchResult)>> {
-    let qt = query_text.to_string();
+    let query_owned = query_text.to_string();
 
-    let per_profile = fan_out(targets, |t| {
-        let qt = qt.clone();
+    let per_profile = fan_out(targets, |target| {
+        let query_clone = query_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            Ok(api.semantic_search(&qt, limit).await?)
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.semantic_search(&query_clone, limit).await?)
         }
     })
     .await;
@@ -195,12 +195,12 @@ async fn collect_query_search_results(
     query_text: &str,
     limit: u32,
 ) -> Result<Vec<(String, QuerySearchResult)>> {
-    let qt = query_text.to_string();
-    let per_profile = fan_out(targets, |t| {
-        let qt = qt.clone();
+    let query_owned = query_text.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let query_clone = query_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            Ok(api.search_queries(&qt, limit).await?)
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.search_queries(&query_clone, limit).await?)
         }
     })
     .await;
@@ -267,12 +267,12 @@ async fn collect_queries_by_field_results(
     field_path: &str,
     limit: u32,
 ) -> Result<Vec<(String, QueryByFieldResult)>> {
-    let fp = field_path.to_string();
-    let per_profile = fan_out(targets, |t| {
-        let fp = fp.clone();
+    let field_path_owned = field_path.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let field_path_clone = field_path_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            Ok(api.queries_by_field(&fp, limit).await?)
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.queries_by_field(&field_path_clone, limit).await?)
         }
     })
     .await;
@@ -528,13 +528,13 @@ pub async fn run_get(
     );
 
     let include_profile = targets.len() > 1;
-    let id = dashboard_id.to_string();
+    let dashboard_id_owned = dashboard_id.to_string();
 
-    let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
+    let per_profile = fan_out(targets, |target| {
+        let dashboard_id_clone = dashboard_id_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            Ok(api.get(&id).await?)
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.get(&dashboard_id_clone).await?)
         }
     })
     .await;
@@ -770,12 +770,12 @@ pub async fn run_create(
 
 pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
     eprintln!("{}", format!("Deleting dashboard {id}...").dimmed());
-    let id = id.to_string();
-    let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
+    let dashboard_id_owned = id.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let dashboard_id_clone = dashboard_id_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            api.delete(&id).await?;
+            let api = DashboardsApi::new(&target.client);
+            api.delete(&dashboard_id_clone).await?;
             Ok(())
         }
     })
@@ -960,12 +960,12 @@ pub async fn run_folders_create(
 
 pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
     eprintln!("{}", format!("Deleting dashboard folder {id}...").dimmed());
-    let id = id.to_string();
-    let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
+    let folder_id_owned = id.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let folder_id_clone = folder_id_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            api.folders_delete(&id).await?;
+            let api = DashboardsApi::new(&target.client);
+            api.folders_delete(&folder_id_clone).await?;
             Ok(())
         }
     })

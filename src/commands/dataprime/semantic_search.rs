@@ -52,6 +52,13 @@ struct FieldSearchItem {
     path_array: Vec<String>,
     description: String,
     similarity_score: f64,
+    /// Present in API JSON; retained for forward compatibility.
+    #[serde(default)]
+    #[allow(dead_code)]
+    dataset_scope: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    labels: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]

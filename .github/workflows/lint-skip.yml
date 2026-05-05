@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - 'contributing/**'
       - '*.md'
+      - '.github/workflows/**' # TEMP: verify lint-skip companion fires
 
 # Companion to lint.yml: lint.yml has matching paths-ignore so it does not run
 # for docs-only PRs. Branch protection still requires the "Format & Clippy"

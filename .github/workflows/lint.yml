@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - 'contributing/**'
       - '*.md'
+      - '.github/workflows/**' # TEMP: verify lint-skip companion fires
 
 concurrency:
   group: lint-${{ github.ref }}

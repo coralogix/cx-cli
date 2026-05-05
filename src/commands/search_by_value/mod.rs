@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::Value;
 
@@ -19,17 +19,22 @@ pub async fn run(
     offset: u32,
     output: OutputFormat,
 ) -> Result<()> {
+    if query.trim().is_empty() {
+        bail!("query text cannot be empty");
+    }
+
     eprintln!(
         "{}",
         format!("Searching {dataset} values for: {query:?}…").dimmed()
     );
 
     let include_profile = targets.len() > 1;
-    let query = query.to_string();
-    let dataset = dataset.to_string();
+    let target_count = targets.len();
+    let q = query.to_string();
+    let ds = dataset.to_string();
     let per_profile = fan_out(targets, |t| {
-        let q = query.clone();
-        let ds = dataset.clone();
+        let q = q.clone();
+        let ds = ds.clone();
         async move {
             api::search_by_value(&t.client, &q, &ds, limit, offset)
                 .await
@@ -38,6 +43,7 @@ pub async fn run(
     })
     .await;
 
+    let mut error_count = 0usize;
     let mut all_results: Vec<(String, SearchByValueResult)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -46,26 +52,32 @@ pub async fn run(
                     all_results.push((profile.clone(), r));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
     }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+
+    let json_rows: Vec<Value> = all_results
+        .iter()
+        .map(|(profile, r)| {
+            let mut v = serde_json::to_value(r).unwrap_or(Value::Null);
+            if include_profile {
+                if let Value::Object(ref mut m) = v {
+                    m.insert("profile".to_string(), Value::String(profile.clone()));
+                }
+            }
+            v
+        })
+        .collect();
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
-            let json_rows: Vec<Value> = all_results
-                .iter()
-                .map(|(profile, r)| {
-                    let mut v = serde_json::to_value(r).unwrap_or(Value::Null);
-                    if include_profile {
-                        if let Value::Object(ref mut m) = v {
-                            m.insert("profile".to_string(), Value::String(profile.clone()));
-                        }
-                    }
-                    v
-                })
-                .collect();
-            render::render_json(&json_rows)?;
-        }
+        OutputFormat::Json => render::render_json(&json_rows)?,
+        OutputFormat::Agents => render::render_agents(&json_rows)?,
         OutputFormat::Text => {
             if all_results.is_empty() {
                 render::print_no_results("No matching values found.");

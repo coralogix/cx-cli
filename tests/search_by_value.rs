@@ -183,10 +183,48 @@ async fn search_by_value_clamps_limit_to_100() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    // limit 500 should be clamped to 100 in the API call
     search_by_value::run(&targets, "test", "logs", 500, 0, OutputFormat::Json)
         .await
         .expect("search-by-value should clamp limit to 100");
+}
+
+#[tokio::test]
+async fn search_by_value_clamps_limit_zero_to_one() {
+    let server = MockServer::start().await;
+
+    let expected_body = json!({
+        "query": "test",
+        "dataset_type": "logs",
+        "limit": 1,
+        "offset": 0
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/semantic-search/values"))
+        .and(body_json(expected_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "matches": [],
+            "total_hits": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    search_by_value::run(&targets, "test", "logs", 0, 0, OutputFormat::Json)
+        .await
+        .expect("limit=0 should be clamped to 1");
+}
+
+#[tokio::test]
+async fn search_by_value_empty_query_returns_error() {
+    let target = common::test_target("test-profile", "http://127.0.0.1:1");
+    let targets = vec![target];
+
+    let result = search_by_value::run(&targets, "   ", "logs", 10, 0, OutputFormat::Json).await;
+    assert!(result.is_err(), "empty/whitespace query must return Err before any HTTP call");
 }
 
 #[tokio::test]
@@ -262,7 +300,36 @@ async fn search_by_value_multi_profile_merges_results() {
 }
 
 #[tokio::test]
-async fn search_by_value_handles_http_error_gracefully() {
+async fn search_by_value_partial_profile_failure_returns_ok() {
+    let server_ok = MockServer::start().await;
+    let server_fail = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/semantic-search/values"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "matches": [{"key_matched": "http.method", "value": "GET", "similarity_score": 0.9}],
+            "total_hits": 1
+        })))
+        .mount(&server_ok)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/semantic-search/values"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server_fail)
+        .await;
+
+    let targets = vec![
+        common::test_target("profile-ok", &server_ok.uri()),
+        common::test_target("profile-fail", &server_fail.uri()),
+    ];
+
+    search_by_value::run(&targets, "GET", "logs", 10, 0, OutputFormat::Json)
+        .await
+        .expect("partial failure should return Ok with results from the good profile");
+}
+
+#[tokio::test]
+async fn search_by_value_all_profiles_fail_returns_error() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -271,12 +338,8 @@ async fn search_by_value_handles_http_error_gracefully() {
         .mount(&server)
         .await;
 
-    let target = common::test_target("test-profile", &server.uri());
-    let targets = vec![target];
+    let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    // A single-profile error should still not panic — the runner logs it and
-    // succeeds with no output rows.
-    search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Json)
-        .await
-        .expect("runner should not propagate a single-profile HTTP error");
+    let result = search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Json).await;
+    assert!(result.is_err(), "all-profiles-fail must return Err");
 }

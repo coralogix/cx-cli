@@ -29,7 +29,26 @@ const OAUTH_REGIONS: &[&str] = &[
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
 
-const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &["file", "os-store (encrypted)"];
+/// Storage backend choices presented to the user. The first element is the
+/// label shown in the prompt; the second is the variant it maps to. Order
+/// matters: the first entry is the default cursor position.
+const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] = &[
+    ("file", CredentialStorage::File),
+    ("os-store (encrypted)", CredentialStorage::OsStore),
+];
+
+fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
+    let labels: Vec<&str> = CREDENTIAL_STORAGE_OPTIONS.iter().map(|(l, _)| *l).collect();
+    let chosen = Select::new(prompt, labels)
+        .with_help_message(help_message)
+        .with_starting_cursor(0)
+        .prompt()?;
+    Ok(CREDENTIAL_STORAGE_OPTIONS
+        .iter()
+        .find(|(label, _)| *label == chosen)
+        .map(|(_, storage)| *storage)
+        .expect("inquire returns one of the labels we passed in"))
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -303,7 +322,8 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
 
-    // Clean up any existing secrets before writing new ones.
+    // Clean up any existing keyring entries before writing new ones, regardless
+    // of which storage backend the user picks below.
     keyring_store::delete_profile(name);
 
     // ── Browser login ──────────────────────────────────────────────────────────
@@ -311,8 +331,11 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
     let tokens = oauth::browser_login(&base_url, &client_id).await?;
     println!("Login successful!");
 
-    // Store tokens in the OS keyring.
-    oauth::store_tokens(name, &tokens)?;
+    let credential_storage = select_credential_storage(
+        "Where should OAuth tokens be stored?",
+        "'file' stores tokens in the profile config (0600 perms). \
+         'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
+    )?;
 
     // For custom environments, explicitly store the base URL so that token
     // refresh can reach the correct OIDC discovery endpoint even if the
@@ -320,19 +343,30 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
     // is derived from `region.api_endpoint()` at runtime and need not be stored.
     let oauth_base_url_for_profile = if is_custom { Some(base_url) } else { None };
 
+    let (oauth_tokens, storage_desc): (Option<_>, &'static str) = match credential_storage {
+        CredentialStorage::OsStore => {
+            oauth::store_tokens_keyring(name, &tokens)?;
+            (None, "OS credential store (OAuth tokens)")
+        }
+        CredentialStorage::File => (
+            Some(oauth::tokens_to_stored(&tokens)),
+            "profile file (OAuth tokens)",
+        ),
+    };
+
     let profile = Profile {
         auth: AuthKind::OAuth,
-        // OAuth profiles always use the OS keyring; tokens are never in the TOML.
-        credential_storage: CredentialStorage::OsStore,
+        credential_storage,
         api_key: None,
         region,
         label,
         oauth_client_id: oauth_client_id_for_profile,
         oauth_base_url: oauth_base_url_for_profile,
+        oauth_tokens,
         default_output_format: None,
     };
 
-    Ok((profile, "OS credential store (OAuth tokens)"))
+    Ok((profile, storage_desc))
 }
 
 // ── API key configure path ────────────────────────────────────────────────────
@@ -357,22 +391,11 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
 
-    let storage_choice = Select::new(
+    let credential_storage = select_credential_storage(
         "Where should API keys be stored?",
-        CREDENTIAL_STORAGE_OPTIONS.to_vec(),
-    )
-    .with_help_message(
         "'file' stores in profile config (0600 perms). \
          'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
-    )
-    .with_starting_cursor(0)
-    .prompt()?;
-
-    let credential_storage = if storage_choice.starts_with("os-store") {
-        CredentialStorage::OsStore
-    } else {
-        CredentialStorage::File
-    };
+    )?;
 
     let (profile, storage_desc) = match credential_storage {
         CredentialStorage::OsStore => {
@@ -385,6 +408,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 label,
                 oauth_client_id: None,
                 oauth_base_url: None,
+                oauth_tokens: None,
                 default_output_format: None,
             };
             (profile, "OS credential store")
@@ -400,6 +424,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 label,
                 oauth_client_id: None,
                 oauth_base_url: None,
+                oauth_tokens: None,
                 default_output_format: None,
             };
             (profile, "profile file")

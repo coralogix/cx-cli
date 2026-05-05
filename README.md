@@ -38,6 +38,16 @@ Most macOS users should use Homebrew. If you are not on macOS, use the cross-pla
 
 ### 1. Install the CLI
 
+```bash
+curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Pin a specific version:
+
+```bash
+CX_VERSION=0.1.0 curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
 #### Recommended for macOS: Homebrew
 
 ```bash
@@ -207,7 +217,7 @@ Configuration lives in `~/.cx/`:
     default.toml           # Credentials and region per profile
 ```
 
-Credentials are stored in the OS keyring on macOS (Keychain) and Windows (Credential Manager). On Linux, keyring support (Secret Service) requires a glibc build; the default install script and release binaries use musl, which has no keyring backend-credentials fall back to file storage. If you need keyring support on Linux, build from source with a glibc toolchain.
+Credentials (API keys or OAuth tokens) are stored either inline in the profile TOML with `0600` permissions (`credential_storage = "file"`, the default) or in the OS keyring (`credential_storage = "os_store"` - macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). `cx profiles add` prompts for the choice. On Linux, keyring support requires a glibc build; the default install script and release binaries use musl, which has no keyring backend, so `os_store` is unavailable there.
 
 Environment variables override profile settings: `CX_PROFILE`, `CX_API_KEY`, and `CX_REGION`.
 

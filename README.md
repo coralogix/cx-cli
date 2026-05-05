@@ -63,7 +63,7 @@ cargo install coralogix-cli
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
 
-<details>
+<details markdown="1">
 <summary>Nix</summary>
 
 ```bash
@@ -104,7 +104,7 @@ in {
 
 </details>
 
-<details>
+<details markdown="1">
 <summary>Build from source</summary>
 
 ```bash
@@ -227,7 +227,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
-<details>
+<details markdown="1">
 <summary>Global options</summary>
 
 ```
@@ -303,7 +303,7 @@ cx -p prod-eu -p prod-us logs 'filter $m.severity == ERROR'
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
 
-<details>
+<details markdown="1">
 <summary><strong>Shell completions</strong></summary>
 
 `cx` supports tab-completion for all commands, flags, subcommands, and profile names.
@@ -378,7 +378,7 @@ COMPLETE=fish cx | source
 
 </details>
 
-<details>
+<details markdown="1">
 <summary><strong>Migrating from cxctl</strong></summary>
 
 `cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.

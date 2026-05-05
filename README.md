@@ -48,12 +48,6 @@ curl -fsSL https://get.coralogix.dev/cli | sh
 brew install coralogix/tap/cx
 ```
 
-#### Works on macOS and Linux: install script
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/coralogix/cx-cli/master/install.sh | sh
-```
-
 ### 2. Install agent skills
 
 Skills teach your AI agent how to use `cx` for observability investigations.

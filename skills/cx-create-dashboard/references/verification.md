@@ -16,27 +16,11 @@ Parse `relativeTimeFrame` from the draft (default `"172800s"` = 48h) into a huma
 | `172800s` | `48h` |
 | `604800s` | `7d` |
 
-`$RANGE` is used **only** for PromQL verification (§2): range vectors are window-sensitive, so the CLI check has to match the window the dashboard will evaluate. DataPrime verification (§3) uses a fixed short window instead — see that section.
+`$RANGE` is used **only** for PromQL verification (§3): range vectors are window-sensitive, so the CLI check has to match the window the dashboard will evaluate. DataPrime verification (§4) uses a fixed short window instead — see that section.
 
 ---
 
-## 2. Pick the storage tier for DataPrime verification (Frequent Search vs Archive)
-
-`cx logs` and `cx spans` support a `--tier` flag:
-
-- `--tier frequent` (default): hot storage, fast, recent data.
-- `--tier archive`: cold/long-term storage, older data.
-
-Use **Frequent Search** unless you have a reason to validate against Archive. Switch to **Archive** when:
-
-- The dashboard is intended for long lookbacks (weekly/monthly trends, retrospectives).
-- The widget's time range (via `$RANGE`) likely exceeds hot retention and Frequent Search returns empty for known-good queries.
-- The user explicitly says “this dashboard should work on archived data.”
-
-
----
-
-## 3. Verify each PromQL query
+## 2. Verify each PromQL query
 
 For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`). Leave any other fixed window (`[5m]`, `[1h]`) untouched - those were placed intentionally for sliding-rate panels.
 
@@ -60,7 +44,7 @@ On failure: consult the `cx-metrics-query` skill for PromQL help, re-search for 
 
 ---
 
-## 4. Verify each DataPrime query
+## 3. Verify each DataPrime query
 
 For every widget whose definition contains a `dataprimeQuery`, pick the CLI command from the widget's source prefix and **strip the leading `source logs` / `source spans`** before handing the pipeline to `cx`:
 
@@ -72,6 +56,17 @@ For every widget whose definition contains a `dataprimeQuery`, pick the CLI comm
 The dashboard runtime requires the `source …` prefix inside the widget JSON (see `query-syntax.md` §3). `cx logs` and `cx spans` inject the source themselves; if you leave a leading `source …` in the pipeline they silently run against the command's own source, which masks pillar mismatches. Strip it for verification; restore nothing - the widget JSON keeps the prefix.
 
 Verify against a **fixed short window** (`now-15m` → `now`), not the dashboard's `$RANGE`. The goal here is syntax / field / pipeline validation — proving the query parses and references real fields. The dashboard runs against `${__range}` itself at render time; we don't need to re-prove data presence on the dashboard's window during the build. A short window is faster, cheaper, and a clean fail signal (a query that fails on `now-15m` is broken regardless of range).
+
+Choose the tier to verify:
+
+- `--tier frequent` (default): hot storage, fast, recent data.
+- `--tier archive`: cold/long-term storage, older data.
+
+Use **Frequent Search** unless you have a reason to validate against Archive. Switch to **Archive** when:
+
+- The dashboard is intended for long lookbacks (weekly/monthly trends, retrospectives).
+- Frequent Search returns empty for known-good queries because the time range is beyond hot retention.
+- The user explicitly says “this dashboard should work on archived data.”
 
 **Log-backed widgets:**
 
@@ -89,7 +84,7 @@ Check both the exit code and the output — some errors surface only in the outp
 
 ---
 
-## 5. Restore `${__range}` before Phase 6
+## 4. Restore `${__range}` before Phase 6
 
 Once every PromQL and DataPrime query passes, restore `${__range}` (and any other variables) in the emitted JSON. PromQL verification swapped `${__range}` for the concrete `[$RANGE]`; the final JSON keeps the injected variable intact. (DataPrime queries don't carry `${__range}`, so nothing to restore there beyond keeping the `source logs` / `source spans` prefix in the widget JSON.)
 

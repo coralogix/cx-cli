@@ -205,8 +205,6 @@ The two languages are verified against different windows:
 - **PromQL**: map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` for the CLI call, then restore `${__range}` in the JSON before Phase 6. Range vectors are window-sensitive, so the check has to match what the dashboard will evaluate.
 - **DataPrime**: verify against a fixed short window (`now-15m` → `now`, `--limit 1`). The goal is syntax / field / pipeline validation, not data-presence on the dashboard's window — a short window is faster and a cleaner fail signal.
 
-Map `relativeTimeFrame` to a `$RANGE` token (e.g. `48h` for `172800s`), substitute `${__range}` with `[$RANGE]` for the CLI call, verify, then restore `${__range}` in the JSON before Phase 6.
-
 Full procedure (CLI invocations, `$RANGE` mapping table, retry budget, failure modes): [`references/verification.md`](references/verification.md).
 
 If a query can't be made to pass within the retry budget, surface it to the user with the CLI error verbatim - don't ship a broken widget.

@@ -8,6 +8,9 @@ on:
       - 'scripts/verify-skills.sh'
       - 'scripts/sync-shared-references.sh'
 
+permissions:
+  contents: read
+
 concurrency:
   group: skills-${{ github.ref }}
   cancel-in-progress: true

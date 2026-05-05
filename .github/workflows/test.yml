@@ -14,10 +14,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      docs_only: ${{ steps.filter.outputs.docs }}
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
@@ -30,29 +33,23 @@ jobs:
               - 'contributing/**'
               - '*.md'
 
-  test:
-    name: Tests (${{ matrix.os }})
-    needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.filter.outputs.docs != 'true'
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: steps.filter.outputs.docs != 'true'
         with:
           toolchain: "1.94.1"
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: steps.filter.outputs.docs != 'true'
         with:
           key: ${{ matrix.os }}
 
       - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
+        if: steps.filter.outputs.docs != 'true' && runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Run tests
+        if: steps.filter.outputs.docs != 'true'
         run: cargo test --locked

@@ -100,6 +100,19 @@ Follow these steps to go from a fresh install to a working query.
     cx dashboards catalog
     ```
 
+6. Try semantic search to find dashboards or queries:
+
+    ```bash
+    # Find dashboards about error rates
+    cx dashboards semantic-search "error rate monitoring"
+    
+    # Search dashboard query content
+    cx dashboards search "http status 500"
+    
+    # Find queries using a specific field
+    cx dashboards queries-by-field '$d.http.status_code'
+    ```
+
 Run `cx <command> --help` for full syntax and examples on any command.
 
 <details open markdown="1">
@@ -122,7 +135,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 | Command | Purpose |
 |---|---|
-| `cx dashboards` | Manage dashboards and folders |
+| `cx dashboards` | Manage dashboards and folders. Includes semantic search: `semantic-search` (find by description), `search` (search query content), `queries-by-field` (find queries using a field) |
 | `cx views` | Manage saved views and view folders |
 | `cx slos` | Manage SLO definitions |
 

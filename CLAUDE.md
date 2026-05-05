@@ -77,6 +77,13 @@ Local:
 
 **`cx search-by-value`:** Calls Olly Knowledge Base `POST /api/v1/search-by-value` on the region API base URL. The platform ingress uses gateway permission `legacy-archive-queries:Execute` (AAA id 40); `dataset_type` in the JSON body (`logs` / `spans` / `all`) is still enforced in-app by the service. See `olly-knowledge-base` `apps/values-reader-service/AGENTS.md` and `platform/defaults/networking/defaults.yaml`.
 
+**`cx dashboards` semantic search:** Three Olly Knowledge Base-powered subcommands for discovering dashboards and queries:
+- `cx dashboards semantic-search <description>` — Find dashboards matching a natural-language description
+- `cx dashboards search <query-text>` — Search dashboard query content semantically
+- `cx dashboards queries-by-field <field-path>` — Find all queries referencing a specific field (e.g., `$d.http.status_code`)
+
+All use the Olly KB semantic-search-service API with gateway permission `legacy-archive-queries:Execute` (AAA id 40). See `olly-knowledge-base` `apps/semantic-search-service/AGENTS.md`.
+
 **Agent discovery:** `cx schema` outputs the full command tree (commands, subcommands, flags, descriptions) as JSON. Agents should call `cx schema` to discover available commands rather than parsing help text.
 
 **Key renames from prior flat layout:**

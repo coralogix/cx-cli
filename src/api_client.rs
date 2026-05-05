@@ -117,23 +117,43 @@ impl CxClient {
     /// Validate the HTTP status of a response and read the body as text.
     async fn checked_text(&self, resp: reqwest::Response) -> Result<String> {
         let status = resp.status();
-        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-            return Err(CxError::Auth(
-                "Invalid or expired API key. Run `cx profiles add` to update credentials.".into(),
-            ));
+        if status.is_success() {
+            return Ok(resp.text().await?);
         }
-        if !status.is_success() {
-            let code = status.as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            let message = serde_json::from_str::<Value>(&body)
-                .ok()
-                .and_then(|v| v["message"].as_str().map(String::from))
-                .unwrap_or(body);
-            return Err(CxError::Api {
+
+        let code = status.as_u16();
+        let retry_after = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+        let body = resp.text().await.unwrap_or_default();
+        let detail = serde_json::from_str::<Value>(&body)
+            .ok()
+            .and_then(|v| v["message"].as_str().map(String::from));
+
+        match status {
+            StatusCode::UNAUTHORIZED => Err(CxError::Auth(
+                "Invalid or expired API key. Run `cx profiles add` to update credentials."
+                    .into(),
+            )),
+            StatusCode::FORBIDDEN => Err(CxError::Auth(match detail {
+                Some(d) => format!("Permission denied: {d}. Check your API key's scopes."),
+                None => "Permission denied: your API key does not have the required scope for this operation.".into(),
+            })),
+            StatusCode::TOO_MANY_REQUESTS => Err(CxError::Api {
                 status: code,
-                message,
-            });
+                message: match retry_after {
+                    Some(secs) => {
+                        format!("Rate limited by the API. Retry after {secs} seconds.")
+                    }
+                    None => "Rate limited by the API. Wait and retry.".into(),
+                },
+            }),
+            _ => Err(CxError::Api {
+                status: code,
+                message: detail.unwrap_or(body),
+            }),
         }
-        Ok(resp.text().await?)
     }
 }

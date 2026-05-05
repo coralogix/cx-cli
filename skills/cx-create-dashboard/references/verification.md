@@ -16,7 +16,7 @@ Parse `relativeTimeFrame` from the draft (default `"172800s"` = 48h) into a huma
 | `172800s` | `48h` |
 | `604800s` | `7d` |
 
-`$RANGE` is used **only** for PromQL verification (§3): range vectors are window-sensitive, so the CLI check has to match the window the dashboard will evaluate. DataPrime verification (§4) uses a fixed short window instead — see that section.
+`$RANGE` is used **only** for PromQL verification (§2): range vectors are window-sensitive, so the CLI check has to match the window the dashboard will evaluate. DataPrime verification (§3) uses a fixed short window instead — see that section.
 
 ---
 

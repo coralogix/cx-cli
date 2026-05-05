@@ -5,21 +5,31 @@
 [![Homebrew](https://img.shields.io/homebrew/v/cx)](https://formulae.brew.sh/formula/cx)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-> **Coralogix on the command line.** `cx` gives you — and your AI agents — direct access to
-> the full Coralogix platform from the terminal: query any signal, manage every resource,
-> and wire Coralogix into automated workflows without leaving the shell.
+The observability backbone for AI agents and engineering teams. `cx` gives you-and your AI agents-direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
 
 <p align="center">
   <img src="assets/demo.png" alt="cx logs demo" width="700">
 </p>
 
-## Why cx?
+## What you can do
 
-- **27 commands, one binary** — from querying signals to managing IAM, notifications, TCO, and archiving, all domains live in a single statically-linked executable.
-- **Multi-profile fan-out** — repeat `-p` to run a command across multiple accounts or regions in parallel, with results merged and tagged by profile.
-- **Built for AI agents** — `cx schema` dumps the full command tree as JSON for agent self-discovery; the `agents` output format is token-efficient and auto-spills large results to a temp file.
-- **Bundled agent skills** — install ready-made skills for Claude Code, Cursor, Codex, and 40+ agents with `npx skills add coralogix/cx-cli`.
-- **DataPrime and PromQL native** — Coralogix's query languages work end-to-end without leaving the shell, including semantic field search.
+- Query any signal-logs, metrics, spans, and RUM data-with DataPrime or PromQL, and render results as tables, raw JSON, or a token-efficient format for AI agents.
+- Manage the full Coralogix stack: alerts, incidents, notifications, IAM, SLOs, dashboards, data pipeline rules, TCO policies, and more.
+- Run the same command across multiple profiles or regions in a single invocation with multi-profile fan-out.
+- Give your AI agent a single entry point to production observability: `cx schema` dumps the entire command tree as JSON so agents can self-discover capabilities without manual documentation.
+- Find the right log or span field by describing it in natural language.
+- Browse the DataPrime language reference offline.
+- Plug Coralogix into your AI coding agent with bundled skills for Claude Code, Cursor, Codex, and 40+ more agents.
+
+## Features
+
+- DataPrime and PromQL at the terminal-Coralogix's proprietary query languages work end-to-end without leaving the shell.
+- 27 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
+- Multi-profile fan-out with `-p prod-eu -p prod-us <command>`-run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
+- `agents` output format-token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
+- `cx schema`-outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
+- Semantic field search-find the right log or span field by describing it in natural language.
+- Bundled skills for Claude Code, Cursor, Codex, OpenCode, and 40+ more agents, distributed via `npx skills add`.
 
 ## Installation
 
@@ -380,7 +390,7 @@ COMPLETE=fish cx | source
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the ownership model,
 PR review process, and step-by-step guides for adding commands and skills.
 
-## Documentation
+## Further reading
 
 - [Configuration](docs/configuration.md)
 - [Agents output format](docs/agents-output.md)
@@ -391,4 +401,4 @@ PR review process, and step-by-step guides for adding commands and skills.
 
 ## License
 
-[Apache-2.0](LICENSE)
+Apache-2.0

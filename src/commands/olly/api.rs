@@ -1,64 +1,8 @@
-use std::io::Read;
-
-use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::api_client::CxClient;
-use crate::error::{CxError, Result};
-
-/// Result of downloading artifact content.
-#[derive(Debug)]
-pub enum ArtifactContent {
-    /// Text content that can be displayed in terminal.
-    Text(String),
-    /// Binary content that should be saved to a file.
-    Binary(Vec<u8>),
-}
-
-/// Download content from a presigned URL.
-/// Automatically decompresses gzip content and detects binary vs text.
-pub async fn download_content(url: &str) -> Result<ArtifactContent> {
-    let response = reqwest::get(url).await?;
-
-    if !response.status().is_success() {
-        return Err(CxError::Api {
-            status: response.status().as_u16(),
-            message: "Failed to download artifact content".to_string(),
-        });
-    }
-
-    let bytes = response.bytes().await?;
-    let data = process_content(bytes.to_vec());
-    Ok(data)
-}
-
-/// Process downloaded bytes: decompress gzip if needed, detect text vs binary.
-fn process_content(bytes: Vec<u8>) -> ArtifactContent {
-    // Check for gzip magic bytes (1f 8b)
-    let data = if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
-        match decompress_gzip(&bytes) {
-            Ok(decompressed) => decompressed,
-            Err(_) => bytes, // If decompression fails, use original bytes
-        }
-    } else {
-        bytes
-    };
-
-    // Try to interpret as UTF-8 text
-    match String::from_utf8(data) {
-        Ok(text) => ArtifactContent::Text(text),
-        Err(e) => ArtifactContent::Binary(e.into_bytes()),
-    }
-}
-
-/// Decompress gzip data.
-fn decompress_gzip(data: &[u8]) -> std::io::Result<Vec<u8>> {
-    let mut decoder = GzDecoder::new(data);
-    let mut decompressed = Vec::new();
-    decoder.read_to_end(&mut decompressed)?;
-    Ok(decompressed)
-}
+use crate::error::Result;
 
 // ── Base paths ─────────────────────────────────────────────────────────────────
 
@@ -170,15 +114,19 @@ pub struct Interaction {
 
 impl Interaction {
     pub fn is_completed(&self) -> bool {
-        self.status == "COMPLETED"
+        self.status.eq_ignore_ascii_case("completed")
     }
 
-    pub fn is_cancelled(&self) -> bool {
-        self.status == "CANCELLED"
+    pub fn is_error(&self) -> bool {
+        self.status.eq_ignore_ascii_case("error")
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.status.eq_ignore_ascii_case("stopped")
     }
 
     pub fn is_terminal(&self) -> bool {
-        self.is_completed() || self.is_cancelled()
+        self.is_completed() || self.is_error() || self.is_stopped()
     }
 
     pub fn assistant_text(&self) -> Option<String> {
@@ -374,15 +322,28 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_interaction_cancelled() {
+    fn deserialize_interaction_error() {
         let json = json!({
             "id": "interaction-123",
             "chat_id": "chat-456",
-            "status": "CANCELLED",
+            "status": "error",
             "responses": null
         });
         let interaction: Interaction = serde_json::from_value(json).unwrap();
-        assert!(interaction.is_cancelled());
+        assert!(interaction.is_error());
+        assert!(interaction.is_terminal());
+    }
+
+    #[test]
+    fn deserialize_interaction_stopped() {
+        let json = json!({
+            "id": "interaction-123",
+            "chat_id": "chat-456",
+            "status": "stopped",
+            "responses": null
+        });
+        let interaction: Interaction = serde_json::from_value(json).unwrap();
+        assert!(interaction.is_stopped());
         assert!(interaction.is_terminal());
     }
 
@@ -491,98 +452,5 @@ mod tests {
         let json = serde_json::to_value(&block).unwrap();
         assert_eq!(json["type"], "input_text");
         assert_eq!(json["text"], "Hello world");
-    }
-
-    // ── process_content tests ─────────────────────────────────────────────────
-
-    #[test]
-    fn process_content_text() {
-        let text = "Hello, world!";
-        let result = super::process_content(text.as_bytes().to_vec());
-        match result {
-            super::ArtifactContent::Text(s) => assert_eq!(s, text),
-            super::ArtifactContent::Binary(_) => panic!("Expected Text, got Binary"),
-        }
-    }
-
-    #[test]
-    fn process_content_json() {
-        let json = r#"{"key": "value", "number": 42}"#;
-        let result = super::process_content(json.as_bytes().to_vec());
-        match result {
-            super::ArtifactContent::Text(s) => assert_eq!(s, json),
-            super::ArtifactContent::Binary(_) => panic!("Expected Text, got Binary"),
-        }
-    }
-
-    #[test]
-    fn process_content_binary() {
-        // Invalid UTF-8 sequence
-        let bytes = vec![0xff, 0xfe, 0x00, 0x01];
-        let result = super::process_content(bytes.clone());
-        match result {
-            super::ArtifactContent::Binary(b) => assert_eq!(b, bytes),
-            super::ArtifactContent::Text(_) => panic!("Expected Binary, got Text"),
-        }
-    }
-
-    #[test]
-    fn process_content_gzip_text() {
-        use flate2::write::GzEncoder;
-        use flate2::Compression;
-        use std::io::Write;
-
-        let original = "Hello, compressed world!";
-
-        // Compress the text
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original.as_bytes()).unwrap();
-        let compressed = encoder.finish().unwrap();
-
-        // Verify it has gzip magic bytes
-        assert_eq!(compressed[0], 0x1f);
-        assert_eq!(compressed[1], 0x8b);
-
-        // Process should decompress and return text
-        let result = super::process_content(compressed);
-        match result {
-            super::ArtifactContent::Text(s) => assert_eq!(s, original),
-            super::ArtifactContent::Binary(_) => panic!("Expected Text after gzip decompression"),
-        }
-    }
-
-    #[test]
-    fn process_content_gzip_binary() {
-        use flate2::write::GzEncoder;
-        use flate2::Compression;
-        use std::io::Write;
-
-        // Binary data that's not valid UTF-8
-        let original = vec![0xff, 0xfe, 0x00, 0x01, 0x80, 0x90];
-
-        // Compress the binary
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&original).unwrap();
-        let compressed = encoder.finish().unwrap();
-
-        // Process should decompress but return binary (not valid UTF-8)
-        let result = super::process_content(compressed);
-        match result {
-            super::ArtifactContent::Binary(b) => assert_eq!(b, original),
-            super::ArtifactContent::Text(_) => panic!("Expected Binary after gzip decompression"),
-        }
-    }
-
-    #[test]
-    fn process_content_invalid_gzip() {
-        // Looks like gzip (magic bytes) but isn't valid
-        let fake_gzip = vec![0x1f, 0x8b, 0x00, 0x00, 0x00];
-        let result = super::process_content(fake_gzip.clone());
-
-        // Should fall back to treating as binary (invalid UTF-8)
-        match result {
-            super::ArtifactContent::Binary(b) => assert_eq!(b, fake_gzip),
-            super::ArtifactContent::Text(_) => panic!("Expected Binary for invalid gzip"),
-        }
     }
 }

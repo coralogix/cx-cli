@@ -10,14 +10,8 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 
 | Skill | Description |
 |---|---|
-| `cx-olly` | Interact with Coralogix's AI assistant (Olly) - chat, follow-up questions, retrieve generated artifacts |
-| `cx-telemetry-querying` | Gateway skill for telemetry-driven investigation - decide where to look (metrics, logs, traces, RUM, APM) before querying |
-| `cx-query-logs` | Query and analyze Coralogix logs using DataPrime syntax via `cx logs` |
-| `cx-query-spans` | Query distributed traces and analyze span latency via `cx spans` |
-| `cx-metrics-query` | Investigate production issues by searching metrics, constructing PromQL queries, and analyzing results via `cx metrics` |
-| `cx-rum` | Query and analyze Real User Monitoring data - frontend errors, web vitals, user interactions, page performance via `cx logs` |
-| `cx-dataprime` | DataPrime query language reference - syntax, commands, operators, aggregations, text extraction |
-| `cx-telemetry-querying` | Gateway for all telemetry investigation — logs, spans, metrics, RUM, and DataPrime queries. Loads pillar-specific reference files (DataPrime syntax, PromQL guidelines, logs/spans/metrics/RUM how-tos) per query type. |
+| `cx-olly` | Interact with Coralogix's Observability Agent (Olly) - chat, follow-up questions, retrieve generated artifacts |
+| `cx-telemetry-querying` | Gateway for all telemetry investigation - logs, spans, metrics, RUM, and DataPrime queries. Loads pillar-specific reference files per query type. |
 | `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts` |
 | `cx-create-dashboard` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation |
 

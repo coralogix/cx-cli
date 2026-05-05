@@ -1,18 +1,18 @@
 ---
 name: cx-olly
-description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the assistant", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix AI assistant (Olly) using the cx CLI.
+description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
 version: 0.1.0
 ---
 
-# Olly AI Assistant Skill
+# Olly Observability Agent Skill
 
-Use this skill to interact with Coralogix's AI assistant (Olly) via the `cx olly` CLI commands. Olly can analyze your observability data, answer questions about alerts, metrics, logs, and generate artifacts like charts and reports.
+Use this skill to interact with Coralogix's Observability Agent (Olly) via the `cx olly` CLI commands. Olly can analyze your observability data, answer questions about alerts, metrics, logs, and generate artifacts like charts and reports.
 
 ## CLI Commands
 
 | Command | Purpose | Key flags |
 |---|---|---|
-| `cx olly ask "message"` | Send a message to the AI assistant | `--chat-id`, `--mode`, `--model`, `--timeout` |
+| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--mode`, `--model`, `--timeout` |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
@@ -44,15 +44,14 @@ Use `--chat-id` to continue a conversation and maintain context from previous me
 |---|---|
 | `fast` | Quick responses, less detailed analysis |
 | `focus` | Balanced mode (default) - good for most queries |
-| `skill` | Deep analysis using specialized skills |
 
 ```bash
-cx olly ask "Analyze this complex issue" --mode skill
+cx olly ask "Quick summary of recent errors" --mode fast
 ```
 
 ### Model selection
 
-Available models include `gpt-5.2` (default), `claude-sonnet-4-5`, `gpt-5.4`, `claude-haiku-4-5`.
+Available models include `gpt-5.2` (default), `claude-sonnet-4-5`, `sonnet-4.6`, `gpt-5.4`, `claude-haiku-4-5`.
 
 ```bash
 cx olly ask "Explain this error" --model claude-sonnet-4-5
@@ -68,7 +67,7 @@ cx olly ask "Deep analysis of last week's incidents" --timeout 1800
 
 ## Artifacts
 
-Olly can generate artifacts like charts, tables, and reports. Artifact IDs appear as links in the assistant's response text.
+Olly can generate artifacts like charts, tables, and reports. Artifact IDs appear as links in the agent's response text.
 
 ### List all artifacts
 
@@ -87,14 +86,13 @@ cx olly artifacts get <artifact-id> -o json
 The `artifacts get` command automatically:
 1. Fetches artifact metadata
 2. Downloads content from the presigned URL
-3. **Decompresses gzip** content if detected
+3. **Decompresses gzip** content
 4. **Parses JSON** and uses spill logic for large content
-5. Saves non-JSON content to a temp file
+5. Saves non-JSON text to a temp file
 
 Output behavior:
 - **JSON content**: Displayed directly, or spilled to file if large
 - **Text content**: Saved to temp file (e.g., `/tmp/cx_results_artifact_<id>_<hash>.txt`)
-- **Binary content**: Saved to temp file (e.g., `/tmp/cx_results_artifact_<id>_<hash>.bin`)
 
 ## Workflow Examples
 
@@ -122,11 +120,10 @@ cx olly ask "List top 5 error messages" -o json | jq '.response'
 cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
 ```
 
-### Deep analysis with specific model
+### Detailed analysis with specific model
 
 ```bash
 cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
-  --mode skill \
   --model claude-sonnet-4-5 \
   --timeout 1800
 ```
@@ -138,9 +135,8 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 - **Artifact IDs are in response text** - look for markdown links like `[Chart](https://...artifact_view/<id>)`
 - **Single-profile only** - `cx olly` does not support multi-profile queries
 - **Large artifacts auto-spill** - JSON content over the configured limit is saved to temp files
-- **Binary content saved to file** - images and compressed data are written to temp files automatically
 
 ## Related Skills
 
-- **`cx-telemetry-querying`** - for direct DataPrime/PromQL queries without AI assistance (covers logs, spans, metrics, RUM)
+- **`cx-telemetry-querying`** - for direct DataPrime/PromQL queries without AI agent assistance (covers logs, spans, metrics, RUM)
 - **`cx-alerts`** - for managing alert definitions

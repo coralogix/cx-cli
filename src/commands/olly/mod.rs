@@ -7,8 +7,10 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 pub mod api;
+mod artifact;
 
-use api::{download_content, ArtifactContent, OllyApi};
+use api::OllyApi;
+use artifact::{download_content, ArtifactContent};
 
 use crate::config::OutputFormat;
 use crate::execution::ExecutionTarget;
@@ -80,8 +82,6 @@ enum ProcessedContent {
     Json(Vec<Value>),
     /// Plain text content (not valid JSON) - saved to file.
     Text { path: std::path::PathBuf },
-    /// Binary content - saved to file.
-    Binary { path: std::path::PathBuf },
     /// No content available.
     None,
 }
@@ -114,7 +114,7 @@ pub async fn run_artifacts_get(
         None => None,
     };
 
-    // Process content: try JSON, fall back to text file, or binary file
+    // Process content: try JSON, fall back to text file
     let processed = match raw_content {
         Some(ArtifactContent::Text(text)) => {
             // Try to parse as JSON
@@ -135,11 +135,7 @@ pub async fn run_artifacts_get(
                 }
             }
         }
-        Some(ArtifactContent::Binary(bytes)) => {
-            let path =
-                write_binary_artifact(&bytes, artifact.filename.as_deref(), artifact_id, temp_dir)?;
-            ProcessedContent::Binary { path }
-        }
+        Some(ArtifactContent::Binary) => ProcessedContent::None,
         None => ProcessedContent::None,
     };
 
@@ -171,26 +167,6 @@ fn write_text_artifact(
     Ok(path)
 }
 
-/// Write binary content to a temp file.
-fn write_binary_artifact(
-    bytes: &[u8],
-    original_filename: Option<&str>,
-    artifact_id: &str,
-    temp_dir: &str,
-) -> Result<std::path::PathBuf> {
-    let extension = original_filename
-        .and_then(|f| f.rsplit('.').next())
-        .unwrap_or("bin");
-    let hash = short_hash_bytes(bytes);
-    let filename = format!(
-        "{}_artifact_{artifact_id}_{hash}.{extension}",
-        spill::FILE_PREFIX
-    );
-    let path = Path::new(temp_dir).join(&filename);
-    std::fs::write(&path, bytes)?;
-    Ok(path)
-}
-
 /// Simple hash for temp file naming.
 fn short_hash_bytes(bytes: &[u8]) -> String {
     const FNV_OFFSET: u64 = 14695981039346656037;
@@ -217,15 +193,6 @@ fn render_artifact_json(artifact: &api::Artifact, processed: &ProcessedContent) 
             })
         }
         ProcessedContent::Text { path } => {
-            json!({
-                "id": artifact.id,
-                "filename": artifact.filename,
-                "content_type": artifact.content_type,
-                "size": artifact.size,
-                "file": path.display().to_string(),
-            })
-        }
-        ProcessedContent::Binary { path } => {
             json!({
                 "id": artifact.id,
                 "filename": artifact.filename,
@@ -266,7 +233,7 @@ fn render_artifact_agents(
                 }
             }
         }
-        ProcessedContent::Text { path } | ProcessedContent::Binary { path } => {
+        ProcessedContent::Text { path } => {
             let response = json!({
                 "id": artifact.id,
                 "filename": artifact.filename,
@@ -327,9 +294,6 @@ fn render_artifact_text_output(
         }
         ProcessedContent::Text { path } => {
             println!("{} {}", "Text content saved to:".green(), path.display());
-        }
-        ProcessedContent::Binary { path } => {
-            println!("{} {}", "Binary content saved to:".green(), path.display());
         }
         ProcessedContent::None => {
             println!("{}", "No content available.".yellow());
@@ -424,8 +388,10 @@ fn render_ask_text(chat_id: &str, interaction: &api::Interaction) -> Result<()> 
             println!("{text}");
         }
         None => {
-            if interaction.is_cancelled() {
-                println!("{}", "Generation was cancelled.".yellow());
+            if interaction.is_error() {
+                println!("{}", "Generation encountered an error.".yellow());
+            } else if interaction.is_stopped() {
+                println!("{}", "Generation was stopped.".yellow());
             } else {
                 println!("{}", "No response received.".yellow());
             }

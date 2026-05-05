@@ -1,26 +1,45 @@
-# cx-cli
+# cx
 
-The observability backbone for AI agents and engineering teams. `cx` gives you-and your AI agents-direct access to the full Coralogix platform from the terminal: query any signal, manage every resource, and wire Coralogix into automated workflows without leaving the shell.
+[![CI](https://github.com/coralogix/cx-cli/actions/workflows/build.yml/badge.svg)](https://github.com/coralogix/cx-cli/actions/workflows/build.yml)
+[![Crates.io](https://img.shields.io/crates/v/coralogix-cli)](https://crates.io/crates/coralogix-cli)
+[![Homebrew](https://img.shields.io/homebrew/v/cx)](https://formulae.brew.sh/formula/cx)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-## What you can do
+> **Coralogix on the command line.** `cx` gives you — and your AI agents — direct access to
+> the full Coralogix platform from the terminal: query any signal, manage every resource,
+> and wire Coralogix into automated workflows without leaving the shell.
 
-- Query any signal-logs, metrics, spans, and RUM data-with DataPrime or PromQL, and render results as tables, raw JSON, or a token-efficient format for AI agents.
-- Manage the full Coralogix stack: alerts, incidents, notifications, IAM, SLOs, dashboards, data pipeline rules, TCO policies, and more.
-- Run the same command across multiple profiles or regions in a single invocation with multi-profile fan-out.
-- Give your AI agent a single entry point to production observability: `cx schema` dumps the entire command tree as JSON so agents can self-discover capabilities without manual documentation.
-- Find the right log or span field by describing it in natural language.
-- Browse the DataPrime language reference offline.
-- Plug Coralogix into your AI coding agent with bundled skills for Claude Code, Cursor, Codex, and 40+ more agents.
+```console
+# Set up a profile (interactive)
+$ cx profiles add
+Profile name: prod-eu
+Region: eu2
+API key: ********
 
-## Features
+# Query error logs from the last hour
+$ cx logs 'filter $m.severity == "ERROR"' --start now-1h --limit 5
+┌────────────────────────┬──────────┬──────────────────────────────────────────┐
+│ timestamp              │ severity │ message                                  │
+├────────────────────────┼──────────┼──────────────────────────────────────────┤
+│ 2026-05-05T09:14:02Z   │ ERROR    │ connection timeout to payments-svc       │
+│ 2026-05-05T09:13:58Z   │ ERROR    │ failed to decode protobuf payload        │
+└────────────────────────┴──────────┴──────────────────────────────────────────┘
 
-- DataPrime and PromQL at the terminal-Coralogix's proprietary query languages work end-to-end without leaving the shell.
-- 27 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
-- Multi-profile fan-out with `-p prod-eu -p prod-us <command>`-run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
-- `agents` output format-token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
-- `cx schema`-outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
-- Semantic field search-find the right log or span field by describing it in natural language.
-- Bundled skills for Claude Code, Cursor, Codex, OpenCode, and 40+ more agents, distributed via `npx skills add`.
+# Fan out across multiple profiles in one command
+$ cx -p prod-eu -p prod-us logs 'filter $m.severity == "CRITICAL"' --start now-15m
+
+# Dump the command tree for AI agent discovery
+$ cx schema | head -3
+{"commands":[{"name":"logs","description":"Query logs using DataPrime syntax",...
+```
+
+## Why cx?
+
+- **27 commands, one binary** — from querying signals to managing IAM, notifications, TCO, and archiving, all domains live in a single statically-linked executable.
+- **Multi-profile fan-out** — repeat `-p` to run a command across multiple accounts or regions in parallel, with results merged and tagged by profile.
+- **Built for AI agents** — `cx schema` dumps the full command tree as JSON for agent self-discovery; the `agents` output format is token-efficient and auto-spills large results to a temp file.
+- **Bundled agent skills** — install ready-made skills for Claude Code, Cursor, Codex, and 40+ agents with `npx skills add coralogix/cx-cli`.
+- **DataPrime and PromQL native** — Coralogix's query languages work end-to-end without leaving the shell, including semantic field search.
 
 ## Installation
 
@@ -54,14 +73,8 @@ cargo install coralogix-cli
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
 
-### Build from source
-
-```bash
-cargo build --release
-cp target/release/cx /usr/local/bin/
-```
-
-### Nix
+<details>
+<summary>Nix</summary>
 
 ```bash
 nix run    github:coralogix/cx-cli -- --help     # try without installing
@@ -99,6 +112,18 @@ in {
 }
 ```
 
+</details>
+
+<details>
+<summary>Build from source</summary>
+
+```bash
+cargo build --release
+cp target/release/cx /usr/local/bin/
+```
+
+</details>
+
 ## Quick start
 
 Follow these steps to go from a fresh install to a working query.
@@ -135,7 +160,8 @@ Follow these steps to go from a fresh install to a working query.
 
 Run `cx <command> --help` for full syntax and examples on any command.
 
-## Commands
+<details open>
+<summary><strong>Commands</strong></summary>
 
 Commands are grouped by domain. Run `cx --help` for the full organized listing, or `cx schema` for a machine-readable JSON tree.
 
@@ -211,7 +237,8 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
-### Global options
+<details>
+<summary>Global options</summary>
 
 ```
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
@@ -220,6 +247,10 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 -o, --output <FORMAT>        text | json | agents (default: text)
     --yes                    Skip confirmation prompts for destructive operations
 ```
+
+</details>
+
+</details>
 
 ## Configuration
 
@@ -282,11 +313,8 @@ cx -p prod-eu -p prod-us logs 'filter $m.severity == "ERROR"'
 
 See [docs/multi-profile.md](docs/multi-profile.md) for more examples.
 
-## Migrating from cxctl
-
-`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
-
-## Shell completions
+<details>
+<summary><strong>Shell completions</strong></summary>
 
 `cx` supports tab-completion for all commands, flags, subcommands, and profile names.
 
@@ -358,7 +386,21 @@ source <(COMPLETE=bash cx)
 COMPLETE=fish cx | source
 ```
 
-## Further reading
+</details>
+
+<details>
+<summary><strong>Migrating from cxctl</strong></summary>
+
+`cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
+
+</details>
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the ownership model,
+PR review process, and step-by-step guides for adding commands and skills.
+
+## Documentation
 
 - [Configuration](docs/configuration.md)
 - [Agents output format](docs/agents-output.md)
@@ -369,4 +411,4 @@ COMPLETE=fish cx | source
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)

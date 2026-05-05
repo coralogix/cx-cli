@@ -256,6 +256,10 @@ pub struct Profile {
     /// When `None`, `region.api_endpoint()` is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth_base_url: Option<String>,
+    /// Per-profile default output format. When set, takes precedence over the
+    /// global `default_output_format` in config.toml.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_output_format: Option<OutputFormat>,
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -332,6 +336,18 @@ pub fn save_config(config: &Config) -> Result<()> {
     std::fs::write(&path, content)
         .with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
+}
+
+/// Load the output format preference from the first of the given profile names.
+/// Returns `None` if no profile specifies one, or if the profile cannot be loaded.
+pub fn first_profile_output_format(profiles: &[String]) -> Option<OutputFormat> {
+    let name = if profiles.is_empty() {
+        load_config().ok().map(|c| c.default_profile)
+    } else {
+        Some(profiles[0].clone())
+    };
+    name.and_then(|n| load_profile(&n).ok())
+        .and_then(|p| p.default_output_format)
 }
 
 /// Load a named profile.
@@ -662,6 +678,7 @@ api_key = "mykey"
             label: Some("prod".to_string()),
             oauth_client_id: None,
             oauth_base_url: None,
+            default_output_format: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -683,6 +700,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: Some("abc-123".to_string()),
             oauth_base_url: None,
+            default_output_format: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -745,6 +763,7 @@ api_key = "mykey"
                 label: None,
                 oauth_client_id: None,
                 oauth_base_url: None,
+                default_output_format: None,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -779,6 +798,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            default_output_format: None,
         };
         save_profile("default", &profile).unwrap();
 
@@ -799,6 +819,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            default_output_format: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -820,6 +841,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            default_output_format: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -841,6 +863,7 @@ api_key = "mykey"
             label: None,
             oauth_client_id: None,
             oauth_base_url: None,
+            default_output_format: None,
         };
         save_profile(name, &profile).unwrap();
 

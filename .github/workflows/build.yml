@@ -3,18 +3,8 @@ name: Build Verification
 on:
   pull_request:
     branches: [master]
-    paths-ignore:
-      - 'skills/**'
-      - 'docs/**'
-      - 'contributing/**'
-      - '*.md'
   push:
     branches: [master]
-    paths-ignore:
-      - 'skills/**'
-      - 'docs/**'
-      - 'contributing/**'
-      - '*.md'
 
 concurrency:
   group: build-${{ github.event_name == 'push' && github.sha || github.ref }}
@@ -31,21 +21,37 @@ jobs:
       contents: read
       actions: read
     steps:
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.filter.outputs.code == 'true'
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: steps.filter.outputs.code == 'true'
         with:
           toolchain: "1.94.1"
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: steps.filter.outputs.code == 'true'
 
       - name: Install Linux system dependencies
+        if: steps.filter.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Build release binary
+        if: steps.filter.outputs.code == 'true'
         run: cargo build --release --locked
 
       - name: Report binary size
+        if: steps.filter.outputs.code == 'true'
         run: |
           BINARY="target/release/cx"
           SIZE_BYTES=$(stat -c%s "$BINARY")
@@ -57,7 +63,7 @@ jobs:
           echo "| \`cx\` | $SIZE_HUMAN ($SIZE_BYTES bytes) |" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload binary size baseline
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: steps.filter.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-size-baseline
@@ -65,7 +71,7 @@ jobs:
           retention-days: 90
 
       - name: Check binary size regression
-        if: github.event_name == 'pull_request'
+        if: steps.filter.outputs.code == 'true' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -123,19 +129,34 @@ jobs:
           - x86_64-unknown-linux-musl
           - aarch64-unknown-linux-musl
     steps:
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.filter.outputs.code == 'true'
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: steps.filter.outputs.code == 'true'
         with:
           toolchain: "1.94.1"
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: steps.filter.outputs.code == 'true'
         with:
           key: ${{ matrix.target }}
 
       - name: Install cross
+        if: steps.filter.outputs.code == 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build
+        if: steps.filter.outputs.code == 'true'
         run: cross build --release --locked --target ${{ matrix.target }}

@@ -9,29 +9,9 @@
 > the full Coralogix platform from the terminal: query any signal, manage every resource,
 > and wire Coralogix into automated workflows without leaving the shell.
 
-```console
-# Set up a profile (interactive)
-$ cx profiles add
-Profile name: prod-eu
-Region: eu2
-API key: ********
-
-# Query error logs from the last hour
-$ cx logs 'filter $m.severity == "ERROR"' --start now-1h --limit 5
-┌────────────────────────┬──────────┬──────────────────────────────────────────┐
-│ timestamp              │ severity │ message                                  │
-├────────────────────────┼──────────┼──────────────────────────────────────────┤
-│ 2026-05-05T09:14:02Z   │ ERROR    │ connection timeout to payments-svc       │
-│ 2026-05-05T09:13:58Z   │ ERROR    │ failed to decode protobuf payload        │
-└────────────────────────┴──────────┴──────────────────────────────────────────┘
-
-# Fan out across multiple profiles in one command
-$ cx -p prod-eu -p prod-us logs 'filter $m.severity == "CRITICAL"' --start now-15m
-
-# Dump the command tree for AI agent discovery
-$ cx schema | head -3
-{"commands":[{"name":"logs","description":"Query logs using DataPrime syntax",...
-```
+<p align="center">
+  <img src="assets/demo.png" alt="cx logs demo" width="700">
+</p>
 
 ## Why cx?
 

@@ -73,7 +73,6 @@ pub fn render() -> String {
     let separator: String = "─".repeat(sep_width);
     out.push(format!("{}{}", sep_pad, separator.truecolor(0, 90, 60)));
 
-    out.push(String::new());
     out.join("\n")
 }
 

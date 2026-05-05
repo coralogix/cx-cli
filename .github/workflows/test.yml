@@ -17,23 +17,23 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      docs_only: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
+          predicate-quantifier: every
           filters: |
-            code:
-              - '**'
-              - '!skills/**'
-              - '!docs/**'
-              - '!contributing/**'
-              - '!*.md'
+            docs:
+              - 'skills/**'
+              - 'docs/**'
+              - 'contributing/**'
+              - '*.md'
 
   test:
     name: Tests (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

@@ -279,9 +279,15 @@ async fn artifacts_get_handles_no_download_url() {
     let tmp_dir = std::env::temp_dir();
     let tmp_str = tmp_dir.to_str().unwrap();
 
-    run_artifacts_get(&targets, "artifact-no-url", OutputFormat::Json, None, tmp_str)
-        .await
-        .expect("run_artifacts_get should handle missing download_url");
+    run_artifacts_get(
+        &targets,
+        "artifact-no-url",
+        OutputFormat::Json,
+        None,
+        tmp_str,
+    )
+    .await
+    .expect("run_artifacts_get should handle missing download_url");
 }
 
 #[tokio::test]
@@ -293,7 +299,8 @@ async fn artifacts_get_rejects_multi_profile() {
     let tmp_dir = std::env::temp_dir();
     let tmp_str = tmp_dir.to_str().unwrap();
 
-    let result = run_artifacts_get(&targets, "artifact-123", OutputFormat::Json, None, tmp_str).await;
+    let result =
+        run_artifacts_get(&targets, "artifact-123", OutputFormat::Json, None, tmp_str).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();

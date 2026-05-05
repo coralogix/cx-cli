@@ -12,7 +12,11 @@ pub fn test_target(profile_name: &str, base_url: &str) -> Arc<ExecutionTarget> {
 }
 
 /// Build an [`ExecutionTarget`] with a custom API key/token.
-pub fn test_target_with_token(profile_name: &str, base_url: &str, api_key: &str) -> Arc<ExecutionTarget> {
+pub fn test_target_with_token(
+    profile_name: &str,
+    base_url: &str,
+    api_key: &str,
+) -> Arc<ExecutionTarget> {
     // reqwest with rustls-no-provider needs an explicit crypto provider.
     // `.ok()` ignores the error when another test already installed it.
     rustls::crypto::ring::default_provider()

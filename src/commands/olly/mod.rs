@@ -136,12 +136,8 @@ pub async fn run_artifacts_get(
             }
         }
         Some(ArtifactContent::Binary(bytes)) => {
-            let path = write_binary_artifact(
-                &bytes,
-                artifact.filename.as_deref(),
-                artifact_id,
-                temp_dir,
-            )?;
+            let path =
+                write_binary_artifact(&bytes, artifact.filename.as_deref(), artifact_id, temp_dir)?;
             ProcessedContent::Binary { path }
         }
         None => ProcessedContent::None,
@@ -163,7 +159,11 @@ pub async fn run_artifacts_get(
 }
 
 /// Write text content to a temp file.
-fn write_text_artifact(content: &str, artifact_id: &str, temp_dir: &str) -> Result<std::path::PathBuf> {
+fn write_text_artifact(
+    content: &str,
+    artifact_id: &str,
+    temp_dir: &str,
+) -> Result<std::path::PathBuf> {
     let hash = short_hash_bytes(content.as_bytes());
     let filename = format!("{}_artifact_{artifact_id}_{hash}.txt", spill::FILE_PREFIX);
     let path = Path::new(temp_dir).join(&filename);
@@ -182,7 +182,10 @@ fn write_binary_artifact(
         .and_then(|f| f.rsplit('.').next())
         .unwrap_or("bin");
     let hash = short_hash_bytes(bytes);
-    let filename = format!("{}_artifact_{artifact_id}_{hash}.{extension}", spill::FILE_PREFIX);
+    let filename = format!(
+        "{}_artifact_{artifact_id}_{hash}.{extension}",
+        spill::FILE_PREFIX
+    );
     let path = Path::new(temp_dir).join(&filename);
     std::fs::write(&path, bytes)?;
     Ok(path)
@@ -359,8 +362,8 @@ pub async fn run_artifacts_list(
         }
         OutputFormat::Agents => {
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
-            let toon = toon_encode(&response)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon =
+                toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
         OutputFormat::Text => {
@@ -470,7 +473,10 @@ fn render_artifacts_list_text(artifacts: &[api::Artifact]) -> Result<()> {
             id: a.id.clone().unwrap_or_else(|| "-".to_string()),
             filename: a.filename.clone().unwrap_or_else(|| "-".to_string()),
             artifact_type: a.artifact_type.clone().unwrap_or_else(|| "-".to_string()),
-            size: a.size.map(|s| format!("{} B", s)).unwrap_or_else(|| "-".to_string()),
+            size: a
+                .size
+                .map(|s| format!("{} B", s))
+                .unwrap_or_else(|| "-".to_string()),
             created_at: a.created_at.clone().unwrap_or_else(|| "-".to_string()),
         })
         .collect();

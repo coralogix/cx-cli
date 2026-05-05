@@ -65,7 +65,6 @@ fn decompress_gzip(data: &[u8]) -> std::io::Result<Vec<u8>> {
 const CHATS_BASE: &str = "/api/v2/olly/v2/chats";
 const ARTIFACTS_BASE: &str = "/api/v2/olly/artifacts";
 
-
 // ── Request types ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -245,7 +244,9 @@ impl OllyApi {
 
     pub async fn get_chat(&self, chat_id: &str) -> Result<ChatWithMessages> {
         let path = format!("{CHATS_BASE}/{chat_id}");
-        self.client.get(&path, &[("response_format", "CONTENT_BLOCKS")]).await
+        self.client
+            .get(&path, &[("response_format", "CONTENT_BLOCKS")])
+            .await
     }
 
     pub async fn send_message(

@@ -58,9 +58,6 @@ mod output_formats;
 mod parsing_rules;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
-// [disabled] Backend quota-rules API returns Permission Denied - re-enable when fixed.
-// #[path = "e2e/quota_rules.rs"]
-// mod quota_rules;
 #[path = "e2e/read_only.rs"]
 mod read_only;
 #[path = "e2e/recording_rules.rs"]
@@ -71,9 +68,6 @@ mod retentions;
 mod roles;
 #[path = "e2e/routers.rs"]
 mod routers;
-// [disabled] Backend SAML API returns Permission Denied - re-enable when fixed.
-// #[path = "e2e/saml.rs"]
-// mod saml;
 #[path = "e2e/scopes.rs"]
 mod scopes;
 #[path = "e2e/search_fields/mod.rs"]

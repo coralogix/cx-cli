@@ -80,14 +80,6 @@ fn iam_team_groups_delete() {
     );
 }
 
-// [disabled] Backend SAML API returns Permission Denied - re-enable when fixed.
-// #[test]
-// fn iam_saml_set_active() {
-//     assert_gated(
-//         &["iam", "saml", "set-active", "--active"],
-//         "iam saml set-active",
-//     );
-// }
 
 #[test]
 fn iam_ip_access_delete() {
@@ -176,11 +168,6 @@ fn retentions_update() {
     );
 }
 
-// [disabled] Backend quota-rules API returns Permission Denied - re-enable when fixed.
-// #[test]
-// fn quotas_delete() {
-//     assert_gated(&["quotas", "delete"], "quotas delete");
-// }
 
 #[test]
 fn e2m_delete() {

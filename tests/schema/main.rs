@@ -38,8 +38,6 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(names.contains(&"integrations"), "missing integrations");
     assert!(names.contains(&"parsing-rules"), "missing parsing-rules");
     assert!(names.contains(&"tco"), "missing tco");
-    // [disabled] quotas command disabled - re-enable when backend is fixed.
-    // assert!(names.contains(&"quotas"), "missing quotas");
     assert!(names.contains(&"usage"), "missing usage");
     assert!(names.contains(&"archive"), "missing archive");
     assert!(names.contains(&"schema"), "missing schema");
@@ -80,7 +78,5 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(iam_subs.contains(&"scopes"));
     assert!(iam_subs.contains(&"users"));
     assert!(iam_subs.contains(&"groups"));
-    // [disabled] saml command disabled - re-enable when backend is fixed.
-    // assert!(iam_subs.contains(&"saml"));
     assert!(iam_subs.contains(&"ip-access"));
 }

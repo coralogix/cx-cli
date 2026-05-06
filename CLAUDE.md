@@ -24,7 +24,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 27 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 26 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -57,14 +57,13 @@ Cost & Storage:
   usage              View data usage and consumption metrics
   tco                Manage TCO policies and settings
   retentions         Manage data retention settings
-  quotas             Manage quota rules
   archive (risky)    Manage data archive storage configuration
 
 Integrations:
   integrations       Manage integrations, extensions, and contextual data
 
 Access:
-  iam (risky)        Manage API keys, roles, scopes, users, groups, SAML, and IP access
+  iam (risky)        Manage API keys, roles, scopes, users, groups, and IP access
 
 Agent:
   schema             Output the full command tree as JSON for agent consumption
@@ -79,7 +78,6 @@ Local:
 **Key renames from prior flat layout:**
 - `rule-groups` -> `parsing-rules`
 - `tco-policies` -> `tco`
-- `quota-rules` -> `quotas`
 - `data-usage` -> `usage`
 - `data-archive` -> `archive`
 
@@ -88,9 +86,9 @@ Local:
 - `webhooks` = outgoing webhooks + actions (formerly `actions`)
 - `enrichments` = enrichment rules + custom enrichment tables (formerly `custom-enrichments`)
 - `integrations` = extensions + contextual-data
-- `iam` = api-keys + roles + scopes + users + team-groups + saml + ip-access
+- `iam` = api-keys + roles + scopes + users + team-groups + ip-access
 
-**Risky commands:** `iam` and `archive` are marked `(risky)` in help output. All write operations (create, update, delete, enable, disable, set, set-idp, set-active, set-status) under these commands require interactive confirmation. Pass `--yes` to skip the prompt (e.g., in scripts or CI). Non-interactive terminals without `--yes` get a clear error. The confirmation logic lives in `src/safety.rs`.
+**Risky commands:** `iam` and `archive` are marked `(risky)` in help output. All write operations (create, update, delete, enable, disable, set, set-status) under these commands require interactive confirmation. Pass `--yes` to skip the prompt (e.g., in scripts or CI). Non-interactive terminals without `--yes` get a clear error. The confirmation logic lives in `src/safety.rs`.
 
 ## Architecture
 
@@ -175,7 +173,6 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx usage` | `cx-cost-optimization` | Covered |
 | `cx tco` | `cx-cost-optimization` | Covered |
 | `cx retentions` | `cx-cost-optimization` | Covered |
-| `cx quotas` | `cx-cost-optimization` | Covered |
 | `cx archive` | `cx-cost-optimization` | Covered |
 | `cx incidents` | `cx-incident-management` | Covered |
 | `cx slos` | `cx-incident-management` | Covered |

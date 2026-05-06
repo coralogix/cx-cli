@@ -179,7 +179,7 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 
 ## Workflow skills
 
-Not every skill maps 1:1 to a CLI command. **Workflow skills** cover multiple commands unified by a user intent. For example, `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx quotas`, `cx retentions`, and `cx archive` - all under the "reduce costs" intent.
+Not every skill maps 1:1 to a CLI command. **Workflow skills** cover multiple commands unified by a user intent. For example, `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx retentions`, and `cx archive` - all under the "reduce costs" intent.
 
 When adding a new command, check whether an existing workflow skill already covers it. If so, add your command to that skill rather than creating a new one. If the command serves a new intent not covered by any existing skill, create a workflow skill.
 

@@ -124,7 +124,6 @@ enum IamCmd {
     Scopes { #[command(subcommand)] cmd: ScopesCmd },
     Users { #[command(subcommand)] cmd: UsersCmd },
     Groups { #[command(subcommand)] cmd: GroupsCmd },
-    Saml { #[command(subcommand)] cmd: SamlCmd },
     IpAccess { #[command(subcommand)] cmd: IpAccessCmd },
 }
 ```

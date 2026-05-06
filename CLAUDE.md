@@ -115,7 +115,7 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 - **`src/commands/dataprime/api.rs`** - DataPrime query API (logs & traces via NDJSON)
 - **`src/commands/dataprime/semantic_search.rs`** - Semantic Search HTTP API (fields + metrics)
 - **`src/commands/metrics/api.rs`** - PromQL queries (instant, range, search, labels)
-- **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, parsing-rules, tco, quotas, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
+- **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, parsing-rules, tco, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
 - **`src/time.rs`** - Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/render.rs`** - Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/agents output
 - **`src/spill.rs`** - Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)

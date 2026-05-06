@@ -335,7 +335,6 @@ Examples:
         cmd: RetentionsCmd,
     },
 
-
     /// Manage Events2Metrics definitions.
     #[command(after_help = "\
 Examples:
@@ -1213,8 +1212,6 @@ enum RetentionsCmd {
     Status,
 }
 
-
-
 #[derive(Subcommand)]
 enum E2mCmd {
     /// List all E2M definitions.
@@ -1918,8 +1915,6 @@ enum TeamGroupsCmd {
         id: String,
     },
 }
-
-
 
 #[derive(Subcommand)]
 enum IpAccessCmd {
@@ -2667,7 +2662,6 @@ async fn main() -> Result<()> {
                 commands::retentions::run_status(&targets, output).await?;
             }
         },
-
 
         Commands::E2m { cmd } => match cmd {
             E2mCmd::List => {

@@ -80,7 +80,6 @@ fn iam_team_groups_delete() {
     );
 }
 
-
 #[test]
 fn iam_ip_access_delete() {
     assert_gated(&["iam", "ip-access", "delete"], "iam ip-access delete");
@@ -167,7 +166,6 @@ fn retentions_update() {
         "retentions update",
     );
 }
-
 
 #[test]
 fn e2m_delete() {

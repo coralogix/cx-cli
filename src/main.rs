@@ -10,14 +10,14 @@ use clap_complete::env::CompleteEnv;
 use clap_complete::CompletionCandidate;
 use config::OutputFormat;
 
-use cx::banner;
-use cx::commands;
-use cx::commands::dataprime::DataprimeFilter;
-use cx::config;
-use cx::execution::build_targets;
-use cx::safety;
-use cx::safety::confirm_destructive;
-use cx::Tier;
+use coralogix_cli::banner;
+use coralogix_cli::commands;
+use coralogix_cli::commands::dataprime::DataprimeFilter;
+use coralogix_cli::config;
+use coralogix_cli::execution::build_targets;
+use coralogix_cli::safety;
+use coralogix_cli::safety::confirm_destructive;
+use coralogix_cli::Tier;
 
 /// Returns profile names from `~/.cx/profiles/` as completion candidates.
 fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {

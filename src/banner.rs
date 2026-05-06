@@ -4,12 +4,12 @@ use colored::Colorize;
 use terminal_size::{terminal_size, Width};
 
 const LOGO_LINES: &[&str] = &[
-    r"  ██████╗██╗  ██╗",
-    r" ██╔════╝╚██╗██╔╝",
-    r" ██║      ╚███╔╝ ",
-    r" ██║      ██╔██╗ ",
-    r" ╚██████╗██╔╝ ██╗",
-    r"  ╚═════╝╚═╝  ╚═╝",
+    r" ██████╗  ██████╗ ████████╗ █████╗ ████████╗ ██████╗ ",
+    r" ██╔══██╗██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██╔═══██╗",
+    r" ██████╔╝██║   ██║   ██║   ███████║   ██║   ██║   ██║",
+    r" ██╔═══╝ ██║   ██║   ██║   ██╔══██║   ██║   ██║   ██║",
+    r" ██║     ╚██████╔╝   ██║   ██║  ██║   ██║   ╚██████╔╝",
+    r" ╚═╝      ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ",
 ];
 
 const TAGLINE: &str = "The observability backbone for AI agents and engineering teams";
@@ -64,14 +64,14 @@ pub fn render() -> String {
     out.push(format!(
         "{}{}",
         tag_pad,
-        TAGLINE.truecolor(0, 170, 110).italic()
+        TAGLINE.truecolor(0, 110, 200).italic()
     ));
 
     // ── Separator line ──
     let sep_width = logo_width.max(TAGLINE.len()) + 4;
     let sep_pad = center_pad(sep_width, width);
     let separator: String = "─".repeat(sep_width);
-    out.push(format!("{}{}", sep_pad, separator.truecolor(0, 90, 60)));
+    out.push(format!("{}{}", sep_pad, separator.truecolor(0, 60, 180)));
 
     out.join("\n")
 }
@@ -82,9 +82,9 @@ fn gradient_line(text: &str, row: usize, total_rows: usize) -> String {
     } else {
         row as f64 / (total_rows - 1) as f64
     };
-    // Vivid mint (#00FFB0) → bright emerald (#00E078)
+    // Bright sky-blue (#00B0FF) → medium blue (#0078E0)
     let r = 0;
-    let g = (255.0 - 31.0 * t) as u8;
-    let b = (176.0 - 56.0 * t) as u8;
+    let g = (176.0 - 56.0 * t) as u8;
+    let b = (255.0 - 31.0 * t) as u8;
     format!("{}", text.truecolor(r, g, b).bold())
 }

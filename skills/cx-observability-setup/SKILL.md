@@ -1,17 +1,6 @@
 ---
 name: cx-observability-setup
-description: >
-  Use this skill when the user asks to "set up monitoring", "configure observability",
-  "onboard new service", "create saved view", "set up notifications",
-  "configure webhook", "set up Slack integration", "outgoing webhook",
-  "automation action", "webhook for alerts", "create view", "saved view",
-  "view folder", "organize dashboards", "install integration",
-  "configure extension", "contextual data", "connect external service",
-  "create notification connector", "set up email alerts", "configure PagerDuty",
-  "notification routing", "deploy extension", "test webhook",
-  "notification preset", "test notification", "webhook actions",
-  or wants to set up, configure, or manage the observability stack for a service or team.
-version: 0.1.0
+description: "Use when setting up or configuring the Coralogix observability stack for a service or team via cx CLI. Creates saved views, configures notification connectors and routing (Slack, PagerDuty, email), manages webhooks and automation actions, installs integrations and extensions."
 ---
 
 # Observability Setup Skill

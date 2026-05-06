@@ -1,7 +1,6 @@
 ---
 name: cx-olly
-description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
-version: 0.1.0
+description: "Use when interacting with the Coralogix Observability Agent (Olly) via cx CLI. Sends natural-language queries, continues multi-turn conversations, and retrieves AI-generated artifacts (charts, analyses, summaries) from Olly sessions."
 ---
 
 # Olly Observability Agent Skill

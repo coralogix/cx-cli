@@ -1,7 +1,6 @@
 ---
 name: add-command
-description: Use this skill when the user asks to "add a command", "implement cx <something>", "new subcommand", "new CLI command", "add a new cx command", "create a command", "add subcommand", "implement a new command", "build a cx command", "wire up a new command", "extend the CLI", "add an API to cx", "new cx feature", "integrate a Coralogix API", or wants to add new functionality to the cx CLI. Use this even when the user describes a feature that implies a new command without saying "command" explicitly.
-version: 0.1.0
+description: "Use when adding a new CLI command to cx. Scaffolds the command module, API client, Clap integration, tests at all three layers (unit, integration, E2E), and wires up CODEOWNERS. Covers the full workflow from API discovery through PR-ready code."
 metadata:
   internal: true
 ---

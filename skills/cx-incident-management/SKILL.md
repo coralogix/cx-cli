@@ -1,15 +1,6 @@
 ---
 name: cx-incident-management
-description: >
-  Use this skill when the user asks to "investigate incident", "triage this alert",
-  "what's firing", "who got paged", "incident response", "check incident status",
-  "SLO breaching", "error budget burned", "check service level", "SLI status",
-  "who was notified", "check notification delivery", "verify alert routing",
-  "MTTR", "incident severity", "error budget", "burn rate",
-  "acknowledge incident", "resolve incident", "production incident",
-  "what alerts are active", "incident timeline", "on-call triage",
-  or wants to triage, manage, or respond to incidents using alerts, SLOs, and notifications.
-version: 0.1.0
+description: "Use when triaging, investigating, or responding to production incidents via cx CLI. Checks active alerts, incident status and severity, SLO burn rates, error budgets, notification delivery, and builds incident timelines across alerts, SLOs, and notifications commands."
 ---
 
 # Incident Management Skill

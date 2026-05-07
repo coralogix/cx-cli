@@ -6,7 +6,9 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::dashboards::api::DashboardsApi;
-use coralogix_cli::commands::dashboards::{run_catalog, run_delete, run_folders_delete, run_replace};
+use coralogix_cli::commands::dashboards::{
+    run_catalog, run_delete, run_folders_delete, run_replace,
+};
 use coralogix_cli::config::OutputFormat;
 
 /// Verify that `DashboardsApi::catalog()` correctly deserializes a mocked

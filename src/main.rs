@@ -2338,8 +2338,8 @@ async fn main() -> Result<()> {
                     .await?;
             }
             DashboardsCmd::Replace { from_file } => {
-                confirm_destructive("Replace dashboard?", yes, agent_mode)?;
-                commands::dashboards::run_replace(&targets, &from_file, output).await?;
+                commands::dashboards::run_replace(&targets, &from_file, output, yes, agent_mode)
+                    .await?;
             }
             DashboardsCmd::Delete { dashboard_id } => {
                 confirm_destructive(

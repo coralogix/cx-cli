@@ -14,6 +14,7 @@ use api::{DashboardFolderItem, DashboardsApi};
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
+use crate::safety::confirm_destructive;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -360,26 +361,33 @@ pub async fn run_replace(
     targets: &[Arc<ExecutionTarget>],
     from_file: &str,
     output: OutputFormat,
+    yes: bool,
+    agent_mode: bool,
 ) -> Result<()> {
     let dashboard = read_dashboard_body(from_file)?;
 
-    let id_field = dashboard
+    let dash_id = dashboard
         .get("id")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    if id_field.is_none() {
-        bail!(
-            "Dashboard JSON is missing required 'id' field. \
-             Use `cx dashboards get <id> -o json` to fetch the full definition, \
-             then pass the edited JSON to `cx dashboards replace`."
-        );
-    }
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Dashboard JSON is missing required 'id' field. \
+                 Use `cx dashboards get <id> -o json` to fetch the full definition, \
+                 then pass the edited JSON to `cx dashboards replace`."
+            )
+        })?;
 
     let name = dashboard
         .get("name")
         .and_then(|v| v.as_str())
         .unwrap_or("<unnamed>")
         .to_string();
+
+    confirm_destructive(
+        &format!("Replace dashboard '{name}' ({dash_id})?"),
+        yes,
+        agent_mode,
+    )?;
 
     eprintln!("{}", format!("Replacing dashboard '{name}'...").dimmed());
 

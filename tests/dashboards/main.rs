@@ -207,9 +207,15 @@ async fn run_replace_json_output_succeeds() {
     )
     .unwrap();
 
-    run_replace(&targets, tmp.to_str().unwrap(), OutputFormat::Json)
-        .await
-        .expect("run_replace with JSON output should succeed");
+    run_replace(
+        &targets,
+        tmp.to_str().unwrap(),
+        OutputFormat::Json,
+        true,
+        false,
+    )
+    .await
+    .expect("run_replace with JSON output should succeed");
 
     std::fs::remove_file(&tmp).ok();
 }
@@ -245,9 +251,51 @@ async fn run_replace_text_output_succeeds() {
     )
     .unwrap();
 
-    run_replace(&targets, tmp.to_str().unwrap(), OutputFormat::Text)
-        .await
-        .expect("run_replace with text output should succeed");
+    run_replace(
+        &targets,
+        tmp.to_str().unwrap(),
+        OutputFormat::Text,
+        true,
+        false,
+    )
+    .await
+    .expect("run_replace with text output should succeed");
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+/// Verify that `run_replace` fails with a clear error when the dashboard JSON has no `id` field.
+#[tokio::test]
+async fn run_replace_missing_id_fails() {
+    let server = MockServer::start().await;
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = std::env::temp_dir().join("cx_test_replace_no_id.json");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "name": "Dashboard Without ID",
+            "layout": { "sections": [] }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let err = run_replace(
+        &targets,
+        tmp.to_str().unwrap(),
+        OutputFormat::Text,
+        true,
+        false,
+    )
+    .await
+    .expect_err("run_replace should fail when id is missing");
+
+    assert!(
+        err.to_string().contains("missing required 'id' field"),
+        "error should mention missing id: {err}"
+    );
 
     std::fs::remove_file(&tmp).ok();
 }

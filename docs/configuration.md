@@ -15,18 +15,19 @@
 
 ## Quick start
 
-Run `cx profiles add` to create or update the default profile:
+Run `cx profiles add` to create or update the default profile. Pass a name to create a named profile:
 
 ```sh
-cx profiles add
+cx profiles add          # default profile
+cx profiles add <name>   # named profile
 ```
 
 At the prompts:
 
 1. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 2. **Region** — your Coralogix region (e.g. `eu2`, `us1`). See [Regions](#regions) for the full list.
-3. **Label** — an optional name for this profile (e.g. `production`).
-4. **Credential storage** — `file` (default) saves credentials in the profile TOML with `0600` permissions; `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux).
+3. **Label** — an optional tag to group or identify profiles (e.g. `production`).
+4. **Credential storage** — `file` (default) saves credentials in the profile TOML; `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux).
 
 If using an API key, it must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys). [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work.
 

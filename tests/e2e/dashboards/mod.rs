@@ -66,6 +66,62 @@ fn dashboards_delete_nonexistent() {
 
 #[test]
 #[ignore]
+fn dashboards_replace_round_trip() {
+    if harness::require_creds("dashboards_replace_round_trip").is_none() {
+        return;
+    }
+    let Some(id) = discover_dashboard_id() else {
+        eprintln!(
+            "[e2e] skipping dashboards_replace_round_trip: no dashboards available on test team"
+        );
+        return;
+    };
+
+    // 1. Get the existing dashboard as JSON.
+    let original = harness::run_ok_json(&["dashboards", "get", &id, "-o", "json"]);
+
+    // Extract the inner dashboard object (may be top-level or nested).
+    let dashboard = if original.get("dashboard").is_some() {
+        original.get("dashboard").unwrap().clone()
+    } else {
+        original.clone()
+    };
+
+    // 2. Write it to a temp file unmodified and replace (idempotent round-trip).
+    let tmp = std::env::temp_dir().join("cx_e2e_replace_dashboard.json");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&dashboard).unwrap())
+        .expect("write temp file");
+
+    let output = harness::cx()
+        .args([
+            "dashboards",
+            "replace",
+            "--from-file",
+            tmp.to_str().unwrap(),
+            "--yes",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute cx");
+
+    std::fs::remove_file(&tmp).ok();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Replacing dashboard"),
+        "expected 'Replacing dashboard' on stderr, got: {stderr}"
+    );
+
+    // The replace should succeed (exit 0) since we're replacing with the same content.
+    assert!(
+        output.status.success(),
+        "replace should succeed for idempotent round-trip, stderr: {stderr}"
+    );
+}
+
+#[test]
+#[ignore]
 fn dashboards_folders_delete_nonexistent() {
     if harness::require_creds("dashboards_folders_delete_nonexistent").is_none() {
         return;

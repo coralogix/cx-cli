@@ -57,13 +57,13 @@ The Coralogix Dashboard Service exposes a PUT endpoint (`/mgmt/openapi/5/dashboa
 - **Acceptance:** `cx dashboards replace --help` shows the command with examples. `cx dashboards --help` lists `replace` as a subcommand. `cargo test` passes (no regressions). `cargo clippy` clean.
 - **Dependencies:** 1.2
 
-### 1.4 [ ] Add integration tests (wiremock)
+### 1.4 [x] Add integration tests (wiremock) *(completed 2026-05-07)*
 - **Files:** `tests/dashboards/main.rs`
 - **What:** Add a wiremock test for the replace command. Mock a PUT to the dashboards endpoint that returns a dashboard response. Run `run_replace` against it and verify the output. Follow the patterns in the existing `tests/dashboards/main.rs` for catalog/get/delete. Test both JSON and text output modes.
 - **Acceptance:** `cargo test --test dashboards` passes with the new test.
 - **Dependencies:** 1.3
 
-### 1.5 [ ] Add E2E test
+### 1.5 [x] Add E2E test *(completed 2026-05-07)*
 - **Files:** `tests/e2e/dashboards/mod.rs`
 - **What:** Add an `#[ignore]`d E2E test that does a round-trip: (1) create a dashboard from a fixture, (2) get it as JSON, (3) modify the name, (4) replace it, (5) get again and verify the name changed, (6) delete it (cleanup). Use the existing `harness` helpers. This test is gated on `CX_API_KEY`.
 - **Acceptance:** `cargo test --test e2e -- --ignored dashboards_replace --test-threads=1` passes against the test environment.

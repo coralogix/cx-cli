@@ -15,29 +15,20 @@
 
 ## Quick start
 
-Run `cx profiles add` to create or update the default profile. OAuth (browser login) is selected by default and is the recommended option - it opens your browser, captures the callback automatically, and persists the resulting tokens.
+Run `cx profiles add` to create or update the default profile:
 
-```
-$ cx profiles add
-Configuring profile 'default'
-
-Authentication method: OAuth (browser login)
-Region: eu2
-Label (e.g. 'prod'): production
-
-Opening browser for authentication...
-Waiting for browser callback...
-Authorization code received, exchanging for tokens...
-Login successful!
-
-Where should OAuth tokens be stored? file
-Profile 'default' saved to /Users/you/.cx
-Credentials stored in profile file (OAuth tokens)
+```sh
+cx profiles add
 ```
 
-You will be asked where to store the credentials: `file` (default - saved inline in the profile TOML with `0600` permissions) or `os-store` (the OS credential store - macOS Keychain, Windows Credential Manager, etc.). Pick `os-store` if your threat model assumes other processes running as your user could read the profile file.
+At the prompts:
 
-To use a plain API key instead, select `API key (paste manually)` at the first prompt. The API key must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or a [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys) - see [API Key](#api-key) below for where to generate one. [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work for querying.
+1. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
+2. **Region** — your Coralogix region (e.g. `eu2`, `us1`). See [Regions](#regions) for the full list.
+3. **Label** — an optional name for this profile (e.g. `production`).
+4. **Credential storage** — `file` (default) saves credentials in the profile TOML with `0600` permissions; `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux).
+
+If using an API key, it must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys). [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work.
 
 ## Authentication methods
 

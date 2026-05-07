@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | complete |
 | Created | 2026-05-07 |
 | Ticket | N/A |
 | Branch | feat/dashboard-replace |
@@ -83,13 +83,13 @@ The Coralogix Dashboard Service exposes a PUT endpoint (`/mgmt/openapi/5/dashboa
 
 Currently the cx-create-dashboard skill only knows how to create new dashboards via `cx dashboards create`. After this milestone, the skill also documents the replace workflow and triggers on "update dashboard" / "modify dashboard" / "replace dashboard" requests.
 
-### 2.1 [ ] Update deploy reference and SKILL.md
+### 2.1 [x] Update deploy reference and SKILL.md *(completed 2026-05-07)*
 - **Files:** `skills/cx-create-dashboard/references/deploy.md`, `skills/cx-create-dashboard/SKILL.md`
 - **What:** In `deploy.md`, add a new section (after the existing create flow) documenting the replace workflow: `cx dashboards get <id> -o json > dash.json`, edit, `cx dashboards replace --from-file dash.json --yes`. In `SKILL.md`, add "replace", "update", "modify" to the trigger description so the skill activates on dashboard update requests. Add the `replace` command to whatever command reference table exists in the skill.
 - **Acceptance:** Skill triggers on "update my dashboard" and "replace dashboard" queries. The deploy reference includes both create-new and replace-existing paths.
 - **Dependencies:** 1.3
 
-### 2.2 [ ] Final build verification
+### 2.2 [x] Final build verification *(completed 2026-05-07)*
 - **Files:** None (verification only)
 - **What:** Run `cargo install --path .` to do a full release-profile build and install. Verify `cx dashboards --help` shows `replace`. Verify `cx dashboards replace --help` shows the expected flags and examples.
 - **Acceptance:** `cargo install --path .` succeeds. `cx dashboards replace --help` output is correct.

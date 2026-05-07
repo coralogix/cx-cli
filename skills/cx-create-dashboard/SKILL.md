@@ -5,9 +5,9 @@ description: >
   spans, metrics, and service specs. Discovers telemetry via cx CLI commands,
   emits importable Coralogix JSON, verifies every PromQL and DataPrime query live
   through the `cx` CLI, and creates the dashboard via `cx dashboards create`.
-  Use whenever the user asks to create, build, generate, or deploy a Coralogix
-  dashboard, monitoring dashboard, or observability dashboard for a service, app,
-  or pipeline.
+  Use whenever the user asks to create, build, generate, deploy, update, replace,
+  or modify a Coralogix dashboard, monitoring dashboard, or observability dashboard
+  for a service, app, or pipeline.
 metadata:
   version: "0.2.0"
 ---
@@ -48,12 +48,21 @@ Beyond creating dashboards, use these commands to manage existing ones:
 | `cx dashboards folders list -o json` | List dashboard folders |
 | `cx dashboards folders create --name "Name"` | Create a dashboard folder |
 | `cx dashboards folders create --name "Sub" --parent-id <id>` | Create a nested folder |
+| `cx dashboards replace --from-file dashboard.json` | Replace an existing dashboard with updated JSON |
 
-To duplicate or modify an existing dashboard:
+To update an existing dashboard:
 
 ```bash
 cx dashboards get <dashboard-id> -o json > dashboard.json
 # Edit dashboard.json (change name, modify widgets, etc.)
+cx dashboards replace --from-file dashboard.json
+```
+
+To duplicate a dashboard as a new copy:
+
+```bash
+cx dashboards get <dashboard-id> -o json > dashboard.json
+# Remove the "id" field, then create as new:
 cx dashboards create --from-file dashboard.json
 ```
 

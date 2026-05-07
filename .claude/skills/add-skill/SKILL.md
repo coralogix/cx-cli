@@ -1,8 +1,8 @@
 ---
 name: add-skill
 description: Use this skill when the user asks to "add a skill", "create a skill", "new skill", "write a skill for", "skill for cx <something>", "add a user-facing skill", "create a SKILL.md", "teach an agent how to use", "agent skill for", "document a command as a skill", "make a skill", "add skill to skills/", "create agent instructions for", "build a skill", or wants to create a new user-facing skill in the skills/ directory that teaches AI agents how to use a cx CLI command. Use this even when the user is following the add-command workflow and reaches the skill creation step.
-version: 0.1.0
 metadata:
+  version: "0.1.0"
   internal: true
 ---
 
@@ -94,7 +94,7 @@ If you're adding a new shared reference:
 
 ## Step 4: Verify
 
-1. **Frontmatter** - `name` matches directory, `description` has 10+ trigger phrases, `version` is `0.1.0`
+1. **Frontmatter** - `name` matches directory, `description` has 10+ trigger phrases, `metadata.version` is `"0.1.0"`
 2. **Body completeness** - has CLI Commands table, workflow steps, key principles, and additional resources (if references exist)
 3. **Reference links** - any `references/` paths in SKILL.md point to files that actually exist
 4. **README updated** - `skills/README.md` has the new row

@@ -9,7 +9,8 @@ description: >
   "acknowledge incident", "resolve incident", "production incident",
   "what alerts are active", "incident timeline", "on-call triage",
   or wants to triage, manage, or respond to incidents using alerts, SLOs, and notifications.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Incident Management Skill

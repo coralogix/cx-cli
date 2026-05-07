@@ -11,7 +11,8 @@ description: >
   "rule group", "enrichment settings", "E2M definition", "labels cardinality",
   "bulk delete rules", "enrichment limits", "search enrichment table",
   or wants to configure how Coralogix processes, enriches, or transforms ingested data.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Data Pipeline Skill

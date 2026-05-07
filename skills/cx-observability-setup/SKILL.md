@@ -11,7 +11,8 @@ description: >
   "notification routing", "deploy extension", "test webhook",
   "notification preset", "test notification", "webhook actions",
   or wants to set up, configure, or manage the observability stack for a service or team.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Observability Setup Skill

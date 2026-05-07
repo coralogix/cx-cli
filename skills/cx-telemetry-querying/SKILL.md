@@ -14,7 +14,8 @@ description: |
   "check error rate", "look up a metric", "check memory usage",
   "how do I write a DataPrime query", "DataPrime syntax",
   or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM.
-version: 0.2.0
+metadata:
+  version: "0.2.0"
 ---
 
 # Telemetry Querying Skill

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | draft |
+| Status | in-progress |
 | Created | 2026-05-07 |
 | Ticket | N/A |
 | Branch | feat/dashboard-replace |
@@ -39,19 +39,19 @@ The Coralogix Dashboard Service exposes a PUT endpoint (`/mgmt/openapi/5/dashboa
 |---------|--------------|---------------|-------------|
 | `cx dashboards replace --from-file <path>` | `--from-file` (or stdin) | `--yes`, `-o` | Replace an existing dashboard with updated JSON |
 
-### 1.1 [ ] Add `replace` API method
+### 1.1 [x] Add `replace` API method *(completed 2026-05-07)*
 - **Files:** `src/commands/dashboards/api.rs`
 - **What:** Add a `replace(&self, body: &Value) -> Result<Value>` method to `DashboardsApi` that sends a PUT request to `DASHBOARDS_BASE`. The body is the full `{ "requestId": ..., "dashboard": { ... } }` envelope, same shape as create. Follow the pattern used by `slos/api.rs::replace()`.
 - **Acceptance:** `cargo build` succeeds. Unit test deserializes a mock PUT response.
 - **Dependencies:** None
 
-### 1.2 [ ] Add `replace` command handler
+### 1.2 [x] Add `replace` command handler *(completed 2026-05-07)*
 - **Files:** `src/commands/dashboards/mod.rs`
 - **What:** Add `run_replace(targets, from_file, output)` async function. It should: (1) call `read_dashboard_body()` to parse and validate the JSON, (2) verify the dashboard object contains an `id` field (error if missing - can't replace without knowing which dashboard), (3) wrap in `{ "requestId": new_request_id(), "dashboard": ... }` envelope, (4) fan out across targets calling `api.replace()`, (5) render results the same way `run_create` does (extract ID and name from response, print confirmation). The response extraction logic (looking for ID in `dashboardId`, `id`, or `dashboard.id`) can be shared with or copied from `run_create`.
 - **Acceptance:** `cargo build` succeeds. `cargo clippy` clean.
 - **Dependencies:** 1.1
 
-### 1.3 [ ] Wire up CLI subcommand and dispatcher
+### 1.3 [x] Wire up CLI subcommand and dispatcher *(completed 2026-05-07)*
 - **Files:** `src/main.rs`
 - **What:** Add a `Replace` variant to the `DashboardsCmd` enum with `--from-file` arg (default `"-"` for stdin), matching `Create`'s pattern. Add an after_help with examples showing the get-edit-replace workflow. In the `Commands::Dashboards` match arm, add the `Replace` case that calls `confirm_destructive("Replace dashboard?", yes, agent_mode)?` then `commands::dashboards::run_replace()`. Add helpful examples in the after_help block.
 - **Acceptance:** `cx dashboards replace --help` shows the command with examples. `cx dashboards --help` lists `replace` as a subcommand. `cargo test` passes (no regressions). `cargo clippy` clean.

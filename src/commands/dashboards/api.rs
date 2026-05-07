@@ -117,6 +117,13 @@ impl<'a> DashboardsApi<'a> {
         self.client.post(FOLDERS_BASE, body).await
     }
 
+    /// Replace an existing dashboard. `body` must be the full
+    /// `{ "requestId": ..., "dashboard": { ... } }` payload with the dashboard
+    /// `id` set to the target dashboard.
+    pub async fn replace(&self, body: &Value) -> Result<Value> {
+        self.client.put(DASHBOARDS_BASE, body).await
+    }
+
     /// Delete a dashboard by ID.
     pub async fn delete(&self, id: &str) -> Result<DeleteDashboardResponse> {
         let path = format!("{DASHBOARDS_BASE}/{id}");

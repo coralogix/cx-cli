@@ -752,6 +752,21 @@ Examples:
         #[arg(long)]
         folder: Option<String>,
     },
+    /// Replace an existing dashboard with an updated JSON definition [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx dashboards get <id> -o json > dash.json
+  # edit dash.json...
+  cx dashboards replace --from-file dash.json
+  cat dash.json | cx dashboards replace")]
+    Replace {
+        /// Path to a JSON file with the updated dashboard definition. Use '-' for stdin.
+        /// The JSON must include the dashboard `id` field. Accepts either a bare dashboard
+        /// document or a `{"dashboard": {...}}` wrapper; the `requestId` envelope field
+        /// is generated automatically.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
     /// Delete a dashboard [requires --yes].
     Delete {
         /// Dashboard ID.
@@ -2321,6 +2336,10 @@ async fn main() -> Result<()> {
                 confirm_destructive("Create a new dashboard?", yes, agent_mode)?;
                 commands::dashboards::run_create(&targets, &from_file, folder.as_deref(), output)
                     .await?;
+            }
+            DashboardsCmd::Replace { from_file } => {
+                confirm_destructive("Replace dashboard?", yes, agent_mode)?;
+                commands::dashboards::run_replace(&targets, &from_file, output).await?;
             }
             DashboardsCmd::Delete { dashboard_id } => {
                 confirm_destructive(

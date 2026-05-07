@@ -24,7 +24,7 @@ Before writing any code, get clarity on the domain:
    - `cx webhooks` - outgoing webhooks + `actions`
    - `cx enrichments` - enrichment rules + `custom` enrichment tables
    - `cx integrations` - integrations + `extensions`, `contextual-data`
-   - `cx iam` - `api-keys`, `roles`, `scopes`, `users`, `groups`, `saml`, `ip-access`
+   - `cx iam` - `api-keys`, `roles`, `scopes`, `users`, `groups`, `ip-access`
    Run `cx schema` to see the full command tree as JSON.
 4. **Which archetype fits?**
 

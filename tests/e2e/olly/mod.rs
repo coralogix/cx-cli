@@ -30,7 +30,7 @@ fn olly_ask_text_output() {
         return;
     }
     // Verify text output mode works (default)
-    let stdout_bytes = harness::run_ok(&["olly", "ask", "Reply with OK"]);
+    let stdout_bytes = harness::run_ok(&["olly", "ask", "Reply with OK", "-o", "text"]);
     let stdout = String::from_utf8_lossy(&stdout_bytes);
 
     // Text output should contain "Chat ID:" line

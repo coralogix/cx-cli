@@ -65,7 +65,7 @@ commands::logs::run()
 
 ### Archetype B: REST-based
 
-**Commands:** `alerts`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `parsing-rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `quotas`, `archive`, `slos`, `views`, `incidents`, `e2m`, `recording-rules`
+**Commands:** `alerts`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `parsing-rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `archive`, `slos`, `views`, `incidents`, `e2m`, `recording-rules`
 
 These manage their own fan-out, merge, and render inline. Each subcommand function follows the same shape:
 
@@ -124,12 +124,11 @@ enum IamCmd {
     Scopes { #[command(subcommand)] cmd: ScopesCmd },
     Users { #[command(subcommand)] cmd: UsersCmd },
     Groups { #[command(subcommand)] cmd: GroupsCmd },
-    Saml { #[command(subcommand)] cmd: SamlCmd },
     IpAccess { #[command(subcommand)] cmd: IpAccessCmd },
 }
 ```
 
-This pattern is used by: `notifications` (connectors, routers, presets, test), `webhooks` (list/get/types + actions), `enrichments` (rules + custom), `integrations` (list/get + extensions + contextual-data), and `iam` (api-keys, roles, scopes, users, groups, saml, ip-access).
+This pattern is used by: `notifications` (connectors, routers, presets, test), `webhooks` (list/get/types + actions), `enrichments` (rules + custom), `integrations` (list/get + extensions + contextual-data), and `iam` (api-keys, roles, scopes, users, groups, ip-access).
 
 Each sub-domain still has its own directory (`src/commands/<sub_domain>/`) with `mod.rs` (handler) and `api.rs` (HTTP client). The wrapper only affects CLI wiring and dispatch in `main.rs`.
 
@@ -311,6 +310,6 @@ src/
     ├── cleanup/mod.rs   # Temp file cleanup (no API calls)
     └── ...              # One module per REST domain (incidents, notifications,
                          #   webhooks, rules, enrichments, integrations, iam,
-                         #   usage, tco, retentions, quotas, archive, slos,
+                         #   usage, tco, retentions, archive, slos,
                          #   views, e2m, recording_rules)
 ```

@@ -48,10 +48,16 @@ fn read_from_file(path: &str) -> Result<Value> {
 
 async fn resolve_team_id(client: &crate::api_client::CxClient) -> anyhow::Result<String> {
     let saml = SamlApi::new(client);
-    let config = saml
-        .get_config()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to resolve team ID from SAML config: {e}"))?;
+    let config = saml.get_config().await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("Permission denied") || msg.contains("Authentication failed") {
+            anyhow::anyhow!(
+                "Cannot resolve team ID: API key lacks SAML scope (required by the users API)"
+            )
+        } else {
+            anyhow::anyhow!("Failed to resolve team ID from SAML config: {e}")
+        }
+    })?;
     config
         .team_id
         .map(|id| id.to_string())

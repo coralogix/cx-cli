@@ -75,14 +75,13 @@ Cost & Storage:
   usage              View data usage and consumption metrics
   tco                Manage TCO policies and settings
   retentions         Manage data retention settings
-  quotas             Manage quota rules
   archive (risky)    Manage data archive storage configuration
 
 Integrations:
   integrations       Manage integrations, extensions, and contextual data
 
 Access:
-  iam (risky)        Manage API keys, roles, scopes, users, groups, SAML, and IP access
+  iam (risky)        Manage API keys, roles, scopes, users, groups, and IP access
 
 Agent:
   schema             Output the full command tree as JSON for agent consumption
@@ -336,21 +335,6 @@ Examples:
         cmd: RetentionsCmd,
     },
 
-    /// Manage quota rules.
-    #[command(
-        name = "quotas",
-        after_help = "\
-Examples:
-  cx quotas get
-  cx quotas create --from-file rules.json
-  cx quotas update --from-file rules.json
-  cx quotas delete"
-    )]
-    QuotaRules {
-        #[command(subcommand)]
-        cmd: QuotaRulesCmd,
-    },
-
     /// Manage Events2Metrics definitions.
     #[command(after_help = "\
 Examples:
@@ -445,7 +429,7 @@ Examples:
         cmd: ViewsCmd,
     },
 
-    /// Manage API keys, roles, scopes, users, groups, SAML, and IP access.
+    /// Manage API keys, roles, scopes, users, groups, and IP access.
     #[command(after_help = "\
 Examples:
   cx iam api-keys list
@@ -453,7 +437,6 @@ Examples:
   cx iam scopes list
   cx iam users search
   cx iam groups list
-  cx iam saml get
   cx iam ip-access get")]
     Iam {
         #[command(subcommand)]
@@ -1230,26 +1213,6 @@ enum RetentionsCmd {
 }
 
 #[derive(Subcommand)]
-enum QuotaRulesCmd {
-    /// Get quota rule set.
-    Get,
-    /// Create quota rules from a JSON file [requires --yes].
-    Create {
-        /// Path to JSON file with quota rules. Use '-' for stdin.
-        #[arg(long, default_value = "-")]
-        from_file: String,
-    },
-    /// Replace quota rules from a JSON file [requires --yes].
-    Update {
-        /// Path to JSON file with quota rules. Use '-' for stdin.
-        #[arg(long, default_value = "-")]
-        from_file: String,
-    },
-    /// Delete quota rules [requires --yes].
-    Delete,
-}
-
-#[derive(Subcommand)]
 enum E2mCmd {
     /// List all E2M definitions.
     List,
@@ -1737,17 +1700,6 @@ Examples:
         #[command(subcommand)]
         cmd: TeamGroupsCmd,
     },
-    /// Manage SAML configuration.
-    #[command(after_help = "\
-Examples:
-  cx iam saml get
-  cx iam saml sp-params
-  cx iam saml set-idp --from-file idp.json
-  cx iam saml set-active --active")]
-    Saml {
-        #[command(subcommand)]
-        cmd: SamlCmd,
-    },
     /// Manage IP access restrictions.
     #[command(after_help = "\
 Examples:
@@ -1961,26 +1913,6 @@ enum TeamGroupsCmd {
     Delete {
         /// Team group ID.
         id: String,
-    },
-}
-
-#[derive(Subcommand)]
-enum SamlCmd {
-    /// Get SAML configuration.
-    Get,
-    /// Get SAML service provider parameters.
-    SpParams,
-    /// Set SAML IDP parameters from a JSON file [requires --yes].
-    SetIdp {
-        /// Path to JSON file with IDP parameters. Use '-' for stdin.
-        #[arg(long, default_value = "-")]
-        from_file: String,
-    },
-    /// Activate or deactivate SAML [requires --yes].
-    SetActive {
-        /// Whether to activate SAML.
-        #[arg(long)]
-        active: bool,
     },
 }
 
@@ -2731,24 +2663,6 @@ async fn main() -> Result<()> {
             }
         },
 
-        Commands::QuotaRules { cmd } => match cmd {
-            QuotaRulesCmd::Get => {
-                commands::quota_rules::run_get(&targets, output).await?;
-            }
-            QuotaRulesCmd::Create { from_file } => {
-                confirm_destructive("Create a new quota rule?", yes, agent_mode)?;
-                commands::quota_rules::run_create(&targets, &from_file, output).await?;
-            }
-            QuotaRulesCmd::Update { from_file } => {
-                confirm_destructive("Update quota rule?", yes, agent_mode)?;
-                commands::quota_rules::run_update(&targets, &from_file, output).await?;
-            }
-            QuotaRulesCmd::Delete => {
-                confirm_destructive("Delete quota rules?", yes, agent_mode)?;
-                commands::quota_rules::run_delete(&targets).await?;
-            }
-        },
-
         Commands::E2m { cmd } => match cmd {
             E2mCmd::List => {
                 commands::e2m::run_list(&targets, output).await?;
@@ -3222,30 +3136,6 @@ async fn main() -> Result<()> {
                 TeamGroupsCmd::Delete { id } => {
                     confirm_destructive(&format!("Delete team group '{id}'?"), yes, agent_mode)?;
                     commands::team_groups::run_delete(&targets, &id).await?;
-                }
-            },
-            IamCmd::Saml { cmd } => match cmd {
-                SamlCmd::Get => {
-                    commands::saml::run_get(&targets, output).await?;
-                }
-                SamlCmd::SpParams => {
-                    commands::saml::run_sp_params(&targets, output).await?;
-                }
-                SamlCmd::SetIdp { from_file } => {
-                    confirm_destructive(
-                        "Update SAML IDP configuration? This may affect SSO for all users.",
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::saml::run_set_idp(&targets, &from_file, output).await?;
-                }
-                SamlCmd::SetActive { active } => {
-                    confirm_destructive(
-                        &format!("Set SAML active to {active}? This may affect SSO for all users."),
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::saml::run_set_active(&targets, active).await?;
                 }
             },
             IamCmd::IpAccess { cmd } => match cmd {

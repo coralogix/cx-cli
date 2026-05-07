@@ -10,7 +10,8 @@ description: >
   "billing units", "plan consumption", "daily plan", "overage", "PAYG",
   "usage anomaly", "usage trend", "cx_data_usage_units",
   or wants to investigate, analyze, or reduce Coralogix data costs.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Cost Optimization Skill

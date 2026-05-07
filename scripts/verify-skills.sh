@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verify all skills in skills/ for correctness.
-# Checks: frontmatter fields, description length (≤1024 chars), trigger phrase count,
-# command validation, cross-reference validation, and line count.
+# Verify all skills in skills/ for cx-cli-specific conventions.
+# Agent Skills spec conformance is checked separately by `agentskills validate`.
+# Checks: metadata.version, trigger phrase count, command validation,
+# cross-reference validation, line count, and shared-reference sync.
 
 SKILLS_DIR="$(cd "$(dirname "$0")/../skills" && pwd)"
 ERRORS=0
@@ -44,39 +45,33 @@ for skill_dir in "$SKILLS_DIR"/*/; do
 
     echo "Checking: $skill_name"
 
-    # 1. Frontmatter check
-    if head -1 "$skill_file" | grep -q '^---'; then
-        frontmatter=$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$skill_file")
-
-        if ! echo "$frontmatter" | grep -q '^name:'; then
-            fail "missing 'name' in frontmatter"
-            skill_errors=$((skill_errors + 1))
-        fi
-        if ! echo "$frontmatter" | grep -q 'description'; then
-            fail "missing 'description' in frontmatter"
-            skill_errors=$((skill_errors + 1))
-        fi
-        if ! echo "$frontmatter" | grep -q '^version:'; then
-            echo "  WARN: missing 'version' in frontmatter"
-        fi
-    else
-        fail "no YAML frontmatter found"
-        skill_errors=$((skill_errors + 1))
+    # 1. Repo metadata check
+    frontmatter=$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$skill_file")
+    if ! echo "$frontmatter" | grep -q '^metadata:' || ! echo "$frontmatter" | grep -q '^  version:'; then
+        echo "  WARN: missing 'metadata.version' in frontmatter"
     fi
 
-    # 2. Description length check (must be ≤1024 characters for Codex compatibility)
-    desc_raw=$(awk '/^description/,/^(version|---)/' "$skill_file" | sed '1s/^description: |//' | sed '$d' | sed 's/^  //')
-    desc_char_count=$(echo "$desc_raw" | wc -c | tr -d ' ')
-    if [ "$desc_char_count" -gt 1024 ]; then
-        fail "description is $desc_char_count characters (max 1024 for Codex)"
-        skill_errors=$((skill_errors + 1))
-    fi
+    # 2. Extract description for cx-cli trigger coverage checks.
+    desc_raw=$(awk '
+        /^---$/ && NR == 1 { next }
+        /^---$/ { exit }
+        /^description:/ {
+            in_desc = 1
+            sub(/^description:[[:space:]]*[>|]?[[:space:]]*/, "")
+            print
+            next
+        }
+        in_desc && /^[A-Za-z0-9_-]+:/ { exit }
+        in_desc {
+            sub(/^  /, "")
+            print
+        }
+    ' "$skill_file")
 
     # 3. Trigger phrase count (quoted strings in description)
     # Some skills use quoted trigger phrases, others use prose descriptions
-    desc_block=$(awk '/^description/,/^(version|---)/' "$skill_file" | sed '$d')
-    phrase_count=$(echo "$desc_block" | { grep -o '"[^"]*"' || true; } | wc -l | tr -d ' ')
-    desc_length=$(echo "$desc_block" | wc -c | tr -d ' ' || echo 0)
+    phrase_count=$(echo "$desc_raw" | { grep -o '"[^"]*"' || true; } | wc -l | tr -d ' ')
+    desc_length=$(echo "$desc_raw" | wc -c | tr -d ' ' || echo 0)
     if [ "$phrase_count" -lt 10 ] && [ "$desc_length" -lt 100 ]; then
         fail "description too short ($desc_length chars) and only $phrase_count trigger phrases (need ≥10 phrases or ≥100 char description)"
         skill_errors=$((skill_errors + 1))

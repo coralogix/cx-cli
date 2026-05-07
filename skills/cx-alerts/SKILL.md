@@ -1,7 +1,8 @@
 ---
 name: cx-alerts
 description: This skill should be used when the user asks to "manage alerts", "create alert", "list alerts", "check alert status", "enable alert", "disable alert", "investigate firing alerts", "check which alerts are active", "find alerting rules", "set up an alert", "configure alerting", "mute an alert", "silence an alert", "see alert definitions", "check alert priority", or wants to manage Coralogix alert definitions using the cx CLI.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Alert Management Skill

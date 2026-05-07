@@ -9,7 +9,8 @@ description: >
   "user permissions", "role-based access", "manage scopes", "system roles",
   "API key admin", "team member keys", "group membership",
   or wants to audit, manage, or configure access controls for a Coralogix account.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Platform Admin Skill

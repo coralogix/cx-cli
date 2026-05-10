@@ -71,7 +71,7 @@ To update a dashboard that already exists (instead of creating a new one), use t
 3. Deploy the updated version:
 
    ```bash
-   cx dashboards replace --from-file dashboard.json
+   cx dashboards replace --from-file dashboard.json --yes
    ```
 
 This is a full replacement - the entire dashboard definition is overwritten. The `id` field in the JSON determines which dashboard is updated.

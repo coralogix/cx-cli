@@ -473,7 +473,7 @@ If your command is risky enough to warrant a `(risky)` tag on the parent command
 
 ## Adding a subcommand to a wrapper command
 
-Some commands group multiple related domains under a single CLI entry point using a **wrapper enum**. Examples: `iam` (api-keys, roles, scopes, users, groups, saml, ip-access), `notifications` (connectors, routers, presets, test), `integrations` (extensions, contextual-data).
+Some commands group multiple related domains under a single CLI entry point using a **wrapper enum**. Examples: `iam` (api-keys, roles, scopes, users, groups, ip-access), `notifications` (connectors, routers, presets, test), `integrations` (extensions, contextual-data).
 
 If your new functionality belongs under an existing wrapper, you do not create a new top-level command. Instead:
 
@@ -708,7 +708,7 @@ cx -p prod -p staging your-domain list
 
 ## User-facing skill (required)
 
-Every command must be covered by a skill in `skills/`. This can be a dedicated skill for the command, or a workflow skill that covers multiple related commands (e.g., `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx quotas`, `cx retentions`, and `cx archive`). Check the existing workflow skills before creating a new one - your command may already be covered.
+Every command must be covered by a skill in `skills/`. This can be a dedicated skill for the command, or a workflow skill that covers multiple related commands (e.g., `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx retentions`, and `cx archive`). Check the existing workflow skills before creating a new one - your command may already be covered.
 
 See **[Adding a Skill](adding-a-skill.md)** for the complete guide covering directory structure, frontmatter conventions, trigger phrases, reference files, and templates for both single-command and workflow skills.
 

@@ -37,7 +37,8 @@ Every `SKILL.md` starts with YAML frontmatter:
 ---
 name: cx-your-domain
 description: This skill should be used when the user asks to "verb phrase 1", "verb phrase 2", "verb phrase 3", or wants to <broad intent summary> using the cx CLI.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 ```
 
@@ -45,7 +46,7 @@ version: 0.1.0
 |-------|------------|
 | `name` | kebab-case, matches the directory name |
 | `description` | Trigger phrase list - this is how agents decide when to activate the skill |
-| `version` | Semver, start at `0.1.0` |
+| `metadata.version` | Semver, start at `0.1.0`; keep repo-specific fields under `metadata` so `agentskills validate` accepts the frontmatter |
 
 The `description` field is how agents decide when to activate a skill. Follow the pattern used by existing skills - see `skills/cx-alerts/SKILL.md` and `skills/cx-telemetry-querying/SKILL.md` for examples.
 
@@ -142,7 +143,8 @@ Copy this as a starting point for a single-command skill (`skills/cx-your-domain
 ---
 name: cx-your-domain
 description: This skill should be used when the user asks to "list items", "inspect an item", "check item status", "find items by name", "investigate item issues", "query your-domain data", or wants to interact with YourDomain resources using the cx CLI.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # YourDomain Skill
@@ -179,7 +181,7 @@ Use this skill to query and manage YourDomain resources using the `cx your-domai
 
 ## Workflow skills
 
-Not every skill maps 1:1 to a CLI command. **Workflow skills** cover multiple commands unified by a user intent. For example, `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx quotas`, `cx retentions`, and `cx archive` - all under the "reduce costs" intent.
+Not every skill maps 1:1 to a CLI command. **Workflow skills** cover multiple commands unified by a user intent. For example, `cx-cost-optimization` covers `cx usage`, `cx tco`, `cx retentions`, and `cx archive` - all under the "reduce costs" intent.
 
 When adding a new command, check whether an existing workflow skill already covers it. If so, add your command to that skill rather than creating a new one. If the command serves a new intent not covered by any existing skill, create a workflow skill.
 
@@ -192,7 +194,8 @@ description: >
   Use this skill when the user asks to "intent phrase 1", "intent phrase 2",
   "intent phrase 3", "domain term 1", "domain term 2",
   or wants to <broad intent summary>.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Your Workflow Skill
@@ -240,7 +243,7 @@ cx command-b list -o json
 ## Checklist
 
 ### Skill definition
-- [ ] `skills/cx-your-domain/SKILL.md` - valid frontmatter (name, description, version)
+- [ ] `skills/cx-your-domain/SKILL.md` - valid Agent Skills frontmatter (`name`, `description`, `metadata.version`)
 - [ ] Frontmatter `description` includes 10+ trigger phrases covering commands, intents, and synonyms
 - [ ] Body includes CLI Commands table, workflow, and key principles
 
@@ -254,5 +257,6 @@ cx command-b list -o json
 - [ ] `skills/README.md` - new skill added to the "Available Skills" table
 
 ### Verification
-- [ ] `scripts/verify-skills.sh` - all skills pass (frontmatter, triggers, commands, cross-refs, reference sync)
+- [ ] CI runs `agentskills validate` for upstream Agent Skills spec validation
+- [ ] `scripts/verify-skills.sh` - cx-cli-specific checks pass (triggers, commands, cross-refs, reference sync)
 ```

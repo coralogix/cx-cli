@@ -1,21 +1,22 @@
 ---
 name: cx-cost-optimization
 description: >
-  Use this skill when the user asks to "check data usage", "list TCO policies", "view quotas",
+  Use this skill when the user asks to "check data usage", "list TCO policies",
   "reduce Coralogix costs", "optimize observability spend", "lower our logging bill",
   "data budget exceeded", "TCO policy", "retention tier", "archive storage", "ingestion costs",
   "frequent search vs archive", "why is our bill so high", "spending too much on logs",
-  "data retention settings", "quota rules", "cost analysis", "usage breakdown",
+  "data retention settings", "cost analysis", "usage breakdown",
   "optimize log volume", "control data ingestion", "archive cold data",
   "billing units", "plan consumption", "daily plan", "overage", "PAYG",
   "usage anomaly", "usage trend", "cx_data_usage_units",
   or wants to investigate, analyze, or reduce Coralogix data costs.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Cost Optimization Skill
 
-Use this skill when investigating or reducing Coralogix data costs. It covers the full cost management lifecycle: measuring current spend, reviewing TCO policies, adjusting retention periods, setting ingestion quotas, and configuring archive storage for cold data.
+Use this skill when investigating or reducing Coralogix data costs. It covers the full cost management lifecycle: measuring current spend, reviewing TCO policies, adjusting retention periods, and configuring archive storage for cold data.
 
 ---
 
@@ -26,7 +27,6 @@ Use this skill when investigating or reducing Coralogix data costs. It covers th
 | `cx usage` | `summary`, `daily`, `logs-count`, `spans-count`, `export-status` | Measure current data consumption |
 | `cx tco` | `list`, `get`, `create`, `update`, `delete`, `reorder`, `test`, `settings`, `settings-update` | Manage TCO (Total Cost of Ownership) policies |
 | `cx retentions` | `list`, `update`, `activate`, `status` | Manage data retention periods |
-| `cx quotas` | `get`, `create`, `update`, `delete` | Set ingestion guardrails |
 | `cx archive logs` | `get`, `set` | Configure logs archive target |
 | `cx archive metrics` | `get`, `create`, `update`, `enable`, `disable`, `validate` | Configure metrics archive storage |
 | `cx metrics query` | `<promql>` (positional), `--time` | Query billing and usage metrics via PromQL (instant) |
@@ -36,7 +36,7 @@ Key flags:
 - All commands support `-o json` for structured output and `-p <profile>` for profile selection
 - `cx usage daily` accepts `--type processed-gbs|units|evaluation-tokens` and `--start`/`--end` time filters
 - `cx usage summary` accepts `--start`/`--end` time filters
-- `cx tco create/update`, `cx retentions update`, `cx quotas create/update`, `cx archive logs set`, `cx archive metrics create/update/validate` use `--from-file <path>` (or `-` for stdin)
+- `cx tco create/update`, `cx retentions update`, `cx archive logs set`, `cx archive metrics create/update/validate` use `--from-file <path>` (or `-` for stdin)
 
 ---
 
@@ -82,15 +82,7 @@ cx retentions status -o json
 
 Long retention periods increase storage costs. Identify indices with unnecessarily long retention.
 
-### Step 4: Review Quota Rules
-
-```bash
-cx quotas get -o json
-```
-
-Quota rules cap ingestion volume. If there are no quotas and you see burst ingestion, recommend adding guardrails.
-
-### Step 5: Check Archive Configuration
+### Step 4: Check Archive Configuration
 
 ```bash
 cx archive logs get -o json
@@ -99,7 +91,7 @@ cx archive metrics get -o json
 
 Verify that archive storage is configured for cold data. If no archive is set up, that's a cost-saving opportunity.
 
-### Step 6: Recommend Optimizations
+### Step 5: Recommend Optimizations
 
 Based on findings, recommend changes in priority order (highest impact first).
 
@@ -111,7 +103,6 @@ Based on findings, recommend changes in priority order (highest impact first).
 |---|---|---|
 | High-volume low-value logs | `cx usage summary -o json` | Move to archive tier via `cx tco create --from-file policy.json` |
 | Long retention on cold data | `cx retentions list -o json` | Reduce retention with `cx retentions update --from-file` |
-| Burst ingestion spikes | `cx usage daily -o json` | Add quota rules with `cx quotas create --from-file` |
 | No cold storage configured | `cx archive logs get -o json` | Enable archive with `cx archive logs set --from-file --yes` (after user approval) |
 | Expensive metrics not queried | `cx archive metrics get -o json` | Enable metrics archiving with `cx archive metrics create --from-file --yes` (after user approval) |
 
@@ -156,13 +147,6 @@ cx retentions list -o json | jq '.[]'
 cx retentions status -o json
 ```
 
-### Quota Analysis
-
-```bash
-# Current quota rules
-cx quotas get -o json | jq '.rules // empty'
-```
-
 ### Archive Status
 
 ```bash
@@ -177,13 +161,13 @@ cx archive metrics get -o json | jq '{enabled: .enabled, bucket: .bucket}'
 
 ## Applying Changes
 
-**IMPORTANT: NEVER pass `--yes` without explicit user approval.** All write operations across archive, TCO, retentions, and quotas require interactive confirmation and the `--yes` flag to execute non-interactively. Before executing any write operation, describe the exact change to the user and wait for their approval before passing `--yes`.
+**IMPORTANT: NEVER pass `--yes` without explicit user approval.** All write operations across archive, TCO, and retentions require interactive confirmation and the `--yes` flag to execute non-interactively. Before executing any write operation, describe the exact change to the user and wait for their approval before passing `--yes`.
 
-**Read-only mode:** Use `--read-only` (or `CX_READ_ONLY=1`) to safely explore cost data without risk of accidental writes. All query commands (usage, tco list/get, retentions list, quotas get, archive get) work normally in read-only mode.
+**Read-only mode:** Use `--read-only` (or `CX_READ_ONLY=1`) to safely explore cost data without risk of accidental writes. All query commands (usage, tco list/get, retentions list, archive get) work normally in read-only mode.
 
 **Agent mode:** When running inside an AI agent, cx fails fast on write operations instead of hanging on a stdin prompt. Get user confirmation first, then re-run with `--yes`.
 
-When modifying TCO policies, retention, quotas, or archive:
+When modifying TCO policies, retention, or archive:
 
 1. **Template from existing:** Get the current configuration as JSON, modify it, then apply:
    ```bash

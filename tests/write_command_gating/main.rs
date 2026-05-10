@@ -81,14 +81,6 @@ fn iam_team_groups_delete() {
 }
 
 #[test]
-fn iam_saml_set_active() {
-    assert_gated(
-        &["iam", "saml", "set-active", "--active"],
-        "iam saml set-active",
-    );
-}
-
-#[test]
 fn iam_ip_access_delete() {
     assert_gated(&["iam", "ip-access", "delete"], "iam ip-access delete");
 }
@@ -173,11 +165,6 @@ fn retentions_update() {
         &["retentions", "update", "--from-file", "/dev/null"],
         "retentions update",
     );
-}
-
-#[test]
-fn quotas_delete() {
-    assert_gated(&["quotas", "delete"], "quotas delete");
 }
 
 #[test]

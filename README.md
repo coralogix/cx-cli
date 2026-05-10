@@ -155,7 +155,6 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx usage` | View data usage and consumption metrics |
 | `cx tco` | Manage TCO policies and settings |
 | `cx retentions` | Manage data retention settings |
-| `cx quotas` | Manage quota rules |
 | `cx archive` (risky) | Manage data archive storage configuration |
 
 **Integrations**
@@ -168,7 +167,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 | Command | Purpose |
 |---|---|
-| `cx iam` (risky) | Manage API keys, roles, scopes, users, groups, SAML, and IP access |
+| `cx iam` (risky) | Manage API keys, roles, scopes, users, groups, and IP access |
 
 **Agent & Local**
 

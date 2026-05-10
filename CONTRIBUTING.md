@@ -24,9 +24,9 @@ Every command domain has a designated owning team. The owning team is responsibl
 | Incidents & SLOs | `src/commands/incidents/`, `src/commands/slos/`, `skills/cx-incident-management/` | Domain team |
 | Notifications | `src/commands/connectors/`, `src/commands/routers/`, `src/commands/presets/`, `src/commands/notification_testing/` | Domain team |
 | Webhooks | `src/commands/webhooks/`, `src/commands/actions/` | Domain team |
-| IAM | `src/commands/api_keys/`, `src/commands/roles/`, `src/commands/scopes/`, `src/commands/users/`, `src/commands/team_groups/`, `src/commands/saml/`, `src/commands/ip_access/`, `skills/cx-platform-admin/` | Domain team |
+| IAM | `src/commands/api_keys/`, `src/commands/roles/`, `src/commands/scopes/`, `src/commands/users/`, `src/commands/team_groups/`, `src/commands/ip_access/`, `skills/cx-platform-admin/` | Domain team |
 | Data pipeline | `src/commands/parsing_rules/`, `src/commands/enrichments/`, `src/commands/custom_enrichments/`, `src/commands/e2m/`, `src/commands/recording_rules/`, `skills/cx-data-pipeline/` | Domain team |
-| Cost & storage | `src/commands/data_usage/`, `src/commands/tco_policies/`, `src/commands/retentions/`, `src/commands/quota_rules/`, `src/commands/data_archive/`, `skills/cx-cost-optimization/` | Domain team |
+| Cost & storage | `src/commands/data_usage/`, `src/commands/tco_policies/`, `src/commands/retentions/`, `src/commands/data_archive/`, `skills/cx-cost-optimization/` | Domain team |
 | Integrations | `src/commands/integrations/`, `src/commands/extensions/`, `src/commands/contextual_data/`, `skills/cx-observability-setup/` | Domain team |
 | Views | `src/commands/views/`, `skills/cx-observability-setup/` | Domain team |
 | User-facing docs | `README.md`, `docs/*` | `@coralogix/team-technical-writers`, `@coralogix/team-cxai` |

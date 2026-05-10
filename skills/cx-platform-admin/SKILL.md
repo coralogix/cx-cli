@@ -4,17 +4,18 @@ description: >
   Use this skill when the user asks "who has access", "audit permissions",
   "check user roles", "list API keys", "review access controls",
   "rotate API keys", "create API key", "delete expired keys", "send data keys",
-  "configure SAML", "set up SSO", "IP allowlist", "IP access restrictions",
+  "IP allowlist", "IP access restrictions",
   "check IP whitelist", "add user", "deactivate user", "manage team groups",
   "user permissions", "role-based access", "manage scopes", "system roles",
   "API key admin", "team member keys", "group membership",
   or wants to audit, manage, or configure access controls for a Coralogix account.
-version: 0.1.0
+metadata:
+  version: "0.1.0"
 ---
 
 # Platform Admin Skill
 
-Use this skill for managing access, authentication, and authorization in Coralogix. It covers API key management, role and scope definitions, user administration, team groups, SAML SSO configuration, and IP access restrictions.
+Use this skill for managing access, authentication, and authorization in Coralogix. It covers API key management, role and scope definitions, user administration, team groups, and IP access restrictions.
 
 ---
 
@@ -88,14 +89,10 @@ When running inside an AI agent (Claude Code, Cursor, Codex, etc.), cx automatic
 | `cx iam groups update --from-file <id>` | Update a group |
 | `cx iam groups delete <id>` | Delete a group |
 
-### SAML & IP Access
+### IP Access
 
 | Command | Purpose |
 |---|---|
-| `cx iam saml get` | Get SAML configuration |
-| `cx iam saml sp-params` | Get service provider parameters |
-| `cx iam saml set-idp --from-file` | Set IDP parameters |
-| `cx iam saml set-active --active true/false` | Activate/deactivate SAML |
 | `cx iam ip-access get` | Get IP access settings |
 | `cx iam ip-access create --from-file` | Create IP access rules |
 | `cx iam ip-access update --from-file` | Update IP access rules |
@@ -158,14 +155,7 @@ cx iam api-keys list -o json | jq '[.[] | {id, name, created_at, active}] | sort
 cx iam ip-access get -o json
 ```
 
-### Step 6: Check SAML Configuration
-
-```bash
-cx iam saml get -o json
-cx iam saml sp-params -o json
-```
-
-### Step 7: Cross-Reference
+### Step 6: Cross-Reference
 
 Produce a summary: which users have admin roles, which API keys are old, which groups have broad access.
 
@@ -191,8 +181,6 @@ Safe key rotation workflow:
 > **Deleting API keys** breaks any integration using that key immediately. Always create a replacement first.
 
 > **Deactivating users** (`cx iam users set-status --status INACTIVE`) takes effect immediately. The user loses access with no grace period.
-
-> **Changing SAML configuration** (`cx iam saml set-idp` or `cx iam saml set-active`) can lock out the entire team if misconfigured. Always verify SP parameters first with `cx iam saml sp-params`.
 
 > **Deleting IP access rules** (`cx iam ip-access delete`) removes all IP restrictions immediately, potentially exposing the account.
 

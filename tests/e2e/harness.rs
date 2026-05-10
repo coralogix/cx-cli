@@ -140,65 +140,6 @@ pub fn parse_json(stdout: &[u8]) -> Option<Value> {
     serde_json::from_slice(stdout).ok()
 }
 
-/// Run `cx <args>` tolerantly: if the command succeeds but stderr contains
-/// auth errors ("Authentication failed"), API errors ("API request failed"),
-/// or gateway errors ("504"), print a skip message and return `None`.
-/// Otherwise return `Some(stdout)`. Use this for tests that hit endpoints
-/// where the test API key may lack permissions or the server may be flaky.
-pub fn run_tolerant(args: &[&str], test_name: &str) -> Option<Vec<u8>> {
-    let output = cx().args(args).output().expect("failed to execute cx");
-    let stdout = output.stdout.clone();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    println!("\n$ cx {}", args.join(" "));
-    if !stdout.is_empty() {
-        println!("--- stdout ---");
-        println!("{}", String::from_utf8_lossy(&stdout));
-    }
-    if !stderr.is_empty() {
-        println!("--- stderr ---");
-        println!("{stderr}");
-    }
-
-    if stderr.contains("Authentication failed") {
-        eprintln!("[e2e] skipping {test_name}: API key lacks permissions for this endpoint");
-        return None;
-    }
-    if stderr.contains("API request failed") || stderr.contains("504") || stderr.contains("502") {
-        eprintln!(
-            "[e2e] WARNING: skipping {test_name}: transient server/gateway error (502/504). \
-            E2E tests run against shared infrastructure where transient failures are expected. \
-            Re-run to confirm this is not a persistent issue."
-        );
-        return None;
-    }
-
-    assert!(
-        output.status.success(),
-        "cx {} exited with non-zero status:\nstderr: {stderr}",
-        args.join(" ")
-    );
-
-    Some(stdout)
-}
-
-/// Like `run_tolerant` but also parses stdout as JSON. Returns `None` if the
-/// command was skipped (auth/server error) or stdout was empty/not valid JSON.
-pub fn run_tolerant_json(args: &[&str], test_name: &str) -> Option<Value> {
-    let stdout = run_tolerant(args, test_name)?;
-    if stdout.is_empty() {
-        eprintln!("[e2e] skipping {test_name}: empty stdout");
-        return None;
-    }
-    Some(serde_json::from_slice(&stdout).unwrap_or_else(|e| {
-        panic!(
-            "expected valid JSON on stdout from `cx {}`: {e}\nstdout: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&stdout)
-        )
-    }))
-}
-
 // ── Shape assertions ─────────────────────────────────────────────────
 //
 // These check the *structure* of a JSON response without inspecting values.

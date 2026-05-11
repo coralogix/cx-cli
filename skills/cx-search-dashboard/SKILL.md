@@ -39,7 +39,7 @@ cx dashboards search "payment service error rate"
 cx dashboards search "kubernetes node cpu"
 ```
 
-### Find widgets that answer a specific question
+### Find widgets whose queries cover a topic
 
 ```bash
 cx dashboards query-search --description "http 5xx error rate"

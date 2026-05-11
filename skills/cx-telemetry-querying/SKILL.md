@@ -138,7 +138,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx search-fields "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |
 | `cx search-fields "<text>" --dataset spans` | Find span fields by description | Discovery for trace-based questions |
 | `cx search-fields "<value>" -s value --dataset logs` | Find fields that contain a known value | When you know a value but not which field holds it — also reveals field type from the returned values |
-| `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | Cross-pillar value search |
+| `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | When you want to search across both logs and spans at once |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |
 

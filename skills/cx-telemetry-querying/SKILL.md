@@ -86,6 +86,13 @@ cx search-fields "payment total" --dataset spans
 cx search-fields "purchase value" --dataset logs --limit 10
 ```
 
+If you know a concrete value that should appear in the data but don't know which field holds it, use value search instead. It returns the matching field keys alongside sample values, which also lets you infer the field's type (string, numeric, enum, etc.):
+
+```bash
+cx search-fields "payment_failed" -s value --dataset logs
+cx search-fields "eu-west-1" -s value --dataset all
+```
+
 **Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add`.
 
 If matching fields are found:
@@ -130,6 +137,8 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx metrics search --description <text>` | Semantic metric search | When you know what you want but not the name |
 | `cx search-fields "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |
 | `cx search-fields "<text>" --dataset spans` | Find span fields by description | Discovery for trace-based questions |
+| `cx search-fields "<value>" -s value --dataset logs` | Find fields that contain a known value | When you know a value but not which field holds it — also reveals field type from the returned values |
+| `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | Cross-pillar value search |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |
 

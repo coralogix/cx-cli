@@ -39,7 +39,7 @@ For choosing the right signal (metrics / logs / traces), use `cx-telemetry-query
 
 ## Dashboard Management
 
-Beyond creating dashboards, use these commands to manage existing ones:
+Beyond creating dashboards, use these commands to manage and discover existing ones:
 
 | Command | Purpose |
 |---|---|
@@ -48,6 +48,14 @@ Beyond creating dashboards, use these commands to manage existing ones:
 | `cx dashboards folders list -o json` | List dashboard folders |
 | `cx dashboards folders create --name "Name"` | Create a dashboard folder |
 | `cx dashboards folders create --name "Sub" --parent-id <id>` | Create a nested folder |
+| `cx dashboards search "<description>"` | Find dashboards by natural-language description |
+| `cx dashboards query-search --description "<text>"` | Find dashboard widgets whose queries match a description |
+| `cx dashboards query-search --field "<field-path>"` | Find all widgets that reference a specific field (e.g. `$d.http.status_code`) |
+
+**When to use semantic search:**
+- Use `cx dashboards search` to check if a dashboard for a service or topic already exists before creating a new one.
+- Use `cx dashboards query-search --field` to discover what dashboards already visualize a field you're adding — helps avoid duplication and reveals query patterns to reuse.
+- Use `cx dashboards query-search --description` to find existing widgets that answer a question similar to the one you're building for.
 
 To duplicate or modify an existing dashboard:
 
@@ -84,8 +92,8 @@ For the target service, gather:
 
 1. **Business purpose** - read `README.md` and the top-level entrypoint (`main.*`, `index.*`, `cmd/main.go`, etc.). Summarize in 2–3 sentences what it does, its key stages, and what can go wrong.
 2. **Metrics** - for each candidate keyword (service name, subsystem, verbs like `request`, `error`, `latency`, `dlq`) run `cx metrics search --name '*<keyword>*'`. When a metric looks promising, list its labels with `cx metrics get-labels <metric>`. Only use names `cx metrics search` returns - this is what prevents invented metrics from reaching Phase 5. Cross-check the service's instrumentation (`prometheus_client`, `promauto.NewCounter/Histogram/Gauge`, OTel meters, `prom-client`, Micrometer, `metrics.py`) for semantics and histogram buckets (`_sum`, `_count`, `_bucket`).
-3. **Logs** - discover custom `$d.*` fields with `cx search-fields "<description>" --dataset logs` before assuming a field exists. Sample message templates and severity with `cx logs "filter \$l.applicationname == '<app>'" --limit 5 -o json`. Standard fields (`$m.severity`, `$m.timestamp`, `$l.applicationname`, `$l.subsystemname`) don't need discovery.
-4. **Spans / traces** - discover span attributes with `cx search-fields "<description>" --dataset spans`. Sample with `cx spans "filter \$l.serviceName == '<svc>'" --limit 5 -o json`. Error conventions vary (`$d.tags.error`, `$d.http.status_code`); check samples before filtering.
+3. **Logs** - discover custom `$d.*` fields with `cx search-fields "<description>" --dataset logs` before assuming a field exists. If you know a concrete value that should appear (e.g. a status string, an ID), use `cx search-fields "<value>" -s value --dataset logs` — it returns the field key and sample values, which also reveals the field's type. Sample message templates and severity with `cx logs "filter \$l.applicationname == '<app>'" --limit 5 -o json`. Standard fields (`$m.severity`, `$m.timestamp`, `$l.applicationname`, `$l.subsystemname`) don't need discovery.
+4. **Spans / traces** - discover span attributes with `cx search-fields "<description>" --dataset spans`. Use `cx search-fields "<value>" -s value --dataset spans` when you have a known attribute value but not the field name. Sample with `cx spans "filter \$l.serviceName == '<svc>'" --limit 5 -o json`. Error conventions vary (`$d.tags.error`, `$d.http.status_code`); check samples before filtering.
 5. **Message buses & DLQs** - grep for Kafka, RabbitMQ, SQS, Pub/Sub clients and any `dlq`/`DLQ` references. Note topic/queue names for DLQ panels.
 6. **Service configuration** - check `meta.yaml`, Helm `values.yaml`, `Deployment`, `Dockerfile`, `chart.yaml`. Extract:
    - The `applicationname` / `subsystemname` label values as they appear in Coralogix.

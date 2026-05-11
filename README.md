@@ -128,13 +128,13 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx spans` | Query distributed spans |
 | `cx metrics` | Query metrics using PromQL: `query`, `query-range`, `search`, `get-labels` |
 | `cx dataprime` | DataPrime language reference and raw queries: `list`, `show`, `query` |
-| `cx search-fields` | Find log or span fields by name (`--name`) or by value content (`--value`) |
+| `cx search-fields` | Find log or span fields by description (default) or by value content (`-s value`) |
 
 **Observe**
 
 | Command | Purpose |
 |---|---|
-| `cx dashboards` | Manage dashboards and folders. Semantic search: `search <desc>` (find by description), `query-search --description <text>` (search query content), `query-search --field <path>` (find queries using a field) |
+| `cx dashboards` | Manage or search dashboards and folders |
 | `cx views` | Manage saved views and view folders |
 | `cx slos` | Manage SLO definitions |
 

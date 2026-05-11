@@ -24,8 +24,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 28 commands grouped by domain. `cx --help` shows this layout:
-The CLI is organized into 28 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 27 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -33,8 +32,7 @@ Query:
   spans              Query spans using DataPrime syntax
   metrics            Query metrics using PromQL
   dataprime          DataPrime language reference and raw queries
-  search-fields      Search log/span fields semantically
-  search-by-value    Search field keys by their value content
+  search-fields      Search log/span fields by description or value content
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -75,12 +73,12 @@ Local:
   cleanup            Remove stale temp files
 ```
 
-**`cx search-by-value`:** Calls Olly Knowledge Base `POST /api/v1/search-by-value` on the region API base URL. The platform ingress uses gateway permission `legacy-archive-queries:Execute` (AAA id 40); `dataset_type` in the JSON body (`logs` / `spans` / `all`) is still enforced in-app by the service. See `olly-knowledge-base` `apps/values-reader-service/AGENTS.md` and `platform/defaults/networking/defaults.yaml`.
+**`cx search-fields -s value`:** Calls Olly Knowledge Base `POST /api/v1/search-by-value` on the region API base URL. The platform ingress uses gateway permission `legacy-archive-queries:Execute` (AAA id 40); `dataset_type` in the JSON body (`logs` / `spans` / `all`) is still enforced in-app by the service. See `olly-knowledge-base` `apps/values-reader-service/AGENTS.md` and `platform/defaults/networking/defaults.yaml`.
 
 **`cx dashboards` semantic search:** Three Olly Knowledge Base-powered subcommands for discovering dashboards and queries:
-- `cx dashboards semantic-search <description>` — Find dashboards matching a natural-language description
-- `cx dashboards search <query-text>` — Search dashboard query content semantically
-- `cx dashboards queries-by-field <field-path>` — Find all queries referencing a specific field (e.g., `$d.http.status_code`)
+- `cx dashboards search <description>` — Find dashboards matching a natural-language description
+- `cx dashboards query-search --description <query-text>` — Search dashboard query content semantically
+- `cx dashboards query-search --field <field-path>` — Find all queries referencing a specific field (e.g., `$d.http.status_code`)
 
 All use the Olly KB semantic-search-service API with gateway permission `legacy-archive-queries:Execute` (AAA id 40). See `olly-knowledge-base` `apps/semantic-search-service/AGENTS.md`.
 

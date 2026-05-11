@@ -8,7 +8,6 @@ fn search_fields_name_logs() {
     }
     let v = harness::run_ok_json(&[
         "search-fields",
-        "--name",
         "http response",
         "--dataset",
         "logs",
@@ -31,7 +30,6 @@ fn search_fields_name_spans() {
     }
     let v = harness::run_ok_json(&[
         "search-fields",
-        "--name",
         "trace id",
         "--dataset",
         "spans",
@@ -54,8 +52,9 @@ fn search_fields_value_logs() {
     }
     let v = harness::run_ok_json(&[
         "search-fields",
-        "--value",
         "log",
+        "-s",
+        "value",
         "--dataset",
         "logs",
         "--limit",
@@ -66,7 +65,7 @@ fn search_fields_value_logs() {
     let arr = v.as_array().expect("should be a JSON array");
     assert!(
         !arr.is_empty(),
-        "search-fields --value 'log' should return at least one result"
+        "search-fields 'log' -s value should return at least one result"
     );
-    harness::assert_array_of_objects_with_keys(&v, &["dataprime_path", "value", "similarity"]);
+    harness::assert_array_of_objects_with_keys(&v, &["key_matched", "value", "similarity_score"]);
 }

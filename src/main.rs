@@ -30,14 +30,17 @@ fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
         .collect()
 }
 
-/// Dataset choice for `search-fields --name`.
-#[derive(Debug, Clone, ValueEnum)]
-pub enum SearchFieldsDataset {
-    Logs,
-    Spans,
+/// How `search-fields` searches: by semantic description or by value content.
+#[derive(Debug, Clone, ValueEnum, Default)]
+pub enum SearchType {
+    /// Semantic / description-based field search (default).
+    #[default]
+    Semantic,
+    /// Search for fields by value content.
+    Value,
 }
 
-/// Dataset choice for `search-fields --value` (superset: also accepts `all`).
+/// Dataset for `search-fields`. `all` is only valid with `--search-type value`.
 #[derive(Debug, Clone, ValueEnum)]
 pub enum SearchByValueDataset {
     Logs,
@@ -59,7 +62,7 @@ Query:
   spans              Query spans using DataPrime syntax
   metrics            Query metrics using PromQL
   dataprime          DataPrime language reference and raw queries
-  search-fields      Search log/span fields by name or value
+  search-fields      Search log/span fields by description or value content
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -478,23 +481,22 @@ Examples:
         cmd: SlosCmd,
     },
 
-    /// Search log/span fields by name description or by value content.
+    /// Search log/span fields by description or by value content.
     #[command(after_help = "\
 Examples:
-  cx search-fields --name \"http response status code\"
-  cx search-fields --name \"error severity level\" --dataset spans --limit 10
-  cx search-fields --value \"payment\" --dataset logs
-  cx search-fields --value \"kubernetes pod\" --dataset all --limit 20 --offset 10")]
+  cx search-fields \"http response status code\"
+  cx search-fields \"error severity level\" --dataset spans --limit 10
+  cx search-fields \"payment\" -s value --dataset logs
+  cx search-fields \"kubernetes pod\" -s value --dataset all --limit 20 --offset 10")]
     SearchFields {
-        /// Search for fields by name/description using semantic similarity.
-        #[arg(long, conflicts_with = "value")]
-        name: Option<String>,
+        /// Description or value to search for.
+        text: String,
 
-        /// Search for fields by value content using semantic similarity.
-        #[arg(long, conflicts_with = "name")]
-        value: Option<String>,
+        /// Search type: semantic (description-based, default) or value (by field value content).
+        #[arg(short = 's', long, default_value = "semantic")]
+        search_type: SearchType,
 
-        /// Dataset to search: logs or spans (--name); logs, spans, or all (--value).
+        /// Dataset to search: logs or spans (semantic); logs, spans, or all (value).
         #[arg(long, default_value = "logs")]
         dataset: SearchByValueDataset,
 
@@ -502,7 +504,7 @@ Examples:
         #[arg(long, default_value_t = 10)]
         limit: u32,
 
-        /// Number of results to skip for pagination (only used with --value).
+        /// Number of results to skip for pagination (only used with -s value).
         #[arg(long, default_value_t = 0)]
         offset: u32,
     },
@@ -3313,33 +3315,30 @@ async fn main() -> Result<()> {
         },
 
         Commands::SearchFields {
-            name,
-            value,
+            text,
+            search_type,
             dataset,
             limit,
             offset,
-        } => match (name.as_deref(), value.as_deref()) {
-            (Some(n), _) => {
+        } => match search_type {
+            SearchType::Semantic => {
                 let dataset_str = match dataset {
                     SearchByValueDataset::Logs => "logs",
                     SearchByValueDataset::Spans => "spans",
                     SearchByValueDataset::All => {
-                        bail!("--dataset all is only valid with --value");
+                        bail!("--dataset all is only valid with -s value");
                     }
                 };
-                commands::search_fields::run(&targets, n, dataset_str, limit, output).await?;
+                commands::search_fields::run(&targets, &text, dataset_str, limit, output).await?;
             }
-            (_, Some(v)) => {
+            SearchType::Value => {
                 let dataset_str = match dataset {
                     SearchByValueDataset::Logs => "logs",
                     SearchByValueDataset::Spans => "spans",
                     SearchByValueDataset::All => "all",
                 };
-                commands::search_by_value::run(&targets, v, dataset_str, limit, offset, output)
+                commands::search_by_value::run(&targets, &text, dataset_str, limit, offset, output)
                     .await?;
-            }
-            (None, None) => {
-                bail!("specify --name or --value");
             }
         },
 

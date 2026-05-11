@@ -528,9 +528,12 @@ enum ProfilesCmd {
     List,
     /// Add or reconfigure a profile interactively.
     Add {
-        /// Profile name to configure (default: "default").
+        /// Profile name to configure (prompted if not provided).
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: Option<String>,
+        /// Set this profile as the default without prompting.
+        #[arg(long)]
+        set_default: bool,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -2083,7 +2086,9 @@ async fn main() -> Result<()> {
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         return match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name } => commands::profiles::run_add(name).await,
+            ProfilesCmd::Add { name, set_default } => {
+                commands::profiles::run_add(name, set_default).await
+            }
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -2145,7 +2150,9 @@ async fn main() -> Result<()> {
     if let Commands::Profiles { cmd } = cli.command {
         return match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name } => commands::profiles::run_add(name).await,
+            ProfilesCmd::Add { name, set_default } => {
+                commands::profiles::run_add(name, set_default).await
+            }
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };

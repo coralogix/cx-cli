@@ -1,7 +1,7 @@
-//! Integration tests for `cx search-fields --value` (the search-by-value API path).
+//! Integration tests for `cx search-fields -s value` (the search-by-value API path).
 //! The underlying HTTP call goes to POST /api/v1/search-by-value.
 //! These tests exercise `commands::search_by_value::run`, which is invoked by
-//! `search-fields --value` in the CLI.
+//! `search-fields -s value` in the CLI.
 
 mod common;
 
@@ -46,7 +46,7 @@ async fn search_fields_value_returns_results() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Json)
         .await
-        .expect("search-fields --value should succeed");
+        .expect("search-fields -s value should succeed");
 }
 
 #[tokio::test]
@@ -73,7 +73,7 @@ async fn search_fields_value_sends_correct_request_body() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Json)
         .await
-        .expect("search-fields --value should send correct request body");
+        .expect("search-fields -s value should send correct request body");
 }
 
 #[tokio::test]
@@ -103,7 +103,7 @@ async fn search_fields_value_with_spans_dataset() {
 
     search_by_value::run(&targets, "error", "spans", 5, 0, OutputFormat::Json)
         .await
-        .expect("search-fields --value --dataset spans should succeed");
+        .expect("search-fields -s value --dataset spans should succeed");
 }
 
 #[tokio::test]
@@ -130,7 +130,7 @@ async fn search_fields_value_with_all_dataset() {
 
     search_by_value::run(&targets, "kubernetes", "all", 20, 0, OutputFormat::Json)
         .await
-        .expect("search-fields --value --dataset all should succeed");
+        .expect("search-fields -s value --dataset all should succeed");
 }
 
 #[tokio::test]
@@ -160,7 +160,7 @@ async fn search_fields_value_with_offset_for_pagination() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 20, OutputFormat::Json)
         .await
-        .expect("search-fields --value --offset should succeed");
+        .expect("search-fields -s value --offset should succeed");
 }
 
 #[tokio::test]
@@ -190,7 +190,7 @@ async fn search_fields_value_clamps_limit_to_100() {
 
     search_by_value::run(&targets, "test", "logs", 500, 0, OutputFormat::Json)
         .await
-        .expect("search-fields --value should clamp limit to 100");
+        .expect("search-fields -s value should clamp limit to 100");
 }
 
 #[tokio::test]

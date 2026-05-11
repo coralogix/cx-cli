@@ -81,9 +81,9 @@ If a matching metric is found, load `references/promql-guidelines.md` + `referen
 Use semantic field search to find relevant DataPrime paths:
 
 ```bash
-cx search-fields "transaction amount" --dataset logs
-cx search-fields "payment total" --dataset spans
-cx search-fields "purchase value" --dataset logs --limit 10
+cx search-fields --name "transaction amount" --dataset logs
+cx search-fields --name "payment total" --dataset spans
+cx search-fields --name "purchase value" --dataset logs --limit 10
 ```
 
 **Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add`.
@@ -128,8 +128,8 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx schema` | Output the full command tree as JSON | Discover all available commands and their flags |
 | `cx metrics search --name <pattern>` | Find metrics by name | First step for metrics discovery |
 | `cx metrics search --description <text>` | Semantic metric search | When you know what you want but not the name |
-| `cx search-fields "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |
-| `cx search-fields "<text>" --dataset spans` | Find span fields by description | Discovery for trace-based questions |
+| `cx search-fields --name "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |
+| `cx search-fields --name "<text>" --dataset spans` | Find span fields by description | Discovery for trace-based questions |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |
 
@@ -143,8 +143,8 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 **Approach:**
 1. Search metrics: `cx metrics search --name '*revenue*'` and `cx metrics search --name '*transaction*'`
-2. Search log fields: `cx search-fields "transaction amount" --dataset logs`
-3. Search span fields: `cx search-fields "payment total" --dataset spans`
+2. Search log fields: `cx search-fields --name "transaction amount" --dataset logs`
+3. Search span fields: `cx search-fields --name "payment total" --dataset spans`
 4. If a metric like `payment_total_usd` exists, load metrics references and run a range query
 5. If only logs have the data, load logs references and use DataPrime aggregation
 6. If traces have `purchase.amount` attribute, load spans references

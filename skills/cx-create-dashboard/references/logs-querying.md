@@ -111,8 +111,8 @@ If you have access to the application's source code, examine logger calls, struc
 ### 2. Semantic Search
 
 ```bash
-cx search-fields "customer identifier" --dataset logs
-cx search-fields "http response code" --dataset logs
+cx search-fields --name "customer identifier" --dataset logs
+cx search-fields --name "http response code" --dataset logs
 ```
 
 Returns DataPrime paths with similarity scores:

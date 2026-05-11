@@ -132,9 +132,9 @@ If you have access to the application's source code, examine OpenTelemetry instr
 ### 2. Semantic Search
 
 ```bash
-cx search-fields "customer identifier" --dataset spans
-cx search-fields "order ID" --dataset spans
-cx search-fields "http response code" --dataset spans
+cx search-fields --name "customer identifier" --dataset spans
+cx search-fields --name "order ID" --dataset spans
+cx search-fields --name "http response code" --dataset spans
 ```
 
 Note: `cx search-fields` only has access to the most common fields. If it doesn't find what you need, fall back to sample query inspection.

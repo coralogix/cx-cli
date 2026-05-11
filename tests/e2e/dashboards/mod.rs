@@ -113,28 +113,27 @@ fn dashboards_query_search_description_returns_results() {
 
 #[test]
 #[ignore]
-fn dashboards_query_search_field_exits_ok() {
+fn dashboards_query_search_field_returns_results() {
     if harness::require_creds("dashboards_query_search_field").is_none() {
         return;
     }
     // GET /api/v1/olly-kb/queries/by-field — returns results for fields referenced in dashboards
-    let output = harness::cx()
-        .args([
-            "dashboards",
-            "query-search",
-            "--field",
-            "team_id",
-            "--limit",
-            "5",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to execute cx");
+    let v = harness::run_ok_json(&[
+        "dashboards",
+        "query-search",
+        "--field",
+        "team_id",
+        "--limit",
+        "5",
+        "-o",
+        "json",
+    ]);
+    let arr = v.as_array().expect("should be a JSON array");
     assert!(
-        output.status.success(),
-        "dashboards query-search --field should exit 0"
+        !arr.is_empty(),
+        "dashboards query-search --field 'team_id' should return at least one result"
     );
+    harness::assert_array_of_objects_with_keys(&v, &["query_text", "similarity", "dashboard_name"]);
 }
 
 #[test]

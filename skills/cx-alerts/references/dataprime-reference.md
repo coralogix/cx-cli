@@ -249,6 +249,6 @@ Check both the exit code and the output — some errors surface only in the outp
 - `Compilation errors:` — parse error, unknown function, malformed expression
 
 **Soft fail** (needs investigation):
-- `keypath does not exist` — the query parsed, but no record in the window had the referenced field. This is ambiguous: the field name might be a typo, or it might be real but absent from records in this 15-minute slice. Confirm with `cx search-fields "<field hint>" --dataset logs` (or `--dataset spans`). If the field is real, the query is fine — try a wider window or accept the empty result. If it isn't, fix the field name.
+- `keypath does not exist` — the query parsed, but no record in the window had the referenced field. This is ambiguous: the field name might be a typo, or it might be real but absent from records in this 15-minute slice. Confirm with `cx search-fields --name "<field hint>" --dataset logs` (or `--dataset spans`). If the field is real, the query is fine — try a wider window or accept the empty result. If it isn't, fix the field name.
 
 On fail: re-discover fields with `cx search-fields`, look up command syntax with `cx dataprime show <command>`, fix, re-run.

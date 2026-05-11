@@ -48,7 +48,8 @@ pub struct DashboardSearchResult {
     pub dashboard_folder: Option<String>,
     pub description: Option<String>,
     pub semantic_description: Option<String>,
-    pub widget_count: u32,
+    #[serde(default)]
+    pub widget_count: Option<u32>,
     pub similarity: f64,
 }
 

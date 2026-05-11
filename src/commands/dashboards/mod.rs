@@ -171,7 +171,7 @@ fn render_semantic_search_text_table(
                 profile.clone(),
                 r.dashboard_name.clone().unwrap_or_default(),
                 r.dashboard_folder.clone().unwrap_or_default(),
-                r.widget_count.to_string(),
+                r.widget_count.map(|n| n.to_string()).unwrap_or_default(),
                 format!("{:.3}", r.similarity),
                 r.semantic_description
                     .as_deref()

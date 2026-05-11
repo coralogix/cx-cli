@@ -39,7 +39,7 @@ For choosing the right signal (metrics / logs / traces), use `cx-telemetry-query
 
 ## Dashboard Management
 
-Beyond creating dashboards, use these commands to manage and discover existing ones:
+Beyond creating dashboards, use these commands to manage existing ones:
 
 | Command | Purpose |
 |---|---|
@@ -48,14 +48,6 @@ Beyond creating dashboards, use these commands to manage and discover existing o
 | `cx dashboards folders list -o json` | List dashboard folders |
 | `cx dashboards folders create --name "Name"` | Create a dashboard folder |
 | `cx dashboards folders create --name "Sub" --parent-id <id>` | Create a nested folder |
-| `cx dashboards search "<description>"` | Find dashboards by natural-language description |
-| `cx dashboards query-search --description "<text>"` | Find dashboard widgets whose queries match a description |
-| `cx dashboards query-search --field "<field-path>"` | Find all widgets that reference a specific field (e.g. `$d.http.status_code`) |
-
-**When to use semantic search:**
-- Use `cx dashboards search` to check if a dashboard for a service or topic already exists before creating a new one.
-- Use `cx dashboards query-search --field` to discover what dashboards already visualize a field you're adding — helps avoid duplication and reveals query patterns to reuse.
-- Use `cx dashboards query-search --description` to find existing widgets that answer a question similar to the one you're building for.
 
 To duplicate or modify an existing dashboard:
 

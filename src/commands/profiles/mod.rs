@@ -177,9 +177,7 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
         }
         None => {
             let mut prompt = Text::new("Profile name:")
-                .with_help_message(
-                    "A short identifier for this profile, e.g. 'prod' or 'staging'.",
-                )
+                .with_help_message("A short identifier for this profile, e.g. 'prod' or 'staging'.")
                 .with_validator(inquire::validator::MinLengthValidator::new(1));
             if is_first_profile {
                 prompt = prompt.with_default("default");

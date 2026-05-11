@@ -846,10 +846,8 @@ api_key = "mykey"
 
     #[test]
     fn save_profile_empty_name_creates_hidden_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "cx_test_empty_profile_name_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("cx_test_empty_profile_name_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
         // Point CX_HOME at our temp dir so save_profile writes there.

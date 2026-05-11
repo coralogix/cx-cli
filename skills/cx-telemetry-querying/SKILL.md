@@ -143,6 +143,9 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | When you want to search across both logs and spans at once |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |
+| `cx dashboards search "<description>"` | Find existing dashboards by natural-language description | Before creating a new dashboard — check if one already exists |
+| `cx dashboards query-search --description "<text>"` | Find dashboard widgets whose queries cover a topic | Discover how a topic is already being monitored |
+| `cx dashboards query-search --field "<field-path>"` | Find widgets that reference a specific field | Reuse existing PromQL/DataPrime patterns for a known field |
 
 ---
 
@@ -202,6 +205,7 @@ Not every question is answered by querying data. If the user's intent is operati
 | Configuring parsing rules, enrichments, E2M | `cx-data-pipeline` |
 | Access audit, API keys, user management | `cx-platform-admin` |
 | Creating or managing dashboards | `cx-create-dashboard` |
+| Finding or searching existing dashboards | `cx-search-dashboard` |
 
 ---
 

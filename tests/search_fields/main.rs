@@ -19,14 +19,14 @@ async fn semantic_field_search_returns_results() {
                 "path_array": ["$d", "http", "status_code"],
                 "description": "HTTP response status code",
                 "similarity_score": 0.92,
-                "dataset_scope": null,
+                "dataset_scope": "USER_DATA",
                 "labels": {}
             },
             {
                 "path_array": ["$d", "http", "method"],
                 "description": "HTTP request method",
                 "similarity_score": 0.85,
-                "dataset_scope": null,
+                "dataset_scope": "USER_DATA",
                 "labels": {}
             }
         ]
@@ -51,7 +51,7 @@ async fn semantic_field_search_returns_results() {
 async fn semantic_field_search_empty_results() {
     let server = MockServer::start().await;
 
-    let body = json!({ "results": [] });
+    let body = json!({ "results": [], "total": 0 });
 
     Mock::given(method("POST"))
         .and(path("/api/v1/semantic-search/fields"))
@@ -84,7 +84,7 @@ async fn semantic_field_lookup_serializes_complex_paths() {
                 "path_array": ["$d", "resource.type", "service name"],
                 "description": "Resource service name",
                 "similarity_score": 0.91,
-                "dataset_scope": null,
+                "dataset_scope": "USER_DATA",
                 "labels": {}
             }
         ]
@@ -119,7 +119,7 @@ async fn semantic_field_search_spans_dataset() {
                 "path_array": ["$d", "traceID"],
                 "description": "Distributed trace identifier",
                 "similarity_score": 0.88,
-                "dataset_scope": null,
+                "dataset_scope": "USER_DATA",
                 "labels": {}
             }
         ]

@@ -1,3 +1,8 @@
+//! Integration tests for `cx search-fields --value` (the search-by-value API path).
+//! The underlying HTTP call goes to POST /api/v1/search-by-value.
+//! These tests exercise `commands::search_by_value::run`, which is invoked by
+//! `search-fields --value` in the CLI.
+
 mod common;
 
 use serde_json::json;
@@ -26,7 +31,7 @@ fn mock_matches_body() -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn search_by_value_returns_results() {
+async fn search_fields_value_returns_results() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -41,11 +46,11 @@ async fn search_by_value_returns_results() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Json)
         .await
-        .expect("search-by-value should succeed");
+        .expect("search-fields --value should succeed");
 }
 
 #[tokio::test]
-async fn search_by_value_sends_correct_request_body() {
+async fn search_fields_value_sends_correct_request_body() {
     let server = MockServer::start().await;
 
     let expected_body = json!({
@@ -68,11 +73,11 @@ async fn search_by_value_sends_correct_request_body() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Json)
         .await
-        .expect("search-by-value should send correct request body");
+        .expect("search-fields --value should send correct request body");
 }
 
 #[tokio::test]
-async fn search_by_value_with_spans_dataset() {
+async fn search_fields_value_with_spans_dataset() {
     let server = MockServer::start().await;
 
     let expected_body = json!({
@@ -98,11 +103,11 @@ async fn search_by_value_with_spans_dataset() {
 
     search_by_value::run(&targets, "error", "spans", 5, 0, OutputFormat::Json)
         .await
-        .expect("search-by-value with spans dataset should succeed");
+        .expect("search-fields --value --dataset spans should succeed");
 }
 
 #[tokio::test]
-async fn search_by_value_with_all_dataset() {
+async fn search_fields_value_with_all_dataset() {
     let server = MockServer::start().await;
 
     let expected_body = json!({
@@ -125,11 +130,11 @@ async fn search_by_value_with_all_dataset() {
 
     search_by_value::run(&targets, "kubernetes", "all", 20, 0, OutputFormat::Json)
         .await
-        .expect("search-by-value with all dataset should succeed");
+        .expect("search-fields --value --dataset all should succeed");
 }
 
 #[tokio::test]
-async fn search_by_value_with_offset_for_pagination() {
+async fn search_fields_value_with_offset_for_pagination() {
     let server = MockServer::start().await;
 
     let expected_body = json!({
@@ -155,11 +160,11 @@ async fn search_by_value_with_offset_for_pagination() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 20, OutputFormat::Json)
         .await
-        .expect("search-by-value with offset should succeed");
+        .expect("search-fields --value --offset should succeed");
 }
 
 #[tokio::test]
-async fn search_by_value_clamps_limit_to_100() {
+async fn search_fields_value_clamps_limit_to_100() {
     let server = MockServer::start().await;
 
     let expected_body = json!({
@@ -185,11 +190,11 @@ async fn search_by_value_clamps_limit_to_100() {
 
     search_by_value::run(&targets, "test", "logs", 500, 0, OutputFormat::Json)
         .await
-        .expect("search-by-value should clamp limit to 100");
+        .expect("search-fields --value should clamp limit to 100");
 }
 
 #[tokio::test]
-async fn search_by_value_clamps_limit_zero_to_one() {
+async fn search_fields_value_clamps_limit_zero_to_one() {
     let server = MockServer::start().await;
 
     let expected_body = json!({
@@ -219,7 +224,7 @@ async fn search_by_value_clamps_limit_zero_to_one() {
 }
 
 #[tokio::test]
-async fn search_by_value_empty_query_returns_error() {
+async fn search_fields_value_empty_query_returns_error() {
     let target = common::test_target("test-profile", "http://127.0.0.1:1");
     let targets = vec![target];
 
@@ -231,7 +236,7 @@ async fn search_by_value_empty_query_returns_error() {
 }
 
 #[tokio::test]
-async fn search_by_value_empty_results_text_output() {
+async fn search_fields_value_empty_results_text_output() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -249,11 +254,11 @@ async fn search_by_value_empty_results_text_output() {
 
     search_by_value::run(&targets, "zzznomatch", "logs", 10, 0, OutputFormat::Text)
         .await
-        .expect("search-by-value with empty results should succeed in text mode");
+        .expect("empty results should succeed in text mode");
 }
 
 #[tokio::test]
-async fn search_by_value_agents_output() {
+async fn search_fields_value_agents_output() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -268,11 +273,11 @@ async fn search_by_value_agents_output() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Agents)
         .await
-        .expect("search-by-value agents output should succeed");
+        .expect("agents output should succeed");
 }
 
 #[tokio::test]
-async fn search_by_value_multi_profile_merges_results() {
+async fn search_fields_value_multi_profile_merges_results() {
     let server_a = MockServer::start().await;
     let server_b = MockServer::start().await;
 
@@ -299,11 +304,11 @@ async fn search_by_value_multi_profile_merges_results() {
 
     search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Json)
         .await
-        .expect("search-by-value multi-profile fan-out should succeed");
+        .expect("multi-profile fan-out should succeed");
 }
 
 #[tokio::test]
-async fn search_by_value_partial_profile_failure_returns_ok() {
+async fn search_fields_value_partial_profile_failure_returns_ok() {
     let server_ok = MockServer::start().await;
     let server_fail = MockServer::start().await;
 
@@ -332,7 +337,7 @@ async fn search_by_value_partial_profile_failure_returns_ok() {
 }
 
 #[tokio::test]
-async fn search_by_value_all_profiles_fail_returns_error() {
+async fn search_fields_value_all_profiles_fail_returns_error() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))

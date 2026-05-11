@@ -19,8 +19,9 @@ async fn dashboard_search_returns_results() {
                 "dashboard_name": "API Overview",
                 "dashboard_folder": "Engineering",
                 "widget_title": "Request Rate",
-                "widget_type": "line_chart",
+                "widget_type": "lineChart",
                 "query_context": "Monitors request rate",
+                "description": null,
                 "extracted_fields": ["http_requests_total"]
             }
         ],
@@ -299,13 +300,13 @@ async fn dashboard_search_multi_profile_merges_results() {
     let body_a = json!({
         "results": [{"query_text": "q1", "similarity": 0.9, "dashboard_name": "D1",
                      "dashboard_folder": null, "widget_title": null, "widget_type": null,
-                     "query_context": null, "extracted_fields": []}],
+                     "query_context": null, "description": null, "extracted_fields": []}],
         "total": 1
     });
     let body_b = json!({
         "results": [{"query_text": "q2", "similarity": 0.8, "dashboard_name": "D2",
                      "dashboard_folder": null, "widget_title": null, "widget_type": null,
-                     "query_context": null, "extracted_fields": []}],
+                     "query_context": null, "description": null, "extracted_fields": []}],
         "total": 1
     });
 
@@ -436,7 +437,7 @@ async fn dashboard_search_partial_failure_returns_ok() {
     let body = json!({
         "results": [{"query_text": "q1", "similarity": 0.9, "dashboard_name": "D1",
                      "dashboard_folder": null, "widget_title": null, "widget_type": null,
-                     "query_context": null, "extracted_fields": []}],
+                     "query_context": null, "description": null, "extracted_fields": []}],
         "total": 1
     });
 
@@ -561,8 +562,8 @@ async fn dashboard_search_text_output_with_results() {
     let body = json!({
         "results": [{"query_text": "rate(http_requests[5m])", "similarity": 0.93,
                      "dashboard_name": "API Overview", "dashboard_folder": null,
-                     "widget_title": "RPS", "widget_type": null,
-                     "query_context": null, "extracted_fields": []}],
+                     "widget_title": "RPS", "widget_type": "lineChart",
+                     "query_context": null, "description": null, "extracted_fields": []}],
         "total": 1
     });
 

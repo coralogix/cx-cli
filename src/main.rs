@@ -30,12 +30,18 @@ fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
         .collect()
 }
 
-/// Dataset choice for `search-fields`.
+/// Dataset choice for `search-fields --name`.
 #[derive(Debug, Clone, ValueEnum)]
 pub enum SearchFieldsDataset {
     Logs,
     Spans,
-    /// Search across both logs and spans (only valid with --value).
+}
+
+/// Dataset choice for `search-fields --value` (superset: also accepts `all`).
+#[derive(Debug, Clone, ValueEnum)]
+pub enum SearchByValueDataset {
+    Logs,
+    Spans,
     All,
 }
 
@@ -488,9 +494,9 @@ Examples:
         #[arg(long, conflicts_with = "name")]
         value: Option<String>,
 
-        /// Dataset to search: logs, spans, or all (all is only valid with --value).
+        /// Dataset to search: logs or spans (--name); logs, spans, or all (--value).
         #[arg(long, default_value = "logs")]
-        dataset: SearchFieldsDataset,
+        dataset: SearchByValueDataset,
 
         /// Maximum number of results to return.
         #[arg(long, default_value_t = 10)]
@@ -3312,25 +3318,30 @@ async fn main() -> Result<()> {
             dataset,
             limit,
             offset,
-        } => {
-            let dataset_str = match dataset {
-                SearchFieldsDataset::Logs => "logs",
-                SearchFieldsDataset::Spans => "spans",
-                SearchFieldsDataset::All => "all",
-            };
-            match (name.as_deref(), value.as_deref()) {
-                (Some(n), _) => {
-                    commands::search_fields::run(&targets, n, dataset_str, limit, output).await?;
-                }
-                (_, Some(v)) => {
-                    commands::search_by_value::run(&targets, v, dataset_str, limit, offset, output)
-                        .await?;
-                }
-                (None, None) => {
-                    bail!("specify --name or --value");
-                }
+        } => match (name.as_deref(), value.as_deref()) {
+            (Some(n), _) => {
+                let dataset_str = match dataset {
+                    SearchByValueDataset::Logs => "logs",
+                    SearchByValueDataset::Spans => "spans",
+                    SearchByValueDataset::All => {
+                        bail!("--dataset all is only valid with --value");
+                    }
+                };
+                commands::search_fields::run(&targets, n, dataset_str, limit, output).await?;
             }
-        }
+            (_, Some(v)) => {
+                let dataset_str = match dataset {
+                    SearchByValueDataset::Logs => "logs",
+                    SearchByValueDataset::Spans => "spans",
+                    SearchByValueDataset::All => "all",
+                };
+                commands::search_by_value::run(&targets, v, dataset_str, limit, offset, output)
+                    .await?;
+            }
+            (None, None) => {
+                bail!("specify --name or --value");
+            }
+        },
 
         Commands::Olly { cmd } => match cmd {
             OllyCmd::Ask {

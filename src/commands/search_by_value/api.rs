@@ -48,3 +48,52 @@ pub async fn search_by_value(
     });
     client.post(SEARCH_BY_VALUE_PATH, &body).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_single_result() {
+        let json = r#"{
+            "matches": [
+                {
+                    "key_matched": "$d.status",
+                    "value": "payment_failed",
+                    "similarity_score": 0.87
+                }
+            ],
+            "total_hits": 1
+        }"#;
+        let resp: SearchByValueResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.total_hits, 1);
+        assert_eq!(resp.matches.len(), 1);
+        let r = &resp.matches[0];
+        assert_eq!(r.key_matched, "$d.status");
+        assert_eq!(r.value, "payment_failed");
+        assert_eq!(r.similarity_score, 0.87);
+    }
+
+    #[test]
+    fn deserializes_empty_matches() {
+        let json = r#"{"matches": [], "total_hits": 0}"#;
+        let resp: SearchByValueResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.total_hits, 0);
+        assert!(resp.matches.is_empty());
+    }
+
+    #[test]
+    fn deserializes_multiple_results() {
+        let json = r#"{
+            "matches": [
+                {"key_matched": "$d.env", "value": "production", "similarity_score": 0.95},
+                {"key_matched": "$d.region", "value": "eu-west-1", "similarity_score": 0.72}
+            ],
+            "total_hits": 2
+        }"#;
+        let resp: SearchByValueResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.matches.len(), 2);
+        assert_eq!(resp.matches[0].key_matched, "$d.env");
+        assert_eq!(resp.matches[1].similarity_score, 0.72);
+    }
+}

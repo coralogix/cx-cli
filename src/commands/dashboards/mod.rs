@@ -82,7 +82,7 @@ fn folder_item_to_json(item: &DashboardFolderItem, include_profile: bool, profil
 }
 
 /// One merged row for `json` / `agents`: `serde_json::to_value` (field names = JSON keys), then optional `profile`.
-fn profiled_api_row_to_json<T: Serialize>(
+pub fn profiled_api_row_to_json<T: Serialize>(
     profile: &str,
     row: &T,
     include_profile: bool,

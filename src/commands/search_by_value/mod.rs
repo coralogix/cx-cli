@@ -6,6 +6,7 @@ use serde_json::Value;
 
 pub mod api;
 
+use crate::commands::dashboards::profiled_api_row_to_json;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
@@ -65,15 +66,9 @@ pub async fn run(
     let json_rows: Vec<Value> = all_results
         .iter()
         .map(|(profile, r)| {
-            let mut v = serde_json::to_value(r).unwrap_or(Value::Null);
-            if include_profile {
-                if let Value::Object(ref mut m) = v {
-                    m.insert("profile".to_string(), Value::String(profile.clone()));
-                }
-            }
-            v
+            profiled_api_row_to_json(profile, r, include_profile, "search-by-value")
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
 
     match output {
         OutputFormat::Json => render::render_json(&json_rows)?,

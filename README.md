@@ -25,7 +25,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 ## Features
 
 - DataPrime and PromQL at the terminal-Coralogix's proprietary query languages work end-to-end without leaving the shell.
-- 28 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
+- 27 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
 - Multi-profile fan-out with `-p prod-eu -p prod-us <command>`-run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
 - `agents` output format-token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
 - `cx schema`-outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
@@ -104,13 +104,13 @@ Follow these steps to go from a fresh install to a working query.
 
     ```bash
     # Find dashboards about error rates
-    cx dashboards semantic-search "error rate monitoring"
-    
+    cx dashboards search "error rate monitoring"
+
     # Search dashboard query content
-    cx dashboards search "http status 500"
-    
+    cx dashboards query-search --description "http status 500"
+
     # Find queries using a specific field
-    cx dashboards queries-by-field '$d.http.status_code'
+    cx dashboards query-search --field '$d.http.status_code'
     ```
 
 Run `cx <command> --help` for full syntax and examples on any command.
@@ -128,14 +128,13 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx spans` | Query distributed spans |
 | `cx metrics` | Query metrics using PromQL: `query`, `query-range`, `search`, `get-labels` |
 | `cx dataprime` | DataPrime language reference and raw queries: `list`, `show`, `query` |
-| `cx search-fields` | Find log or span fields by natural-language description |
-| `cx search-by-value` | Search field keys by their value content |
+| `cx search-fields` | Find log or span fields by name (`--name`) or by value content (`--value`) |
 
 **Observe**
 
 | Command | Purpose |
 |---|---|
-| `cx dashboards` | Manage dashboards and folders. Includes semantic search: `semantic-search` (find by description), `search` (search query content), `queries-by-field` (find queries using a field) |
+| `cx dashboards` | Manage dashboards and folders. Semantic search: `search <desc>` (find by description), `query-search --description <text>` (search query content), `query-search --field <path>` (find queries using a field) |
 | `cx views` | Manage saved views and view folders |
 | `cx slos` | Manage SLO definitions |
 

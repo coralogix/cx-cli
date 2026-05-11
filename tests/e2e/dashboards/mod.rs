@@ -133,7 +133,10 @@ fn dashboards_query_search_field_returns_results() {
         !arr.is_empty(),
         "dashboards query-search --field 'team_id' should return at least one result"
     );
-    harness::assert_array_of_objects_with_keys(&v, &["query_text", "similarity", "dashboard_name"]);
+    harness::assert_array_of_objects_with_keys(
+        &v,
+        &["query_text", "dashboard_name", "matched_fields"],
+    );
 }
 
 #[test]

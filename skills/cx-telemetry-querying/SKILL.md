@@ -90,6 +90,7 @@ If you know a concrete value that should appear in the data but don't know which
 
 ```bash
 cx search-fields "payment_failed" -s value --dataset logs
+cx search-fields "grpc.status.UNAVAILABLE" -s value --dataset spans
 cx search-fields "eu-west-1" -s value --dataset all
 ```
 
@@ -137,7 +138,8 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx metrics search --description <text>` | Semantic metric search | When you know what you want but not the name |
 | `cx search-fields "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |
 | `cx search-fields "<text>" --dataset spans` | Find span fields by description | Discovery for trace-based questions |
-| `cx search-fields "<value>" -s value --dataset logs` | Find fields that contain a known value | When you know a value but not which field holds it — also reveals field type from the returned values |
+| `cx search-fields "<value>" -s value --dataset logs` | Find log fields that contain a known value | When you know a value but not which log field holds it — also reveals field type from the returned values |
+| `cx search-fields "<value>" -s value --dataset spans` | Find span fields that contain a known value | When you know a value but not which span attribute holds it |
 | `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | When you want to search across both logs and spans at once |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |

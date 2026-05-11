@@ -17,9 +17,6 @@ fn temp_home() -> PathBuf {
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
-    // Close stdin so any interactive prompt fails fast instead of hanging.
-    // On Windows CI the inherited console stdin blocks indefinitely otherwise.
-    cmd.write_stdin("");
     cmd
 }
 
@@ -71,17 +68,19 @@ fn add_empty_name_via_arg_is_rejected() {
 #[test]
 fn set_default_flag_is_accepted_by_clap() {
     let tmp = temp_home();
-    // Without a TTY, `profiles add --set-default` will fail because the
-    // interactive prompts can't run, but it should NOT fail with a Clap
-    // argument parsing error.
+    // Verify clap registers the flag via --help. We can't drive the full
+    // `profiles add` flow without a TTY, and on Windows the prompt code
+    // (crossterm reading CONIN$ directly) hangs instead of failing fast
+    // even with stdin redirected.
     let output = cx(&tmp)
-        .args(["profiles", "add", "myprofile", "--set-default"])
+        .args(["profiles", "add", "--help"])
         .output()
         .expect("failed to run cx");
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "--help should exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        !stderr.contains("unexpected argument"),
-        "--set-default should be a recognized flag, stderr: {stderr}"
+        stdout.contains("--set-default"),
+        "--set-default should appear in help, got: {stdout}"
     );
 }
 

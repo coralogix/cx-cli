@@ -2,6 +2,7 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
+use clap::parser::ValueSource;
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
@@ -2198,9 +2199,27 @@ async fn main() -> Result<()> {
         // DataprimeCmd::Query needs credentials - fall through.
     }
 
+    // When the user names a profile explicitly via --profile but did NOT pass
+    // --api-key / --region on the command line, suppress the corresponding
+    // env-var value (CX_API_KEY / CX_REGION) so the profile's own stored
+    // credentials and region are used instead.
+    let profile_from_cli = matches.value_source("profile") == Some(ValueSource::CommandLine);
+    let api_key_from_cli = matches.value_source("api_key") == Some(ValueSource::CommandLine);
+    let region_from_cli = matches.value_source("region") == Some(ValueSource::CommandLine);
+    let effective_api_key: Option<&str> = if profile_from_cli && !api_key_from_cli {
+        None
+    } else {
+        cli.api_key.as_deref()
+    };
+    let effective_region: Option<&str> = if profile_from_cli && !region_from_cli {
+        None
+    } else {
+        cli.region.as_deref()
+    };
+
     // Reject --api-key / --region when more than one --profile is supplied,
     // because it would be ambiguous which profile the override targets.
-    if cli.profile.len() > 1 && (cli.api_key.is_some() || cli.region.is_some()) {
+    if cli.profile.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {
         bail!(
             "Cannot combine multiple --profile values with --api-key or --region overrides.\n\
              Store per-profile credentials with `cx profiles add <name>`."
@@ -2217,7 +2236,7 @@ async fn main() -> Result<()> {
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = config::resolve_all(&cli.profile, cli.api_key.as_deref(), cli.region.as_deref())
+    let configs = config::resolve_all(&cli.profile, effective_api_key, effective_region)
         .await
         .map_err(|e| {
             eprintln!("Configuration error: {e}");

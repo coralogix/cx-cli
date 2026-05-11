@@ -410,10 +410,17 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 /// Resolve a single named profile, respecting optional CLI overrides.
 ///
 /// Resolution order for the bearer token:
-///   1. `--api-key` / `CX_API_KEY` CLI override (always wins, any auth mode)
-///   2. `AuthKind::ApiKey` - reads the key from OS keyring or profile file
-///   3. `AuthKind::OAuth`  - loads the cached access token; refreshes via the
-///      refresh token if the access token has expired (or is missing)
+///   1. `--api-key` CLI flag (explicit command-line value, always wins)
+///   2. Profile credentials (when `--profile` is explicit on the CLI, the
+///      profile's own key/token is used; `CX_API_KEY` env var is suppressed
+///      by `main.rs` in this case)
+///   3. `CX_API_KEY` env var (when no `--profile` was explicitly passed)
+///
+/// Resolution order for the endpoint region:
+///   1. `--region` CLI flag (explicit command-line value, always wins)
+///   2. Profile's configured region (when `--profile` is explicit on the CLI;
+///      `CX_REGION` env var is suppressed by `main.rs`)
+///   3. `CX_REGION` env var (when no `--profile` was explicitly passed)
 ///
 /// Env-only mode: when no profile file exists on disk but both an API key
 /// override (`--api-key` / `CX_API_KEY`) and a region override (`--region` /
@@ -442,7 +449,7 @@ async fn resolve_single(
         profile.region = region.parse()?;
     }
 
-    // --api-key / CX_API_KEY always overrides, regardless of auth mode.
+    // CLI-level api_key_override (already filtered by main.rs) wins over profile creds.
     let bearer = if let Some(key) = api_key_override {
         key.to_string()
     } else {

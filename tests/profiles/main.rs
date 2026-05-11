@@ -17,6 +17,9 @@ fn temp_home() -> PathBuf {
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
+    // Close stdin so any interactive prompt fails fast instead of hanging.
+    // On Windows CI the inherited console stdin blocks indefinitely otherwise.
+    cmd.write_stdin("");
     cmd
 }
 

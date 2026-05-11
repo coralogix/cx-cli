@@ -26,8 +26,8 @@ Use this skill to discover existing Coralogix dashboards and widgets using seman
 | Goal | Command |
 |---|---|
 | Check if a dashboard for a service or topic already exists | `cx dashboards search` |
-| Find widgets that answer a question similar to one you're building | `cx dashboards query-search --description` |
-| Discover what dashboards already visualize a specific field | `cx dashboards query-search --field` |
+| Find widgets whose queries cover a topic you care about | `cx dashboards query-search --description` |
+| Find widgets whose queries reference a specific field path | `cx dashboards query-search --field` |
 | Browse all dashboards | `cx dashboards catalog` |
 
 ## Examples

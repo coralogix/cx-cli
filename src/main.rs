@@ -35,13 +35,7 @@ fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
 pub enum SearchFieldsDataset {
     Logs,
     Spans,
-}
-
-/// Dataset choice for `search-by-value`.
-#[derive(Debug, Clone, ValueEnum)]
-pub enum SearchByValueDataset {
-    Logs,
-    Spans,
+    /// Search across both logs and spans (only valid with --value).
     All,
 }
 
@@ -59,8 +53,7 @@ Query:
   spans              Query spans using DataPrime syntax
   metrics            Query metrics using PromQL
   dataprime          DataPrime language reference and raw queries
-  search-fields      Search log/span fields semantically
-  search-by-value    Search field keys by their value content
+  search-fields      Search log/span fields by name or value
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -479,43 +472,31 @@ Examples:
         cmd: SlosCmd,
     },
 
-    /// Search log/span fields semantically by description.
+    /// Search log/span fields by name description or by value content.
     #[command(after_help = "\
 Examples:
-  cx search-fields \"http response status code\"
-  cx search-fields \"error severity level\" --dataset spans --limit 10")]
+  cx search-fields --name \"http response status code\"
+  cx search-fields --name \"error severity level\" --dataset spans --limit 10
+  cx search-fields --value \"payment\" --dataset logs
+  cx search-fields --value \"kubernetes pod\" --dataset all --limit 20 --offset 10")]
     SearchFields {
-        /// Natural-language description to search for (e.g. "http response code").
-        text: String,
+        /// Search for fields by name/description using semantic similarity.
+        #[arg(long, conflicts_with = "value")]
+        name: Option<String>,
 
-        /// Dataset to search: logs or spans.
+        /// Search for fields by value content using semantic similarity.
+        #[arg(long, conflicts_with = "name")]
+        value: Option<String>,
+
+        /// Dataset to search: logs, spans, or all (all is only valid with --value).
         #[arg(long, default_value = "logs")]
         dataset: SearchFieldsDataset,
-
-        /// Maximum number of results to return.
-        #[arg(long, default_value_t = 5)]
-        limit: u32,
-    },
-
-    /// Fuzzy-search log/span field keys by their value content.
-    #[command(after_help = "\
-Examples:
-  cx search-by-value \"payment\"
-  cx search-by-value \"500 error\" --dataset spans --limit 10
-  cx search-by-value \"kubernetes pod\" --dataset all --limit 20 --offset 10")]
-    SearchByValue {
-        /// Value content to search for (e.g. "payment", "kubernetes pod name").
-        query: String,
-
-        /// Dataset to search: logs, spans, or all.
-        #[arg(long, default_value = "logs")]
-        dataset: SearchByValueDataset,
 
         /// Maximum number of results to return.
         #[arg(long, default_value_t = 10)]
         limit: u32,
 
-        /// Number of results to skip (for pagination).
+        /// Number of results to skip for pagination (only used with --value).
         #[arg(long, default_value_t = 0)]
         offset: u32,
     },
@@ -790,6 +771,40 @@ Examples:
         /// Dashboard ID.
         dashboard_id: String,
     },
+    /// Search dashboards semantically by description.
+    #[command(after_help = "\
+Examples:
+  cx dashboards search \"kubernetes pod memory\"
+  cx dashboards search \"latency over time\" --limit 5")]
+    Search {
+        /// Natural-language description to search for.
+        description: String,
+
+        /// Maximum number of results to return.
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
+
+    /// Search dashboard queries by field reference or description.
+    #[command(after_help = "\
+Examples:
+  cx dashboards query-search --field \"$d.http.status\"
+  cx dashboards query-search --description \"http error rate\"
+  cx dashboards query-search --description \"cpu usage\" --limit 5")]
+    QuerySearch {
+        /// Find queries that reference a specific field path.
+        #[arg(long, conflicts_with = "description")]
+        field: Option<String>,
+
+        /// Find queries matching a natural-language description.
+        #[arg(long, conflicts_with = "field")]
+        description: Option<String>,
+
+        /// Maximum number of results to return.
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
+
     /// Manage dashboard folders.
     Folders {
         #[command(subcommand)]
@@ -2381,6 +2396,25 @@ async fn main() -> Result<()> {
                 )?;
                 commands::dashboards::run_delete(&targets, &dashboard_id).await?;
             }
+            DashboardsCmd::Search { description, limit } => {
+                commands::dashboards::run_semantic_search(&targets, &description, limit, output)
+                    .await?;
+            }
+            DashboardsCmd::QuerySearch {
+                field,
+                description,
+                limit,
+            } => match (field.as_deref(), description.as_deref()) {
+                (Some(f), _) => {
+                    commands::dashboards::run_queries_by_field(&targets, f, limit, output).await?;
+                }
+                (_, Some(d)) => {
+                    commands::dashboards::run_search(&targets, d, limit, output).await?;
+                }
+                (None, None) => {
+                    bail!("specify --field or --description");
+                }
+            },
             DashboardsCmd::Folders { cmd } => match cmd {
                 FoldersCmd::List => {
                     commands::dashboards::run_folders_list(&targets, output).await?;
@@ -3273,15 +3307,29 @@ async fn main() -> Result<()> {
         },
 
         Commands::SearchFields {
-            text,
+            name,
+            value,
             dataset,
             limit,
+            offset,
         } => {
             let dataset_str = match dataset {
                 SearchFieldsDataset::Logs => "logs",
                 SearchFieldsDataset::Spans => "spans",
+                SearchFieldsDataset::All => "all",
             };
-            commands::search_fields::run(&targets, &text, dataset_str, limit, output).await?;
+            match (name.as_deref(), value.as_deref()) {
+                (Some(n), _) => {
+                    commands::search_fields::run(&targets, n, dataset_str, limit, output).await?;
+                }
+                (_, Some(v)) => {
+                    commands::search_by_value::run(&targets, v, dataset_str, limit, offset, output)
+                        .await?;
+                }
+                (None, None) => {
+                    bail!("specify --name or --value");
+                }
+            }
         }
 
         Commands::Olly { cmd } => match cmd {
@@ -3319,21 +3367,6 @@ async fn main() -> Result<()> {
                 }
             },
         },
-
-        Commands::SearchByValue {
-            query,
-            dataset,
-            limit,
-            offset,
-        } => {
-            let dataset_str = match dataset {
-                SearchByValueDataset::Logs => "logs",
-                SearchByValueDataset::Spans => "spans",
-                SearchByValueDataset::All => "all",
-            };
-            commands::search_by_value::run(&targets, &query, dataset_str, limit, offset, output)
-                .await?;
-        }
     }
 
     Ok(())

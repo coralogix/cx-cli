@@ -90,6 +90,7 @@ fn render_results(
 ) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json_auto(all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(all_results)?,
         OutputFormat::Agents => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;

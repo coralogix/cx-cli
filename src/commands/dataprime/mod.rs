@@ -138,6 +138,21 @@ pub fn run_list(
                 .collect();
             println!("{}", serde_json::to_string_pretty(&json_items)?);
         }
+        OutputFormat::Yaml => {
+            let yaml_items: Vec<_> = items
+                .iter()
+                .map(|(name, kind, entry)| {
+                    serde_json::json!({
+                        "name": name,
+                        "type": kind,
+                        "syntax": entry.syntax,
+                        "description": first_sentence(&entry.description),
+                        "category": entry.category,
+                    })
+                })
+                .collect::<Vec<_>>();
+            println!("{}", serde_yaml::to_string(&yaml_items)?.trim_end());
+        }
         OutputFormat::Agents => {
             let agent_items: Vec<_> = items
                 .iter()
@@ -220,6 +235,16 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
                 "category": entry.category,
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        OutputFormat::Yaml => {
+            let val = serde_json::json!({
+                "name": name,
+                "type": kind,
+                "syntax": entry.syntax,
+                "description": entry.description,
+                "category": entry.category,
+            });
+            println!("{}", serde_yaml::to_string(&val)?.trim_end());
         }
         OutputFormat::Agents => {
             let json = serde_json::json!({
@@ -340,6 +365,9 @@ pub fn render_results(
     match output {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&merged.rows)?);
+        }
+        OutputFormat::Yaml => {
+            println!("{}", serde_yaml::to_string(&merged.rows)?.trim_end());
         }
         OutputFormat::Agents => {
             if merged.is_aggregate {

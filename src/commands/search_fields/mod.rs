@@ -63,6 +63,21 @@ pub async fn run(
                 .collect();
             render::render_json(&json_rows)?;
         }
+        OutputFormat::Yaml => {
+            let yaml_rows: Vec<Value> = all_results
+                .iter()
+                .map(|(profile, r)| {
+                    let mut v = serde_json::to_value(r).unwrap_or(Value::Null);
+                    if include_profile {
+                        if let Value::Object(ref mut m) = v {
+                            m.insert("profile".to_string(), Value::String(profile.clone()));
+                        }
+                    }
+                    v
+                })
+                .collect();
+            render::render_yaml(&yaml_rows)?;
+        }
         OutputFormat::Text => {
             if all_results.is_empty() {
                 render::print_no_results("No matching fields found.");

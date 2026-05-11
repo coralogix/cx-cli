@@ -56,6 +56,34 @@ pub fn render_json_auto(rows: &[Value]) -> Result<()> {
     Ok(())
 }
 
+// ── YAML output ──────────────────────────────────────────────────────────────
+
+/// Format rows as a YAML array.
+pub fn format_yaml(rows: &[Value]) -> Result<String> {
+    Ok(serde_yaml::to_string(rows)?)
+}
+
+/// Render rows as a YAML array (for list commands).
+pub fn render_yaml(rows: &[Value]) -> Result<()> {
+    println!("{}", format_yaml(rows)?);
+    Ok(())
+}
+
+/// Format YAML, unwrapping single-element arrays to a bare object.
+pub fn format_yaml_auto(rows: &[Value]) -> Result<String> {
+    if rows.len() == 1 {
+        Ok(serde_yaml::to_string(&rows[0])?)
+    } else {
+        Ok(serde_yaml::to_string(rows)?)
+    }
+}
+
+/// Render YAML, unwrapping single-element arrays (for get commands).
+pub fn render_yaml_auto(rows: &[Value]) -> Result<()> {
+    println!("{}", format_yaml_auto(rows)?);
+    Ok(())
+}
+
 // ── Text output helpers ──────────────────────────────────────────────────────
 
 /// Print a "no results" message in yellow.
@@ -257,5 +285,19 @@ mod tests {
         let mut val = json!("plain string");
         tag_get_result(&mut val, "prod");
         assert_eq!(val, json!("plain string"));
+    }
+
+    #[test]
+    fn format_yaml_auto_unwraps_single() {
+        let rows = vec![json!({"id": "abc"})];
+        let output = format_yaml_auto(&rows).unwrap();
+        assert!(output.contains("id: abc"));
+    }
+
+    #[test]
+    fn format_yaml_renders_array() {
+        let rows = vec![json!({"x": 1})];
+        let output = format_yaml(&rows).unwrap();
+        assert!(output.contains("- x: 1"));
     }
 }

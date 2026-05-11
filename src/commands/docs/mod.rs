@@ -231,6 +231,13 @@ pub async fn run_search(query: &str, limit: u32, output: OutputFormat) -> Result
                 .collect();
             render::render_json(&json_rows)?;
         }
+        OutputFormat::Yaml => {
+            let yaml_rows: Vec<serde_json::Value> = rows
+                .iter()
+                .map(|r| serde_json::to_value(r).unwrap_or_default())
+                .collect();
+            render::render_yaml(&yaml_rows)?;
+        }
         OutputFormat::Agents => {
             let values: Vec<serde_json::Value> = rows
                 .iter()
@@ -259,6 +266,9 @@ pub async fn run_fetch(suffix: &str, output: OutputFormat) -> Result<()> {
         }
         OutputFormat::Json => {
             render::render_json_auto(&[serde_json::to_value(&result)?])?;
+        }
+        OutputFormat::Yaml => {
+            render::render_yaml_auto(&[serde_json::to_value(&result)?])?;
         }
         OutputFormat::Agents => {
             render::render_agents(&[serde_json::to_value(&result)?])?;

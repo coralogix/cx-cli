@@ -40,6 +40,8 @@ pub enum OutputFormat {
     Text,
     /// Raw JSON output.
     Json,
+    /// YAML output format.
+    Yaml,
     /// Token-aware, AI-agent-optimised JSON output.
     Agents,
 }
@@ -49,6 +51,7 @@ impl OutputFormat {
         match self {
             OutputFormat::Text => "text",
             OutputFormat::Json => "json",
+            OutputFormat::Yaml => "yaml",
             OutputFormat::Agents => "agents",
         }
     }

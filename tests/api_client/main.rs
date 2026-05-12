@@ -205,6 +205,28 @@ async fn error_404_catch_all() {
 }
 
 #[tokio::test]
+async fn error_401_with_nested_error_message() {
+    init_tls();
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/test"))
+        .respond_with(
+            ResponseTemplate::new(401)
+                .set_body_json(json!({"error": {"message": "Bearer prefix missing"}})),
+        )
+        .mount(&server)
+        .await;
+    let client = CxClient::new(server.uri(), "test-key").unwrap();
+    let err = client.get::<Value>("/test", &[]).await.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Bearer prefix missing"),
+        "expected nested server message, got: {msg}"
+    );
+    assert!(msg.contains("cx profiles add"), "expected hint, got: {msg}");
+}
+
+#[tokio::test]
 async fn error_500_with_raw_body() {
     init_tls();
     let server = MockServer::start().await;

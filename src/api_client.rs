@@ -128,10 +128,7 @@ impl CxClient {
             .and_then(|v| v.to_str().ok())
             .map(String::from);
         let body = resp.text().await.unwrap_or_default();
-        let detail = serde_json::from_str::<Value>(&body)
-            .ok()
-            .and_then(|v| v["message"].as_str().map(String::from))
-            .filter(|s| !s.is_empty());
+        let detail = extract_error_detail(&body);
 
         match status {
             StatusCode::UNAUTHORIZED => Err(CxError::Auth(match detail {
@@ -156,5 +153,83 @@ impl CxClient {
                 message: detail.unwrap_or(body),
             }),
         }
+    }
+}
+
+/// Extract a human-readable error detail from a response body.
+///
+/// Tries common JSON error shapes in order:
+/// 1. `{"message": "..."}`
+/// 2. `{"error": "..."}` (string)
+/// 3. `{"error": {"message": "..."}}`
+/// 4. `{"detail": "..."}`
+///
+/// Returns `None` when the body is not JSON, none of the fields are present,
+/// or every candidate is an empty string.
+fn extract_error_detail(body: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(body).ok()?;
+    let non_empty = |val: &Value| val.as_str().filter(|s| !s.is_empty()).map(String::from);
+    non_empty(&v["message"])
+        .or_else(|| non_empty(&v["error"]))
+        .or_else(|| non_empty(&v["error"]["message"]))
+        .or_else(|| non_empty(&v["detail"]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_error_detail;
+
+    #[test]
+    fn prefers_top_level_message() {
+        let body = r#"{"message":"primary","error":"secondary","detail":"tertiary"}"#;
+        assert_eq!(extract_error_detail(body).as_deref(), Some("primary"));
+    }
+
+    #[test]
+    fn falls_back_to_error_string() {
+        let body = r#"{"error":"Token expired"}"#;
+        assert_eq!(extract_error_detail(body).as_deref(), Some("Token expired"));
+    }
+
+    #[test]
+    fn falls_back_to_nested_error_message() {
+        let body = r#"{"error":{"message":"User lacks role"}}"#;
+        assert_eq!(
+            extract_error_detail(body).as_deref(),
+            Some("User lacks role")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_detail() {
+        let body = r#"{"detail":"resource not found"}"#;
+        assert_eq!(
+            extract_error_detail(body).as_deref(),
+            Some("resource not found")
+        );
+    }
+
+    #[test]
+    fn empty_strings_are_skipped() {
+        let body = r#"{"message":"","error":"actual"}"#;
+        assert_eq!(extract_error_detail(body).as_deref(), Some("actual"));
+    }
+
+    #[test]
+    fn returns_none_for_non_json() {
+        assert_eq!(extract_error_detail("plain text"), None);
+        assert_eq!(extract_error_detail(""), None);
+    }
+
+    #[test]
+    fn returns_none_when_no_recognized_fields() {
+        let body = r#"{"code":42,"trace_id":"abc"}"#;
+        assert_eq!(extract_error_detail(body), None);
+    }
+
+    #[test]
+    fn returns_none_when_error_object_has_no_message() {
+        let body = r#"{"error":{"code":"E_BAD"}}"#;
+        assert_eq!(extract_error_detail(body), None);
     }
 }

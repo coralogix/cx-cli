@@ -15,11 +15,10 @@
 
 ## Quick start
 
-Run `cx profiles add` to create or update the default profile. Pass a name to create a named profile:
+Run `cx profiles add <name>` to create a new profile or update an existing one:
 
 ```sh
-cx profiles add          # default profile
-cx profiles add <name>   # named profile
+cx profiles add <name>
 ```
 
 At the prompts:

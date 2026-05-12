@@ -1,7 +1,9 @@
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 
 /// Storage tier to search for logs.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Tier {
     /// Hot storage: fast, recent data (default).
     #[value(name = "frequent")]

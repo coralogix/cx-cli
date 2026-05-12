@@ -30,6 +30,7 @@ pub mod routers;
 pub mod saml;
 pub mod schema;
 pub mod scopes;
+pub mod search_by_value;
 pub mod search_fields;
 pub mod slos;
 pub mod spans;

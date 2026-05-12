@@ -86,3 +86,81 @@ fn dashboards_folders_delete_nonexistent() {
         "expected 'Deleting dashboard folder' on stderr, got: {stderr}"
     );
 }
+
+#[test]
+#[ignore]
+fn dashboards_query_search_description_returns_results() {
+    if harness::require_creds("dashboards_query_search_description").is_none() {
+        return;
+    }
+    let v = harness::run_ok_json(&[
+        "dashboards",
+        "query-search",
+        "--description",
+        "data usage by application",
+        "--limit",
+        "5",
+        "-o",
+        "json",
+    ]);
+    let arr = v.as_array().expect("should be a JSON array");
+    assert!(
+        !arr.is_empty(),
+        "query-search --description should return at least one result for this account"
+    );
+    harness::assert_array_of_objects_with_keys(&v, &["query_text", "similarity", "dashboard_name"]);
+}
+
+#[test]
+#[ignore]
+fn dashboards_query_search_field_returns_results() {
+    if harness::require_creds("dashboards_query_search_field").is_none() {
+        return;
+    }
+    // GET /api/v1/olly-kb/queries/by-field — returns results for fields referenced in dashboards
+    let v = harness::run_ok_json(&[
+        "dashboards",
+        "query-search",
+        "--field",
+        "team_id",
+        "--limit",
+        "5",
+        "-o",
+        "json",
+    ]);
+    let arr = v.as_array().expect("should be a JSON array");
+    assert!(
+        !arr.is_empty(),
+        "dashboards query-search --field 'team_id' should return at least one result"
+    );
+    harness::assert_array_of_objects_with_keys(
+        &v,
+        &["query_text", "dashboard_name", "matched_fields"],
+    );
+}
+
+#[test]
+#[ignore]
+fn dashboards_search_exits_ok() {
+    if harness::require_creds("dashboards_search").is_none() {
+        return;
+    }
+    // GET /api/v1/olly-kb/dashboards/semantic-search — may return empty for accounts
+    // without indexed dashboard embeddings; CLI must still exit 0.
+    let output = harness::cx()
+        .args([
+            "dashboards",
+            "search",
+            "data usage",
+            "--limit",
+            "5",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute cx");
+    assert!(
+        output.status.success(),
+        "dashboards search should exit 0 even with empty results"
+    );
+}

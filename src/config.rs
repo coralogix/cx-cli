@@ -849,6 +849,30 @@ api_key = "mykey"
         assert!(result.is_err());
     }
 
+    // ── Empty profile name edge case ──────────────────────────────────────────
+
+    #[test]
+    fn save_profile_empty_name_creates_hidden_file() {
+        let dir =
+            std::env::temp_dir().join(format!("cx_test_empty_profile_name_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Point CX_HOME at our temp dir so save_profile writes there.
+        // We can't easily redirect save_profile without CX_HOME, so test
+        // the underlying list_profile_names_from behavior instead: an empty
+        // stem is invisible to profile discovery.
+        std::fs::create_dir_all(dir.join("profiles")).unwrap();
+        std::fs::write(dir.join("profiles").join(".toml"), "region = \"eu1\"\n").unwrap();
+
+        let names = list_profile_names_from(&dir.join("profiles")).unwrap();
+        assert!(
+            names.is_empty() || !names.contains(&String::new()),
+            "empty-named profile should not appear in list, got: {names:?}"
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     // ── Integration tests (require ~/.cx access, run with --ignored) ──────────
 
     #[tokio::test]

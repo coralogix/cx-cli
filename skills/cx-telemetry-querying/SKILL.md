@@ -86,6 +86,14 @@ cx search-fields "payment total" --dataset spans
 cx search-fields "purchase value" --dataset logs --limit 10
 ```
 
+If you know a concrete value that should appear in the data but don't know which field holds it, use value search instead. It returns the matching field keys alongside sample values, which also lets you infer the field's type (string, numeric, enum, etc.):
+
+```bash
+cx search-fields "payment_failed" -s value --dataset logs
+cx search-fields "grpc.status.UNAVAILABLE" -s value --dataset spans
+cx search-fields "eu-west-1" -s value --dataset all
+```
+
 **Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add`.
 
 If matching fields are found:
@@ -130,8 +138,14 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx metrics search --description <text>` | Semantic metric search | When you know what you want but not the name |
 | `cx search-fields "<text>" --dataset logs` | Find log fields by description | Discovery for log-based questions |
 | `cx search-fields "<text>" --dataset spans` | Find span fields by description | Discovery for trace-based questions |
+| `cx search-fields "<value>" -s value --dataset logs` | Find log fields that contain a known value | When you know a value but not which log field holds it — also reveals field type from the returned values |
+| `cx search-fields "<value>" -s value --dataset spans` | Find span fields that contain a known value | When you know a value but not which span attribute holds it |
+| `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | When you want to search across both logs and spans at once |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |
+| `cx dashboards search "<description>"` | Find existing dashboards by natural-language description | Before creating a new dashboard — check if one already exists |
+| `cx dashboards query-search --description "<text>"` | Find dashboard widgets whose queries cover a topic | Discover how a topic is already being monitored |
+| `cx dashboards query-search --field "<field-path>"` | Find widgets that reference a specific field | Reuse existing PromQL/DataPrime patterns for a known field |
 
 ---
 
@@ -191,6 +205,7 @@ Not every question is answered by querying data. If the user's intent is operati
 | Configuring parsing rules, enrichments, E2M | `cx-data-pipeline` |
 | Access audit, API keys, user management | `cx-platform-admin` |
 | Creating or managing dashboards | `cx-create-dashboard` |
+| Finding or searching existing dashboards | `cx-search-dashboard` |
 
 ---
 

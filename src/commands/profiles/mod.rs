@@ -165,9 +165,26 @@ pub fn run_list() -> Result<()> {
 
 // ── Add ───────────────────────────────────────────────────────────────────────
 
-pub async fn run_add(profile_name: Option<String>) -> Result<()> {
-    let name = profile_name.unwrap_or_else(|| "default".to_string());
+pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<()> {
     let is_first_profile = list_profile_names()?.is_empty();
+
+    let name = match profile_name {
+        Some(n) => {
+            if n.is_empty() {
+                anyhow::bail!("Profile name cannot be empty.");
+            }
+            n
+        }
+        None => {
+            let mut prompt = Text::new("Profile name:")
+                .with_help_message("A short identifier for this profile, e.g. 'prod' or 'staging'.")
+                .with_validator(inquire::validator::MinLengthValidator::new(1));
+            if is_first_profile {
+                prompt = prompt.with_default("default");
+            }
+            prompt.prompt()?
+        }
+    };
 
     println!("Configuring profile '{name}'\n");
 
@@ -208,7 +225,7 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
 
     save_profile(&name, &profile)?;
 
-    // On first profile creation, prompt for global safety settings.
+    // On first profile creation, prompt for global safety settings and auto-set as default.
     if is_first_profile {
         println!("\n─── Global Safety Settings ───");
         println!("These apply to all profiles. Change later in ~/.cx/config.toml\n");
@@ -230,7 +247,23 @@ pub async fn run_add(profile_name: Option<String>) -> Result<()> {
                 .with_help_message("When disabled, 'olly ask' is blocked.")
                 .prompt()?;
 
+        global_config.default_profile = name.clone();
         save_config(&global_config)?;
+    }
+
+    if !is_first_profile {
+        let mut global_config = load_config().unwrap_or_default();
+        let should_set_default = if set_default {
+            true
+        } else {
+            Confirm::new(&format!("Set '{name}' as the default profile?"))
+                .with_default(false)
+                .prompt()?
+        };
+        if should_set_default {
+            global_config.default_profile = name.clone();
+            save_config(&global_config)?;
+        }
     }
 
     let cx_dir = crate::config::config_dir()?;

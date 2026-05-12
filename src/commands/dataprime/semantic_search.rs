@@ -208,4 +208,67 @@ mod tests {
     fn rejects_invalid_top_level_prefix() {
         assert_eq!(serialize_path_for_query(&path(&["$x", "field"])), None);
     }
+
+    #[test]
+    fn test_field_search_item_with_extra_fields() {
+        let json = r#"{
+            "path_array": ["http", "status_code"],
+            "description": "HTTP status code",
+            "similarity_score": 0.95,
+            "dataset_scope": "USER_DATA",
+            "labels": {"category": "http", "type": "numeric"}
+        }"#;
+
+        let item: FieldSearchItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.path_array, vec!["http", "status_code"]);
+        assert_eq!(item.description, "HTTP status code");
+        assert_eq!(item.similarity_score, 0.95);
+        assert_eq!(item.dataset_scope, Some("USER_DATA".to_string()));
+        assert!(item.labels.is_object());
+    }
+
+    #[test]
+    fn test_field_search_item_without_extra_fields() {
+        let json = r#"{
+            "path_array": ["http", "status_code"],
+            "description": "HTTP status code",
+            "similarity_score": 0.95
+        }"#;
+
+        let item: FieldSearchItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.path_array, vec!["http", "status_code"]);
+        assert_eq!(item.description, "HTTP status code");
+        assert_eq!(item.similarity_score, 0.95);
+        assert_eq!(item.dataset_scope, None);
+        assert!(item.labels.is_null());
+    }
+
+    #[test]
+    fn test_field_search_item_with_null_dataset_scope() {
+        let json = r#"{
+            "path_array": ["http", "status_code"],
+            "description": "HTTP status code",
+            "similarity_score": 0.95,
+            "dataset_scope": null,
+            "labels": null
+        }"#;
+
+        let item: FieldSearchItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.dataset_scope, None);
+        assert!(item.labels.is_null());
+    }
+
+    #[test]
+    fn test_field_search_item_with_metadata_scope() {
+        let json = r#"{
+            "path_array": ["applicationName"],
+            "description": "Application name",
+            "similarity_score": 0.88,
+            "dataset_scope": "METADATA",
+            "labels": {}
+        }"#;
+
+        let item: FieldSearchItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.dataset_scope, Some("METADATA".to_string()));
+    }
 }

@@ -95,10 +95,10 @@ Some reference files are unique to one skill and do not belong in `skills/shared
 | Skill | Reference file | Content |
 |-------|---------------|---------|
 | `cx-alerts` | `alert-schemas.md` | JSON schemas for all 12 alert types, enum values |
-| `cx-create-dashboard` | `query-syntax.md` | Coralogix dashboard query gotchas and cross-references |
-| `cx-create-dashboard` | `widget-templates.md` | Widget JSON templates for all widget types |
-| `cx-create-dashboard` | `verification.md` | Live-verification procedure for dashboard queries |
-| `cx-create-dashboard` | `deploy.md` | Dashboard deployment procedure via `cx dashboards create` |
+| `cx-dashboards` | `query-syntax.md` | Coralogix dashboard query gotchas and cross-references |
+| `cx-dashboards` | `widget-templates.md` | Widget JSON templates for all widget types |
+| `cx-dashboards` | `verification.md` | Live-verification procedure for dashboard queries |
+| `cx-dashboards` | `deploy.md` | Dashboard deployment procedure via `cx dashboards create` |
 
 ### Naming and linking
 

@@ -170,7 +170,7 @@ cx integrations extensions deploy --from-file extension.json
 
 ### 6. Create Dashboard
 
-Use the `cx-create-dashboard` skill for the full dashboard creation workflow.
+Use the `cx-dashboards` skill for the full dashboard creation workflow.
 
 ### 7. Create SLOs
 
@@ -261,7 +261,7 @@ cx webhooks actions reorder --from-file order.json
 
 ## Related Skills
 
-- **`cx-create-dashboard`** - dashboard creation workflow for new services
+- **`cx-dashboards`** - dashboard creation and replace workflow
 - **`cx-incident-management`** - SLO creation and alert triage workflows
 - **`cx-alerts`** - alert definitions that trigger notifications
 - **`cx-telemetry-querying`** - verify data flows after setup

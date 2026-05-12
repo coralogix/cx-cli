@@ -1,13 +1,13 @@
 ---
-name: cx-create-dashboard
+name: cx-dashboards
 description: >
   Build and deploy a Coralogix dashboard for a given service from its logs,
   spans, metrics, and service specs. Discovers telemetry via cx CLI commands,
   emits importable Coralogix JSON, verifies every PromQL and DataPrime query live
-  through the `cx` CLI, and creates the dashboard via `cx dashboards create`.
-  Use whenever the user asks to create, build, generate, deploy, update, replace,
-  or modify a Coralogix dashboard, monitoring dashboard, or observability dashboard
-  for a service, app, or pipeline.
+  through the `cx` CLI, and creates or updates dashboards via `cx dashboards create`
+  and `cx dashboards replace`. Use whenever the user asks to create, build, generate,
+  deploy, update, replace, or modify a Coralogix dashboard, monitoring dashboard,
+  or observability dashboard for a service, app, or pipeline.
 metadata:
   version: "0.2.0"
 ---

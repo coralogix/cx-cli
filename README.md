@@ -100,6 +100,19 @@ Follow these steps to go from a fresh install to a working query.
     cx dashboards catalog
     ```
 
+6. Try semantic search to find dashboards or queries:
+
+    ```bash
+    # Find dashboards about error rates
+    cx dashboards search "error rate monitoring"
+
+    # Search dashboard query content
+    cx dashboards query-search --description "http status 500"
+
+    # Find queries using a specific field
+    cx dashboards query-search --field '$d.http.status_code'
+    ```
+
 Run `cx <command> --help` for full syntax and examples on any command.
 
 <details open markdown="1">
@@ -115,13 +128,13 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx spans` | Query distributed spans |
 | `cx metrics` | Query metrics using PromQL: `query`, `query-range`, `search`, `get-labels` |
 | `cx dataprime` | DataPrime language reference and raw queries: `list`, `show`, `query` |
-| `cx search-fields` | Find log or span fields by natural-language description |
+| `cx search-fields` | Find log or span fields by description (default) or by value content (`-s value`) |
 
 **Observe**
 
 | Command | Purpose |
 |---|---|
-| `cx dashboards` | Manage dashboards and folders |
+| `cx dashboards` | Manage or search dashboards and folders |
 | `cx views` | Manage saved views and view folders |
 | `cx slos` | Manage SLO definitions |
 

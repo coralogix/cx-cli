@@ -4,20 +4,30 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use colored::Colorize;
 use rand::RngExt;
+use serde::Serialize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 pub mod api;
 
-use api::{DashboardFolderItem, DashboardsApi};
-
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
+use api::{
+    DashboardFolderItem, DashboardSearchResult, DashboardsApi, QueryByFieldResult,
+    QuerySearchResult,
+};
 use crate::safety::confirm_destructive;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// JSON key for the source profile when merging multi-profile dashboard REST rows.
+const JSON_KEY_PROFILE: &str = "profile";
+
+/// Builds one catalog row as JSON for `json` / `agents` output after fan-out.
+///
+/// When `include_profile` is true (multiple `--profile`), injects the profile key so merged
+/// arrays stay attributable per account; text mode uses a separate table path.
 fn catalog_item_to_json(
     item: &api::DashboardCatalogItem,
     include_profile: bool,
@@ -41,13 +51,330 @@ fn catalog_item_to_json(
     });
     if include_profile {
         if let Value::Object(ref mut m) = v {
-            m.insert("profile".to_string(), Value::String(profile.to_string()));
+            m.insert(
+                JSON_KEY_PROFILE.to_string(),
+                Value::String(profile.to_string()),
+            );
         }
     }
     v
 }
 
+/// Builds one dashboard-folder row as JSON for `json` / `agents` output after fan-out.
+///
+/// Same contract as `catalog_item_to_json`: folder list responses are merged across
+/// profiles, so we normalize each item to a plain object (string ids via `id_str` /
+/// `parent_id_str`) and optionally add the profile key when rendering multi-profile results.
+fn folder_item_to_json(item: &DashboardFolderItem, include_profile: bool, profile: &str) -> Value {
+    let mut v = json!({
+        "id": item.id_str(),
+        "name": item.name,
+        "parent_id": item.parent_id_str(),
+    });
+    if include_profile {
+        if let Value::Object(ref mut m) = v {
+            m.insert(
+                JSON_KEY_PROFILE.to_string(),
+                Value::String(profile.to_string()),
+            );
+        }
+    }
+    v
+}
+
+/// One merged row for `json` / `agents`: `serde_json::to_value` (field names = JSON keys), then optional `profile`.
+pub fn profiled_api_row_to_json<T: Serialize>(
+    profile: &str,
+    row: &T,
+    include_profile: bool,
+    row_kind: &str,
+) -> Result<Value> {
+    let mut v = serde_json::to_value(row)
+        .map_err(|e| anyhow::anyhow!("failed to serialize {row_kind} row: {e}"))?;
+    if include_profile {
+        if let Value::Object(ref mut m) = v {
+            m.insert(
+                JSON_KEY_PROFILE.to_string(),
+                Value::String(profile.to_string()),
+            );
+        }
+    }
+    Ok(v)
+}
+
+/// Runs `semantic_search` on every target **concurrently**, flattens `(profile, row)` pairs,
+/// and errors if **all** profiles fail (so CI/scripts see a non-zero exit when nothing succeeded).
+///
+/// `fan_out` schedules one async task per profile. Each task clones the query string, builds a
+/// [`DashboardsApi`] for that profile's HTTP client, and awaits the same REST call; answers are
+/// stitched together so `-p a -p b` produces one combined list.
+async fn collect_semantic_search_results(
+    targets: &[Arc<ExecutionTarget>],
+    query_text: &str,
+    limit: u32,
+) -> Result<Vec<(String, DashboardSearchResult)>> {
+    let query_owned = query_text.to_string();
+
+    let per_profile = fan_out(targets, |target| {
+        let query_clone = query_owned.clone();
+        async move {
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.semantic_search(&query_clone, limit).await?)
+        }
+    })
+    .await;
+
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
+    let mut all_results: Vec<(String, DashboardSearchResult)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for r in resp.results {
+                    all_results.push((profile.clone(), r));
+                }
+            }
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
+        }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+    Ok(all_results)
+}
+
+fn semantic_search_merged_json_rows(
+    rows: &[(String, DashboardSearchResult)],
+    include_profile: bool,
+) -> Result<Vec<Value>> {
+    rows.iter()
+        .map(|(profile, r)| {
+            profiled_api_row_to_json(profile, r, include_profile, "dashboard semantic search")
+        })
+        .collect()
+}
+
+fn render_semantic_search_text_table(
+    rows: &[(String, DashboardSearchResult)],
+    include_profile: bool,
+) {
+    if rows.is_empty() {
+        println!("{}", "No matching dashboards found.".yellow());
+        return;
+    }
+    let table_rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|(profile, r)| {
+            vec![
+                profile.clone(),
+                r.dashboard_name.clone().unwrap_or_default(),
+                r.dashboard_folder.clone().unwrap_or_default(),
+                r.widget_count.map(|n| n.to_string()).unwrap_or_default(),
+                format!("{:.3}", r.similarity),
+                r.semantic_description
+                    .as_deref()
+                    .or(r.description.as_deref())
+                    .unwrap_or_default()
+                    .chars()
+                    .take(60)
+                    .collect(),
+            ]
+        })
+        .collect();
+    render::render_table(
+        &["Name", "Folder", "Widgets", "Similarity", "Description"],
+        table_rows,
+        include_profile,
+    );
+}
+
+async fn collect_query_search_results(
+    targets: &[Arc<ExecutionTarget>],
+    query_text: &str,
+    limit: u32,
+) -> Result<Vec<(String, QuerySearchResult)>> {
+    let query_owned = query_text.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let query_clone = query_owned.clone();
+        async move {
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.search_queries(&query_clone, limit).await?)
+        }
+    })
+    .await;
+
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
+    let mut all_results: Vec<(String, QuerySearchResult)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for r in resp.results {
+                    all_results.push((profile.clone(), r));
+                }
+            }
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
+        }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+    Ok(all_results)
+}
+
+fn query_search_merged_json_rows(
+    rows: &[(String, QuerySearchResult)],
+    include_profile: bool,
+) -> Result<Vec<Value>> {
+    rows.iter()
+        .map(|(profile, r)| {
+            profiled_api_row_to_json(profile, r, include_profile, "dashboard query search")
+        })
+        .collect()
+}
+
+fn render_query_search_text_table(rows: &[(String, QuerySearchResult)], include_profile: bool) {
+    if rows.is_empty() {
+        println!("{}", "No matching queries found.".yellow());
+        return;
+    }
+    let table_rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|(profile, r)| {
+            vec![
+                profile.clone(),
+                r.query_text.clone(),
+                r.dashboard_name.clone().unwrap_or_default(),
+                r.widget_title.clone().unwrap_or_default(),
+                format!("{:.3}", r.similarity),
+            ]
+        })
+        .collect();
+    render::render_table(
+        &["Query", "Dashboard", "Widget", "Similarity"],
+        table_rows,
+        include_profile,
+    );
+}
+
+async fn collect_queries_by_field_results(
+    targets: &[Arc<ExecutionTarget>],
+    field_path: &str,
+    limit: u32,
+) -> Result<Vec<(String, QueryByFieldResult)>> {
+    let field_path_owned = field_path.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let field_path_clone = field_path_owned.clone();
+        async move {
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.queries_by_field(&field_path_clone, limit).await?)
+        }
+    })
+    .await;
+
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
+    let mut all_results: Vec<(String, QueryByFieldResult)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for r in resp.queries {
+                    all_results.push((profile.clone(), r));
+                }
+            }
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
+        }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+    Ok(all_results)
+}
+
+fn queries_by_field_merged_json_rows(
+    rows: &[(String, QueryByFieldResult)],
+    include_profile: bool,
+) -> Result<Vec<Value>> {
+    rows.iter()
+        .map(|(profile, r)| {
+            profiled_api_row_to_json(profile, r, include_profile, "dashboard queries-by-field")
+        })
+        .collect()
+}
+
+fn render_queries_by_field_text_table(
+    rows: &[(String, QueryByFieldResult)],
+    field_path: &str,
+    include_profile: bool,
+) {
+    if rows.is_empty() {
+        println!(
+            "{}",
+            format!("No queries found referencing {field_path:?}.").yellow()
+        );
+        return;
+    }
+    let table_rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|(profile, r)| {
+            vec![
+                profile.clone(),
+                r.query_text.clone(),
+                r.dashboard_name.clone().unwrap_or_default(),
+                r.widget_title.clone().unwrap_or_default(),
+                r.matched_fields.join(", "),
+            ]
+        })
+        .collect();
+    render::render_table(
+        &["Query", "Dashboard", "Widget", "Matched Fields"],
+        table_rows,
+        include_profile,
+    );
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
+
+pub async fn run_semantic_search(
+    targets: &[Arc<ExecutionTarget>],
+    query_text: &str,
+    limit: u32,
+    output: OutputFormat,
+) -> Result<()> {
+    if query_text.trim().is_empty() {
+        bail!("query text cannot be empty");
+    }
+    eprintln!(
+        "{}",
+        format!("Searching dashboards for: {query_text:?}…").dimmed()
+    );
+
+    let include_profile = targets.len() > 1;
+    let all_results = collect_semantic_search_results(targets, query_text, limit).await?;
+
+    match output {
+        OutputFormat::Json => {
+            let json_rows = semantic_search_merged_json_rows(&all_results, include_profile)?;
+            render::render_json(&json_rows)?;
+        }
+        OutputFormat::Agents => {
+            let json_rows = semantic_search_merged_json_rows(&all_results, include_profile)?;
+            render::render_agents(&json_rows)?;
+        }
+        OutputFormat::Text => render_semantic_search_text_table(&all_results, include_profile),
+    }
+
+    Ok(())
+}
 
 pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching dashboard catalog...".dimmed());
@@ -60,7 +387,8 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
     })
     .await;
 
-    // Merge
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, api::DashboardCatalogItem)> = Vec::new();
     for (profile, result) in per_profile {
@@ -71,11 +399,16 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
                     all_items.push((profile.clone(), item));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
     }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
 
-    // Render
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
         OutputFormat::Agents => {
@@ -116,29 +449,99 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
     Ok(())
 }
 
+pub async fn run_search(
+    targets: &[Arc<ExecutionTarget>],
+    query_text: &str,
+    limit: u32,
+    output: OutputFormat,
+) -> Result<()> {
+    if query_text.trim().is_empty() {
+        bail!("query text cannot be empty");
+    }
+    eprintln!(
+        "{}",
+        format!("Searching dashboard queries for: {query_text:?}…").dimmed()
+    );
+
+    let include_profile = targets.len() > 1;
+    let all_results = collect_query_search_results(targets, query_text, limit).await?;
+
+    match output {
+        OutputFormat::Json => {
+            let json_rows = query_search_merged_json_rows(&all_results, include_profile)?;
+            render::render_json(&json_rows)?;
+        }
+        OutputFormat::Agents => {
+            let json_rows = query_search_merged_json_rows(&all_results, include_profile)?;
+            render::render_agents(&json_rows)?;
+        }
+        OutputFormat::Text => render_query_search_text_table(&all_results, include_profile),
+    }
+
+    Ok(())
+}
+
+pub async fn run_queries_by_field(
+    targets: &[Arc<ExecutionTarget>],
+    field_path: &str,
+    limit: u32,
+    output: OutputFormat,
+) -> Result<()> {
+    if field_path.trim().is_empty() {
+        bail!("field path cannot be empty");
+    }
+    eprintln!(
+        "{}",
+        format!("Finding queries referencing field {field_path:?}…").dimmed()
+    );
+
+    let include_profile = targets.len() > 1;
+    let all_results = collect_queries_by_field_results(targets, field_path, limit).await?;
+
+    match output {
+        OutputFormat::Json => {
+            let json_rows = queries_by_field_merged_json_rows(&all_results, include_profile)?;
+            render::render_json(&json_rows)?;
+        }
+        OutputFormat::Agents => {
+            let json_rows = queries_by_field_merged_json_rows(&all_results, include_profile)?;
+            render::render_agents(&json_rows)?;
+        }
+        OutputFormat::Text => {
+            render_queries_by_field_text_table(&all_results, field_path, include_profile);
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn run_get(
     targets: &[Arc<ExecutionTarget>],
     dashboard_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
+    if dashboard_id.trim().is_empty() {
+        bail!("dashboard id cannot be empty");
+    }
     eprintln!(
         "{}",
         format!("Fetching dashboard {dashboard_id}...").dimmed()
     );
 
     let include_profile = targets.len() > 1;
-    let id = dashboard_id.to_string();
+    let dashboard_id_owned = dashboard_id.to_string();
 
-    let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
+    let per_profile = fan_out(targets, |target| {
+        let dashboard_id_clone = dashboard_id_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            Ok(api.get(&id).await?)
+            let api = DashboardsApi::new(&target.client);
+            Ok(api.get(&dashboard_id_clone).await?)
         }
     })
     .await;
 
-    // Merge
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -148,11 +551,16 @@ pub async fn run_get(
                 }
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
     }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
 
-    // Render
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
@@ -288,6 +696,8 @@ pub async fn run_create(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -314,8 +724,14 @@ pub async fn run_create(
                 }
                 all_results.push((profile, created_id, resp));
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -330,10 +746,6 @@ pub async fn run_create(
             println!("{toon}");
         }
         OutputFormat::Text => {
-            if all_results.is_empty() {
-                // Per-profile errors already surfaced via eprintln! above.
-                return Ok(());
-            }
             if include_profile {
                 let rows: Vec<Vec<String>> = all_results
                     .iter()
@@ -476,12 +888,12 @@ pub async fn run_replace(
 
 pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
     eprintln!("{}", format!("Deleting dashboard {id}...").dimmed());
-    let id = id.to_string();
-    let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
+    let dashboard_id_owned = id.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let dashboard_id_clone = dashboard_id_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            api.delete(&id).await?;
+            let api = DashboardsApi::new(&target.client);
+            api.delete(&dashboard_id_clone).await?;
             Ok(())
         }
     })
@@ -500,20 +912,6 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
 
 // ── Folders ───────────────────────────────────────────────────────────────────
 
-fn folder_item_to_json(item: &DashboardFolderItem, include_profile: bool, profile: &str) -> Value {
-    let mut v = json!({
-        "id": item.id_str(),
-        "name": item.name,
-        "parent_id": item.parent_id_str(),
-    });
-    if include_profile {
-        if let Value::Object(ref mut m) = v {
-            m.insert("profile".to_string(), Value::String(profile.to_string()));
-        }
-    }
-    v
-}
-
 pub async fn run_folders_list(
     targets: &[Arc<ExecutionTarget>],
     output: OutputFormat,
@@ -528,6 +926,8 @@ pub async fn run_folders_list(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, DashboardFolderItem)> = Vec::new();
     for (profile, result) in per_profile {
@@ -538,8 +938,14 @@ pub async fn run_folders_list(
                     all_items.push((profile.clone(), item));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -578,6 +984,9 @@ pub async fn run_folders_create(
     parent_id: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
+    if name.trim().is_empty() {
+        bail!("folder name cannot be empty");
+    }
     eprintln!(
         "{}",
         format!("Creating dashboard folder '{name}'...").dimmed()
@@ -605,6 +1014,8 @@ pub async fn run_folders_create(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -624,8 +1035,14 @@ pub async fn run_folders_create(
                 }
                 all_results.push((profile, created_id, resp));
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -640,9 +1057,6 @@ pub async fn run_folders_create(
             println!("{toon}");
         }
         OutputFormat::Text => {
-            if all_results.is_empty() {
-                return Ok(());
-            }
             if include_profile {
                 let rows: Vec<Vec<String>> = all_results
                     .iter()
@@ -664,12 +1078,12 @@ pub async fn run_folders_create(
 
 pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
     eprintln!("{}", format!("Deleting dashboard folder {id}...").dimmed());
-    let id = id.to_string();
-    let per_profile = fan_out(targets, |t| {
-        let id = id.clone();
+    let folder_id_owned = id.to_string();
+    let per_profile = fan_out(targets, |target| {
+        let folder_id_clone = folder_id_owned.clone();
         async move {
-            let api = DashboardsApi::new(&t.client);
-            api.folders_delete(&id).await?;
+            let api = DashboardsApi::new(&target.client);
+            api.folders_delete(&folder_id_clone).await?;
             Ok(())
         }
     })

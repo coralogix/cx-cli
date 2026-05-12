@@ -17,6 +17,7 @@ use api::{
     DashboardFolderItem, DashboardSearchResult, DashboardsApi, QueryByFieldResult,
     QuerySearchResult,
 };
+
 use crate::safety::confirm_destructive;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

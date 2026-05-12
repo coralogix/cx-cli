@@ -130,24 +130,25 @@ impl CxClient {
         let body = resp.text().await.unwrap_or_default();
         let detail = serde_json::from_str::<Value>(&body)
             .ok()
-            .and_then(|v| v["message"].as_str().map(String::from));
+            .and_then(|v| v["message"].as_str().map(String::from))
+            .filter(|s| !s.is_empty());
 
         match status {
-            StatusCode::UNAUTHORIZED => Err(CxError::Auth(
-                "Invalid or expired API key. Run `cx profiles add` to update credentials."
-                    .into(),
-            )),
+            StatusCode::UNAUTHORIZED => Err(CxError::Auth(match detail {
+                Some(d) => format!("{d}. Run `cx profiles add` to update credentials."),
+                None => "Invalid or expired API key. Run `cx profiles add` to update credentials.".into(),
+            })),
             StatusCode::FORBIDDEN => Err(CxError::Auth(match detail {
-                Some(d) => format!("Permission denied: {d}. Check your API key's scopes."),
+                Some(d) => format!("{d}. Check your API key's scopes."),
                 None => "Permission denied: your API key does not have the required scope for this operation.".into(),
             })),
             StatusCode::TOO_MANY_REQUESTS => Err(CxError::Api {
                 status: code,
-                message: match retry_after {
-                    Some(secs) => {
-                        format!("Rate limited by the API. Retry after {secs} seconds.")
-                    }
-                    None => "Rate limited by the API. Wait and retry.".into(),
+                message: match (detail, retry_after) {
+                    (Some(d), Some(secs)) => format!("{d}. Retry after {secs} seconds."),
+                    (Some(d), None) => d,
+                    (None, Some(secs)) => format!("Rate limited by the API. Retry after {secs} seconds."),
+                    (None, None) => "Rate limited by the API. Wait and retry.".into(),
                 },
             }),
             _ => Err(CxError::Api {

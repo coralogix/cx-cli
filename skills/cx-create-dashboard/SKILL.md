@@ -260,27 +260,13 @@ On failure: show the CLI error verbatim and return to Phase 5. The most common c
 
 The workflow is **not done** until the user has a clickable link to the dashboard. Printing the ID alone forces the user to navigate the Coralogix UI by hand, which defeats the point of automating deployment.
 
-After Phase 7 succeeds, capture the dashboard `id` returned by `cx dashboards create` and the active profile's region, then build the link:
-
-```
-https://<region>.app.coralogix.com/#/dashboards/<id>
-```
-
-Region resolution:
-
-| Profile region | Webapp host |
-|---|---|
-| `us1` / `us2` / `us3` | `us1.app.coralogix.com` / `us2.app.coralogix.com` / `us3.app.coralogix.com` |
-| `eu1` / `eu2` | `eu1.app.coralogix.com` / `eu2.app.coralogix.com` |
-| `ap1` / `ap2` / `ap3` | `ap1.app.coralogix.com` / `ap2.app.coralogix.com` / `ap3.app.coralogix.com` |
-| `stg1` | `stg1.app.coralogix.net` |
-| Custom (`https://api.<host>`) | Replace the leading `api.` with `<host>` (e.g. `api.myenv.coralogix.com` → `myenv.app.coralogix.com`). If the API endpoint doesn't follow the `api.` prefix convention, omit the link and surface only the ID with a note. |
-
-Render the link as a markdown link with the dashboard **name** as the link text — that's what the user clicks. The final user-facing message must include this link (see "Output format for the user" below).
+After Phase 7 succeeds, capture the dashboard `id` returned by `cx dashboards create`, build the URL using the region → webapp host mapping in [`references/deploy.md`](references/deploy.md) § "Share the link", and emit the output template below. Render the dashboard **name** as the link text — that's what the user clicks.
 
 ---
 
 ## Output format for the user
+
+When the webapp host is resolvable (any built-in region, or a `Custom` endpoint that follows the `api.<host>` convention):
 
 ````
 ## Plan
@@ -301,11 +287,24 @@ Open it: [<Name>](https://<region>.app.coralogix.com/#/dashboards/<id>)
 Adjust filter values (e.g. `account_id`) after opening it.
 ````
 
-If the region is custom and the webapp host couldn't be derived, replace the link line with:
+When the webapp host **cannot** be derived (custom endpoint that doesn't match `api.<host>`), omit the link entirely — do not invent a URL. Use this template instead:
 
-```
+````
+## Plan
+<the approved Phase 3 plan>
+
+## Verification
+- PromQL queries verified: <N>/<N>
+- DataPrime queries verified: <N>/<N>
+
+## Deployed
 - Dashboard: **<Name>** (open via the Coralogix UI; ID `<id>`)
-```
+- ID: `<id>`
+- Folder: `<folder name or "root">`
+- Profile: `<cx profile>`
+
+Adjust filter values (e.g. `account_id`) after opening it.
+````
 
 ---
 

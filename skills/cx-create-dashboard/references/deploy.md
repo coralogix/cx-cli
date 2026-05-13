@@ -76,7 +76,7 @@ Region → webapp host mapping:
 | `stg1` | `stg1.app.coralogix.net` |
 | Custom (`https://api.<host>`) | Strip the leading `api.` and use `<host>` (e.g. `api.myenv.coralogix.com` → `myenv.app.coralogix.com`). |
 
-If the custom endpoint doesn't follow the `api.` prefix convention, skip the link and tell the user the dashboard ID and name so they can open it from the Coralogix UI directly.
+If the custom endpoint doesn't follow the `api.` prefix convention, **omit the link entirely** — do not invent a URL. Use the second ("webapp host cannot be derived") template in `SKILL.md` § "Output format for the user", which drops the markdown link from the `Deployed` line *and* drops the standalone `Open it:` line so the user is never shown a broken URL.
 
 Render the link as a markdown link using the dashboard **name** as the link text, e.g.:
 
@@ -84,7 +84,7 @@ Render the link as a markdown link using the dashboard **name** as the link text
 Dashboard: **[Order Service - Health](https://eu2.app.coralogix.com/#/dashboards/abc123def456)**
 ```
 
-Then emit the summary defined in the main `SKILL.md` "Output format for the user" section, which includes the link both in the "Deployed" line and as a standalone "Open it:" line so the user can click it without scrolling.
+Then emit the summary defined in the main `SKILL.md` § "Output format for the user".
 
 ---
 

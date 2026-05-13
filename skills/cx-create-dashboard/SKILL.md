@@ -72,9 +72,10 @@ Dashboard Progress:
 - [ ] Phase 5: Live-verify every query through the cx CLI
 - [ ] Phase 6: Self-verify structure against the checklist
 - [ ] Phase 7: Deploy via `cx dashboards create`
+- [ ] Phase 8: Share the dashboard link with the user
 ```
 
-Proceed in order. Don't jump to Phase 4 before the user approves the Phase 3 plan, and don't run Phase 7 before Phases 5 and 6 both pass.
+Proceed in order. Don't jump to Phase 4 before the user approves the Phase 3 plan, and don't run Phase 7 before Phases 5 and 6 both pass. Phase 8 is mandatory — the workflow is not done until the user has a clickable link.
 
 ---
 
@@ -255,6 +256,30 @@ On failure: show the CLI error verbatim and return to Phase 5. The most common c
 
 ---
 
+## Phase 8: Share the dashboard link
+
+The workflow is **not done** until the user has a clickable link to the dashboard. Printing the ID alone forces the user to navigate the Coralogix UI by hand, which defeats the point of automating deployment.
+
+After Phase 7 succeeds, capture the dashboard `id` returned by `cx dashboards create` and the active profile's region, then build the link:
+
+```
+https://<region>.app.coralogix.com/#/dashboards/<id>
+```
+
+Region resolution:
+
+| Profile region | Webapp host |
+|---|---|
+| `us1` / `us2` / `us3` | `us1.app.coralogix.com` / `us2.app.coralogix.com` / `us3.app.coralogix.com` |
+| `eu1` / `eu2` | `eu1.app.coralogix.com` / `eu2.app.coralogix.com` |
+| `ap1` / `ap2` / `ap3` | `ap1.app.coralogix.com` / `ap2.app.coralogix.com` / `ap3.app.coralogix.com` |
+| `stg1` | `stg1.app.coralogix.net` |
+| Custom (`https://api.<host>`) | Replace the leading `api.` with `<host>` (e.g. `api.myenv.coralogix.com` → `myenv.app.coralogix.com`). If the API endpoint doesn't follow the `api.` prefix convention, omit the link and surface only the ID with a note. |
+
+Render the link as a markdown link with the dashboard **name** as the link text — that's what the user clicks. The final user-facing message must include this link (see "Output format for the user" below).
+
+---
+
 ## Output format for the user
 
 ````
@@ -266,13 +291,21 @@ On failure: show the CLI error verbatim and return to Phase 5. The most common c
 - DataPrime queries verified: <N>/<N>
 
 ## Deployed
-- Dashboard: **<Name>**
+- Dashboard: **[<Name>](https://<region>.app.coralogix.com/#/dashboards/<id>)**
 - ID: `<id>`
 - Folder: `<folder name or "root">`
 - Profile: `<cx profile>`
 
-The dashboard is live in Coralogix. Adjust filter values (e.g. `account_id`) after opening it.
+Open it: [<Name>](https://<region>.app.coralogix.com/#/dashboards/<id>)
+
+Adjust filter values (e.g. `account_id`) after opening it.
 ````
+
+If the region is custom and the webapp host couldn't be derived, replace the link line with:
+
+```
+- Dashboard: **<Name>** (open via the Coralogix UI; ID `<id>`)
+```
 
 ---
 

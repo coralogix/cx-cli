@@ -822,6 +822,11 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
+    /// Delete an alert [requires --yes].
+    Delete {
+        /// Alert definition ID (UUID).
+        alert_id: String,
+    },
     /// Enable an alert [requires --yes].
     Enable {
         /// Alert definition ID (UUID).
@@ -2384,6 +2389,10 @@ async fn main() -> Result<()> {
             AlertsCmd::Create { from_file } => {
                 confirm_destructive("Create a new alert?", yes, agent_mode)?;
                 commands::alerts::run_create(&targets, &from_file, output).await?;
+            }
+            AlertsCmd::Delete { alert_id } => {
+                confirm_destructive(&format!("Delete alert '{alert_id}'?"), yes, agent_mode)?;
+                commands::alerts::run_delete(&targets, &alert_id).await?;
             }
             AlertsCmd::Enable { alert_id } => {
                 confirm_destructive(&format!("Enable alert '{alert_id}'?"), yes, agent_mode)?;

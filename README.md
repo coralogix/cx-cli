@@ -129,7 +129,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 | Command | Purpose |
 |---|---|
-| `cx alerts` | Manage alerts: `list`, `get`, `create`, `enable`, `disable`, `events`, `event-stats`, `suppression-rules` |
+| `cx alerts` | Manage alerts: `list`, `get`, `create`, `delete`, `enable`, `disable`, `events`, `event-stats`, `suppression-rules` |
 | `cx incidents` | Manage and triage incidents |
 
 **Notifications**

@@ -241,11 +241,10 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
                 )
                 .prompt()?;
 
-        global_config.allow_costly_commands =
-            Confirm::new("Allow costly commands? (olly ask — AI assistant queries)")
-                .with_default(true)
-                .with_help_message("When disabled, 'olly ask' is blocked.")
-                .prompt()?;
+        global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
+            .with_default(true)
+            .with_help_message("When disabled, 'olly ask' is blocked.")
+            .prompt()?;
 
         global_config.default_profile = name.clone();
         save_config(&global_config)?;

@@ -27,6 +27,7 @@ pub fn test_target_with_token(
         profile_name: profile_name.to_string(),
         api_key: api_key.to_string(),
         endpoint: base_url.to_string(),
+        default_tier: coralogix_cli::Tier::Archive,
     };
     Arc::new(ExecutionTarget::new(cfg).expect("test_target: failed to build ExecutionTarget"))
 }

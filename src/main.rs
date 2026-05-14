@@ -230,9 +230,10 @@ Examples:
         #[arg(long, default_value_t = 100)]
         limit: u32,
 
-        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
-        #[arg(long, default_value = "frequent")]
-        tier: Tier,
+        /// Storage tier to search. Overrides the profile's default_tier setting.
+        /// If neither is set, defaults to archive.
+        #[arg(long)]
+        tier: Option<Tier>,
     },
 
     /// Query metrics using PromQL.
@@ -264,9 +265,10 @@ Examples:
         #[arg(long, default_value_t = 200)]
         limit: u32,
 
-        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
-        #[arg(long, default_value = "frequent")]
-        tier: Tier,
+        /// Storage tier to search. Overrides the profile's default_tier setting.
+        /// If neither is set, defaults to archive.
+        #[arg(long)]
+        tier: Option<Tier>,
     },
 
     /// Manage and inspect dashboards.
@@ -624,9 +626,10 @@ Examples:
         #[arg(long, default_value_t = 100)]
         limit: u32,
 
-        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
-        #[arg(long, default_value = "frequent")]
-        tier: Tier,
+        /// Storage tier to search. Overrides the profile's default_tier setting.
+        /// If neither is set, defaults to archive.
+        #[arg(long)]
+        tier: Option<Tier>,
     },
 }
 

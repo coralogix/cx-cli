@@ -304,6 +304,11 @@ pub struct Profile {
     /// global `default_output_format` in config.toml.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_output_format: Option<OutputFormat>,
+    /// Per-profile default storage tier for DataPrime queries (logs, spans).
+    /// When set, used as the default `--tier` value for this profile.
+    /// Falls back to `Archive` when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_tier: Option<crate::Tier>,
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -313,6 +318,9 @@ pub struct ResolvedConfig {
     pub profile_name: String,
     pub api_key: String,
     pub endpoint: String,
+    /// Default storage tier for DataPrime queries, resolved from the profile
+    /// config. Falls back to `Archive` when the profile does not specify one.
+    pub default_tier: crate::Tier,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -439,6 +447,7 @@ async fn resolve_single(
                 profile_name: profile_name.to_string(),
                 endpoint: region.api_endpoint().to_string(),
                 api_key: key.to_string(),
+                default_tier: crate::Tier::Archive,
             });
         }
     }
@@ -504,6 +513,7 @@ async fn resolve_single(
         profile_name: profile_name.to_string(),
         endpoint: profile.region.api_endpoint().to_string(),
         api_key: bearer,
+        default_tier: profile.default_tier.unwrap_or(crate::Tier::Archive),
     })
 }
 
@@ -695,6 +705,7 @@ default_profile = "my-profile"
             profile_name: "prod".to_string(),
             api_key: "k".to_string(),
             endpoint: "https://api.eu2.coralogix.com".to_string(),
+            default_tier: crate::Tier::Archive,
         };
         assert_eq!(cfg.profile_name, "prod");
     }
@@ -749,6 +760,7 @@ api_key = "mykey"
             oauth_base_url: None,
             oauth_tokens: None,
             default_output_format: None,
+            default_tier: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -778,6 +790,7 @@ api_key = "mykey"
                 expiry: Some(1_700_000_000),
             }),
             default_output_format: None,
+            default_tier: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -802,6 +815,7 @@ api_key = "mykey"
             oauth_base_url: None,
             oauth_tokens: None,
             default_output_format: None,
+            default_tier: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -890,6 +904,7 @@ api_key = "mykey"
                 oauth_base_url: None,
                 oauth_tokens: None,
                 default_output_format: None,
+                default_tier: None,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -926,6 +941,7 @@ api_key = "mykey"
             oauth_base_url: None,
             oauth_tokens: None,
             default_output_format: None,
+            default_tier: None,
         };
         save_profile("default", &profile).unwrap();
 
@@ -948,6 +964,7 @@ api_key = "mykey"
             oauth_base_url: None,
             oauth_tokens: None,
             default_output_format: None,
+            default_tier: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -971,6 +988,7 @@ api_key = "mykey"
             oauth_base_url: None,
             oauth_tokens: None,
             default_output_format: None,
+            default_tier: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -994,6 +1012,7 @@ api_key = "mykey"
             oauth_base_url: None,
             oauth_tokens: None,
             default_output_format: None,
+            default_tier: None,
         };
         save_profile(name, &profile).unwrap();
 

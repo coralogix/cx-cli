@@ -49,7 +49,9 @@ async fn catalog_returns_items_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -97,7 +99,9 @@ async fn run_catalog_json_output_succeeds() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

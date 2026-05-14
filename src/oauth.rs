@@ -197,7 +197,47 @@ fn extract_and_respond(stream: TcpStream, expected_state: &str) -> Result<Option
         .nth(1)
         .context("Malformed HTTP request in OAuth callback")?;
 
-    let Some(query) = path.split('?').nth(1) else {
+    let (path_part, query_part) = match path.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (path, None),
+    };
+
+    // Serve a launcher page that opens the OAuth URL in a popup window.
+    // The popup is script-opened, so window.close() works when auth completes.
+    if path_part == "/launch" {
+        let auth_url = query_part
+            .and_then(|q| {
+                url::form_urlencoded::parse(q.as_bytes())
+                    .find(|(k, _)| k == "url")
+                    .map(|(_, v)| v.into_owned())
+            })
+            .unwrap_or_default();
+        // Embed the URL in a data attribute to avoid JS string escaping concerns.
+        let safe_url = auth_url.replace('&', "&amp;").replace('"', "&quot;");
+        let body = format!(
+            "<html><body>\
+<p>Opening authentication window...</p>\
+<p id=\"fb\" style=\"display:none\">Popup was blocked. \
+<a id=\"a\" href=\"\">Click here to authenticate</a>.</p>\
+<div id=\"d\" data-url=\"{safe_url}\"></div>\
+<script>\
+var u=document.getElementById('d').dataset.url;\
+document.getElementById('a').href=u;\
+var p=window.open(u,'cx_auth','width=600,height=700');\
+if(!p||p.closed){{\
+document.getElementById('fb').style.display='block';\
+}}else{{\
+var t=setInterval(function(){{\
+if(p.closed){{clearInterval(t);document.body.innerHTML='<p>Authentication complete. You may close this tab.</p>';}}\
+}},500);\
+}}\
+</script></body></html>"
+        );
+        send_http_response(&stream, 200, &body);
+        return Ok(None);
+    }
+
+    let Some(query) = query_part else {
         // No query string - not an OAuth redirect (e.g. GET / or GET /favicon.ico).
         send_http_response(&stream, 204, "");
         return Ok(None);
@@ -222,6 +262,7 @@ fn extract_and_respond(stream: TcpStream, expected_state: &str) -> Result<Option
         bail!("OAuth state mismatch – possible CSRF attempt, aborting.");
     }
 
+    // This page is served inside the script-opened popup, so window.close() works.
     let body = "<html><body>\
                 <h2>Authentication successful!</h2>\
                 <p>You may close this tab and return to the terminal.</p>\
@@ -358,8 +399,15 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
         state,
     );
 
+    // Open a local launcher page instead of the auth URL directly.
+    // The launcher page uses window.open() to start OAuth in a popup,
+    // which allows window.close() to work after auth completes.
+    let launcher_url = format!(
+        "http://localhost:{port}/launch?url={}",
+        urlencode(&auth_url)
+    );
     println!("Opening browser for authentication...");
-    if open::that(&auth_url).is_err() {
+    if open::that(&launcher_url).is_err() {
         println!("Could not open browser automatically.\nPlease visit:\n  {auth_url}");
     }
 

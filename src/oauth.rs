@@ -222,8 +222,11 @@ fn extract_and_respond(stream: TcpStream, expected_state: &str) -> Result<Option
         bail!("OAuth state mismatch – possible CSRF attempt, aborting.");
     }
 
-    let body = "<html><body><h2>Authentication successful!</h2>\
-                <p>You may close this tab and return to the terminal.</p></body></html>";
+    let body = "<html><body>\
+                <h2>Authentication successful!</h2>\
+                <p>You may close this tab and return to the terminal.</p>\
+                <script>setTimeout(function() { window.close(); }, 2000);</script>\
+                </body></html>";
     send_http_response(&stream, 200, body);
     Ok(Some(code))
 }

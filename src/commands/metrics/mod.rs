@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
+use chrono::{DateTime, Utc};
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
@@ -103,6 +104,69 @@ pub(crate) fn instant_samples_to_toon_rows(samples: &[Value], include_profile: b
             Value::Object(obj)
         })
         .collect()
+}
+
+fn epoch_to_iso(v: &Value) -> String {
+    let f = match v.as_f64() {
+        Some(f) => f,
+        None => return v.to_string(),
+    };
+    let secs = f as i64;
+    let nanos = (f.fract() * 1_000_000_000.0) as u32;
+    DateTime::<Utc>::from_timestamp(secs, nanos)
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+        .unwrap_or_else(|| v.to_string())
+}
+
+/// Build toon-ready flat JSON rows from range samples.
+/// Each `[timestamp, value]` pair becomes its own row with metric labels repeated.
+pub(crate) fn range_samples_to_toon_rows(samples: &[Value], include_profile: bool) -> Vec<Value> {
+    let all_keys: Vec<String> = {
+        let mut set = std::collections::BTreeSet::new();
+        for s in samples {
+            if let Some(metric) = s.get("metric").and_then(|m| m.as_object()) {
+                for k in metric.keys() {
+                    set.insert(k.clone());
+                }
+            }
+        }
+        let mut keys: Vec<String> = set.into_iter().collect();
+        if include_profile {
+            keys.push("profile".to_string());
+        }
+        keys.push("timestamp".to_string());
+        keys.push("value".to_string());
+        keys
+    };
+
+    let mut rows = Vec::new();
+    for s in samples {
+        let values_arr = match s.get("values").and_then(|v| v.as_array()) {
+            Some(arr) => arr,
+            None => continue,
+        };
+        for point in values_arr {
+            let mut obj = serde_json::Map::new();
+            for k in &all_keys {
+                let v = match k.as_str() {
+                    "timestamp" => {
+                        let epoch = point.get(0).unwrap_or(&Value::Null);
+                        Value::String(epoch_to_iso(epoch))
+                    }
+                    "value" => point.get(1).cloned().unwrap_or(Value::Null),
+                    "profile" => s.get("profile").cloned().unwrap_or(Value::Null),
+                    _ => s
+                        .get("metric")
+                        .and_then(|m| m.get(k))
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new())),
+                };
+                obj.insert(k.clone(), v);
+            }
+            rows.push(Value::Object(obj));
+        }
+    }
+    rows
 }
 
 // ── Normalise metric responses to optionally tagged JSON rows ─────────────────
@@ -342,7 +406,17 @@ pub async fn run_query_range(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => render::render_json(&all_rows)?,
+        OutputFormat::Json => render::render_json(&all_rows)?,
+        OutputFormat::Agents => {
+            if all_rows.is_empty() {
+                println!("[]");
+                return Ok(());
+            }
+            let toon_rows = range_samples_to_toon_rows(&all_rows, include_profile);
+            let toon = toon_encode(&toon_rows)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
         OutputFormat::Text => {
             if all_rows.is_empty() {
                 render::print_no_results("No results found.");

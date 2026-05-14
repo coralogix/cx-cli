@@ -13,6 +13,7 @@ use anyhow::Result;
 use colored::Colorize;
 use serde_json::Value;
 use tabled::builder::Builder;
+use toon_format::encode_default as toon_encode;
 // ── JSON output ──────────────────────────────────────────────────────────────
 
 /// Format rows as a JSON array.
@@ -23,6 +24,20 @@ pub fn format_json(rows: &[Value]) -> Result<String> {
 /// Render rows as a JSON array (for list commands).
 pub fn render_json(rows: &[Value]) -> Result<()> {
     println!("{}", format_json(rows)?);
+    Ok(())
+}
+
+/// Format merged result rows for agents output (TOON-encoded).
+///
+/// See `docs/agents-output.md` — agents mode uses TOON, not pretty JSON.
+pub fn format_agents(rows: &[Value]) -> Result<String> {
+    let wrapped = Value::Array(rows.to_vec());
+    toon_encode(&wrapped).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))
+}
+
+/// Print merged rows in agents (TOON) format.
+pub fn render_agents(rows: &[Value]) -> Result<()> {
+    println!("{}", format_agents(rows)?);
     Ok(())
 }
 
@@ -217,6 +232,17 @@ mod tests {
         let rows = vec![json!({"x": 1})];
         let output = format_json(&rows).unwrap();
         assert!(output.starts_with('['));
+    }
+
+    #[test]
+    fn format_agents_toon_differs_from_pretty_json() {
+        let rows = vec![json!({"query_text": "q", "similarity": 0.5})];
+        let json = format_json(&rows).unwrap();
+        let agents = format_agents(&rows).unwrap();
+        assert_ne!(
+            json, agents,
+            "agents output must be TOON, not identical to pretty JSON"
+        );
     }
 
     #[test]

@@ -44,6 +44,10 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(names.contains(&"olly"), "missing olly");
 
     // Verify old commands are gone
+    assert!(
+        !names.contains(&"search-by-value"),
+        "search-by-value merged into search-fields"
+    );
     assert!(!names.contains(&"alert-schedulers"));
     assert!(!names.contains(&"actions"));
     assert!(!names.contains(&"custom-enrichments"));

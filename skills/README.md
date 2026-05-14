@@ -1,10 +1,10 @@
-# cx Skills
+# cx skills
 
-A collection of agent skills for the [`cx` Coralogix CLI](https://github.com/coralogix/cx-cli). Install these skills to give your coding agent deep knowledge of how to investigate observability data using the CLI.
+Use these skills to give your coding agent access to Coralogix observability data — logs, spans, metrics, RUM, and alerts — directly from the CLI.
 
-Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more agents](https://github.com/vercel-labs/skills#supported-agents).
+Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](https://github.com/vercel-labs/skills#supported-agents).
 
-## Available Skills
+## Available skills
 
 ### Investigation
 
@@ -24,6 +24,11 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
+
+## Requirements
+
+- [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx profiles add`)
+- A supported coding agent (Claude Code, Cursor, Codex, etc.)
 
 ## Installation
 
@@ -51,14 +56,9 @@ Install for a specific agent:
 npx skills add coralogix/cx-cli -a claude-code -g -y
 ```
 
-## Requirements
-
-- [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx profiles add`)
-- A supported coding agent (Claude Code, Cursor, Codex, etc.)
-
 ## Usage
 
-Once installed, your agent will automatically use the relevant skill when you ask questions like:
+Once installed, your agent uses the relevant skill automatically. Example queries:
 
 - "Ask Olly why the checkout service is slow"
 - "Investigate why we're seeing high error rates"

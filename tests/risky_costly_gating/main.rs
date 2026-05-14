@@ -118,12 +118,12 @@ fn risky_enabled_allows_iam_write() {
     );
 }
 
-// ── Costly command gating ────────────────────────────────────────────────────
+// ── Olly gating ─────────────────────────────────────────────────────────────
 
 #[test]
-fn costly_disabled_blocks_olly_ask() {
+fn olly_disabled_blocks_olly_ask() {
     let tmp = temp_home();
-    let output = cx_with_config(&tmp, "allow_costly_commands = false\n")
+    let output = cx_with_config(&tmp, "olly_enabled = false\n")
         .args([
             "olly",
             "ask",
@@ -137,13 +137,13 @@ fn costly_disabled_blocks_olly_ask() {
         .expect("failed to run cx");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("additional charges"), "stderr: {stderr}");
+    assert!(stderr.contains("disabled"), "stderr: {stderr}");
 }
 
 #[test]
-fn costly_disabled_allows_olly_artifacts() {
+fn olly_disabled_allows_olly_artifacts() {
     let tmp = temp_home();
-    let output = cx_with_config(&tmp, "allow_costly_commands = false\n")
+    let output = cx_with_config(&tmp, "olly_enabled = false\n")
         .args([
             "olly",
             "artifacts",
@@ -157,15 +157,15 @@ fn costly_disabled_allows_olly_artifacts() {
         .expect("failed to run cx");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("additional charges"),
+        !stderr.contains("disabled"),
         "artifacts should not be blocked, stderr: {stderr}"
     );
 }
 
 #[test]
-fn costly_enabled_allows_olly_ask() {
+fn olly_enabled_allows_olly_ask() {
     let tmp = temp_home();
-    let output = cx_with_config(&tmp, "allow_costly_commands = true\n")
+    let output = cx_with_config(&tmp, "olly_enabled = true\n")
         .args([
             "olly",
             "ask",
@@ -179,7 +179,7 @@ fn costly_enabled_allows_olly_ask() {
         .expect("failed to run cx");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("additional charges"),
+        !stderr.contains("disabled"),
         "should not be blocked when enabled, stderr: {stderr}"
     );
 }

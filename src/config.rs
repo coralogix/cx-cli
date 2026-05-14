@@ -171,10 +171,10 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub allow_risky_commands: bool,
 
-    /// Whether to allow costly commands (olly ask).
-    /// When false, these commands are hard-blocked.
+    /// Whether the Olly AI assistant (`olly ask`) is enabled.
+    /// When false, `olly ask` is blocked.
     #[serde(default = "default_true")]
-    pub allow_costly_commands: bool,
+    pub olly_enabled: bool,
 
     /// When true, ALL write operations are blocked globally.
     /// Equivalent to always passing --read-only.
@@ -211,7 +211,7 @@ impl Default for Config {
             max_dataprime_direct_output_size: default_max_dataprime_direct_output_size(),
             temp_dir: default_temp_dir(),
             allow_risky_commands: true,
-            allow_costly_commands: true,
+            olly_enabled: true,
             read_only: false,
             managed_completions: vec![],
         }

@@ -95,6 +95,9 @@ The default install script and release binaries are built for musl on Linux, so 
 | `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `agents`) |
 | `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `agents` mode before spilling to a temp file. Set to `-1` to disable |
 | `temp_dir` | `"/tmp/"` | Directory for spilled result files |
+| `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
+| `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`) |
+| `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`) |
 
 Example:
 
@@ -103,6 +106,9 @@ default_profile = "default"
 default_output_format = "text"
 max_dataprime_direct_output_size = 102400
 temp_dir = "/tmp/"
+read_only = false
+allow_risky_commands = true
+olly_enabled = true
 ```
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
@@ -208,12 +214,36 @@ Environment variables override profile file values:
 | `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
+| `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add` first would be a paper-cut.
+
+## Read-only mode
+
+Read-only mode blocks all write operations (create, update, delete, enable, disable, etc.) while allowing reads (list, get, query, search). This is useful for giving agents or automation safe, query-only access to your Coralogix data.
+
+There are three ways to enable it, listed from narrowest to broadest scope:
+
+| Method | Scope | Example |
+|---|---|---|
+| `--read-only` flag | Single invocation | `cx --read-only alerts list` |
+| `CX_READ_ONLY` env var | Shell session / CI job | `export CX_READ_ONLY=true` |
+| `read_only = true` in `~/.cx/config.toml` | All invocations | See global config table above |
+
+When a write operation is attempted in read-only mode, `cx` exits with an error:
+
+```
+Error: Write operation 'create' is blocked in read-only mode
+(--read-only flag, CX_READ_ONLY env var, or read_only = true in ~/.cx/config.toml).
+```
+
+Local commands (`profiles`, `cleanup`, `completions`) are exempt from read-only enforcement - they manage local configuration and never touch the Coralogix API.
+
+The env var accepts `1`, `true`, `yes`, or `on` (case-insensitive).
 
 ## Shell completion and profiles
 

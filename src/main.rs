@@ -536,7 +536,7 @@ impl Commands {
         matches!(self, Self::Iam { .. } | Self::DataArchive { .. })
     }
 
-    fn is_costly(&self) -> bool {
+    fn is_olly(&self) -> bool {
         match self {
             Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
             _ => false,
@@ -2161,7 +2161,7 @@ async fn main() -> Result<()> {
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
-    // Load global config early for read-only / risky / costly gating.
+    // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();
 
     let read_only =
@@ -2191,12 +2191,11 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Costly command gating (olly ask).
-    if cli.command.is_costly() && !global_cfg_early.allow_costly_commands {
+    // Olly gating (olly ask).
+    if cli.command.is_olly() && !global_cfg_early.olly_enabled {
         bail!(
-            "This operation may result in additional charges and is currently \
-             disabled in your global configuration.\n\
-             To enable it, set allow_costly_commands = true in ~/.cx/config.toml."
+            "The Olly AI assistant is currently disabled in your global configuration.\n\
+             To enable it, set olly_enabled = true in ~/.cx/config.toml."
         );
     }
 

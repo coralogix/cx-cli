@@ -422,6 +422,7 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         oauth_base_url: oauth_base_url_for_profile,
         oauth_tokens,
         default_output_format: None,
+        default_tier: None,
     };
 
     Ok((profile, storage_desc))
@@ -468,6 +469,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 oauth_base_url: None,
                 oauth_tokens: None,
                 default_output_format: None,
+                default_tier: None,
             };
             (profile, "OS credential store")
         }
@@ -484,6 +486,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 oauth_base_url: None,
                 oauth_tokens: None,
                 default_output_format: None,
+                default_tier: None,
             };
             (profile, "profile file")
         }

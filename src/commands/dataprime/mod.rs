@@ -386,7 +386,7 @@ pub async fn run_query(
     start: &str,
     end: &str,
     limit: u32,
-    tier: Tier,
+    tier: Option<Tier>,
     output: OutputFormat,
     max_direct: Option<usize>,
     temp_dir: &str,
@@ -404,7 +404,10 @@ pub async fn run_query(
         let src = source.clone();
         let s = start.clone();
         let e = end.clone();
-        async move { execute_query(t, &q, &s, &e, limit, tier, &src).await }
+        async move {
+            let effective_tier = tier.unwrap_or(t.cfg.default_tier);
+            execute_query(t, &q, &s, &e, limit, effective_tier, &src).await
+        }
     })
     .await;
 

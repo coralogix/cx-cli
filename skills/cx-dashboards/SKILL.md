@@ -81,9 +81,10 @@ Dashboard Progress:
 - [ ] Phase 5: Live-verify every query through the cx CLI
 - [ ] Phase 6: Self-verify structure against the checklist
 - [ ] Phase 7: Deploy via `cx dashboards create`
+- [ ] Phase 8: Share the dashboard link with the user
 ```
 
-Proceed in order. Don't jump to Phase 4 before the user approves the Phase 3 plan, and don't run Phase 7 before Phases 5 and 6 both pass.
+Proceed in order. Don't jump to Phase 4 before the user approves the Phase 3 plan, and don't run Phase 7 before Phases 5 and 6 both pass. Phase 8 is mandatory — the workflow is not done until the user has a clickable link.
 
 ---
 
@@ -264,7 +265,17 @@ On failure: show the CLI error verbatim and return to Phase 5. The most common c
 
 ---
 
+## Phase 8: Share the dashboard link
+
+The workflow is **not done** until the user has a clickable link to the dashboard. Printing the ID alone forces the user to navigate the Coralogix UI by hand, which defeats the point of automating deployment.
+
+After Phase 7 succeeds, capture the dashboard `id` returned by `cx dashboards create`, build the URL using the region → webapp host mapping in [`references/deploy.md`](references/deploy.md) § "Share the link", and emit the output template below. Render the dashboard **name** as the link text — that's what the user clicks.
+
+---
+
 ## Output format for the user
+
+When the webapp host is resolvable (any built-in region, or a `Custom` endpoint that follows the `api.<host>` convention):
 
 ````
 ## Plan
@@ -275,12 +286,33 @@ On failure: show the CLI error verbatim and return to Phase 5. The most common c
 - DataPrime queries verified: <N>/<N>
 
 ## Deployed
-- Dashboard: **<Name>**
+- Dashboard: **[<Name>](https://<region>.app.coralogix.com/#/dashboards/<id>)**
 - ID: `<id>`
 - Folder: `<folder name or "root">`
 - Profile: `<cx profile>`
 
-The dashboard is live in Coralogix. Adjust filter values (e.g. `account_id`) after opening it.
+Open it: [<Name>](https://<region>.app.coralogix.com/#/dashboards/<id>)
+
+Adjust filter values (e.g. `account_id`) after opening it.
+````
+
+When the webapp host **cannot** be derived (custom endpoint that doesn't match `api.<host>`), omit the link entirely — do not invent a URL. Use this template instead:
+
+````
+## Plan
+<the approved Phase 3 plan>
+
+## Verification
+- PromQL queries verified: <N>/<N>
+- DataPrime queries verified: <N>/<N>
+
+## Deployed
+- Dashboard: **<Name>** (open via the Coralogix UI; ID `<id>`)
+- ID: `<id>`
+- Folder: `<folder name or "root">`
+- Profile: `<cx profile>`
+
+Adjust filter values (e.g. `account_id`) after opening it.
 ````
 
 ---

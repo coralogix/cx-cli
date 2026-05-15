@@ -52,11 +52,43 @@ The CLI generates the `requestId` envelope automatically and prints the created 
 
 On failure: show the CLI error verbatim, return to Phase 5 (most common cause: a query that parses locally but the live API rejects), fix, and redeploy.
 
-On success: emit the summary defined in the main `SKILL.md` "Output format for the user" section.
+On success: continue to step 4 below — the workflow is **not finished** until the user has the link.
 
 ---
 
-## 4. Replace an existing dashboard
+## 4. Share the link (final step — mandatory)
+
+Don't stop at "dashboard created". The very last action is to give the user a clickable link to the dashboard.
+
+Build the URL from the active profile's region and the dashboard `id` returned by `cx dashboards create`:
+
+```
+https://<region>.app.coralogix.com/#/dashboards/<id>
+```
+
+Region → webapp host mapping:
+
+| Region | Webapp host |
+|---|---|
+| `us1` / `us2` / `us3` | `us1.app.coralogix.com` / `us2.app.coralogix.com` / `us3.app.coralogix.com` |
+| `eu1` / `eu2` | `eu1.app.coralogix.com` / `eu2.app.coralogix.com` |
+| `ap1` / `ap2` / `ap3` | `ap1.app.coralogix.com` / `ap2.app.coralogix.com` / `ap3.app.coralogix.com` |
+| `stg1` | `stg1.app.coralogix.net` |
+| Custom (`https://api.<host>`) | Strip the leading `api.` and use `<host>` (e.g. `api.myenv.coralogix.com` → `myenv.app.coralogix.com`). |
+
+If the custom endpoint doesn't follow the `api.` prefix convention, **omit the link entirely** — do not invent a URL. Use the second ("webapp host cannot be derived") template in `SKILL.md` § "Output format for the user", which drops the markdown link from the `Deployed` line *and* drops the standalone `Open it:` line so the user is never shown a broken URL.
+
+Render the link as a markdown link using the dashboard **name** as the link text, e.g.:
+
+```
+Dashboard: **[Order Service - Health](https://eu2.app.coralogix.com/#/dashboards/abc123def456)**
+```
+
+Then emit the summary defined in the main `SKILL.md` § "Output format for the user".
+
+---
+
+## 5. Replace an existing dashboard
 
 To update a dashboard that already exists (instead of creating a new one), use the replace workflow:
 
@@ -87,6 +119,6 @@ Use create (not replace) when:
 
 ---
 
-## 5. Idempotency note
+## 6. Idempotency note
 
 Each `create` run generates a fresh top-level `id` (21-char nanoid), so re-running creates a *new* dashboard rather than overwriting an existing one. Use `replace` to update in place.

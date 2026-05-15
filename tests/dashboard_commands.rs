@@ -34,7 +34,9 @@ async fn dashboard_catalog_empty_returns_ok() {
     let body = json!({ "items": [] });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -53,7 +55,9 @@ async fn dashboard_catalog_500_returns_error() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(500))
         .expect(1)
         .mount(&server)
@@ -83,12 +87,16 @@ async fn dashboard_catalog_multi_profile_merges() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body_a))
         .mount(&server_a)
         .await;
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body_b))
         .mount(&server_b)
         .await;
@@ -109,12 +117,16 @@ async fn dashboard_catalog_all_profiles_fail_returns_error() {
     let server_b = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(503))
         .mount(&server_a)
         .await;
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(503))
         .mount(&server_b)
         .await;
@@ -137,7 +149,9 @@ async fn dashboard_catalog_agents_output_succeeds() {
     let body = json!({ "items": [] });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/catalog"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

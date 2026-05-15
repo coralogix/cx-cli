@@ -241,11 +241,10 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
                 )
                 .prompt()?;
 
-        global_config.allow_costly_commands =
-            Confirm::new("Allow costly commands? (olly ask — AI assistant queries)")
-                .with_default(true)
-                .with_help_message("When disabled, 'olly ask' is blocked.")
-                .prompt()?;
+        global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
+            .with_default(true)
+            .with_help_message("When disabled, 'olly ask' is blocked.")
+            .prompt()?;
 
         global_config.default_profile = name.clone();
         save_config(&global_config)?;
@@ -423,6 +422,7 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         oauth_base_url: oauth_base_url_for_profile,
         oauth_tokens,
         default_output_format: None,
+        default_tier: None,
     };
 
     Ok((profile, storage_desc))
@@ -469,6 +469,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 oauth_base_url: None,
                 oauth_tokens: None,
                 default_output_format: None,
+                default_tier: None,
             };
             (profile, "OS credential store")
         }
@@ -485,6 +486,7 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 oauth_base_url: None,
                 oauth_tokens: None,
                 default_output_format: None,
+                default_tier: None,
             };
             (profile, "profile file")
         }

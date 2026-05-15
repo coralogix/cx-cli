@@ -94,7 +94,7 @@ pub async fn run(
     start: &str,
     end: &str,
     limit: u32,
-    tier: Tier,
+    tier: Option<Tier>,
     output: OutputFormat,
     max_direct: Option<usize>,
     temp_dir: &str,

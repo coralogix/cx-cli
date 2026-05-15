@@ -163,7 +163,7 @@ impl<'a> DashboardsApi<'a> {
     /// List all dashboards in the catalog.
     pub async fn catalog(&self) -> Result<DashboardCatalogResponse> {
         self.client
-            .get(&format!("{DASHBOARDS_BASE}/catalog"), &[])
+            .get(&format!("{DASHBOARDS_BASE}/catalog/list"), &[])
             .await
     }
 

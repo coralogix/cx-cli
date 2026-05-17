@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
+use chrono::{DateTime, Utc};
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
@@ -99,6 +100,98 @@ pub(crate) fn instant_samples_to_toon_rows(samples: &[Value], include_profile: b
                         .unwrap_or_else(|| Value::String(String::new())),
                 };
                 obj.insert(k.clone(), v);
+            }
+            Value::Object(obj)
+        })
+        .collect()
+}
+
+fn epoch_to_iso(v: &Value) -> String {
+    let f = match v.as_f64() {
+        Some(f) => f,
+        None => return v.to_string(),
+    };
+    let secs = f as i64;
+    let nanos = (f.fract() * 1_000_000_000.0) as u32;
+    DateTime::<Utc>::from_timestamp(secs, nanos)
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+        .unwrap_or_else(|| v.to_string())
+}
+
+/// Build toon-ready pivoted JSON rows from range samples.
+/// Each series becomes one row; ISO timestamps are used as column headers so
+/// label values are not repeated across data points.
+pub(crate) fn range_samples_to_toon_rows(samples: &[Value], include_profile: bool) -> Vec<Value> {
+    // Collect all unique ISO timestamps across all series (BTreeSet sorts them chronologically).
+    let all_timestamps: Vec<String> = {
+        let mut set = std::collections::BTreeSet::new();
+        for s in samples {
+            if let Some(arr) = s.get("values").and_then(|v| v.as_array()) {
+                for point in arr {
+                    if let Some(epoch) = point.get(0) {
+                        set.insert(epoch_to_iso(epoch));
+                    }
+                }
+            }
+        }
+        set.into_iter().collect()
+    };
+
+    // Collect all unique metric label keys (sorted).
+    let label_keys: Vec<String> = {
+        let mut set = std::collections::BTreeSet::new();
+        for s in samples {
+            if let Some(metric) = s.get("metric").and_then(|m| m.as_object()) {
+                for k in metric.keys() {
+                    set.insert(k.clone());
+                }
+            }
+        }
+        set.into_iter().collect()
+    };
+
+    // Column order: sorted label keys → optional profile → sorted timestamps.
+    let mut all_columns: Vec<String> = label_keys;
+    if include_profile {
+        all_columns.push("profile".to_string());
+    }
+    all_columns.extend(all_timestamps.iter().cloned());
+
+    let ts_set: std::collections::HashSet<String> = all_timestamps.into_iter().collect();
+
+    samples
+        .iter()
+        .map(|s| {
+            // Build a per-series lookup: ISO timestamp → value.
+            let ts_to_val: std::collections::HashMap<String, Value> = s
+                .get("values")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|point| {
+                            let val = point.get(1)?.clone();
+                            Some((epoch_to_iso(point.get(0)?), val))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let mut obj = serde_json::Map::new();
+            for col in &all_columns {
+                let v = if ts_set.contains(col) {
+                    ts_to_val
+                        .get(col)
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new()))
+                } else if col == "profile" {
+                    s.get("profile").cloned().unwrap_or(Value::Null)
+                } else {
+                    s.get("metric")
+                        .and_then(|m| m.get(col))
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new()))
+                };
+                obj.insert(col.clone(), v);
             }
             Value::Object(obj)
         })
@@ -342,7 +435,17 @@ pub async fn run_query_range(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => render::render_json(&all_rows)?,
+        OutputFormat::Json => render::render_json(&all_rows)?,
+        OutputFormat::Agents => {
+            if all_rows.is_empty() {
+                println!("[]");
+                return Ok(());
+            }
+            let toon_rows = range_samples_to_toon_rows(&all_rows, include_profile);
+            let toon = toon_encode(&toon_rows)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
         OutputFormat::Text => {
             if all_rows.is_empty() {
                 render::print_no_results("No results found.");

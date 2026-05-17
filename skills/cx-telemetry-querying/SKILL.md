@@ -94,7 +94,7 @@ cx search-fields "grpc.status.UNAVAILABLE" -s value --dataset spans
 cx search-fields "eu-west-1" -s value --dataset all
 ```
 
-**Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add`.
+**Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add <name>`.
 
 If matching fields are found:
 - For **logs**: load `references/dataprime-reference.md` + `references/logs-querying.md`

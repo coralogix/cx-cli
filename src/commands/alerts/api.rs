@@ -136,6 +136,9 @@ pub struct CreateAlertResponse {
 pub struct SetActiveResponse {}
 
 #[derive(Debug, Deserialize)]
+pub struct DeleteAlertResponse {}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertEvent {
     #[serde(default, deserialize_with = "string_or_number")]
@@ -221,6 +224,12 @@ impl<'a> AlertsApi<'a> {
     /// Create an alert definition from a JSON body.
     pub async fn create(&self, body: &Value) -> Result<CreateAlertResponse> {
         self.client.post(ALERTS_BASE, body).await
+    }
+
+    /// Delete an alert definition.
+    pub async fn delete(&self, id: &str) -> Result<DeleteAlertResponse> {
+        let path = format!("{ALERTS_BASE}/{id}");
+        self.client.delete(&path).await
     }
 
     /// Enable or disable an alert definition.
@@ -436,5 +445,11 @@ mod tests {
     fn deserialize_set_active_response() {
         let json = json!({});
         let _resp: SetActiveResponse = serde_json::from_value(json).unwrap();
+    }
+
+    #[test]
+    fn deserialize_delete_response() {
+        let json = json!({});
+        let _resp: DeleteAlertResponse = serde_json::from_value(json).unwrap();
     }
 }

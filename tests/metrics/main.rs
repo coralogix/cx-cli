@@ -152,6 +152,49 @@ async fn search_by_description() {
 }
 
 #[tokio::test]
+async fn range_query_agents_output() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [
+                {
+                    "metric": { "__name__": "http_requests_total", "method": "GET" },
+                    "values": [
+                        [1719000000, "100"],
+                        [1719000060, "105"],
+                        [1719000120, "112"]
+                    ]
+                }
+            ]
+        }
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/metrics/api/v1/query_range"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_query_range(
+        &targets,
+        "http_requests_total",
+        "2024-06-22T00:00:00Z",
+        "2024-06-22T01:00:00Z",
+        "60s",
+        OutputFormat::Agents,
+    )
+    .await
+    .expect("run_query_range with agents output should succeed");
+}
+
+#[tokio::test]
 async fn get_labels_for_metric() {
     let server = MockServer::start().await;
 

@@ -15,29 +15,20 @@
 
 ## Quick start
 
-Run `cx profiles add` to create or update the default profile. OAuth (browser login) is selected by default and is the recommended option - it opens your browser, captures the callback automatically, and persists the resulting tokens.
+Run `cx profiles add <name>` to create a new profile or update an existing one:
 
-```
-$ cx profiles add
-Configuring profile 'default'
-
-Authentication method: OAuth (browser login)
-Region: eu2
-Label (e.g. 'prod'): production
-
-Opening browser for authentication...
-Waiting for browser callback...
-Authorization code received, exchanging for tokens...
-Login successful!
-
-Where should OAuth tokens be stored? file
-Profile 'default' saved to /Users/you/.cx
-Credentials stored in profile file (OAuth tokens)
+```sh
+cx profiles add <name>
 ```
 
-You will be asked where to store the credentials: `file` (default - saved inline in the profile TOML with `0600` permissions) or `os-store` (the OS credential store - macOS Keychain, Windows Credential Manager, etc.). Pick `os-store` if your threat model assumes other processes running as your user could read the profile file.
+At the prompts:
 
-To use a plain API key instead, select `API key (paste manually)` at the first prompt. The API key must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or a [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys) - see [API Key](#api-key) below for where to generate one. [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work for querying.
+1. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
+2. **Region** — your Coralogix region (e.g. `eu2`, `us1`). See [Regions](#regions) for the full list.
+3. **Label** — an optional tag to group or identify profiles (e.g. `production`).
+4. **Credential storage** — `file` (default) saves credentials in the profile TOML; `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux).
+
+If using an API key, it must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys). [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work.
 
 ## Authentication methods
 
@@ -95,6 +86,9 @@ The default install script and release binaries are built for musl on Linux, so 
 | `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `agents`) |
 | `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `agents` mode before spilling to a temp file. Set to `-1` to disable |
 | `temp_dir` | `"/tmp/"` | Directory for spilled result files |
+| `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
+| `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`) |
+| `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`) |
 
 Example:
 
@@ -103,6 +97,9 @@ default_profile = "default"
 default_output_format = "text"
 max_dataprime_direct_output_size = 102400
 temp_dir = "/tmp/"
+read_only = false
+allow_risky_commands = true
+olly_enabled = true
 ```
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
@@ -208,12 +205,36 @@ Environment variables override profile file values:
 | `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
+| `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
-> **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add` first would be a paper-cut.
+> **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
+
+## Read-only mode
+
+Read-only mode blocks all write operations (create, update, delete, enable, disable, etc.) while allowing reads (list, get, query, search). This is useful for giving agents or automation safe, query-only access to your Coralogix data.
+
+There are three ways to enable it, listed from narrowest to broadest scope:
+
+| Method | Scope | Example |
+|---|---|---|
+| `--read-only` flag | Single invocation | `cx --read-only alerts list` |
+| `CX_READ_ONLY` env var | Shell session / CI job | `export CX_READ_ONLY=true` |
+| `read_only = true` in `~/.cx/config.toml` | All invocations | See global config table above |
+
+When a write operation is attempted in read-only mode, `cx` exits with an error:
+
+```
+Error: Write operation 'create' is blocked in read-only mode
+(--read-only flag, CX_READ_ONLY env var, or read_only = true in ~/.cx/config.toml).
+```
+
+Local commands (`profiles`, `cleanup`, `completions`) are exempt from read-only enforcement - they manage local configuration and never touch the Coralogix API.
+
+The env var accepts `1`, `true`, `yes`, or `on` (case-insensitive).
 
 ## Shell completion and profiles
 
@@ -227,10 +248,10 @@ For profile names that are always resolved fresh without a manual refresh step, 
 
 ## OAuth callback ports
 
-The local HTTP callback listener used during `cx profiles add` (OAuth path) binds one port from the following fixed allow-list, chosen at random:
+The local HTTP callback listener used during `cx profiles add <name>` (OAuth path) binds one port from the following fixed allow-list, chosen at random:
 
 ```
 21783  24861  27654  31847  38129
 ```
 
-Ensure at least one of these ports is available when running `cx profiles add`.
+Ensure at least one of these ports is available when running `cx profiles add <name>`.

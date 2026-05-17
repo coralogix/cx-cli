@@ -30,7 +30,7 @@ The following metadata fields are removed from `$m`:
 
 For `cx metrics query` (instant), agents output includes only the metric definition (labels) and sample value — timestamps are omitted since instant queries return a single point in time.
 
-For `cx metrics query-range`, agents output flattens each time-series into one row per data point. Each row contains the metric labels as individual columns, a `timestamp` column (ISO-8601 format, e.g. `2026-05-14T12:00:00Z`), and a `value` column. When querying multiple profiles, a `profile` column is included. Epoch timestamps from the API are automatically converted to ISO-8601 for reliable LLM interpretation.
+For `cx metrics query-range`, agents output produces **one row per time-series**. Each row contains the metric labels as individual columns, followed by one column per data point whose header is the ISO-8601 timestamp (e.g. `2026-05-14T12:00:00Z`) and whose value is the sample value. This avoids repeating long label strings across every data point. When querying multiple profiles, a `profile` column is included between the label columns and the timestamp columns. Epoch timestamps from the API are automatically converted to ISO-8601.
 
 ## Result spilling
 

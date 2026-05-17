@@ -118,10 +118,27 @@ fn epoch_to_iso(v: &Value) -> String {
         .unwrap_or_else(|| v.to_string())
 }
 
-/// Build toon-ready flat JSON rows from range samples.
-/// Each `[timestamp, value]` pair becomes its own row with metric labels repeated.
+/// Build toon-ready pivoted JSON rows from range samples.
+/// Each series becomes one row; ISO timestamps are used as column headers so
+/// label values are not repeated across data points.
 pub(crate) fn range_samples_to_toon_rows(samples: &[Value], include_profile: bool) -> Vec<Value> {
-    let all_keys: Vec<String> = {
+    // Collect all unique ISO timestamps across all series (BTreeSet sorts them chronologically).
+    let all_timestamps: Vec<String> = {
+        let mut set = std::collections::BTreeSet::new();
+        for s in samples {
+            if let Some(arr) = s.get("values").and_then(|v| v.as_array()) {
+                for point in arr {
+                    if let Some(epoch) = point.get(0) {
+                        set.insert(epoch_to_iso(epoch));
+                    }
+                }
+            }
+        }
+        set.into_iter().collect()
+    };
+
+    // Collect all unique metric label keys (sorted).
+    let label_keys: Vec<String> = {
         let mut set = std::collections::BTreeSet::new();
         for s in samples {
             if let Some(metric) = s.get("metric").and_then(|m| m.as_object()) {
@@ -130,43 +147,55 @@ pub(crate) fn range_samples_to_toon_rows(samples: &[Value], include_profile: boo
                 }
             }
         }
-        let mut keys: Vec<String> = set.into_iter().collect();
-        if include_profile {
-            keys.push("profile".to_string());
-        }
-        keys.push("timestamp".to_string());
-        keys.push("value".to_string());
-        keys
+        set.into_iter().collect()
     };
 
-    let mut rows = Vec::new();
-    for s in samples {
-        let values_arr = match s.get("values").and_then(|v| v.as_array()) {
-            Some(arr) => arr,
-            None => continue,
-        };
-        for point in values_arr {
-            let mut obj = serde_json::Map::new();
-            for k in &all_keys {
-                let v = match k.as_str() {
-                    "timestamp" => {
-                        let epoch = point.get(0).unwrap_or(&Value::Null);
-                        Value::String(epoch_to_iso(epoch))
-                    }
-                    "value" => point.get(1).cloned().unwrap_or(Value::Null),
-                    "profile" => s.get("profile").cloned().unwrap_or(Value::Null),
-                    _ => s
-                        .get("metric")
-                        .and_then(|m| m.get(k))
-                        .cloned()
-                        .unwrap_or_else(|| Value::String(String::new())),
-                };
-                obj.insert(k.clone(), v);
-            }
-            rows.push(Value::Object(obj));
-        }
+    // Column order: sorted label keys → optional profile → sorted timestamps.
+    let mut all_columns: Vec<String> = label_keys;
+    if include_profile {
+        all_columns.push("profile".to_string());
     }
-    rows
+    all_columns.extend(all_timestamps.iter().cloned());
+
+    let ts_set: std::collections::HashSet<String> = all_timestamps.into_iter().collect();
+
+    samples
+        .iter()
+        .map(|s| {
+            // Build a per-series lookup: ISO timestamp → value.
+            let ts_to_val: std::collections::HashMap<String, Value> = s
+                .get("values")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|point| {
+                            let val = point.get(1)?.clone();
+                            Some((epoch_to_iso(point.get(0)?), val))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let mut obj = serde_json::Map::new();
+            for col in &all_columns {
+                let v = if ts_set.contains(col) {
+                    ts_to_val
+                        .get(col)
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new()))
+                } else if col == "profile" {
+                    s.get("profile").cloned().unwrap_or(Value::Null)
+                } else {
+                    s.get("metric")
+                        .and_then(|m| m.get(col))
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new()))
+                };
+                obj.insert(col.clone(), v);
+            }
+            Value::Object(obj)
+        })
+        .collect()
 }
 
 // ── Normalise metric responses to optionally tagged JSON rows ─────────────────

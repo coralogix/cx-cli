@@ -226,47 +226,54 @@ fn range_empty_input_returns_empty_vec() {
 
 #[test]
 fn range_single_series_single_point() {
-    let sample = make_range_row(&[("job", "api")], &[(1_719_000_000, "42")], None);
+    // 1 series, 1 point → 1 row; timestamp becomes a column header containing the value.
+    let sample = make_range_row(&[("job", "api")], &[(1_719_014_400, "42")], None);
     let rows = range_samples_to_toon_rows(&[sample], false);
 
     assert_eq!(rows.len(), 1);
     let obj = rows[0].as_object().unwrap();
     assert_eq!(obj["job"], json!("api"));
-    assert_eq!(obj["value"], json!("42"));
-    assert!(obj["timestamp"].as_str().unwrap().ends_with('Z'));
-    assert!(obj["timestamp"].as_str().unwrap().contains('T'));
+    // The timestamp column key is the ISO string.
+    assert_eq!(obj["2024-06-22T00:00:00Z"], json!("42"));
+    // No separate "timestamp" or "value" columns.
+    assert!(!obj.contains_key("timestamp"));
+    assert!(!obj.contains_key("value"));
 }
 
 #[test]
 fn range_single_series_multiple_points() {
+    // 1 series, 3 points → 1 row with 3 timestamp columns.
     let sample = make_range_row(
         &[("job", "api")],
         &[
-            (1_719_000_000, "1"),
-            (1_719_000_060, "2"),
-            (1_719_000_120, "3"),
+            (1_719_014_400, "1"),
+            (1_719_014_460, "2"),
+            (1_719_014_520, "3"),
         ],
         None,
     );
     let rows = range_samples_to_toon_rows(&[sample], false);
 
-    assert_eq!(rows.len(), 3);
-    assert_eq!(rows[0].as_object().unwrap()["value"], json!("1"));
-    assert_eq!(rows[1].as_object().unwrap()["value"], json!("2"));
-    assert_eq!(rows[2].as_object().unwrap()["value"], json!("3"));
-    // Same label repeated on every row.
-    for row in &rows {
-        assert_eq!(row.as_object().unwrap()["job"], json!("api"));
-    }
+    assert_eq!(rows.len(), 1);
+    let obj = rows[0].as_object().unwrap();
+    assert_eq!(obj["job"], json!("api"));
+    assert_eq!(obj["2024-06-22T00:00:00Z"], json!("1"));
+    assert_eq!(obj["2024-06-22T00:01:00Z"], json!("2"));
+    assert_eq!(obj["2024-06-22T00:02:00Z"], json!("3"));
 }
 
 #[test]
-fn range_multiple_series_differing_labels_padded() {
+fn range_multiple_series_same_timestamps() {
+    // 2 series sharing the same timestamps → 2 rows with shared timestamp columns.
     let samples = vec![
-        make_range_row(&[("job", "a")], &[(1_719_000_000, "1")], None),
         make_range_row(
-            &[("job", "b"), ("pod", "p1")],
-            &[(1_719_000_000, "2")],
+            &[("job", "a")],
+            &[(1_719_014_400, "10"), (1_719_014_460, "20")],
+            None,
+        ),
+        make_range_row(
+            &[("job", "b")],
+            &[(1_719_014_400, "30"), (1_719_014_460, "40")],
             None,
         ),
     ];
@@ -275,16 +282,58 @@ fn range_multiple_series_differing_labels_padded() {
     assert_eq!(rows.len(), 2);
     let r0 = rows[0].as_object().unwrap();
     let r1 = rows[1].as_object().unwrap();
+    assert_eq!(r0["job"], json!("a"));
+    assert_eq!(r0["2024-06-22T00:00:00Z"], json!("10"));
+    assert_eq!(r0["2024-06-22T00:01:00Z"], json!("20"));
+    assert_eq!(r1["job"], json!("b"));
+    assert_eq!(r1["2024-06-22T00:00:00Z"], json!("30"));
+    assert_eq!(r1["2024-06-22T00:01:00Z"], json!("40"));
+}
+
+#[test]
+fn range_multiple_series_differing_labels_padded() {
+    let samples = vec![
+        make_range_row(&[("job", "a")], &[(1_719_014_400, "1")], None),
+        make_range_row(
+            &[("job", "b"), ("pod", "p1")],
+            &[(1_719_014_400, "2")],
+            None,
+        ),
+    ];
+    let rows = range_samples_to_toon_rows(&samples, false);
+
+    assert_eq!(rows.len(), 2);
     // Missing label padded with empty string.
-    assert_eq!(r0["pod"], json!(""));
-    assert_eq!(r1["pod"], json!("p1"));
+    assert_eq!(rows[0].as_object().unwrap()["pod"], json!(""));
+    assert_eq!(rows[1].as_object().unwrap()["pod"], json!("p1"));
+}
+
+#[test]
+fn range_sparse_timestamps_padded() {
+    // Series 0 has T1+T2; Series 1 has only T1 → T2 padded with "" for series 1.
+    let samples = vec![
+        make_range_row(
+            &[("job", "a")],
+            &[(1_719_014_400, "1"), (1_719_014_460, "2")],
+            None,
+        ),
+        make_range_row(&[("job", "b")], &[(1_719_014_400, "3")], None),
+    ];
+    let rows = range_samples_to_toon_rows(&samples, false);
+
+    assert_eq!(rows.len(), 2);
+    // Series b is missing the second timestamp.
+    assert_eq!(
+        rows[1].as_object().unwrap()["2024-06-22T00:01:00Z"],
+        json!("")
+    );
 }
 
 #[test]
 fn range_label_keys_sorted_alphabetically() {
     let sample = make_range_row(
         &[("zzz", "z"), ("aaa", "a"), ("mmm", "m")],
-        &[(1_719_000_000, "0")],
+        &[(1_719_014_400, "0")],
         None,
     );
     let rows = range_samples_to_toon_rows(&[sample], false);
@@ -294,33 +343,38 @@ fn range_label_keys_sorted_alphabetically() {
         .keys()
         .map(String::as_str)
         .collect();
-    assert_eq!(keys, vec!["aaa", "mmm", "zzz", "timestamp", "value"]);
+    // Sorted label keys first, then the timestamp column.
+    assert_eq!(keys, vec!["aaa", "mmm", "zzz", "2024-06-22T00:00:00Z"]);
 }
 
 #[test]
 fn range_timestamp_is_iso8601() {
-    // 1719014400 == 2024-06-22T00:00:00Z
+    // 1719014400 == 2024-06-22T00:00:00Z — verifies epoch→ISO conversion.
     let sample = make_range_row(&[("job", "x")], &[(1_719_014_400, "1")], None);
     let rows = range_samples_to_toon_rows(&[sample], false);
-    assert_eq!(
-        rows[0].as_object().unwrap()["timestamp"],
-        json!("2024-06-22T00:00:00Z")
-    );
+    let keys: Vec<&str> = rows[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert!(keys.contains(&"2024-06-22T00:00:00Z"));
 }
 
 #[test]
 fn range_with_profile_column() {
-    let sample = make_range_row(&[("job", "api")], &[(1_719_000_000, "1")], Some("prod"));
+    let sample = make_range_row(&[("job", "api")], &[(1_719_014_400, "1")], Some("prod"));
     let rows = range_samples_to_toon_rows(&[sample], true);
     let obj = rows[0].as_object().unwrap();
     assert_eq!(obj["profile"], json!("prod"));
+    // profile appears between label keys and timestamp columns.
     let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
-    assert_eq!(keys, vec!["job", "profile", "timestamp", "value"]);
+    assert_eq!(keys, vec!["job", "profile", "2024-06-22T00:00:00Z"]);
 }
 
 #[test]
 fn range_without_profile_column() {
-    let sample = make_range_row(&[("job", "api")], &[(1_719_000_000, "1")], None);
+    let sample = make_range_row(&[("job", "api")], &[(1_719_014_400, "1")], None);
     let rows = range_samples_to_toon_rows(&[sample], false);
     let obj = rows[0].as_object().unwrap();
     assert!(!obj.contains_key("profile"));
@@ -328,9 +382,10 @@ fn range_without_profile_column() {
 
 #[test]
 fn range_column_order() {
+    // Full column order: sorted labels → profile → timestamps.
     let sample = make_range_row(
         &[("job", "api"), ("instance", "h1")],
-        &[(1_719_000_000, "1")],
+        &[(1_719_014_400, "1"), (1_719_014_460, "2")],
         Some("prod"),
     );
     let rows = range_samples_to_toon_rows(&[sample], true);
@@ -340,9 +395,14 @@ fn range_column_order() {
         .keys()
         .map(String::as_str)
         .collect();
-    // sorted labels, then profile, then timestamp, then value
     assert_eq!(
         keys,
-        vec!["instance", "job", "profile", "timestamp", "value"]
+        vec![
+            "instance",
+            "job",
+            "profile",
+            "2024-06-22T00:00:00Z",
+            "2024-06-22T00:01:00Z"
+        ]
     );
 }

@@ -1,13 +1,13 @@
 ---
 name: cx-alerts
-description: This skill should be used when the user asks to "manage alerts", "create alert", "list alerts", "check alert status", "enable alert", "disable alert", "investigate firing alerts", "check which alerts are active", "find alerting rules", "set up an alert", "configure alerting", "mute an alert", "silence an alert", "see alert definitions", "check alert priority", or wants to manage Coralogix alert definitions using the cx CLI.
+description: This skill should be used when the user asks to "manage alerts", "create alert", "list alerts", "delete alert", "check alert status", "enable alert", "disable alert", "investigate firing alerts", "check which alerts are active", "find alerting rules", "set up an alert", "configure alerting", "mute an alert", "silence an alert", "see alert definitions", "check alert priority", or wants to manage Coralogix alert definitions using the cx CLI.
 metadata:
   version: "0.1.0"
 ---
 
 # Alert Management Skill
 
-Use this skill to list, inspect, create, enable, and disable Coralogix alert definitions using the `cx alerts` CLI commands.
+Use this skill to list, inspect, create, delete, enable, and disable Coralogix alert definitions using the `cx alerts` CLI commands.
 
 ## CLI Commands
 
@@ -16,6 +16,7 @@ Use this skill to list, inspect, create, enable, and disable Coralogix alert def
 | `cx alerts list` | List all alert definitions | `--name <filter>` |
 | `cx alerts get <id>` | Get a single alert definition by ID | - |
 | `cx alerts create` | Create an alert from a JSON definition | `--from-file <path>` (default: stdin) |
+| `cx alerts delete <id>` | Delete an alert | - |
 | `cx alerts enable <id>` | Enable an alert | - |
 | `cx alerts disable <id>` | Disable an alert | - |
 | `cx alerts events` | List alert trigger events | `--alert-id`, `--start`, `--end` |

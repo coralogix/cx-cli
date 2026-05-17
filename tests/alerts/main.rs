@@ -5,7 +5,7 @@ use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::alerts::{run_disable, run_enable, run_get, run_list};
+use coralogix_cli::commands::alerts::{run_delete, run_disable, run_enable, run_get, run_list};
 use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
@@ -166,6 +166,27 @@ async fn enable_alert() {
     run_enable(&targets, "alert-001")
         .await
         .expect("run_enable should succeed");
+}
+
+#[tokio::test]
+async fn delete_alert() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("DELETE"))
+        .and(path(
+            "/mgmt/openapi/latest/alerts/alerts-general/v3/alert-001",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_delete(&targets, "alert-001")
+        .await
+        .expect("run_delete should succeed");
 }
 
 #[tokio::test]

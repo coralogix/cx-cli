@@ -230,9 +230,10 @@ Examples:
         #[arg(long, default_value_t = 100)]
         limit: u32,
 
-        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
-        #[arg(long, default_value = "frequent")]
-        tier: Tier,
+        /// Storage tier to search. Overrides the profile's default_tier setting.
+        /// If neither is set, defaults to archive.
+        #[arg(long)]
+        tier: Option<Tier>,
     },
 
     /// Query metrics using PromQL.
@@ -264,9 +265,10 @@ Examples:
         #[arg(long, default_value_t = 200)]
         limit: u32,
 
-        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
-        #[arg(long, default_value = "frequent")]
-        tier: Tier,
+        /// Storage tier to search. Overrides the profile's default_tier setting.
+        /// If neither is set, defaults to archive.
+        #[arg(long)]
+        tier: Option<Tier>,
     },
 
     /// Manage and inspect dashboards.
@@ -536,7 +538,7 @@ impl Commands {
         matches!(self, Self::Iam { .. } | Self::DataArchive { .. })
     }
 
-    fn is_costly(&self) -> bool {
+    fn is_olly(&self) -> bool {
         match self {
             Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
             _ => false,
@@ -624,9 +626,10 @@ Examples:
         #[arg(long, default_value_t = 100)]
         limit: u32,
 
-        /// Storage tier to search. "frequent" (default) for hot data, "archive" for long-term storage.
-        #[arg(long, default_value = "frequent")]
-        tier: Tier,
+        /// Storage tier to search. Overrides the profile's default_tier setting.
+        /// If neither is set, defaults to archive.
+        #[arg(long)]
+        tier: Option<Tier>,
     },
 }
 
@@ -879,6 +882,11 @@ Examples:
         /// Path to JSON file with the alert definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
+    },
+    /// Delete an alert [requires --yes].
+    Delete {
+        /// Alert definition ID (UUID).
+        alert_id: String,
     },
     /// Enable an alert [requires --yes].
     Enable {
@@ -2161,7 +2169,7 @@ async fn main() -> Result<()> {
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
-    // Load global config early for read-only / risky / costly gating.
+    // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();
 
     let read_only =
@@ -2191,12 +2199,11 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Costly command gating (olly ask).
-    if cli.command.is_costly() && !global_cfg_early.allow_costly_commands {
+    // Olly gating (olly ask).
+    if cli.command.is_olly() && !global_cfg_early.olly_enabled {
         bail!(
-            "This operation may result in additional charges and is currently \
-             disabled in your global configuration.\n\
-             To enable it, set allow_costly_commands = true in ~/.cx/config.toml."
+            "The Olly AI assistant is currently disabled in your global configuration.\n\
+             To enable it, set olly_enabled = true in ~/.cx/config.toml."
         );
     }
 
@@ -2465,6 +2472,10 @@ async fn main() -> Result<()> {
             AlertsCmd::Create { from_file } => {
                 confirm_destructive("Create a new alert?", yes, agent_mode)?;
                 commands::alerts::run_create(&targets, &from_file, output).await?;
+            }
+            AlertsCmd::Delete { alert_id } => {
+                confirm_destructive(&format!("Delete alert '{alert_id}'?"), yes, agent_mode)?;
+                commands::alerts::run_delete(&targets, &alert_id).await?;
             }
             AlertsCmd::Enable { alert_id } => {
                 confirm_destructive(&format!("Enable alert '{alert_id}'?"), yes, agent_mode)?;

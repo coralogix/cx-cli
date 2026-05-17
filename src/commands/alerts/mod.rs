@@ -283,6 +283,34 @@ pub async fn run_create(
     Ok(())
 }
 
+pub async fn run_delete(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Result<()> {
+    eprintln!("{}", format!("Deleting alert {alert_id}...").dimmed());
+
+    let id = alert_id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = AlertsApi::new(&t.client);
+            api.delete(&id).await?;
+            Ok(())
+        }
+    })
+    .await;
+
+    for (profile, result) in per_profile {
+        match result {
+            Ok(()) => eprintln!(
+                "{}",
+                format!("Deleted alert {alert_id} in profile '{profile}'.").green()
+            ),
+            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Result<()> {
     eprintln!("{}", format!("Enabling alert {alert_id}...").dimmed());
 

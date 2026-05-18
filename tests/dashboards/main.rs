@@ -6,7 +6,9 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::dashboards::api::DashboardsApi;
-use coralogix_cli::commands::dashboards::{run_catalog, run_delete, run_folders_delete};
+use coralogix_cli::commands::dashboards::{
+    run_catalog, run_delete, run_folders_delete, run_replace,
+};
 use coralogix_cli::config::OutputFormat;
 
 /// Verify that `DashboardsApi::catalog()` correctly deserializes a mocked
@@ -133,6 +135,173 @@ async fn delete_dashboard_from_mock() {
     run_delete(&targets, "dash-abc")
         .await
         .expect("run_delete should succeed");
+}
+
+/// Verify that `DashboardsApi::replace()` sends a PUT and returns the response.
+#[tokio::test]
+async fn replace_dashboard_api() {
+    let server = MockServer::start().await;
+
+    let response_body = json!({
+        "dashboard": {
+            "id": "dash-001",
+            "name": "Updated Dashboard"
+        }
+    });
+
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let api = DashboardsApi::new(&target.client);
+
+    let body = json!({
+        "requestId": "test-req-id",
+        "dashboard": {
+            "id": "dash-001",
+            "name": "Updated Dashboard",
+            "layout": {}
+        }
+    });
+
+    let resp = api.replace(&body).await.expect("replace() should succeed");
+    assert_eq!(
+        resp.get("dashboard")
+            .and_then(|d| d.get("id"))
+            .and_then(|v| v.as_str()),
+        Some("dash-001")
+    );
+}
+
+/// Verify that `run_replace` succeeds with JSON output when backed by a mock server.
+#[tokio::test]
+async fn run_replace_json_output_succeeds() {
+    let server = MockServer::start().await;
+
+    let response_body = json!({
+        "dashboard": {
+            "id": "dash-001",
+            "name": "Replaced Dashboard"
+        }
+    });
+
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = std::env::temp_dir().join("cx_test_replace_dashboard.json");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&json!({
+            "id": "dash-001",
+            "name": "Replaced Dashboard",
+            "layout": { "sections": [] }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    run_replace(
+        &targets,
+        tmp.to_str().unwrap(),
+        OutputFormat::Json,
+        true,
+        false,
+    )
+    .await
+    .expect("run_replace with JSON output should succeed");
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+/// Verify that `run_replace` succeeds with text output.
+#[tokio::test]
+async fn run_replace_text_output_succeeds() {
+    let server = MockServer::start().await;
+
+    let response_body = json!({
+        "dashboardId": "dash-001"
+    });
+
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = std::env::temp_dir().join("cx_test_replace_dashboard_text.json");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&json!({
+            "id": "dash-001",
+            "name": "My Dashboard",
+            "layout": { "sections": [] }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    run_replace(
+        &targets,
+        tmp.to_str().unwrap(),
+        OutputFormat::Text,
+        true,
+        false,
+    )
+    .await
+    .expect("run_replace with text output should succeed");
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+/// Verify that `run_replace` fails with a clear error when the dashboard JSON has no `id` field.
+#[tokio::test]
+async fn run_replace_missing_id_fails() {
+    let server = MockServer::start().await;
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = std::env::temp_dir().join("cx_test_replace_no_id.json");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "name": "Dashboard Without ID",
+            "layout": { "sections": [] }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let err = run_replace(
+        &targets,
+        tmp.to_str().unwrap(),
+        OutputFormat::Text,
+        true,
+        false,
+    )
+    .await
+    .expect_err("run_replace should fail when id is missing");
+
+    assert!(
+        err.to_string().contains("missing required 'id' field"),
+        "error should mention missing id: {err}"
+    );
+
+    std::fs::remove_file(&tmp).ok();
 }
 
 /// Verify that `run_folders_delete` succeeds when the mock returns an empty response.

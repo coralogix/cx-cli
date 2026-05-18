@@ -204,7 +204,7 @@ Not every question is answered by querying data. If the user's intent is operati
 | Setting up monitoring, webhooks, notifications | `cx-observability-setup` |
 | Configuring parsing rules, enrichments, E2M | `cx-data-pipeline` |
 | Access audit, API keys, user management | `cx-platform-admin` |
-| Creating or managing dashboards | `cx-create-dashboard` |
+| Creating or managing dashboards | `cx-dashboards` |
 | Finding or searching existing dashboards | `cx-search-dashboard` |
 
 ---

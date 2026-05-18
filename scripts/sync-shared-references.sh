@@ -55,8 +55,8 @@ copy_refs "cx-telemetry-querying" \
     "rum-querying.md" \
     "rum-fields.md"
 
-# cx-create-dashboard: query language and data-source references
-copy_refs "cx-create-dashboard" \
+# cx-dashboards: query language and data-source references
+copy_refs "cx-dashboards" \
     "dataprime-reference.md" \
     "promql-guidelines.md" \
     "logs-querying.md" \

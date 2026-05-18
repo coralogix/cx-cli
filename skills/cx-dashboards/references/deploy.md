@@ -88,6 +88,37 @@ Then emit the summary defined in the main `SKILL.md` § "Output format for the u
 
 ---
 
-## 5. Idempotency note
+## 5. Replace an existing dashboard
 
-Each run generates a fresh top-level `id` (21-char nanoid), so re-running this skill creates a *new* dashboard rather than overwriting an existing one. If the user wants to replace an existing dashboard, point them at the Coralogix API's "replace dashboard" endpoint - that's outside this skill's current scope.
+To update a dashboard that already exists (instead of creating a new one), use the replace workflow:
+
+1. Get the current definition:
+
+   ```bash
+   cx dashboards get <dashboard-id> -o json > dashboard.json
+   ```
+
+2. Edit `dashboard.json` (change widgets, queries, filters, etc.). The `id` field must remain intact.
+
+3. Deploy the updated version:
+
+   ```bash
+   cx dashboards replace --from-file dashboard.json --yes
+   ```
+
+This is a full replacement - the entire dashboard definition is overwritten. The `id` field in the JSON determines which dashboard is updated.
+
+Use replace when:
+- The user asks to update, modify, or iterate on an existing dashboard.
+- You're refining a dashboard after Phase 5 verification found issues.
+- The user exported a dashboard and wants to push changes back.
+
+Use create (not replace) when:
+- Building a new dashboard from scratch.
+- Duplicating an existing dashboard (remove the `id` field first).
+
+---
+
+## 6. Idempotency note
+
+Each `create` run generates a fresh top-level `id` (21-char nanoid), so re-running creates a *new* dashboard rather than overwriting an existing one. Use `replace` to update in place.

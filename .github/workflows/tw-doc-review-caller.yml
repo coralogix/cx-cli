@@ -1,0 +1,15 @@
+name: TW doc review
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "docs/*.md"
+
+jobs:
+  tw-review:
+    uses: coralogix/documentation/.github/workflows/tw-doc-review.yml@master
+    with:
+      doc_paths: "README.md docs/*.md"
+      shadow: true
+    secrets: inherit

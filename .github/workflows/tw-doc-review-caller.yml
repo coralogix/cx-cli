@@ -6,6 +6,9 @@ on:
       - "README.md"
       - "docs/*.md"
 
+permissions:
+  contents: read
+
 jobs:
   tw-review:
     uses: coralogix/documentation/.github/workflows/tw-doc-review.yml@master

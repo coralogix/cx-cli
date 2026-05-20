@@ -54,7 +54,6 @@ async fn ask_creates_chat_and_sends_message() {
         &targets,
         "What alerts fired today?",
         None,
-        "focus",
         "gpt-5.2",
         900,
         OutputFormat::Json,
@@ -93,7 +92,6 @@ async fn ask_continues_existing_chat() {
         &targets,
         "Tell me more",
         Some("existing-chat"),
-        "focus",
         "gpt-5.2",
         900,
         OutputFormat::Json,
@@ -103,7 +101,7 @@ async fn ask_continues_existing_chat() {
 }
 
 #[tokio::test]
-async fn ask_with_different_modes() {
+async fn ask_with_different_models() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -143,13 +141,12 @@ async fn ask_with_different_modes() {
         &targets,
         "Analyze this complex issue",
         None,
-        "deep-research",
         "advanced",
         900,
         OutputFormat::Json,
     )
     .await
-    .expect("run_ask with deep-research mode should succeed");
+    .expect("run_ask with advanced model should succeed");
 }
 
 #[tokio::test]
@@ -185,7 +182,6 @@ async fn ask_handles_cancelled_response() {
         &targets,
         "Query that gets cancelled",
         None,
-        "focus",
         "gpt-5.2",
         900,
         OutputFormat::Json,
@@ -204,7 +200,6 @@ async fn ask_rejects_multi_profile() {
         &targets,
         "Hello",
         None,
-        "focus",
         "gpt-5.2",
         900,
         OutputFormat::Json,

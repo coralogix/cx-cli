@@ -2,7 +2,7 @@
 mod common;
 
 use serde_json::json;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::olly::{run_artifacts_get, run_ask};
@@ -120,7 +120,7 @@ async fn ask_with_different_models() {
             "id": "interaction-deep",
             "chat_id": "chat-deep",
             "status": "COMPLETED",
-            "interaction_mode": "DEEP_RESEARCH",
+            "interaction_mode": "SKILL",
             "model_choice": "ADVANCED",
             "responses": [
                 {
@@ -201,6 +201,54 @@ async fn ask_rejects_multi_profile() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("does not support multi-profile"));
+}
+
+#[tokio::test]
+async fn ask_sends_skill_interaction_mode() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-skill",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-skill/interactions/"))
+        .and(body_partial_json(json!({"interaction_mode": "skill"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-skill",
+            "chat_id": "chat-skill",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-skill",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Response in skill mode"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_ask(
+        &targets,
+        "Test message",
+        None,
+        "gpt-5.2",
+        900,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_ask should send skill interaction_mode");
 }
 
 #[tokio::test]

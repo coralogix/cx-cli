@@ -23,12 +23,10 @@ use crate::spill::{self, maybe_spill, SpillOutcome};
 ///
 /// Creates a new chat if `chat_id` is None, otherwise continues an existing chat.
 /// Uses blocking mode to wait for the response.
-#[allow(clippy::too_many_arguments)]
 pub async fn run_ask(
     targets: &[Arc<ExecutionTarget>],
     message: &str,
     chat_id: Option<&str>,
-    mode: &str,
     model: &str,
     timeout: u32,
     output: OutputFormat,
@@ -52,9 +50,7 @@ pub async fn run_ask(
     };
 
     eprintln!("{}", "Sending message...".dimmed());
-    let interaction = api
-        .send_message(&chat_id, message, mode, model, timeout)
-        .await?;
+    let interaction = api.send_message(&chat_id, message, model, timeout).await?;
 
     // Render based on output format
     match output {

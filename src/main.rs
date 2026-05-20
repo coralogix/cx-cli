@@ -525,7 +525,7 @@ Examples:
 Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
-  cx olly ask \"Analyze this metric\" --mode deep-research
+  cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
   cx olly artifacts get <artifact-id>")]
     Olly {
         #[command(subcommand)]
@@ -640,7 +640,7 @@ enum OllyCmd {
 Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <uuid>
-  cx olly ask \"Analyze this\" --mode skill --model claude-sonnet-4-5")]
+  cx olly ask \"Analyze this\" --model claude-sonnet-4-5")]
     Ask {
         /// The message to send to the assistant.
         message: String,
@@ -648,10 +648,6 @@ Examples:
         /// Continue an existing chat (omit to create a new chat).
         #[arg(long)]
         chat_id: Option<String>,
-
-        /// Interaction mode: fast, focus, or skill.
-        #[arg(long, default_value = "focus")]
-        mode: String,
 
         /// Model choice (e.g., gpt-5.2, claude-sonnet-4-5, gpt-5.4, claude-haiku-4-5).
         #[arg(long, default_value = "gpt-5.2")]
@@ -3383,7 +3379,6 @@ async fn main() -> Result<()> {
             OllyCmd::Ask {
                 message,
                 chat_id,
-                mode,
                 model,
                 timeout,
             } => {
@@ -3391,7 +3386,6 @@ async fn main() -> Result<()> {
                     &targets,
                     &message,
                     chat_id.as_deref(),
-                    &mode,
                     &model,
                     timeout,
                     output,

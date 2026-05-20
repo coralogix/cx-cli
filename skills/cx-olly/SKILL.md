@@ -13,7 +13,7 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 
 | Command | Purpose | Key flags |
 |---|---|---|
-| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--mode`, `--model`, `--timeout` |
+| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout` |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
@@ -38,17 +38,6 @@ cx olly ask "Tell me more about the error rates" --chat-id <chat-id>
 ```
 
 Use `--chat-id` to continue a conversation and maintain context from previous messages.
-
-### Interaction modes
-
-| Mode | Description |
-|---|---|
-| `fast` | Quick responses, less detailed analysis |
-| `focus` | Balanced mode (default) - good for most queries |
-
-```bash
-cx olly ask "Quick summary of recent errors" --mode fast
-```
 
 ### Model selection
 

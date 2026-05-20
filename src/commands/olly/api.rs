@@ -201,14 +201,13 @@ impl OllyApi {
         &self,
         chat_id: &str,
         content: &str,
-        interaction_mode: &str,
         model_choice: &str,
         timeout_seconds: u32,
     ) -> Result<Interaction> {
         let path = format!("{CHATS_BASE}/{chat_id}/interactions/");
         let body = json!({
             "content": [InputContentBlock::text(content)],
-            "interaction_mode": interaction_mode,
+            "interaction_mode": "skill",
             "model_choice": model_choice,
             "should_block": true,
             "timeout_seconds": timeout_seconds

@@ -196,15 +196,7 @@ async fn ask_rejects_multi_profile() {
     let target2 = common::test_target("profile2", "http://localhost:2");
     let targets = vec![target1, target2];
 
-    let result = run_ask(
-        &targets,
-        "Hello",
-        None,
-        "gpt-5.2",
-        900,
-        OutputFormat::Json,
-    )
-    .await;
+    let result = run_ask(&targets, "Hello", None, "gpt-5.2", 900, OutputFormat::Json).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();

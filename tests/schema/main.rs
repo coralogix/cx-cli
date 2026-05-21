@@ -22,7 +22,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 27, "expected 27 top-level commands");
+    assert_eq!(commands.len(), 28, "expected 28 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()
@@ -31,6 +31,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
 
     // Verify key merged/renamed commands exist
     assert!(names.contains(&"alerts"), "missing alerts");
+    assert!(names.contains(&"cases"), "missing cases");
     assert!(names.contains(&"iam"), "missing iam");
     assert!(names.contains(&"notifications"), "missing notifications");
     assert!(names.contains(&"webhooks"), "missing webhooks");

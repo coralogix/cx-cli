@@ -21,6 +21,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 |---|---|
 | `cx-cost-optimization` | Analyze and reduce Coralogix data costs - usage analysis, TCO policies, retention, archive |
 | `cx-incident-management` | Triage incidents end-to-end - incidents, SLOs, alerts, notification verification |
+| `cx-cases` | Manage Coralogix Cases - list, inspect, assign/acknowledge/resolve/close, set priority overrides |
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |

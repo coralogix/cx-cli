@@ -72,6 +72,7 @@ Observe:
 Detect & Respond:
   alerts             Manage alert definitions and suppression rules
   incidents          Manage and triage incidents
+  cases              Manage and triage cases
 
 Notifications:
   notifications      Manage connectors, routers, presets, and notification testing
@@ -294,6 +295,23 @@ Examples:
     Incidents {
         #[command(subcommand)]
         cmd: IncidentsCmd,
+    },
+
+    /// Manage and triage cases.
+    #[command(after_help = "\
+Examples:
+  cx cases list
+  cx cases list --status ACTIVE --priority P1
+  cx cases get <case-id>
+  cx cases assign <case-id> --user alice@example.com
+  cx cases acknowledge <case-id>
+  cx cases resolve <case-id> --reason \"Mitigated by rollback\"
+  cx cases close <case-id>
+  cx cases events list <case-id>
+  cx cases notifications <case-id>")]
+    Cases {
+        #[command(subcommand)]
+        cmd: CasesCmd,
     },
 
     /// Manage connectors, routers, presets, and notification testing.
@@ -1015,6 +1033,149 @@ Examples:
     },
     /// Get incident aggregations.
     Aggregations,
+}
+
+#[derive(Subcommand)]
+enum CasesCmd {
+    /// List cases with optional filters.
+    #[command(after_help = "\
+Examples:
+  cx cases list
+  cx cases list --status ACTIVE --priority P1 --priority P2
+  cx cases list --category AVAILABILITY --assignee <user-id>
+  cx cases list --text \"database\" --page-size 50")]
+    List {
+        /// Filter by status. Repeatable. Accepts P1-style shorthand or full enum.
+        #[arg(long)]
+        status: Vec<String>,
+
+        /// Filter by priority. Repeatable. e.g. P1, P2.
+        #[arg(long)]
+        priority: Vec<String>,
+
+        /// Filter by category. Repeatable. e.g. AVAILABILITY, SECURITY.
+        #[arg(long)]
+        category: Vec<String>,
+
+        /// Filter by assignee user ID, or pass `unassigned` to show unassigned cases.
+        #[arg(long)]
+        assignee: Option<String>,
+
+        /// Free-text search applied to case titles.
+        #[arg(long)]
+        text: Option<String>,
+
+        /// Maximum number of cases per page.
+        #[arg(long)]
+        page_size: Option<u32>,
+
+        /// Pagination token from a previous response.
+        #[arg(long)]
+        page_token: Option<String>,
+    },
+    /// Get a single case by ID.
+    Get {
+        /// Case ID (UUID).
+        id: String,
+    },
+    /// Update mutable fields on a case.
+    Update {
+        /// Case ID (UUID).
+        id: String,
+        /// New case title.
+        #[arg(long)]
+        title: Option<String>,
+        /// Resolution reason.
+        #[arg(long)]
+        resolution_reason: Option<String>,
+    },
+    /// Assign a case to a user.
+    Assign {
+        /// Case ID (UUID).
+        id: String,
+        /// User to assign the case to — accepts an email address (resolved via
+        /// the team-members directory) or a raw user ID.
+        #[arg(long)]
+        user: String,
+    },
+    /// Remove the assignee from a case.
+    Unassign {
+        /// Case ID (UUID).
+        id: String,
+    },
+    /// Acknowledge a case.
+    Acknowledge {
+        /// Case ID (UUID).
+        id: String,
+    },
+    /// Remove the acknowledgment from a case.
+    Unacknowledge {
+        /// Case ID (UUID).
+        id: String,
+    },
+    /// Resolve a case [irreversible — requires confirmation; pass --yes to skip prompts].
+    Resolve {
+        /// Case ID (UUID).
+        id: String,
+        /// Resolution reason (prompted if omitted in an interactive terminal).
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Close a case.
+    Close {
+        /// Case ID (UUID).
+        id: String,
+    },
+    /// Override a case's computed priority.
+    SetPriority {
+        /// Case ID (UUID).
+        id: String,
+        /// Priority to set (e.g. P1, P2, P3, P4, P5).
+        #[arg(long)]
+        priority: String,
+    },
+    /// Clear a previously set priority override.
+    ClearPriority {
+        /// Case ID (UUID).
+        id: String,
+    },
+    /// Show available filter values and aggregated counts.
+    FilterValues,
+    /// List the grouping keys available for case filtering.
+    GroupingKeys,
+    /// Inspect the event timeline of a case.
+    #[command(after_help = "\
+Examples:
+  cx cases events list <case-id>
+  cx cases events get <event-id>")]
+    Events {
+        #[command(subcommand)]
+        cmd: CasesEventsCmd,
+    },
+    /// List notification deliveries for one or more cases.
+    #[command(after_help = "\
+Examples:
+  cx cases notifications <case-id>
+  cx cases notifications <case-id-1> <case-id-2>")]
+    Notifications {
+        /// One or more case IDs (UUIDs).
+        #[arg(required = true)]
+        case_ids: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum CasesEventsCmd {
+    /// List all events on a case (status changes, comments, etc.).
+    List {
+        /// Case ID (UUID).
+        case_id: String,
+    },
+    /// Get a single case event by its event ID.
+    Get {
+        /// Event ID (UUID).
+        event_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2590,6 +2751,109 @@ async fn main() -> Result<()> {
             }
             IncidentsCmd::Aggregations => {
                 commands::incidents::run_aggregations(&targets, output).await?;
+            }
+        },
+
+        Commands::Cases { cmd } => match cmd {
+            CasesCmd::List {
+                status,
+                priority,
+                category,
+                assignee,
+                text,
+                page_size,
+                page_token,
+            } => {
+                commands::cases::run_list(
+                    &targets,
+                    &status,
+                    &priority,
+                    &category,
+                    assignee.as_deref(),
+                    text.as_deref(),
+                    page_size,
+                    page_token.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            CasesCmd::Get { id } => {
+                commands::cases::run_get(&targets, &id, output).await?;
+            }
+            CasesCmd::Update {
+                id,
+                title,
+                resolution_reason,
+            } => {
+                commands::cases::run_update(
+                    &targets,
+                    &id,
+                    title.as_deref(),
+                    resolution_reason.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            CasesCmd::Assign { id, user } => {
+                commands::cases::run_assign(&targets, &id, &user, output).await?;
+            }
+            CasesCmd::Unassign { id } => {
+                commands::cases::run_unassign(&targets, &id, output).await?;
+            }
+            CasesCmd::Acknowledge { id } => {
+                commands::cases::run_acknowledge(&targets, &id, output).await?;
+            }
+            CasesCmd::Unacknowledge { id } => {
+                commands::cases::run_unacknowledge(&targets, &id, output).await?;
+            }
+            CasesCmd::Resolve { id, reason } => {
+                let reason = match reason {
+                    Some(r) => Some(r),
+                    None => safety::prompt_optional_text(
+                        "Resolution reason:",
+                        Some(
+                            "Share the root cause, what fixed it, and any follow-up. \
+                             Visible to all teammates in the case timeline.",
+                        ),
+                        yes,
+                        agent_mode,
+                    )?,
+                };
+                confirm_destructive(
+                    &format!(
+                        "Resolve case '{id}'? Resolution is irreversible — \
+                         the case cannot be reopened, only closed."
+                    ),
+                    yes,
+                    agent_mode,
+                )?;
+                commands::cases::run_resolve(&targets, &id, reason.as_deref(), output).await?;
+            }
+            CasesCmd::Close { id } => {
+                commands::cases::run_close(&targets, &id, output).await?;
+            }
+            CasesCmd::SetPriority { id, priority } => {
+                commands::cases::run_set_priority(&targets, &id, &priority, output).await?;
+            }
+            CasesCmd::ClearPriority { id } => {
+                commands::cases::run_clear_priority(&targets, &id, output).await?;
+            }
+            CasesCmd::FilterValues => {
+                commands::cases::run_filter_values(&targets, output).await?;
+            }
+            CasesCmd::GroupingKeys => {
+                commands::cases::run_grouping_keys(&targets, output).await?;
+            }
+            CasesCmd::Events { cmd } => match cmd {
+                CasesEventsCmd::List { case_id } => {
+                    commands::cases::run_events_list(&targets, &case_id, output).await?;
+                }
+                CasesEventsCmd::Get { event_id } => {
+                    commands::cases::run_event_get(&targets, &event_id, output).await?;
+                }
+            },
+            CasesCmd::Notifications { case_ids } => {
+                commands::cases::run_notifications(&targets, &case_ids, output).await?;
             }
         },
 

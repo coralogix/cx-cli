@@ -60,6 +60,18 @@ fn event_to_json(event: &Value, include_profile: bool, profile: &str) -> Value {
     v
 }
 
+fn next_page_token(pagination: Option<&Value>) -> Option<String> {
+    pagination
+        .and_then(|p| {
+            p.get("nextPageToken")
+                .or_else(|| p.get("next_page_token"))
+                .or_else(|| p.get("next_page"))
+        })
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 pub async fn run_list(
@@ -443,30 +455,51 @@ pub async fn run_events(
         let end = end_owned.clone();
         async move {
             let api = AlertsApi::new(&t.client);
-            let mut params: Vec<(&str, String)> = Vec::new();
-            if alert_version_ids.is_empty() {
-                params.push((
-                    "filter.timestamp.from",
-                    crate::time::parse_timestamp(&start)?,
-                ));
-                params.push(("filter.timestamp.to", crate::time::parse_timestamp(&end)?));
-                params.push(("pagination.page_size", "100".to_string()));
-                let params_ref: Vec<(&str, &str)> =
-                    params.iter().map(|(k, v)| (*k, v.as_str())).collect();
-                Ok(api.list_events(&params_ref).await?)
-            } else {
-                for id in &alert_version_ids {
-                    params.push(("alert_ids", id.clone()));
+            let start = crate::time::parse_timestamp(&start)?;
+            let end = crate::time::parse_timestamp(&end)?;
+            let mut all_events = Vec::new();
+            let mut page_token: Option<String> = None;
+
+            loop {
+                let mut params: Vec<(&str, String)> = Vec::new();
+                if alert_version_ids.is_empty() {
+                    params.push(("filter.timestamp.from", start.clone()));
+                    params.push(("filter.timestamp.to", end.clone()));
+                    params.push(("pagination.page_size", "100".to_string()));
+                } else {
+                    for id in &alert_version_ids {
+                        params.push(("alert_ids", id.clone()));
+                    }
+                    params.push(("timestamp_range.from", start.clone()));
+                    params.push(("timestamp_range.to", end.clone()));
                 }
-                params.push((
-                    "timestamp_range.from",
-                    crate::time::parse_timestamp(&start)?,
-                ));
-                params.push(("timestamp_range.to", crate::time::parse_timestamp(&end)?));
+                if let Some(token) = &page_token {
+                    params.push(("pagination.page_token", token.clone()));
+                }
+
                 let params_ref: Vec<(&str, &str)> =
                     params.iter().map(|(k, v)| (*k, v.as_str())).collect();
-                Ok(api.list_alert_events(&params_ref).await?)
+
+                let resp = if alert_version_ids.is_empty() {
+                    api.list_events(&params_ref).await?
+                } else {
+                    api.list_alert_events(&params_ref).await?
+                };
+                let next = next_page_token(resp.pagination.as_ref());
+                all_events.extend(if resp.events.is_empty() {
+                    resp.alert_events
+                } else {
+                    resp.events
+                });
+
+                match next {
+                    Some(next) if page_token.as_deref() != Some(next.as_str()) => {
+                        page_token = Some(next);
+                    }
+                    _ => break,
+                }
             }
+            Ok(all_events)
         }
     })
     .await;
@@ -475,12 +508,7 @@ pub async fn run_events(
     let mut all_items: Vec<(String, Value)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(resp) => {
-                let events = if resp.events.is_empty() {
-                    resp.alert_events
-                } else {
-                    resp.events
-                };
+            Ok(events) => {
                 for event in events {
                     all_json.push(event_to_json(&event, include_profile, &profile));
                     all_items.push((profile.clone(), event));

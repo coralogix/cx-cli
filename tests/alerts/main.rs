@@ -2,7 +2,7 @@
 mod common;
 
 use serde_json::json;
-use wiremock::matchers::{body_json, method, path, query_param};
+use wiremock::matchers::{body_json, method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::alerts::{
@@ -273,6 +273,46 @@ async fn events_without_alert_version_ids_uses_general_events_endpoint() {
 }
 
 #[tokio::test]
+async fn events_without_alert_version_ids_paginates_general_events_endpoint() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/events/v3"))
+        .and(query_param_is_missing("pagination.page_token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "events": [
+                { "cxEventKey": "event-1" }
+            ],
+            "pagination": {
+                "nextPageToken": "page-2"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/events/v3"))
+        .and(query_param("pagination.page_token", "page-2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "events": [
+                { "cxEventKey": "event-2" }
+            ],
+            "pagination": {}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_events(&targets, &[], None, None, OutputFormat::Json)
+        .await
+        .expect("run_events should paginate general events endpoint");
+}
+
+#[tokio::test]
 async fn events_with_alert_version_ids_uses_scoped_endpoint() {
     let server = MockServer::start().await;
 
@@ -293,4 +333,47 @@ async fn events_with_alert_version_ids_uses_scoped_endpoint() {
     run_events(&targets, &ids, None, None, OutputFormat::Json)
         .await
         .expect("run_events should use scoped alert events endpoint");
+}
+
+#[tokio::test]
+async fn events_with_alert_version_ids_paginates_scoped_endpoint() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/all/events"))
+        .and(query_param("alert_ids", "version-001"))
+        .and(query_param_is_missing("pagination.page_token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertEvents": [
+                { "cxEventKey": "event-1" }
+            ],
+            "pagination": {
+                "nextPageToken": "page-2"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/all/events"))
+        .and(query_param("alert_ids", "version-001"))
+        .and(query_param("pagination.page_token", "page-2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertEvents": [
+                { "cxEventKey": "event-2" }
+            ],
+            "pagination": {}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+    let ids = vec!["version-001".to_string()];
+
+    run_events(&targets, &ids, None, None, OutputFormat::Json)
+        .await
+        .expect("run_events should paginate scoped alert events endpoint");
 }

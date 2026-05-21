@@ -29,6 +29,14 @@ pub fn normalize_priority(input: &str) -> Result<String> {
     }
 }
 
+/// Insert (or replace) the `assignees` array inside the request body's
+/// `filters` object. No-op if `filters` is missing or not an object.
+fn inject_assignees_filter(body: &mut Value, entry: Value) {
+    if let Some(filters) = body.get_mut("filters").and_then(|v| v.as_object_mut()) {
+        filters.insert("assignees".to_string(), Value::Array(vec![entry]));
+    }
+}
+
 fn normalize_enum_filter(values: &[String], prefix: &str) -> Vec<String> {
     values
         .iter()
@@ -156,30 +164,6 @@ pub async fn run_list(
             ),
         );
     }
-    // The --assignee filter accepts email, user ID, or the literal "unassigned".
-    // Email is resolved via the teammates directory before fan-out so a single
-    // resolution failure doesn't fire per-profile requests we know will be no-ops.
-    let assignee_filter = match assignee {
-        Some(a) if a.eq_ignore_ascii_case("unassigned") => Some(json!({ "unassigned": {} })),
-        Some(a) if a.contains('@') => {
-            // Resolve against the first profile's directory. Multi-profile users
-            // with diverging teammate lists should use the raw user ID instead.
-            let primary = targets.first().ok_or_else(|| anyhow!("no targets"))?;
-            let dir = CasesApi::new(&primary.client)
-                .teammate_directory()
-                .await
-                .map_err(|e| {
-                    anyhow!("failed to fetch teammates for --assignee resolution: {e:#}")
-                })?;
-            let uid = dir.resolve_to_user_id(a)?;
-            Some(json!({ "assignee": uid }))
-        }
-        Some(a) => Some(json!({ "assignee": a })),
-        None => None,
-    };
-    if let Some(entry) = assignee_filter {
-        filters.insert("assignees".to_string(), Value::Array(vec![entry]));
-    }
     if let Some(t) = text {
         filters.insert("textSearch".to_string(), Value::String(t.to_string()));
     }
@@ -198,17 +182,49 @@ pub async fn run_list(
         body.insert("pagination".to_string(), Value::Object(pagination));
     }
     let body = Value::Object(body);
+    let assignee_owned: Option<String> = assignee.map(String::from);
 
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
+        let assignee = assignee_owned.clone();
         async move {
             let api = CasesApi::new(&t.client);
-            // Fetch teammates in parallel; failure is non-fatal — we fall back to
-            // raw user IDs in the output so the list call still produces useful data.
-            let (cases_res, dir_res) = tokio::join!(api.list(&body), api.teammate_directory());
-            let cases = cases_res?;
-            let directory = dir_res.unwrap_or_default();
-            Ok::<_, anyhow::Error>((cases, directory))
+            // --assignee is resolved per profile because user IDs are
+            // team-scoped — resolving once against the primary profile would
+            // silently return wrong/empty results for the others.
+            let is_email = assignee
+                .as_deref()
+                .is_some_and(|a| a.contains('@') && !a.eq_ignore_ascii_case("unassigned"));
+            if is_email {
+                // Email path: fetch directory first, then list with the
+                // resolved user ID. Cannot race the two requests here.
+                let email = assignee.as_deref().expect("checked above");
+                let directory = api.teammate_directory().await.map_err(|e| {
+                    anyhow!("failed to fetch teammates for --assignee resolution: {e:#}")
+                })?;
+                let uid = directory.resolve_to_user_id(email)?;
+                let mut body = body;
+                inject_assignees_filter(&mut body, json!({ "assignee": uid }));
+                let cases = api.list(&body).await?;
+                Ok::<_, anyhow::Error>((cases, directory))
+            } else {
+                // Non-email path: inject any pass-through filter and race
+                // the directory fetch with the list call.
+                let mut body = body;
+                if let Some(a) = assignee.as_deref() {
+                    let entry = if a.eq_ignore_ascii_case("unassigned") {
+                        json!({ "unassigned": {} })
+                    } else {
+                        json!({ "assignee": a })
+                    };
+                    inject_assignees_filter(&mut body, entry);
+                }
+                // Fetch teammates in parallel; failure is non-fatal — we fall back
+                // to raw user IDs in the output so the list call still produces
+                // useful data.
+                let (cases_res, dir_res) = tokio::join!(api.list(&body), api.teammate_directory());
+                Ok::<_, anyhow::Error>((cases_res?, dir_res.unwrap_or_default()))
+            }
         }
     })
     .await;

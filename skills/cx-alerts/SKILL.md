@@ -19,7 +19,7 @@ Use this skill to list, inspect, create, delete, enable, and disable Coralogix a
 | `cx alerts delete <id>` | Delete an alert | - |
 | `cx alerts enable <id>` | Enable an alert | - |
 | `cx alerts disable <id>` | Disable an alert | - |
-| `cx alerts events` | List alert trigger events | `--alert-id`, `--start`, `--end` |
+| `cx alerts events` | List events; use alert-version scoped endpoint when filtering | `--alert-version-id`, `--start`, `--end` |
 | `cx alerts event-stats` | Get alert event statistics | - |
 | `cx alerts suppression-rules list` | List suppression rules | - |
 | `cx alerts suppression-rules get <id>` | Get a suppression rule | - |

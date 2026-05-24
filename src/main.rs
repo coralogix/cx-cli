@@ -913,12 +913,12 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx alerts events
-  cx alerts events --alert-id <id>
-  cx alerts events --start now-24h")]
+  cx alerts events --alert-version-id <version-id>
+  cx alerts events --alert-version-id <version-id> --start now-24h")]
     Events {
-        /// Filter by alert definition ID.
+        /// Filter by alert version ID. Repeat to include multiple alert versions.
         #[arg(long)]
-        alert_id: Option<String>,
+        alert_version_id: Vec<String>,
 
         /// Start time filter (ISO 8601 or relative).
         #[arg(long)]
@@ -2501,13 +2501,13 @@ async fn main() -> Result<()> {
                 commands::alerts::run_disable(&targets, &alert_id).await?;
             }
             AlertsCmd::Events {
-                alert_id,
+                alert_version_id,
                 start,
                 end,
             } => {
                 commands::alerts::run_events(
                     &targets,
-                    alert_id.as_deref(),
+                    &alert_version_id,
                     start.as_deref(),
                     end.as_deref(),
                     output,

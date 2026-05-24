@@ -11,7 +11,7 @@ use crate::config::OutputFormat;
 use crate::error::CxError;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
-use api::{AlertDef, AlertEvent, AlertsApi};
+use api::{normalize_alert_payload, AlertDef, AlertsApi};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -34,6 +34,42 @@ fn alert_to_json(alert: &AlertDef, include_profile: bool, profile: &str) -> Valu
         }
     }
     v
+}
+
+fn event_field(event: &Value, keys: &[&str]) -> String {
+    for key in keys {
+        if let Some(value) = event.get(*key) {
+            if let Some(s) = value.as_str() {
+                return s.to_string();
+            }
+            if value.is_number() || value.is_boolean() {
+                return value.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+fn event_to_json(event: &Value, include_profile: bool, profile: &str) -> Value {
+    let mut v = event.clone();
+    if include_profile {
+        if let Value::Object(ref mut m) = v {
+            m.insert("profile".to_string(), Value::String(profile.to_string()));
+        }
+    }
+    v
+}
+
+fn next_page_token(pagination: Option<&Value>) -> Option<String> {
+    pagination
+        .and_then(|p| {
+            p.get("nextPageToken")
+                .or_else(|| p.get("next_page_token"))
+                .or_else(|| p.get("next_page"))
+        })
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
 }
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
@@ -220,12 +256,13 @@ pub async fn run_create(
         std::fs::read_to_string(from_file)?
     };
 
-    let body: Value = serde_json::from_str(&raw)?;
+    let mut body: Value = serde_json::from_str(&raw)?;
 
     // Validate that alertDefProperties exists
     if body.get("alertDefProperties").is_none() {
         bail!("JSON must contain an 'alertDefProperties' key. See `cx alerts create --help`.");
     }
+    normalize_alert_payload(&mut body);
 
     eprintln!("{}", "Creating alert...".dimmed());
 
@@ -311,6 +348,33 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
     Ok(())
 }
 
+fn replace_body_with_enabled(
+    mut alert_response: Value,
+    alert_id: &str,
+    active: bool,
+) -> Result<Value> {
+    let alert_def = alert_response
+        .get_mut("alertDef")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| anyhow::anyhow!("Alert response did not contain 'alertDef'."))?;
+
+    let mut properties = alert_def
+        .remove("alertDefProperties")
+        .ok_or_else(|| anyhow::anyhow!("Alert response did not contain 'alertDefProperties'."))?;
+
+    let props = properties
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("'alertDefProperties' was not a JSON object."))?;
+    props.insert("enabled".to_string(), Value::Bool(active));
+
+    let mut body = json!({
+        "id": alert_id,
+        "alertDefProperties": properties,
+    });
+    normalize_alert_payload(&mut body);
+    Ok(body)
+}
+
 pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Result<()> {
     eprintln!("{}", format!("Enabling alert {alert_id}...").dimmed());
 
@@ -320,7 +384,9 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
         let id = id.clone();
         async move {
             let api = AlertsApi::new(&t.client);
-            api.set_active(&id, true).await?;
+            let alert = api.get(&id).await?;
+            let body = replace_body_with_enabled(alert, &id, true)?;
+            api.replace(&body).await?;
             Ok(())
         }
     })
@@ -348,7 +414,9 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
         let id = id.clone();
         async move {
             let api = AlertsApi::new(&t.client);
-            api.set_active(&id, false).await?;
+            let alert = api.get(&id).await?;
+            let body = replace_body_with_enabled(alert, &id, false)?;
+            api.replace(&body).await?;
             Ok(())
         }
     })
@@ -369,7 +437,7 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
 
 pub async fn run_events(
     targets: &[Arc<ExecutionTarget>],
-    alert_id: Option<&str>,
+    alert_version_ids: &[String],
     start: Option<&str>,
     end: Option<&str>,
     output: OutputFormat,
@@ -377,54 +445,72 @@ pub async fn run_events(
     eprintln!("{}", "Fetching alert events...".dimmed());
 
     let include_profile = targets.len() > 1;
-    let alert_id_owned = alert_id.map(|s| s.to_string());
-    let start_owned = start.map(|s| s.to_string());
-    let end_owned = end.map(|s| s.to_string());
+    let alert_version_ids = alert_version_ids.to_vec();
+    let start_owned = start.unwrap_or("now-24h").to_string();
+    let end_owned = end.unwrap_or("now").to_string();
 
     let per_profile = fan_out(targets, |t| {
-        let alert_id = alert_id_owned.clone();
+        let alert_version_ids = alert_version_ids.clone();
         let start = start_owned.clone();
         let end = end_owned.clone();
         async move {
             let api = AlertsApi::new(&t.client);
-            let mut params: Vec<(&str, String)> = Vec::new();
-            if let Some(ref id) = alert_id {
-                params.push(("alert_id", id.clone()));
+            let start = crate::time::parse_timestamp(&start)?;
+            let end = crate::time::parse_timestamp(&end)?;
+            let mut all_events = Vec::new();
+            let mut page_token: Option<String> = None;
+
+            loop {
+                let mut params: Vec<(&str, String)> = Vec::new();
+                if alert_version_ids.is_empty() {
+                    params.push(("filter.timestamp.from", start.clone()));
+                    params.push(("filter.timestamp.to", end.clone()));
+                    params.push(("pagination.page_size", "100".to_string()));
+                } else {
+                    for id in &alert_version_ids {
+                        params.push(("alert_ids", id.clone()));
+                    }
+                    params.push(("timestamp_range.from", start.clone()));
+                    params.push(("timestamp_range.to", end.clone()));
+                }
+                if let Some(token) = &page_token {
+                    params.push(("pagination.page_token", token.clone()));
+                }
+
+                let params_ref: Vec<(&str, &str)> =
+                    params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
+                let resp = if alert_version_ids.is_empty() {
+                    api.list_events(&params_ref).await?
+                } else {
+                    api.list_alert_events(&params_ref).await?
+                };
+                let next = next_page_token(resp.pagination.as_ref());
+                all_events.extend(if resp.events.is_empty() {
+                    resp.alert_events
+                } else {
+                    resp.events
+                });
+
+                match next {
+                    Some(next) if page_token.as_deref() != Some(next.as_str()) => {
+                        page_token = Some(next);
+                    }
+                    _ => break,
+                }
             }
-            if let Some(ref s) = start {
-                params.push(("start", s.clone()));
-            }
-            if let Some(ref e) = end {
-                params.push(("end", e.clone()));
-            }
-            let params_ref: Vec<(&str, &str)> =
-                params.iter().map(|(k, v)| (*k, v.as_str())).collect();
-            Ok(api.list_events(&params_ref).await?)
+            Ok(all_events)
         }
     })
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
-    let mut all_items: Vec<(String, AlertEvent)> = Vec::new();
+    let mut all_items: Vec<(String, Value)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(resp) => {
-                for event in resp.alert_events {
-                    let mut v = json!({
-                        "id": event.id,
-                        "alert_def_id": event.alert_def_id,
-                        "alert_name": event.alert_name,
-                        "severity": event.display_severity(),
-                        "status": event.display_status(),
-                        "triggered_at": event.triggered_at,
-                        "resolved_at": event.resolved_at,
-                    });
-                    if include_profile {
-                        if let Value::Object(ref mut m) = v {
-                            m.insert("profile".to_string(), Value::String(profile.clone()));
-                        }
-                    }
-                    all_json.push(v);
+            Ok(events) => {
+                for event in events {
+                    all_json.push(event_to_json(&event, include_profile, &profile));
                     all_items.push((profile.clone(), event));
                 }
             }
@@ -446,24 +532,24 @@ pub async fn run_events(
             }
             let rows: Vec<Vec<String>> = all_items
                 .iter()
-                .map(|(profile, evt)| {
+                .map(|(profile, event)| {
                     vec![
                         profile.clone(),
-                        evt.id.clone().unwrap_or_default(),
-                        evt.alert_name.clone().unwrap_or_default(),
-                        evt.display_severity(),
-                        evt.display_status(),
-                        evt.triggered_at.clone().unwrap_or_default(),
+                        event_field(event, &["cxEventKey", "id", "eventId"]),
+                        event_field(event, &["cxEventType", "type", "status"]),
+                        event_field(event, &["cxEventPayloadType", "alertName", "alert_name"]),
+                        event_field(event, &["cxEventTimestamp", "triggeredAt", "triggered_at"]),
+                        event_field(event, &["cxEventDedupKey", "dedupKey"]),
                     ]
                 })
                 .collect();
             render::render_table(
                 &[
-                    "Event ID",
-                    "Alert Name",
-                    "Severity",
-                    "Status",
-                    "Triggered At",
+                    "Event Key",
+                    "Type",
+                    "Payload Type",
+                    "Timestamp",
+                    "Dedup Key",
                 ],
                 rows,
                 include_profile,

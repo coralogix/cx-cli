@@ -53,7 +53,7 @@ async fn explicit_profile_uses_profile_key_not_env_var() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/alerts/alerts-general/v3"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
         .and(header("Authorization", "Bearer profile-key-aaa"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "alertDefs": []
@@ -78,7 +78,7 @@ async fn no_explicit_profile_uses_env_var_key() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/alerts/alerts-general/v3"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
         .and(header("Authorization", "Bearer env-key-bbb"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "alertDefs": []
@@ -103,7 +103,7 @@ async fn explicit_api_key_flag_overrides_profile_key() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/alerts/alerts-general/v3"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
         .and(header("Authorization", "Bearer explicit-flag-key"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "alertDefs": []
@@ -136,7 +136,7 @@ async fn explicit_profile_uses_profile_region_not_env_var() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/alerts/alerts-general/v3"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "alertDefs": []
         })))
@@ -164,7 +164,7 @@ async fn multi_profile_with_env_api_key_does_not_bail() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/alerts/alerts-general/v3"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "alertDefs": []
         })))
@@ -202,7 +202,7 @@ async fn multi_profile_with_env_region_does_not_bail() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/alerts/alerts-general/v3"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "alertDefs": []
         })))

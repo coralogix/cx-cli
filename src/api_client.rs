@@ -51,6 +51,30 @@ impl CxClient {
         Ok(serde_json::from_str(&text)?)
     }
 
+    /// GET with optional query params, return the raw response text.
+    pub async fn get_raw(&self, path: &str, params: &[(&str, &str)]) -> Result<String> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self.inner.get(&url).query(params).send().await?;
+        self.checked_text(resp).await
+    }
+
+    /// GET an endpoint documented as newline-delimited JSON over event-stream.
+    pub async fn get_event_stream_raw(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+    ) -> Result<String> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self
+            .inner
+            .get(&url)
+            .header(header::ACCEPT, "text/event-stream")
+            .query(params)
+            .send()
+            .await?;
+        self.checked_text(resp).await
+    }
+
     /// POST JSON body, deserialize response into T.
     pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);

@@ -1075,12 +1075,12 @@ Examples:
     },
     /// Get a single case by ID.
     Get {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Update mutable fields on a case.
     Update {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
         /// New case title.
         #[arg(long)]
@@ -1091,7 +1091,7 @@ Examples:
     },
     /// Assign a case to a user.
     Assign {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
         /// User to assign the case to — accepts an email address (resolved via
         /// the team-members directory) or a raw user ID.
@@ -1100,22 +1100,22 @@ Examples:
     },
     /// Remove the assignee from a case.
     Unassign {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Acknowledge a case.
     Acknowledge {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Remove the acknowledgment from a case.
     Unacknowledge {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Resolve a case [irreversible — requires confirmation; pass --yes to skip prompts].
     Resolve {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
         /// Resolution reason (prompted if omitted in an interactive terminal).
         #[arg(long)]
@@ -1123,12 +1123,12 @@ Examples:
     },
     /// Close a case.
     Close {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Override a case's computed priority.
     SetPriority {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
         /// Priority to set (e.g. P1, P2, P3, P4, P5).
         #[arg(long)]
@@ -1136,7 +1136,7 @@ Examples:
     },
     /// Clear a previously set priority override.
     ClearPriority {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Show available filter values and aggregated counts.
@@ -1168,7 +1168,7 @@ Examples:
 enum CasesEventsCmd {
     /// List all events on a case (status changes, comments, etc.).
     List {
-        /// Case ID (UUID).
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
         case_id: String,
     },
     /// Get a single case event by its event ID.

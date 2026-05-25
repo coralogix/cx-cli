@@ -96,7 +96,7 @@ impl<'a> RuleGroupsApi<'a> {
     }
 
     pub async fn usage_limits(&self) -> Result<Value> {
-        self.client.get(PARSING_RULES_LIMITS_BASE, &[]).await
+        self.client.post_empty(PARSING_RULES_LIMITS_BASE, &[]).await
     }
 }
 

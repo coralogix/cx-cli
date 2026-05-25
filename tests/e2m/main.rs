@@ -32,9 +32,7 @@ async fn list_e2m_returns_items_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path(
-            "/mgmt/openapi/5/events2metrics/events2metrics/v2",
-        ))
+        .and(path("/mgmt/openapi/5/events2metrics/events2metrics/v2"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

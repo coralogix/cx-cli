@@ -38,9 +38,7 @@ async fn retentions_status_from_mock() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path(
-            "/mgmt/openapi/5/dataengine/retention-tags/v1/enabled",
-        ))
+        .and(path("/mgmt/openapi/5/dataengine/retention-tags/v1/enabled"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
         .expect(1)
         .mount(&server)

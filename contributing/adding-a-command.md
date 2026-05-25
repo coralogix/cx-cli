@@ -220,7 +220,7 @@ pub struct ListResponse {
 
 // ── API client ─────────────────────────────────────────────────────
 
-const BASE_PATH: &str = "/mgmt/openapi/latest/your-domain/v1";
+const BASE_PATH: &str = "/mgmt/openapi/5/your-domain/v1";
 
 pub struct YourDomainApi<'a> {
     client: &'a CxClient,
@@ -582,7 +582,7 @@ async fn list_returns_items_from_mock() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/your-domain/v1"))
+        .and(path("/mgmt/openapi/5/your-domain/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "items": [{ "id": "abc-123", "name": "Test" }]
         })))

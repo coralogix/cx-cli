@@ -19,7 +19,7 @@ async fn list_integrations_from_mock() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/integrations/integrations/v1"))
+        .and(path("/mgmt/openapi/5/integrations/integrations/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -36,7 +36,7 @@ async fn list_integrations_empty() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/integrations/integrations/v1"))
+        .and(path("/mgmt/openapi/5/integrations/integrations/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "deployments": [] })))
         .expect(1)
         .mount(&server)

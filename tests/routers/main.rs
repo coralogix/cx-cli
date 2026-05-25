@@ -20,7 +20,7 @@ async fn list_routers_from_mock() {
 
     Mock::given(method("GET"))
         .and(path(
-            "/mgmt/openapi/latest/notifications/notification-center/v1/routers",
+            "/mgmt/openapi/5/notifications/notification-center/v1/routers",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)

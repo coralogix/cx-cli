@@ -16,7 +16,7 @@ pub struct TestResultResponse {
 
 // --- API ---
 
-const NOTIFICATION_TEST_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1";
+const NOTIFICATION_TEST_BASE: &str = "/mgmt/openapi/5/notifications/notification-center/v1";
 
 pub struct NotificationTestingApi<'a> {
     client: &'a CxClient,

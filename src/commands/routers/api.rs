@@ -61,7 +61,7 @@ pub struct DeleteRouterResponse {}
 
 // --- API ---
 
-const ROUTERS_BASE: &str = "/mgmt/openapi/latest/notifications/notification-center/v1/routers";
+const ROUTERS_BASE: &str = "/mgmt/openapi/5/notifications/notification-center/v1/routers";
 
 pub struct RoutersApi<'a> {
     client: &'a CxClient,

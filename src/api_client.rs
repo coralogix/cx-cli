@@ -150,18 +150,24 @@ impl CxClient {
         match status {
             StatusCode::UNAUTHORIZED => Err(CxError::Auth(match detail {
                 Some(d) => format!("{d}. Run `cx profiles add` to update credentials."),
-                None => "Invalid or expired API key. Run `cx profiles add` to update credentials.".into(),
+                None => "Invalid or expired API key. Run `cx profiles add` to update credentials."
+                    .into(),
             })),
-            StatusCode::FORBIDDEN => Err(CxError::Auth(match detail {
+            StatusCode::FORBIDDEN => Err(CxError::Permission(match detail {
                 Some(d) => format!("{d}. Check your API key's scopes."),
-                None => "Permission denied: your API key does not have the required scope for this operation.".into(),
+                None => {
+                    "You do not have permission for this operation. Check your API key's scopes."
+                        .into()
+                }
             })),
             StatusCode::TOO_MANY_REQUESTS => Err(CxError::Api {
                 status: code,
                 message: match (detail, retry_after) {
                     (Some(d), Some(secs)) => format!("{d}. Retry after {secs} seconds."),
                     (Some(d), None) => d,
-                    (None, Some(secs)) => format!("Rate limited by the API. Retry after {secs} seconds."),
+                    (None, Some(secs)) => {
+                        format!("Rate limited by the API. Retry after {secs} seconds.")
+                    }
                     (None, None) => "Rate limited by the API. Wait and retry.".into(),
                 },
             }),

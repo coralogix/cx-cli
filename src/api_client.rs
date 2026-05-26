@@ -51,20 +51,19 @@ impl CxClient {
         Ok(serde_json::from_str(&text)?)
     }
 
-    /// GET an endpoint documented as newline-delimited JSON over event-stream.
-    pub async fn get_event_stream_raw(
+    /// GET with optional query params, return the raw response text.
+    pub async fn get_raw(
         &self,
         path: &str,
         params: &[(&str, &str)],
+        headers: &[(&str, &str)],
     ) -> Result<String> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self
-            .inner
-            .get(&url)
-            .header(header::ACCEPT, "text/event-stream")
-            .query(params)
-            .send()
-            .await?;
+        let mut req = self.inner.get(&url).query(params);
+        for (key, value) in headers {
+            req = req.header(*key, *value);
+        }
+        let resp = req.send().await?;
         self.checked_text(resp).await
     }
 

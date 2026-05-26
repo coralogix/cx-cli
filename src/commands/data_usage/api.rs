@@ -45,6 +45,7 @@ pub struct ExportStatusResponse {
 // --- API ---
 
 const DATA_USAGE_BASE: &str = "/mgmt/openapi/5/dataplans/data-usage/v2";
+const DATA_USAGE_ACCEPT: &str = "text/event-stream";
 
 pub struct DataUsageApi<'a> {
     client: &'a CxClient,
@@ -58,7 +59,7 @@ impl<'a> DataUsageApi<'a> {
     pub async fn get_usage(&self, params: &[(&str, &str)]) -> Result<Value> {
         let raw = self
             .client
-            .get_event_stream_raw(DATA_USAGE_BASE, params)
+            .get_raw(DATA_USAGE_BASE, params, &[("Accept", DATA_USAGE_ACCEPT)])
             .await?;
         parse_data_usage_raw_response(&raw)
     }
@@ -70,13 +71,19 @@ impl<'a> DataUsageApi<'a> {
 
     pub async fn logs_count(&self, params: &[(&str, &str)]) -> Result<Value> {
         let path = format!("{DATA_USAGE_BASE}/logs/count");
-        let raw = self.client.get_event_stream_raw(&path, params).await?;
+        let raw = self
+            .client
+            .get_raw(&path, params, &[("Accept", DATA_USAGE_ACCEPT)])
+            .await?;
         parse_data_usage_raw_response(&raw)
     }
 
     pub async fn spans_count(&self, params: &[(&str, &str)]) -> Result<Value> {
         let path = format!("{DATA_USAGE_BASE}/spans/count");
-        let raw = self.client.get_event_stream_raw(&path, params).await?;
+        let raw = self
+            .client
+            .get_raw(&path, params, &[("Accept", DATA_USAGE_ACCEPT)])
+            .await?;
         parse_data_usage_raw_response(&raw)
     }
 
@@ -87,18 +94,22 @@ impl<'a> DataUsageApi<'a> {
 }
 
 pub fn parse_data_usage_raw_response(raw: &str) -> Result<Value> {
+    // Data Usage overview, logs/count, and spans/count are requested with
+    // `Accept: text/event-stream`, but some responses still arrive as one JSON
+    // object. Parse the single-object form first, then fall back to the
+    // line-delimited event-stream form.
     if let Ok(value) = serde_json::from_str(raw) {
         return Ok(normalize_result_array_object(value));
     }
 
-    // The Data Usage overview documents `Get data usage`, `logs/count`, and
-    // `spans/count` as `Accept: text/event-stream` endpoints that return
-    // newline-delimited JSON. Some responses still arrive as one JSON object,
-    // so parse that first and fall back to the documented line-delimited form.
     let mut values = Vec::new();
     for line in raw.lines() {
         let mut line = line.trim();
-        if line.is_empty() || line.starts_with(':') {
+        if line.is_empty() {
+            continue;
+        }
+        // Server-Sent Events allows colon-prefixed comment/keepalive lines.
+        if line.starts_with(':') {
             continue;
         }
         if let Some(data) = line.strip_prefix("data:") {
@@ -250,6 +261,24 @@ mod tests {
     fn parse_data_usage_raw_response_accepts_ndjson() {
         let raw = r#"{"timestamp":"2026-05-25T00:00:00Z","count":"1"}
 {"timestamp":"2026-05-25T01:00:00Z","count":"2"}
+"#;
+        let value = parse_data_usage_raw_response(raw).unwrap();
+        assert_eq!(
+            value,
+            json!([
+                {"timestamp": "2026-05-25T00:00:00Z", "count": "1"},
+                {"timestamp": "2026-05-25T01:00:00Z", "count": "2"}
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_data_usage_raw_response_accepts_sse_data_lines() {
+        let raw = r#": keepalive
+data: {"timestamp":"2026-05-25T00:00:00Z","count":"1"}
+
+data: {"timestamp":"2026-05-25T01:00:00Z","count":"2"}
+data: [DONE]
 "#;
         let value = parse_data_usage_raw_response(raw).unwrap();
         assert_eq!(

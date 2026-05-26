@@ -5,7 +5,7 @@ use serde_json::json;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::data_usage::{run_logs_count, run_summary};
+use coralogix_cli::commands::data_usage::{run_logs_count, run_spans_count, run_summary};
 use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
@@ -70,4 +70,44 @@ async fn run_logs_count_forwards_time_and_query_params() {
     )
     .await
     .expect("run_logs_count should forward query params");
+}
+
+#[tokio::test]
+async fn run_spans_count_forwards_time_and_query_params() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dataplans/data-usage/v2/spans/count"))
+        .and(header("Accept", "text/event-stream"))
+        .and(query_param(
+            "date_range.fromDate",
+            "2024-01-01T00:00:00.000Z",
+        ))
+        .and(query_param("date_range.toDate", "2024-01-02T00:00:00.000Z"))
+        .and(query_param("resolution", "6h"))
+        .and(query_param("subsystem_aggregation", "true"))
+        .and(query_param("filters.subsystemName", "worker"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("{\"result\":{\"spansCount\":[]}}\n"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+    let params = vec!["filters.subsystemName=worker".to_string()];
+
+    run_spans_count(
+        &targets,
+        Some("2024-01-01T00:00:00Z"),
+        Some("2024-01-02T00:00:00Z"),
+        Some("6h"),
+        true,
+        false,
+        &params,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_spans_count should forward query params");
 }

@@ -114,20 +114,25 @@ pub fn parse_data_usage_raw_response(raw: &str) -> Result<Value> {
     Ok(match values.len() {
         0 => Value::Null,
         1 => values.remove(0),
-        _ => merge_count_chunks(&values).unwrap_or(Value::Array(values)),
+        _ => merge_result_array_chunks(&values).unwrap_or(Value::Array(values)),
     })
 }
 
-fn merge_count_chunks(values: &[Value]) -> Option<Value> {
-    for count_key in ["logsCount", "spansCount"] {
+fn merge_result_array_chunks(values: &[Value]) -> Option<Value> {
+    for result_key in ["entries", "logsCount", "spansCount"] {
         let mut merged = Vec::new();
         let mut matched = false;
 
         for value in values {
-            let items = value
+            let Some(items) = value
                 .get("result")
-                .and_then(|result| result.get(count_key))
-                .and_then(Value::as_array)?;
+                .and_then(|result| result.get(result_key))
+                .and_then(Value::as_array)
+            else {
+                matched = false;
+                break;
+            };
+
             matched = true;
             merged.extend(items.iter().cloned());
         }
@@ -135,7 +140,7 @@ fn merge_count_chunks(values: &[Value]) -> Option<Value> {
         if matched {
             return Some(serde_json::json!({
                 "result": {
-                    count_key: merged
+                    result_key: merged
                 }
             }));
         }
@@ -231,6 +236,25 @@ mod tests {
                     "logsCount": [
                         {"timestamp": "2026-05-25T00:00:00Z", "logsCount": "1"},
                         {"timestamp": "2026-05-25T01:00:00Z", "logsCount": "2"}
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn parse_data_usage_raw_response_merges_summary_chunks() {
+        let raw = r#"{"result":{"entries":[{"timestamp":"2026-05-25T00:00:00Z","sizeGb":1}]}}
+{"result":{"entries":[{"timestamp":"2026-05-25T01:00:00Z","sizeGb":2}]}}
+"#;
+        let value = parse_data_usage_raw_response(raw).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "result": {
+                    "entries": [
+                        {"timestamp": "2026-05-25T00:00:00Z", "sizeGb": 1},
+                        {"timestamp": "2026-05-25T01:00:00Z", "sizeGb": 2}
                     ]
                 }
             })

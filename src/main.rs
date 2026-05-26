@@ -316,7 +316,7 @@ Examples:
   cx usage summary
   cx usage daily --type processed-gbs
   cx usage logs-count
-  cx usage spans-count"
+  cx usage spans-count --start now-24h --end now"
     )]
     DataUsage {
         #[command(subcommand)]
@@ -1219,9 +1219,75 @@ enum DataUsageCmd {
         end: Option<String>,
     },
     /// Show logs count.
-    LogsCount,
+    #[command(after_help = "\
+Examples:
+  cx usage logs-count
+  cx usage logs-count --start now-7d --end now --resolution 6h
+  cx usage logs-count --application-aggregation
+
+Output:
+  JSON output is normalized to one object with rows under result.logsCount.
+  Large backend responses may arrive in multiple JSON chunks; cx merges them.")]
+    LogsCount {
+        /// Start time filter (ISO 8601 or relative, e.g. now-7d). Defaults to 24h ago.
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End time filter (ISO 8601 or relative, e.g. now). Defaults to now.
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Query resolution. Defaults to 1h.
+        #[arg(long)]
+        resolution: Option<String>,
+
+        /// Aggregate by subsystem.
+        #[arg(long)]
+        subsystem_aggregation: bool,
+
+        /// Aggregate by application.
+        #[arg(long)]
+        application_aggregation: bool,
+
+        /// Extra raw query parameter in KEY=VALUE form. Repeat for filters.* fields.
+        #[arg(long = "param")]
+        params: Vec<String>,
+    },
     /// Show spans count.
-    SpansCount,
+    #[command(after_help = "\
+Examples:
+  cx usage spans-count
+  cx usage spans-count --start now-7d --end now --resolution 6h
+  cx usage spans-count --application-aggregation
+
+Output:
+  JSON output is normalized to one object with rows under result.spansCount.
+  Large backend responses may arrive in multiple JSON chunks; cx merges them.")]
+    SpansCount {
+        /// Start time filter (ISO 8601 or relative, e.g. now-7d). Defaults to 24h ago.
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End time filter (ISO 8601 or relative, e.g. now). Defaults to now.
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Query resolution. Defaults to 1h.
+        #[arg(long)]
+        resolution: Option<String>,
+
+        /// Aggregate by subsystem.
+        #[arg(long)]
+        subsystem_aggregation: bool,
+
+        /// Aggregate by application.
+        #[arg(long)]
+        application_aggregation: bool,
+
+        /// Extra raw query parameter in KEY=VALUE form. Repeat for filters.* fields.
+        #[arg(long = "param")]
+        params: Vec<String>,
+    },
     /// Show export status.
     ExportStatus,
 }
@@ -2726,11 +2792,49 @@ async fn main() -> Result<()> {
                 )
                 .await?;
             }
-            DataUsageCmd::LogsCount => {
-                commands::data_usage::run_logs_count(&targets, output).await?;
+            DataUsageCmd::LogsCount {
+                start,
+                end,
+                resolution,
+                subsystem_aggregation,
+                application_aggregation,
+                params,
+            } => {
+                commands::data_usage::run_logs_count(
+                    &targets,
+                    commands::data_usage::CountCommandOptions {
+                        start: start.as_deref(),
+                        end: end.as_deref(),
+                        resolution: resolution.as_deref(),
+                        subsystem_aggregation,
+                        application_aggregation,
+                        extra_params: &params,
+                        output,
+                    },
+                )
+                .await?;
             }
-            DataUsageCmd::SpansCount => {
-                commands::data_usage::run_spans_count(&targets, output).await?;
+            DataUsageCmd::SpansCount {
+                start,
+                end,
+                resolution,
+                subsystem_aggregation,
+                application_aggregation,
+                params,
+            } => {
+                commands::data_usage::run_spans_count(
+                    &targets,
+                    commands::data_usage::CountCommandOptions {
+                        start: start.as_deref(),
+                        end: end.as_deref(),
+                        resolution: resolution.as_deref(),
+                        subsystem_aggregation,
+                        application_aggregation,
+                        extra_params: &params,
+                        output,
+                    },
+                )
+                .await?;
             }
             DataUsageCmd::ExportStatus => {
                 commands::data_usage::run_export_status(&targets, output).await?;

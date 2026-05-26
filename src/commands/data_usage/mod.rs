@@ -14,22 +14,29 @@ use api::DataUsageApi;
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
-fn build_count_query_params(
-    start: Option<&str>,
-    end: Option<&str>,
-    resolution: Option<&str>,
-    subsystem_aggregation: bool,
-    application_aggregation: bool,
-    extra_params: &[String],
-) -> Result<Vec<(String, String)>> {
-    let from = match start.map(crate::time::parse_timestamp).transpose()? {
+pub struct CountCommandOptions<'a> {
+    pub start: Option<&'a str>,
+    pub end: Option<&'a str>,
+    pub resolution: Option<&'a str>,
+    pub subsystem_aggregation: bool,
+    pub application_aggregation: bool,
+    pub extra_params: &'a [String],
+    pub output: OutputFormat,
+}
+
+fn build_count_query_params(options: &CountCommandOptions<'_>) -> Result<Vec<(String, String)>> {
+    let from = match options
+        .start
+        .map(crate::time::parse_timestamp)
+        .transpose()?
+    {
         Some(s) => s,
         None => chrono::Utc::now()
             .checked_sub_signed(chrono::Duration::hours(24))
             .unwrap_or_else(chrono::Utc::now)
             .to_rfc3339(),
     };
-    let to = match end.map(crate::time::parse_timestamp).transpose()? {
+    let to = match options.end.map(crate::time::parse_timestamp).transpose()? {
         Some(s) => s,
         None => chrono::Utc::now().to_rfc3339(),
     };
@@ -40,15 +47,15 @@ fn build_count_query_params(
 
     params.push((
         "resolution".to_string(),
-        resolution.unwrap_or("1h").to_string(),
+        options.resolution.unwrap_or("1h").to_string(),
     ));
-    if subsystem_aggregation {
+    if options.subsystem_aggregation {
         params.push(("subsystem_aggregation".to_string(), "true".to_string()));
     }
-    if application_aggregation {
+    if options.application_aggregation {
         params.push(("application_aggregation".to_string(), "true".to_string()));
     }
-    for raw in extra_params {
+    for raw in options.extra_params {
         let (key, value) = raw
             .split_once('=')
             .ok_or_else(|| anyhow::anyhow!("query params must use KEY=VALUE format: {raw}"))?;
@@ -210,25 +217,12 @@ pub async fn run_daily(
 
 pub async fn run_logs_count(
     targets: &[Arc<ExecutionTarget>],
-    start: Option<&str>,
-    end: Option<&str>,
-    resolution: Option<&str>,
-    subsystem_aggregation: bool,
-    application_aggregation: bool,
-    extra_params: &[String],
-    output: OutputFormat,
+    options: CountCommandOptions<'_>,
 ) -> Result<()> {
     eprintln!("{}", "Fetching logs count...".dimmed());
 
     let include_profile = targets.len() > 1;
-    let params = build_count_query_params(
-        start,
-        end,
-        resolution,
-        subsystem_aggregation,
-        application_aggregation,
-        extra_params,
-    )?;
+    let params = build_count_query_params(&options)?;
 
     let per_profile = fan_out(targets, |t| {
         let params = params.clone();
@@ -256,7 +250,7 @@ pub async fn run_logs_count(
         }
     }
 
-    match output {
+    match options.output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
             let toon = toon_encode(&all_results)
@@ -275,25 +269,12 @@ pub async fn run_logs_count(
 
 pub async fn run_spans_count(
     targets: &[Arc<ExecutionTarget>],
-    start: Option<&str>,
-    end: Option<&str>,
-    resolution: Option<&str>,
-    subsystem_aggregation: bool,
-    application_aggregation: bool,
-    extra_params: &[String],
-    output: OutputFormat,
+    options: CountCommandOptions<'_>,
 ) -> Result<()> {
     eprintln!("{}", "Fetching spans count...".dimmed());
 
     let include_profile = targets.len() > 1;
-    let params = build_count_query_params(
-        start,
-        end,
-        resolution,
-        subsystem_aggregation,
-        application_aggregation,
-        extra_params,
-    )?;
+    let params = build_count_query_params(&options)?;
 
     let per_profile = fan_out(targets, |t| {
         let params = params.clone();
@@ -321,7 +302,7 @@ pub async fn run_spans_count(
         }
     }
 
-    match output {
+    match options.output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
             let toon = toon_encode(&all_results)

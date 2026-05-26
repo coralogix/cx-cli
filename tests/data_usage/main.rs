@@ -5,7 +5,9 @@ use serde_json::json;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::data_usage::{run_logs_count, run_spans_count, run_summary};
+use coralogix_cli::commands::data_usage::{
+    run_logs_count, run_spans_count, run_summary, CountCommandOptions,
+};
 use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
@@ -60,13 +62,15 @@ async fn run_logs_count_forwards_time_and_query_params() {
 
     run_logs_count(
         &targets,
-        Some("2024-01-01T00:00:00Z"),
-        Some("2024-01-02T00:00:00Z"),
-        None,
-        false,
-        true,
-        &params,
-        OutputFormat::Json,
+        CountCommandOptions {
+            start: Some("2024-01-01T00:00:00Z"),
+            end: Some("2024-01-02T00:00:00Z"),
+            resolution: None,
+            subsystem_aggregation: false,
+            application_aggregation: true,
+            extra_params: &params,
+            output: OutputFormat::Json,
+        },
     )
     .await
     .expect("run_logs_count should forward query params");
@@ -100,13 +104,15 @@ async fn run_spans_count_forwards_time_and_query_params() {
 
     run_spans_count(
         &targets,
-        Some("2024-01-01T00:00:00Z"),
-        Some("2024-01-02T00:00:00Z"),
-        Some("6h"),
-        true,
-        false,
-        &params,
-        OutputFormat::Json,
+        CountCommandOptions {
+            start: Some("2024-01-01T00:00:00Z"),
+            end: Some("2024-01-02T00:00:00Z"),
+            resolution: Some("6h"),
+            subsystem_aggregation: true,
+            application_aggregation: false,
+            extra_params: &params,
+            output: OutputFormat::Json,
+        },
     )
     .await
     .expect("run_spans_count should forward query params");

@@ -2802,13 +2802,15 @@ async fn main() -> Result<()> {
             } => {
                 commands::data_usage::run_logs_count(
                     &targets,
-                    start.as_deref(),
-                    end.as_deref(),
-                    resolution.as_deref(),
-                    subsystem_aggregation,
-                    application_aggregation,
-                    &params,
-                    output,
+                    commands::data_usage::CountCommandOptions {
+                        start: start.as_deref(),
+                        end: end.as_deref(),
+                        resolution: resolution.as_deref(),
+                        subsystem_aggregation,
+                        application_aggregation,
+                        extra_params: &params,
+                        output,
+                    },
                 )
                 .await?;
             }
@@ -2822,13 +2824,15 @@ async fn main() -> Result<()> {
             } => {
                 commands::data_usage::run_spans_count(
                     &targets,
-                    start.as_deref(),
-                    end.as_deref(),
-                    resolution.as_deref(),
-                    subsystem_aggregation,
-                    application_aggregation,
-                    &params,
-                    output,
+                    commands::data_usage::CountCommandOptions {
+                        start: start.as_deref(),
+                        end: end.as_deref(),
+                        resolution: resolution.as_deref(),
+                        subsystem_aggregation,
+                        application_aggregation,
+                        extra_params: &params,
+                        output,
+                    },
                 )
                 .await?;
             }

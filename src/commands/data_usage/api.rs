@@ -88,7 +88,7 @@ impl<'a> DataUsageApi<'a> {
 
 pub fn parse_data_usage_raw_response(raw: &str) -> Result<Value> {
     if let Ok(value) = serde_json::from_str(raw) {
-        return Ok(value);
+        return Ok(normalize_result_array_object(value));
     }
 
     // The Data Usage overview documents `Get data usage`, `logs/count`, and
@@ -113,7 +113,7 @@ pub fn parse_data_usage_raw_response(raw: &str) -> Result<Value> {
 
     Ok(match values.len() {
         0 => Value::Null,
-        1 => values.remove(0),
+        1 => normalize_result_array_object(values.remove(0)),
         _ => merge_result_array_chunks(&values).unwrap_or(Value::Array(values)),
     })
 }
@@ -124,11 +124,7 @@ fn merge_result_array_chunks(values: &[Value]) -> Option<Value> {
         let mut matched = false;
 
         for value in values {
-            let Some(items) = value
-                .get("result")
-                .and_then(|result| result.get(result_key))
-                .and_then(Value::as_array)
-            else {
+            let Some(items) = result_array_items(value, result_key) else {
                 matched = false;
                 break;
             };
@@ -147,6 +143,36 @@ fn merge_result_array_chunks(values: &[Value]) -> Option<Value> {
     }
 
     None
+}
+
+fn normalize_result_array_object(value: Value) -> Value {
+    for result_key in ["logsCount", "spansCount"] {
+        if value
+            .get("result")
+            .and_then(|result| result.get(result_key))
+            .is_some()
+        {
+            return value;
+        }
+
+        if let Some(items) = value.get(result_key).and_then(Value::as_array) {
+            return serde_json::json!({
+                "result": {
+                    result_key: items
+                }
+            });
+        }
+    }
+
+    value
+}
+
+fn result_array_items<'a>(value: &'a Value, result_key: &str) -> Option<&'a Vec<Value>> {
+    value
+        .get("result")
+        .and_then(|result| result.get(result_key))
+        .or_else(|| value.get(result_key))
+        .and_then(Value::as_array)
 }
 
 // --- Tests ---
@@ -209,6 +235,18 @@ mod tests {
     }
 
     #[test]
+    fn parse_data_usage_raw_response_normalizes_single_top_level_logs_count() {
+        let value = parse_data_usage_raw_response(r#"{"logsCount":[]}"#).unwrap();
+        assert_eq!(value, json!({"result": {"logsCount": []}}));
+    }
+
+    #[test]
+    fn parse_data_usage_raw_response_normalizes_single_top_level_spans_count() {
+        let value = parse_data_usage_raw_response(r#"{"spansCount":[]}"#).unwrap();
+        assert_eq!(value, json!({"result": {"spansCount": []}}));
+    }
+
+    #[test]
     fn parse_data_usage_raw_response_accepts_ndjson() {
         let raw = r#"{"timestamp":"2026-05-25T00:00:00Z","count":"1"}
 {"timestamp":"2026-05-25T01:00:00Z","count":"2"}
@@ -227,6 +265,25 @@ mod tests {
     fn parse_data_usage_raw_response_merges_count_chunks() {
         let raw = r#"{"result":{"logsCount":[{"timestamp":"2026-05-25T00:00:00Z","logsCount":"1"}]}}
 {"result":{"logsCount":[{"timestamp":"2026-05-25T01:00:00Z","logsCount":"2"}]}}
+"#;
+        let value = parse_data_usage_raw_response(raw).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "result": {
+                    "logsCount": [
+                        {"timestamp": "2026-05-25T00:00:00Z", "logsCount": "1"},
+                        {"timestamp": "2026-05-25T01:00:00Z", "logsCount": "2"}
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn parse_data_usage_raw_response_merges_top_level_count_chunks() {
+        let raw = r#"{"logsCount":[{"timestamp":"2026-05-25T00:00:00Z","logsCount":"1"}]}
+{"logsCount":[{"timestamp":"2026-05-25T01:00:00Z","logsCount":"2"}]}
 "#;
         let value = parse_data_usage_raw_response(raw).unwrap();
         assert_eq!(

@@ -55,6 +55,10 @@ async fn error_403_with_message() {
         msg.contains("Check your API key's scopes"),
         "expected scope hint in error, got: {msg}"
     );
+    assert!(
+        msg.contains("Permission denied"),
+        "expected permission error, got: {msg}"
+    );
 }
 
 #[tokio::test]
@@ -72,8 +76,12 @@ async fn error_403_without_message() {
     let err = client.get::<Value>("/test", &[]).await.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("Permission denied: your API key does not have the required scope"),
+        msg.contains("You do not have permission for this operation"),
         "expected generic permission error, got: {msg}"
+    );
+    assert!(
+        msg.contains("Check your API key's scopes"),
+        "expected permission hint, got: {msg}"
     );
 }
 

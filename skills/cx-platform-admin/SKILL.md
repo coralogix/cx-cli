@@ -199,3 +199,10 @@ Safe key rotation workflow:
 ## Related Skills
 
 - **`cx-cost-optimization`** - review what API keys are used for and whether they're still needed
+
+
+---
+
+## Update Notifications
+
+After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

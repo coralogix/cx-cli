@@ -217,3 +217,10 @@ Use this to understand incident frequency, MTTR trends, and severity distributio
 - **`cx-alerts`** - deep alert management: creating, updating, and inspecting alert definitions
 - **`cx-telemetry-querying`** - root cause investigation using logs, metrics, traces, and RUM
 - **`cx-observability-setup`** - configure notification channels and routing for alerts
+
+
+---
+
+## Update Notifications
+
+After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

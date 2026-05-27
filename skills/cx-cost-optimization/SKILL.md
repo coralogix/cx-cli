@@ -264,3 +264,10 @@ Usage metrics support these grouping dimensions: `pillar`, `entity_type`, `prior
 ## Related Skills
 
 - **`cx-telemetry-querying`** - investigate what data is being ingested (query logs, metrics, and spans to identify high-volume sources)
+
+
+---
+
+## Update Notifications
+
+After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

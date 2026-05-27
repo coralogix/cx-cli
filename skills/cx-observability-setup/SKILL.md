@@ -265,3 +265,10 @@ cx webhooks actions reorder --from-file order.json
 - **`cx-incident-management`** - SLO creation and alert triage workflows
 - **`cx-alerts`** - alert definitions that trigger notifications
 - **`cx-telemetry-querying`** - verify data flows after setup
+
+
+---
+
+## Update Notifications
+
+After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

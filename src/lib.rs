@@ -4,13 +4,16 @@ pub mod commands;
 pub mod config;
 pub mod error;
 pub mod execution;
+pub mod install_method;
 pub mod keyring_store;
 pub mod oauth;
 pub mod render;
 pub mod safety;
 pub mod serde_helpers;
 pub mod spill;
+pub mod state;
 pub mod tier;
 pub mod time;
+pub mod update_check;
 
 pub use tier::Tier;

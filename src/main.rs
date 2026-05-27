@@ -17,7 +17,6 @@ use coralogix_cli::config;
 use coralogix_cli::execution::build_targets;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
-use coralogix_cli::update_check;
 use coralogix_cli::Tier;
 
 /// Returns profile names from `~/.cx/profiles/` as completion candidates.
@@ -317,7 +316,7 @@ Examples:
   cx usage summary
   cx usage daily --type processed-gbs
   cx usage logs-count
-  cx usage spans-count"
+  cx usage spans-count --start now-24h --end now"
     )]
     DataUsage {
         #[command(subcommand)]
@@ -1220,9 +1219,75 @@ enum DataUsageCmd {
         end: Option<String>,
     },
     /// Show logs count.
-    LogsCount,
+    #[command(after_help = "\
+Examples:
+  cx usage logs-count
+  cx usage logs-count --start now-7d --end now --resolution 6h
+  cx usage logs-count --application-aggregation
+
+Output:
+  JSON output is normalized to one object with rows under result.logsCount.
+  Large backend responses may arrive in multiple JSON chunks; cx merges them.")]
+    LogsCount {
+        /// Start time filter (ISO 8601 or relative, e.g. now-7d). Defaults to 24h ago.
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End time filter (ISO 8601 or relative, e.g. now). Defaults to now.
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Query resolution. Defaults to 1h.
+        #[arg(long)]
+        resolution: Option<String>,
+
+        /// Aggregate by subsystem.
+        #[arg(long)]
+        subsystem_aggregation: bool,
+
+        /// Aggregate by application.
+        #[arg(long)]
+        application_aggregation: bool,
+
+        /// Extra raw query parameter in KEY=VALUE form. Repeat for filters.* fields.
+        #[arg(long = "param")]
+        params: Vec<String>,
+    },
     /// Show spans count.
-    SpansCount,
+    #[command(after_help = "\
+Examples:
+  cx usage spans-count
+  cx usage spans-count --start now-7d --end now --resolution 6h
+  cx usage spans-count --application-aggregation
+
+Output:
+  JSON output is normalized to one object with rows under result.spansCount.
+  Large backend responses may arrive in multiple JSON chunks; cx merges them.")]
+    SpansCount {
+        /// Start time filter (ISO 8601 or relative, e.g. now-7d). Defaults to 24h ago.
+        #[arg(long)]
+        start: Option<String>,
+
+        /// End time filter (ISO 8601 or relative, e.g. now). Defaults to now.
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Query resolution. Defaults to 1h.
+        #[arg(long)]
+        resolution: Option<String>,
+
+        /// Aggregate by subsystem.
+        #[arg(long)]
+        subsystem_aggregation: bool,
+
+        /// Aggregate by application.
+        #[arg(long)]
+        application_aggregation: bool,
+
+        /// Extra raw query parameter in KEY=VALUE form. Repeat for filters.* fields.
+        #[arg(long = "param")]
+        params: Vec<String>,
+    },
     /// Show export status.
     ExportStatus,
 }
@@ -2155,19 +2220,12 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    // Kick off the background version check.  The result is written to
-    // ~/.cx/state.json and read back on the next command invocation.
-    // For fast local commands the task may be cancelled before it finishes
-    // writing (intentional race — same model as `gh`); API commands take long
-    // enough that the fetch always completes in time.
-    let _update_task = tokio::spawn(update_check::fetch_if_stale());
-
     // Check if this is a profiles command - use separate parser without global API flags.
     // Only works when `profiles` is the first arg (no global flags before it).
     if std::env::args().nth(1).as_deref() == Some("profiles") {
         let profiles_cli = ProfilesCli::parse();
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
-        let result = match cmd {
+        return match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add { name, set_default } => {
                 commands::profiles::run_add(name, set_default).await
@@ -2175,8 +2233,6 @@ async fn main() -> Result<()> {
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
-        update_check::maybe_print_notice(OutputFormat::Text);
-        return result;
     }
     // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // the early check above misses it. The main Cli parser handles it below.
@@ -2232,7 +2288,7 @@ async fn main() -> Result<()> {
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // it falls through to here.
     if let Commands::Profiles { cmd } = cli.command {
-        let result = match cmd {
+        return match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add { name, set_default } => {
                 commands::profiles::run_add(name, set_default).await
@@ -2240,29 +2296,21 @@ async fn main() -> Result<()> {
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
-        update_check::maybe_print_notice(OutputFormat::Text);
-        return result;
     }
 
     // Cleanup command doesn't need API credentials.
     if let Commands::Cleanup = cli.command {
-        let result = commands::cleanup::run();
-        update_check::maybe_print_notice(OutputFormat::Text);
-        return result;
+        return commands::cleanup::run();
     }
 
     // Schema command doesn't need API credentials - outputs command tree as JSON.
-    // The _meta.update block is already embedded in the JSON output for agents;
-    // the stderr notice covers TTY human users.
     if let Commands::Schema = cli.command {
-        let result = commands::schema::run(Cli::command());
-        update_check::maybe_print_notice(OutputFormat::Text);
-        return result;
+        return commands::schema::run(Cli::command());
     }
 
     // Completions commands don't need API credentials.
     if let Commands::Completions { cmd } = cli.command {
-        let result = match cmd {
+        return match cmd {
             CompletionsCmd::Generate { shell } => {
                 commands::completions::run_generate(shell, &mut Cli::command())
             }
@@ -2271,8 +2319,6 @@ async fn main() -> Result<()> {
             }
             CompletionsCmd::Refresh => commands::completions::run_refresh(Cli::command),
         };
-        update_check::maybe_print_notice(OutputFormat::Text);
-        return result;
     }
 
     // Dataprime list/show don't need API credentials - handle them early.
@@ -2280,7 +2326,7 @@ async fn main() -> Result<()> {
         if matches!(cmd, DataprimeCmd::List { .. } | DataprimeCmd::Show { .. }) {
             let global_config = config::load_config().unwrap_or_default();
             let output = cli.output.unwrap_or(global_config.default_output_format);
-            let result = match cmd {
+            return match cmd {
                 DataprimeCmd::List { filter, name } => {
                     commands::dataprime::run_list(*filter, name.as_deref(), output)
                 }
@@ -2288,8 +2334,6 @@ async fn main() -> Result<()> {
                 // Query needs credentials - handled in the main match below.
                 DataprimeCmd::Query { .. } => unreachable!(),
             };
-            update_check::maybe_print_notice(output);
-            return result;
         }
         // DataprimeCmd::Query needs credentials - fall through.
     }
@@ -2343,1179 +2387,1132 @@ async fn main() -> Result<()> {
     let yes = cli.yes;
     let agent_mode = safety::is_agent_mode();
 
-    // Wrap the dispatch in an async block so we can capture its Result and
-    // always run the update notice afterwards (even on error).
-    let cmd_result = async {
-        match cli.command {
-            Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
-            Commands::Cleanup => unreachable!("handled above"),
-            Commands::Schema => unreachable!("handled above"),
-            Commands::Completions { .. } => unreachable!("handled above"),
+    match cli.command {
+        Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
+        Commands::Cleanup => unreachable!("handled above"),
+        Commands::Schema => unreachable!("handled above"),
+        Commands::Completions { .. } => unreachable!("handled above"),
 
-            Commands::Dataprime { cmd } => match cmd {
-                DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {
-                    unreachable!("handled above")
-                }
-                DataprimeCmd::Query {
-                    query,
-                    source,
-                    start,
-                    end,
+        Commands::Dataprime { cmd } => match cmd {
+            DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {
+                unreachable!("handled above")
+            }
+            DataprimeCmd::Query {
+                query,
+                source,
+                start,
+                end,
+                limit,
+                tier,
+            } => {
+                commands::dataprime::run_query(
+                    &targets,
+                    &query,
+                    source.as_deref().unwrap_or(""),
+                    &start,
+                    &end,
                     limit,
                     tier,
-                } => {
-                    commands::dataprime::run_query(
+                    output,
+                    max_direct,
+                    &temp_dir,
+                    None,
+                )
+                .await?;
+            }
+        },
+
+        Commands::Logs {
+            query,
+            start,
+            end,
+            limit,
+            tier,
+        } => {
+            commands::logs::run(
+                &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+            )
+            .await?;
+        }
+
+        Commands::Metrics { cmd } => match cmd {
+            MetricsCmd::Query { expr, time } => {
+                commands::metrics::run_query(&targets, &expr, time.as_deref(), output).await?;
+            }
+            MetricsCmd::QueryRange {
+                expr,
+                start,
+                end,
+                step,
+            } => {
+                commands::metrics::run_query_range(&targets, &expr, &start, &end, &step, output)
+                    .await?;
+            }
+            MetricsCmd::Search { name, description } => {
+                commands::metrics::run_search(
+                    &targets,
+                    name.as_deref(),
+                    description.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            MetricsCmd::GetLabels { metric } => {
+                commands::metrics::run_get_labels(&targets, &metric, output).await?;
+            }
+        },
+
+        Commands::Spans {
+            query,
+            start,
+            end,
+            limit,
+            tier,
+        } => {
+            commands::spans::run(
+                &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+            )
+            .await?;
+        }
+
+        Commands::Dashboards { cmd } => match cmd {
+            DashboardsCmd::Catalog => {
+                commands::dashboards::run_catalog(&targets, output).await?;
+            }
+            DashboardsCmd::Get { dashboard_id } => {
+                commands::dashboards::run_get(&targets, &dashboard_id, output).await?;
+            }
+            DashboardsCmd::Create { from_file, folder } => {
+                confirm_destructive("Create a new dashboard?", yes, agent_mode)?;
+                commands::dashboards::run_create(&targets, &from_file, folder.as_deref(), output)
+                    .await?;
+            }
+            DashboardsCmd::Replace { from_file } => {
+                commands::dashboards::run_replace(&targets, &from_file, output, yes, agent_mode)
+                    .await?;
+            }
+            DashboardsCmd::Delete { dashboard_id } => {
+                confirm_destructive(
+                    &format!("Delete dashboard '{dashboard_id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
+                commands::dashboards::run_delete(&targets, &dashboard_id).await?;
+            }
+            DashboardsCmd::Search { description, limit } => {
+                commands::dashboards::run_semantic_search(&targets, &description, limit, output)
+                    .await?;
+            }
+            DashboardsCmd::QuerySearch {
+                field,
+                description,
+                limit,
+            } => match (field.as_deref(), description.as_deref()) {
+                (Some(f), _) => {
+                    commands::dashboards::run_queries_by_field(&targets, f, limit, output).await?;
+                }
+                (_, Some(d)) => {
+                    commands::dashboards::run_search(&targets, d, limit, output).await?;
+                }
+                (None, None) => {
+                    bail!("specify --field or --description");
+                }
+            },
+            DashboardsCmd::Folders { cmd } => match cmd {
+                FoldersCmd::List => {
+                    commands::dashboards::run_folders_list(&targets, output).await?;
+                }
+                FoldersCmd::Create { name, parent_id } => {
+                    confirm_destructive("Create a new dashboard folder?", yes, agent_mode)?;
+                    commands::dashboards::run_folders_create(
                         &targets,
-                        &query,
-                        source.as_deref().unwrap_or(""),
-                        &start,
-                        &end,
-                        limit,
-                        tier,
+                        &name,
+                        parent_id.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                FoldersCmd::Delete { id } => {
+                    confirm_destructive(
+                        &format!("Delete dashboard folder '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::dashboards::run_folders_delete(&targets, &id).await?;
+                }
+            },
+        },
+
+        Commands::Alerts { cmd } => match cmd {
+            AlertsCmd::List { name } => {
+                commands::alerts::run_list(&targets, name.as_deref(), output).await?;
+            }
+            AlertsCmd::Get { alert_id } => {
+                commands::alerts::run_get(&targets, &alert_id, output).await?;
+            }
+            AlertsCmd::Create { from_file } => {
+                confirm_destructive("Create a new alert?", yes, agent_mode)?;
+                commands::alerts::run_create(&targets, &from_file, output).await?;
+            }
+            AlertsCmd::Delete { alert_id } => {
+                confirm_destructive(&format!("Delete alert '{alert_id}'?"), yes, agent_mode)?;
+                commands::alerts::run_delete(&targets, &alert_id).await?;
+            }
+            AlertsCmd::Enable { alert_id } => {
+                confirm_destructive(&format!("Enable alert '{alert_id}'?"), yes, agent_mode)?;
+                commands::alerts::run_enable(&targets, &alert_id).await?;
+            }
+            AlertsCmd::Disable { alert_id } => {
+                confirm_destructive(&format!("Disable alert '{alert_id}'?"), yes, agent_mode)?;
+                commands::alerts::run_disable(&targets, &alert_id).await?;
+            }
+            AlertsCmd::Events {
+                alert_version_id,
+                start,
+                end,
+            } => {
+                commands::alerts::run_events(
+                    &targets,
+                    &alert_version_id,
+                    start.as_deref(),
+                    end.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            AlertsCmd::EventStats => {
+                commands::alerts::run_event_stats(&targets, output).await?;
+            }
+            AlertsCmd::SuppressionRules { cmd } => match cmd {
+                SuppressionRulesCmd::List => {
+                    commands::suppression_rules::run_list(&targets, output).await?;
+                }
+                SuppressionRulesCmd::Get { id } => {
+                    commands::suppression_rules::run_get(&targets, &id, output).await?;
+                }
+                SuppressionRulesCmd::Create { from_file } => {
+                    confirm_destructive("Create a new suppression rule?", yes, agent_mode)?;
+                    commands::suppression_rules::run_create(&targets, &from_file, output).await?;
+                }
+                SuppressionRulesCmd::Update { from_file } => {
+                    confirm_destructive("Update suppression rule?", yes, agent_mode)?;
+                    commands::suppression_rules::run_update(&targets, &from_file, output).await?;
+                }
+                SuppressionRulesCmd::Delete { id } => {
+                    confirm_destructive(
+                        &format!("Delete suppression rule '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::suppression_rules::run_delete(&targets, &id).await?;
+                }
+            },
+        },
+
+        Commands::Incidents { cmd } => match cmd {
+            IncidentsCmd::List {
+                status,
+                severity,
+                assignee,
+            } => {
+                commands::incidents::run_list(
+                    &targets,
+                    status.as_deref(),
+                    severity.as_deref(),
+                    assignee.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            IncidentsCmd::Get { id } => {
+                commands::incidents::run_get(&targets, &id, output).await?;
+            }
+            IncidentsCmd::Acknowledge { ids } => {
+                confirm_destructive("Acknowledge incident(s)?", yes, agent_mode)?;
+                commands::incidents::run_acknowledge(&targets, &ids).await?;
+            }
+            IncidentsCmd::Resolve { ids } => {
+                confirm_destructive("Resolve incident(s)?", yes, agent_mode)?;
+                commands::incidents::run_resolve(&targets, &ids).await?;
+            }
+            IncidentsCmd::Close { ids } => {
+                confirm_destructive("Close incident(s)?", yes, agent_mode)?;
+                commands::incidents::run_close(&targets, &ids).await?;
+            }
+            IncidentsCmd::Assign { ids, user_id } => {
+                confirm_destructive(
+                    &format!("Assign incident(s) to '{user_id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
+                commands::incidents::run_assign(&targets, &ids, &user_id).await?;
+            }
+            IncidentsCmd::Unassign { ids } => {
+                confirm_destructive("Unassign incident(s)?", yes, agent_mode)?;
+                commands::incidents::run_unassign(&targets, &ids).await?;
+            }
+            IncidentsCmd::Events { incident_id } => {
+                commands::incidents::run_events(&targets, incident_id.as_deref(), output).await?;
+            }
+            IncidentsCmd::Aggregations => {
+                commands::incidents::run_aggregations(&targets, output).await?;
+            }
+        },
+
+        Commands::Notifications { cmd } => match cmd {
+            NotificationsCmd::Connectors { cmd } => match cmd {
+                ConnectorsCmd::List => {
+                    commands::connectors::run_list(&targets, output).await?;
+                }
+                ConnectorsCmd::Get { id } => {
+                    commands::connectors::run_get(&targets, &id, output).await?;
+                }
+                ConnectorsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new connector?", yes, agent_mode)?;
+                    commands::connectors::run_create(&targets, &from_file, output).await?;
+                }
+                ConnectorsCmd::Update { from_file } => {
+                    confirm_destructive("Update connector?", yes, agent_mode)?;
+                    commands::connectors::run_update(&targets, &from_file, output).await?;
+                }
+                ConnectorsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete connector '{id}'?"), yes, agent_mode)?;
+                    commands::connectors::run_delete(&targets, &id).await?;
+                }
+                ConnectorsCmd::Types => {
+                    commands::connectors::run_types(&targets, output).await?;
+                }
+                ConnectorsCmd::EntityTypes => {
+                    commands::connectors::run_entity_types(&targets, output).await?;
+                }
+                ConnectorsCmd::EntitySubtypes { r#type } => {
+                    commands::connectors::run_entity_subtypes(&targets, &r#type, output).await?;
+                }
+            },
+            NotificationsCmd::Routers { cmd } => match cmd {
+                RoutersCmd::List => {
+                    commands::routers::run_list(&targets, output).await?;
+                }
+                RoutersCmd::Get { id } => {
+                    commands::routers::run_get(&targets, &id, output).await?;
+                }
+                RoutersCmd::Create { from_file } => {
+                    confirm_destructive("Create a new router?", yes, agent_mode)?;
+                    commands::routers::run_create(&targets, &from_file, output).await?;
+                }
+                RoutersCmd::Update { from_file } => {
+                    confirm_destructive("Update router?", yes, agent_mode)?;
+                    commands::routers::run_update(&targets, &from_file, output).await?;
+                }
+                RoutersCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete router '{id}'?"), yes, agent_mode)?;
+                    commands::routers::run_delete(&targets, &id).await?;
+                }
+                RoutersCmd::ValidateMatcher { from_file } => {
+                    commands::routers::run_validate_matcher(&targets, &from_file, output).await?;
+                }
+            },
+            NotificationsCmd::Presets { cmd } => match cmd {
+                PresetsCmd::List => {
+                    commands::presets::run_list(&targets, output).await?;
+                }
+                PresetsCmd::Get { id } => {
+                    commands::presets::run_get(&targets, &id, output).await?;
+                }
+                PresetsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new preset?", yes, agent_mode)?;
+                    commands::presets::run_create(&targets, &from_file, output).await?;
+                }
+                PresetsCmd::Update { from_file } => {
+                    confirm_destructive("Update preset?", yes, agent_mode)?;
+                    commands::presets::run_update(&targets, &from_file, output).await?;
+                }
+                PresetsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete preset '{id}'?"), yes, agent_mode)?;
+                    commands::presets::run_delete(&targets, &id).await?;
+                }
+                PresetsCmd::SetDefault { id } => {
+                    confirm_destructive(
+                        &format!("Set preset '{id}' as default?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::presets::run_set_default(&targets, &id).await?;
+                }
+            },
+            NotificationsCmd::Test { cmd } => match cmd {
+                NotificationTestCmd::Connector { from_file } => {
+                    commands::notification_testing::run_test_connector(
+                        &targets, &from_file, output,
+                    )
+                    .await?;
+                }
+                NotificationTestCmd::Destination { from_file } => {
+                    commands::notification_testing::run_test_destination(
+                        &targets, &from_file, output,
+                    )
+                    .await?;
+                }
+                NotificationTestCmd::Preset { from_file } => {
+                    commands::notification_testing::run_test_preset(&targets, &from_file, output)
+                        .await?;
+                }
+                NotificationTestCmd::RoutingCondition { from_file } => {
+                    commands::notification_testing::run_test_routing_condition(
+                        &targets, &from_file, output,
+                    )
+                    .await?;
+                }
+                NotificationTestCmd::TemplateRender { from_file } => {
+                    commands::notification_testing::run_test_template_render(
+                        &targets, &from_file, output,
+                    )
+                    .await?;
+                }
+            },
+        },
+
+        Commands::DataUsage { cmd } => match cmd {
+            DataUsageCmd::Summary { start, end } => {
+                commands::data_usage::run_summary(
+                    &targets,
+                    start.as_deref(),
+                    end.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            DataUsageCmd::Daily { r#type, start, end } => {
+                commands::data_usage::run_daily(
+                    &targets,
+                    &r#type,
+                    start.as_deref(),
+                    end.as_deref(),
+                    output,
+                )
+                .await?;
+            }
+            DataUsageCmd::LogsCount {
+                start,
+                end,
+                resolution,
+                subsystem_aggregation,
+                application_aggregation,
+                params,
+            } => {
+                commands::data_usage::run_logs_count(
+                    &targets,
+                    commands::data_usage::CountCommandOptions {
+                        start: start.as_deref(),
+                        end: end.as_deref(),
+                        resolution: resolution.as_deref(),
+                        subsystem_aggregation,
+                        application_aggregation,
+                        extra_params: &params,
+                        output,
+                    },
+                )
+                .await?;
+            }
+            DataUsageCmd::SpansCount {
+                start,
+                end,
+                resolution,
+                subsystem_aggregation,
+                application_aggregation,
+                params,
+            } => {
+                commands::data_usage::run_spans_count(
+                    &targets,
+                    commands::data_usage::CountCommandOptions {
+                        start: start.as_deref(),
+                        end: end.as_deref(),
+                        resolution: resolution.as_deref(),
+                        subsystem_aggregation,
+                        application_aggregation,
+                        extra_params: &params,
+                        output,
+                    },
+                )
+                .await?;
+            }
+            DataUsageCmd::ExportStatus => {
+                commands::data_usage::run_export_status(&targets, output).await?;
+            }
+        },
+
+        Commands::TcoPolicies { cmd } => match cmd {
+            TcoPoliciesCmd::List => {
+                commands::tco_policies::run_list(&targets, output).await?;
+            }
+            TcoPoliciesCmd::Get { id } => {
+                commands::tco_policies::run_get(&targets, &id, output).await?;
+            }
+            TcoPoliciesCmd::Create { from_file } => {
+                confirm_destructive("Create a new TCO policy?", yes, agent_mode)?;
+                commands::tco_policies::run_create(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Update { from_file } => {
+                confirm_destructive("Update TCO policy?", yes, agent_mode)?;
+                commands::tco_policies::run_update(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete TCO policy '{id}'?"), yes, agent_mode)?;
+                commands::tco_policies::run_delete(&targets, &id).await?;
+            }
+            TcoPoliciesCmd::Reorder { from_file } => {
+                confirm_destructive("Reorder TCO policies?", yes, agent_mode)?;
+                commands::tco_policies::run_reorder(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Test { from_file } => {
+                commands::tco_policies::run_test(&targets, &from_file, output).await?;
+            }
+            TcoPoliciesCmd::Settings => {
+                commands::tco_policies::run_settings(&targets, output).await?;
+            }
+            TcoPoliciesCmd::SettingsUpdate { from_file } => {
+                confirm_destructive("Update TCO settings?", yes, agent_mode)?;
+                commands::tco_policies::run_settings_update(&targets, &from_file, output).await?;
+            }
+        },
+
+        Commands::Retentions { cmd } => match cmd {
+            RetentionsCmd::List => {
+                commands::retentions::run_list(&targets, output).await?;
+            }
+            RetentionsCmd::Update { from_file } => {
+                confirm_destructive("Update retention settings?", yes, agent_mode)?;
+                commands::retentions::run_update(&targets, &from_file, output).await?;
+            }
+            RetentionsCmd::Activate => {
+                confirm_destructive("Activate retention settings?", yes, agent_mode)?;
+                commands::retentions::run_activate(&targets).await?;
+            }
+            RetentionsCmd::Status => {
+                commands::retentions::run_status(&targets, output).await?;
+            }
+        },
+
+        Commands::E2m { cmd } => match cmd {
+            E2mCmd::List => {
+                commands::e2m::run_list(&targets, output).await?;
+            }
+            E2mCmd::Get { id } => {
+                commands::e2m::run_get(&targets, &id, output).await?;
+            }
+            E2mCmd::Create { from_file } => {
+                confirm_destructive("Create a new E2M definition?", yes, agent_mode)?;
+                commands::e2m::run_create(&targets, &from_file, output).await?;
+            }
+            E2mCmd::Update { from_file } => {
+                confirm_destructive("Update E2M definition?", yes, agent_mode)?;
+                commands::e2m::run_update(&targets, &from_file, output).await?;
+            }
+            E2mCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete E2M definition '{id}'?"), yes, agent_mode)?;
+                commands::e2m::run_delete(&targets, &id).await?;
+            }
+            E2mCmd::LabelsCardinality => {
+                commands::e2m::run_labels_cardinality(&targets, output).await?;
+            }
+            E2mCmd::Limits => {
+                commands::e2m::run_limits(&targets, output).await?;
+            }
+        },
+
+        Commands::RecordingRules { cmd } => match cmd {
+            RecordingRulesCmd::List => {
+                commands::recording_rules::run_list(&targets, output).await?;
+            }
+            RecordingRulesCmd::Get { id } => {
+                commands::recording_rules::run_get(&targets, &id, output).await?;
+            }
+            RecordingRulesCmd::Create { from_file } => {
+                confirm_destructive("Create a new recording rule group?", yes, agent_mode)?;
+                commands::recording_rules::run_create(&targets, &from_file, output).await?;
+            }
+            RecordingRulesCmd::Update { from_file, id } => {
+                confirm_destructive(
+                    &format!("Update recording rule group '{id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
+                commands::recording_rules::run_update(&targets, &id, &from_file, output).await?;
+            }
+            RecordingRulesCmd::Delete { id } => {
+                confirm_destructive(
+                    &format!("Delete recording rule group '{id}'?"),
+                    yes,
+                    agent_mode,
+                )?;
+                commands::recording_rules::run_delete(&targets, &id).await?;
+            }
+        },
+
+        Commands::ParsingRules { cmd } => match cmd {
+            ParsingRulesCmd::List => {
+                commands::parsing_rules::run_list(&targets, output).await?;
+            }
+            ParsingRulesCmd::Get { id } => {
+                commands::parsing_rules::run_get(&targets, &id, output).await?;
+            }
+            ParsingRulesCmd::Create { from_file } => {
+                confirm_destructive("Create a new parsing rule?", yes, agent_mode)?;
+                commands::parsing_rules::run_create(&targets, &from_file, output).await?;
+            }
+            ParsingRulesCmd::Update { from_file, id } => {
+                confirm_destructive(&format!("Update parsing rule '{id}'?"), yes, agent_mode)?;
+                commands::parsing_rules::run_update(&targets, &id, &from_file, output).await?;
+            }
+            ParsingRulesCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete parsing rule '{id}'?"), yes, agent_mode)?;
+                commands::parsing_rules::run_delete(&targets, &id).await?;
+            }
+            ParsingRulesCmd::BulkDelete { ids } => {
+                confirm_destructive("Bulk delete parsing rules?", yes, agent_mode)?;
+                commands::parsing_rules::run_bulk_delete(&targets, &ids).await?;
+            }
+            ParsingRulesCmd::UsageLimits => {
+                commands::parsing_rules::run_usage_limits(&targets, output).await?;
+            }
+        },
+
+        Commands::Enrichments { cmd } => match cmd {
+            EnrichmentsCmd::List => {
+                commands::enrichments::run_list(&targets, output).await?;
+            }
+            EnrichmentsCmd::Add { from_file } => {
+                confirm_destructive("Add enrichment rules?", yes, agent_mode)?;
+                commands::enrichments::run_add(&targets, &from_file, output).await?;
+            }
+            EnrichmentsCmd::Remove { from_file } => {
+                confirm_destructive("Remove enrichment rules?", yes, agent_mode)?;
+                commands::enrichments::run_remove(&targets, &from_file, output).await?;
+            }
+            EnrichmentsCmd::Overwrite { from_file } => {
+                confirm_destructive("Overwrite enrichment rules?", yes, agent_mode)?;
+                commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
+            }
+            EnrichmentsCmd::Limit => {
+                commands::enrichments::run_limit(&targets, output).await?;
+            }
+            EnrichmentsCmd::Settings => {
+                commands::enrichments::run_settings(&targets, output).await?;
+            }
+            EnrichmentsCmd::Custom { cmd } => match cmd {
+                CustomEnrichmentsCmd::List => {
+                    commands::custom_enrichments::run_list(&targets, output).await?;
+                }
+                CustomEnrichmentsCmd::Get { id } => {
+                    commands::custom_enrichments::run_get(&targets, &id, output).await?;
+                }
+                CustomEnrichmentsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new custom enrichment?", yes, agent_mode)?;
+                    commands::custom_enrichments::run_create(&targets, &from_file, output).await?;
+                }
+                CustomEnrichmentsCmd::Update { from_file } => {
+                    confirm_destructive("Update custom enrichment?", yes, agent_mode)?;
+                    commands::custom_enrichments::run_update(&targets, &from_file, output).await?;
+                }
+                CustomEnrichmentsCmd::Delete { id } => {
+                    confirm_destructive(
+                        &format!("Delete custom enrichment '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::custom_enrichments::run_delete(&targets, &id).await?;
+                }
+                CustomEnrichmentsCmd::Search { id, query } => {
+                    commands::custom_enrichments::run_search(&targets, &id, &query, output).await?;
+                }
+            },
+        },
+
+        Commands::Integrations { cmd } => match cmd {
+            IntegrationsCmd::List => {
+                commands::integrations::run_list(&targets, output).await?;
+            }
+            IntegrationsCmd::Get { id } => {
+                commands::integrations::run_get(&targets, &id, output).await?;
+            }
+            IntegrationsCmd::Definition { id } => {
+                commands::integrations::run_definition(&targets, &id, output).await?;
+            }
+            IntegrationsCmd::Deployed { id } => {
+                commands::integrations::run_deployed(&targets, &id, output).await?;
+            }
+            IntegrationsCmd::Create { from_file } => {
+                confirm_destructive("Create a new integration?", yes, agent_mode)?;
+                commands::integrations::run_create(&targets, &from_file, output).await?;
+            }
+            IntegrationsCmd::Update { id, from_file } => {
+                confirm_destructive(&format!("Update integration '{id}'?"), yes, agent_mode)?;
+                commands::integrations::run_update(&targets, &id, &from_file, output).await?;
+            }
+            IntegrationsCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete integration '{id}'?"), yes, agent_mode)?;
+                commands::integrations::run_delete(&targets, &id).await?;
+            }
+            IntegrationsCmd::Test { from_file } => {
+                confirm_destructive("Test integration?", yes, agent_mode)?;
+                commands::integrations::run_test(&targets, &from_file, output).await?;
+            }
+            IntegrationsCmd::Template => {
+                commands::integrations::run_template(&targets, output).await?;
+            }
+            IntegrationsCmd::Extensions { cmd } => match cmd {
+                ExtensionsCmd::List => {
+                    commands::extensions::run_list(&targets, output).await?;
+                }
+                ExtensionsCmd::Get { id } => {
+                    commands::extensions::run_get(&targets, &id, output).await?;
+                }
+                ExtensionsCmd::Deployed => {
+                    commands::extensions::run_deployed(&targets, output).await?;
+                }
+                ExtensionsCmd::Deploy { from_file } => {
+                    confirm_destructive("Deploy extension?", yes, agent_mode)?;
+                    commands::extensions::run_deploy(&targets, &from_file, output).await?;
+                }
+                ExtensionsCmd::Update { from_file } => {
+                    confirm_destructive("Update extension?", yes, agent_mode)?;
+                    commands::extensions::run_update(&targets, &from_file, output).await?;
+                }
+                ExtensionsCmd::Undeploy { from_file } => {
+                    confirm_destructive("Undeploy extension?", yes, agent_mode)?;
+                    commands::extensions::run_undeploy(&targets, &from_file, output).await?;
+                }
+            },
+            IntegrationsCmd::ContextualData { cmd } => match cmd {
+                ContextualDataCmd::List => {
+                    commands::contextual_data::run_list(&targets, output).await?;
+                }
+                ContextualDataCmd::Get { id } => {
+                    commands::contextual_data::run_get(&targets, &id, output).await?;
+                }
+                ContextualDataCmd::Create { from_file } => {
+                    confirm_destructive("Create contextual data integration?", yes, agent_mode)?;
+                    commands::contextual_data::run_create(&targets, &from_file, output).await?;
+                }
+                ContextualDataCmd::Update { id, from_file } => {
+                    confirm_destructive(
+                        &format!("Update contextual data '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::contextual_data::run_update(&targets, &id, &from_file, output)
+                        .await?;
+                }
+                ContextualDataCmd::Delete { id } => {
+                    confirm_destructive(
+                        &format!("Delete contextual data '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::contextual_data::run_delete(&targets, &id).await?;
+                }
+                ContextualDataCmd::Definition { id } => {
+                    commands::contextual_data::run_definition(&targets, &id, output).await?;
+                }
+                ContextualDataCmd::Test { id } => {
+                    commands::contextual_data::run_test(&targets, &id, output).await?;
+                }
+            },
+        },
+
+        Commands::Webhooks { cmd } => match cmd {
+            WebhooksCmd::List => {
+                commands::webhooks::run_list(&targets, output).await?;
+            }
+            WebhooksCmd::Get { id } => {
+                commands::webhooks::run_get(&targets, &id, output).await?;
+            }
+            WebhooksCmd::Create { from_file } => {
+                confirm_destructive("Create a new webhook?", yes, agent_mode)?;
+                commands::webhooks::run_create(&targets, &from_file, output).await?;
+            }
+            WebhooksCmd::Update { id, from_file } => {
+                confirm_destructive(&format!("Update webhook '{id}'?"), yes, agent_mode)?;
+                commands::webhooks::run_update(&targets, &id, &from_file, output).await?;
+            }
+            WebhooksCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete webhook '{id}'?"), yes, agent_mode)?;
+                commands::webhooks::run_delete(&targets, &id).await?;
+            }
+            WebhooksCmd::Test { id } => {
+                confirm_destructive(&format!("Test webhook '{id}'?"), yes, agent_mode)?;
+                commands::webhooks::run_test(&targets, &id, output).await?;
+            }
+            WebhooksCmd::Types => {
+                commands::webhooks::run_types(&targets, output).await?;
+            }
+            WebhooksCmd::Actions { cmd } => match cmd {
+                ActionsCmd::List => {
+                    commands::actions::run_list(&targets, output).await?;
+                }
+                ActionsCmd::Get { id } => {
+                    commands::actions::run_get(&targets, &id, output).await?;
+                }
+                ActionsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new webhook action?", yes, agent_mode)?;
+                    commands::actions::run_create(&targets, &from_file, output).await?;
+                }
+                ActionsCmd::Update { from_file } => {
+                    confirm_destructive("Update webhook action?", yes, agent_mode)?;
+                    commands::actions::run_update(&targets, &from_file, output).await?;
+                }
+                ActionsCmd::Delete { id } => {
+                    confirm_destructive(
+                        &format!("Delete webhook action '{id}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::actions::run_delete(&targets, &id).await?;
+                }
+                ActionsCmd::Batch { from_file } => {
+                    confirm_destructive("Batch execute webhook actions?", yes, agent_mode)?;
+                    commands::actions::run_batch(&targets, &from_file, output).await?;
+                }
+                ActionsCmd::Reorder { from_file } => {
+                    confirm_destructive("Reorder webhook actions?", yes, agent_mode)?;
+                    commands::actions::run_reorder(&targets, &from_file, output).await?;
+                }
+            },
+        },
+
+        Commands::Views { cmd } => match cmd {
+            ViewsCmd::List => {
+                commands::views::run_list(&targets, output).await?;
+            }
+            ViewsCmd::Get { id } => {
+                commands::views::run_get(&targets, &id, output).await?;
+            }
+            ViewsCmd::Create { from_file } => {
+                confirm_destructive("Create a new view?", yes, agent_mode)?;
+                commands::views::run_create(&targets, &from_file, output).await?;
+            }
+            ViewsCmd::Update { id, from_file } => {
+                confirm_destructive(&format!("Update view '{id}'?"), yes, agent_mode)?;
+                commands::views::run_update(&targets, &id, &from_file, output).await?;
+            }
+            ViewsCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete view '{id}'?"), yes, agent_mode)?;
+                commands::views::run_delete(&targets, &id).await?;
+            }
+            ViewsCmd::Folders { cmd } => match cmd {
+                ViewFoldersCmd::List => {
+                    commands::views::run_folders_list(&targets, output).await?;
+                }
+                ViewFoldersCmd::Get { id } => {
+                    commands::views::run_folders_get(&targets, &id, output).await?;
+                }
+                ViewFoldersCmd::Create { from_file } => {
+                    confirm_destructive("Create a new view folder?", yes, agent_mode)?;
+                    commands::views::run_folders_create(&targets, &from_file, output).await?;
+                }
+                ViewFoldersCmd::Update { id, from_file } => {
+                    confirm_destructive(&format!("Update view folder '{id}'?"), yes, agent_mode)?;
+                    commands::views::run_folders_update(&targets, &id, &from_file, output).await?;
+                }
+                ViewFoldersCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete view folder '{id}'?"), yes, agent_mode)?;
+                    commands::views::run_folders_delete(&targets, &id).await?;
+                }
+            },
+        },
+
+        Commands::Iam { cmd } => match cmd {
+            IamCmd::ApiKeys { cmd } => match cmd {
+                ApiKeysCmd::List => {
+                    commands::api_keys::run_list(&targets, output).await?;
+                }
+                ApiKeysCmd::Get { id } => {
+                    commands::api_keys::run_get(&targets, &id, output).await?;
+                }
+                ApiKeysCmd::Create { from_file } => {
+                    confirm_destructive("Create a new API key?", yes, agent_mode)?;
+                    commands::api_keys::run_create(&targets, &from_file, output).await?;
+                }
+                ApiKeysCmd::Update { from_file, id } => {
+                    confirm_destructive(&format!("Update API key '{id}'?"), yes, agent_mode)?;
+                    commands::api_keys::run_update(&targets, &id, &from_file, output).await?;
+                }
+                ApiKeysCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete API key '{id}'?"), yes, agent_mode)?;
+                    commands::api_keys::run_delete(&targets, &id).await?;
+                }
+                ApiKeysCmd::SendDataKeys => {
+                    commands::api_keys::run_send_data_keys(&targets, output).await?;
+                }
+                ApiKeysCmd::Admin { cmd } => match cmd {
+                    ApiKeysAdminCmd::List => {
+                        commands::api_keys::run_admin_list(&targets, output).await?;
+                    }
+                    ApiKeysAdminCmd::Delete { ids } => {
+                        confirm_destructive("Bulk delete API keys?", yes, agent_mode)?;
+                        commands::api_keys::run_admin_delete(&targets, &ids).await?;
+                    }
+                    ApiKeysAdminCmd::SetStatus { ids, active } => {
+                        confirm_destructive(
+                            &format!("Set API key status to active={active}?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::api_keys::run_admin_set_status(&targets, &ids, active).await?;
+                    }
+                },
+            },
+            IamCmd::Roles { cmd } => match cmd {
+                RolesCmd::List => {
+                    commands::roles::run_list(&targets, output).await?;
+                }
+                RolesCmd::Get { id } => {
+                    commands::roles::run_get(&targets, &id, output).await?;
+                }
+                RolesCmd::Create { from_file } => {
+                    confirm_destructive("Create a new custom role?", yes, agent_mode)?;
+                    commands::roles::run_create(&targets, &from_file, output).await?;
+                }
+                RolesCmd::Update { from_file, id } => {
+                    confirm_destructive(&format!("Update role '{id}'?"), yes, agent_mode)?;
+                    commands::roles::run_update(&targets, &id, &from_file, output).await?;
+                }
+                RolesCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete role '{id}'?"), yes, agent_mode)?;
+                    commands::roles::run_delete(&targets, &id).await?;
+                }
+                RolesCmd::System => {
+                    commands::roles::run_system(&targets, output).await?;
+                }
+            },
+            IamCmd::Scopes { cmd } => match cmd {
+                ScopesCmd::List => {
+                    commands::scopes::run_list(&targets, output).await?;
+                }
+                ScopesCmd::Get { id } => {
+                    commands::scopes::run_get(&targets, &id, output).await?;
+                }
+                ScopesCmd::Create { from_file } => {
+                    confirm_destructive("Create a new scope?", yes, agent_mode)?;
+                    commands::scopes::run_create(&targets, &from_file, output).await?;
+                }
+                ScopesCmd::Update { from_file } => {
+                    confirm_destructive("Update scope?", yes, agent_mode)?;
+                    commands::scopes::run_update(&targets, &from_file, output).await?;
+                }
+                ScopesCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete scope '{id}'?"), yes, agent_mode)?;
+                    commands::scopes::run_delete(&targets, &id).await?;
+                }
+            },
+            IamCmd::Users { cmd } => match cmd {
+                UsersCmd::Search {
+                    query,
+                    status,
+                    page_size,
+                    page_token,
+                } => {
+                    commands::users::run_search(
+                        &targets,
+                        query.as_deref(),
+                        status.as_deref(),
+                        page_size.as_deref(),
+                        page_token.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                UsersCmd::Get { user_id } => {
+                    commands::users::run_get(&targets, &user_id, output).await?;
+                }
+                UsersCmd::Create { from_file } => {
+                    confirm_destructive("Create user(s)?", yes, agent_mode)?;
+                    commands::users::run_create(&targets, &from_file, output).await?;
+                }
+                UsersCmd::Update { from_file } => {
+                    confirm_destructive("Update user(s)?", yes, agent_mode)?;
+                    commands::users::run_update(&targets, &from_file, output).await?;
+                }
+                UsersCmd::SetStatus { user_ids, status } => {
+                    confirm_destructive(
+                        &format!("Set user status to '{status}'?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::users::run_set_status(&targets, &user_ids, &status).await?;
+                }
+            },
+            IamCmd::TeamGroups { cmd } => match cmd {
+                TeamGroupsCmd::List {} => {
+                    commands::team_groups::run_list(&targets, output).await?;
+                }
+                TeamGroupsCmd::Get { id } => {
+                    commands::team_groups::run_get(&targets, &id, output).await?;
+                }
+                TeamGroupsCmd::GetByName { name } => {
+                    commands::team_groups::run_get_by_name(&targets, &name, output).await?;
+                }
+                TeamGroupsCmd::Users { group_id } => {
+                    commands::team_groups::run_users(&targets, &group_id, output).await?;
+                }
+                TeamGroupsCmd::Create { from_file } => {
+                    confirm_destructive("Create a new team group?", yes, agent_mode)?;
+                    commands::team_groups::run_create(&targets, &from_file, output).await?;
+                }
+                TeamGroupsCmd::Update { from_file, id } => {
+                    confirm_destructive(&format!("Update team group '{id}'?"), yes, agent_mode)?;
+                    commands::team_groups::run_update(&targets, &id, &from_file, output).await?;
+                }
+                TeamGroupsCmd::Delete { id } => {
+                    confirm_destructive(&format!("Delete team group '{id}'?"), yes, agent_mode)?;
+                    commands::team_groups::run_delete(&targets, &id).await?;
+                }
+            },
+            IamCmd::IpAccess { cmd } => match cmd {
+                IpAccessCmd::Get => {
+                    commands::ip_access::run_get(&targets, output).await?;
+                }
+                IpAccessCmd::Create { from_file } => {
+                    confirm_destructive("Create IP access rules?", yes, agent_mode)?;
+                    commands::ip_access::run_create(&targets, &from_file, output).await?;
+                }
+                IpAccessCmd::Update { from_file } => {
+                    confirm_destructive("Update IP access rules?", yes, agent_mode)?;
+                    commands::ip_access::run_update(&targets, &from_file, output).await?;
+                }
+                IpAccessCmd::Delete => {
+                    confirm_destructive(
+                        "Delete all IP access rules? This removes all IP restrictions.",
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::ip_access::run_delete(&targets).await?;
+                }
+            },
+        },
+
+        Commands::DataArchive { cmd } => match cmd {
+            DataArchiveCmd::Metrics { cmd } => match cmd {
+                DataArchiveMetricsCmd::Get => {
+                    commands::data_archive::run_metrics_get(&targets, output).await?;
+                }
+                DataArchiveMetricsCmd::Create { from_file } => {
+                    confirm_destructive("Create metrics archive configuration?", yes, agent_mode)?;
+                    commands::data_archive::run_metrics_create(&targets, &from_file, output)
+                        .await?;
+                }
+                DataArchiveMetricsCmd::Update { from_file } => {
+                    confirm_destructive("Update metrics archive configuration?", yes, agent_mode)?;
+                    commands::data_archive::run_metrics_update(&targets, &from_file, output)
+                        .await?;
+                }
+                DataArchiveMetricsCmd::Enable => {
+                    confirm_destructive("Enable metrics archiving?", yes, agent_mode)?;
+                    commands::data_archive::run_metrics_enable(&targets).await?;
+                }
+                DataArchiveMetricsCmd::Disable => {
+                    confirm_destructive("Disable metrics archiving?", yes, agent_mode)?;
+                    commands::data_archive::run_metrics_disable(&targets).await?;
+                }
+                DataArchiveMetricsCmd::Validate { from_file } => {
+                    commands::data_archive::run_metrics_validate(&targets, &from_file, output)
+                        .await?;
+                }
+            },
+            DataArchiveCmd::Logs { cmd } => match cmd {
+                DataArchiveLogsCmd::Get => {
+                    commands::data_archive::run_logs_get(&targets, output).await?;
+                }
+                DataArchiveLogsCmd::Set { from_file } => {
+                    confirm_destructive("Set logs archive target?", yes, agent_mode)?;
+                    commands::data_archive::run_logs_set(&targets, &from_file, output).await?;
+                }
+            },
+        },
+
+        Commands::Slos { cmd } => match cmd {
+            SlosCmd::List => {
+                commands::slos::run_list(&targets, output).await?;
+            }
+            SlosCmd::Get { id } => {
+                commands::slos::run_get(&targets, &id, output).await?;
+            }
+            SlosCmd::Create { from_file } => {
+                confirm_destructive("Create a new SLO?", yes, agent_mode)?;
+                commands::slos::run_create(&targets, &from_file, output).await?;
+            }
+            SlosCmd::Update { from_file } => {
+                confirm_destructive("Update SLO?", yes, agent_mode)?;
+                commands::slos::run_update(&targets, &from_file, output).await?;
+            }
+            SlosCmd::Delete { id } => {
+                confirm_destructive(&format!("Delete SLO '{id}'?"), yes, agent_mode)?;
+                commands::slos::run_delete(&targets, &id).await?;
+            }
+        },
+
+        Commands::SearchFields {
+            text,
+            search_type,
+            dataset,
+            limit,
+            offset,
+        } => match search_type {
+            SearchType::Semantic => {
+                let dataset_str = match dataset {
+                    SearchByValueDataset::Logs => "logs",
+                    SearchByValueDataset::Spans => "spans",
+                    SearchByValueDataset::All => {
+                        bail!("--dataset all is only valid with -s value");
+                    }
+                };
+                commands::search_fields::run(&targets, &text, dataset_str, limit, output).await?;
+            }
+            SearchType::Value => {
+                let dataset_str = match dataset {
+                    SearchByValueDataset::Logs => "logs",
+                    SearchByValueDataset::Spans => "spans",
+                    SearchByValueDataset::All => "all",
+                };
+                commands::search_by_value::run(&targets, &text, dataset_str, limit, offset, output)
+                    .await?;
+            }
+        },
+
+        Commands::Olly { cmd } => match cmd {
+            OllyCmd::Ask {
+                message,
+                chat_id,
+                model,
+                timeout,
+            } => {
+                commands::olly::run_ask(
+                    &targets,
+                    &message,
+                    chat_id.as_deref(),
+                    &model,
+                    timeout,
+                    output,
+                )
+                .await?;
+            }
+            OllyCmd::Artifacts { cmd } => match cmd {
+                OllyArtifactsCmd::List => {
+                    commands::olly::run_artifacts_list(&targets, output).await?;
+                }
+                OllyArtifactsCmd::Get { artifact_id } => {
+                    commands::olly::run_artifacts_get(
+                        &targets,
+                        &artifact_id,
                         output,
                         max_direct,
                         &temp_dir,
-                        None,
                     )
                     .await?;
                 }
             },
-
-            Commands::Logs {
-                query,
-                start,
-                end,
-                limit,
-                tier,
-            } => {
-                commands::logs::run(
-                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
-                )
-                .await?;
-            }
-
-            Commands::Metrics { cmd } => match cmd {
-                MetricsCmd::Query { expr, time } => {
-                    commands::metrics::run_query(&targets, &expr, time.as_deref(), output).await?;
-                }
-                MetricsCmd::QueryRange {
-                    expr,
-                    start,
-                    end,
-                    step,
-                } => {
-                    commands::metrics::run_query_range(
-                        &targets, &expr, &start, &end, &step, output,
-                    )
-                    .await?;
-                }
-                MetricsCmd::Search { name, description } => {
-                    commands::metrics::run_search(
-                        &targets,
-                        name.as_deref(),
-                        description.as_deref(),
-                        output,
-                    )
-                    .await?;
-                }
-                MetricsCmd::GetLabels { metric } => {
-                    commands::metrics::run_get_labels(&targets, &metric, output).await?;
-                }
-            },
-
-            Commands::Spans {
-                query,
-                start,
-                end,
-                limit,
-                tier,
-            } => {
-                commands::spans::run(
-                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
-                )
-                .await?;
-            }
-
-            Commands::Dashboards { cmd } => match cmd {
-                DashboardsCmd::Catalog => {
-                    commands::dashboards::run_catalog(&targets, output).await?;
-                }
-                DashboardsCmd::Get { dashboard_id } => {
-                    commands::dashboards::run_get(&targets, &dashboard_id, output).await?;
-                }
-                DashboardsCmd::Create { from_file, folder } => {
-                    confirm_destructive("Create a new dashboard?", yes, agent_mode)?;
-                    commands::dashboards::run_create(
-                        &targets,
-                        &from_file,
-                        folder.as_deref(),
-                        output,
-                    )
-                    .await?;
-                }
-                DashboardsCmd::Replace { from_file } => {
-                    commands::dashboards::run_replace(
-                        &targets, &from_file, output, yes, agent_mode,
-                    )
-                    .await?;
-                }
-                DashboardsCmd::Delete { dashboard_id } => {
-                    confirm_destructive(
-                        &format!("Delete dashboard '{dashboard_id}'?"),
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::dashboards::run_delete(&targets, &dashboard_id).await?;
-                }
-                DashboardsCmd::Search { description, limit } => {
-                    commands::dashboards::run_semantic_search(
-                        &targets,
-                        &description,
-                        limit,
-                        output,
-                    )
-                    .await?;
-                }
-                DashboardsCmd::QuerySearch {
-                    field,
-                    description,
-                    limit,
-                } => match (field.as_deref(), description.as_deref()) {
-                    (Some(f), _) => {
-                        commands::dashboards::run_queries_by_field(&targets, f, limit, output)
-                            .await?;
-                    }
-                    (_, Some(d)) => {
-                        commands::dashboards::run_search(&targets, d, limit, output).await?;
-                    }
-                    (None, None) => {
-                        bail!("specify --field or --description");
-                    }
-                },
-                DashboardsCmd::Folders { cmd } => match cmd {
-                    FoldersCmd::List => {
-                        commands::dashboards::run_folders_list(&targets, output).await?;
-                    }
-                    FoldersCmd::Create { name, parent_id } => {
-                        confirm_destructive("Create a new dashboard folder?", yes, agent_mode)?;
-                        commands::dashboards::run_folders_create(
-                            &targets,
-                            &name,
-                            parent_id.as_deref(),
-                            output,
-                        )
-                        .await?;
-                    }
-                    FoldersCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete dashboard folder '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::dashboards::run_folders_delete(&targets, &id).await?;
-                    }
-                },
-            },
-
-            Commands::Alerts { cmd } => match cmd {
-                AlertsCmd::List { name } => {
-                    commands::alerts::run_list(&targets, name.as_deref(), output).await?;
-                }
-                AlertsCmd::Get { alert_id } => {
-                    commands::alerts::run_get(&targets, &alert_id, output).await?;
-                }
-                AlertsCmd::Create { from_file } => {
-                    confirm_destructive("Create a new alert?", yes, agent_mode)?;
-                    commands::alerts::run_create(&targets, &from_file, output).await?;
-                }
-                AlertsCmd::Delete { alert_id } => {
-                    confirm_destructive(&format!("Delete alert '{alert_id}'?"), yes, agent_mode)?;
-                    commands::alerts::run_delete(&targets, &alert_id).await?;
-                }
-                AlertsCmd::Enable { alert_id } => {
-                    confirm_destructive(&format!("Enable alert '{alert_id}'?"), yes, agent_mode)?;
-                    commands::alerts::run_enable(&targets, &alert_id).await?;
-                }
-                AlertsCmd::Disable { alert_id } => {
-                    confirm_destructive(&format!("Disable alert '{alert_id}'?"), yes, agent_mode)?;
-                    commands::alerts::run_disable(&targets, &alert_id).await?;
-                }
-                AlertsCmd::Events {
-                    alert_version_id,
-                    start,
-                    end,
-                } => {
-                    commands::alerts::run_events(
-                        &targets,
-                        &alert_version_id,
-                        start.as_deref(),
-                        end.as_deref(),
-                        output,
-                    )
-                    .await?;
-                }
-                AlertsCmd::EventStats => {
-                    commands::alerts::run_event_stats(&targets, output).await?;
-                }
-                AlertsCmd::SuppressionRules { cmd } => match cmd {
-                    SuppressionRulesCmd::List => {
-                        commands::suppression_rules::run_list(&targets, output).await?;
-                    }
-                    SuppressionRulesCmd::Get { id } => {
-                        commands::suppression_rules::run_get(&targets, &id, output).await?;
-                    }
-                    SuppressionRulesCmd::Create { from_file } => {
-                        confirm_destructive("Create a new suppression rule?", yes, agent_mode)?;
-                        commands::suppression_rules::run_create(&targets, &from_file, output)
-                            .await?;
-                    }
-                    SuppressionRulesCmd::Update { from_file } => {
-                        confirm_destructive("Update suppression rule?", yes, agent_mode)?;
-                        commands::suppression_rules::run_update(&targets, &from_file, output)
-                            .await?;
-                    }
-                    SuppressionRulesCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete suppression rule '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::suppression_rules::run_delete(&targets, &id).await?;
-                    }
-                },
-            },
-
-            Commands::Incidents { cmd } => match cmd {
-                IncidentsCmd::List {
-                    status,
-                    severity,
-                    assignee,
-                } => {
-                    commands::incidents::run_list(
-                        &targets,
-                        status.as_deref(),
-                        severity.as_deref(),
-                        assignee.as_deref(),
-                        output,
-                    )
-                    .await?;
-                }
-                IncidentsCmd::Get { id } => {
-                    commands::incidents::run_get(&targets, &id, output).await?;
-                }
-                IncidentsCmd::Acknowledge { ids } => {
-                    confirm_destructive("Acknowledge incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_acknowledge(&targets, &ids).await?;
-                }
-                IncidentsCmd::Resolve { ids } => {
-                    confirm_destructive("Resolve incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_resolve(&targets, &ids).await?;
-                }
-                IncidentsCmd::Close { ids } => {
-                    confirm_destructive("Close incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_close(&targets, &ids).await?;
-                }
-                IncidentsCmd::Assign { ids, user_id } => {
-                    confirm_destructive(
-                        &format!("Assign incident(s) to '{user_id}'?"),
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::incidents::run_assign(&targets, &ids, &user_id).await?;
-                }
-                IncidentsCmd::Unassign { ids } => {
-                    confirm_destructive("Unassign incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_unassign(&targets, &ids).await?;
-                }
-                IncidentsCmd::Events { incident_id } => {
-                    commands::incidents::run_events(&targets, incident_id.as_deref(), output)
-                        .await?;
-                }
-                IncidentsCmd::Aggregations => {
-                    commands::incidents::run_aggregations(&targets, output).await?;
-                }
-            },
-
-            Commands::Notifications { cmd } => match cmd {
-                NotificationsCmd::Connectors { cmd } => match cmd {
-                    ConnectorsCmd::List => {
-                        commands::connectors::run_list(&targets, output).await?;
-                    }
-                    ConnectorsCmd::Get { id } => {
-                        commands::connectors::run_get(&targets, &id, output).await?;
-                    }
-                    ConnectorsCmd::Create { from_file } => {
-                        confirm_destructive("Create a new connector?", yes, agent_mode)?;
-                        commands::connectors::run_create(&targets, &from_file, output).await?;
-                    }
-                    ConnectorsCmd::Update { from_file } => {
-                        confirm_destructive("Update connector?", yes, agent_mode)?;
-                        commands::connectors::run_update(&targets, &from_file, output).await?;
-                    }
-                    ConnectorsCmd::Delete { id } => {
-                        confirm_destructive(&format!("Delete connector '{id}'?"), yes, agent_mode)?;
-                        commands::connectors::run_delete(&targets, &id).await?;
-                    }
-                    ConnectorsCmd::Types => {
-                        commands::connectors::run_types(&targets, output).await?;
-                    }
-                    ConnectorsCmd::EntityTypes => {
-                        commands::connectors::run_entity_types(&targets, output).await?;
-                    }
-                    ConnectorsCmd::EntitySubtypes { r#type } => {
-                        commands::connectors::run_entity_subtypes(&targets, &r#type, output)
-                            .await?;
-                    }
-                },
-                NotificationsCmd::Routers { cmd } => match cmd {
-                    RoutersCmd::List => {
-                        commands::routers::run_list(&targets, output).await?;
-                    }
-                    RoutersCmd::Get { id } => {
-                        commands::routers::run_get(&targets, &id, output).await?;
-                    }
-                    RoutersCmd::Create { from_file } => {
-                        confirm_destructive("Create a new router?", yes, agent_mode)?;
-                        commands::routers::run_create(&targets, &from_file, output).await?;
-                    }
-                    RoutersCmd::Update { from_file } => {
-                        confirm_destructive("Update router?", yes, agent_mode)?;
-                        commands::routers::run_update(&targets, &from_file, output).await?;
-                    }
-                    RoutersCmd::Delete { id } => {
-                        confirm_destructive(&format!("Delete router '{id}'?"), yes, agent_mode)?;
-                        commands::routers::run_delete(&targets, &id).await?;
-                    }
-                    RoutersCmd::ValidateMatcher { from_file } => {
-                        commands::routers::run_validate_matcher(&targets, &from_file, output)
-                            .await?;
-                    }
-                },
-                NotificationsCmd::Presets { cmd } => match cmd {
-                    PresetsCmd::List => {
-                        commands::presets::run_list(&targets, output).await?;
-                    }
-                    PresetsCmd::Get { id } => {
-                        commands::presets::run_get(&targets, &id, output).await?;
-                    }
-                    PresetsCmd::Create { from_file } => {
-                        confirm_destructive("Create a new preset?", yes, agent_mode)?;
-                        commands::presets::run_create(&targets, &from_file, output).await?;
-                    }
-                    PresetsCmd::Update { from_file } => {
-                        confirm_destructive("Update preset?", yes, agent_mode)?;
-                        commands::presets::run_update(&targets, &from_file, output).await?;
-                    }
-                    PresetsCmd::Delete { id } => {
-                        confirm_destructive(&format!("Delete preset '{id}'?"), yes, agent_mode)?;
-                        commands::presets::run_delete(&targets, &id).await?;
-                    }
-                    PresetsCmd::SetDefault { id } => {
-                        confirm_destructive(
-                            &format!("Set preset '{id}' as default?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::presets::run_set_default(&targets, &id).await?;
-                    }
-                },
-                NotificationsCmd::Test { cmd } => match cmd {
-                    NotificationTestCmd::Connector { from_file } => {
-                        commands::notification_testing::run_test_connector(
-                            &targets, &from_file, output,
-                        )
-                        .await?;
-                    }
-                    NotificationTestCmd::Destination { from_file } => {
-                        commands::notification_testing::run_test_destination(
-                            &targets, &from_file, output,
-                        )
-                        .await?;
-                    }
-                    NotificationTestCmd::Preset { from_file } => {
-                        commands::notification_testing::run_test_preset(
-                            &targets, &from_file, output,
-                        )
-                        .await?;
-                    }
-                    NotificationTestCmd::RoutingCondition { from_file } => {
-                        commands::notification_testing::run_test_routing_condition(
-                            &targets, &from_file, output,
-                        )
-                        .await?;
-                    }
-                    NotificationTestCmd::TemplateRender { from_file } => {
-                        commands::notification_testing::run_test_template_render(
-                            &targets, &from_file, output,
-                        )
-                        .await?;
-                    }
-                },
-            },
-
-            Commands::DataUsage { cmd } => match cmd {
-                DataUsageCmd::Summary { start, end } => {
-                    commands::data_usage::run_summary(
-                        &targets,
-                        start.as_deref(),
-                        end.as_deref(),
-                        output,
-                    )
-                    .await?;
-                }
-                DataUsageCmd::Daily { r#type, start, end } => {
-                    commands::data_usage::run_daily(
-                        &targets,
-                        &r#type,
-                        start.as_deref(),
-                        end.as_deref(),
-                        output,
-                    )
-                    .await?;
-                }
-                DataUsageCmd::LogsCount => {
-                    commands::data_usage::run_logs_count(&targets, output).await?;
-                }
-                DataUsageCmd::SpansCount => {
-                    commands::data_usage::run_spans_count(&targets, output).await?;
-                }
-                DataUsageCmd::ExportStatus => {
-                    commands::data_usage::run_export_status(&targets, output).await?;
-                }
-            },
-
-            Commands::TcoPolicies { cmd } => match cmd {
-                TcoPoliciesCmd::List => {
-                    commands::tco_policies::run_list(&targets, output).await?;
-                }
-                TcoPoliciesCmd::Get { id } => {
-                    commands::tco_policies::run_get(&targets, &id, output).await?;
-                }
-                TcoPoliciesCmd::Create { from_file } => {
-                    confirm_destructive("Create a new TCO policy?", yes, agent_mode)?;
-                    commands::tco_policies::run_create(&targets, &from_file, output).await?;
-                }
-                TcoPoliciesCmd::Update { from_file } => {
-                    confirm_destructive("Update TCO policy?", yes, agent_mode)?;
-                    commands::tco_policies::run_update(&targets, &from_file, output).await?;
-                }
-                TcoPoliciesCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete TCO policy '{id}'?"), yes, agent_mode)?;
-                    commands::tco_policies::run_delete(&targets, &id).await?;
-                }
-                TcoPoliciesCmd::Reorder { from_file } => {
-                    confirm_destructive("Reorder TCO policies?", yes, agent_mode)?;
-                    commands::tco_policies::run_reorder(&targets, &from_file, output).await?;
-                }
-                TcoPoliciesCmd::Test { from_file } => {
-                    commands::tco_policies::run_test(&targets, &from_file, output).await?;
-                }
-                TcoPoliciesCmd::Settings => {
-                    commands::tco_policies::run_settings(&targets, output).await?;
-                }
-                TcoPoliciesCmd::SettingsUpdate { from_file } => {
-                    confirm_destructive("Update TCO settings?", yes, agent_mode)?;
-                    commands::tco_policies::run_settings_update(&targets, &from_file, output)
-                        .await?;
-                }
-            },
-
-            Commands::Retentions { cmd } => match cmd {
-                RetentionsCmd::List => {
-                    commands::retentions::run_list(&targets, output).await?;
-                }
-                RetentionsCmd::Update { from_file } => {
-                    confirm_destructive("Update retention settings?", yes, agent_mode)?;
-                    commands::retentions::run_update(&targets, &from_file, output).await?;
-                }
-                RetentionsCmd::Activate => {
-                    confirm_destructive("Activate retention settings?", yes, agent_mode)?;
-                    commands::retentions::run_activate(&targets).await?;
-                }
-                RetentionsCmd::Status => {
-                    commands::retentions::run_status(&targets, output).await?;
-                }
-            },
-
-            Commands::E2m { cmd } => match cmd {
-                E2mCmd::List => {
-                    commands::e2m::run_list(&targets, output).await?;
-                }
-                E2mCmd::Get { id } => {
-                    commands::e2m::run_get(&targets, &id, output).await?;
-                }
-                E2mCmd::Create { from_file } => {
-                    confirm_destructive("Create a new E2M definition?", yes, agent_mode)?;
-                    commands::e2m::run_create(&targets, &from_file, output).await?;
-                }
-                E2mCmd::Update { from_file } => {
-                    confirm_destructive("Update E2M definition?", yes, agent_mode)?;
-                    commands::e2m::run_update(&targets, &from_file, output).await?;
-                }
-                E2mCmd::Delete { id } => {
-                    confirm_destructive(
-                        &format!("Delete E2M definition '{id}'?"),
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::e2m::run_delete(&targets, &id).await?;
-                }
-                E2mCmd::LabelsCardinality => {
-                    commands::e2m::run_labels_cardinality(&targets, output).await?;
-                }
-                E2mCmd::Limits => {
-                    commands::e2m::run_limits(&targets, output).await?;
-                }
-            },
-
-            Commands::RecordingRules { cmd } => match cmd {
-                RecordingRulesCmd::List => {
-                    commands::recording_rules::run_list(&targets, output).await?;
-                }
-                RecordingRulesCmd::Get { id } => {
-                    commands::recording_rules::run_get(&targets, &id, output).await?;
-                }
-                RecordingRulesCmd::Create { from_file } => {
-                    confirm_destructive("Create a new recording rule group?", yes, agent_mode)?;
-                    commands::recording_rules::run_create(&targets, &from_file, output).await?;
-                }
-                RecordingRulesCmd::Update { from_file, id } => {
-                    confirm_destructive(
-                        &format!("Update recording rule group '{id}'?"),
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::recording_rules::run_update(&targets, &id, &from_file, output)
-                        .await?;
-                }
-                RecordingRulesCmd::Delete { id } => {
-                    confirm_destructive(
-                        &format!("Delete recording rule group '{id}'?"),
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::recording_rules::run_delete(&targets, &id).await?;
-                }
-            },
-
-            Commands::ParsingRules { cmd } => match cmd {
-                ParsingRulesCmd::List => {
-                    commands::parsing_rules::run_list(&targets, output).await?;
-                }
-                ParsingRulesCmd::Get { id } => {
-                    commands::parsing_rules::run_get(&targets, &id, output).await?;
-                }
-                ParsingRulesCmd::Create { from_file } => {
-                    confirm_destructive("Create a new parsing rule?", yes, agent_mode)?;
-                    commands::parsing_rules::run_create(&targets, &from_file, output).await?;
-                }
-                ParsingRulesCmd::Update { from_file, id } => {
-                    confirm_destructive(&format!("Update parsing rule '{id}'?"), yes, agent_mode)?;
-                    commands::parsing_rules::run_update(&targets, &id, &from_file, output).await?;
-                }
-                ParsingRulesCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete parsing rule '{id}'?"), yes, agent_mode)?;
-                    commands::parsing_rules::run_delete(&targets, &id).await?;
-                }
-                ParsingRulesCmd::BulkDelete { ids } => {
-                    confirm_destructive("Bulk delete parsing rules?", yes, agent_mode)?;
-                    commands::parsing_rules::run_bulk_delete(&targets, &ids).await?;
-                }
-                ParsingRulesCmd::UsageLimits => {
-                    commands::parsing_rules::run_usage_limits(&targets, output).await?;
-                }
-            },
-
-            Commands::Enrichments { cmd } => match cmd {
-                EnrichmentsCmd::List => {
-                    commands::enrichments::run_list(&targets, output).await?;
-                }
-                EnrichmentsCmd::Add { from_file } => {
-                    confirm_destructive("Add enrichment rules?", yes, agent_mode)?;
-                    commands::enrichments::run_add(&targets, &from_file, output).await?;
-                }
-                EnrichmentsCmd::Remove { from_file } => {
-                    confirm_destructive("Remove enrichment rules?", yes, agent_mode)?;
-                    commands::enrichments::run_remove(&targets, &from_file, output).await?;
-                }
-                EnrichmentsCmd::Overwrite { from_file } => {
-                    confirm_destructive("Overwrite enrichment rules?", yes, agent_mode)?;
-                    commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
-                }
-                EnrichmentsCmd::Limit => {
-                    commands::enrichments::run_limit(&targets, output).await?;
-                }
-                EnrichmentsCmd::Settings => {
-                    commands::enrichments::run_settings(&targets, output).await?;
-                }
-                EnrichmentsCmd::Custom { cmd } => match cmd {
-                    CustomEnrichmentsCmd::List => {
-                        commands::custom_enrichments::run_list(&targets, output).await?;
-                    }
-                    CustomEnrichmentsCmd::Get { id } => {
-                        commands::custom_enrichments::run_get(&targets, &id, output).await?;
-                    }
-                    CustomEnrichmentsCmd::Create { from_file } => {
-                        confirm_destructive("Create a new custom enrichment?", yes, agent_mode)?;
-                        commands::custom_enrichments::run_create(&targets, &from_file, output)
-                            .await?;
-                    }
-                    CustomEnrichmentsCmd::Update { from_file } => {
-                        confirm_destructive("Update custom enrichment?", yes, agent_mode)?;
-                        commands::custom_enrichments::run_update(&targets, &from_file, output)
-                            .await?;
-                    }
-                    CustomEnrichmentsCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete custom enrichment '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::custom_enrichments::run_delete(&targets, &id).await?;
-                    }
-                    CustomEnrichmentsCmd::Search { id, query } => {
-                        commands::custom_enrichments::run_search(&targets, &id, &query, output)
-                            .await?;
-                    }
-                },
-            },
-
-            Commands::Integrations { cmd } => match cmd {
-                IntegrationsCmd::List => {
-                    commands::integrations::run_list(&targets, output).await?;
-                }
-                IntegrationsCmd::Get { id } => {
-                    commands::integrations::run_get(&targets, &id, output).await?;
-                }
-                IntegrationsCmd::Definition { id } => {
-                    commands::integrations::run_definition(&targets, &id, output).await?;
-                }
-                IntegrationsCmd::Deployed { id } => {
-                    commands::integrations::run_deployed(&targets, &id, output).await?;
-                }
-                IntegrationsCmd::Create { from_file } => {
-                    confirm_destructive("Create a new integration?", yes, agent_mode)?;
-                    commands::integrations::run_create(&targets, &from_file, output).await?;
-                }
-                IntegrationsCmd::Update { id, from_file } => {
-                    confirm_destructive(&format!("Update integration '{id}'?"), yes, agent_mode)?;
-                    commands::integrations::run_update(&targets, &id, &from_file, output).await?;
-                }
-                IntegrationsCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete integration '{id}'?"), yes, agent_mode)?;
-                    commands::integrations::run_delete(&targets, &id).await?;
-                }
-                IntegrationsCmd::Test { from_file } => {
-                    confirm_destructive("Test integration?", yes, agent_mode)?;
-                    commands::integrations::run_test(&targets, &from_file, output).await?;
-                }
-                IntegrationsCmd::Template => {
-                    commands::integrations::run_template(&targets, output).await?;
-                }
-                IntegrationsCmd::Extensions { cmd } => match cmd {
-                    ExtensionsCmd::List => {
-                        commands::extensions::run_list(&targets, output).await?;
-                    }
-                    ExtensionsCmd::Get { id } => {
-                        commands::extensions::run_get(&targets, &id, output).await?;
-                    }
-                    ExtensionsCmd::Deployed => {
-                        commands::extensions::run_deployed(&targets, output).await?;
-                    }
-                    ExtensionsCmd::Deploy { from_file } => {
-                        confirm_destructive("Deploy extension?", yes, agent_mode)?;
-                        commands::extensions::run_deploy(&targets, &from_file, output).await?;
-                    }
-                    ExtensionsCmd::Update { from_file } => {
-                        confirm_destructive("Update extension?", yes, agent_mode)?;
-                        commands::extensions::run_update(&targets, &from_file, output).await?;
-                    }
-                    ExtensionsCmd::Undeploy { from_file } => {
-                        confirm_destructive("Undeploy extension?", yes, agent_mode)?;
-                        commands::extensions::run_undeploy(&targets, &from_file, output).await?;
-                    }
-                },
-                IntegrationsCmd::ContextualData { cmd } => match cmd {
-                    ContextualDataCmd::List => {
-                        commands::contextual_data::run_list(&targets, output).await?;
-                    }
-                    ContextualDataCmd::Get { id } => {
-                        commands::contextual_data::run_get(&targets, &id, output).await?;
-                    }
-                    ContextualDataCmd::Create { from_file } => {
-                        confirm_destructive(
-                            "Create contextual data integration?",
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::contextual_data::run_create(&targets, &from_file, output).await?;
-                    }
-                    ContextualDataCmd::Update { id, from_file } => {
-                        confirm_destructive(
-                            &format!("Update contextual data '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::contextual_data::run_update(&targets, &id, &from_file, output)
-                            .await?;
-                    }
-                    ContextualDataCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete contextual data '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::contextual_data::run_delete(&targets, &id).await?;
-                    }
-                    ContextualDataCmd::Definition { id } => {
-                        commands::contextual_data::run_definition(&targets, &id, output).await?;
-                    }
-                    ContextualDataCmd::Test { id } => {
-                        commands::contextual_data::run_test(&targets, &id, output).await?;
-                    }
-                },
-            },
-
-            Commands::Webhooks { cmd } => match cmd {
-                WebhooksCmd::List => {
-                    commands::webhooks::run_list(&targets, output).await?;
-                }
-                WebhooksCmd::Get { id } => {
-                    commands::webhooks::run_get(&targets, &id, output).await?;
-                }
-                WebhooksCmd::Create { from_file } => {
-                    confirm_destructive("Create a new webhook?", yes, agent_mode)?;
-                    commands::webhooks::run_create(&targets, &from_file, output).await?;
-                }
-                WebhooksCmd::Update { id, from_file } => {
-                    confirm_destructive(&format!("Update webhook '{id}'?"), yes, agent_mode)?;
-                    commands::webhooks::run_update(&targets, &id, &from_file, output).await?;
-                }
-                WebhooksCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete webhook '{id}'?"), yes, agent_mode)?;
-                    commands::webhooks::run_delete(&targets, &id).await?;
-                }
-                WebhooksCmd::Test { id } => {
-                    confirm_destructive(&format!("Test webhook '{id}'?"), yes, agent_mode)?;
-                    commands::webhooks::run_test(&targets, &id, output).await?;
-                }
-                WebhooksCmd::Types => {
-                    commands::webhooks::run_types(&targets, output).await?;
-                }
-                WebhooksCmd::Actions { cmd } => match cmd {
-                    ActionsCmd::List => {
-                        commands::actions::run_list(&targets, output).await?;
-                    }
-                    ActionsCmd::Get { id } => {
-                        commands::actions::run_get(&targets, &id, output).await?;
-                    }
-                    ActionsCmd::Create { from_file } => {
-                        confirm_destructive("Create a new webhook action?", yes, agent_mode)?;
-                        commands::actions::run_create(&targets, &from_file, output).await?;
-                    }
-                    ActionsCmd::Update { from_file } => {
-                        confirm_destructive("Update webhook action?", yes, agent_mode)?;
-                        commands::actions::run_update(&targets, &from_file, output).await?;
-                    }
-                    ActionsCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete webhook action '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::actions::run_delete(&targets, &id).await?;
-                    }
-                    ActionsCmd::Batch { from_file } => {
-                        confirm_destructive("Batch execute webhook actions?", yes, agent_mode)?;
-                        commands::actions::run_batch(&targets, &from_file, output).await?;
-                    }
-                    ActionsCmd::Reorder { from_file } => {
-                        confirm_destructive("Reorder webhook actions?", yes, agent_mode)?;
-                        commands::actions::run_reorder(&targets, &from_file, output).await?;
-                    }
-                },
-            },
-
-            Commands::Views { cmd } => match cmd {
-                ViewsCmd::List => {
-                    commands::views::run_list(&targets, output).await?;
-                }
-                ViewsCmd::Get { id } => {
-                    commands::views::run_get(&targets, &id, output).await?;
-                }
-                ViewsCmd::Create { from_file } => {
-                    confirm_destructive("Create a new view?", yes, agent_mode)?;
-                    commands::views::run_create(&targets, &from_file, output).await?;
-                }
-                ViewsCmd::Update { id, from_file } => {
-                    confirm_destructive(&format!("Update view '{id}'?"), yes, agent_mode)?;
-                    commands::views::run_update(&targets, &id, &from_file, output).await?;
-                }
-                ViewsCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete view '{id}'?"), yes, agent_mode)?;
-                    commands::views::run_delete(&targets, &id).await?;
-                }
-                ViewsCmd::Folders { cmd } => match cmd {
-                    ViewFoldersCmd::List => {
-                        commands::views::run_folders_list(&targets, output).await?;
-                    }
-                    ViewFoldersCmd::Get { id } => {
-                        commands::views::run_folders_get(&targets, &id, output).await?;
-                    }
-                    ViewFoldersCmd::Create { from_file } => {
-                        confirm_destructive("Create a new view folder?", yes, agent_mode)?;
-                        commands::views::run_folders_create(&targets, &from_file, output).await?;
-                    }
-                    ViewFoldersCmd::Update { id, from_file } => {
-                        confirm_destructive(
-                            &format!("Update view folder '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::views::run_folders_update(&targets, &id, &from_file, output)
-                            .await?;
-                    }
-                    ViewFoldersCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete view folder '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::views::run_folders_delete(&targets, &id).await?;
-                    }
-                },
-            },
-
-            Commands::Iam { cmd } => match cmd {
-                IamCmd::ApiKeys { cmd } => match cmd {
-                    ApiKeysCmd::List => {
-                        commands::api_keys::run_list(&targets, output).await?;
-                    }
-                    ApiKeysCmd::Get { id } => {
-                        commands::api_keys::run_get(&targets, &id, output).await?;
-                    }
-                    ApiKeysCmd::Create { from_file } => {
-                        confirm_destructive("Create a new API key?", yes, agent_mode)?;
-                        commands::api_keys::run_create(&targets, &from_file, output).await?;
-                    }
-                    ApiKeysCmd::Update { from_file, id } => {
-                        confirm_destructive(&format!("Update API key '{id}'?"), yes, agent_mode)?;
-                        commands::api_keys::run_update(&targets, &id, &from_file, output).await?;
-                    }
-                    ApiKeysCmd::Delete { id } => {
-                        confirm_destructive(&format!("Delete API key '{id}'?"), yes, agent_mode)?;
-                        commands::api_keys::run_delete(&targets, &id).await?;
-                    }
-                    ApiKeysCmd::SendDataKeys => {
-                        commands::api_keys::run_send_data_keys(&targets, output).await?;
-                    }
-                    ApiKeysCmd::Admin { cmd } => match cmd {
-                        ApiKeysAdminCmd::List => {
-                            commands::api_keys::run_admin_list(&targets, output).await?;
-                        }
-                        ApiKeysAdminCmd::Delete { ids } => {
-                            confirm_destructive("Bulk delete API keys?", yes, agent_mode)?;
-                            commands::api_keys::run_admin_delete(&targets, &ids).await?;
-                        }
-                        ApiKeysAdminCmd::SetStatus { ids, active } => {
-                            confirm_destructive(
-                                &format!("Set API key status to active={active}?"),
-                                yes,
-                                agent_mode,
-                            )?;
-                            commands::api_keys::run_admin_set_status(&targets, &ids, active)
-                                .await?;
-                        }
-                    },
-                },
-                IamCmd::Roles { cmd } => match cmd {
-                    RolesCmd::List => {
-                        commands::roles::run_list(&targets, output).await?;
-                    }
-                    RolesCmd::Get { id } => {
-                        commands::roles::run_get(&targets, &id, output).await?;
-                    }
-                    RolesCmd::Create { from_file } => {
-                        confirm_destructive("Create a new custom role?", yes, agent_mode)?;
-                        commands::roles::run_create(&targets, &from_file, output).await?;
-                    }
-                    RolesCmd::Update { from_file, id } => {
-                        confirm_destructive(&format!("Update role '{id}'?"), yes, agent_mode)?;
-                        commands::roles::run_update(&targets, &id, &from_file, output).await?;
-                    }
-                    RolesCmd::Delete { id } => {
-                        confirm_destructive(&format!("Delete role '{id}'?"), yes, agent_mode)?;
-                        commands::roles::run_delete(&targets, &id).await?;
-                    }
-                    RolesCmd::System => {
-                        commands::roles::run_system(&targets, output).await?;
-                    }
-                },
-                IamCmd::Scopes { cmd } => match cmd {
-                    ScopesCmd::List => {
-                        commands::scopes::run_list(&targets, output).await?;
-                    }
-                    ScopesCmd::Get { id } => {
-                        commands::scopes::run_get(&targets, &id, output).await?;
-                    }
-                    ScopesCmd::Create { from_file } => {
-                        confirm_destructive("Create a new scope?", yes, agent_mode)?;
-                        commands::scopes::run_create(&targets, &from_file, output).await?;
-                    }
-                    ScopesCmd::Update { from_file } => {
-                        confirm_destructive("Update scope?", yes, agent_mode)?;
-                        commands::scopes::run_update(&targets, &from_file, output).await?;
-                    }
-                    ScopesCmd::Delete { id } => {
-                        confirm_destructive(&format!("Delete scope '{id}'?"), yes, agent_mode)?;
-                        commands::scopes::run_delete(&targets, &id).await?;
-                    }
-                },
-                IamCmd::Users { cmd } => match cmd {
-                    UsersCmd::Search {
-                        query,
-                        status,
-                        page_size,
-                        page_token,
-                    } => {
-                        commands::users::run_search(
-                            &targets,
-                            query.as_deref(),
-                            status.as_deref(),
-                            page_size.as_deref(),
-                            page_token.as_deref(),
-                            output,
-                        )
-                        .await?;
-                    }
-                    UsersCmd::Get { user_id } => {
-                        commands::users::run_get(&targets, &user_id, output).await?;
-                    }
-                    UsersCmd::Create { from_file } => {
-                        confirm_destructive("Create user(s)?", yes, agent_mode)?;
-                        commands::users::run_create(&targets, &from_file, output).await?;
-                    }
-                    UsersCmd::Update { from_file } => {
-                        confirm_destructive("Update user(s)?", yes, agent_mode)?;
-                        commands::users::run_update(&targets, &from_file, output).await?;
-                    }
-                    UsersCmd::SetStatus { user_ids, status } => {
-                        confirm_destructive(
-                            &format!("Set user status to '{status}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::users::run_set_status(&targets, &user_ids, &status).await?;
-                    }
-                },
-                IamCmd::TeamGroups { cmd } => match cmd {
-                    TeamGroupsCmd::List {} => {
-                        commands::team_groups::run_list(&targets, output).await?;
-                    }
-                    TeamGroupsCmd::Get { id } => {
-                        commands::team_groups::run_get(&targets, &id, output).await?;
-                    }
-                    TeamGroupsCmd::GetByName { name } => {
-                        commands::team_groups::run_get_by_name(&targets, &name, output).await?;
-                    }
-                    TeamGroupsCmd::Users { group_id } => {
-                        commands::team_groups::run_users(&targets, &group_id, output).await?;
-                    }
-                    TeamGroupsCmd::Create { from_file } => {
-                        confirm_destructive("Create a new team group?", yes, agent_mode)?;
-                        commands::team_groups::run_create(&targets, &from_file, output).await?;
-                    }
-                    TeamGroupsCmd::Update { from_file, id } => {
-                        confirm_destructive(
-                            &format!("Update team group '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::team_groups::run_update(&targets, &id, &from_file, output)
-                            .await?;
-                    }
-                    TeamGroupsCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete team group '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::team_groups::run_delete(&targets, &id).await?;
-                    }
-                },
-                IamCmd::IpAccess { cmd } => match cmd {
-                    IpAccessCmd::Get => {
-                        commands::ip_access::run_get(&targets, output).await?;
-                    }
-                    IpAccessCmd::Create { from_file } => {
-                        confirm_destructive("Create IP access rules?", yes, agent_mode)?;
-                        commands::ip_access::run_create(&targets, &from_file, output).await?;
-                    }
-                    IpAccessCmd::Update { from_file } => {
-                        confirm_destructive("Update IP access rules?", yes, agent_mode)?;
-                        commands::ip_access::run_update(&targets, &from_file, output).await?;
-                    }
-                    IpAccessCmd::Delete => {
-                        confirm_destructive(
-                            "Delete all IP access rules? This removes all IP restrictions.",
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::ip_access::run_delete(&targets).await?;
-                    }
-                },
-            },
-
-            Commands::DataArchive { cmd } => match cmd {
-                DataArchiveCmd::Metrics { cmd } => match cmd {
-                    DataArchiveMetricsCmd::Get => {
-                        commands::data_archive::run_metrics_get(&targets, output).await?;
-                    }
-                    DataArchiveMetricsCmd::Create { from_file } => {
-                        confirm_destructive(
-                            "Create metrics archive configuration?",
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::data_archive::run_metrics_create(&targets, &from_file, output)
-                            .await?;
-                    }
-                    DataArchiveMetricsCmd::Update { from_file } => {
-                        confirm_destructive(
-                            "Update metrics archive configuration?",
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::data_archive::run_metrics_update(&targets, &from_file, output)
-                            .await?;
-                    }
-                    DataArchiveMetricsCmd::Enable => {
-                        confirm_destructive("Enable metrics archiving?", yes, agent_mode)?;
-                        commands::data_archive::run_metrics_enable(&targets).await?;
-                    }
-                    DataArchiveMetricsCmd::Disable => {
-                        confirm_destructive("Disable metrics archiving?", yes, agent_mode)?;
-                        commands::data_archive::run_metrics_disable(&targets).await?;
-                    }
-                    DataArchiveMetricsCmd::Validate { from_file } => {
-                        commands::data_archive::run_metrics_validate(&targets, &from_file, output)
-                            .await?;
-                    }
-                },
-                DataArchiveCmd::Logs { cmd } => match cmd {
-                    DataArchiveLogsCmd::Get => {
-                        commands::data_archive::run_logs_get(&targets, output).await?;
-                    }
-                    DataArchiveLogsCmd::Set { from_file } => {
-                        confirm_destructive("Set logs archive target?", yes, agent_mode)?;
-                        commands::data_archive::run_logs_set(&targets, &from_file, output).await?;
-                    }
-                },
-            },
-
-            Commands::Slos { cmd } => match cmd {
-                SlosCmd::List => {
-                    commands::slos::run_list(&targets, output).await?;
-                }
-                SlosCmd::Get { id } => {
-                    commands::slos::run_get(&targets, &id, output).await?;
-                }
-                SlosCmd::Create { from_file } => {
-                    confirm_destructive("Create a new SLO?", yes, agent_mode)?;
-                    commands::slos::run_create(&targets, &from_file, output).await?;
-                }
-                SlosCmd::Update { from_file } => {
-                    confirm_destructive("Update SLO?", yes, agent_mode)?;
-                    commands::slos::run_update(&targets, &from_file, output).await?;
-                }
-                SlosCmd::Delete { id } => {
-                    confirm_destructive(&format!("Delete SLO '{id}'?"), yes, agent_mode)?;
-                    commands::slos::run_delete(&targets, &id).await?;
-                }
-            },
-
-            Commands::SearchFields {
-                text,
-                search_type,
-                dataset,
-                limit,
-                offset,
-            } => match search_type {
-                SearchType::Semantic => {
-                    let dataset_str = match dataset {
-                        SearchByValueDataset::Logs => "logs",
-                        SearchByValueDataset::Spans => "spans",
-                        SearchByValueDataset::All => {
-                            bail!("--dataset all is only valid with -s value");
-                        }
-                    };
-                    commands::search_fields::run(&targets, &text, dataset_str, limit, output)
-                        .await?;
-                }
-                SearchType::Value => {
-                    let dataset_str = match dataset {
-                        SearchByValueDataset::Logs => "logs",
-                        SearchByValueDataset::Spans => "spans",
-                        SearchByValueDataset::All => "all",
-                    };
-                    commands::search_by_value::run(
-                        &targets,
-                        &text,
-                        dataset_str,
-                        limit,
-                        offset,
-                        output,
-                    )
-                    .await?;
-                }
-            },
-
-            Commands::Olly { cmd } => match cmd {
-                OllyCmd::Ask {
-                    message,
-                    chat_id,
-                    model,
-                    timeout,
-                } => {
-                    commands::olly::run_ask(
-                        &targets,
-                        &message,
-                        chat_id.as_deref(),
-                        &model,
-                        timeout,
-                        output,
-                    )
-                    .await?;
-                }
-                OllyCmd::Artifacts { cmd } => match cmd {
-                    OllyArtifactsCmd::List => {
-                        commands::olly::run_artifacts_list(&targets, output).await?;
-                    }
-                    OllyArtifactsCmd::Get { artifact_id } => {
-                        commands::olly::run_artifacts_get(
-                            &targets,
-                            &artifact_id,
-                            output,
-                            max_direct,
-                            &temp_dir,
-                        )
-                        .await?;
-                    }
-                },
-            },
-        } // end match cli.command
-        Ok::<(), anyhow::Error>(())
-    }
-    .await;
-
-    // Print update notice after command output so it doesn't scroll off.
-    // Using a separate result variable (rather than ?) ensures the notice
-    // fires even when the command returns an error — same behaviour as `gh`.
-    if output == OutputFormat::Agents {
-        update_check::maybe_print_agents_meta();
-    } else {
-        update_check::maybe_print_notice(output);
+        },
     }
 
-    cmd_result
+    Ok(())
 }

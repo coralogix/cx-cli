@@ -36,6 +36,8 @@ Key flags:
 - All commands support `-o json` for structured output and `-p <profile>` for profile selection
 - `cx usage daily` accepts `--type processed-gbs|units|evaluation-tokens` and `--start`/`--end` time filters
 - `cx usage summary` accepts `--start`/`--end` time filters
+- `cx usage logs-count` and `cx usage spans-count` accept `--start`/`--end` time filters, defaulting to the last 24h, plus `--resolution` (default `1h`), `--subsystem-aggregation`, `--application-aggregation`, and repeated `--param KEY=VALUE` for API filter query params
+- Data usage summary and count endpoints are documented as newline-delimited JSON over `Accept: text/event-stream`; the CLI handles that transport and normalizes count chunks into `.result.logsCount[]` or `.result.spansCount[]`.
 - `cx tco create/update`, `cx retentions update`, `cx archive logs set`, `cx archive metrics create/update/validate` use `--from-file <path>` (or `-` for stdin)
 
 ---
@@ -50,8 +52,8 @@ Follow these steps to diagnose and reduce costs:
 cx usage summary -o json
 cx usage summary --start now-30d -o json
 cx usage daily --type processed-gbs --start now-7d -o json
-cx usage logs-count -o json
-cx usage spans-count -o json
+cx usage logs-count --start now-7d --end now -o json
+cx usage spans-count --start now-7d --end now -o json
 ```
 
 Identify which data types consume the most volume. Use `jq` to sort:
@@ -120,8 +122,8 @@ cx usage summary -o json | jq '[.[] | {name, daily_avg: .avg_daily_gb}] | sort_b
 cx usage daily --type processed-gbs --start now-7d -o json | jq '[.[] | {date, gb: .processed_gbs}]'
 
 # Total logs and spans counts
-cx usage logs-count -o json | jq '.total_count'
-cx usage spans-count -o json | jq '.total_count'
+cx usage logs-count --start now-7d --end now -o json | jq '[.result.logsCount[]?.logsCount | tonumber] | add // 0'
+cx usage spans-count --start now-7d --end now -o json | jq '[.result.spansCount[]? | ((.successSpanCount | tonumber) + (.errorSpanCount | tonumber) + (.lowSuccessSpanCount | tonumber) + (.lowErrorSpanCount | tonumber) + (.mediumSuccessSpanCount | tonumber) + (.mediumErrorSpanCount | tonumber))] | add // 0'
 ```
 
 ### TCO Policy Analysis

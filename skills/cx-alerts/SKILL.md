@@ -230,8 +230,3 @@ cx alerts suppression-rules create --from-file suppression-rule.json
 - **`cx-observability-setup`** - setting up notification routing and webhook integrations for alerts
 - **`cx-telemetry-querying`** - investigate the telemetry behind a firing alert
 
----
-
-## Update Notifications
-
-After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

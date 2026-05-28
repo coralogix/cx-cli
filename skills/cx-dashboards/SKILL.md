@@ -336,9 +336,3 @@ Adjust filter values (e.g. `account_id`) after opening it.
 - **`cx-incident-management`** - SLO and alert-connected dashboards, incident triage
 - **`cx-telemetry-querying`** - discover the right telemetry signal before building dashboards
 
-
----
-
-## Update Notifications
-
-After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

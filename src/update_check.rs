@@ -25,20 +25,21 @@ use serde_json::{json, Value};
 use crate::config::OutputFormat;
 use crate::install_method;
 use crate::safety::env_is_truthy;
-use crate::state::State;
+use crate::version_cache::VersionCheckCache;
 
 const BINARY_REPO: &str = "coralogix/cx-cli";
 
-/// Set to an empty string to disable the skills check until the package is published.
-const SKILLS_NPM_PACKAGE: &str = "";
-
 // ── Background fetcher ────────────────────────────────────────────────────────
 
-/// Fetch the latest binary and skills versions if the cached data is older than
+/// Fetch the latest binary version if the cached data is older than
 /// 24 h, then persist the result.  Designed to be run via `tokio::spawn`.
 /// All errors are silently swallowed — this must never affect the CLI output.
 pub async fn fetch_if_stale() {
-    let mut state = State::load();
+    if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
+        return;
+    }
+
+    let mut state = VersionCheckCache::load();
     if !state.check_is_stale() {
         return;
     }
@@ -54,11 +55,6 @@ pub async fn fetch_if_stale() {
     if let Some(v) = fetch_latest_binary(&client).await {
         state.latest_binary = Some(v);
     }
-    if !SKILLS_NPM_PACKAGE.is_empty() {
-        if let Some(v) = fetch_latest_skills(&client).await {
-            state.latest_skills = Some(v);
-        }
-    }
 
     // Always update the timestamp, even when fetches fail (e.g. GitHub is
     // unreachable).  This prevents hammering the API on every command during
@@ -73,12 +69,6 @@ async fn fetch_latest_binary(client: &reqwest::Client) -> Option<String> {
     resp["tag_name"]
         .as_str()
         .map(|s| s.trim_start_matches('v').to_string())
-}
-
-async fn fetch_latest_skills(client: &reqwest::Client) -> Option<String> {
-    let url = format!("https://registry.npmjs.org/{SKILLS_NPM_PACKAGE}");
-    let resp: Value = client.get(&url).send().await.ok()?.json().await.ok()?;
-    resp["dist-tags"]["latest"].as_str().map(str::to_string)
 }
 
 // ── Human notice (stderr) ─────────────────────────────────────────────────────
@@ -97,13 +87,8 @@ pub fn maybe_print_notice(output: OutputFormat) {
         return;
     }
 
-    let mut state = State::load();
-    if !state.notify_is_stale() {
-        return;
-    }
-
+    let state = VersionCheckCache::load();
     let current = env!("CARGO_PKG_VERSION");
-    let mut noticed = false;
 
     if let Some(latest) = state.latest_binary.as_deref() {
         if is_newer(latest, current) {
@@ -133,20 +118,11 @@ pub fn maybe_print_notice(output: OutputFormat) {
                     upgrade.bold()
                 );
             }
-            noticed = true;
+            eprintln!(
+                "{}",
+                "Set CX_NO_UPDATE_NOTIFIER=1 to silence this.".dimmed()
+            );
         }
-    }
-
-    // TODO: add a skills notice here once SKILLS_NPM_PACKAGE is set and
-    // we can compare the locally installed skills version.
-
-    if noticed {
-        eprintln!(
-            "{}",
-            "Set CX_NO_UPDATE_NOTIFIER=1 to silence this.".dimmed()
-        );
-        state.last_notified_at = Some(Utc::now());
-        let _ = state.save(); // best-effort; failure is silent
     }
 }
 
@@ -159,12 +135,11 @@ pub fn build_meta_block() -> Option<Value> {
         return None;
     }
 
-    let state = State::load();
+    let state = VersionCheckCache::load();
     let current = env!("CARGO_PKG_VERSION");
 
     let binary_block = state.latest_binary.as_deref().and_then(|latest| {
         if is_newer(latest, current) {
-            // Detect install method only when we actually have something to show.
             let command = install_method::binary_upgrade_command(&install_method::detect());
             Some(json!({ "current": current, "latest": latest, "command": command }))
         } else {
@@ -172,29 +147,7 @@ pub fn build_meta_block() -> Option<Value> {
         }
     });
 
-    // Skills: we don't track the locally installed version (no reliable way to
-    // read it at runtime), so we surface the cached latest whenever it exists.
-    // The `current` field is intentionally omitted from the skills block.
-    let skills_block = state.latest_skills.as_deref().map(|latest| {
-        json!({
-            "latest": latest,
-            "command": "npx skills update -g",
-        })
-    });
-
-    if binary_block.is_none() && skills_block.is_none() {
-        return None;
-    }
-
-    let mut update = json!({});
-    if let Some(b) = binary_block {
-        update["binary"] = b;
-    }
-    if let Some(s) = skills_block {
-        update["skills"] = s;
-    }
-
-    Some(json!({ "update": update }))
+    binary_block.map(|b| json!({ "update": { "binary": b } }))
 }
 
 /// Print the `_meta` block to stdout for agents to consume.
@@ -229,6 +182,7 @@ fn is_newer(latest: &str, current: &str) -> bool {
 /// still get notified when a strictly newer release ships, and are never falsely
 /// told to downgrade to an older published release.
 fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
+    let v = v.strip_prefix('v').unwrap_or(v);
     let mut parts = v.splitn(3, '.');
     let major: u32 = parts.next()?.parse().ok()?;
     let minor: u32 = parts.next()?.parse().ok()?;
@@ -282,6 +236,14 @@ mod tests {
         assert!(!is_newer("0.1.14", "0.1.15-dev"));
         // GitHub never returns pre-release tags, but be safe: treat them as base version.
         assert!(is_newer("0.2.0-rc1", "0.1.5"));
+    }
+
+    #[test]
+    fn is_newer_v_prefix_handled() {
+        // Defensive: strip v prefix if it somehow slips through.
+        assert!(is_newer("v1.3.0", "1.2.0"));
+        assert!(is_newer("1.3.0", "v1.2.0"));
+        assert!(is_newer("v1.3.0", "v1.2.0"));
     }
 
     #[test]

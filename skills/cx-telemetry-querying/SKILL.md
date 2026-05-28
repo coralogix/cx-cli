@@ -215,13 +215,12 @@ When `cx` runs in `--output agents` mode, the output may include a trailing `{"_
 
 ```json
 {"_meta": {"update": {
-  "binary": { "current": "1.2.0", "latest": "1.3.0", "command": "brew upgrade cx" },
-  "skills": { "current": "0.4.1", "latest": "0.5.0", "command": "npx skills update -g" }
+  "binary": { "current": "1.2.0", "latest": "1.3.0", "command": "brew upgrade cx" }
 }}}
 ```
 
 If `_meta.update` is present, tell the user:
-> "A newer version of cx (or the skills) is available. Run `<command>` to upgrade."
+> "A newer version of cx is available. Run `<command>` to upgrade."
 
 Then offer to run the suggested command on their behalf. The same block appears in `cx schema` output so you can check it at startup.
 

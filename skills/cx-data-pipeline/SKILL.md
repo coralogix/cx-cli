@@ -218,9 +218,3 @@ cx metrics query "new_precomputed_metric" --time now
 
 - **`cx-telemetry-querying`** - discover what data is available before configuring pipeline, and verify parsing results and enriched fields via log/metrics queries
 
-
----
-
-## Update Notifications
-
-After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

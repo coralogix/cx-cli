@@ -131,9 +131,3 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 - **`cx-telemetry-querying`** - for direct DataPrime/PromQL queries without AI agent assistance (covers logs, spans, metrics, RUM)
 - **`cx-alerts`** - for managing alert definitions
 
-
----
-
-## Update Notifications
-
-After any `cx --output agents` command, a trailing `{"_meta": {"update": {...}}}` JSON object may appear. If present, inform the user that a newer version of `cx` or the skills is available and offer to run the suggested upgrade command (e.g. `brew upgrade cx` or `npx skills update -g`). The same block appears in `cx schema` output.

@@ -266,4 +266,3 @@ Usage metrics support these grouping dimensions: `pillar`, `entity_type`, `prior
 ## Related Skills
 
 - **`cx-telemetry-querying`** - investigate what data is being ingested (query logs, metrics, and spans to identify high-volume sources)
-

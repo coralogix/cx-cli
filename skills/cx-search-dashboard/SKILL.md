@@ -75,4 +75,3 @@ cx dashboards create --from-file dashboard.json
 
 - **`cx-dashboards`** — build and deploy a new Coralogix dashboard from scratch
 - **`cx-telemetry-querying`** — discover what telemetry fields and metrics exist before searching dashboards
-

@@ -130,4 +130,3 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 
 - **`cx-telemetry-querying`** - for direct DataPrime/PromQL queries without AI agent assistance (covers logs, spans, metrics, RUM)
 - **`cx-alerts`** - for managing alert definitions
-

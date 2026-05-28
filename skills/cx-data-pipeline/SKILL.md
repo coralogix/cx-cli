@@ -217,4 +217,3 @@ cx metrics query "new_precomputed_metric" --time now
 ## Related Skills
 
 - **`cx-telemetry-querying`** - discover what data is available before configuring pipeline, and verify parsing results and enriched fields via log/metrics queries
-

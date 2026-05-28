@@ -336,4 +336,3 @@ Adjust filter values (e.g. `account_id`) after opening it.
 - **`cx-observability-setup`** - full monitoring setup workflow (views, webhooks, notifications, integrations)
 - **`cx-incident-management`** - SLO and alert-connected dashboards, incident triage
 - **`cx-telemetry-querying`** - discover the right telemetry signal before building dashboards
-

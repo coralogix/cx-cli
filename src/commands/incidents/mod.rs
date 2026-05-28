@@ -318,11 +318,7 @@ pub async fn run_assign(
 ) -> Result<()> {
     eprintln!(
         "{}",
-        format!(
-            "Assigning {} incident(s) to user",
-            incident_ids.len()
-        )
-        .dimmed()
+        format!("Assigning {} incident(s) to user", incident_ids.len()).dimmed()
     );
 
     let ids = incident_ids.to_vec();

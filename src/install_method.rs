@@ -6,16 +6,31 @@ pub enum InstallMethod {
     Unknown,
 }
 
-/// Detect install method by inspecting the binary path or a marker file.
+/// Detect install method by reading a marker file or inspecting the binary path.
 ///
 /// Order of checks:
-/// 1. Binary lives in a Homebrew prefix → `Brew`
+/// 1. `~/.cx/install-method` contains "brew" → `Brew`  (written by Homebrew formula)
 /// 2. `~/.cx/install-method` contains "curl" → `Curl`  (written by `install.sh`)
-/// 3. Anything else → `Unknown`
+/// 3. Binary lives in a Homebrew prefix → `Brew`  (fallback for existing installs)
+/// 4. Anything else → `Unknown`
 ///
 /// Windows-specific package managers (Scoop, Chocolatey, winget) are not yet
 /// detected; Windows users get the `Unknown` fallback with a docs URL.
 pub fn detect() -> InstallMethod {
+    // Prefer marker file (written by install.sh or Homebrew formula).
+    if let Ok(cx_dir) = crate::config::config_dir() {
+        let marker = cx_dir.join("install-method");
+        if let Ok(content) = std::fs::read_to_string(marker) {
+            match content.trim() {
+                "brew" => return InstallMethod::Brew,
+                "curl" => return InstallMethod::Curl,
+                _ => {}
+            }
+        }
+    }
+
+    // Fallback: detect Homebrew by binary path (for users who installed before
+    // the formula wrote the marker file).
     if let Ok(exe) = std::env::current_exe() {
         let path = exe.to_string_lossy();
         if path.contains("/opt/homebrew/")
@@ -24,15 +39,6 @@ pub fn detect() -> InstallMethod {
             || path.contains("/home/linuxbrew/")
         {
             return InstallMethod::Brew;
-        }
-    }
-
-    if let Ok(cx_dir) = crate::config::config_dir() {
-        let marker = cx_dir.join("install-method");
-        if let Ok(content) = std::fs::read_to_string(marker) {
-            if content.trim() == "curl" {
-                return InstallMethod::Curl;
-            }
         }
     }
 

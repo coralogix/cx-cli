@@ -319,7 +319,7 @@ pub async fn run_assign(
     eprintln!(
         "{}",
         format!(
-            "Assigning {} incident(s) to user {user_id}...",
+            "Assigning {} incident(s) to user",
             incident_ids.len()
         )
         .dimmed()

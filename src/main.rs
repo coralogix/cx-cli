@@ -55,78 +55,95 @@ pub enum SearchByValueDataset {
     version,
     about,
     long_about = None,
-    help_template = "{before-help}{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
+    help_template = "{before-help}{about-with-newline}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
     after_help = "\
-Query:
-  logs               Query logs using DataPrime syntax
-  spans              Query spans using DataPrime syntax
-  metrics            Query metrics using PromQL
-  dataprime          DataPrime language reference and raw queries
-  search-fields      Search log/span fields by description or value content
+\x1b[1m\x1b[4mQuery:\x1b[0m
+  \x1b[1mlogs\x1b[0m               Query logs using DataPrime syntax
+  \x1b[1mspans\x1b[0m              Query spans using DataPrime syntax
+  \x1b[1mmetrics\x1b[0m            Query metrics using PromQL
+  \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
+  \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
 
-Observe:
-  dashboards         Manage dashboards and dashboard folders
-  views              Manage saved views and view folders
-  slos               Manage SLO definitions
+\x1b[1m\x1b[4mObserve:\x1b[0m
+  \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
+  \x1b[1mviews\x1b[0m              Manage saved views and view folders
+  \x1b[1mslos\x1b[0m               Manage SLO definitions
 
-Detect & Respond:
-  alerts             Manage alert definitions and suppression rules
-  incidents          Manage and triage incidents
+\x1b[1m\x1b[4mDetect & Respond:\x1b[0m
+  \x1b[1malerts\x1b[0m             Manage alert definitions and suppression rules
+  \x1b[1mincidents\x1b[0m          Manage and triage incidents
 
-Notifications:
-  notifications      Manage connectors, routers, presets, and notification testing
-  webhooks           Manage outgoing webhooks and automation actions
+\x1b[1m\x1b[4mNotifications:\x1b[0m
+  \x1b[1mnotifications\x1b[0m      Manage connectors, routers, presets, and notification testing
+  \x1b[1mwebhooks\x1b[0m           Manage outgoing webhooks and automation actions
 
-Data Pipeline:
-  parsing-rules      Manage log parsing rules
-  enrichments        Manage enrichment rules and custom enrichment tables
-  e2m                Manage Events2Metrics definitions
-  recording-rules    Manage Prometheus recording rule groups
+\x1b[1m\x1b[4mData Pipeline:\x1b[0m
+  \x1b[1mparsing-rules\x1b[0m      Manage log parsing rules
+  \x1b[1menrichments\x1b[0m        Manage enrichment rules and custom enrichment tables
+  \x1b[1me2m\x1b[0m                Manage Events2Metrics definitions
+  \x1b[1mrecording-rules\x1b[0m    Manage Prometheus recording rule groups
 
-Cost & Storage:
-  usage              View data usage and consumption metrics
-  tco                Manage TCO policies and settings
-  retentions         Manage data retention settings
-  archive (risky)    Manage data archive storage configuration
+\x1b[1m\x1b[4mCost & Storage:\x1b[0m
+  \x1b[1musage\x1b[0m              View data usage and consumption metrics
+  \x1b[1mtco\x1b[0m                Manage TCO policies and settings
+  \x1b[1mretentions\x1b[0m         Manage data retention settings
+  \x1b[1marchive\x1b[0m (risky)    Manage data archive storage configuration
 
-Integrations:
-  integrations       Manage integrations, extensions, and contextual data
+\x1b[1m\x1b[4mIntegrations:\x1b[0m
+  \x1b[1mintegrations\x1b[0m       Manage integrations, extensions, and contextual data
 
-Access:
-  iam (risky)        Manage API keys, roles, scopes, users, groups, and IP access
+\x1b[1m\x1b[4mAccess:\x1b[0m
+  \x1b[1miam\x1b[0m (risky)        Manage API keys, roles, scopes, users, groups, and IP access
 
-Agent:
-  schema             Output the full command tree as JSON for agent consumption
-  olly               Interact with the AI assistant
+\x1b[1m\x1b[4mAgent:\x1b[0m
+  \x1b[1mschema\x1b[0m             Output the full command tree as JSON for agent consumption
+  \x1b[1molly\x1b[0m               Interact with the AI assistant
 
-Local:
-  profiles           Manage profiles (list, add, delete, set-default)
-  cleanup            Remove stale temp files"
+\x1b[1m\x1b[4mLocal:\x1b[0m
+  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
 struct Cli {
     /// Profile(s) to use. Repeat to fan out across multiple profiles simultaneously.
     /// Overrides the default profile set in config.
-    #[arg(long, short = 'p', global = true, env = "CX_PROFILE", add = ArgValueCompleter::new(complete_profile_names))]
+    #[arg(
+        long,
+        short = 'p',
+        global = true,
+        env = "CX_PROFILE",
+        help_heading = "Global Options",
+        add = ArgValueCompleter::new(complete_profile_names)
+    )]
     profile: Vec<String>,
 
     /// Coralogix API key (overrides a single profile; incompatible with multiple --profile).
-    #[arg(long, global = true, env = "CX_API_KEY")]
+    #[arg(
+        long,
+        global = true,
+        env = "CX_API_KEY",
+        help_heading = "Global Options"
+    )]
     api_key: Option<String>,
 
     /// Coralogix region (overrides a single profile; incompatible with multiple --profile).
-    #[arg(long, global = true, env = "CX_REGION")]
+    #[arg(
+        long,
+        global = true,
+        env = "CX_REGION",
+        help_heading = "Global Options"
+    )]
     region: Option<String>,
 
     /// Output format: text, json, or agents. Overrides the default set in config.
-    #[arg(long, short = 'o', global = true)]
+    #[arg(long, short = 'o', global = true, help_heading = "Global Options")]
     output: Option<OutputFormat>,
 
     /// Skip confirmation prompts for destructive operations.
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help_heading = "Global Options")]
     yes: bool,
 
     /// Block all write operations. Useful for safe agent/automation access.
-    #[arg(long, global = true)]
+    #[arg(long, global = true, help_heading = "Global Options")]
     read_only: bool,
 
     #[command(subcommand)]
@@ -2239,9 +2256,9 @@ async fn main() -> Result<()> {
 
     let mut cmd = Cli::command();
     if banner::should_show() {
-        cmd = cmd
-            .before_help(banner::render())
-            .help_template("{before-help}\nUsage: {usage}{after-help}\n\nOptions:\n{options}");
+        cmd = cmd.before_help(banner::render()).help_template(
+            "{before-help}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
+        );
     }
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;

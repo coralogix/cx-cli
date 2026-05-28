@@ -340,7 +340,7 @@ pub async fn run_assign(
             Ok(()) => eprintln!(
                 "{}",
                 format!(
-                    "Assigned {} incident(s) to {user_id} in profile '{profile}'.",
+                    "Assigned {} incident(s) to user in profile '{profile}'.",
                     incident_ids.len()
                 )
                 .green()

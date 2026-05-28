@@ -167,7 +167,7 @@ pub async fn run_get(
     user_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!("{}", format!("Fetching user {user_id}...").dimmed());
+    eprintln!("{}", format!("Fetching user...").dimmed());
     let include_profile = targets.len() > 1;
     let user_id = user_id.to_string();
 

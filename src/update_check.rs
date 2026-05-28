@@ -2,15 +2,15 @@
 //!
 //! ## Design (mirrors `gh`'s model)
 //!
-//! * Once per 24 h, [`fetch_if_stale`] contacts the GitHub releases API and the
-//!   npm registry to discover the latest versions.  Results are cached in
-//!   `~/.cx/state.json` (see [`crate::state`]).
+//! * Once per 24 h, [`fetch_if_stale`] contacts the GitHub releases API to
+//!   discover the latest version.  Results are cached in `~/.cx/state.json`
+//!   (see [`crate::version_cache`]).
 //! * Every command reads that cached result and either:
 //!   - Prints a one-line notice to **stderr** when stderr is a TTY and output
 //!     mode is not `agents` (see [`maybe_print_notice`]).
 //!   - Returns a `_meta.update` JSON block for the agents output path (see
 //!     [`build_meta_block`]).
-//! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications.
+//! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications (including the fetch).
 //! * `fetch_if_stale` is spawned via `tokio::spawn` and intentionally races
 //!   with the command.  For fast local commands (e.g. `cx profiles list`) the
 //!   task may be cancelled before it finishes writing; the state is populated
@@ -78,7 +78,6 @@ async fn fetch_latest_binary(client: &reqwest::Client) -> Option<String> {
 /// - Output mode is not `agents` (agents get `_meta.update` instead)
 /// - stderr is a terminal (no noise into piped output)
 /// - A newer version is available in the cache
-/// - We haven't already shown the notice in the last 24 h
 pub fn maybe_print_notice(output: OutputFormat) {
     if env_is_truthy("CX_NO_UPDATE_NOTIFIER") || output == OutputFormat::Agents {
         return;

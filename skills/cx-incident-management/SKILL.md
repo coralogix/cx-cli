@@ -33,7 +33,7 @@ Use this skill as the gateway for incident triage, SLO monitoring, and notificat
 
 Key flags:
 - `cx incidents list` supports repeatable filters: `--status` (TRIGGERED, ACKNOWLEDGED, RESOLVED), `--severity` (INFO, WARNING, ERROR, CRITICAL), `--state` (TRIGGERED, RESOLVED), `--assignee`, `--application-name`, `--subsystem-name`, `--contextual-label key=value`, `--query`, `--muted`, `--unmuted`, `--created-start/--created-end`, and `--duration-start/--duration-end`
-- `cx incidents list` returns at most 100 incidents by default. Use `--limit <n>` for a bounded result set, `--page-size <n>`/`--page-token <token>` for manual pagination, or `--all` only when you explicitly need every page.
+- `cx incidents list` returns at most 100 incidents per profile by default. Use `--limit <n>` for a bounded per-profile result set, `--page-size <n>`/`--page-token <token>` for manual pagination, or `--all` only when you explicitly need every page.
 - All commands support `-o json` for structured output and `-p <profile>` for profile selection
 - `cx slos create/update` use `--from-file <path>` (or `-` for stdin)
 

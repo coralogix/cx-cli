@@ -1035,7 +1035,7 @@ Examples:
         #[arg(long = "page-token")]
         page_token: Option<String>,
 
-        /// Maximum incidents to return. Use --all to fetch every page.
+        /// Maximum incidents to return per profile. Use --all to fetch every page.
         #[arg(long, default_value_t = 100, conflicts_with = "all", value_parser = clap::value_parser!(u32).range(1..))]
         limit: u32,
 

@@ -11,9 +11,9 @@ pub mod render;
 pub mod safety;
 pub mod serde_helpers;
 pub mod spill;
-pub mod version_cache;
 pub mod tier;
 pub mod time;
 pub mod update_check;
+pub mod version_cache;
 
 pub use tier::Tier;

@@ -34,6 +34,12 @@ pub struct ListIncidentsOptions {
     pub page_size: u32,
     pub page_token: Option<String>,
     pub limit: Option<usize>,
+    pub show_next_page_token: bool,
+}
+
+struct ListIncidentsPage {
+    incidents: Vec<Incident>,
+    next_page_token: Option<String>,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -283,7 +289,10 @@ pub async fn run_list(
                 }
             }
 
-            Ok(incidents)
+            Ok(ListIncidentsPage {
+                incidents,
+                next_page_token,
+            })
         }
     })
     .await;
@@ -294,9 +303,18 @@ pub async fn run_list(
     let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
-            Ok(incidents) => {
+            Ok(page) => {
                 success_count += 1;
-                for incident in incidents {
+                if options.show_next_page_token {
+                    if let Some(token) = page.next_page_token.as_deref() {
+                        if include_profile {
+                            eprintln!("Next page token for profile '{profile}': {token}");
+                        } else {
+                            eprintln!("Next page token: {token}");
+                        }
+                    }
+                }
+                for incident in page.incidents {
                     all_json.push(incident_to_json(&incident, include_profile, &profile));
                     all_items.push((profile.clone(), incident));
                 }
@@ -798,6 +816,8 @@ mod tests {
                 search_query: Some("latency".to_string()),
                 search_field: Some("name".to_string()),
                 is_muted: Some(false),
+                created_start: Some("2024-01-01T00:00:00Z".to_string()),
+                created_end: Some("2024-01-02T00:00:00Z".to_string()),
                 order_by: Some("created_at".to_string()),
                 order_direction: Some("asc".to_string()),
                 page_size: 50,
@@ -824,6 +844,13 @@ mod tests {
             json!("INCIDENTS_FIELDS_NAME")
         );
         assert_eq!(body["filter"]["isMuted"], json!(false));
+        assert_eq!(
+            body["filter"]["createdAtRange"],
+            json!({
+                "startTime": "2024-01-01T00:00:00.000Z",
+                "endTime": "2024-01-02T00:00:00.000Z"
+            })
+        );
         assert_eq!(body["pagination"]["pageToken"], json!("next-token"));
         assert_eq!(
             body["orderBys"],

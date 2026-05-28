@@ -1,6 +1,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+use assert_cmd::Command;
 use serde_json::json;
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -78,4 +79,47 @@ async fn list_incidents_posts_filter_arrays_and_paginates() {
     )
     .await
     .expect("run_list should succeed");
+}
+
+#[test]
+fn incidents_list_help_uses_ergonomic_flags() {
+    let output = Command::cargo_bin("cx")
+        .expect("cx binary should build")
+        .args(["incidents", "list", "--help"])
+        .output()
+        .expect("help command should run");
+
+    assert!(output.status.success(), "--help should exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(stdout.contains("--start <START>"), "stdout: {stdout}");
+    assert!(stdout.contains("--end <END>"), "stdout: {stdout}");
+    assert!(stdout.contains("--muting <MUTING>"), "stdout: {stdout}");
+    assert!(
+        !stdout.contains("--created-start"),
+        "stdout should not expose --created-start: {stdout}"
+    );
+    assert!(
+        !stdout.contains("--created-end"),
+        "stdout should not expose --created-end: {stdout}"
+    );
+    assert!(
+        !stdout.contains("--muted"),
+        "stdout should not expose --muted: {stdout}"
+    );
+    assert!(
+        !stdout.contains("--unmuted"),
+        "stdout should not expose --unmuted: {stdout}"
+    );
+}
+
+#[test]
+fn incidents_list_rejects_removed_flags() {
+    for flag in ["--created-start", "--created-end", "--muted", "--unmuted"] {
+        Command::cargo_bin("cx")
+            .expect("cx binary should build")
+            .args(["incidents", "list", flag])
+            .assert()
+            .failure();
+    }
 }

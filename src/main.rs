@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::parser::ValueSource;
-use clap::{ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
 use clap_complete::env::CompleteEnv;
@@ -47,6 +47,20 @@ pub enum SearchByValueDataset {
     Logs,
     Spans,
     All,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Muting {
+    Muted,
+    Unmuted,
+}
+
+fn incidents_list_arg_from_cli(matches: &ArgMatches, arg: &str) -> bool {
+    matches
+        .subcommand_matches("incidents")
+        .and_then(|m| m.subcommand_matches("list"))
+        .and_then(|m| m.value_source(arg))
+        == Some(ValueSource::CommandLine)
 }
 
 /// Coralogix CLI - the observability backbone for AI agents and engineering teams.
@@ -954,7 +968,7 @@ Examples:
   cx incidents list
   cx incidents list --severity CRITICAL
   cx incidents list --status TRIGGERED
-  cx incidents list --created-start now-24h --order-by created_at --limit 50")]
+  cx incidents list --start now-24h --order-by created_at --limit 50")]
     List {
         /// Filter by status. Repeatable. Values: TRIGGERED, ACKNOWLEDGED, RESOLVED.
         #[arg(long)]
@@ -996,21 +1010,17 @@ Examples:
         #[arg(long = "query-contextual-label")]
         search_contextual_label: Option<String>,
 
-        /// Return only muted incidents.
-        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "unmuted")]
-        muted: bool,
-
-        /// Return only unmuted incidents.
-        #[arg(long, action = ArgAction::SetTrue)]
-        unmuted: bool,
+        /// Filter by muting state.
+        #[arg(long, value_enum)]
+        muting: Option<Muting>,
 
         /// Created-at range start (ISO 8601 or relative, e.g. now-24h).
-        #[arg(long = "created-start")]
-        created_start: Option<String>,
+        #[arg(long = "start")]
+        start: Option<String>,
 
         /// Created-at range end (ISO 8601 or relative, e.g. now).
-        #[arg(long = "created-end")]
-        created_end: Option<String>,
+        #[arg(long = "end")]
+        end: Option<String>,
 
         /// Incident-duration range start (ISO 8601 or relative).
         #[arg(long = "duration-start")]
@@ -2742,10 +2752,9 @@ async fn main() -> Result<()> {
                     search_query,
                     search_field,
                     search_contextual_label,
-                    muted,
-                    unmuted,
-                    created_start,
-                    created_end,
+                    muting,
+                    start,
+                    end,
                     duration_start,
                     duration_end,
                     order_by,
@@ -2755,13 +2764,9 @@ async fn main() -> Result<()> {
                     limit,
                     all,
                 } => {
-                    let is_muted = if muted {
-                        Some(true)
-                    } else if unmuted {
-                        Some(false)
-                    } else {
-                        None
-                    };
+                    let is_muted = muting.map(|m| matches!(m, Muting::Muted));
+                    let show_next_page_token = incidents_list_arg_from_cli(&matches, "page_size")
+                        || incidents_list_arg_from_cli(&matches, "page_token");
                     let options = commands::incidents::ListIncidentsOptions {
                         statuses: status,
                         severities: severity,
@@ -2774,8 +2779,8 @@ async fn main() -> Result<()> {
                         search_field,
                         search_contextual_label,
                         is_muted,
-                        created_start,
-                        created_end,
+                        created_start: start,
+                        created_end: end,
                         duration_start,
                         duration_end,
                         order_by,
@@ -2783,6 +2788,7 @@ async fn main() -> Result<()> {
                         page_size,
                         page_token,
                         limit: if all { None } else { Some(limit as usize) },
+                        show_next_page_token,
                     };
                     commands::incidents::run_list(&targets, options, output).await?;
                 }

@@ -32,7 +32,7 @@ Use this skill as the gateway for incident triage, SLO monitoring, and notificat
 | `cx notifications test` | `connector`, `destination`, `preset`, `routing-condition`, `template-render` | Test notification delivery |
 
 Key flags:
-- `cx incidents list` supports repeatable filters: `--status` (TRIGGERED, ACKNOWLEDGED, RESOLVED), `--severity` (INFO, WARNING, ERROR, CRITICAL), `--state` (TRIGGERED, RESOLVED), `--assignee`, `--application-name`, `--subsystem-name`, `--contextual-label key=value`, `--query`, `--muted`, `--unmuted`, `--created-start/--created-end`, and `--duration-start/--duration-end`
+- `cx incidents list` supports repeatable filters: `--status` (TRIGGERED, ACKNOWLEDGED, RESOLVED), `--severity` (INFO, WARNING, ERROR, CRITICAL), `--state` (TRIGGERED, RESOLVED), `--assignee`, `--application-name`, `--subsystem-name`, `--contextual-label key=value`, `--query`, `--muting muted|unmuted`, `--start/--end`, and `--duration-start/--duration-end`
 - `cx incidents list` returns at most 100 incidents per profile by default. Use `--limit <n>` for a bounded per-profile result set, `--page-size <n>`/`--page-token <token>` for manual pagination, or `--all` only when you explicitly need every page.
 - All commands support `-o json` for structured output and `-p <profile>` for profile selection
 - `cx slos create/update` use `--from-file <path>` (or `-` for stdin)
@@ -47,7 +47,7 @@ Key flags:
 cx incidents list -o json
 cx incidents list --status TRIGGERED -o json
 cx incidents list --severity CRITICAL -o json
-cx incidents list --status TRIGGERED --created-start now-24h --limit 50 -o json
+cx incidents list --status TRIGGERED --start now-24h --limit 50 -o json
 ```
 
 Get an overview of what's happening. Filter by severity for immediate priorities:

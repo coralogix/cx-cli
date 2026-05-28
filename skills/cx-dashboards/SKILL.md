@@ -239,6 +239,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 - [ ] Each section has `id.value`, `rows`, and `options.custom`.
 - [ ] Each row has `id.value`, `appearance.height`, and `widgets`.
 - [ ] Each widget has a unique `id.value` and a `definition` with exactly one of `gauge` / `pieChart` / `lineChart` / `dataTable`.
+- [ ] Every gauge has numeric `min` and `max`, and `min < max`.
 - [ ] Success-rate gauges use `thresholdType: "THRESHOLD_TYPE_ABSOLUTE"` with green at high values; error/DLQ gauges use red at high values.
 - [ ] "Total" / "stat" widgets are encoded as `gauge`, not as a stat type.
 - [ ] Top-level `filters` includes each slicing dimension from Phase 2.

@@ -2,8 +2,15 @@ use anyhow::Result;
 use clap::Command;
 use serde_json::{json, Value};
 
+use crate::update_check;
+
 pub fn run(cmd: Command) -> Result<()> {
-    let schema = build_schema(&cmd);
+    let mut schema = build_schema(&cmd);
+    // Include cached update info so agents that call `cx schema` at startup
+    // can surface a nudge without running a real command first.
+    if let Some(meta) = update_check::build_meta_block() {
+        schema["_meta"] = meta;
+    }
     println!("{}", serde_json::to_string_pretty(&schema)?);
     Ok(())
 }

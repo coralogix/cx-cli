@@ -428,7 +428,7 @@ The `Cli` struct uses a custom `after_help` string (not Clap's `next_help_headin
 
 ```rust
 #[command(
-    help_template = "{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
+    help_template = "{about-with-newline}\n{usage-heading} {usage}{after-help}\n\nGlobal Options:\n{options}",
     after_help = "\
 Query:
   logs               Query logs using DataPrime syntax

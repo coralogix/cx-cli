@@ -1,4 +1,3 @@
-use clap::CommandFactory;
 use serde_json::Value;
 
 #[path = "../../src/main.rs"]
@@ -22,7 +21,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 27, "expected 27 top-level commands");
+    assert_eq!(commands.len(), 28, "expected 28 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()
@@ -41,6 +40,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(names.contains(&"usage"), "missing usage");
     assert!(names.contains(&"archive"), "missing archive");
     assert!(names.contains(&"schema"), "missing schema");
+    assert!(names.contains(&"docs"), "missing docs");
     assert!(names.contains(&"olly"), "missing olly");
 
     // Verify old commands are gone
@@ -83,4 +83,15 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(iam_subs.contains(&"users"));
     assert!(iam_subs.contains(&"groups"));
     assert!(iam_subs.contains(&"ip-access"));
+
+    // Verify docs subcommands
+    let docs = commands.iter().find(|c| c["name"] == "docs").unwrap();
+    let docs_subs: Vec<&str> = docs["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert!(docs_subs.contains(&"search"));
+    assert!(docs_subs.contains(&"fetch"));
 }

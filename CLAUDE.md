@@ -32,6 +32,7 @@ Query:
   spans              Query spans using DataPrime syntax
   metrics            Query metrics using PromQL
   dataprime          DataPrime language reference and raw queries
+  docs               Search and fetch official Coralogix product documentation
   search-fields      Search log/span fields by description or value content
 
 Observe:
@@ -174,6 +175,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx spans` | `cx-telemetry-querying` | Covered (loads `spans-querying.md` + `dataprime-reference.md`) |
 | `cx metrics` | `cx-telemetry-querying` | Covered (loads `metrics-querying.md` + `promql-guidelines.md`) |
 | `cx dataprime` | `cx-telemetry-querying` | Covered (loads `dataprime-reference.md`) |
+| `cx docs` | `coralogix-docs` | Covered |
 | `cx logs` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |

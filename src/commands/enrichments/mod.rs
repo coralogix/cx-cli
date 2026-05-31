@@ -328,4 +328,25 @@ mod tests {
         let err = validate_enrichments_body(&body).unwrap_err();
         assert!(err.to_string().contains("requestEnrichments"));
     }
+
+    #[test]
+    fn validate_enrichments_body_rejects_non_object() {
+        let err = validate_enrichments_body(&json!([1, 2, 3])).unwrap_err();
+        assert!(err.to_string().contains("JSON object"));
+    }
+
+    #[test]
+    fn validate_enrichments_body_rejects_non_object_item() {
+        let body = json!({ "requestEnrichments": ["not-an-object"] });
+        let err = validate_enrichments_body(&body).unwrap_err();
+        assert!(err.to_string().contains("requestEnrichments[0]"));
+        assert!(err.to_string().contains("JSON object"));
+    }
+
+    #[test]
+    fn validate_enrichments_body_rejects_missing_enrichment_type() {
+        let body = json!({ "requestEnrichments": [{ "fieldName": "sourceIPs" }] });
+        let err = validate_enrichments_body(&body).unwrap_err();
+        assert!(err.to_string().contains("enrichmentType"));
+    }
 }

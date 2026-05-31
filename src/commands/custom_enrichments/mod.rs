@@ -52,47 +52,49 @@ fn validate_file_field(body: &serde_json::Map<String, Value>, context: &str) -> 
     match body.get("file") {
         Some(Value::Object(_)) => Ok(()),
         Some(Value::String(_)) => anyhow::bail!(
-            "{context}`file` must be an object `{{textual, extension, name, size}}` \
+            "{context}: `file` must be an object `{{textual, extension, name, size}}` \
              (the v5 JSON API, not multipart `file=@...`)"
         ),
         _ => anyhow::bail!(
-            "{context}must include `file` (object with textual, extension, name, size)"
+            "{context}: must include `file` (object with textual, extension, name, size)"
         ),
     }
 }
 
 /// Shallow validation of the CreateCustomEnrichment request body.
 fn validate_create_body(body: &Value) -> Result<()> {
+    let ctx = "create custom enrichment";
     let obj = body
         .as_object()
-        .ok_or_else(|| anyhow::anyhow!("request body must be a JSON object"))?;
+        .ok_or_else(|| anyhow::anyhow!("{ctx}: request body must be a JSON object"))?;
 
     if !obj.get("name").is_some_and(Value::is_string) {
-        anyhow::bail!("must include `name` (string)");
+        anyhow::bail!("{ctx}: must include `name` (string)");
     }
     if !obj.get("description").is_some_and(Value::is_string) {
-        anyhow::bail!("must include `description` (string)");
+        anyhow::bail!("{ctx}: must include `description` (string)");
     }
-    validate_file_field(obj, "")?;
+    validate_file_field(obj, ctx)?;
     Ok(())
 }
 
 /// Shallow validation of the UpdateCustomEnrichment request body.
 fn validate_update_body(body: &Value) -> Result<()> {
+    let ctx = "update custom enrichment";
     let obj = body
         .as_object()
-        .ok_or_else(|| anyhow::anyhow!("request body must be a JSON object"))?;
+        .ok_or_else(|| anyhow::anyhow!("{ctx}: request body must be a JSON object"))?;
 
     if !obj.get("customEnrichmentId").is_some_and(Value::is_number) {
-        anyhow::bail!("must include `customEnrichmentId` (number)");
+        anyhow::bail!("{ctx}: must include `customEnrichmentId` (number)");
     }
     if !obj.get("name").is_some_and(Value::is_string) {
-        anyhow::bail!("must include `name` (string)");
+        anyhow::bail!("{ctx}: must include `name` (string)");
     }
     if !obj.get("description").is_some_and(Value::is_string) {
-        anyhow::bail!("must include `description` (string)");
+        anyhow::bail!("{ctx}: must include `description` (string)");
     }
-    validate_file_field(obj, "")?;
+    validate_file_field(obj, ctx)?;
     Ok(())
 }
 
@@ -422,6 +424,22 @@ mod tests {
     }
 
     #[test]
+    fn validate_create_body_rejects_missing_file() {
+        let mut body = valid_create_body();
+        body.as_object_mut().unwrap().remove("file");
+        let err = validate_create_body(&body).unwrap_err();
+        assert!(err.to_string().contains("file"));
+    }
+
+    #[test]
+    fn validate_create_body_rejects_non_object() {
+        let err = validate_create_body(&json!([1, 2, 3])).unwrap_err();
+        assert!(err.to_string().contains("JSON object"));
+        // Context disambiguates which command rejected the payload.
+        assert!(err.to_string().contains("create"));
+    }
+
+    #[test]
     fn validate_update_body_accepts_valid() {
         validate_update_body(&valid_update_body()).unwrap();
     }
@@ -431,5 +449,24 @@ mod tests {
         let body = valid_create_body();
         let err = validate_update_body(&body).unwrap_err();
         assert!(err.to_string().contains("customEnrichmentId"));
+    }
+
+    #[test]
+    fn validate_update_body_rejects_string_file() {
+        let mut body = valid_update_body();
+        body.as_object_mut()
+            .unwrap()
+            .insert("file".to_string(), json!("/path/to/file.csv"));
+        let err = validate_update_body(&body).unwrap_err();
+        assert!(err.to_string().contains("file"));
+        assert!(err.to_string().contains("object"));
+    }
+
+    #[test]
+    fn validate_update_body_error_is_scoped_to_update() {
+        let mut body = valid_update_body();
+        body.as_object_mut().unwrap().remove("file");
+        let err = validate_update_body(&body).unwrap_err();
+        assert!(err.to_string().contains("update"));
     }
 }

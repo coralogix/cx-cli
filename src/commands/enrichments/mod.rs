@@ -29,6 +29,55 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+fn validate_enrichments_body(body: &Value) -> Result<()> {
+    let obj = body
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("request body must be a JSON object"))?;
+
+    // Common mistake: sending the list/GET key `enrichments` instead of the write key.
+    if obj.contains_key("enrichments") && !obj.contains_key("requestEnrichments") {
+        anyhow::bail!(
+            "use `requestEnrichments` (an array), not `enrichments` (that is the GET response shape)"
+        );
+    }
+
+    let items = obj
+        .get("requestEnrichments")
+        .and_then(Value::as_array)
+        .filter(|a| !a.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("`requestEnrichments` must be a non-empty array of enrichment objects")
+        })?;
+
+    for (i, item) in items.iter().enumerate() {
+        let item_obj = item
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("requestEnrichments[{i}] must be a JSON object"))?;
+
+        if !item_obj.get("fieldName").is_some_and(Value::is_string) {
+            anyhow::bail!("requestEnrichments[{i}] must include `fieldName` (string)");
+        }
+
+        // `enrichmentType` is a oneOf object (e.g. {"geoIp": {}}); list output shows it as a
+        // string. We only check it is an object, not which variant.
+        match item_obj.get("enrichmentType") {
+            Some(Value::Object(_)) => {}
+            Some(Value::String(s)) => {
+                anyhow::bail!(
+                    "requestEnrichments[{i}].enrichmentType must be an object, e.g. \
+                     {{\"geoIp\": {{}}}} / {{\"aws\": {{\"resourceType\": \"ec2\"}}}} / \
+                     {{\"customEnrichment\": {{\"id\": 1}}}} — got string \"{s}\""
+                );
+            }
+            _ => anyhow::bail!(
+                "requestEnrichments[{i}] must include `enrichmentType` (object, not string)"
+            ),
+        }
+    }
+
+    Ok(())
+}
+
 fn render_results(
     all_results: &[Value],
     output: OutputFormat,
@@ -87,6 +136,7 @@ pub async fn run_add(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    validate_enrichments_body(&body)?;
     eprintln!("{}", "Adding enrichment rules...".dimmed());
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
@@ -149,6 +199,7 @@ pub async fn run_overwrite(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    validate_enrichments_body(&body)?;
     eprintln!("{}", "Overwriting enrichment rules...".dimmed());
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
@@ -218,4 +269,63 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         }
     }
     render_results(&all_results, output, include_profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn valid_body() -> Value {
+        json!({
+            "requestEnrichments": [
+                {
+                    "fieldName": "sourceIPs",
+                    "enrichmentType": { "geoIp": { "withAsn": true } }
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn validate_enrichments_body_accepts_valid() {
+        validate_enrichments_body(&valid_body()).unwrap();
+    }
+
+    #[test]
+    fn validate_enrichments_body_rejects_enrichments_key() {
+        let body =
+            json!({ "enrichments": [{ "fieldName": "x", "enrichmentType": { "geoIp": {} } }] });
+        let err = validate_enrichments_body(&body).unwrap_err();
+        assert!(err.to_string().contains("requestEnrichments"));
+        assert!(err.to_string().contains("enrichments"));
+    }
+
+    #[test]
+    fn validate_enrichments_body_rejects_string_enrichment_type() {
+        let body = json!({
+            "requestEnrichments": [
+                { "fieldName": "sourceIPs", "enrichmentType": "GEO_IP" }
+            ]
+        });
+        let err = validate_enrichments_body(&body).unwrap_err();
+        assert!(err.to_string().contains("enrichmentType"));
+        assert!(err.to_string().contains("object"));
+    }
+
+    #[test]
+    fn validate_enrichments_body_rejects_missing_field_name() {
+        let body = json!({
+            "requestEnrichments": [{ "enrichmentType": { "geoIp": {} } }]
+        });
+        let err = validate_enrichments_body(&body).unwrap_err();
+        assert!(err.to_string().contains("fieldName"));
+    }
+
+    #[test]
+    fn validate_enrichments_body_rejects_empty_array() {
+        let body = json!({ "requestEnrichments": [] });
+        let err = validate_enrichments_body(&body).unwrap_err();
+        assert!(err.to_string().contains("requestEnrichments"));
+    }
 }

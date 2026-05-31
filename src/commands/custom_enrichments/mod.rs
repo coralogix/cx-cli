@@ -48,6 +48,54 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+fn validate_file_field(body: &serde_json::Map<String, Value>, context: &str) -> Result<()> {
+    match body.get("file") {
+        Some(Value::Object(_)) => Ok(()),
+        Some(Value::String(_)) => anyhow::bail!(
+            "{context}`file` must be an object `{{textual, extension, name, size}}` \
+             (the v5 JSON API, not multipart `file=@...`)"
+        ),
+        _ => anyhow::bail!(
+            "{context}must include `file` (object with textual, extension, name, size)"
+        ),
+    }
+}
+
+/// Shallow validation of the CreateCustomEnrichment request body.
+fn validate_create_body(body: &Value) -> Result<()> {
+    let obj = body
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("request body must be a JSON object"))?;
+
+    if !obj.get("name").is_some_and(Value::is_string) {
+        anyhow::bail!("must include `name` (string)");
+    }
+    if !obj.get("description").is_some_and(Value::is_string) {
+        anyhow::bail!("must include `description` (string)");
+    }
+    validate_file_field(obj, "")?;
+    Ok(())
+}
+
+/// Shallow validation of the UpdateCustomEnrichment request body.
+fn validate_update_body(body: &Value) -> Result<()> {
+    let obj = body
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("request body must be a JSON object"))?;
+
+    if !obj.get("customEnrichmentId").is_some_and(Value::is_number) {
+        anyhow::bail!("must include `customEnrichmentId` (number)");
+    }
+    if !obj.get("name").is_some_and(Value::is_string) {
+        anyhow::bail!("must include `name` (string)");
+    }
+    if !obj.get("description").is_some_and(Value::is_string) {
+        anyhow::bail!("must include `description` (string)");
+    }
+    validate_file_field(obj, "")?;
+    Ok(())
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching custom enrichments...".dimmed());
     let include_profile = targets.len() > 1;
@@ -157,6 +205,7 @@ pub async fn run_create(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    validate_create_body(&body)?;
     eprintln!("{}", "Creating custom enrichment...".dimmed());
     let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| {
@@ -204,6 +253,7 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    validate_update_body(&body)?;
     eprintln!("{}", "Updating custom enrichment...".dimmed());
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
@@ -304,4 +354,82 @@ pub async fn run_search(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn valid_create_body() -> Value {
+        json!({
+            "name": "IP Lookup",
+            "description": "Maps IPs to locations",
+            "file": {
+                "textual": "ip,city\n1.2.3.4,London",
+                "extension": "csv",
+                "name": "lookup.csv",
+                "size": 24
+            }
+        })
+    }
+
+    fn valid_update_body() -> Value {
+        json!({
+            "customEnrichmentId": 1,
+            "name": "IP Lookup",
+            "description": "Maps IPs to locations",
+            "file": {
+                "textual": "ip,city\n1.2.3.4,London",
+                "extension": "csv",
+                "name": "lookup.csv",
+                "size": 24
+            }
+        })
+    }
+
+    #[test]
+    fn validate_create_body_accepts_valid() {
+        validate_create_body(&valid_create_body()).unwrap();
+    }
+
+    #[test]
+    fn validate_create_body_rejects_missing_name() {
+        let mut body = valid_create_body();
+        body.as_object_mut().unwrap().remove("name");
+        let err = validate_create_body(&body).unwrap_err();
+        assert!(err.to_string().contains("name"));
+    }
+
+    #[test]
+    fn validate_create_body_rejects_missing_description() {
+        let mut body = valid_create_body();
+        body.as_object_mut().unwrap().remove("description");
+        let err = validate_create_body(&body).unwrap_err();
+        assert!(err.to_string().contains("description"));
+    }
+
+    #[test]
+    fn validate_create_body_rejects_string_file() {
+        let body = json!({
+            "name": "IP Lookup",
+            "description": "Maps IPs",
+            "file": "/path/to/file.csv"
+        });
+        let err = validate_create_body(&body).unwrap_err();
+        assert!(err.to_string().contains("file"));
+        assert!(err.to_string().contains("object"));
+    }
+
+    #[test]
+    fn validate_update_body_accepts_valid() {
+        validate_update_body(&valid_update_body()).unwrap();
+    }
+
+    #[test]
+    fn validate_update_body_rejects_missing_custom_enrichment_id() {
+        let body = valid_create_body();
+        let err = validate_update_body(&body).unwrap_err();
+        assert!(err.to_string().contains("customEnrichmentId"));
+    }
 }

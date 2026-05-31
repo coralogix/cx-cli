@@ -115,11 +115,43 @@ cx enrichments custom list -o json
 cx enrichments custom create --from-file table-definition.json
 ```
 
+`table-definition.json` must use the v5 JSON shape (inline file content, not multipart `file=@...`):
+
+```json
+{
+  "name": "IP Lookup",
+  "description": "Maps IPs to locations",
+  "file": {
+    "textual": "ip,city\n1.2.3.4,London",
+    "extension": "csv",
+    "name": "lookup.csv",
+    "size": 24
+  }
+}
+```
+
+For updates, include `customEnrichmentId` (number) plus the same fields.
+
 ### 3. Add Enrichment Rules
 
 ```bash
 cx enrichments add --from-file enrichment-rules.json
 ```
+
+`enrichment-rules.json` must use `requestEnrichments` (not `enrichments` from list output). Each `enrichmentType` is an object, not a string:
+
+```json
+{
+  "requestEnrichments": [
+    {
+      "fieldName": "sourceIPs",
+      "enrichmentType": { "geoIp": { "withAsn": true } }
+    }
+  ]
+}
+```
+
+Other types: `{"aws": {"resourceType": "ec2"}}`, `{"suspiciousIp": {}}`, `{"customEnrichment": {"id": 1}}`.
 
 ### 4. Search Custom Table Data
 

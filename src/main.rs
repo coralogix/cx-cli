@@ -622,7 +622,7 @@ Examples:
 Example:
   cx docs fetch user-guides/data_exploration/spans/")]
     Fetch {
-        /// Path suffix from `cx docs search` (full docs URL also accepted).
+        /// Path suffix from `cx docs search` (not a full URL).
         suffix: String,
     },
 }

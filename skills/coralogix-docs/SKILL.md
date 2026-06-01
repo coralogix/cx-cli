@@ -89,8 +89,7 @@ User: "How do I show spans in the Coralogix website?"
 
 ### `cx docs fetch`
 
-- Pass the **suffix** from **`cx docs search`** (e.g. `user-guides/data_exploration/spans/`).
-- A full `https://coralogix.com/docs/...` URL is accepted for convenience but agents should use suffixes only.
+- Pass the **suffix** from **`cx docs search`** (e.g. `user-guides/data_exploration/spans/`). Full URLs are rejected.
 - **`cx docs fetch` one page at a time** — pick the best match first.
 
 ## Troubleshooting

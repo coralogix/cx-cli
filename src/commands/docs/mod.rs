@@ -139,18 +139,6 @@ pub fn fuzzy_score(query: &str, title: &str, suffix: &str) -> f64 {
     (jaro(&q, &t) + jaro(&q, &s)) / 2.0
 }
 
-/// Resolve fetch input: suffix from search, or a full Coralogix docs URL (human CLI).
-pub fn resolve_fetch_suffix(value: &str) -> Result<String> {
-    let value = value.trim();
-    if value.starts_with("http://") || value.starts_with("https://") {
-        if !is_coralogix_docs_url(value) {
-            bail!("expected a Coralogix docs URL or path suffix from `cx docs search`");
-        }
-        return Ok(docs_suffix(&page_url(value)));
-    }
-    normalize_suffix(value)
-}
-
 async fn fetch_text(url: &str) -> Result<String> {
     let client = reqwest::Client::new();
     let response = client
@@ -255,8 +243,8 @@ pub async fn run_search(query: &str, limit: u32, output: OutputFormat) -> Result
     Ok(())
 }
 
-pub async fn run_fetch(suffix_or_url: &str, output: OutputFormat) -> Result<()> {
-    let suffix = resolve_fetch_suffix(suffix_or_url)?;
+pub async fn run_fetch(suffix: &str, output: OutputFormat) -> Result<()> {
+    let suffix = normalize_suffix(suffix)?;
     let md = md_url(&page_url_from_suffix(&suffix)?);
     let body = fetch_text(&md).await?;
     let result = FetchDocResult {
@@ -356,11 +344,4 @@ mod tests {
         assert!(s < MIN_FUZZY_SCORE);
     }
 
-    #[test]
-    fn resolve_fetch_suffix_accepts_docs_url() {
-        assert_eq!(
-            resolve_fetch_suffix("https://coralogix.com/docs/user-guides/foo/").unwrap(),
-            "user-guides/foo"
-        );
-    }
 }

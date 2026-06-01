@@ -1,6 +1,6 @@
 # Time syntax
 
-Commands that accept `--start` and `--end` (`cx logs`, `cx spans`, `cx dataprime query`, `cx metrics query-range`) support the following time expressions. `cx metrics query` uses `--time` for a single instant instead.
+Commands that accept `--start` and `--end` (`cx logs`, `cx spans`, `cx dataprime query`, `cx metrics query-range`, `cx incidents list`) support the following time expressions. `cx metrics query` uses `--time` for a single instant instead.
 
 ## Formats
 
@@ -33,6 +33,7 @@ Compound durations are supported: `1h30m`, `2d12h`.
 | `cx spans` | `now-1h` | `now` |
 | `cx dataprime query` | `now-1h` | `now` |
 | `cx metrics query-range` | `now-1h` | `now` |
+| `cx incidents list` | Not set | Not set |
 | `cx metrics query` | Uses `--time` (defaults to `now`) | N/A |
 
 ## Examples

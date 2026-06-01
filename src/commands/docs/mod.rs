@@ -343,5 +343,4 @@ mod tests {
         );
         assert!(s < MIN_FUZZY_SCORE);
     }
-
 }

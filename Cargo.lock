@@ -384,6 +384,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "strsim",
  "tabled",
  "terminal_size",
  "thiserror 2.0.18",

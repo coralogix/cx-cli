@@ -77,6 +77,7 @@ fn incidents_list_arg_from_cli(matches: &ArgMatches, arg: &str) -> bool {
   \x1b[1mspans\x1b[0m              Query spans using DataPrime syntax
   \x1b[1mmetrics\x1b[0m            Query metrics using PromQL
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
+  \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
@@ -550,6 +551,12 @@ Examples:
         cmd: DataprimeCmd,
     },
 
+    /// Search and fetch official Coralogix product documentation (not live tenant data).
+    Docs {
+        #[command(subcommand)]
+        cmd: DocsCmd,
+    },
+
     /// Output the full command tree as JSON for agent consumption.
     Schema,
 
@@ -606,6 +613,32 @@ enum ProfilesCmd {
         /// Profile name to set as default.
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DocsCmd {
+    /// Search official Coralogix docs by title or path.
+    #[command(after_help = "\
+Examples:
+  cx docs search \"explore spans\" --limit 5
+  cx docs search \"OpenTelemetry traces\"")]
+    Search {
+        /// Search text (short keywords work best).
+        query: String,
+
+        /// Maximum number of results (1–20).
+        #[arg(long, default_value_t = 5)]
+        limit: u32,
+    },
+
+    /// Fetch one Coralogix docs page as markdown.
+    #[command(after_help = "\
+Example:
+  cx docs fetch user-guides/data_exploration/spans/")]
+    Fetch {
+        /// Path suffix from `cx docs search` (not a full URL).
+        suffix: String,
     },
 }
 
@@ -2371,7 +2404,7 @@ async fn main() -> Result<()> {
         let top = safety::get_top_level_subcommand_name(&matches);
         let is_local = matches!(
             top.as_deref(),
-            Some("profiles") | Some("cleanup") | Some("completions")
+            Some("profiles") | Some("cleanup") | Some("completions") | Some("docs")
         );
         if !is_local {
             if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
@@ -2413,6 +2446,20 @@ async fn main() -> Result<()> {
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
         update_check::maybe_print_notice(OutputFormat::Text);
+        return result;
+    }
+
+    // Docs commands fetch public documentation — no API credentials.
+    if let Commands::Docs { ref cmd } = cli.command {
+        let global_config = config::load_config().unwrap_or_default();
+        let output = cli.output.unwrap_or(global_config.default_output_format);
+        let result = match cmd {
+            DocsCmd::Search { query, limit } => {
+                commands::docs::run_search(query, *limit, output).await
+            }
+            DocsCmd::Fetch { suffix } => commands::docs::run_fetch(suffix, output).await,
+        };
+        update_check::maybe_print_notice(output);
         return result;
     }
 
@@ -2523,6 +2570,7 @@ async fn main() -> Result<()> {
             Commands::Cleanup => unreachable!("handled above"),
             Commands::Schema => unreachable!("handled above"),
             Commands::Completions { .. } => unreachable!("handled above"),
+            Commands::Docs { .. } => unreachable!("handled above"),
 
             Commands::Dataprime { cmd } => match cmd {
                 DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {

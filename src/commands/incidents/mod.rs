@@ -2,7 +2,7 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
@@ -11,6 +11,36 @@ use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
 use api::{Incident, IncidentsApi};
+
+#[derive(Debug, Clone, Default)]
+pub struct ListIncidentsOptions {
+    pub statuses: Vec<String>,
+    pub severities: Vec<String>,
+    pub states: Vec<String>,
+    pub assignees: Vec<String>,
+    pub application_names: Vec<String>,
+    pub subsystem_names: Vec<String>,
+    pub contextual_labels: Vec<String>,
+    pub search_query: Option<String>,
+    pub search_field: Option<String>,
+    pub search_contextual_label: Option<String>,
+    pub is_muted: Option<bool>,
+    pub created_start: Option<String>,
+    pub created_end: Option<String>,
+    pub duration_start: Option<String>,
+    pub duration_end: Option<String>,
+    pub order_by: Option<String>,
+    pub order_direction: Option<String>,
+    pub page_size: u32,
+    pub page_token: Option<String>,
+    pub limit: Option<usize>,
+    pub show_next_page_token: bool,
+}
+
+struct ListIncidentsPage {
+    incidents: Vec<Incident>,
+    next_page_token: Option<String>,
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,57 +63,271 @@ fn incident_to_json(incident: &Incident, include_profile: bool, profile: &str) -
     v
 }
 
+fn normalize_enum(input: &str, prefix: &str) -> String {
+    let normalized = input.trim().replace(['-', ' '], "_").to_ascii_uppercase();
+    if normalized.starts_with(prefix) {
+        normalized
+    } else {
+        format!("{prefix}{normalized}")
+    }
+}
+
+fn normalize_incident_field(input: &str) -> String {
+    let normalized = input.trim().replace(['-', ' '], "_").to_ascii_uppercase();
+    let field = match normalized.as_str() {
+        "CREATED" | "CREATED_AT" | "CREATED_TIME" => "CREATED_TIME",
+        "CLOSED" | "CLOSED_AT" | "CLOSED_TIME" => "CLOSED_TIME",
+        "LAST_UPDATE" | "LAST_STATE_UPDATE" | "LAST_STATE_UPDATE_AT" | "LAST_STATE_UPDATE_TIME" => {
+            "LAST_STATE_UPDATE_TIME"
+        }
+        "APPLICATION" | "APPLICATION_NAME" => "APPLICATION_NAME",
+        "SUBSYSTEM" | "SUBSYSTEM_NAME" => "SUBSYSTEM_NAME",
+        other => other,
+    };
+
+    if field.starts_with("INCIDENTS_FIELDS_") {
+        field.to_string()
+    } else {
+        format!("INCIDENTS_FIELDS_{field}")
+    }
+}
+
+fn normalize_order_direction(input: &str) -> String {
+    normalize_enum(input, "ORDER_BY_DIRECTION_")
+}
+
+fn insert_non_empty_array(filter: &mut Value, key: &str, values: &[String], prefix: Option<&str>) {
+    if values.is_empty() {
+        return;
+    }
+
+    let items: Vec<Value> = values
+        .iter()
+        .map(|v| match prefix {
+            Some(prefix) => Value::String(normalize_enum(v, prefix)),
+            None => Value::String(v.clone()),
+        })
+        .collect();
+    filter[key] = Value::Array(items);
+}
+
+fn insert_time_range(
+    filter: &mut Value,
+    key: &str,
+    start: Option<&str>,
+    end: Option<&str>,
+) -> Result<()> {
+    if start.is_none() && end.is_none() {
+        return Ok(());
+    }
+
+    let mut range = json!({});
+    if let Some(start) = start {
+        range["startTime"] = Value::String(crate::time::parse_timestamp(start)?);
+    }
+    if let Some(end) = end {
+        range["endTime"] = Value::String(crate::time::parse_timestamp(end)?);
+    }
+    filter[key] = range;
+
+    Ok(())
+}
+
+fn insert_contextual_labels(filter: &mut Value, labels: &[String]) -> Result<()> {
+    if labels.is_empty() {
+        return Ok(());
+    }
+
+    let mut map = serde_json::Map::new();
+    for label in labels {
+        let Some((key, value)) = label.split_once('=') else {
+            bail!("Invalid contextual label '{label}'. Use key=value.");
+        };
+        let key = key.trim();
+        let value = value.trim();
+        if key.is_empty() || value.is_empty() {
+            bail!("Invalid contextual label '{label}'. Use key=value.");
+        }
+
+        let entry = map
+            .entry(key.to_string())
+            .or_insert_with(|| json!({ "contextualLabelValues": [] }));
+        entry["contextualLabelValues"]
+            .as_array_mut()
+            .expect("contextual label values initialized as array")
+            .push(Value::String(value.to_string()));
+    }
+
+    filter["contextualLabels"] = Value::Object(map);
+    Ok(())
+}
+
+fn build_list_body(options: &ListIncidentsOptions, page_token: Option<&str>) -> Result<Value> {
+    let mut filter = json!({});
+
+    insert_non_empty_array(
+        &mut filter,
+        "status",
+        &options.statuses,
+        Some("INCIDENT_STATUS_"),
+    );
+    insert_non_empty_array(
+        &mut filter,
+        "severity",
+        &options.severities,
+        Some("INCIDENT_SEVERITY_"),
+    );
+    insert_non_empty_array(
+        &mut filter,
+        "state",
+        &options.states,
+        Some("INCIDENT_STATE_"),
+    );
+    insert_non_empty_array(&mut filter, "assignee", &options.assignees, None);
+    insert_non_empty_array(
+        &mut filter,
+        "applicationName",
+        &options.application_names,
+        None,
+    );
+    insert_non_empty_array(&mut filter, "subsystemName", &options.subsystem_names, None);
+    insert_contextual_labels(&mut filter, &options.contextual_labels)?;
+
+    if let Some(is_muted) = options.is_muted {
+        filter["isMuted"] = Value::Bool(is_muted);
+    }
+
+    if let Some(query) = options.search_query.as_deref() {
+        if options.search_field.is_some() && options.search_contextual_label.is_some() {
+            bail!("Use only one of --query-field or --query-contextual-label with --query.");
+        }
+        if options.search_field.is_none() && options.search_contextual_label.is_none() {
+            bail!("Use --query-field or --query-contextual-label with --query.");
+        }
+
+        let mut search_query = json!({ "query": query });
+        if let Some(field) = options.search_field.as_deref() {
+            search_query["incidentField"] = Value::String(normalize_incident_field(field));
+        }
+        if let Some(label) = options.search_contextual_label.as_deref() {
+            search_query["contextualLabel"] = Value::String(label.to_string());
+        }
+        filter["searchQuery"] = search_query;
+    }
+
+    insert_time_range(
+        &mut filter,
+        "createdAtRange",
+        options.created_start.as_deref(),
+        options.created_end.as_deref(),
+    )?;
+    insert_time_range(
+        &mut filter,
+        "incidentDurationRange",
+        options.duration_start.as_deref(),
+        options.duration_end.as_deref(),
+    )?;
+
+    let mut body = json!({
+        "filter": filter,
+        "pagination": {
+            "pageSize": options.page_size,
+        },
+    });
+
+    if let Some(token) = page_token.or(options.page_token.as_deref()) {
+        body["pagination"]["pageToken"] = Value::String(token.to_string());
+    }
+
+    if let Some(order_by) = options.order_by.as_deref() {
+        body["orderBys"] = json!([
+            {
+                "incidentField": normalize_incident_field(order_by),
+                "direction": normalize_order_direction(
+                    options.order_direction.as_deref().unwrap_or("DESC")
+                ),
+            }
+        ]);
+    }
+
+    Ok(body)
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 pub async fn run_list(
     targets: &[Arc<ExecutionTarget>],
-    status_filter: Option<&str>,
-    severity_filter: Option<&str>,
-    assignee_filter: Option<&str>,
+    options: ListIncidentsOptions,
     output: OutputFormat,
 ) -> Result<()> {
     eprintln!("{}", "Fetching incidents...".dimmed());
 
     let include_profile = targets.len() > 1;
 
-    let status_owned = status_filter.map(|s| s.to_string());
-    let severity_owned = severity_filter.map(|s| s.to_string());
-    let assignee_owned = assignee_filter.map(|s| s.to_string());
-
     let per_profile = fan_out(targets, |t| {
-        let status = status_owned.clone();
-        let severity = severity_owned.clone();
-        let assignee = assignee_owned.clone();
+        let options = options.clone();
         async move {
             let api = IncidentsApi::new(&t.client);
-            let mut filter = json!({});
-            if let Some(s) = status {
-                filter["status"] = Value::String(s);
+            let mut incidents = Vec::new();
+            let mut next_page_token: Option<String> = None;
+
+            loop {
+                let body = build_list_body(&options, next_page_token.as_deref())?;
+                let mut resp = api.list(&body).await?;
+                next_page_token = resp.next_page_token().map(ToString::to_string);
+                incidents.append(&mut resp.incidents);
+
+                if let Some(limit) = options.limit {
+                    if incidents.len() >= limit {
+                        incidents.truncate(limit);
+                        break;
+                    }
+                }
+
+                if next_page_token.is_none() {
+                    break;
+                }
             }
-            if let Some(s) = severity {
-                filter["severity"] = Value::String(s);
-            }
-            if let Some(a) = assignee {
-                filter["assignee"] = Value::String(a);
-            }
-            let body = json!({ "filter": filter });
-            Ok(api.list(&body).await?)
+
+            Ok(ListIncidentsPage {
+                incidents,
+                next_page_token,
+            })
         }
     })
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Incident)> = Vec::new();
+    let mut success_count = 0usize;
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
-            Ok(resp) => {
-                for incident in resp.incidents {
+            Ok(page) => {
+                success_count += 1;
+                if options.show_next_page_token {
+                    if let Some(token) = page.next_page_token.as_deref() {
+                        if include_profile {
+                            eprintln!("Next page token for profile '{profile}': {token}");
+                        } else {
+                            eprintln!("Next page token: {token}");
+                        }
+                    }
+                }
+                for incident in page.incidents {
                     all_json.push(incident_to_json(&incident, include_profile, &profile));
                     all_items.push((profile.clone(), incident));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+
+    if success_count == 0 && error_count > 0 {
+        bail!("Failed to list incidents for all selected profiles.");
     }
 
     match output {
@@ -520,4 +764,147 @@ pub async fn run_aggregations(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_list_body_uses_repeated_fields_and_full_enum_names() {
+        let body = build_list_body(
+            &ListIncidentsOptions {
+                statuses: vec![
+                    "triggered".to_string(),
+                    "INCIDENT_STATUS_ACKNOWLEDGED".to_string(),
+                ],
+                severities: vec!["critical".to_string()],
+                states: vec!["resolved".to_string()],
+                assignees: vec!["user-1".to_string()],
+                page_size: 25,
+                limit: Some(25),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            body["filter"]["status"],
+            json!(["INCIDENT_STATUS_TRIGGERED", "INCIDENT_STATUS_ACKNOWLEDGED"])
+        );
+        assert_eq!(
+            body["filter"]["severity"],
+            json!(["INCIDENT_SEVERITY_CRITICAL"])
+        );
+        assert_eq!(body["filter"]["state"], json!(["INCIDENT_STATE_RESOLVED"]));
+        assert_eq!(body["filter"]["assignee"], json!(["user-1"]));
+        assert_eq!(body["pagination"]["pageSize"], json!(25));
+    }
+
+    #[test]
+    fn build_list_body_supports_search_labels_ordering_and_page_token() {
+        let body = build_list_body(
+            &ListIncidentsOptions {
+                application_names: vec!["checkout".to_string()],
+                subsystem_names: vec!["api".to_string()],
+                contextual_labels: vec![
+                    "team=payments".to_string(),
+                    "team=platform".to_string(),
+                    "env=prod".to_string(),
+                ],
+                search_query: Some("latency".to_string()),
+                search_field: Some("name".to_string()),
+                is_muted: Some(false),
+                created_start: Some("2024-01-01T00:00:00Z".to_string()),
+                created_end: Some("2024-01-02T00:00:00Z".to_string()),
+                order_by: Some("created_at".to_string()),
+                order_direction: Some("asc".to_string()),
+                page_size: 50,
+                limit: Some(50),
+                ..Default::default()
+            },
+            Some("next-token"),
+        )
+        .unwrap();
+
+        assert_eq!(body["filter"]["applicationName"], json!(["checkout"]));
+        assert_eq!(body["filter"]["subsystemName"], json!(["api"]));
+        assert_eq!(
+            body["filter"]["contextualLabels"]["team"]["contextualLabelValues"],
+            json!(["payments", "platform"])
+        );
+        assert_eq!(
+            body["filter"]["contextualLabels"]["env"]["contextualLabelValues"],
+            json!(["prod"])
+        );
+        assert_eq!(body["filter"]["searchQuery"]["query"], json!("latency"));
+        assert_eq!(
+            body["filter"]["searchQuery"]["incidentField"],
+            json!("INCIDENTS_FIELDS_NAME")
+        );
+        assert_eq!(body["filter"]["isMuted"], json!(false));
+        assert_eq!(
+            body["filter"]["createdAtRange"],
+            json!({
+                "startTime": "2024-01-01T00:00:00.000Z",
+                "endTime": "2024-01-02T00:00:00.000Z"
+            })
+        );
+        assert_eq!(body["pagination"]["pageToken"], json!("next-token"));
+        assert_eq!(
+            body["orderBys"],
+            json!([
+                {
+                    "incidentField": "INCIDENTS_FIELDS_CREATED_TIME",
+                    "direction": "ORDER_BY_DIRECTION_ASC"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn invalid_contextual_label_errors() {
+        let err = build_list_body(
+            &ListIncidentsOptions {
+                contextual_labels: vec!["team".to_string()],
+                page_size: 100,
+                limit: Some(100),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Use key=value"));
+    }
+
+    #[test]
+    fn search_query_requires_exactly_one_field_target() {
+        let no_field = build_list_body(
+            &ListIncidentsOptions {
+                search_query: Some("error".to_string()),
+                page_size: 100,
+                limit: Some(100),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap_err();
+        assert!(no_field.to_string().contains("--query-field"));
+
+        let two_fields = build_list_body(
+            &ListIncidentsOptions {
+                search_query: Some("error".to_string()),
+                search_field: Some("name".to_string()),
+                search_contextual_label: Some("service".to_string()),
+                page_size: 100,
+                limit: Some(100),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap_err();
+        assert!(two_fields.to_string().contains("Use only one"));
+    }
 }

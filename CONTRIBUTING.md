@@ -19,7 +19,7 @@ Every command domain has a designated owning team. The owning team is responsibl
 | Metrics | `src/commands/metrics/`, `skills/cx-metrics-query/` | Domain team |
 | Traces | `src/commands/spans/`, `skills/cx-query-spans/` | Domain team |
 | Alerts | `src/commands/alerts/`, `skills/cx-alerts/` | Domain team |
-| Dashboards | `src/commands/dashboards/`, `tests/dashboards/`, `tests/e2e/dashboards/`, `tests/dashboard_commands.rs`, `tests/dashboard_queries.rs`, `skills/cx-dashboards/`, `skills/cx-search-dashboard/` | `@coralogix/team-dashboards` |
+| Dashboards | `src/commands/dashboards/`, `skills/cx-dashboards/` | `@coralogix/team-dashboards` |
 | Search fields | `src/commands/search_fields/`, `src/commands/dataprime/semantic_search.rs` | Domain team |
 | Incidents & SLOs | `src/commands/incidents/`, `src/commands/slos/`, `skills/cx-incident-management/` | Domain team |
 | Notifications | `src/commands/connectors/`, `src/commands/routers/`, `src/commands/presets/`, `src/commands/notification_testing/` | Domain team |

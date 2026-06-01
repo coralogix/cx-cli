@@ -35,15 +35,10 @@
 /skills/cx-alerts/                     @coralogix/team-cxai
 
 # === dashboards ===
-# All dashboard code, tests, and skills are owned by the dashboards team.
-# `**/dashboards/` covers src/commands/dashboards/, tests/dashboards/, and
-# tests/e2e/dashboards/; the standalone integration-test files and both
-# dashboard skills are listed explicitly.
-**/dashboards/                         @coralogix/team-dashboards
-/tests/dashboard_commands.rs           @coralogix/team-dashboards
-/tests/dashboard_queries.rs            @coralogix/team-dashboards
+# The dashboards team owns the command code and its user-facing skill.
+# Dashboard tests stay with the platform catch-all.
+/src/commands/dashboards/              @coralogix/team-dashboards
 /skills/cx-dashboards/                 @coralogix/team-dashboards
-/skills/cx-search-dashboard/           @coralogix/team-dashboards
 
 # === user-facing docs (blocking review from technical writers) ===
 /README.md                             @coralogix/team-technical-writers @coralogix/team-cxai

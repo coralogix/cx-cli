@@ -206,46 +206,12 @@ Environment variables override profile file values:
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
-| `CX_OLLY_PATH_PREFIX` | Olly API path prefix (default: `/api/v2/olly`). Set to empty string for localhost. |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
-
-## Local development (Olly)
-
-For testing `cx olly` against a local Olly server:
-
-### 1. Create a localhost profile
-
-```toml
-# ~/.cx/profiles/localhost.toml
-region = "http://localhost:8000"
-api_key = "test-key"
-label = "local"
-```
-
-### 2. Run with path prefix override
-
-The Coralogix API gateway adds `/api/v2/olly` to Olly endpoints. Local servers use `/v2/chats` directly. Override the prefix with an empty string:
-
-```bash
-CX_OLLY_PATH_PREFIX="" cx -p localhost olly ask "hello"
-```
-
-Or export for the session:
-
-```bash
-export CX_OLLY_PATH_PREFIX=""
-cx -p localhost olly ask "hello"
-```
-
-| Environment | `CX_OLLY_PATH_PREFIX` | Path |
-|---|---|---|
-| Production / Staging | Not set (default) | `/api/v2/olly/v2/chats` |
-| Localhost | `""` (empty) | `/v2/chats` |
 
 ## Read-only mode
 

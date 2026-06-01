@@ -6,23 +6,8 @@ use crate::error::Result;
 
 // ── Base paths ─────────────────────────────────────────────────────────────────
 
-/// Default path prefix for production (Coralogix API gateway).
-const DEFAULT_PATH_PREFIX: &str = "/api/v2/olly";
-
-/// Get the Olly API path prefix.
-/// Override with `CX_OLLY_PATH_PREFIX` env var for local development.
-/// Set to empty string for localhost: `CX_OLLY_PATH_PREFIX=""`
-fn path_prefix() -> String {
-    std::env::var("CX_OLLY_PATH_PREFIX").unwrap_or_else(|_| DEFAULT_PATH_PREFIX.to_string())
-}
-
-fn chats_path() -> String {
-    format!("{}/v2/chats", path_prefix())
-}
-
-fn artifacts_path() -> String {
-    format!("{}/artifacts", path_prefix())
-}
+const CHATS_BASE: &str = "/api/v2/olly/v2/chats";
+const ARTIFACTS_BASE: &str = "/api/v2/olly/artifacts";
 
 // ── Request types ──────────────────────────────────────────────────────────────
 
@@ -202,12 +187,12 @@ impl OllyApi {
 
     pub async fn create_chat(&self) -> Result<Chat> {
         self.client
-            .post_empty(&format!("{}/", chats_path()), &[("chat_type", "ai_connector")])
+            .post_empty(&format!("{CHATS_BASE}/"), &[("chat_type", "ai_connector")])
             .await
     }
 
     pub async fn get_chat(&self, chat_id: &str) -> Result<ChatWithMessages> {
-        let path = format!("{}/{chat_id}", chats_path());
+        let path = format!("{CHATS_BASE}/{chat_id}");
         self.client
             .get(&path, &[("response_format", "CONTENT_BLOCKS")])
             .await
@@ -220,7 +205,7 @@ impl OllyApi {
         model_choice: &str,
         timeout_seconds: u32,
     ) -> Result<Interaction> {
-        let path = format!("{}/{chat_id}/interactions/", chats_path());
+        let path = format!("{CHATS_BASE}/{chat_id}/interactions/");
         let body = json!({
             "content": [InputContentBlock::text(content)],
             "interaction_mode": "skill",
@@ -236,19 +221,19 @@ impl OllyApi {
         chat_id: &str,
         interaction_id: &str,
     ) -> Result<Interaction> {
-        let path = format!("{}/{chat_id}/interactions/{interaction_id}", chats_path());
+        let path = format!("{CHATS_BASE}/{chat_id}/interactions/{interaction_id}");
         self.client.get(&path, &[]).await
     }
 
     // ── Artifacts ──────────────────────────────────────────────────────────────
 
     pub async fn list_artifacts(&self) -> Result<Vec<Artifact>> {
-        let path = format!("{}/", artifacts_path());
+        let path = format!("{ARTIFACTS_BASE}/");
         self.client.get(&path, &[]).await
     }
 
     pub async fn get_artifact(&self, artifact_id: &str) -> Result<Artifact> {
-        let path = format!("{}/{artifact_id}", artifacts_path());
+        let path = format!("{ARTIFACTS_BASE}/{artifact_id}");
         self.client.get(&path, &[]).await
     }
 }

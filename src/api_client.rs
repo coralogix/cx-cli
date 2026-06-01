@@ -69,8 +69,22 @@ impl CxClient {
 
     /// POST JSON body, deserialize response into T.
     pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
+        self.post_with_headers(path, body, &[]).await
+    }
+
+    /// POST JSON body with extra headers, deserialize response into T.
+    pub async fn post_with_headers<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Value,
+        headers: &[(&str, &str)],
+    ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.post(&url).json(body).send().await?;
+        let mut req = self.inner.post(&url).json(body);
+        for (key, value) in headers {
+            req = req.header(*key, *value);
+        }
+        let resp = req.send().await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
     }

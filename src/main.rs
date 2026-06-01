@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::parser::ValueSource;
-use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
 use clap_complete::env::CompleteEnv;
@@ -47,6 +47,20 @@ pub enum SearchByValueDataset {
     Logs,
     Spans,
     All,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Muting {
+    Muted,
+    Unmuted,
+}
+
+fn incidents_list_arg_from_cli(matches: &ArgMatches, arg: &str) -> bool {
+    matches
+        .subcommand_matches("incidents")
+        .and_then(|m| m.subcommand_matches("list"))
+        .and_then(|m| m.value_source(arg))
+        == Some(ValueSource::CommandLine)
 }
 
 /// Coralogix CLI - the observability backbone for AI agents and engineering teams.
@@ -211,6 +225,7 @@ Examples:
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Manage profiles (list, add, delete, set-default).
     Profiles {
@@ -995,25 +1010,99 @@ Examples:
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum IncidentsCmd {
     /// List incidents with optional filters.
     #[command(after_help = "\
 Examples:
   cx incidents list
   cx incidents list --severity CRITICAL
-  cx incidents list --status TRIGGERED")]
+  cx incidents list --status TRIGGERED
+  cx incidents list --start now-24h --order-by created_at --limit 50")]
     List {
-        /// Filter by status (e.g. TRIGGERED, ACKNOWLEDGED, RESOLVED).
+        /// Filter by status. Repeatable. Values: TRIGGERED, ACKNOWLEDGED, RESOLVED.
         #[arg(long)]
-        status: Option<String>,
+        status: Vec<String>,
 
-        /// Filter by severity (e.g. CRITICAL, WARNING, INFO).
+        /// Filter by severity. Repeatable. Values: INFO, WARNING, ERROR, CRITICAL.
         #[arg(long)]
-        severity: Option<String>,
+        severity: Vec<String>,
 
-        /// Filter by assignee user ID.
+        /// Filter by incident state. Repeatable. Values: TRIGGERED, RESOLVED.
         #[arg(long)]
-        assignee: Option<String>,
+        state: Vec<String>,
+
+        /// Filter by assignee user ID. Repeatable.
+        #[arg(long)]
+        assignee: Vec<String>,
+
+        /// Filter by application name. Repeatable.
+        #[arg(long = "application-name")]
+        application_name: Vec<String>,
+
+        /// Filter by subsystem name. Repeatable.
+        #[arg(long = "subsystem-name")]
+        subsystem_name: Vec<String>,
+
+        /// Filter by contextual label as key=value. Repeatable.
+        #[arg(long = "contextual-label")]
+        contextual_label: Vec<String>,
+
+        /// Search query text.
+        #[arg(long = "query")]
+        search_query: Option<String>,
+
+        /// Incident field for --query (e.g. name, id, severity, status).
+        #[arg(long = "query-field")]
+        search_field: Option<String>,
+
+        /// Contextual label field for --query.
+        #[arg(long = "query-contextual-label")]
+        search_contextual_label: Option<String>,
+
+        /// Filter by muting state.
+        #[arg(long, value_enum)]
+        muting: Option<Muting>,
+
+        /// Created-at range start (ISO 8601 or relative, e.g. now-24h).
+        #[arg(long = "start")]
+        start: Option<String>,
+
+        /// Created-at range end (ISO 8601 or relative, e.g. now).
+        #[arg(long = "end")]
+        end: Option<String>,
+
+        /// Incident-duration range start (ISO 8601 or relative).
+        #[arg(long = "duration-start")]
+        duration_start: Option<String>,
+
+        /// Incident-duration range end (ISO 8601 or relative).
+        #[arg(long = "duration-end")]
+        duration_end: Option<String>,
+
+        /// Field to sort by (e.g. created_at, severity, name, status).
+        #[arg(long = "order-by")]
+        order_by: Option<String>,
+
+        /// Sort direction: ASC or DESC.
+        #[arg(long = "order-direction", default_value = "DESC")]
+        order_direction: String,
+
+        /// Number of incidents to request per API page.
+        #[arg(long = "page-size", default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
+        page_size: u32,
+
+        /// Page token returned by the API.
+        #[arg(long = "page-token")]
+        page_token: Option<String>,
+
+        /// Maximum incidents to return per profile. Use --all to fetch every page.
+        #[arg(long, default_value_t = 100, conflicts_with = "all", value_parser = clap::value_parser!(u32).range(1..))]
+        limit: u32,
+
+        /// Fetch every available page.
+        #[arg(long, action = ArgAction::SetTrue)]
+        all: bool,
     },
     /// Get a single incident by ID.
     Get {
@@ -2720,16 +2809,53 @@ async fn main() -> Result<()> {
                 IncidentsCmd::List {
                     status,
                     severity,
+                    state,
                     assignee,
+                    application_name,
+                    subsystem_name,
+                    contextual_label,
+                    search_query,
+                    search_field,
+                    search_contextual_label,
+                    muting,
+                    start,
+                    end,
+                    duration_start,
+                    duration_end,
+                    order_by,
+                    order_direction,
+                    page_size,
+                    page_token,
+                    limit,
+                    all,
                 } => {
-                    commands::incidents::run_list(
-                        &targets,
-                        status.as_deref(),
-                        severity.as_deref(),
-                        assignee.as_deref(),
-                        output,
-                    )
-                    .await?;
+                    let is_muted = muting.map(|m| matches!(m, Muting::Muted));
+                    let show_next_page_token = incidents_list_arg_from_cli(&matches, "page_size")
+                        || incidents_list_arg_from_cli(&matches, "page_token");
+                    let options = commands::incidents::ListIncidentsOptions {
+                        statuses: status,
+                        severities: severity,
+                        states: state,
+                        assignees: assignee,
+                        application_names: application_name,
+                        subsystem_names: subsystem_name,
+                        contextual_labels: contextual_label,
+                        search_query,
+                        search_field,
+                        search_contextual_label,
+                        is_muted,
+                        created_start: start,
+                        created_end: end,
+                        duration_start,
+                        duration_end,
+                        order_by,
+                        order_direction: Some(order_direction),
+                        page_size,
+                        page_token,
+                        limit: if all { None } else { Some(limit as usize) },
+                        show_next_page_token,
+                    };
+                    commands::incidents::run_list(&targets, options, output).await?;
                 }
                 IncidentsCmd::Get { id } => {
                     commands::incidents::run_get(&targets, &id, output).await?;

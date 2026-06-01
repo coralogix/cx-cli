@@ -187,8 +187,9 @@ impl OllyApi {
     // ── Chats ──────────────────────────────────────────────────────────────────
 
     pub async fn create_chat(&self) -> Result<Chat> {
-        let body = json!({ "chat_type": "cli" });
-        self.client.post(&format!("{CHATS_BASE}/"), &body).await
+        self.client
+            .post_empty(&format!("{CHATS_BASE}/"), &[("chat_type", "ai_connector")])
+            .await
     }
 
     pub async fn get_chat(&self, chat_id: &str) -> Result<ChatWithMessages> {

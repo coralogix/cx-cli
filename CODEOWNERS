@@ -30,11 +30,20 @@
 /skills/telemetry-querying/            @coralogix/team-cxai
 /assets/                               @coralogix/team-cxai
 
-# === config-surface (alerts, dashboards) ===
+# === config-surface (alerts) ===
 **/alerts/                             @coralogix/team-cxai
-**/dashboards/                         @coralogix/team-cxai
 /skills/cx-alerts/                     @coralogix/team-cxai
-/skills/create-dashboard/              @coralogix/team-cxai
+
+# === dashboards ===
+# All dashboard code, tests, and skills are owned by the dashboards team.
+# `**/dashboards/` covers src/commands/dashboards/, tests/dashboards/, and
+# tests/e2e/dashboards/; the standalone integration-test files and both
+# dashboard skills are listed explicitly.
+**/dashboards/                         @coralogix/team-dashboards
+/tests/dashboard_commands.rs           @coralogix/team-dashboards
+/tests/dashboard_queries.rs            @coralogix/team-dashboards
+/skills/cx-dashboards/                 @coralogix/team-dashboards
+/skills/cx-search-dashboard/           @coralogix/team-dashboards
 
 # === user-facing docs (blocking review from technical writers) ===
 /README.md                             @coralogix/team-technical-writers @coralogix/team-cxai

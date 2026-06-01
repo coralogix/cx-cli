@@ -8,6 +8,7 @@ use crate::error::Result;
 
 const CHATS_BASE: &str = "/api/v2/olly/v2/chats";
 const ARTIFACTS_BASE: &str = "/api/v2/olly/artifacts";
+const INTERACTION_SOURCE_HEADER: (&str, &str) = ("interaction-source", "cli");
 
 // ── Request types ──────────────────────────────────────────────────────────────
 
@@ -212,7 +213,9 @@ impl OllyApi {
             "should_block": true,
             "timeout_seconds": timeout_seconds
         });
-        self.client.post(&path, &body).await
+        self.client
+            .post_with_headers(&path, &body, &[INTERACTION_SOURCE_HEADER])
+            .await
     }
 
     pub async fn get_interaction(

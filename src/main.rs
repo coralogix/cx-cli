@@ -603,7 +603,7 @@ enum ProfilesCmd {
 
 #[derive(Subcommand)]
 enum DocsCmd {
-    /// Search official Coralogix docs by title or URL path.
+    /// Search official Coralogix docs by title or path.
     #[command(after_help = "\
 Examples:
   cx docs search \"explore spans\" --limit 5
@@ -620,10 +620,10 @@ Examples:
     /// Fetch one Coralogix docs page as markdown.
     #[command(after_help = "\
 Example:
-  cx docs fetch https://coralogix.com/docs/user-guides/data_exploration/spans/")]
+  cx docs fetch user-guides/data_exploration/spans/")]
     Fetch {
-        /// Docs page URL from `cx docs search` (with or without `.md`).
-        url: String,
+        /// Path suffix from `cx docs search` (full docs URL also accepted).
+        suffix: String,
     },
 }
 
@@ -2368,7 +2368,7 @@ async fn main() -> Result<()> {
             DocsCmd::Search { query, limit } => {
                 commands::docs::run_search(query, *limit, output).await
             }
-            DocsCmd::Fetch { url } => commands::docs::run_fetch(url, output).await,
+            DocsCmd::Fetch { suffix } => commands::docs::run_fetch(suffix, output).await,
         };
         update_check::maybe_print_notice(output);
         return result;

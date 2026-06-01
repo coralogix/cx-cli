@@ -19,8 +19,8 @@ No Coralogix API key is required.
 
 | Command | Purpose |
 |---------|---------|
-| `cx docs search <query>` | Find doc pages by keyword. Returns numbered titles + URLs. |
-| `cx docs fetch <url>` | Download one page as markdown. Use a URL from search. |
+| `cx docs search <query>` | Find doc pages by keyword. Returns numbered titles + path suffixes. |
+| `cx docs fetch <suffix>` | Download one page as markdown. Pass the suffix from search. |
 
 ### Flags
 
@@ -34,7 +34,7 @@ No Coralogix API key is required.
 ```bash
 cx docs search "explore spans" --limit 5
 cx docs search "OpenTelemetry traces"
-cx docs fetch "https://coralogix.com/docs/user-guides/data_exploration/spans/"
+cx docs fetch user-guides/data_exploration/spans/
 cx docs search "API keys" -o json
 ```
 
@@ -66,15 +66,15 @@ Use **`cx docs search`** + **`cx docs fetch`** when the user wants:
 ## Standard workflow
 
 1. **`cx docs search`** with a focused query (2–4 keywords, not full sentences).
-2. Pick the most relevant URL from the results.
-3. **`cx docs fetch`** on that URL.
+2. Pick the most relevant **suffix** from the results.
+3. **`cx docs fetch`** on that suffix.
 4. Answer from the fetched content. Fetch additional pages only when needed.
 
 ```
 User: "How do I show spans in the Coralogix website?"
 
 1. cx docs search "explore spans" --limit 5
-2. cx docs fetch <best URL from search>
+2. cx docs fetch user-guides/data_exploration/spans/
 3. Summarize: Explore → spans dataset → Spans/Traces/Flows tabs → drilldown
 ```
 
@@ -85,12 +85,13 @@ User: "How do I show spans in the Coralogix website?"
 - Start with **2–4 focused terms**, not full sentences.
 - If no matches, try synonyms or broader terms (`"tracing"` instead of `"distributed trace waterfall view"`).
 - Increase `--limit` when the first page of hits is ambiguous.
+- Results use **path suffixes** under `/docs/` (not full URLs) — pass them directly to **`cx docs fetch`**.
 
 ### `cx docs fetch`
 
-- Pass a URL from **`cx docs search`** (with or without `.md`).
+- Pass the **suffix** from **`cx docs search`** (e.g. `user-guides/data_exploration/spans/`).
+- A full `https://coralogix.com/docs/...` URL is accepted for convenience but agents should use suffixes only.
 - **`cx docs fetch` one page at a time** — pick the best match first.
-- Cite the doc URL when answering the user.
 
 ## Troubleshooting
 

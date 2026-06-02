@@ -167,7 +167,7 @@ impl CxClient {
                     .into(),
             })),
             StatusCode::FORBIDDEN => Err(CxError::Permission(match detail {
-                Some(d) => format!("{d}. Check your API key's scopes."),
+                Some(d) => d,
                 None => {
                     "You do not have permission for this operation. Check your API key's scopes."
                         .into()

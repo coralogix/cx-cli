@@ -64,14 +64,14 @@ pub fn render() -> String {
     out.push(format!(
         "{}{}",
         tag_pad,
-        TAGLINE.truecolor(0, 170, 110).italic()
+        TAGLINE.truecolor(60, 140, 220).italic()
     ));
 
     // ── Separator line ──
     let sep_width = logo_width.max(TAGLINE.len()) + 4;
     let sep_pad = center_pad(sep_width, width);
     let separator: String = "─".repeat(sep_width);
-    out.push(format!("{}{}", sep_pad, separator.truecolor(0, 90, 60)));
+    out.push(format!("{}{}", sep_pad, separator.truecolor(20, 60, 140)));
 
     out.join("\n")
 }
@@ -82,9 +82,9 @@ fn gradient_line(text: &str, row: usize, total_rows: usize) -> String {
     } else {
         row as f64 / (total_rows - 1) as f64
     };
-    // Vivid mint (#00FFB0) → bright emerald (#00E078)
-    let r = 0;
-    let g = (255.0 - 31.0 * t) as u8;
-    let b = (176.0 - 56.0 * t) as u8;
+    // Bright sky blue (#4FC3FF) → deep royal blue (#1E5BCC)
+    let r = (79.0 - 49.0 * t) as u8;
+    let g = (195.0 - 104.0 * t) as u8;
+    let b = (255.0 - 51.0 * t) as u8;
     format!("{}", text.truecolor(r, g, b).bold())
 }

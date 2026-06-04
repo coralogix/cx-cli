@@ -51,6 +51,8 @@ A row always looks like:
 
 Use for headline numbers: counts, percentages, success rates.
 
+Gauge `min` and `max` must be numeric and `min < max`. This API constraint applies even when `thresholdType` is `THRESHOLD_TYPE_ABSOLUTE`; use a real range such as `0..100` for percentages, a known capacity/limit when available, or a max above the highest threshold.
+
 ```json
 {
   "id": {"value": "<uuid>"},

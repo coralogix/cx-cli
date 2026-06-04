@@ -80,7 +80,7 @@ pub struct E2mLimitsResponse {
 
 // --- API ---
 
-const E2M_BASE: &str = "/mgmt/openapi/latest/events2metrics/events2metrics/v2";
+const E2M_BASE: &str = "/mgmt/openapi/5/events2metrics/events2metrics/v2";
 
 pub struct E2mApi<'a> {
     client: &'a CxClient,

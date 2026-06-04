@@ -52,7 +52,7 @@ pub struct DeleteIntegrationResponse {}
 
 // --- API ---
 
-const INTEGRATIONS_BASE: &str = "/mgmt/openapi/latest/integrations/integrations/v1";
+const INTEGRATIONS_BASE: &str = "/mgmt/openapi/5/integrations/integrations/v1";
 
 pub struct IntegrationsApi<'a> {
     client: &'a CxClient,

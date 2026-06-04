@@ -1,6 +1,6 @@
 [package]
 name = "coralogix-cli"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 repository = "https://github.com/coralogix/cx-cli"
@@ -58,6 +58,9 @@ humantime = "2"
 
 # URL building
 url = "2"
+
+# Fuzzy string matching (docs search)
+strsim = "0.11"
 
 # TOON format - agent-optimised, token-efficient serialisation
 toon-format = { version = "0.4.5", default-features = false }

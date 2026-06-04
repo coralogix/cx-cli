@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "coralogix-cli"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -384,6 +384,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "strsim",
  "tabled",
  "terminal_size",
  "thiserror 2.0.18",

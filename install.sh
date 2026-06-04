@@ -78,6 +78,12 @@ main() {
     fi
     chmod +x "${install_dir}/${BINARY_NAME}"
 
+    # Write install-method marker so cx can suggest the right upgrade command.
+    local cx_dir
+    cx_dir="${CX_HOME:-$HOME}/.cx"
+    mkdir -p "$cx_dir"
+    printf 'curl' > "${cx_dir}/install-method"
+
     say "Installed ${BINARY_NAME} to ${install_dir}/${BINARY_NAME}"
 
     case ":$PATH:" in

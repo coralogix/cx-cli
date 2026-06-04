@@ -43,7 +43,7 @@ pub struct RetentionStatusResponse {
 
 // --- API ---
 
-const RETENTIONS_BASE: &str = "/mgmt/openapi/latest/dataengine/retention-tags/v1";
+const RETENTIONS_BASE: &str = "/mgmt/openapi/5/dataengine/retention-tags/v1";
 
 pub struct RetentionsApi<'a> {
     client: &'a CxClient,

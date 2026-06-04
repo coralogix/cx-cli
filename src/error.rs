@@ -5,6 +5,9 @@ pub enum CxError {
     #[error("Authentication failed: {0}")]
     Auth(String),
 
+    #[error("Permission denied: {0}")]
+    Permission(String),
+
     #[error("API request failed ({status}): {message}")]
     Api { status: u16, message: String },
 

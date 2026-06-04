@@ -63,9 +63,9 @@ Categories: `AVAILABILITY` or `SECURITY`. Priorities: `P1` (highest) → `P5`.
 1. **Inspect** — `cx cases get <id>`. The payload includes `groupings`,
    `labels`, `impactedEntities`, `kpiBreaches`, `aiSummary`, and both
    `priorityDetails.system` (computed) and `priorityDetails.override` (user-set).
-2. **Investigate** — pull the underlying telemetry for the case's
-   `impactedEntities`/`groupings` (logs, spans, metrics) to confirm impact and
-   find root cause before acting. See the `cx-telemetry-querying` skill.
+2. **Investigate** — Pull the underlying telemetry by querying the alert's DataPrime / PromQL to find root cause before acting.
+   Optionally export the investigation via `cx olly` or pull the case's `impactedEntities` / `groupings` to confirm the impact. 
+   See the `cx-telemetry-querying` skill.
 3. **Claim** — `cx cases assign <id> --user you@example.com` then
    `cx cases acknowledge <id>`.
 4. **Resolve or close** — see below.

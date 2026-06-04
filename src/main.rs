@@ -334,8 +334,6 @@ Examples:
     /// Manage and triage cases.
     #[command(after_help = "\
 Examples:
-  cx cases list
-  cx cases list --status ACTIVE --priority P1
   cx cases get <case-id>
   cx cases assign <case-id> --user alice@example.com
   cx cases acknowledge <case-id>
@@ -1177,42 +1175,6 @@ Examples:
 
 #[derive(Subcommand)]
 enum CasesCmd {
-    /// List cases with optional filters.
-    #[command(after_help = "\
-Examples:
-  cx cases list
-  cx cases list --status ACTIVE --priority P1 --priority P2
-  cx cases list --category AVAILABILITY --assignee <user-id>
-  cx cases list --text \"database\" --page-size 50")]
-    List {
-        /// Filter by status. Repeatable. Accepts P1-style shorthand or full enum.
-        #[arg(long)]
-        status: Vec<String>,
-
-        /// Filter by priority. Repeatable. e.g. P1, P2.
-        #[arg(long)]
-        priority: Vec<String>,
-
-        /// Filter by category. Repeatable. e.g. AVAILABILITY, SECURITY.
-        #[arg(long)]
-        category: Vec<String>,
-
-        /// Filter by assignee user ID, or pass `unassigned` to show unassigned cases.
-        #[arg(long)]
-        assignee: Option<String>,
-
-        /// Free-text search applied to case titles.
-        #[arg(long)]
-        text: Option<String>,
-
-        /// Maximum number of cases per page.
-        #[arg(long)]
-        page_size: Option<u32>,
-
-        /// Pagination token from a previous response.
-        #[arg(long)]
-        page_token: Option<String>,
-    },
     /// Get a single case by ID.
     Get {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
@@ -1257,9 +1219,14 @@ Examples:
     Resolve {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
-        /// Resolution reason (prompted if omitted in an interactive terminal).
-        #[arg(long)]
+        /// Resolution reason (required unless --no-reason is passed; prompted if
+        /// omitted in an interactive terminal).
+        #[arg(long, conflicts_with = "no_reason")]
         reason: Option<String>,
+        /// Resolve without a reason. Use only when a reason genuinely does not
+        /// apply — an empty resolution loses the audit trail.
+        #[arg(long)]
+        no_reason: bool,
     },
     /// Close a case.
     Close {
@@ -1279,10 +1246,6 @@ Examples:
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
-    /// Show available filter values and aggregated counts.
-    FilterValues,
-    /// List the grouping keys available for case filtering.
-    GroupingKeys,
     /// Inspect the event timeline of a case.
     #[command(after_help = "\
 Examples:
@@ -3055,28 +3018,6 @@ async fn main() -> Result<()> {
             },
 
             Commands::Cases { cmd } => match cmd {
-                CasesCmd::List {
-                    status,
-                    priority,
-                    category,
-                    assignee,
-                    text,
-                    page_size,
-                    page_token,
-                } => {
-                    commands::cases::run_list(
-                        &targets,
-                        &status,
-                        &priority,
-                        &category,
-                        assignee.as_deref(),
-                        text.as_deref(),
-                        page_size,
-                        page_token.as_deref(),
-                        output,
-                    )
-                        .await?;
-                }
                 CasesCmd::Get { id } => {
                     commands::cases::run_get(&targets, &id, output).await?;
                 }
@@ -3092,7 +3033,7 @@ async fn main() -> Result<()> {
                         resolution_reason.as_deref(),
                         output,
                     )
-                        .await?;
+                    .await?;
                 }
                 CasesCmd::Assign { id, user } => {
                     commands::cases::run_assign(&targets, &id, &user, output).await?;
@@ -3106,10 +3047,19 @@ async fn main() -> Result<()> {
                 CasesCmd::Unacknowledge { id } => {
                     commands::cases::run_unacknowledge(&targets, &id, output).await?;
                 }
-                CasesCmd::Resolve { id, reason } => {
+                CasesCmd::Resolve {
+                    id,
+                    reason,
+                    no_reason,
+                } => {
                     let reason = match reason {
                         Some(r) => Some(r),
-                        None => safety::prompt_optional_text(
+                        // `--no-reason` is the explicit opt-out; resolve with no reason.
+                        None if no_reason => None,
+                        // Otherwise a reason is required. In an interactive terminal we
+                        // prompt for it; in non-interactive/agent/--yes contexts we refuse
+                        // rather than silently resolving with an empty audit trail.
+                        None => match safety::prompt_optional_text(
                             "Resolution reason:",
                             Some(
                                 "Share the root cause, what fixed it, and any follow-up. \
@@ -3117,7 +3067,13 @@ async fn main() -> Result<()> {
                             ),
                             yes,
                             agent_mode,
-                        )?,
+                        )? {
+                            Some(r) => Some(r),
+                            None => anyhow::bail!(
+                                "a resolution reason is required: pass --reason \"<text>\", \
+                                 or --no-reason to resolve without one"
+                            ),
+                        },
                     };
                     confirm_destructive(
                         &format!(
@@ -3137,12 +3093,6 @@ async fn main() -> Result<()> {
                 }
                 CasesCmd::ClearPriority { id } => {
                     commands::cases::run_clear_priority(&targets, &id, output).await?;
-                }
-                CasesCmd::FilterValues => {
-                    commands::cases::run_filter_values(&targets, output).await?;
-                }
-                CasesCmd::GroupingKeys => {
-                    commands::cases::run_grouping_keys(&targets, output).await?;
                 }
                 CasesCmd::Events { cmd } => match cmd {
                     CasesEventsCmd::List { case_id } => {

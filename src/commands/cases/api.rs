@@ -90,20 +90,6 @@ impl Case {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ListCasesResponse {
-    #[serde(default)]
-    pub cases: Vec<Case>,
-    pub pagination: Option<PaginationResponse>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PaginationResponse {
-    pub next_page_token: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ListEventsResponse {
     #[serde(default)]
     pub events: Vec<Value>,
@@ -191,8 +177,6 @@ const ASSIGNED_BASE: &str = "/mgmt/openapi/5/cases/assigned/v1";
 const ACKNOWLEDGED_BASE: &str = "/mgmt/openapi/5/cases/acknowledged/v1";
 const CLOSED_BASE: &str = "/mgmt/openapi/5/cases/closed/v1";
 const RESOLVED_BASE: &str = "/mgmt/openapi/5/cases/resolved/v1";
-const FILTER_VALUES_BASE: &str = "/mgmt/openapi/5/cases/filter-values/v1";
-const GROUPING_KEYS_BASE: &str = "/mgmt/openapi/5/cases/grouping-keys/v1";
 const NOTIFICATION_DELIVERIES_BASE: &str = "/mgmt/openapi/5/cases/notifications/v1/deliveries";
 const TEAMMATES_BASE: &str = "/api/v1/user/team/teammates";
 
@@ -203,11 +187,6 @@ pub struct CasesApi<'a> {
 impl<'a> CasesApi<'a> {
     pub fn new(client: &'a CxClient) -> Self {
         Self { client }
-    }
-
-    /// List cases (POST with filter body).
-    pub async fn list(&self, body: &Value) -> Result<ListCasesResponse> {
-        self.client.post(CASES_BASE, body).await
     }
 
     /// Get a single case by ID.
@@ -279,16 +258,6 @@ impl<'a> CasesApi<'a> {
         self.client.delete(&path).await
     }
 
-    /// Get aggregated filter values for the case list.
-    pub async fn filter_values(&self, body: &Value) -> Result<Value> {
-        self.client.post(FILTER_VALUES_BASE, body).await
-    }
-
-    /// Get available grouping keys.
-    pub async fn grouping_keys(&self) -> Result<Value> {
-        self.client.get(GROUPING_KEYS_BASE, &[]).await
-    }
-
     /// List events for a case.
     pub async fn list_events(&self, case_id: &str) -> Result<ListEventsResponse> {
         let path = format!("{CASES_BASE}/{case_id}/events");
@@ -329,50 +298,34 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn deserialize_list_response() {
-        let body = json!({
-            "cases": [
-                {
-                    "id": "3f166e9f-3c88-4af2-b52e-138f339dab3e",
-                    "readableId": "CASE-123",
-                    "title": "Database outage investigation",
-                    "status": "CASE_STATUS_ACTIVE",
-                    "priority": "CASE_PRIORITY_P2",
-                    "category": "CASE_CATEGORY_AVAILABILITY",
-                    "createTime": "2025-09-22T10:30:00Z"
-                },
-                {
-                    "id": "a4c7d2e8-5f99-4b3a-c53f-239f440dbe4f",
-                    "title": "Security incident",
-                    "status": "CASE_STATUS_ACKNOWLEDGED",
-                    "priority": "CASE_PRIORITY_P1",
-                    "category": "CASE_CATEGORY_SECURITY",
-                    "createTime": "2025-09-23T09:00:00Z",
-                    "assignee": { "userId": "user-1" }
-                }
-            ],
-            "pagination": { "nextPageToken": "abc" }
-        });
+    fn deserialize_case() {
+        let unassigned: Case = serde_json::from_value(json!({
+            "id": "3f166e9f-3c88-4af2-b52e-138f339dab3e",
+            "readableId": "CASE-123",
+            "title": "Database outage investigation",
+            "status": "CASE_STATUS_ACTIVE",
+            "priority": "CASE_PRIORITY_P2",
+            "category": "CASE_CATEGORY_AVAILABILITY",
+            "createTime": "2025-09-22T10:30:00Z"
+        }))
+        .unwrap();
+        assert_eq!(unassigned.display_status(), "ACTIVE");
+        assert_eq!(unassigned.display_priority(), "P2");
+        assert_eq!(unassigned.display_category(), "AVAILABILITY");
+        assert_eq!(unassigned.display_assignee(), "-");
 
-        let resp: ListCasesResponse = serde_json::from_value(body).unwrap();
-        assert_eq!(resp.cases.len(), 2);
-        assert_eq!(resp.cases[0].display_status(), "ACTIVE");
-        assert_eq!(resp.cases[0].display_priority(), "P2");
-        assert_eq!(resp.cases[0].display_category(), "AVAILABILITY");
-        assert_eq!(resp.cases[0].display_assignee(), "-");
-        assert_eq!(resp.cases[1].display_status(), "ACKNOWLEDGED");
-        assert_eq!(resp.cases[1].display_assignee(), "user-1");
-        assert_eq!(
-            resp.pagination.and_then(|p| p.next_page_token).as_deref(),
-            Some("abc")
-        );
-    }
-
-    #[test]
-    fn deserialize_empty_response() {
-        let body = json!({});
-        let resp: ListCasesResponse = serde_json::from_value(body).unwrap();
-        assert!(resp.cases.is_empty());
+        let assigned: Case = serde_json::from_value(json!({
+            "id": "a4c7d2e8-5f99-4b3a-c53f-239f440dbe4f",
+            "title": "Security incident",
+            "status": "CASE_STATUS_ACKNOWLEDGED",
+            "priority": "CASE_PRIORITY_P1",
+            "category": "CASE_CATEGORY_SECURITY",
+            "createTime": "2025-09-23T09:00:00Z",
+            "assignee": { "userId": "user-1" }
+        }))
+        .unwrap();
+        assert_eq!(assigned.display_status(), "ACKNOWLEDGED");
+        assert_eq!(assigned.display_assignee(), "user-1");
     }
 
     #[test]
@@ -511,21 +464,14 @@ mod tests {
 
     #[test]
     fn deserialize_labels_and_groupings() {
-        let body = json!({
-            "cases": [
-                {
-                    "title": "x",
-                    "labels": [{ "key": "team", "value": "backend" }],
-                    "groupings": [{ "key": "service", "value": "payments" }]
-                }
-            ]
-        });
-        let resp: ListCasesResponse = serde_json::from_value(body).unwrap();
-        assert_eq!(resp.cases[0].labels.len(), 1);
-        assert_eq!(resp.cases[0].labels[0].key.as_deref(), Some("team"));
-        assert_eq!(
-            resp.cases[0].groupings[0].value.as_deref(),
-            Some("payments")
-        );
+        let case: Case = serde_json::from_value(json!({
+            "title": "x",
+            "labels": [{ "key": "team", "value": "backend" }],
+            "groupings": [{ "key": "service", "value": "payments" }]
+        }))
+        .unwrap();
+        assert_eq!(case.labels.len(), 1);
+        assert_eq!(case.labels[0].key.as_deref(), Some("team"));
+        assert_eq!(case.groupings[0].value.as_deref(), Some("payments"));
     }
 }

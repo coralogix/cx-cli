@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
@@ -29,68 +29,6 @@ pub fn normalize_priority(input: &str) -> Result<String> {
     }
 }
 
-/// Insert (or replace) the `assignees` array inside the request body's
-/// `filters` object. No-op if `filters` is missing or not an object.
-fn inject_assignees_filter(body: &mut Value, entry: Value) {
-    if let Some(filters) = body.get_mut("filters").and_then(|v| v.as_object_mut()) {
-        filters.insert("assignees".to_string(), Value::Array(vec![entry]));
-    }
-}
-
-fn normalize_enum_filter(values: &[String], prefix: &str) -> Vec<String> {
-    values
-        .iter()
-        .map(|v| {
-            let upper = v.trim().to_uppercase();
-            if upper.starts_with(prefix) {
-                upper
-            } else {
-                format!("{prefix}{upper}")
-            }
-        })
-        .collect()
-}
-
-/// Resolve a case's assignee to a human-readable string (email when known,
-/// otherwise raw user ID, otherwise "-").
-fn assignee_display(case: &Case, directory: &TeammateDirectory) -> String {
-    let Some(uid) = case.assignee.as_ref().and_then(|a| a.user_id.as_deref()) else {
-        return "-".to_string();
-    };
-    directory.email_for(uid).unwrap_or(uid).to_string()
-}
-
-fn case_to_json(
-    case: &Case,
-    directory: &TeammateDirectory,
-    include_profile: bool,
-    profile: &str,
-) -> Value {
-    let assignee = case
-        .assignee
-        .as_ref()
-        .and_then(|a| a.user_id.as_deref())
-        .map(|uid| directory.email_for(uid).unwrap_or(uid).to_string());
-    let mut v = json!({
-        "id": case.id,
-        "readable_id": case.readable_id,
-        "title": case.title,
-        "status": case.display_status(),
-        "priority": case.display_priority(),
-        "category": case.display_category(),
-        "assignee": assignee,
-        "create_time": case.create_time,
-        "update_time": case.update_time,
-        "acknowledge_time": case.acknowledge_time,
-    });
-    if include_profile {
-        if let Value::Object(ref mut m) = v {
-            m.insert("profile".to_string(), Value::String(profile.to_string()));
-        }
-    }
-    v
-}
-
 /// Rewrite the `assignee.userId` inside a raw case payload (as returned by
 /// the API) to a `{ "email": ... }` shape so consumers never see opaque IDs.
 /// When the directory has no entry, the original value is preserved as
@@ -113,188 +51,6 @@ fn substitute_assignee_email(value: &mut Value, directory: &TeammateDirectory) {
 }
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
-
-#[allow(clippy::too_many_arguments)]
-pub async fn run_list(
-    targets: &[Arc<ExecutionTarget>],
-    statuses: &[String],
-    priorities: &[String],
-    categories: &[String],
-    assignee: Option<&str>,
-    text: Option<&str>,
-    page_size: Option<u32>,
-    page_token: Option<&str>,
-    output: OutputFormat,
-) -> Result<()> {
-    eprintln!("{}", "Fetching cases...".dimmed());
-
-    let include_profile = targets.len() > 1;
-
-    let mut filters = serde_json::Map::new();
-    if !statuses.is_empty() {
-        filters.insert(
-            "statuses".to_string(),
-            Value::Array(
-                normalize_enum_filter(statuses, "CASE_STATUS_")
-                    .into_iter()
-                    .map(Value::String)
-                    .collect(),
-            ),
-        );
-    }
-    if !priorities.is_empty() {
-        filters.insert(
-            "priorities".to_string(),
-            Value::Array(
-                normalize_enum_filter(priorities, "CASE_PRIORITY_")
-                    .into_iter()
-                    .map(Value::String)
-                    .collect(),
-            ),
-        );
-    }
-    if !categories.is_empty() {
-        filters.insert(
-            "categories".to_string(),
-            Value::Array(
-                normalize_enum_filter(categories, "CASE_CATEGORY_")
-                    .into_iter()
-                    .map(Value::String)
-                    .collect(),
-            ),
-        );
-    }
-    if let Some(t) = text {
-        filters.insert("textSearch".to_string(), Value::String(t.to_string()));
-    }
-
-    let mut pagination = serde_json::Map::new();
-    if let Some(size) = page_size {
-        pagination.insert("pageSize".to_string(), json!(size));
-    }
-    if let Some(token) = page_token {
-        pagination.insert("pageToken".to_string(), Value::String(token.to_string()));
-    }
-
-    let mut body = serde_json::Map::new();
-    body.insert("filters".to_string(), Value::Object(filters));
-    if !pagination.is_empty() {
-        body.insert("pagination".to_string(), Value::Object(pagination));
-    }
-    let body = Value::Object(body);
-    let assignee_owned: Option<String> = assignee.map(String::from);
-
-    let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
-        let assignee = assignee_owned.clone();
-        async move {
-            let api = CasesApi::new(&t.client);
-            // --assignee is resolved per profile because user IDs are
-            // team-scoped — resolving once against the primary profile would
-            // silently return wrong/empty results for the others.
-            let is_email = assignee
-                .as_deref()
-                .is_some_and(|a| a.contains('@') && !a.eq_ignore_ascii_case("unassigned"));
-            if is_email {
-                // Email path: fetch directory first, then list with the
-                // resolved user ID. Cannot race the two requests here.
-                let email = assignee.as_deref().expect("checked above");
-                let directory = api.teammate_directory().await.map_err(|e| {
-                    anyhow!("failed to fetch teammates for --assignee resolution: {e:#}")
-                })?;
-                let uid = directory.resolve_to_user_id(email)?;
-                let mut body = body;
-                inject_assignees_filter(&mut body, json!({ "assignee": uid }));
-                let cases = api.list(&body).await?;
-                Ok::<_, anyhow::Error>((cases, directory))
-            } else {
-                // Non-email path: inject any pass-through filter and race
-                // the directory fetch with the list call.
-                let mut body = body;
-                if let Some(a) = assignee.as_deref() {
-                    let entry = if a.eq_ignore_ascii_case("unassigned") {
-                        json!({ "unassigned": {} })
-                    } else {
-                        json!({ "assignee": a })
-                    };
-                    inject_assignees_filter(&mut body, entry);
-                }
-                // Fetch teammates in parallel; failure is non-fatal — we fall back
-                // to raw user IDs in the output so the list call still produces
-                // useful data.
-                let (cases_res, dir_res) = tokio::join!(api.list(&body), api.teammate_directory());
-                Ok::<_, anyhow::Error>((cases_res?, dir_res.unwrap_or_default()))
-            }
-        }
-    })
-    .await;
-
-    let mut all_json: Vec<Value> = Vec::new();
-    let mut all_items: Vec<(String, Case, TeammateDirectory)> = Vec::new();
-    let mut next_tokens: Vec<(String, String)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok((resp, directory)) => {
-                if let Some(token) = resp.pagination.and_then(|p| p.next_page_token) {
-                    next_tokens.push((profile.clone(), token));
-                }
-                for case in resp.cases {
-                    all_json.push(case_to_json(&case, &directory, include_profile, &profile));
-                    all_items.push((profile.clone(), case, directory.clone()));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
-    }
-
-    match output {
-        OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
-            let toon =
-                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
-        OutputFormat::Text => {
-            if all_items.is_empty() {
-                render::print_no_results("No cases found.");
-                return Ok(());
-            }
-            let rows: Vec<Vec<String>> = all_items
-                .iter()
-                .map(|(profile, case, directory)| {
-                    vec![
-                        profile.clone(),
-                        case.id.clone().unwrap_or_default(),
-                        case.readable_id.clone().unwrap_or_default(),
-                        case.title.clone().unwrap_or_default(),
-                        case.display_status(),
-                        case.display_priority(),
-                        case.display_category(),
-                        assignee_display(case, directory),
-                        case.create_time.clone().unwrap_or_default(),
-                    ]
-                })
-                .collect();
-            render::render_table(
-                &[
-                    "ID", "Readable", "Title", "Status", "Priority", "Category", "Assignee",
-                    "Created",
-                ],
-                rows,
-                include_profile,
-            );
-            for (profile, token) in &next_tokens {
-                eprintln!(
-                    "{}",
-                    format!("[{profile}] more results available; pass --page-token \"{token}\"")
-                        .dimmed()
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
 
 pub async fn run_get(
     targets: &[Arc<ExecutionTarget>],
@@ -467,17 +223,23 @@ pub async fn run_assign(
             // directory; otherwise pass through as already being a user ID.
             // The directory call is only made when needed, since most agent
             // workflows already have the user ID in hand.
-            let user_id = if input.contains('@') {
+            let (user_id, resolved_directory) = if input.contains('@') {
                 let directory = api.teammate_directory().await.map_err(|e| {
                     anyhow!("failed to fetch teammates to resolve email '{input}': {e:#}")
                 })?;
-                directory.resolve_to_user_id(&input)?
+                let uid = directory.resolve_to_user_id(&input)?;
+                (uid, Some(directory))
             } else {
-                input.clone()
+                (input.clone(), None)
             };
             let mut result = api.assign(&id, &user_id).await?;
             // Surface the email in the response so the user never sees the userId.
-            let directory = api.teammate_directory().await.unwrap_or_default();
+            // Reuse the directory already fetched on the email path; only the
+            // raw-user-ID path needs a fresh (best-effort) fetch here.
+            let directory = match resolved_directory {
+                Some(d) => d,
+                None => api.teammate_directory().await.unwrap_or_default(),
+            };
             if let Some(case) = result.get_mut("case") {
                 substitute_assignee_email(case, &directory);
             }
@@ -667,40 +429,6 @@ pub async fn run_clear_priority(
         output,
         &format!("Cleared priority override of case '{case_id}'"),
     )
-}
-
-pub async fn run_filter_values(
-    targets: &[Arc<ExecutionTarget>],
-    output: OutputFormat,
-) -> Result<()> {
-    eprintln!("{}", "Fetching case filter values...".dimmed());
-
-    let body = json!({ "filters": {} });
-    let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
-        async move {
-            let api = CasesApi::new(&t.client);
-            Ok(api.filter_values(&body).await?)
-        }
-    })
-    .await;
-
-    render_value_per_profile(per_profile, output, "No filter values returned.")
-}
-
-pub async fn run_grouping_keys(
-    targets: &[Arc<ExecutionTarget>],
-    output: OutputFormat,
-) -> Result<()> {
-    eprintln!("{}", "Fetching case grouping keys...".dimmed());
-
-    let per_profile = fan_out(targets, |t| async move {
-        let api = CasesApi::new(&t.client);
-        Ok(api.grouping_keys().await?)
-    })
-    .await;
-
-    render_value_per_profile(per_profile, output, "No grouping keys returned.")
 }
 
 pub async fn run_events_list(
@@ -990,47 +718,6 @@ fn finish_lifecycle(
     Ok(())
 }
 
-fn render_value_per_profile(
-    per_profile: Vec<(String, Result<Value>)>,
-    output: OutputFormat,
-    empty_msg: &str,
-) -> Result<()> {
-    let include_profile = per_profile.len() > 1;
-    let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut v) => {
-                if include_profile {
-                    render::tag_get_result(&mut v, &profile);
-                }
-                all_results.push(v);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
-    }
-    match output {
-        OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
-            let toon = toon_encode(&all_results)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
-        OutputFormat::Text => {
-            if all_results.is_empty() {
-                render::print_no_results(empty_msg);
-                return Ok(());
-            }
-            for val in &all_results {
-                if let Some(p) = val.get("_profile").and_then(|v| v.as_str()) {
-                    println!("{}", format!("[{p}]").dimmed());
-                }
-                println!("{}", serde_json::to_string_pretty(val)?);
-            }
-        }
-    }
-    Ok(())
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1055,26 +742,5 @@ mod tests {
     fn normalize_priority_rejects_invalid() {
         assert!(normalize_priority("CRITICAL").is_err());
         assert!(normalize_priority("P9").is_err());
-    }
-
-    #[test]
-    fn normalize_enum_filter_prefixes_values() {
-        let result = normalize_enum_filter(
-            &["active".to_string(), "ACKNOWLEDGED".to_string()],
-            "CASE_STATUS_",
-        );
-        assert_eq!(
-            result,
-            vec![
-                "CASE_STATUS_ACTIVE".to_string(),
-                "CASE_STATUS_ACKNOWLEDGED".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn normalize_enum_filter_passes_through_full() {
-        let result = normalize_enum_filter(&["CASE_STATUS_ACTIVE".to_string()], "CASE_STATUS_");
-        assert_eq!(result, vec!["CASE_STATUS_ACTIVE".to_string()]);
     }
 }

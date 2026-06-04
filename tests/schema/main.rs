@@ -21,7 +21,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 28, "expected 28 top-level commands");
+    assert_eq!(commands.len(), 29, "expected 29 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()

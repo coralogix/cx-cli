@@ -32,9 +32,8 @@ through their lifecycle (active → acknowledged → resolved → closed).
 | `cx cases events get <event-id>` | A single event — drill in, e.g. to expand a comment thread |
 | `cx cases notifications <case-id> [<case-id> ...]` | Notification deliveries (connector, status, time) |
 
-Append `-o json` or `-o agents` to any read command. Always identify users by
-**email** — `assign --user` accepts an email and the CLI resolves it; case output
-shows emails, never internal user IDs.
+Always identify users by **email** — `assign --user <email>`; case output shows
+emails.
 
 ## Case Lifecycle
 
@@ -64,10 +63,13 @@ Categories: `AVAILABILITY` or `SECURITY`. Priorities: `P1` (highest) → `P5`.
 1. **Inspect** — `cx cases get <id>`. The payload includes `groupings`,
    `labels`, `impactedEntities`, `kpiBreaches`, `aiSummary`, and both
    `priorityDetails.system` (computed) and `priorityDetails.override` (user-set).
-2. **Claim** — `cx cases assign <id> --user you@example.com` then
+2. **Investigate** — pull the underlying telemetry for the case's
+   `impactedEntities`/`groupings` (logs, spans, metrics) to confirm impact and
+   find root cause before acting. See the `cx-telemetry-querying` skill.
+3. **Claim** — `cx cases assign <id> --user you@example.com` then
    `cx cases acknowledge <id>`.
-3. **Resolve or close** — see below.
-4. **Re-prioritize** if impact differs from the computed value —
+4. **Resolve or close** — see below.
+5. **Re-prioritize** if impact differs from the computed value —
    `cx cases set-priority <id> --priority P1` / `clear-priority`. Only possible
    while the case is still open; priority cannot be overridden once a case is
    `RESOLVED` or `CLOSED`.

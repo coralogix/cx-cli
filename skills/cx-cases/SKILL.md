@@ -20,7 +20,7 @@ through their lifecycle (active → acknowledged → resolved → closed).
 |---|---|
 | `cx cases get <id>` | Get a single case by ID |
 | `cx cases update <id> [--title] [--resolution-reason]` | Update mutable fields |
-| `cx cases assign <id> --user <email>` | Assign a case (email preferred; raw user ID also accepted) |
+| `cx cases assign <id> --user <email>` | Assign a case (email, or raw user ID) |
 | `cx cases unassign <id>` | Remove the assignee |
 | `cx cases acknowledge <id>` | Acknowledge (signals you're working it; stops re-notification) |
 | `cx cases unacknowledge <id>` | Remove the acknowledgment |
@@ -31,9 +31,6 @@ through their lifecycle (active → acknowledged → resolved → closed).
 | `cx cases events list <case-id>` | Event timeline (status changes, comments, assignments) |
 | `cx cases events get <event-id>` | A single event — drill in, e.g. to expand a comment thread |
 | `cx cases notifications <case-id> [<case-id> ...]` | Notification deliveries (connector, status, time) |
-
-Always identify users by **email** — `assign --user <email>`; case output shows
-emails.
 
 ## Case Lifecycle
 

@@ -184,10 +184,10 @@ fn wait_for_callback_blocking(listener: TcpListener, expected_state: String) -> 
 
 /// HTML returned to the browser after a successful OAuth login.
 ///
-/// Self-contained (no shipped or remote image assets): brand colours, an inline
-/// SVG checkmark, and Nunito Sans loaded from Google Fonts with a system-font
-/// fallback. Mirrors the Figma "Auth callback / Success" design (node 9428-15414),
-/// with two intentional omissions for this localhost flow:
+/// Fully self-contained — no remote resources. Avoids third-party network requests
+/// from the callback URL (which still holds the OAuth `code` and `state` params in
+/// the query string). Mirrors the Figma "Auth callback / Success" design
+/// (node 9428-15414), with two intentional omissions for this localhost flow:
 ///   - the reCAPTCHA footer (there is no reCAPTCHA on a local callback page), and
 ///   - a "Close tab" button: browsers block `window.close()` for tabs they did not
 ///     open, so — like `gh`, `gcloud`, etc. — we just tell the user to close the tab.
@@ -197,9 +197,6 @@ const SUCCESS_PAGE_HTML: &str = r##"<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Authentication successful</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,500;6..12,700&display=swap" rel="stylesheet">
 <style>
   :root {
     --text-primary: #0e141d;
@@ -216,8 +213,7 @@ const SUCCESS_PAGE_HTML: &str = r##"<!DOCTYPE html>
     padding: 24px;
     background: linear-gradient(160deg, #edeff1 0%, #f7f8f9 45%, #ffffff 100%);
     color: var(--text-primary);
-    font-family: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-optical-sizing: auto;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }

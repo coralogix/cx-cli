@@ -14,7 +14,7 @@ async fn test_connector_from_mock() {
 
     Mock::given(method("POST"))
         .and(path(
-            "/mgmt/openapi/5/notifications/notification-center/v1/connectors/tests/config",
+            "/mgmt/openapi/5/notifications/notification-center/v1/connectors:testConfig",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"success": true})))
         .expect(1)

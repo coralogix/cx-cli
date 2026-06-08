@@ -339,6 +339,7 @@ Examples:
   cx cases acknowledge <case-id>
   cx cases resolve <case-id> --reason \"Mitigated by rollback\"
   cx cases close <case-id>
+  cx cases comment <case-id> --text \"Investigating the root cause\"
   cx cases events list <case-id>
   cx cases notifications <case-id>")]
     Cases {
@@ -1190,6 +1191,14 @@ enum CasesCmd {
         /// Resolution reason.
         #[arg(long)]
         resolution_reason: Option<String>,
+    },
+    /// Add a comment to a case.
+    Comment {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+        /// Comment text to add to the case.
+        #[arg(long)]
+        text: String,
     },
     /// Assign a case to a user.
     Assign {
@@ -3034,6 +3043,9 @@ async fn main() -> Result<()> {
                         output,
                     )
                     .await?;
+                }
+                CasesCmd::Comment { id, text } => {
+                    commands::cases::run_comment(&targets, &id, &text, output).await?;
                 }
                 CasesCmd::Assign { id, user } => {
                     commands::cases::run_assign(&targets, &id, &user, output).await?;

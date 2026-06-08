@@ -50,6 +50,204 @@ fn substitute_assignee_email(value: &mut Value, directory: &TeammateDirectory) {
     }
 }
 
+/// Strip the noisy `CASE_STATUS_` / `CASE_PRIORITY_` / `CASE_CATEGORY_` prefix
+/// from an enum-like string so the table shows `ACTIVE` instead of
+/// `CASE_STATUS_ACTIVE`.
+fn humanize_enum(s: &str) -> String {
+    for prefix in ["CASE_STATUS_", "CASE_PRIORITY_", "CASE_CATEGORY_"] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            return rest.to_string();
+        }
+    }
+    s.to_string()
+}
+
+/// Render an event's `actor` into a readable string: a teammate email (or raw
+/// user ID) for human actors, or "system" for automated events.
+fn format_event_actor(event: &Value) -> String {
+    let Some(actor) = event.get("actor").and_then(|v| v.as_object()) else {
+        return "-".to_string();
+    };
+    if let Some(user) = actor.get("user").and_then(|v| v.as_object()) {
+        return user
+            .get("email")
+            .or_else(|| user.get("userId"))
+            .or_else(|| user.get("id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("user")
+            .to_string();
+    }
+    if actor.contains_key("system") {
+        return "system".to_string();
+    }
+    // Unknown actor shape: surface its variant key rather than a blank cell.
+    actor
+        .keys()
+        .next()
+        .cloned()
+        .unwrap_or_else(|| "-".to_string())
+}
+
+/// Summarize the change an event represents from its `eventData` payload, e.g.
+/// `PENDING_ACTIVATION → ACTIVE` for a status change or `P1` for case creation.
+fn format_event_details(event: &Value) -> String {
+    let Some((_kind, payload)) = event
+        .get("eventData")
+        .and_then(|v| v.as_object())
+        .and_then(|m| m.iter().next())
+    else {
+        return "-".to_string();
+    };
+    let Some(obj) = payload.as_object() else {
+        return "-".to_string();
+    };
+    let get = |k: &str| obj.get(k).and_then(|v| v.as_str()).map(humanize_enum);
+
+    // Common "before → after" transitions (status, priority, category, ...).
+    if let (Some(old), Some(new)) = (get("oldStatus"), get("newStatus")) {
+        return format!("{old} → {new}");
+    }
+    if let (Some(old), Some(new)) = (get("oldPriority"), get("newPriority")) {
+        return format!("{old} → {new}");
+    }
+    if let Some(priority) = get("priority") {
+        return priority;
+    }
+    if let Some(status) = get("status") {
+        return status;
+    }
+
+    // Generic fallback: compact "key: value" pairs of string fields so the row
+    // is never empty for event shapes we don't model explicitly.
+    let pairs: Vec<String> = obj
+        .iter()
+        .filter_map(|(k, v)| v.as_str().map(|s| format!("{k}: {}", humanize_enum(s))))
+        .collect();
+    if pairs.is_empty() {
+        "-".to_string()
+    } else {
+        pairs.join(", ")
+    }
+}
+
+/// A notification delivery carries its outcome as a oneof-style variant key
+/// (e.g. `noRouterMatched`, plus connector success/failure variants), alongside
+/// the bookkeeping fields below. Surface that variant as a readable status.
+fn format_delivery_status(delivery: &Value) -> String {
+    const BOOKKEEPING: [&str; 4] = ["timestamp", "requestNotificationId", "caseId", "profile"];
+    let Some(obj) = delivery.as_object() else {
+        return "-".to_string();
+    };
+    obj.keys()
+        .find(|k| !BOOKKEEPING.contains(&k.as_str()))
+        .map(|k| humanize_camel_case(k))
+        .unwrap_or_else(|| "-".to_string())
+}
+
+/// Turn a camelCase identifier into space-separated words with a leading
+/// capital, e.g. `noRouterMatched` → `No router matched`.
+fn humanize_camel_case(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() && i != 0 {
+            out.push(' ');
+            out.extend(ch.to_lowercase());
+        } else if i == 0 {
+            out.extend(ch.to_uppercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// One rendered table row for a notification delivery. A single delivery fans
+/// out to one row per connector attempt (`attempted.attempts[]`); deliveries
+/// with no attempts (e.g. `noRouterMatched`) produce a single summary row.
+struct DeliveryRow {
+    profile: String,
+    case_id: String,
+    connector: String,
+    connector_type: String,
+    status: String,
+    evidence_url: String,
+    timestamp: String,
+}
+
+/// Flatten one delivery payload into its per-attempt rows.
+fn delivery_rows(delivery: &Value) -> Vec<DeliveryRow> {
+    let profile = str_field(delivery, "profile");
+    let case_id = str_field(delivery, "caseId");
+    let timestamp = str_field(delivery, "timestamp");
+
+    let attempts = delivery
+        .get("attempted")
+        .and_then(|a| a.get("attempts"))
+        .and_then(|v| v.as_array());
+
+    let Some(attempts) = attempts.filter(|a| !a.is_empty()) else {
+        // No connector attempts (e.g. noRouterMatched): one summary row whose
+        // status is the top-level outcome variant.
+        return vec![DeliveryRow {
+            profile,
+            case_id,
+            connector: "-".to_string(),
+            connector_type: "-".to_string(),
+            status: format_delivery_status(delivery),
+            evidence_url: "-".to_string(),
+            timestamp,
+        }];
+    };
+
+    attempts
+        .iter()
+        .map(|attempt| {
+            let connector = attempt
+                .get("connector")
+                .map(|c| str_field(c, "connectorName"))
+                .filter(|s| s != "-")
+                .unwrap_or_else(|| "-".to_string());
+            let connector_type = attempt
+                .get("connector")
+                .and_then(|c| c.get("connectorType"))
+                .and_then(|v| v.as_str())
+                .map(|t| t.strip_prefix("CONNECTOR_TYPE_").unwrap_or(t).to_string())
+                .unwrap_or_else(|| "-".to_string());
+            // outcome is a oneof: success | failure (+ maybe more). Its variant
+            // key is the status; evidenceUrl (when present) lives inside it.
+            let outcome = attempt.get("outcome").and_then(|v| v.as_object());
+            let status = outcome
+                .and_then(|o| o.keys().next())
+                .map(|k| humanize_camel_case(k))
+                .unwrap_or_else(|| "-".to_string());
+            let evidence_url = outcome
+                .and_then(|o| o.values().next())
+                .map(|v| str_field(v, "evidenceUrl"))
+                .filter(|s| s != "-")
+                .unwrap_or_else(|| "-".to_string());
+            DeliveryRow {
+                profile: profile.clone(),
+                case_id: case_id.clone(),
+                connector,
+                connector_type,
+                status,
+                evidence_url,
+                timestamp: timestamp.clone(),
+            }
+        })
+        .collect()
+}
+
+/// Read a string field, returning "-" when missing — the table's empty-cell
+/// convention.
+fn str_field(value: &Value, key: &str) -> String {
+    value
+        .get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("-")
+        .to_string()
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 pub async fn run_get(
@@ -201,6 +399,37 @@ pub async fn run_update(
     )
 }
 
+pub async fn run_comment(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    text: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Adding comment to case {case_id}...").dimmed()
+    );
+
+    let id = case_id.to_string();
+    let text = text.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        let text = text.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            Ok(api.create_comment(&id, &text).await?)
+        }
+    })
+    .await;
+
+    finish_lifecycle(
+        per_profile,
+        targets.len() > 1,
+        output,
+        &format!("Added comment to case '{case_id}'"),
+    )
+}
+
 pub async fn run_assign(
     targets: &[Arc<ExecutionTarget>],
     case_id: &str,
@@ -225,7 +454,12 @@ pub async fn run_assign(
             // workflows already have the user ID in hand.
             let (user_id, resolved_directory) = if input.contains('@') {
                 let directory = api.teammate_directory().await.map_err(|e| {
-                    anyhow!("failed to fetch teammates to resolve email '{input}': {e:#}")
+                    anyhow!(
+                        "failed to fetch teammates to resolve email '{input}': {e:#}\n\
+                         hint: resolving an email requires read access to the team \
+                         directory (GET /api/v1/user/team/teammates). If your API key \
+                         lacks that scope, pass the user ID directly: --user <user-id>."
+                    )
                 })?;
                 let uid = directory.resolve_to_user_id(&input)?;
                 (uid, Some(directory))
@@ -491,25 +725,33 @@ pub async fn run_events_list(
                         .unwrap_or("")
                         .to_string();
                     let event_id = event
-                        .get("id")
+                        .get("eventId")
+                        .or_else(|| event.get("id"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
                     let event_type = event
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                        .get("eventData")
+                        .and_then(|v| v.as_object())
+                        .and_then(|m| m.keys().next())
+                        .map(|k| k.to_string())
+                        .unwrap_or_default();
                     let created = event
                         .get("createTime")
                         .or_else(|| event.get("create_time"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    vec![profile, event_id, event_type, created]
+                    let actor = format_event_actor(event);
+                    let details = format_event_details(event);
+                    vec![profile, event_id, event_type, actor, details, created]
                 })
                 .collect();
-            render::render_table(&["Event ID", "Type", "Created"], rows, include_profile);
+            render::render_table(
+                &["Event ID", "Type", "Actor", "Details", "Timestamp"],
+                rows,
+                include_profile,
+            );
         }
     }
 
@@ -584,7 +826,31 @@ pub async fn run_notifications(
         let ids = ids.clone();
         async move {
             let api = CasesApi::new(&t.client);
-            Ok(api.list_notification_deliveries(&ids).await?)
+            // The deliveries endpoint only accepts UUIDs, so resolve any readable
+            // IDs (e.g. "CASE-764019") first and remember the mapping so we can
+            // present results under the ID the user actually passed.
+            let mut uuids: Vec<String> = Vec::with_capacity(ids.len());
+            let mut uuid_to_input: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
+            for id in &ids {
+                let uuid = api.resolve_case_uuid(id).await?;
+                uuid_to_input.insert(uuid.clone(), id.clone());
+                uuids.push(uuid);
+            }
+
+            let mut resp = api.list_notification_deliveries(&uuids).await?;
+            // Rewrite the UUID-keyed `deliveriesByCase` map back to the input IDs.
+            if let Some(map) = resp
+                .get_mut("deliveriesByCase")
+                .and_then(|v| v.as_object_mut())
+            {
+                let remapped: serde_json::Map<String, Value> = std::mem::take(map)
+                    .into_iter()
+                    .map(|(k, v)| (uuid_to_input.get(&k).cloned().unwrap_or(k), v))
+                    .collect();
+                *map = remapped;
+            }
+            Ok(resp)
         }
     })
     .await;
@@ -631,45 +897,39 @@ pub async fn run_notifications(
                 render::print_no_results("No notification deliveries found.");
                 return Ok(());
             }
+            // The Case ID column is redundant when the user queried a single
+            // case — every row repeats the same value.
+            let include_case_id = case_ids.len() > 1;
             let rows: Vec<Vec<String>> = all_json
                 .iter()
-                .map(|d| {
-                    let profile = d
-                        .get("profile")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let case_id = d
-                        .get("caseId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let connector = d
-                        .get("connectorType")
-                        .or_else(|| d.get("connector_type"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("-")
-                        .to_string();
-                    let status = d
-                        .get("status")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("-")
-                        .to_string();
-                    let delivered_at = d
-                        .get("deliveredAt")
-                        .or_else(|| d.get("delivered_at"))
-                        .or_else(|| d.get("createTime"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    vec![profile, case_id, connector, status, delivered_at]
+                .flat_map(delivery_rows)
+                .map(|r| {
+                    let mut row = Vec::with_capacity(6);
+                    row.push(r.profile);
+                    if include_case_id {
+                        row.push(r.case_id);
+                    }
+                    row.push(r.connector);
+                    row.push(r.connector_type);
+                    row.push(r.status);
+                    row.push(r.evidence_url);
+                    row.push(r.timestamp);
+                    row
                 })
                 .collect();
-            render::render_table(
-                &["Case ID", "Connector", "Status", "Delivered"],
-                rows,
-                include_profile,
-            );
+            let headers: &[&str] = if include_case_id {
+                &[
+                    "Case ID",
+                    "Connector",
+                    "Type",
+                    "Status",
+                    "Evidence URL",
+                    "Timestamp",
+                ]
+            } else {
+                &["Connector", "Type", "Status", "Evidence URL", "Timestamp"]
+            };
+            render::render_table(headers, rows, include_profile);
         }
     }
 

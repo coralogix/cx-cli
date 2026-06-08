@@ -5,7 +5,24 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::api_client::CxClient;
-use crate::error::Result;
+use crate::error::{CxError, Result};
+
+/// Cheap structural check for the canonical 8-4-4-4-12 hyphenated UUID form.
+/// Used to decide whether a case ID needs resolving to a UUID before hitting
+/// endpoints that reject readable IDs like "CASE-764019".
+fn is_uuid(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    bytes.iter().enumerate().all(|(i, &b)| {
+        if matches!(i, 8 | 13 | 18 | 23) {
+            b == b'-'
+        } else {
+            b.is_ascii_hexdigit()
+        }
+    })
+}
 
 // --- Response types ---
 
@@ -195,11 +212,11 @@ impl<'a> CasesApi<'a> {
         self.client.get(&path, &[]).await
     }
 
-    /// Update a case (partial patch).
+    /// Update a case (partial patch). The endpoint takes the updatable fields
+    /// directly as the request body — it has no `patch` wrapper field.
     pub async fn update(&self, id: &str, patch: &Value) -> Result<Value> {
         let path = format!("{CASES_BASE}/{id}");
-        let body = serde_json::json!({ "patch": patch });
-        self.client.put(&path, &body).await
+        self.client.put(&path, patch).await
     }
 
     /// Assign a case to a user.
@@ -264,10 +281,42 @@ impl<'a> CasesApi<'a> {
         self.client.get(&path, &[]).await
     }
 
+    /// Add a comment to a case. The body field is `text`; the server stores it
+    /// as a comment event (`eventData.comment.unsafeText`) and returns the
+    /// created event.
+    pub async fn create_comment(&self, case_id: &str, text: &str) -> Result<Value> {
+        let path = format!("{CASES_BASE}/{case_id}/comments");
+        let body = serde_json::json!({ "text": text });
+        self.client.post(&path, &body).await
+    }
+
     /// Get a single case event by event ID.
     pub async fn get_event(&self, event_id: &str) -> Result<Value> {
         let path = format!("{EVENTS_BASE}/{event_id}");
         self.client.get(&path, &[]).await
+    }
+
+    /// Resolve a possibly-readable case ID (e.g. "CASE-764019") to its UUID.
+    /// UUID inputs are returned unchanged with no extra API round-trip; readable
+    /// IDs are resolved via `GET` on the case, which returns its UUID `id`.
+    ///
+    /// Stopgap: the notification-deliveries endpoint rejects readable IDs in its
+    /// `caseIds` body with `400 Invalid uuid for case id`, unlike the path-based
+    /// case endpoints that accept either form. Remove this once that endpoint
+    /// accepts readable IDs too.
+    pub async fn resolve_case_uuid(&self, id: &str) -> Result<String> {
+        if is_uuid(id) {
+            return Ok(id.to_string());
+        }
+        let val = self.get(id).await?;
+        val.get("case")
+            .and_then(|c| c.get("id"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| CxError::Api {
+                status: 400,
+                message: format!("could not resolve case id '{id}' to a UUID"),
+            })
     }
 
     /// List notification deliveries for one or more cases.
@@ -296,6 +345,18 @@ impl<'a> CasesApi<'a> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn is_uuid_recognizes_canonical_form() {
+        assert!(is_uuid("18f77652-bd54-5477-b12e-75534874a10a"));
+        assert!(is_uuid("3f166e9f-3c88-4af2-b52e-138f339dab3e"));
+        // Readable IDs and other shapes are rejected.
+        assert!(!is_uuid("CASE-764019"));
+        assert!(!is_uuid("18f77652bd545477b12e75534874a10a")); // no hyphens
+        assert!(!is_uuid("18f77652-bd54-5477-b12e-75534874a10")); // too short
+        assert!(!is_uuid("18f77652-bd54-5477-b12e-75534874a10g")); // non-hex
+        assert!(!is_uuid(""));
+    }
 
     #[test]
     fn deserialize_case() {

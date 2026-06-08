@@ -6,8 +6,9 @@ use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::cases::{
-    run_acknowledge, run_assign, run_clear_priority, run_close, run_event_get, run_events_list,
-    run_get, run_notifications, run_resolve, run_set_priority, run_unassign, run_update,
+    run_acknowledge, run_assign, run_clear_priority, run_close, run_comment, run_event_get,
+    run_events_list, run_get, run_notifications, run_resolve, run_set_priority, run_unassign,
+    run_update,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -186,13 +187,16 @@ async fn clear_priority_calls_delete() {
 }
 
 #[tokio::test]
-async fn update_case_sends_patch_envelope() {
+async fn update_case_sends_fields_directly() {
     let server = MockServer::start().await;
 
+    // The endpoint takes the updatable fields as the body directly — wrapping
+    // them in a `patch` envelope makes the server reject the request as proto
+    // with an unknown `patch` field.
     Mock::given(method("PUT"))
         .and(path("/mgmt/openapi/5/cases/cases/v1/case-1"))
         .and(body_partial_json(json!({
-            "patch": { "title": "New title" }
+            "title": "New title"
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"case": { "id": "case-1" }})))
         .expect(1)
@@ -220,6 +224,32 @@ async fn update_case_requires_at_least_one_field() {
 
     let result = run_update(&targets, "case-1", None, None, OutputFormat::Json).await;
     assert!(result.is_err(), "expected update without fields to error");
+}
+
+#[tokio::test]
+async fn comment_posts_text_to_nested_path() {
+    let server = MockServer::start().await;
+
+    // POST /cases/cases/v1/{id}/comments with the comment as the `text` field.
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/case-1/comments"))
+        .and(body_partial_json(json!({ "text": "Investigating" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "event": {
+                "eventId": "evt-1",
+                "eventData": { "comment": { "unsafeText": "Investigating", "attachments": [] } }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_comment(&targets, "case-1", "Investigating", OutputFormat::Json)
+        .await
+        .expect("run_comment should succeed");
 }
 
 #[tokio::test]
@@ -280,20 +310,37 @@ async fn event_get_calls_events_path() {
 async fn notifications_lists_deliveries_for_cases() {
     let server = MockServer::start().await;
 
+    // UUID inputs are passed straight through with no resolution round-trip.
+    let uuid_1 = "11111111-1111-4111-8111-111111111111";
+    let uuid_2 = "22222222-2222-4222-8222-222222222222";
+
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/cases/notifications/v1/deliveries"))
         .and(body_partial_json(json!({
-            "caseIds": ["case-1", "case-2"]
+            "caseIds": [uuid_1, uuid_2]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "deliveriesByCase": {
-                "case-1": {
-                    "notificationDeliveries": [
-                        { "connectorType": "CONNECTOR_TYPE_SLACK", "status": "DELIVERED" }
-                    ]
+                uuid_1: {
+                    "notificationDeliveries": [{
+                        "timestamp": "2026-06-08T20:15:07Z",
+                        "attempted": {
+                            "router": { "routerName": "yansa" },
+                            "attempts": [{
+                                "connector": {
+                                    "connectorType": "CONNECTOR_TYPE_SLACK",
+                                    "connectorName": "Olly Slack"
+                                },
+                                "outcome": { "success": { "evidenceUrl": "https://slack/x" } }
+                            }]
+                        }
+                    }]
                 },
-                "case-2": {
-                    "notificationDeliveries": []
+                uuid_2: {
+                    "notificationDeliveries": [{
+                        "timestamp": "2026-06-08T20:13:50Z",
+                        "noRouterMatched": {}
+                    }]
                 }
             }
         })))
@@ -304,10 +351,55 @@ async fn notifications_lists_deliveries_for_cases() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    let ids = vec!["case-1".to_string(), "case-2".to_string()];
-    run_notifications(&targets, &ids, OutputFormat::Json)
+    let ids = vec![uuid_1.to_string(), uuid_2.to_string()];
+    run_notifications(&targets, &ids, OutputFormat::Text)
         .await
         .expect("run_notifications should succeed");
+}
+
+#[tokio::test]
+async fn notifications_resolves_readable_case_id_to_uuid() {
+    let server = MockServer::start().await;
+
+    let uuid = "11111111-1111-4111-8111-111111111111";
+
+    // A readable ID is first resolved to its UUID via GET on the case.
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-764019"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "case": { "id": uuid, "readableId": "CASE-764019" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // The deliveries endpoint is then hit with the resolved UUID, not the
+    // readable ID that would otherwise be rejected as an invalid UUID.
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/cases/notifications/v1/deliveries"))
+        .and(body_partial_json(json!({
+            "caseIds": [uuid]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "deliveriesByCase": {
+                uuid: {
+                    "notificationDeliveries": [
+                        { "connectorType": "CONNECTOR_TYPE_SLACK", "status": "DELIVERED" }
+                    ]
+                }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    let ids = vec!["CASE-764019".to_string()];
+    run_notifications(&targets, &ids, OutputFormat::Json)
+        .await
+        .expect("run_notifications should resolve readable IDs");
 }
 
 #[tokio::test]

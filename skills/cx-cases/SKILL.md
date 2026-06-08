@@ -20,6 +20,7 @@ through their lifecycle (active → acknowledged → resolved → closed).
 |---|---|
 | `cx cases get <id>` | Get a single case by ID |
 | `cx cases update <id> [--title] [--resolution-reason]` | Update mutable fields |
+| `cx cases comment <id> --text <text>` | Add a comment to the case timeline |
 | `cx cases assign <id> --user <email>` | Assign a case (email, or raw user ID) |
 | `cx cases unassign <id>` | Remove the assignee |
 | `cx cases acknowledge <id>` | Acknowledge (signals you're working it; stops re-notification) |
@@ -65,8 +66,11 @@ Categories: `AVAILABILITY` or `SECURITY`. Priorities: `P1` (highest) → `P5`.
    See the `cx-telemetry-querying` skill.
 3. **Claim** — `cx cases assign <id> --user you@example.com` then
    `cx cases acknowledge <id>`.
-4. **Resolve or close** — see below.
-5. **Re-prioritize** if impact differs from the computed value —
+4. **Record findings** — `cx cases comment <id> --text "<note>"` to leave
+   investigation notes on the timeline (root cause, links, next steps) as you go.
+   Comments appear as `comment` events in `cx cases events list`.
+5. **Resolve or close** — see below.
+6. **Re-prioritize** if impact differs from the computed value —
    `cx cases set-priority <id> --priority P1` / `clear-priority`. Only possible
    while the case is still open; priority cannot be overridden once a case is
    `RESOLVED` or `CLOSED`.

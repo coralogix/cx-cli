@@ -63,7 +63,7 @@ impl<'a> ExtensionsApi<'a> {
     }
 
     pub async fn get(&self, id: &str) -> Result<Value> {
-        let path = format!("{EXTENSIONS_BASE}/{id}");
+        let path = format!("{EXTENSIONS_BASE}/catalog/{id}");
         self.client.get(&path, &[]).await
     }
 

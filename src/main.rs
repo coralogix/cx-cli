@@ -88,6 +88,7 @@ fn incidents_list_arg_from_cli(matches: &ArgMatches, arg: &str) -> bool {
 \x1b[1m\x1b[4mDetect & Respond:\x1b[0m
   \x1b[1malerts\x1b[0m             Manage alert definitions and suppression rules
   \x1b[1mincidents\x1b[0m          Manage and triage incidents
+  \x1b[1cases\x1b[0m               Manage and triage cases
 
 \x1b[1m\x1b[4mNotifications:\x1b[0m
   \x1b[1mnotifications\x1b[0m      Manage connectors, routers, presets, and notification testing
@@ -328,6 +329,22 @@ Examples:
     Incidents {
         #[command(subcommand)]
         cmd: IncidentsCmd,
+    },
+
+    /// Manage and triage cases.
+    #[command(after_help = "\
+Examples:
+  cx cases get <case-id>
+  cx cases assign <case-id> --user alice@example.com
+  cx cases acknowledge <case-id>
+  cx cases resolve <case-id> --reason \"Mitigated by rollback\"
+  cx cases close <case-id>
+  cx cases comment <case-id> --text \"Investigating the root cause\"
+  cx cases events list <case-id>
+  cx cases notifications <case-id>")]
+    Cases {
+        #[command(subcommand)]
+        cmd: CasesCmd,
     },
 
     /// Manage connectors, routers, presets, and notification testing.
@@ -1155,6 +1172,122 @@ Examples:
     },
     /// Get incident aggregations.
     Aggregations,
+}
+
+#[derive(Subcommand)]
+enum CasesCmd {
+    /// Get a single case by ID.
+    Get {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Update mutable fields on a case.
+    Update {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+        /// New case title.
+        #[arg(long)]
+        title: Option<String>,
+        /// Resolution reason.
+        #[arg(long)]
+        resolution_reason: Option<String>,
+    },
+    /// Add a comment to a case.
+    Comment {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+        /// Comment text to add to the case.
+        #[arg(long)]
+        text: String,
+    },
+    /// Assign a case to a user.
+    Assign {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+        /// User to assign the case to — accepts an email address (resolved via
+        /// the team-members directory) or a raw user ID.
+        #[arg(long)]
+        user: String,
+    },
+    /// Remove the assignee from a case.
+    Unassign {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Acknowledge a case.
+    Acknowledge {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Remove the acknowledgment from a case.
+    Unacknowledge {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Resolve a case [irreversible — requires confirmation; pass --yes to skip prompts].
+    Resolve {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+        /// Resolution reason (required unless --no-reason is passed; prompted if
+        /// omitted in an interactive terminal).
+        #[arg(long, conflicts_with = "no_reason")]
+        reason: Option<String>,
+        /// Resolve without a reason. Use only when a reason genuinely does not
+        /// apply — an empty resolution loses the audit trail.
+        #[arg(long)]
+        no_reason: bool,
+    },
+    /// Close a case.
+    Close {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Override a case's computed priority.
+    SetPriority {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+        /// Priority to set (e.g. P1, P2, P3, P4, P5).
+        #[arg(long)]
+        priority: String,
+    },
+    /// Clear a previously set priority override.
+    ClearPriority {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Inspect the event timeline of a case.
+    #[command(after_help = "\
+Examples:
+  cx cases events list <case-id>
+  cx cases events get <event-id>")]
+    Events {
+        #[command(subcommand)]
+        cmd: CasesEventsCmd,
+    },
+    /// List notification deliveries for one or more cases.
+    #[command(after_help = "\
+Examples:
+  cx cases notifications <case-id>
+  cx cases notifications <case-id-1> <case-id-2>")]
+    Notifications {
+        /// One or more case IDs (UUIDs).
+        #[arg(required = true)]
+        case_ids: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum CasesEventsCmd {
+    /// List all events on a case (status changes, comments, etc.).
+    List {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        case_id: String,
+    },
+    /// Get a single case event by its event ID.
+    Get {
+        /// Event ID (UUID).
+        event_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2890,6 +3023,99 @@ async fn main() -> Result<()> {
                 }
                 IncidentsCmd::Aggregations => {
                     commands::incidents::run_aggregations(&targets, output).await?;
+                }
+            },
+
+            Commands::Cases { cmd } => match cmd {
+                CasesCmd::Get { id } => {
+                    commands::cases::run_get(&targets, &id, output).await?;
+                }
+                CasesCmd::Update {
+                    id,
+                    title,
+                    resolution_reason,
+                } => {
+                    commands::cases::run_update(
+                        &targets,
+                        &id,
+                        title.as_deref(),
+                        resolution_reason.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                CasesCmd::Comment { id, text } => {
+                    commands::cases::run_comment(&targets, &id, &text, output).await?;
+                }
+                CasesCmd::Assign { id, user } => {
+                    commands::cases::run_assign(&targets, &id, &user, output).await?;
+                }
+                CasesCmd::Unassign { id } => {
+                    commands::cases::run_unassign(&targets, &id, output).await?;
+                }
+                CasesCmd::Acknowledge { id } => {
+                    commands::cases::run_acknowledge(&targets, &id, output).await?;
+                }
+                CasesCmd::Unacknowledge { id } => {
+                    commands::cases::run_unacknowledge(&targets, &id, output).await?;
+                }
+                CasesCmd::Resolve {
+                    id,
+                    reason,
+                    no_reason,
+                } => {
+                    let reason = match reason {
+                        Some(r) => Some(r),
+                        // `--no-reason` is the explicit opt-out; resolve with no reason.
+                        None if no_reason => None,
+                        // Otherwise a reason is required. In an interactive terminal we
+                        // prompt for it; in non-interactive/agent/--yes contexts we refuse
+                        // rather than silently resolving with an empty audit trail.
+                        None => match safety::prompt_optional_text(
+                            "Resolution reason:",
+                            Some(
+                                "Share the root cause, what fixed it, and any follow-up. \
+                             Visible to all teammates in the case timeline.",
+                            ),
+                            yes,
+                            agent_mode,
+                        )? {
+                            Some(r) => Some(r),
+                            None => anyhow::bail!(
+                                "a resolution reason is required: pass --reason \"<text>\", \
+                                 or --no-reason to resolve without one"
+                            ),
+                        },
+                    };
+                    confirm_destructive(
+                        &format!(
+                            "Resolve case '{id}'? Resolution is irreversible — \
+                         the case cannot be reopened, only closed."
+                        ),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::cases::run_resolve(&targets, &id, reason.as_deref(), output).await?;
+                }
+                CasesCmd::Close { id } => {
+                    commands::cases::run_close(&targets, &id, output).await?;
+                }
+                CasesCmd::SetPriority { id, priority } => {
+                    commands::cases::run_set_priority(&targets, &id, &priority, output).await?;
+                }
+                CasesCmd::ClearPriority { id } => {
+                    commands::cases::run_clear_priority(&targets, &id, output).await?;
+                }
+                CasesCmd::Events { cmd } => match cmd {
+                    CasesEventsCmd::List { case_id } => {
+                        commands::cases::run_events_list(&targets, &case_id, output).await?;
+                    }
+                    CasesEventsCmd::Get { event_id } => {
+                        commands::cases::run_event_get(&targets, &event_id, output).await?;
+                    }
+                },
+                CasesCmd::Notifications { case_ids } => {
+                    commands::cases::run_notifications(&targets, &case_ids, output).await?;
                 }
             },
 

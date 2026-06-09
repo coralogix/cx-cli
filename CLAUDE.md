@@ -24,7 +24,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 28 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 29 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -43,6 +43,7 @@ Observe:
 Detect & Respond:
   alerts             Manage alert definitions and suppression rules
   incidents          Manage and triage incidents
+  cases              Manage and triage cases
 
 Notifications:
   notifications      Manage connectors, routers, presets, and notification testing
@@ -186,6 +187,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx retentions` | `cx-cost-optimization` | Covered |
 | `cx archive` | `cx-cost-optimization` | Covered |
 | `cx incidents` | `cx-incident-management` | Covered |
+| `cx cases` | `cx-cases` | Covered |
 | `cx slos` | `cx-incident-management` | Covered |
 | `cx parsing-rules` | `cx-data-pipeline` | Covered |
 | `cx enrichments` | `cx-data-pipeline` | Covered |

@@ -358,31 +358,19 @@ async fn notifications_lists_deliveries_for_cases() {
 }
 
 #[tokio::test]
-async fn notifications_resolves_readable_case_id_to_uuid() {
+async fn notifications_accepts_readable_case_id_directly() {
     let server = MockServer::start().await;
 
-    let uuid = "11111111-1111-4111-8111-111111111111";
-
-    // A readable ID is first resolved to its UUID via GET on the case.
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-764019"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "case": { "id": uuid, "readableId": "CASE-764019" }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    // The deliveries endpoint is then hit with the resolved UUID, not the
-    // readable ID that would otherwise be rejected as an invalid UUID.
+    // The deliveries endpoint accepts readable IDs directly — no GET on the
+    // case to resolve a UUID first.
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/cases/notifications/v1/deliveries"))
         .and(body_partial_json(json!({
-            "caseIds": [uuid]
+            "caseIds": ["CASE-764019"]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "deliveriesByCase": {
-                uuid: {
+                "CASE-764019": {
                     "notificationDeliveries": [
                         { "connectorType": "CONNECTOR_TYPE_SLACK", "status": "DELIVERED" }
                     ]
@@ -399,7 +387,7 @@ async fn notifications_resolves_readable_case_id_to_uuid() {
     let ids = vec!["CASE-764019".to_string()];
     run_notifications(&targets, &ids, OutputFormat::Json)
         .await
-        .expect("run_notifications should resolve readable IDs");
+        .expect("run_notifications should accept readable IDs directly");
 }
 
 #[tokio::test]

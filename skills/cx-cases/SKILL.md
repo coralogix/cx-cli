@@ -104,6 +104,11 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 - **`P1`-style shorthand** is accepted anywhere a priority/status/category is expected.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) for cross-environment triage.
 
+## References
+
+- Case analytics: [`references/case-analytics.md`](references/case-analytics.md)
+- Single case investigation: [`references/single-case.md`](references/single-case.md)
+
 ## Related Skills
 
 - **`cx-alerts`** — the alert definitions behind the events grouped into a case.

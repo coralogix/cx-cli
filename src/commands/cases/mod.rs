@@ -826,31 +826,10 @@ pub async fn run_notifications(
         let ids = ids.clone();
         async move {
             let api = CasesApi::new(&t.client);
-            // The deliveries endpoint only accepts UUIDs, so resolve any readable
-            // IDs (e.g. "CASE-764019") first and remember the mapping so we can
-            // present results under the ID the user actually passed.
-            let mut uuids: Vec<String> = Vec::with_capacity(ids.len());
-            let mut uuid_to_input: std::collections::HashMap<String, String> =
-                std::collections::HashMap::new();
-            for id in &ids {
-                let uuid = api.resolve_case_uuid(id).await?;
-                uuid_to_input.insert(uuid.clone(), id.clone());
-                uuids.push(uuid);
-            }
-
-            let mut resp = api.list_notification_deliveries(&uuids).await?;
-            // Rewrite the UUID-keyed `deliveriesByCase` map back to the input IDs.
-            if let Some(map) = resp
-                .get_mut("deliveriesByCase")
-                .and_then(|v| v.as_object_mut())
-            {
-                let remapped: serde_json::Map<String, Value> = std::mem::take(map)
-                    .into_iter()
-                    .map(|(k, v)| (uuid_to_input.get(&k).cloned().unwrap_or(k), v))
-                    .collect();
-                *map = remapped;
-            }
-            Ok(resp)
+            // The deliveries endpoint accepts both readable IDs (e.g.
+            // "CASE-764019") and UUIDs directly, so the IDs the user passed go
+            // straight through and come back keyed under the same values.
+            Ok(api.list_notification_deliveries(&ids).await?)
         }
     })
     .await;

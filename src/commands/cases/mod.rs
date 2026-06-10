@@ -455,10 +455,11 @@ pub async fn run_assign(
             let (user_id, resolved_directory) = if input.contains('@') {
                 let directory = api.teammate_directory().await.map_err(|e| {
                     anyhow!(
-                        "failed to fetch teammates to resolve email '{input}': {e:#}\n\
+                        "failed to fetch team members to resolve email '{input}': {e:#}\n\
                          hint: resolving an email requires read access to the team \
-                         directory (GET /api/v1/user/team/teammates). If your API key \
-                         lacks that scope, pass the user ID directly: --user <user-id>."
+                         users directory (GET /mgmt/openapi/5/aaa/teams/v2/{{team_id}}/search). \
+                         If your API key lacks that scope, pass the user ID directly: \
+                         --user <user-id>."
                     )
                 })?;
                 let uid = directory.resolve_to_user_id(&input)?;

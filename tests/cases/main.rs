@@ -394,14 +394,26 @@ async fn notifications_accepts_readable_case_id_directly() {
 async fn assign_case_resolves_email_to_user_id() {
     let server = MockServer::start().await;
 
-    // Teammates directory lookup must come first so the email can be resolved.
+    // The team ID is resolved from /identity/whoami before the users search.
     Mock::given(method("GET"))
-        .and(path("/api/v1/user/team/teammates"))
+        .and(path("/identity/whoami"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "data": [
-                { "id": "uid-alice", "username": "alice@example.com" },
-                { "id": "uid-bob", "username": "bob@example.com" }
-            ]
+            "team_id": 53623,
+            "team_name": "cases",
+            "user_name": "bot@coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+
+    // Then the paginated team-users search resolves the email to a user ID.
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/teams/v2/53623/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "users": [
+                { "userId": "uid-alice", "username": "alice@example.com" },
+                { "userId": "uid-bob", "username": "bob@example.com" }
+            ],
+            "totalCount": 2
         })))
         .mount(&server)
         .await;

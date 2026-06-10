@@ -1,6 +1,6 @@
 ---
 name: single-case
-description: Deep single-case investigation. Load when the user asks about one specific case by ID (UUID or readable id like "CASE-123") — e.g. summarize comments, explain who was notified where, judge whether the trigger reflects a real incident, walk the lifecycle. The `alerts` skill should be loaded alongside this skill.
+description: Deep single-case investigation. Load when the user asks about one specific case by ID (UUID or readable id like "CASE-123") — e.g. summarize comments, explain who was notified where, judge whether the trigger reflects a real incident, walk the lifecycle.
 ---
 
 # Case Investigation Skill — Drill into a single Case

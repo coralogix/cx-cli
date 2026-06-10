@@ -286,6 +286,52 @@ async fn events_list_calls_nested_path() {
 }
 
 #[tokio::test]
+async fn events_list_resolves_user_ids_to_emails() {
+    let server = MockServer::start().await;
+
+    // Directory resolution: whoami -> team id -> paginated user search.
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 53623
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/teams/v2/53623/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "users": [{ "userId": "uid-alice", "username": "alice@example.com" }],
+            "totalCount": 1
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // An "assigned" event referencing the known user (in actor + payload).
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/case-1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "events": [
+                {
+                    "id": "evt-1",
+                    "actor": { "user": { "userId": "uid-alice" } },
+                    "eventData": { "assigned": { "assigneeUserId": "uid-alice" } }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_events_list(&targets, "case-1", OutputFormat::Json)
+        .await
+        .expect("run_events_list should resolve user IDs without error");
+}
+
+#[tokio::test]
 async fn event_get_calls_events_path() {
     let server = MockServer::start().await;
 

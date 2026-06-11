@@ -88,7 +88,7 @@ fn incidents_list_arg_from_cli(matches: &ArgMatches, arg: &str) -> bool {
 \x1b[1m\x1b[4mDetect & Respond:\x1b[0m
   \x1b[1malerts\x1b[0m             Manage alert definitions and suppression rules
   \x1b[1mincidents\x1b[0m          Manage and triage incidents
-  \x1b[1cases\x1b[0m               Manage and triage cases
+  \x1b[1mcases\x1b[0m               Manage and triage cases
 
 \x1b[1m\x1b[4mNotifications:\x1b[0m
   \x1b[1mnotifications\x1b[0m      Manage connectors, routers, presets, and notification testing

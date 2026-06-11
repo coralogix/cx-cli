@@ -5,24 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::api_client::CxClient;
-use crate::error::{CxError, Result};
-
-/// Cheap structural check for the canonical 8-4-4-4-12 hyphenated UUID form.
-/// Used to decide whether a case ID needs resolving to a UUID before hitting
-/// endpoints that reject readable IDs like "CASE-764019".
-fn is_uuid(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    if bytes.len() != 36 {
-        return false;
-    }
-    bytes.iter().enumerate().all(|(i, &b)| {
-        if matches!(i, 8 | 13 | 18 | 23) {
-            b == b'-'
-        } else {
-            b.is_ascii_hexdigit()
-        }
-    })
-}
+use crate::error::Result;
 
 // --- Response types ---
 
@@ -112,25 +95,34 @@ pub struct ListEventsResponse {
     pub events: Vec<Value>,
 }
 
-/// One row from `GET /api/v1/user/team/teammates`. Only the fields we use are
-/// modeled; the endpoint also returns groupIds, accountId, etc. that we ignore.
+/// One user row from the team users search endpoint
+/// `GET /mgmt/openapi/5/aaa/teams/v2/{team_id}/search`. Only the fields we use
+/// are modeled; the endpoint also returns firstName/lastName/status etc.
 #[derive(Debug, Deserialize, Clone)]
-pub struct Teammate {
-    pub id: Option<String>,
-    /// The team-member's email address (the API field is misnamed `username`).
+#[serde(rename_all = "camelCase")]
+pub struct TeamUser {
+    /// Opaque user ID (UUID). Matches a case's `assignee.userId`.
+    pub user_id: Option<String>,
+    /// The user's email address (the API field is named `username`).
     pub username: Option<String>,
-    #[serde(rename = "firstName")]
-    pub first_name: Option<String>,
-    #[serde(rename = "lastName")]
-    pub last_name: Option<String>,
-    #[serde(rename = "isActive")]
-    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct ListTeammatesResponse {
+#[serde(rename_all = "camelCase")]
+pub struct SearchUsersResponse {
     #[serde(default)]
-    pub data: Vec<Teammate>,
+    pub users: Vec<TeamUser>,
+    /// Offset token for the next page; absent once the last page is reached.
+    pub next_page_token: Option<i64>,
+}
+
+/// Response from `GET /identity/whoami`, which identifies the team (and user)
+/// the current API key belongs to. Fields are snake_case in the payload.
+#[derive(Debug, Deserialize)]
+pub struct Whoami {
+    pub team_id: Option<i64>,
+    pub team_name: Option<String>,
+    pub user_name: Option<String>,
 }
 
 /// In-memory lookup over the team-members list, used to convert between
@@ -143,11 +135,11 @@ pub struct TeammateDirectory {
 }
 
 impl TeammateDirectory {
-    pub fn from_response(resp: ListTeammatesResponse) -> Self {
+    pub fn from_users(users: Vec<TeamUser>) -> Self {
         let mut by_id = HashMap::new();
         let mut by_email = HashMap::new();
-        for t in resp.data {
-            if let (Some(id), Some(email)) = (t.id, t.username) {
+        for u in users {
+            if let (Some(id), Some(email)) = (u.user_id, u.username) {
                 by_id.insert(id.clone(), email.clone());
                 by_email.insert(email.to_lowercase(), id);
             }
@@ -195,7 +187,11 @@ const ACKNOWLEDGED_BASE: &str = "/mgmt/openapi/5/cases/acknowledged/v1";
 const CLOSED_BASE: &str = "/mgmt/openapi/5/cases/closed/v1";
 const RESOLVED_BASE: &str = "/mgmt/openapi/5/cases/resolved/v1";
 const NOTIFICATION_DELIVERIES_BASE: &str = "/mgmt/openapi/5/cases/notifications/v1/deliveries";
-const TEAMMATES_BASE: &str = "/api/v1/user/team/teammates";
+const USERS_BASE: &str = "/mgmt/openapi/5/aaa/teams/v2";
+const WHOAMI_BASE: &str = "/identity/whoami";
+/// Page size for the paginated team-users search. The endpoint caps how many
+/// rows it returns per call, so we walk pages until `nextPageToken` is absent.
+const USERS_PAGE_SIZE: i64 = 300;
 
 pub struct CasesApi<'a> {
     client: &'a CxClient,
@@ -296,46 +292,69 @@ impl<'a> CasesApi<'a> {
         self.client.get(&path, &[]).await
     }
 
-    /// Resolve a possibly-readable case ID (e.g. "CASE-764019") to its UUID.
-    /// UUID inputs are returned unchanged with no extra API round-trip; readable
-    /// IDs are resolved via `GET` on the case, which returns its UUID `id`.
-    ///
-    /// Stopgap: the notification-deliveries endpoint rejects readable IDs in its
-    /// `caseIds` body with `400 Invalid uuid for case id`, unlike the path-based
-    /// case endpoints that accept either form. Remove this once that endpoint
-    /// accepts readable IDs too.
-    pub async fn resolve_case_uuid(&self, id: &str) -> Result<String> {
-        if is_uuid(id) {
-            return Ok(id.to_string());
-        }
-        let val = self.get(id).await?;
-        val.get("case")
-            .and_then(|c| c.get("id"))
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .ok_or_else(|| CxError::Api {
-                status: 400,
-                message: format!("could not resolve case id '{id}' to a UUID"),
-            })
-    }
-
-    /// List notification deliveries for one or more cases.
+    /// List notification deliveries for one or more cases. The endpoint accepts
+    /// both readable IDs (e.g. "CASE-764019") and UUIDs in `caseIds`, and keys
+    /// the `deliveriesByCase` response under whatever form was passed.
     pub async fn list_notification_deliveries(&self, case_ids: &[String]) -> Result<Value> {
         let body = serde_json::json!({ "caseIds": case_ids });
         self.client.post(NOTIFICATION_DELIVERIES_BASE, &body).await
     }
 
-    /// List team members (used to map user IDs <-> email addresses).
-    pub async fn list_teammates(&self) -> Result<ListTeammatesResponse> {
-        self.client.get(TEAMMATES_BASE, &[]).await
+    /// Resolve the team ID for the current API key. The team-users search
+    /// endpoint embeds the team ID in its path, so we ask `/identity/whoami`,
+    /// which every key can read and which returns the caller's team.
+    async fn resolve_team_id(&self) -> anyhow::Result<String> {
+        let whoami: Whoami = self
+            .client
+            .get(WHOAMI_BASE, &[])
+            .await
+            .map_err(|e| anyhow!("failed to resolve team ID via /identity/whoami: {e:#}"))?;
+        whoami
+            .team_id
+            .map(|id| id.to_string())
+            .ok_or_else(|| anyhow!("/identity/whoami returned no team_id"))
+    }
+
+    /// List all team members by walking the paginated team-users search
+    /// endpoint (`GET /mgmt/openapi/5/aaa/teams/v2/{team_id}/search`) in pages
+    /// of [`USERS_PAGE_SIZE`], following `nextPageToken` until it is absent.
+    pub async fn list_teammates(&self) -> Result<Vec<TeamUser>> {
+        let team_id = self
+            .resolve_team_id()
+            .await
+            .map_err(|e| crate::error::CxError::Api {
+                status: 0,
+                message: e.to_string(),
+            })?;
+        let path = format!("{USERS_BASE}/{team_id}/search");
+        let page_size = USERS_PAGE_SIZE.to_string();
+
+        let mut users = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let mut params: Vec<(&str, &str)> = vec![("pageSize", page_size.as_str())];
+            if let Some(ref token) = page_token {
+                params.push(("pageToken", token.as_str()));
+            }
+            let resp: SearchUsersResponse = self.client.get(&path, &params).await?;
+            let page_len = resp.users.len();
+            users.extend(resp.users);
+            // Stop once the server reports no further page, or returns an empty
+            // page (defensive: avoids looping if a token is ever echoed back).
+            match resp.next_page_token {
+                Some(token) if page_len > 0 => page_token = Some(token.to_string()),
+                _ => break,
+            }
+        }
+        Ok(users)
     }
 
     /// Convenience: fetch teammates and build a [`TeammateDirectory`].
     /// Errors are surfaced; callers that want best-effort behavior should
     /// `.unwrap_or_default()`.
     pub async fn teammate_directory(&self) -> Result<TeammateDirectory> {
-        let resp = self.list_teammates().await?;
-        Ok(TeammateDirectory::from_response(resp))
+        let users = self.list_teammates().await?;
+        Ok(TeammateDirectory::from_users(users))
     }
 }
 
@@ -345,18 +364,6 @@ impl<'a> CasesApi<'a> {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn is_uuid_recognizes_canonical_form() {
-        assert!(is_uuid("18f77652-bd54-5477-b12e-75534874a10a"));
-        assert!(is_uuid("3f166e9f-3c88-4af2-b52e-138f339dab3e"));
-        // Readable IDs and other shapes are rejected.
-        assert!(!is_uuid("CASE-764019"));
-        assert!(!is_uuid("18f77652bd545477b12e75534874a10a")); // no hyphens
-        assert!(!is_uuid("18f77652-bd54-5477-b12e-75534874a10")); // too short
-        assert!(!is_uuid("18f77652-bd54-5477-b12e-75534874a10g")); // non-hex
-        assert!(!is_uuid(""));
-    }
 
     #[test]
     fn deserialize_case() {
@@ -459,40 +466,55 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_teammates_response() {
+    fn deserialize_search_users_response() {
         let body = json!({
-            "data": [
+            "users": [
                 {
-                    "id": "281da03a-0241-447e-aca0-f90083b8198a",
-                    "isActive": true,
+                    "userId": "281da03a-0241-447e-aca0-f90083b8198a",
+                    "userAccountId": 44584,
+                    "status": "USER_STATUS_ACTIVE",
                     "username": "Alessandro.Massa@coralogix.com",
                     "firstName": "Alessandro",
                     "lastName": "Massa"
                 },
                 {
-                    "id": "60291e28-3bec-4bb4-b7e5-3deabcdc80d2",
+                    "userId": "60291e28-3bec-4bb4-b7e5-3deabcdc80d2",
                     "username": "ilia.shurygin@coralogix.com"
                 }
-            ]
+            ],
+            "nextPageToken": 2,
+            "totalCount": 2
         });
-        let resp: ListTeammatesResponse = serde_json::from_value(body).unwrap();
-        assert_eq!(resp.data.len(), 2);
+        let resp: SearchUsersResponse = serde_json::from_value(body).unwrap();
+        assert_eq!(resp.users.len(), 2);
         assert_eq!(
-            resp.data[0].username.as_deref(),
+            resp.users[0].username.as_deref(),
             Some("Alessandro.Massa@coralogix.com")
         );
+        assert_eq!(resp.next_page_token, Some(2));
+    }
+
+    #[test]
+    fn deserialize_search_users_last_page() {
+        // The last page omits `nextPageToken`.
+        let body = json!({ "users": [], "totalCount": 0 });
+        let resp: SearchUsersResponse = serde_json::from_value(body).unwrap();
+        assert!(resp.users.is_empty());
+        assert_eq!(resp.next_page_token, None);
     }
 
     #[test]
     fn directory_round_trips_id_and_email() {
-        let body = json!({
-            "data": [
-                { "id": "uid-1", "username": "alice@example.com" },
-                { "id": "uid-2", "username": "Bob@Example.com" }
-            ]
-        });
-        let resp: ListTeammatesResponse = serde_json::from_value(body).unwrap();
-        let dir = TeammateDirectory::from_response(resp);
+        let dir = TeammateDirectory::from_users(vec![
+            TeamUser {
+                user_id: Some("uid-1".into()),
+                username: Some("alice@example.com".into()),
+            },
+            TeamUser {
+                user_id: Some("uid-2".into()),
+                username: Some("Bob@Example.com".into()),
+            },
+        ]);
 
         assert_eq!(dir.email_for("uid-1"), Some("alice@example.com"));
         assert_eq!(dir.email_for("uid-2"), Some("Bob@Example.com"));
@@ -506,10 +528,10 @@ mod tests {
 
     #[test]
     fn directory_resolve_email_to_id() {
-        let body = json!({
-            "data": [{ "id": "uid-1", "username": "alice@example.com" }]
-        });
-        let dir = TeammateDirectory::from_response(serde_json::from_value(body).unwrap());
+        let dir = TeammateDirectory::from_users(vec![TeamUser {
+            user_id: Some("uid-1".into()),
+            username: Some("alice@example.com".into()),
+        }]);
 
         assert_eq!(
             dir.resolve_to_user_id("alice@example.com").unwrap(),

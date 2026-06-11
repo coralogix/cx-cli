@@ -286,6 +286,52 @@ async fn events_list_calls_nested_path() {
 }
 
 #[tokio::test]
+async fn events_list_resolves_user_ids_to_emails() {
+    let server = MockServer::start().await;
+
+    // Directory resolution: whoami -> team id -> paginated user search.
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 53623
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/teams/v2/53623/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "users": [{ "userId": "uid-alice", "username": "alice@example.com" }],
+            "totalCount": 1
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // An "assigned" event referencing the known user (in actor + payload).
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/case-1/events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "events": [
+                {
+                    "id": "evt-1",
+                    "actor": { "user": { "userId": "uid-alice" } },
+                    "eventData": { "assigned": { "assigneeUserId": "uid-alice" } }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_events_list(&targets, "case-1", OutputFormat::Json)
+        .await
+        .expect("run_events_list should resolve user IDs without error");
+}
+
+#[tokio::test]
 async fn event_get_calls_events_path() {
     let server = MockServer::start().await;
 
@@ -358,31 +404,19 @@ async fn notifications_lists_deliveries_for_cases() {
 }
 
 #[tokio::test]
-async fn notifications_resolves_readable_case_id_to_uuid() {
+async fn notifications_accepts_readable_case_id_directly() {
     let server = MockServer::start().await;
 
-    let uuid = "11111111-1111-4111-8111-111111111111";
-
-    // A readable ID is first resolved to its UUID via GET on the case.
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-764019"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "case": { "id": uuid, "readableId": "CASE-764019" }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    // The deliveries endpoint is then hit with the resolved UUID, not the
-    // readable ID that would otherwise be rejected as an invalid UUID.
+    // The deliveries endpoint accepts readable IDs directly — no GET on the
+    // case to resolve a UUID first.
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/cases/notifications/v1/deliveries"))
         .and(body_partial_json(json!({
-            "caseIds": [uuid]
+            "caseIds": ["CASE-764019"]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "deliveriesByCase": {
-                uuid: {
+                "CASE-764019": {
                     "notificationDeliveries": [
                         { "connectorType": "CONNECTOR_TYPE_SLACK", "status": "DELIVERED" }
                     ]
@@ -399,21 +433,33 @@ async fn notifications_resolves_readable_case_id_to_uuid() {
     let ids = vec!["CASE-764019".to_string()];
     run_notifications(&targets, &ids, OutputFormat::Json)
         .await
-        .expect("run_notifications should resolve readable IDs");
+        .expect("run_notifications should accept readable IDs directly");
 }
 
 #[tokio::test]
 async fn assign_case_resolves_email_to_user_id() {
     let server = MockServer::start().await;
 
-    // Teammates directory lookup must come first so the email can be resolved.
+    // The team ID is resolved from /identity/whoami before the users search.
     Mock::given(method("GET"))
-        .and(path("/api/v1/user/team/teammates"))
+        .and(path("/identity/whoami"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "data": [
-                { "id": "uid-alice", "username": "alice@example.com" },
-                { "id": "uid-bob", "username": "bob@example.com" }
-            ]
+            "team_id": 53623,
+            "team_name": "cases",
+            "user_name": "bot@coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+
+    // Then the paginated team-users search resolves the email to a user ID.
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/teams/v2/53623/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "users": [
+                { "userId": "uid-alice", "username": "alice@example.com" },
+                { "userId": "uid-bob", "username": "bob@example.com" }
+            ],
+            "totalCount": 2
         })))
         .mount(&server)
         .await;

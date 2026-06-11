@@ -50,6 +50,32 @@ fn substitute_assignee_email(value: &mut Value, directory: &TeammateDirectory) {
     }
 }
 
+/// Recursively rewrite any string value that matches a known user ID to that
+/// user's email. Events carry user IDs in assorted shapes (`actor.user.userId`,
+/// `assigneeUserId`, `previousAssigneeUserId`, ...); resolving by value lets us
+/// surface emails everywhere they appear without special-casing each field.
+/// IDs absent from the directory (e.g. service accounts) are left untouched.
+fn substitute_user_emails(value: &mut Value, directory: &TeammateDirectory) {
+    match value {
+        Value::Object(map) => {
+            for v in map.values_mut() {
+                substitute_user_emails(v, directory);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                substitute_user_emails(v, directory);
+            }
+        }
+        Value::String(s) => {
+            if let Some(email) = directory.email_for(s) {
+                *s = email.to_string();
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Strip the noisy `CASE_STATUS_` / `CASE_PRIORITY_` / `CASE_CATEGORY_` prefix
 /// from an enum-like string so the table shows `ACTIVE` instead of
 /// `CASE_STATUS_ACTIVE`.
@@ -455,10 +481,11 @@ pub async fn run_assign(
             let (user_id, resolved_directory) = if input.contains('@') {
                 let directory = api.teammate_directory().await.map_err(|e| {
                     anyhow!(
-                        "failed to fetch teammates to resolve email '{input}': {e:#}\n\
+                        "failed to fetch team members to resolve email '{input}': {e:#}\n\
                          hint: resolving an email requires read access to the team \
-                         directory (GET /api/v1/user/team/teammates). If your API key \
-                         lacks that scope, pass the user ID directly: --user <user-id>."
+                         users directory (GET /mgmt/openapi/5/aaa/teams/v2/{{team_id}}/search). \
+                         If your API key lacks that scope, pass the user ID directly: \
+                         --user <user-id>."
                     )
                 })?;
                 let uid = directory.resolve_to_user_id(&input)?;
@@ -682,7 +709,13 @@ pub async fn run_events_list(
         let id = id.clone();
         async move {
             let api = CasesApi::new(&t.client);
-            Ok(api.list_events(&id).await?)
+            // Fetch events and the team directory together; the directory is
+            // best-effort so events still render if the lookup is unavailable.
+            let (events_res, dir_res) =
+                tokio::join!(api.list_events(&id), api.teammate_directory());
+            let events = events_res?;
+            let directory = dir_res.unwrap_or_default();
+            Ok::<_, anyhow::Error>((events, directory))
         }
     })
     .await;
@@ -690,8 +723,9 @@ pub async fn run_events_list(
     let mut all_json: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(resp) => {
+            Ok((resp, directory)) => {
                 for mut event in resp.events {
+                    substitute_user_emails(&mut event, &directory);
                     if include_profile {
                         if let Value::Object(ref mut m) = event {
                             m.insert("profile".to_string(), Value::String(profile.clone()));
@@ -772,7 +806,11 @@ pub async fn run_event_get(
         let id = id.clone();
         async move {
             let api = CasesApi::new(&t.client);
-            Ok(api.get_event(&id).await?)
+            let (event_res, dir_res) = tokio::join!(api.get_event(&id), api.teammate_directory());
+            let mut event = event_res?;
+            let directory = dir_res.unwrap_or_default();
+            substitute_user_emails(&mut event, &directory);
+            Ok::<_, anyhow::Error>(event)
         }
     })
     .await;
@@ -826,31 +864,10 @@ pub async fn run_notifications(
         let ids = ids.clone();
         async move {
             let api = CasesApi::new(&t.client);
-            // The deliveries endpoint only accepts UUIDs, so resolve any readable
-            // IDs (e.g. "CASE-764019") first and remember the mapping so we can
-            // present results under the ID the user actually passed.
-            let mut uuids: Vec<String> = Vec::with_capacity(ids.len());
-            let mut uuid_to_input: std::collections::HashMap<String, String> =
-                std::collections::HashMap::new();
-            for id in &ids {
-                let uuid = api.resolve_case_uuid(id).await?;
-                uuid_to_input.insert(uuid.clone(), id.clone());
-                uuids.push(uuid);
-            }
-
-            let mut resp = api.list_notification_deliveries(&uuids).await?;
-            // Rewrite the UUID-keyed `deliveriesByCase` map back to the input IDs.
-            if let Some(map) = resp
-                .get_mut("deliveriesByCase")
-                .and_then(|v| v.as_object_mut())
-            {
-                let remapped: serde_json::Map<String, Value> = std::mem::take(map)
-                    .into_iter()
-                    .map(|(k, v)| (uuid_to_input.get(&k).cloned().unwrap_or(k), v))
-                    .collect();
-                *map = remapped;
-            }
-            Ok(resp)
+            // The deliveries endpoint accepts both readable IDs (e.g.
+            // "CASE-764019") and UUIDs directly, so the IDs the user passed go
+            // straight through and come back keyed under the same values.
+            Ok(api.list_notification_deliveries(&ids).await?)
         }
     })
     .await;
@@ -1002,5 +1019,52 @@ mod tests {
     fn normalize_priority_rejects_invalid() {
         assert!(normalize_priority("CRITICAL").is_err());
         assert!(normalize_priority("P9").is_err());
+    }
+
+    fn directory() -> TeammateDirectory {
+        TeammateDirectory::from_users(vec![api::TeamUser {
+            user_id: Some("uid-known".into()),
+            username: Some("alice@example.com".into()),
+        }])
+    }
+
+    #[test]
+    fn substitute_user_emails_maps_known_ids_in_event() {
+        // An "assigned" event: actor + assigneeUserId both reference users.
+        let mut event = serde_json::json!({
+            "eventId": "e1",
+            "actor": { "user": { "userId": "uid-known" } },
+            "eventData": {
+                "assigned": {
+                    "assigneeUserId": "uid-known",
+                    "previousAssigneeUserId": "uid-unknown"
+                }
+            }
+        });
+        substitute_user_emails(&mut event, &directory());
+
+        assert_eq!(
+            event["actor"]["user"]["userId"], "alice@example.com",
+            "actor user ID should resolve to email"
+        );
+        assert_eq!(
+            event["eventData"]["assigned"]["assigneeUserId"],
+            "alice@example.com"
+        );
+        // Unknown IDs (e.g. service accounts) are left untouched.
+        assert_eq!(
+            event["eventData"]["assigned"]["previousAssigneeUserId"],
+            "uid-unknown"
+        );
+    }
+
+    #[test]
+    fn substitute_user_emails_is_a_noop_without_matches() {
+        let mut event = serde_json::json!({
+            "eventData": { "statusChanged": { "oldStatus": "ACTIVE", "newStatus": "RESOLVED" } }
+        });
+        let before = event.clone();
+        substitute_user_emails(&mut event, &directory());
+        assert_eq!(event, before);
     }
 }

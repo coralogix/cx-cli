@@ -116,6 +116,35 @@ async fn search_by_name_pattern() {
 }
 
 #[tokio::test]
+async fn search_by_name_with_trailing_slash_endpoint() {
+    // Regression: an endpoint with a trailing slash must not produce a `//`
+    // in the request path (which the metrics proxy rejects with 404).
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "status": "success",
+        "data": ["http_requests_total"]
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/metrics/api/v1/label/__name__/values"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // Append a trailing slash to the base URL - this previously yielded a
+    // `//metrics/...` request path that missed the mock and 404'd in prod.
+    let base_with_slash = format!("{}/", server.uri());
+    let target = common::test_target("test-profile", &base_with_slash);
+    let targets = vec![target];
+
+    run_search(&targets, Some("http_*"), None, OutputFormat::Json)
+        .await
+        .expect("run_search should succeed even with a trailing-slash endpoint");
+}
+
+#[tokio::test]
 async fn search_by_description() {
     let server = MockServer::start().await;
 

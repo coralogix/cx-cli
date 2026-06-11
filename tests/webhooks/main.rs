@@ -32,6 +32,33 @@ async fn list_webhooks_from_mock() {
 }
 
 #[tokio::test]
+async fn list_webhooks_with_trailing_slash_endpoint() {
+    // Regression: an endpoint with a trailing slash must not produce a `//` in
+    // the request path. The mgmt OpenAPI gateway rejects `//mgmt/openapi/...`
+    // with 400 Bad Request ("OpenAPI schema"), which is how this surfaced.
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "webhooks": [
+            { "id": "wh-001", "name": "Slack Notify", "type": "slack", "url": "https://hooks.slack.com/abc" }
+        ]
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/integrations/webhooks/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let base_with_slash = format!("{}/", server.uri());
+    let target = common::test_target("test-profile", &base_with_slash);
+    run_list(&[target], OutputFormat::Json)
+        .await
+        .expect("run_list should succeed even with a trailing-slash endpoint");
+}
+
+#[tokio::test]
 async fn list_webhook_types_from_mock() {
     let server = MockServer::start().await;
 

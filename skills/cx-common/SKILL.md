@@ -13,18 +13,51 @@ Cross-cutting behaviors for all cx CLI commands.
 
 ## Update Notifications
 
-**MUST DO:** After running any cx command, scan the full tool output for update notices. If you see lines like:
+**MUST DO:** After running any cx command, check for update notices using the channels below (in priority order). **After summarizing the command result**, tell the user a newer version is available and offer to run both the binary upgrade and skills refresh. Do not skip this even when the command returned a useful answer.
+
+### 1. Primary — agents mode (`-o agents`)
+
+Commands with `--output agents` append a **standalone trailing JSON line** to stdout:
+
+```json
+{"_meta":{"update":{"binary":{"current":"0.1.7","latest":"0.2.0","command":"brew upgrade cx"},"skills":{"command":"npx skills add coralogix/cx-cli","docs":"https://github.com/coralogix/cx-cli#install"}}}}
+```
+
+Scan the **last line** of stdout for `_meta.update`. When present:
+
+- Binary upgrade: `_meta.update.binary.command` (current: `.binary.current`, latest: `.binary.latest`)
+- Skills refresh: `_meta.update.skills.command`
+
+### 2. Schema startup check
+
+`cx schema` embeds the same `_meta.update` object at the **top level** of the schema JSON (not a trailing line). Check `_meta.update.binary` and `_meta.update.skills` the same way.
+
+### 3. Fallback — human-readable text
+
+Also scan stderr and stdout for plain-text notices:
 
 ```
 cx X.Y.Z is available (you have A.B.C). Upgrade: <command>
 Refresh agent skills: npx skills add coralogix/cx-cli
 ```
 
-Then **after summarizing the command result**, tell the user:
+Or prefixed lines:
 
-> "A newer cx version (X.Y.Z) is available. Would you like me to run `<upgrade command>` and `npx skills add coralogix/cx-cli` to update?"
+```
+[cx update] Version X.Y.Z available (you have A.B.C). Run: <command>
+[cx skills] Refresh agent skills: npx skills add coralogix/cx-cli
+```
 
-You MUST mention BOTH the binary upgrade AND the skills refresh command. Do not skip this even when the command returned a useful answer.
+These appear on stderr for text/json mode, or stdout for `--help` / `--version`.
+
+### Response template
+
+> [Summarize the command result here]
+>
+> ---
+> A newer cx version (X.Y.Z) is available — you have A.B.C. Would you like me to run `<binary upgrade command>` and `npx skills add coralogix/cx-cli` to update?
+
+You MUST mention BOTH the binary upgrade AND the skills refresh command.
 
 ---
 

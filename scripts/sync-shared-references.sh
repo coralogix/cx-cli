@@ -69,6 +69,14 @@ copy_refs "cx-alerts" \
     "promql-guidelines.md" \
     "spans-querying.md"
 
+# cx-coding-agents: all query-language and telemetry-pillar references (agents use logs, spans, and metrics)
+copy_refs "cx-coding-agents" \
+    "dataprime-reference.md" \
+    "logs-querying.md" \
+    "spans-querying.md" \
+    "promql-guidelines.md" \
+    "metrics-querying.md"
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Synced $COPIED file(s)"

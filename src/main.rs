@@ -2526,25 +2526,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Use try_get_matches to intercept --help and --version so we can add
-    // the update notice before exiting.
-    let matches = match cmd.try_get_matches() {
-        Ok(m) => m,
-        Err(e) => {
-            let _ = e.print();
-
-            // Add update notice for help/version display (not for real errors).
-            // Print to stdout (not stderr) so agents that discard stderr still see it.
-            if matches!(
-                e.kind(),
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
-            ) {
-                update_check::maybe_print_notice_stdout();
-            }
-
-            std::process::exit(e.exit_code());
-        }
-    };
+    let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
     // Load global config early for read-only / risky / olly gating.

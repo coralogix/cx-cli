@@ -6,8 +6,9 @@
 //!   discover the latest version.  Results are cached in `~/.cx/state.json`
 //!   (see [`crate::version_cache`]).
 //! * Every command reads that cached result and either:
-//!   - Prints a one-line notice to **stderr** when stderr is a TTY and output
-//!     mode is not `agents` (see [`maybe_print_notice`]).
+//!   - Prints update notices to **stderr** (see [`maybe_print_notice`]):
+//!     colored on TTY text mode; plain `[cx update]` / `[cx skills]` for agents
+//!     mode or non-TTY stderr so captured agent output still surfaces upgrades.
 //!   - Returns a `_meta.update` JSON block for the agents output path (see
 //!     [`build_meta_block`]).
 //! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications (including the fetch).
@@ -75,14 +76,11 @@ async fn fetch_latest_binary(client: &reqwest::Client) -> Option<String> {
 
 /// Print a one-line update notice to stderr, if all conditions are met:
 /// - `CX_NO_UPDATE_NOTIFIER` is not set
-/// - Output mode is not `agents` (agents get `_meta.update` instead)
-/// - stderr is a terminal (no noise into piped output)
 /// - A newer version is available in the cache
+/// - Agents mode or non-TTY stderr: plain `[cx update]` (agent/script friendly)
+/// - Text mode with TTY stderr: colored human notice
 pub fn maybe_print_notice(output: OutputFormat) {
-    if env_is_truthy("CX_NO_UPDATE_NOTIFIER") || output == OutputFormat::Agents {
-        return;
-    }
-    if !std::io::stderr().is_terminal() {
+    if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
         return;
     }
 
@@ -91,10 +89,14 @@ pub fn maybe_print_notice(output: OutputFormat) {
 
     if let Some(latest) = state.latest_binary.as_deref() {
         if is_newer(latest, current) {
-            // Detect install method only when we actually have something to show.
             let upgrade = install_method::binary_upgrade_command(&install_method::detect());
+
+            if output == OutputFormat::Agents || !std::io::stderr().is_terminal() {
+                print_plain_notices(latest, current, &upgrade);
+                return;
+            }
+
             if upgrade.starts_with("https://") {
-                // Unknown install method — show docs URL instead of a command.
                 eprintln!(
                     "\n{} {} {} {}{}. {} {}",
                     "cx".bold(),
@@ -117,6 +119,11 @@ pub fn maybe_print_notice(output: OutputFormat) {
                     upgrade.bold()
                 );
             }
+            eprintln!(
+                "{} {}",
+                "Refresh agent skills:".dimmed(),
+                install_method::skills_upgrade_command().bold()
+            );
             eprintln!(
                 "{}",
                 "Set CX_NO_UPDATE_NOTIFIER=1 to silence this.".dimmed()
@@ -146,7 +153,17 @@ pub fn build_meta_block() -> Option<Value> {
         }
     });
 
-    binary_block.map(|b| json!({ "update": { "binary": b } }))
+    binary_block.map(|b| {
+        json!({
+            "update": {
+                "binary": b,
+                "skills": {
+                    "command": install_method::skills_upgrade_command(),
+                    "docs": install_method::install_docs_url()
+                }
+            }
+        })
+    })
 }
 
 /// Print the `_meta` block to stdout for agents to consume.
@@ -159,7 +176,60 @@ pub fn maybe_print_agents_meta() {
     }
 }
 
+// ── Stdout notice (for --help/--version) ─────────────────────────────────────
+
+/// Print update notice to stdout (not stderr).
+/// Used for --help and --version where stderr might be discarded by agents.
+pub fn maybe_print_notice_stdout() {
+    if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
+        return;
+    }
+
+    let state = VersionCheckCache::load();
+    let current = env!("CARGO_PKG_VERSION");
+
+    if let Some(latest) = state.latest_binary.as_deref() {
+        if is_newer(latest, current) {
+            let upgrade = install_method::binary_upgrade_command(&install_method::detect());
+            println!();
+            if upgrade.starts_with("https://") {
+                println!(
+                    "cx {} is available (you have {}). See: {}",
+                    latest, current, upgrade
+                );
+            } else {
+                println!(
+                    "cx {} is available (you have {}). Upgrade: {}",
+                    latest, current, upgrade
+                );
+            }
+            println!(
+                "Refresh agent skills: {}",
+                install_method::skills_upgrade_command()
+            );
+        }
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn print_plain_notices(latest: &str, current: &str, upgrade: &str) {
+    if upgrade.starts_with("https://") {
+        eprintln!(
+            "[cx update] Version {} available (you have {}). See: {}",
+            latest, current, upgrade
+        );
+    } else {
+        eprintln!(
+            "[cx update] Version {} available (you have {}). Run: {}",
+            latest, current, upgrade
+        );
+    }
+    eprintln!(
+        "[cx skills] Refresh agent skills: {}",
+        install_method::skills_upgrade_command()
+    );
+}
 
 /// Returns true when `latest` is strictly greater than `current`.
 ///

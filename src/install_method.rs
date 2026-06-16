@@ -54,6 +54,16 @@ pub fn binary_upgrade_command(method: &InstallMethod) -> String {
     }
 }
 
+/// Return the one-liner that refreshes agent skills from the cx-cli repo.
+pub fn skills_upgrade_command() -> &'static str {
+    "npx skills add coralogix/cx-cli"
+}
+
+/// Official install docs URL (binary + skills).
+pub fn install_docs_url() -> &'static str {
+    "https://github.com/coralogix/cx-cli#install"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,6 +83,11 @@ mod tests {
     #[test]
     fn unknown_upgrade_command_is_url() {
         let cmd = binary_upgrade_command(&InstallMethod::Unknown);
-        assert!(cmd.starts_with("https://"));
+        assert_eq!(cmd, "https://github.com/coralogix/cx-cli#install");
+    }
+
+    #[test]
+    fn skills_upgrade_command_is_npx() {
+        assert_eq!(skills_upgrade_command(), "npx skills add coralogix/cx-cli");
     }
 }

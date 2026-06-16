@@ -2392,7 +2392,26 @@ async fn main() -> Result<()> {
             "{before-help}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
         );
     }
-    let matches = cmd.get_matches();
+
+    // Use try_get_matches to intercept --help and --version so we can add
+    // the update notice before exiting.
+    let matches = match cmd.try_get_matches() {
+        Ok(m) => m,
+        Err(e) => {
+            let _ = e.print();
+
+            // Add update notice for help/version display (not for real errors).
+            // Print to stdout (not stderr) so agents that discard stderr still see it.
+            if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) {
+                update_check::maybe_print_notice_stdout();
+            }
+
+            std::process::exit(e.exit_code());
+        }
+    };
     let cli = Cli::from_arg_matches(&matches)?;
 
     // Load global config early for read-only / risky / olly gating.
@@ -2472,10 +2491,11 @@ async fn main() -> Result<()> {
 
     // Schema command doesn't need API credentials - outputs command tree as JSON.
     // The _meta.update block is already embedded in the JSON output for agents;
-    // the stderr notice covers TTY human users.
+    // the stderr notice covers TTY human users (or plain text for agents mode).
     if let Commands::Schema = cli.command {
         let result = commands::schema::run(Cli::command());
-        update_check::maybe_print_notice(OutputFormat::Text);
+        let output = cli.output.unwrap_or(OutputFormat::Text);
+        update_check::maybe_print_notice(output);
         return result;
     }
 

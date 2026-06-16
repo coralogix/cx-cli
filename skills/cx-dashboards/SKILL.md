@@ -334,5 +334,6 @@ Adjust filter values (e.g. `account_id`) after opening it.
 ### Related Skills
 
 - **`cx-observability-setup`** - full monitoring setup workflow (views, webhooks, notifications, integrations)
-- **`cx-incident-management`** - SLO and alert-connected dashboards, incident triage
+- **`cx-slos`** - SLO-connected reliability targets to surface on dashboards
+- **`cx-cases`** - triage the cases raised against the services a dashboard monitors
 - **`cx-telemetry-querying`** - discover the right telemetry signal before building dashboards

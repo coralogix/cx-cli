@@ -59,7 +59,7 @@ Use **`cx docs search`** + **`cx docs fetch`** when the user wants:
 | **Query live logs** | `cx logs` — [cx-telemetry-querying](../cx-telemetry-querying/SKILL.md) |
 | **Query live spans/traces** | `cx spans` — [cx-telemetry-querying](../cx-telemetry-querying/SKILL.md) |
 | **DataPrime syntax / commands** | `cx dataprime list` / `cx dataprime show` — [cx-telemetry-querying](../cx-telemetry-querying/SKILL.md) |
-| **Alerts & incidents in the tenant** | `cx alerts`, `cx incidents` — [cx-alerts](../cx-alerts/SKILL.md), [cx-incident-management](../cx-incident-management/SKILL.md) |
+| **Alerts & cases in the tenant** | `cx alerts`, `cx cases` — [cx-alerts](../cx-alerts/SKILL.md), [cx-cases](../cx-cases/SKILL.md) |
 | **Metrics (PromQL)** | `cx metrics` — [cx-telemetry-querying](../cx-telemetry-querying/SKILL.md) |
 | **Discover field paths in tenant data** | `cx search-fields` |
 

@@ -65,7 +65,7 @@ commands::logs::run()
 
 ### Archetype B: REST-based
 
-**Commands:** `alerts`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `parsing-rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `archive`, `slos`, `views`, `incidents`, `e2m`, `recording-rules`
+**Commands:** `alerts`, `cases`, `dashboards`, `metrics`, `search-fields`, `notifications`, `webhooks`, `parsing-rules`, `enrichments`, `integrations`, `iam`, `usage`, `tco`, `retentions`, `archive`, `slos`, `views`, `e2m`, `recording-rules`
 
 These manage their own fan-out, merge, and render inline. Each subcommand function follows the same shape:
 
@@ -308,7 +308,7 @@ src/
     ├── schema/mod.rs    # cx schema - JSON command tree for agent discovery
     ├── profiles/mod.rs  # Profile management (no API calls)
     ├── cleanup/mod.rs   # Temp file cleanup (no API calls)
-    └── ...              # One module per REST domain (incidents, notifications,
+    └── ...              # One module per REST domain (cases, notifications,
                          #   webhooks, rules, enrichments, integrations, iam,
                          #   usage, tco, retentions, archive, slos,
                          #   views, e2m, recording_rules)

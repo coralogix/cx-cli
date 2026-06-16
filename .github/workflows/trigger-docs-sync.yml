@@ -10,6 +10,7 @@ on:
     paths:
       - 'README.md'
       - 'docs/*.md'
+      - 'skills/**'
 
 jobs:
   trigger_action:

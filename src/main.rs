@@ -2525,6 +2525,7 @@ async fn main() -> Result<()> {
             "{before-help}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
         );
     }
+
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
@@ -2605,10 +2606,11 @@ async fn main() -> Result<()> {
 
     // Schema command doesn't need API credentials - outputs command tree as JSON.
     // The _meta.update block is already embedded in the JSON output for agents;
-    // the stderr notice covers TTY human users.
+    // the stderr notice covers TTY human users (or plain text for agents mode).
     if let Commands::Schema = cli.command {
         let result = commands::schema::run(Cli::command());
-        update_check::maybe_print_notice(OutputFormat::Text);
+        let output = cli.output.unwrap_or(OutputFormat::Text);
+        update_check::maybe_print_notice(output);
         return result;
     }
 

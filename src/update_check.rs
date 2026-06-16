@@ -6,8 +6,9 @@
 //!   discover the latest version.  Results are cached in `~/.cx/state.json`
 //!   (see [`crate::version_cache`]).
 //! * Every command reads that cached result and either:
-//!   - Prints a one-line notice to **stderr** when stderr is a TTY and output
-//!     mode is not `agents` (see [`maybe_print_notice`]).
+//!   - Prints update notices to **stderr** (see [`maybe_print_notice`]):
+//!     colored on TTY text mode; plain single-line `[cx update]` for agents
+//!     mode or non-TTY stderr (binary and skills separated by `|`).
 //!   - Returns a `_meta.update` JSON block for the agents output path (see
 //!     [`build_meta_block`]).
 //! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications (including the fetch).
@@ -75,14 +76,11 @@ async fn fetch_latest_binary(client: &reqwest::Client) -> Option<String> {
 
 /// Print a one-line update notice to stderr, if all conditions are met:
 /// - `CX_NO_UPDATE_NOTIFIER` is not set
-/// - Output mode is not `agents` (agents get `_meta.update` instead)
-/// - stderr is a terminal (no noise into piped output)
 /// - A newer version is available in the cache
+/// - Agents mode or non-TTY stderr: plain `[cx update]` (agent/script friendly)
+/// - Text mode with TTY stderr: colored human notice
 pub fn maybe_print_notice(output: OutputFormat) {
-    if env_is_truthy("CX_NO_UPDATE_NOTIFIER") || output == OutputFormat::Agents {
-        return;
-    }
-    if !std::io::stderr().is_terminal() {
+    if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
         return;
     }
 
@@ -91,32 +89,31 @@ pub fn maybe_print_notice(output: OutputFormat) {
 
     if let Some(latest) = state.latest_binary.as_deref() {
         if is_newer(latest, current) {
-            // Detect install method only when we actually have something to show.
             let upgrade = install_method::binary_upgrade_command(&install_method::detect());
-            if upgrade.starts_with("https://") {
-                // Unknown install method — show docs URL instead of a command.
-                eprintln!(
-                    "\n{} {} {} {}{}. {} {}",
-                    "cx".bold(),
-                    latest.bold().green(),
-                    "is available (you have".dimmed(),
-                    current.dimmed(),
-                    ")".dimmed(),
-                    "See upgrade docs:".dimmed(),
-                    upgrade.dimmed()
-                );
-            } else {
-                eprintln!(
-                    "\n{} {} {} {}{}. {}: {}",
-                    "cx".bold(),
-                    latest.bold().green(),
-                    "is available (you have".dimmed(),
-                    current.dimmed(),
-                    ")".dimmed(),
-                    "Upgrade".dimmed(),
-                    upgrade.bold()
-                );
+
+            if output == OutputFormat::Agents || !std::io::stderr().is_terminal() {
+                print_plain_notice(latest, current, &upgrade);
+                return;
             }
+
+            let skills = install_method::skills_upgrade_command();
+            eprintln!();
+            eprintln!(
+                "{} {} {} {}{}.",
+                "cx".bold(),
+                latest.bold().green(),
+                "is available (you have".dimmed(),
+                current.dimmed(),
+                ")".dimmed()
+            );
+            eprintln!(
+                "{} {} {} {} {}",
+                "upgrade:".dimmed(),
+                upgrade.bold(),
+                "|".dimmed(),
+                "skills:".dimmed(),
+                skills.bold()
+            );
             eprintln!(
                 "{}",
                 "Set CX_NO_UPDATE_NOTIFIER=1 to silence this.".dimmed()
@@ -146,7 +143,17 @@ pub fn build_meta_block() -> Option<Value> {
         }
     });
 
-    binary_block.map(|b| json!({ "update": { "binary": b } }))
+    binary_block.map(|b| {
+        json!({
+            "update": {
+                "binary": b,
+                "skills": {
+                    "command": install_method::skills_upgrade_command(),
+                    "docs": install_method::install_docs_url()
+                }
+            }
+        })
+    })
 }
 
 /// Print the `_meta` block to stdout for agents to consume.
@@ -160,6 +167,15 @@ pub fn maybe_print_agents_meta() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Single-line notice for agents and non-TTY stderr.
+/// Binary upgrade and skills refresh are separated by `|` so both stay together.
+fn print_plain_notice(latest: &str, current: &str, upgrade: &str) {
+    let skills = install_method::skills_upgrade_command();
+    eprintln!(
+        "[cx update] v{latest} available (you have {current}) | upgrade: {upgrade} | skills: {skills}"
+    );
+}
 
 /// Returns true when `latest` is strictly greater than `current`.
 ///

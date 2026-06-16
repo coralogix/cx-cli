@@ -3,7 +3,6 @@ name: cx-common
 description: This skill should be used whenever the user runs any cx command, uses the cx CLI, Coralogix CLI, or mentions cx in the context of Coralogix observability. This skill provides cross-cutting concerns like update notifications that apply to all cx commands.
 metadata:
   version: "0.1.0"
-  tags: ["coralogix", "cx", "cli", "common"]
 ---
 
 # cx-common

@@ -31,7 +31,7 @@ impl CxClient {
 
         Ok(Self {
             inner,
-            endpoint: endpoint.into(),
+            endpoint: normalize_endpoint(&endpoint.into()),
         })
     }
 
@@ -192,6 +192,18 @@ impl CxClient {
     }
 }
 
+/// Normalize a base endpoint so URL joining always produces a single `/`.
+///
+/// All request paths in this crate begin with a leading `/`, and URLs are
+/// built with `format!("{endpoint}{path}")`. A trailing slash on the endpoint
+/// (common for custom/overridden endpoints) would otherwise yield a `//` in the
+/// path, which some Coralogix proxies reject (e.g. the metrics endpoint returns
+/// 404 for `//metrics/api/v1/...`). Trimming trailing slashes here fixes this
+/// for every command at a single chokepoint.
+fn normalize_endpoint(endpoint: &str) -> String {
+    endpoint.trim_end_matches('/').to_string()
+}
+
 /// Extract a human-readable error detail from a response body.
 ///
 /// Tries common JSON error shapes in order:
@@ -213,7 +225,31 @@ fn extract_error_detail(body: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_error_detail;
+    use super::{extract_error_detail, normalize_endpoint};
+
+    #[test]
+    fn trims_single_trailing_slash() {
+        assert_eq!(
+            normalize_endpoint("https://api.eu1.coralogix.com/"),
+            "https://api.eu1.coralogix.com"
+        );
+    }
+
+    #[test]
+    fn trims_multiple_trailing_slashes() {
+        assert_eq!(
+            normalize_endpoint("https://api.eu1.coralogix.com///"),
+            "https://api.eu1.coralogix.com"
+        );
+    }
+
+    #[test]
+    fn leaves_endpoint_without_trailing_slash_unchanged() {
+        assert_eq!(
+            normalize_endpoint("https://api.eu1.coralogix.com"),
+            "https://api.eu1.coralogix.com"
+        );
+    }
 
     #[test]
     fn prefers_top_level_message() {

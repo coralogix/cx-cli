@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod alerts;
 pub mod api_keys;
+pub mod cases;
 pub mod cleanup;
 pub mod completions;
 pub mod connectors;

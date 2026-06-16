@@ -128,12 +128,12 @@ impl<'a> ContextualDataApi<'a> {
     }
 
     pub async fn get_definition(&self, id: &str) -> Result<Value> {
-        let path = format!("{CONTEXTUAL_DATA_BASE}/{id}/definition");
+        let path = format!("{CONTEXTUAL_DATA_BASE}/definitions/{id}");
         self.client.get(&path, &[]).await
     }
 
     pub async fn test(&self, id: &str) -> Result<Value> {
-        let path = format!("{CONTEXTUAL_DATA_BASE}/{id}/test");
+        let path = format!("{CONTEXTUAL_DATA_BASE}/test/{id}");
         self.client.post(&path, &serde_json::json!({})).await
     }
 }

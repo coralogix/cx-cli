@@ -19,27 +19,40 @@ If an E2M produces **zero metric series**, the usual cause is that its source da
 
 ## Source types
 
-The API/CLI supports two source types via the `query` oneof:
+The `type` field + `query` oneof select what events are aggregated:
 
 | `type` (string enum) | `query` field | Source |
 |---|---|---|
 | `E2M_TYPE_LOGS2METRICS` | `logsQuery` | Logs |
 | `E2M_TYPE_SPANS2METRICS` | `spansQuery` | Spans |
 
-> **Datasets are UI-only.** The Coralogix UI additionally lets you create an E2M on a **Dataset** (datasource selection), but the v2 API/CLI exposes **logs and spans only** (dataset support is coming to the API). For a dataset-based E2M, use the UI for now.
-
 `E2M_TYPE_UNSPECIFIED` (0) is never used in a real definition.
+
+**Datasets (`dataSource`):** an optional top-level `dataSource` string in `"<dataspace>/<dataset>"` format (e.g. `"my_dataspace/my_dataset"`) scopes the E2M to a specific dataset instead of the standard logs/spans stream. It is **supported via the API/CLI** — add it to the create body. If omitted, the E2M defaults to the standard logs/spans stream for the chosen `type`.
+
+```json
+{ "type": "E2M_TYPE_LOGS2METRICS", "dataSource": "my_dataspace/my_dataset", "logsQuery": { ... } }
+```
 
 ---
 
 ## Top-level structure
 
-`cx e2m create` posts the **bare definition object** (the HTTP body maps to the `e2m` field). A `cx e2m get` *response* wraps the same object as `{"e2m": { ... }}`, so when templating, extract `.e2m` and drop the read-only fields:
+`cx e2m create` and `cx e2m update` post the **bare definition object** (the HTTP body maps to the `e2m` field). A `cx e2m get` *response* wraps the same object as `{"e2m": { ... }}`, so when templating, extract `.e2m`.
+
+**Creating a new E2M** — drop `id` (and other read-only fields); the server assigns a fresh id:
 
 ```bash
 cx e2m get <id> -o json | jq '.e2m | del(.id, .permutations, .createTime, .updateTime, .metricName)' > e2m.json
-# edit e2m.json, then:
 cx e2m create --from-file e2m.json
+```
+
+**Updating an existing E2M** — `cx e2m update` is a PUT with **no id in the path**, so the body **must keep `id`** (it's the only identifier the API uses). Drop only the server-derived fields:
+
+```bash
+cx e2m get <id> -o json | jq '.e2m | del(.permutations, .createTime, .updateTime, .metricName)' > e2m.json
+# edit e2m.json (keep "id"), then:
+cx e2m update --from-file e2m.json
 ```
 
 ### Create payload (`E2MCreateParams`)
@@ -82,11 +95,14 @@ cx e2m create --from-file e2m.json
 | `description` | string | Optional. |
 | `permutationsLimit` | int | Create-only. Caps the label permutation cardinality (e.g. `30000`). |
 | `type` | enum string | `E2M_TYPE_LOGS2METRICS` or `E2M_TYPE_SPANS2METRICS`. Required. |
+| `dataSource` | string | Optional. `"<dataspace>/<dataset>"` to scope to a dataset; omit for the standard logs/spans stream. |
 | `logsQuery` / `spansQuery` | object | The `query` oneof — exactly one, matching `type`. |
 | `metricLabels[]` | array | Each label becomes a Prometheus label. **Each distinct value set multiplies permutations.** |
 | `metricFields[]` | array | **Max 10.** Each holds a source field + its aggregations. |
 
-**Read-only fields** (present in `get` responses, omit from create/update bodies): `id` (UUID — *required* on `update`/replace), `permutations` (`{limit, hasExceededLimit}`), `createTime`, `updateTime`, `metricName`, `isInternal`.
+**`id`** — UUID. **Omit on `create`** (server assigns it); **required in the body on `update`** (the PUT has no path id). Present in `get` responses.
+
+**Server-derived fields** (present in `get` responses; drop from create/update bodies): `permutations` (`{limit, hasExceededLimit}`), `createTime`, `updateTime`, `metricName`, `isInternal`.
 
 ### `logsQuery`
 
@@ -182,8 +198,9 @@ cx e2m labels-cardinality -o json  # current label cardinality data (existing E2
 
 - **Enums are strings, not integers.** Use `"type": "E2M_TYPE_LOGS2METRICS"` and `"aggType": "AGG_TYPE_AVG"` — not `1` / `4`. (Some internal/legacy exports use integers and a `$case` discriminator; the `cx` CLI uses the OpenAPI string form.)
 - **Template from `get`, not `list`.** `cx e2m list` / `create` print a simplified summary; only `cx e2m get <id> -o json` returns the full definition (`{"e2m": {...}}`).
-- **Create body is the bare object**, not wrapped in `{"e2m": ...}`. Extract `.e2m` from a `get` response before creating.
-- **`update` (replace) requires `id`** in the body; `create` must omit it.
+- **Create/update body is the bare object**, not wrapped in `{"e2m": ...}`. Extract `.e2m` from a `get` response first.
+- **`update` (replace) requires `id` in the body** — the PUT has no path id, so dropping `id` makes the update fail to find the rule. `create` must omit `id`.
+- **Simple aggregations (MIN/MAX/COUNT/AVG/SUM) need no `agg_metadata`** — only `histogram` and `samples` carry metadata. (The proto models the empty case as a `none` marker; in JSON, just omit the metadata.)
 - **Max 10 metric fields** per E2M.
 - **`targetMetricName` must be unique** within the definition; collisions silently clobber series.
 - **Forward-only.** Creating an E2M never backfills historical data — only events ingested after creation produce series.

@@ -192,7 +192,7 @@ The axis is **tier / processing level — NOT "Frequent Search vs archive"** (Me
 
 ### 1. Design the metric
 
-Choose `logs2metrics` vs `spans2metrics`, the source field(s) + aggregations, and labels (with cardinality in mind — see `references/e2m-schemas.md`). **Datasets are UI-only:** the API/CLI supports logs and spans only; for a dataset-source E2M, direct the user to the UI for now.
+Choose `logs2metrics` vs `spans2metrics`, the source field(s) + aggregations, and labels (with cardinality in mind — see `references/e2m-schemas.md`). To scope the E2M to a **dataset**, set the optional `dataSource` field to `"<dataspace>/<dataset>"` (supported via the API/CLI); omit it for the standard logs/spans stream.
 
 ### 2. Size it: check limits & cardinality
 

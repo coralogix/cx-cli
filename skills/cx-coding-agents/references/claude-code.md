@@ -130,27 +130,9 @@ topk(<N>, sum by (tool_name) (increase(claude_code_code_edit_tool_decision_total
 Retrieve turn-by-turn conversation messages for a specific session. The `ai_sessions_claude` source uses two log shapes; use `firstNonNull` to normalize across both.
 
 ```bash
-cx logs 'source ai_sessions_claude
-| filter ($d.logRecord.attributes["session.id"] == "<session_id>" || $d.attributes["session_id"] == "<session_id>")
-| filter ["claude_code.user_prompt", "claude_code.api_response_body"].arrayContains($d.logRecord.body) || ["claude_code.user_prompt", "claude_code.api_response_body"].arrayContains($d.body)
-| create body_norm from firstNonNull($d.logRecord.body, $d.body)
-| create resp_body from firstNonNull($d.logRecord.attributes["body"], $d.attributes["body"])
-| create prompt_norm from firstNonNull($d.logRecord.attributes["prompt"], $d.attributes["prompt"])
-| create ts_norm from firstNonNull($d.logRecord.timeUnixNano, $d.timeUnixNano)
-| extract $d.resp_body into parsed using jsonobject()
-| create role from case {
-    $d.body_norm == "claude_code.user_prompt" -> "user",
-    $d.body_norm == "claude_code.api_response_body" -> "assistant",
-    _ -> "unknown"
-  }
-| orderby $d.ts_norm asc
-| choose $d.role as role, $d.prompt_norm as prompt, $d.parsed.content as content_blocks, $d.parsed.text as flat_text, $d.ts_norm as ts' \
-  --start now-7d --tier archive -o agents
-```
-
-```text
+cx logs "$(cat <<'EOF'
 source ai_sessions_claude
-| filter ($d.logRecord.attributes['session.id'] == '<session_id>' || $d.attributes['session_id'] == '<session_id>')
+| filter ($d.logRecord.attributes['session.id'] == '<session_id>' || $d.attributes['session.id'] == '<session_id>')
 | filter ['claude_code.user_prompt', 'claude_code.api_response_body'].arrayContains($d.logRecord.body) || ['claude_code.user_prompt', 'claude_code.api_response_body'].arrayContains($d.body)
 | create body_norm from firstNonNull($d.logRecord.body, $d.body)
 | create resp_body from firstNonNull($d.logRecord.attributes['body'], $d.attributes['body'])
@@ -164,4 +146,40 @@ source ai_sessions_claude
 }
 | orderby $d.ts_norm asc
 | choose $d.role as role, $d.prompt_norm as prompt, $d.parsed.content as content_blocks, $d.parsed.text as flat_text, $d.ts_norm as ts
+EOF
+)" --start now-7d --tier archive -p <profile> -o agents
+```
+
+```text
+source ai_sessions_claude
+| filter ($d.logRecord.attributes['session.id'] == '<session_id>' || $d.attributes['session.id'] == '<session_id>')
+| filter ['claude_code.user_prompt', 'claude_code.api_response_body'].arrayContains($d.logRecord.body) || ['claude_code.user_prompt', 'claude_code.api_response_body'].arrayContains($d.body)
+| create body_norm from firstNonNull($d.logRecord.body, $d.body)
+| create resp_body from firstNonNull($d.logRecord.attributes['body'], $d.attributes['body'])
+| create prompt_norm from firstNonNull($d.logRecord.attributes['prompt'], $d.attributes['prompt'])
+| create ts_norm from firstNonNull($d.logRecord.timeUnixNano, $d.timeUnixNano)
+| extract $d.resp_body into parsed using jsonobject()
+| create role from case {
+    $d.body_norm == 'claude_code.user_prompt' -> 'user',
+    $d.body_norm == 'claude_code.api_response_body' -> 'assistant',
+    _ -> 'unknown'
+}
+| orderby $d.ts_norm asc
+| choose $d.role as role, $d.prompt_norm as prompt, $d.parsed.content as content_blocks, $d.parsed.text as flat_text, $d.ts_norm as ts
+```
+
+### User Prompts Only (simpler, flat-schema)
+
+When you only need the human turns (not assistant responses), this query is simpler and avoids the two-shape complexity:
+
+```bash
+cx logs "$(cat <<'EOF'
+source ai_sessions_claude
+| filter $d.attributes['session.id'] == '<session_id>'
+| filter $d.body == 'claude_code.user_prompt'
+| create prompt from $d.attributes['prompt']
+| orderby $d.timeUnixNano asc
+| choose prompt
+EOF
+)" --start now-7d --tier archive -p <profile> -o agents
 ```

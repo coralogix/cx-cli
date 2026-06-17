@@ -14,10 +14,14 @@ pub struct Integration {
     #[serde(default, deserialize_with = "string_or_number")]
     pub id: Option<String>,
     pub name: Option<String>,
-    #[serde(rename = "type")]
-    pub integration_type: Option<String>,
-    pub status: Option<String>,
-    pub version: Option<u32>,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub versions: Vec<String>,
+    // `integrationType` is a oneof object whose single key is the type
+    // (e.g. `cloudformation`, `arm`, `managed`, `untracked`).
+    pub integration_type: Option<Value>,
 }
 
 impl Integration {
@@ -26,19 +30,32 @@ impl Integration {
     }
 
     pub fn display_type(&self) -> &str {
-        self.integration_type.as_deref().unwrap_or("-")
+        self.integration_type
+            .as_ref()
+            .and_then(|v| v.as_object())
+            .and_then(|m| m.keys().next())
+            .map(String::as_str)
+            .unwrap_or("-")
     }
 
-    pub fn display_status(&self) -> &str {
-        self.status.as_deref().unwrap_or("-")
+    pub fn display_version(&self) -> &str {
+        self.versions.last().map(String::as_str).unwrap_or("-")
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntegrationEntry {
+    pub integration: Integration,
+    #[serde(default)]
+    pub errors: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListIntegrationsResponse {
     #[serde(default)]
-    pub deployments: Vec<Integration>,
+    pub integrations: Vec<IntegrationEntry>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,28 +134,35 @@ mod tests {
     #[test]
     fn deserialize_list_response() {
         let json = json!({
-            "deployments": [
+            "integrations": [
                 {
-                    "id": "int-001",
-                    "name": "AWS Integration",
-                    "type": "aws",
-                    "status": "active",
-                    "version": 1
+                    "integration": {
+                        "id": "aws-sns-shipper",
+                        "name": "AWS SNS",
+                        "description": "Ship logs via SNS",
+                        "tags": ["AWS", "Logs"],
+                        "versions": ["0.0.1", "0.0.40"],
+                        "integrationType": { "cloudformation": {} }
+                    },
+                    "errors": []
                 }
             ]
         });
         let resp: ListIntegrationsResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.deployments.len(), 1);
-        assert_eq!(resp.deployments[0].display_name(), "AWS Integration");
-        assert_eq!(resp.deployments[0].display_type(), "aws");
-        assert_eq!(resp.deployments[0].display_status(), "active");
+        assert_eq!(resp.integrations.len(), 1);
+        let i = &resp.integrations[0].integration;
+        assert_eq!(i.id.as_deref(), Some("aws-sns-shipper"));
+        assert_eq!(i.display_name(), "AWS SNS");
+        assert_eq!(i.display_type(), "cloudformation");
+        assert_eq!(i.display_version(), "0.0.40");
+        assert_eq!(i.tags, vec!["AWS", "Logs"]);
     }
 
     #[test]
     fn deserialize_empty_list() {
-        let json = json!({ "deployments": [] });
+        let json = json!({ "integrations": [] });
         let resp: ListIntegrationsResponse = serde_json::from_value(json).unwrap();
-        assert!(resp.deployments.is_empty());
+        assert!(resp.integrations.is_empty());
     }
 
     #[test]
@@ -153,12 +177,13 @@ mod tests {
         let i = Integration {
             id: None,
             name: None,
+            description: None,
+            tags: vec![],
+            versions: vec![],
             integration_type: None,
-            status: None,
-            version: None,
         };
         assert_eq!(i.display_name(), "-");
         assert_eq!(i.display_type(), "-");
-        assert_eq!(i.display_status(), "-");
+        assert_eq!(i.display_version(), "-");
     }
 }

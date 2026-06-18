@@ -7,6 +7,7 @@ description: |
   Claude Code, Codex, Cursor, Gemini CLI, or Copilot CLI.
 metadata:
   version: "1.0.0"
+internal: true
 ---
 
 # Coding Agents Skill

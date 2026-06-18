@@ -35,7 +35,7 @@ Before writing any skill, read existing ones to internalize the project's patter
 |-------|-------------|
 | `skills/cx-alerts/SKILL.md` | REST-based command with rich examples, JSON payloads, investigation workflow; uses both shared and skill-local reference files |
 | `skills/cx-telemetry-querying/SKILL.md` | Gateway skill that loads shared reference files per pillar — good model for cross-pillar routing and reference-loading patterns |
-| `skills/cx-create-dashboard/SKILL.md` | Complex multi-step workflow; uses shared references (dataprime, promql, logs, spans) plus skill-local references |
+| `skills/cx-dashboards/SKILL.md` | Complex multi-step workflow; uses shared references (dataprime, promql, logs, spans) plus skill-local references |
 | `skills/cx-cost-optimization/SKILL.md` | Workflow skill covering 5 commands unified by "reduce costs" intent — good model for multi-command skills |
 
 Pick the two closest to what you're building and read them completely.

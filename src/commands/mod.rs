@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod alerts;
 pub mod api_keys;
+pub mod cases;
 pub mod cleanup;
 pub mod completions;
 pub mod connectors;
@@ -10,6 +11,7 @@ pub mod dashboards;
 pub mod data_archive;
 pub mod data_usage;
 pub mod dataprime;
+pub mod docs;
 pub mod e2m;
 pub mod enrichments;
 pub mod extensions;

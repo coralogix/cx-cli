@@ -94,7 +94,7 @@ cx search-fields "grpc.status.UNAVAILABLE" -s value --dataset spans
 cx search-fields "eu-west-1" -s value --dataset all
 ```
 
-**Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add`.
+**Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add <name>`.
 
 If matching fields are found:
 - For **logs**: load `references/dataprime-reference.md` + `references/logs-querying.md`
@@ -204,10 +204,11 @@ Not every question is answered by querying data. If the user's intent is operati
 | Setting up monitoring, webhooks, notifications | `cx-observability-setup` |
 | Configuring parsing rules, enrichments, E2M | `cx-data-pipeline` |
 | Access audit, API keys, user management | `cx-platform-admin` |
-| Creating or managing dashboards | `cx-create-dashboard` |
+| Creating or managing dashboards | `cx-dashboards` |
 | Finding or searching existing dashboards | `cx-search-dashboard` |
 
 ---
+
 
 ## Key Principles
 

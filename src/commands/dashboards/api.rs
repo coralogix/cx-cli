@@ -163,7 +163,7 @@ impl<'a> DashboardsApi<'a> {
     /// List all dashboards in the catalog.
     pub async fn catalog(&self) -> Result<DashboardCatalogResponse> {
         self.client
-            .get(&format!("{DASHBOARDS_BASE}/catalog"), &[])
+            .get(&format!("{DASHBOARDS_BASE}/catalog/list"), &[])
             .await
     }
 
@@ -191,6 +191,13 @@ impl<'a> DashboardsApi<'a> {
     /// payload expected by the Dashboard Folders Service.
     pub async fn folders_create(&self, body: &Value) -> Result<Value> {
         self.client.post(FOLDERS_BASE, body).await
+    }
+
+    /// Replace an existing dashboard. `body` must be the full
+    /// `{ "requestId": ..., "dashboard": { ... } }` payload with the dashboard
+    /// `id` set to the target dashboard.
+    pub async fn replace(&self, body: &Value) -> Result<Value> {
+        self.client.put(DASHBOARDS_BASE, body).await
     }
 
     /// Delete a dashboard by ID.

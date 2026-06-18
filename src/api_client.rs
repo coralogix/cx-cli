@@ -31,7 +31,7 @@ impl CxClient {
 
         Ok(Self {
             inner,
-            endpoint: endpoint.into(),
+            endpoint: normalize_endpoint(&endpoint.into()),
         })
     }
 
@@ -51,10 +51,40 @@ impl CxClient {
         Ok(serde_json::from_str(&text)?)
     }
 
+    /// GET with optional query params, return the raw response text.
+    pub async fn get_raw(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+        headers: &[(&str, &str)],
+    ) -> Result<String> {
+        let url = format!("{}{path}", self.endpoint);
+        let mut req = self.inner.get(&url).query(params);
+        for (key, value) in headers {
+            req = req.header(*key, *value);
+        }
+        let resp = req.send().await?;
+        self.checked_text(resp).await
+    }
+
     /// POST JSON body, deserialize response into T.
     pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
+        self.post_with_headers(path, body, &[]).await
+    }
+
+    /// POST JSON body with extra headers, deserialize response into T.
+    pub async fn post_with_headers<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Value,
+        headers: &[(&str, &str)],
+    ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.post(&url).json(body).send().await?;
+        let mut req = self.inner.post(&url).json(body);
+        for (key, value) in headers {
+            req = req.header(*key, *value);
+        }
+        let resp = req.send().await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
     }
@@ -133,18 +163,24 @@ impl CxClient {
         match status {
             StatusCode::UNAUTHORIZED => Err(CxError::Auth(match detail {
                 Some(d) => format!("{d}. Run `cx profiles add` to update credentials."),
-                None => "Invalid or expired API key. Run `cx profiles add` to update credentials.".into(),
+                None => "Invalid or expired API key. Run `cx profiles add` to update credentials."
+                    .into(),
             })),
-            StatusCode::FORBIDDEN => Err(CxError::Auth(match detail {
-                Some(d) => format!("{d}. Check your API key's scopes."),
-                None => "Permission denied: your API key does not have the required scope for this operation.".into(),
+            StatusCode::FORBIDDEN => Err(CxError::Permission(match detail {
+                Some(d) => d,
+                None => {
+                    "You do not have permission for this operation. Check your API key's scopes."
+                        .into()
+                }
             })),
             StatusCode::TOO_MANY_REQUESTS => Err(CxError::Api {
                 status: code,
                 message: match (detail, retry_after) {
                     (Some(d), Some(secs)) => format!("{d}. Retry after {secs} seconds."),
                     (Some(d), None) => d,
-                    (None, Some(secs)) => format!("Rate limited by the API. Retry after {secs} seconds."),
+                    (None, Some(secs)) => {
+                        format!("Rate limited by the API. Retry after {secs} seconds.")
+                    }
                     (None, None) => "Rate limited by the API. Wait and retry.".into(),
                 },
             }),
@@ -154,6 +190,18 @@ impl CxClient {
             }),
         }
     }
+}
+
+/// Normalize a base endpoint so URL joining always produces a single `/`.
+///
+/// All request paths in this crate begin with a leading `/`, and URLs are
+/// built with `format!("{endpoint}{path}")`. A trailing slash on the endpoint
+/// (common for custom/overridden endpoints) would otherwise yield a `//` in the
+/// path, which some Coralogix proxies reject (e.g. the metrics endpoint returns
+/// 404 for `//metrics/api/v1/...`). Trimming trailing slashes here fixes this
+/// for every command at a single chokepoint.
+fn normalize_endpoint(endpoint: &str) -> String {
+    endpoint.trim_end_matches('/').to_string()
 }
 
 /// Extract a human-readable error detail from a response body.
@@ -177,7 +225,31 @@ fn extract_error_detail(body: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_error_detail;
+    use super::{extract_error_detail, normalize_endpoint};
+
+    #[test]
+    fn trims_single_trailing_slash() {
+        assert_eq!(
+            normalize_endpoint("https://api.eu1.coralogix.com/"),
+            "https://api.eu1.coralogix.com"
+        );
+    }
+
+    #[test]
+    fn trims_multiple_trailing_slashes() {
+        assert_eq!(
+            normalize_endpoint("https://api.eu1.coralogix.com///"),
+            "https://api.eu1.coralogix.com"
+        );
+    }
+
+    #[test]
+    fn leaves_endpoint_without_trailing_slash_unchanged() {
+        assert_eq!(
+            normalize_endpoint("https://api.eu1.coralogix.com"),
+            "https://api.eu1.coralogix.com"
+        );
+    }
 
     #[test]
     fn prefers_top_level_message() {

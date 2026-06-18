@@ -2,7 +2,7 @@
 mod common;
 
 use serde_json::json;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::olly::{run_artifacts_get, run_ask};
@@ -29,6 +29,7 @@ async fn ask_creates_chat_and_sends_message() {
     // Mock send message with blocking response
     Mock::given(method("POST"))
         .and(path("/api/v2/olly/v2/chats/chat-123/interactions/"))
+        .and(header("interaction-source", "cli"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "id": "interaction-789",
             "chat_id": "chat-123",
@@ -54,7 +55,6 @@ async fn ask_creates_chat_and_sends_message() {
         &targets,
         "What alerts fired today?",
         None,
-        "focus",
         "gpt-5.2",
         900,
         OutputFormat::Json,
@@ -70,6 +70,7 @@ async fn ask_continues_existing_chat() {
     // No chat creation - we're continuing an existing chat
     Mock::given(method("POST"))
         .and(path("/api/v2/olly/v2/chats/existing-chat/interactions/"))
+        .and(header("interaction-source", "cli"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "id": "interaction-002",
             "chat_id": "existing-chat",
@@ -93,7 +94,6 @@ async fn ask_continues_existing_chat() {
         &targets,
         "Tell me more",
         Some("existing-chat"),
-        "focus",
         "gpt-5.2",
         900,
         OutputFormat::Json,
@@ -103,7 +103,7 @@ async fn ask_continues_existing_chat() {
 }
 
 #[tokio::test]
-async fn ask_with_different_modes() {
+async fn ask_with_different_models() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -118,11 +118,12 @@ async fn ask_with_different_modes() {
 
     Mock::given(method("POST"))
         .and(path("/api/v2/olly/v2/chats/chat-deep/interactions/"))
+        .and(header("interaction-source", "cli"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "id": "interaction-deep",
             "chat_id": "chat-deep",
             "status": "COMPLETED",
-            "interaction_mode": "DEEP_RESEARCH",
+            "interaction_mode": "SKILL",
             "model_choice": "ADVANCED",
             "responses": [
                 {
@@ -143,13 +144,12 @@ async fn ask_with_different_modes() {
         &targets,
         "Analyze this complex issue",
         None,
-        "deep-research",
         "advanced",
         900,
         OutputFormat::Json,
     )
     .await
-    .expect("run_ask with deep-research mode should succeed");
+    .expect("run_ask with advanced model should succeed");
 }
 
 #[tokio::test]
@@ -168,6 +168,7 @@ async fn ask_handles_cancelled_response() {
 
     Mock::given(method("POST"))
         .and(path("/api/v2/olly/v2/chats/chat-cancel/interactions/"))
+        .and(header("interaction-source", "cli"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "id": "interaction-cancel",
             "chat_id": "chat-cancel",
@@ -185,7 +186,6 @@ async fn ask_handles_cancelled_response() {
         &targets,
         "Query that gets cancelled",
         None,
-        "focus",
         "gpt-5.2",
         900,
         OutputFormat::Json,
@@ -200,20 +200,60 @@ async fn ask_rejects_multi_profile() {
     let target2 = common::test_target("profile2", "http://localhost:2");
     let targets = vec![target1, target2];
 
-    let result = run_ask(
-        &targets,
-        "Hello",
-        None,
-        "focus",
-        "gpt-5.2",
-        900,
-        OutputFormat::Json,
-    )
-    .await;
+    let result = run_ask(&targets, "Hello", None, "gpt-5.2", 900, OutputFormat::Json).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("does not support multi-profile"));
+}
+
+#[tokio::test]
+async fn ask_sends_skill_interaction_mode() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-skill",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-skill/interactions/"))
+        .and(header("interaction-source", "cli"))
+        .and(body_partial_json(json!({"interaction_mode": "skill"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-skill",
+            "chat_id": "chat-skill",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-skill",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Response in skill mode"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_ask(
+        &targets,
+        "Test message",
+        None,
+        "gpt-5.2",
+        900,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_ask should send skill interaction_mode");
 }
 
 #[tokio::test]

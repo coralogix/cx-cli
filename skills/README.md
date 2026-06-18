@@ -1,10 +1,10 @@
-# cx Skills
+# cx skills
 
-A collection of agent skills for the [`cx` Coralogix CLI](https://github.com/coralogix/cx-cli). Install these skills to give your coding agent deep knowledge of how to investigate observability data using the CLI.
+Use these skills to give your coding agent access to Coralogix observability data — logs, spans, metrics, RUM, and alerts — directly from the CLI.
 
-Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more agents](https://github.com/vercel-labs/skills#supported-agents).
+Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](https://github.com/vercel-labs/skills#supported-agents).
 
-## Available Skills
+## Available skills
 
 ### Investigation
 
@@ -12,8 +12,9 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 |---|---|
 | `cx-olly` | Interact with Coralogix's Observability Agent (Olly) - chat, follow-up questions, retrieve generated artifacts |
 | `cx-telemetry-querying` | Gateway for all telemetry investigation - logs, spans, metrics, RUM, and DataPrime queries. Loads pillar-specific reference files per query type. |
+| `coralogix-docs` | Search and fetch official Coralogix product documentation (`cx docs search`, `cx docs fetch`) — not live tenant data |
 | `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts` |
-| `cx-create-dashboard` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation |
+| `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation |
 
 ### Workflow
 
@@ -21,9 +22,15 @@ Supports **Claude Code**, **Cursor**, **Codex**, **OpenCode**, and [40+ more age
 |---|---|
 | `cx-cost-optimization` | Analyze and reduce Coralogix data costs - usage analysis, TCO policies, retention, archive |
 | `cx-incident-management` | Triage incidents end-to-end - incidents, SLOs, alerts, notification verification |
+| `cx-cases` | Manage Coralogix Cases - list, inspect, assign/acknowledge/resolve/close, set priority overrides |
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
+
+## Requirements
+
+- [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx profiles add`)
+- A supported coding agent (Claude Code, Cursor, Codex, etc.)
 
 ## Installation
 
@@ -51,14 +58,9 @@ Install for a specific agent:
 npx skills add coralogix/cx-cli -a claude-code -g -y
 ```
 
-## Requirements
-
-- [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx profiles add`)
-- A supported coding agent (Claude Code, Cursor, Codex, etc.)
-
 ## Usage
 
-Once installed, your agent will automatically use the relevant skill when you ask questions like:
+Once installed, your agent uses the relevant skill automatically. Example queries:
 
 - "Ask Olly why the checkout service is slow"
 - "Investigate why we're seeing high error rates"

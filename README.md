@@ -25,7 +25,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 ## Features
 
 - DataPrime and PromQL at the terminal-Coralogix's proprietary query languages work end-to-end without leaving the shell.
-- 27 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
+- 28 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
 - Multi-profile fan-out with `-p prod-eu -p prod-us <command>`-run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
 - `agents` output format-token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
 - `cx schema`-outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
@@ -70,10 +70,10 @@ For other shells, see [Shell completions](#shell-completions). For Cargo, pre-bu
 
 Follow these steps to go from a fresh install to a working query.
 
-1. Create a profile. `cx profiles add` opens an interactive prompt for region, credentials, and default output format:
+1. Create a profile. `cx profiles add <name>` opens an interactive prompt for region, credentials, and default output format:
 
     ```bash
-    cx profiles add
+    cx profiles add <name>
     ```
 
 2. Query logs. The positional argument is a DataPrime query:
@@ -142,7 +142,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 | Command | Purpose |
 |---|---|
-| `cx alerts` | Manage alerts: `list`, `get`, `create`, `enable`, `disable`, `events`, `event-stats`, `suppression-rules` |
+| `cx alerts` | Manage alerts: `list`, `get`, `create`, `delete`, `enable`, `disable`, `events`, `event-stats`, `suppression-rules` |
 | `cx incidents` | Manage and triage incidents |
 
 **Notifications**
@@ -217,7 +217,7 @@ Configuration lives in `~/.cx/`:
     default.toml           # Credentials and region per profile
 ```
 
-Credentials (API keys or OAuth tokens) are stored either inline in the profile TOML with `0600` permissions (`credential_storage = "file"`, the default) or in the OS keyring (`credential_storage = "os_store"` - macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). `cx profiles add` prompts for the choice. On Linux, keyring support requires a glibc build; the default install script and release binaries use musl, which has no keyring backend, so `os_store` is unavailable there.
+Credentials (API keys or OAuth tokens) are stored either inline in the profile TOML with `0600` permissions (`credential_storage = "file"`, the default) or in the OS keyring (`credential_storage = "os_store"` - macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). `cx profiles add <name>` prompts for the choice. On Linux, keyring support requires a glibc build; the default install script and release binaries use musl, which has no keyring backend, so `os_store` is unavailable there.
 
 Environment variables override profile settings: `CX_PROFILE`, `CX_API_KEY`, and `CX_REGION`.
 
@@ -251,7 +251,7 @@ Install globally for all projects:
 npx skills add coralogix/cx-cli -g
 ```
 
-Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-create-dashboard`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](https://github.com/coralogix/cx-cli/blob/master/skills/README.md) for per-skill usage.
+Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-dashboards`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](https://github.com/coralogix/cx-cli/blob/master/skills/README.md) for per-skill usage.
 
 ## Multi-profile fan-out
 

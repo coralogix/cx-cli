@@ -1,7 +1,8 @@
 use std::io::IsTerminal;
 
 use anyhow::{bail, Result};
-use inquire::Confirm;
+use inquire::validator::MinLengthValidator;
+use inquire::{Confirm, Text};
 
 const WRITE_VERBS: &[&str] = &[
     "acknowledge",
@@ -10,6 +11,7 @@ const WRITE_VERBS: &[&str] = &[
     "assign",
     "batch",
     "bulk-delete",
+    "clear-priority",
     "close",
     "create",
     "delete",
@@ -19,13 +21,16 @@ const WRITE_VERBS: &[&str] = &[
     "overwrite",
     "remove",
     "reorder",
+    "replace",
     "resolve",
     "set",
     "set-active",
     "set-default",
     "set-idp",
+    "set-priority",
     "set-status",
     "settings-update",
+    "unacknowledge",
     "unassign",
     "undeploy",
     "update",
@@ -83,6 +88,29 @@ const AGENT_ENV_VARS: &[&str] = &[
 
 pub fn is_agent_mode() -> bool {
     AGENT_ENV_VARS.iter().any(|var| std::env::var(var).is_ok())
+}
+
+/// Interactively prompt the user for a required non-empty text value.
+///
+/// Returns `Ok(Some(value))` when the user supplied a string in an interactive
+/// terminal, and `Ok(None)` when prompting is skipped because the user opted
+/// out (`yes == true`), is non-interactive (no TTY), or is running under an
+/// agent. Callers should treat `None` as "fall back to the value already
+/// provided by the caller / leave the field unset."
+pub fn prompt_optional_text(
+    label: &str,
+    help: Option<&str>,
+    yes: bool,
+    agent_mode: bool,
+) -> Result<Option<String>> {
+    if yes || agent_mode || !std::io::stdin().is_terminal() {
+        return Ok(None);
+    }
+    let mut prompt = Text::new(label).with_validator(MinLengthValidator::new(1));
+    if let Some(h) = help {
+        prompt = prompt.with_help_message(h);
+    }
+    Ok(Some(prompt.prompt()?))
 }
 
 pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<()> {
@@ -150,6 +178,9 @@ mod tests {
             "set-idp",
             "set-active",
             "set-default",
+            "set-priority",
+            "clear-priority",
+            "unacknowledge",
             "batch",
             "activate",
             "settings-update",
@@ -229,6 +260,18 @@ mod tests {
     #[test]
     fn test_confirm_destructive_succeeds_with_yes_no_agent() {
         assert!(confirm_destructive("test action?", true, false).is_ok());
+    }
+
+    #[test]
+    fn test_prompt_optional_text_returns_none_with_yes() {
+        let r = prompt_optional_text("label", None, true, false).unwrap();
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn test_prompt_optional_text_returns_none_in_agent_mode() {
+        let r = prompt_optional_text("label", None, false, true).unwrap();
+        assert!(r.is_none());
     }
 
     #[test]

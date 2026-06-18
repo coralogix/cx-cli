@@ -220,7 +220,7 @@ pub struct ListResponse {
 
 // ── API client ─────────────────────────────────────────────────────
 
-const BASE_PATH: &str = "/mgmt/openapi/latest/your-domain/v1";
+const BASE_PATH: &str = "/mgmt/openapi/5/your-domain/v1";
 
 pub struct YourDomainApi<'a> {
     client: &'a CxClient,
@@ -428,7 +428,7 @@ The `Cli` struct uses a custom `after_help` string (not Clap's `next_help_headin
 
 ```rust
 #[command(
-    help_template = "{about-with-newline}\nUsage: {usage}{after-help}\n\nOptions:\n{options}",
+    help_template = "{about-with-newline}\n{usage-heading} {usage}{after-help}\n\nGlobal Options:\n{options}",
     after_help = "\
 Query:
   logs               Query logs using DataPrime syntax
@@ -582,7 +582,7 @@ async fn list_returns_items_from_mock() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/latest/your-domain/v1"))
+        .and(path("/mgmt/openapi/5/your-domain/v1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "items": [{ "id": "abc-123", "name": "Test" }]
         })))

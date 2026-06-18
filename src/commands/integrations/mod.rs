@@ -17,8 +17,8 @@ fn rg_to_json(integration: &Integration, include_profile: bool, profile: &str) -
         "id": integration.id,
         "name": integration.name,
         "type": integration.display_type(),
-        "status": integration.display_status(),
-        "version": integration.version.map(|v| v.to_string()).unwrap_or_default(),
+        "version": integration.display_version(),
+        "tags": integration.tags,
     });
     if include_profile {
         if let Value::Object(ref mut m) = v {
@@ -63,7 +63,8 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {
-                for integration in resp.deployments {
+                for entry in resp.integrations {
+                    let integration = entry.integration;
                     all_json.push(rg_to_json(&integration, include_profile, &profile));
                     all_items.push((profile.clone(), integration));
                 }
@@ -92,16 +93,13 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                         integration.id.clone().unwrap_or_default(),
                         integration.name.clone().unwrap_or_default(),
                         integration.display_type().to_string(),
-                        integration.display_status().to_string(),
-                        integration
-                            .version
-                            .map(|v| v.to_string())
-                            .unwrap_or_default(),
+                        integration.display_version().to_string(),
+                        integration.tags.join(", "),
                     ]
                 })
                 .collect();
             render::render_table(
-                &["ID", "Name", "Type", "Status", "Version"],
+                &["ID", "Name", "Type", "Version", "Tags"],
                 rows,
                 include_profile,
             );

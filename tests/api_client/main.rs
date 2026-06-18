@@ -52,8 +52,38 @@ async fn error_403_with_message() {
         "expected server message in error, got: {msg}"
     );
     assert!(
-        msg.contains("Check your API key's scopes"),
-        "expected scope hint in error, got: {msg}"
+        !msg.contains("Check your API key's scopes"),
+        "scope hint should not be appended when server provides detail, got: {msg}"
+    );
+    assert!(
+        msg.contains("Permission denied"),
+        "expected permission error, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn error_403_quota_exceeded() {
+    init_tls();
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/test"))
+        .respond_with(
+            ResponseTemplate::new(403).set_body_json(json!({"message": "quota exceeded"})),
+        )
+        .mount(&server)
+        .await;
+
+    let client = CxClient::new(server.uri(), "test-key").unwrap();
+    let err = client.get::<Value>("/test", &[]).await.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("quota exceeded"),
+        "expected server message in error, got: {msg}"
+    );
+    assert!(
+        !msg.contains("Check your API key's scopes"),
+        "scope hint should not be appended for quota errors, got: {msg}"
     );
 }
 
@@ -72,8 +102,12 @@ async fn error_403_without_message() {
     let err = client.get::<Value>("/test", &[]).await.unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("Permission denied: your API key does not have the required scope"),
+        msg.contains("You do not have permission for this operation"),
         "expected generic permission error, got: {msg}"
+    );
+    assert!(
+        msg.contains("Check your API key's scopes"),
+        "expected permission hint, got: {msg}"
     );
 }
 

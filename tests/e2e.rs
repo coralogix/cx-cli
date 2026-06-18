@@ -20,6 +20,8 @@ mod actions;
 mod alerts;
 #[path = "e2e/api_keys.rs"]
 mod api_keys;
+#[path = "e2e/cases/mod.rs"]
+mod cases;
 #[path = "e2e/connectors.rs"]
 mod connectors;
 #[path = "e2e/contextual_data.rs"]

@@ -87,7 +87,27 @@ impl Incident {
 pub struct ListIncidentsResponse {
     #[serde(default)]
     pub incidents: Vec<Incident>,
+    pub pagination: Option<PaginationResponse>,
+    // Older facade responses exposed this at the top level; keep accepting it
+    // so pagination keeps working across API versions.
     pub next_page_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginationResponse {
+    pub total_size: Option<u32>,
+    pub next_page_token: Option<String>,
+}
+
+impl ListIncidentsResponse {
+    pub fn next_page_token(&self) -> Option<&str> {
+        self.pagination
+            .as_ref()
+            .and_then(|p| p.next_page_token.as_deref())
+            .or(self.next_page_token.as_deref())
+            .filter(|token| !token.is_empty())
+    }
 }
 
 #[derive(Debug, Deserialize)]

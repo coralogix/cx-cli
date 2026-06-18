@@ -182,6 +182,91 @@ fn wait_for_callback_blocking(listener: TcpListener, expected_state: String) -> 
     }
 }
 
+/// HTML returned to the browser after a successful OAuth login.
+///
+/// Fully self-contained — no remote resources. Avoids third-party network requests
+/// from the callback URL (which still holds the OAuth `code` and `state` params in
+/// the query string). Mirrors the Figma "Auth callback / Success" design
+/// (node 9428-15414), with two intentional omissions for this localhost flow:
+///   - the reCAPTCHA footer (there is no reCAPTCHA on a local callback page), and
+///   - a "Close tab" button: browsers block `window.close()` for tabs they did not
+///     open, so — like `gh`, `gcloud`, etc. — we just tell the user to close the tab.
+const SUCCESS_PAGE_HTML: &str = r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authentication successful</title>
+<style>
+  :root {
+    --text-primary: #0e141d;
+    --text-secondary: #5e6164;
+    --green-badge: #02763a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+    background: linear-gradient(160deg, #edeff1 0%, #f7f8f9 45%, #ffffff 100%);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: fit-content;
+    max-width: calc(100vw - 48px);
+    text-align: center;
+  }
+  .badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    margin-bottom: 8px;
+    border-radius: 50%;
+    background: var(--green-badge);
+  }
+  .badge svg { display: block; }
+  h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--text-primary);
+  }
+  .subtitle {
+    margin: 8px 0 0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  @media (max-width: 340px) { .subtitle { white-space: normal; } }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="badge">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+        <path d="M5 12.5L10 17.5L19.5 7" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Authentication successful</h1>
+    <p class="subtitle">You are now connected to Coralogix.<br>You may close this tab and return to your application.</p>
+  </main>
+</body>
+</html>"##;
+
 /// Parse one HTTP connection and send an appropriate response.
 ///
 /// Returns `Ok(Some(code))` when a valid OAuth callback is received,
@@ -222,9 +307,7 @@ fn extract_and_respond(stream: TcpStream, expected_state: &str) -> Result<Option
         bail!("OAuth state mismatch – possible CSRF attempt, aborting.");
     }
 
-    let body = "<html><body><h2>Authentication successful!</h2>\
-                <p>You may close this tab and return to the terminal.</p></body></html>";
-    send_http_response(&stream, 200, body);
+    send_http_response(&stream, 200, SUCCESS_PAGE_HTML);
     Ok(Some(code))
 }
 

@@ -24,7 +24,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 27 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 29 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -32,6 +32,7 @@ Query:
   spans              Query spans using DataPrime syntax
   metrics            Query metrics using PromQL
   dataprime          DataPrime language reference and raw queries
+  docs               Search and fetch official Coralogix product documentation
   search-fields      Search log/span fields by description or value content
 
 Observe:
@@ -42,6 +43,7 @@ Observe:
 Detect & Respond:
   alerts             Manage alert definitions and suppression rules
   incidents          Manage and triage incidents
+  cases              Manage and triage cases
 
 Notifications:
   notifications      Manage connectors, routers, presets, and notification testing
@@ -143,7 +145,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 ### Skills
 
-`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Eight skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-create-dashboard`, `cx-incident-management`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
+`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Eight skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-dashboards`, `cx-incident-management`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
 
 ### Documentation
 
@@ -174,16 +176,18 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx spans` | `cx-telemetry-querying` | Covered (loads `spans-querying.md` + `dataprime-reference.md`) |
 | `cx metrics` | `cx-telemetry-querying` | Covered (loads `metrics-querying.md` + `promql-guidelines.md`) |
 | `cx dataprime` | `cx-telemetry-querying` | Covered (loads `dataprime-reference.md`) |
+| `cx docs` | `coralogix-docs` | Covered |
 | `cx logs` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx alerts` | `cx-alerts` | Covered |
-| `cx dashboards` | `cx-create-dashboard` | Covered |
+| `cx dashboards` | `cx-dashboards` | Covered |
 | `cx usage` | `cx-cost-optimization` | Covered |
 | `cx tco` | `cx-cost-optimization` | Covered |
 | `cx retentions` | `cx-cost-optimization` | Covered |
 | `cx archive` | `cx-cost-optimization` | Covered |
 | `cx incidents` | `cx-incident-management` | Covered |
+| `cx cases` | `cx-cases` | Covered |
 | `cx slos` | `cx-incident-management` | Covered |
 | `cx parsing-rules` | `cx-data-pipeline` | Covered |
 | `cx enrichments` | `cx-data-pipeline` | Covered |

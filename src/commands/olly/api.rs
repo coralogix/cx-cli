@@ -8,6 +8,7 @@ use crate::error::Result;
 
 const CHATS_BASE: &str = "/api/v2/olly/v2/chats";
 const ARTIFACTS_BASE: &str = "/api/v2/olly/artifacts";
+const INTERACTION_SOURCE_HEADER: (&str, &str) = ("interaction-source", "cli");
 
 // ── Request types ──────────────────────────────────────────────────────────────
 
@@ -186,8 +187,9 @@ impl OllyApi {
     // ── Chats ──────────────────────────────────────────────────────────────────
 
     pub async fn create_chat(&self) -> Result<Chat> {
-        let body = json!({ "chat_type": "cli" });
-        self.client.post(&format!("{CHATS_BASE}/"), &body).await
+        self.client
+            .post_empty(&format!("{CHATS_BASE}/"), &[("chat_type", "ai_connector")])
+            .await
     }
 
     pub async fn get_chat(&self, chat_id: &str) -> Result<ChatWithMessages> {
@@ -201,19 +203,20 @@ impl OllyApi {
         &self,
         chat_id: &str,
         content: &str,
-        interaction_mode: &str,
         model_choice: &str,
         timeout_seconds: u32,
     ) -> Result<Interaction> {
         let path = format!("{CHATS_BASE}/{chat_id}/interactions/");
         let body = json!({
             "content": [InputContentBlock::text(content)],
-            "interaction_mode": interaction_mode,
+            "interaction_mode": "skill",
             "model_choice": model_choice,
             "should_block": true,
             "timeout_seconds": timeout_seconds
         });
-        self.client.post(&path, &body).await
+        self.client
+            .post_with_headers(&path, &body, &[INTERACTION_SOURCE_HEADER])
+            .await
     }
 
     pub async fn get_interaction(

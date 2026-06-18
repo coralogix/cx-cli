@@ -28,7 +28,9 @@ The `type` field + `query` oneof select what events are aggregated:
 
 `E2M_TYPE_UNSPECIFIED` (0) is never used in a real definition.
 
-**Datasets (`dataSource`):** an optional top-level `dataSource` string in `"<dataspace>/<dataset>"` format (e.g. `"my_dataspace/my_dataset"`) scopes the E2M to a specific dataset instead of the standard logs/spans stream. It is **supported via the API/CLI** — add it to the create body. If omitted, the E2M defaults to the standard logs/spans stream for the chosen `type`.
+**Datasets (`dataSource`):** an optional top-level `dataSource` string in `"<dataspace>/<dataset>"` format (e.g. `"my_dataspace/my_dataset"`) scopes the E2M to a specific dataset instead of the standard logs/spans stream. It is supported via the API/CLI — add it to the create body. If omitted, the E2M defaults to the standard logs/spans stream for the chosen `type`.
+
+> **Requires an account feature flag.** `dataSource` is gated behind `e2m_dataset_source_enabled` per company. If the feature isn't enabled, the API rejects the definition with `"dataSource is not enabled for this company"`. If you hit that error, the account needs the feature turned on — it's not a payload problem.
 
 ```json
 { "type": "E2M_TYPE_LOGS2METRICS", "dataSource": "my_dataspace/my_dataset", "logsQuery": { ... } }
@@ -177,17 +179,19 @@ Each aggregation: `enabled` (bool), `aggType` (string enum), `targetMetricName` 
 - Keep labels to bounded, low-cardinality dimensions (app, subsystem, region, status class, severity, endpoint *group*).
 - `permutationsLimit` caps the design; if exceeded, the read-back `permutations.hasExceededLimit` is `true` and new permutations stop being produced.
 
-**Checking limits and cardinality:**
+**Checking limits and forecasting cardinality:**
 
 ```bash
 cx e2m limits -o json              # account E2M count limit + used
-cx e2m labels-cardinality -o json  # current label cardinality data (existing E2Ms)
+cx e2m labels-cardinality -o json  # see caveat below
 ```
 
 - `cx e2m limits` reports the E2M **count** limit and how many are used (the underlying API also tracks labels/permutations/metrics caps).
-- `cx e2m labels-cardinality` reports **existing** label cardinality — it is **not** a pre-create forecast from a draft. To size a new E2M, estimate permutations manually (product of distinct label values) and set `permutationsLimit` accordingly.
+- **The labels-cardinality endpoint is a draft forecast tool.** Given a proposed query + `metricLabels`, the backend runs a cardinality aggregation over the **last 7 days** of the company's logs/spans and returns the distinct label-permutation count **per day** for exactly that draft design — so you can size a design *before* creating it. With no labels supplied it returns an empty result.
+- **CLI limitation:** `cx e2m labels-cardinality` currently takes **no arguments**, so it sends no draft and returns an **empty list** — it does not expose the forecast yet (it would need `--metric-labels`/`--query`). Until then, forecast a draft via the **Coralogix UI** (the create flow calls this endpoint with your labels+query), or estimate manually (below) as a rough check.
+- **The forecast only sees Frequent-Search (High-tier) data** — it queries the hot `*_newlogs*` index. For a Medium-tier (archive) source it will undercount, so treat manual estimates as the floor.
 
-**Worked example — sizing a 2-label design:**
+**Manual estimate (rough fallback) — sizing a 2-label design:**
 - Labels: `app` (~12 distinct), `severity` (6 distinct).
 - Estimated permutations = 12 × 6 = **72** — comfortably under any limit.
 - Adding `endpoint` (~300 distinct) → 12 × 6 × 300 = **21,600**. Closer to limits; prefer grouping endpoints into a bounded `route` field, or drop the label and filter in `lucene` instead.

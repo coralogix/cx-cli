@@ -192,16 +192,16 @@ The axis is **tier / processing level — NOT "Frequent Search vs archive"** (Me
 
 ### 1. Design the metric
 
-Choose `logs2metrics` vs `spans2metrics`, the source field(s) + aggregations, and labels (with cardinality in mind — see `references/e2m-schemas.md`). To scope the E2M to a **dataset**, set the optional `dataSource` field to `"<dataspace>/<dataset>"` (supported via the API/CLI); omit it for the standard logs/spans stream.
+Choose `logs2metrics` vs `spans2metrics`, the source field(s) + aggregations, and labels (with cardinality in mind — see `references/e2m-schemas.md`). To scope the E2M to a **dataset**, set the optional `dataSource` field to `"<dataspace>/<dataset>"`; this requires the account feature `e2m_dataset_source_enabled` (otherwise the API rejects it with "dataSource is not enabled for this company"). Omit it for the standard logs/spans stream.
 
 ### 2. Size it: check limits & cardinality
 
 ```bash
 cx e2m limits -o json              # account E2M count limit + used
-cx e2m labels-cardinality -o json  # current label cardinality (existing E2Ms)
+cx e2m labels-cardinality -o json  # see caveat below
 ```
 
-`cx e2m labels-cardinality` reports **existing** cardinality — it is **not** a forecast from a draft. Estimate permutations for a new E2M manually (product of distinct label values) and set `permutationsLimit` accordingly. Never use high-cardinality fields (IDs, raw URLs, IPs) as labels.
+The labels-cardinality endpoint is a **draft forecast** — given proposed labels + query it returns the per-day distinct-permutation count over the last 7 days, so you can size a design before creating it. **But `cx e2m labels-cardinality` currently takes no arguments**, so it sends no draft and returns an empty list (a CLI gap — it can't forecast yet). Until that's wired up, forecast via the UI or estimate permutations manually (product of distinct label values) and set `permutationsLimit`. Never use high-cardinality fields (IDs, raw URLs, IPs) as labels. Note the forecast only sees Frequent-Search (High-tier) data.
 
 ### 3. Template from an existing definition
 
@@ -229,7 +229,7 @@ cx metrics query "<target_metric_name>" --time now
 ### Troubleshooting: E2M produces no metric series
 
 1. **Check the source data's TCO tier** — if it's routed to **Low/compliance** (or blocked), E2M cannot run. Fix with a TCO change (`cx tco list` / `cx-cost-optimization`), **not** an E2M change.
-2. **Verify the query matches streaming data** — run the E2M's `lucene` filter as a live `cx logs`/`cx spans` query and confirm it returns recent results.
+2. **Verify the query matches streaming data** — run the E2M's `lucene` filter as a live `cx logs`/`cx spans` query and confirm it returns recent results. Note `cx logs` queries Frequent-Search (High-tier) by default; for a **Medium-tier (archive)** source add `--tier archive`, since the data won't appear in a default Frequent-Search query even though E2M still produces series.
 3. **Remember it's forward-only** — no series exist for data ingested before the E2M was created.
 
 ### Cost optimization: convert High-tier logs to metrics

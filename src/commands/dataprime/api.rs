@@ -142,6 +142,12 @@ pub fn build_dataprime_body(
 /// - line 1: `{"queryId": {...}}`
 /// - line 2+: `{"result": {"results": [...]}}` (one or more batches)
 /// - optional: `{"warning": {"compileWarning": {"warningMessage": "..."}}}` lines
+/// - optional: `{"error": {...}}` lines — returned as `Err` immediately
+///
+/// An error line causes the function to return `Err` at the first occurrence.
+/// Result rows never carry a top-level `"error"` key (they have `metadata`,
+/// `labels`, and `userData`), so any line with `"error"` is safely treated as
+/// a backend-reported query failure.
 pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
     let mut rows: Vec<Value> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
@@ -163,9 +169,54 @@ pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
                     warnings.push(msg.to_string());
                 }
             }
+        } else if let Some(err_value) = value.get("error") {
+            // The Dataprime backend emits an error line when the query cannot be
+            // executed (e.g. OOM, compilation failure).  The HTTP status is still
+            // 200, so this must be caught at the NDJSON layer.
+            //
+            // The exact JSON shape is not pinned in the protos available in this
+            // repo, so we parse defensively: try common field names, then fall
+            // back to the raw JSON so the message is never silently lost.
+            let message = extract_error_message(err_value);
+            return Err(crate::error::CxError::Api {
+                status: 200,
+                message: format!("query failed: {message}"),
+            });
         }
     }
     Ok((rows, warnings))
+}
+
+/// Extract a human-readable error message from the value of a Dataprime `"error"` NDJSON field.
+///
+/// Tries the following in order:
+/// 1. A plain string: `{"error": "some message"}`
+/// 2. An object whose first child has an `"errorMessage"` field:
+///    `{"error": {"someSubtype": {"errorMessage": "..."}}}`
+/// 3. An object whose first child has a `"message"` or `"warningMessage"` field
+///    (defensive — covers alternative shapes).
+/// 4. Fallback: serialize the entire value as JSON so no information is lost.
+fn extract_error_message(v: &Value) -> String {
+    // Shape 1: plain string
+    if let Some(s) = v.as_str() {
+        if !s.is_empty() {
+            return s.to_string();
+        }
+    }
+    // Shape 2 & 3: object wrapping a subtype object
+    if let Some(obj) = v.as_object() {
+        for inner in obj.values() {
+            for key in &["errorMessage", "message", "warningMessage"] {
+                if let Some(msg) = inner.get(key).and_then(|m| m.as_str()) {
+                    if !msg.is_empty() {
+                        return msg.to_string();
+                    }
+                }
+            }
+        }
+    }
+    // Fallback: raw JSON so the caller always sees something meaningful
+    v.to_string()
 }
 
 // ── Aggregate-query detection ─────────────────────────────────────────────────

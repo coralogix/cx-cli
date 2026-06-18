@@ -81,8 +81,10 @@ keyring = { version = "3", features = ["windows-native"] }
 
 # Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)
 # NOTE: musl builds have no keyring backend - users must use file-based credential storage
+# The "vendored" feature compiles libdbus from source so CI containers don't need
+# libdbus-1-dev / pkg-config installed as a system dependency.
 [target.'cfg(all(target_os = "linux", not(target_env = "musl")))'.dependencies]
-keyring = { version = "3", features = ["sync-secret-service"] }
+keyring = { version = "3", features = ["sync-secret-service", "vendored"] }
 
 [dev-dependencies]
 wiremock = "0.6"

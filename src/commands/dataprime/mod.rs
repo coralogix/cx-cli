@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -280,13 +280,18 @@ pub struct MergedResults {
 }
 
 /// Merge per-profile generic responses into a single result set.
+///
+/// Returns `(MergedResults, errors)` where `errors` is the list of profiles that
+/// failed, together with their errors.  The caller decides whether to print them
+/// to stderr, propagate them, or both.
 pub fn merge_results(
     per_profile: Vec<(String, Result<QueryGenericResponse>)>,
     include_profile: bool,
-) -> MergedResults {
+) -> (MergedResults, Vec<(String, anyhow::Error)>) {
     let mut rows: Vec<Value> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     let mut is_aggregate: Option<bool> = None;
+    let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
 
     for (profile, result) in per_profile {
         match result {
@@ -308,16 +313,19 @@ pub fn merge_results(
                     rows.extend(resp.raw_results);
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => errors.push((profile, e)),
         }
     }
 
-    MergedResults {
-        rows,
-        warnings,
-        is_aggregate: is_aggregate.unwrap_or(false),
-        include_profile,
-    }
+    (
+        MergedResults {
+            rows,
+            warnings,
+            is_aggregate: is_aggregate.unwrap_or(false),
+            include_profile,
+        },
+        errors,
+    )
 }
 
 /// Render merged results to stdout.
@@ -411,7 +419,37 @@ pub async fn run_query(
     })
     .await;
 
-    let merged = merge_results(per_profile, include_profile);
+    let total = targets.len();
+    let (merged, errors) = merge_results(per_profile, include_profile);
+
+    if errors.len() == total && total > 0 {
+        // Every profile failed. For a single profile, propagate the underlying
+        // error directly so main prints exactly one "Error: ..." line on stderr
+        // and exits non-zero — no misleading "No results found." on stdout.
+        // For multiple profiles that all failed, print each per-profile error
+        // and return a generic failure.
+        if total == 1 {
+            let (_profile, err) = errors.into_iter().next().unwrap();
+            return Err(err);
+        }
+        for (profile, err) in &errors {
+            eprintln!(
+                "{}",
+                format!("error from profile '{profile}': {err:#}").red()
+            );
+        }
+        return Err(anyhow!("all profiles failed"));
+    }
+
+    // Partial failure: print per-profile errors to stderr and continue
+    // rendering the rows that succeeded.
+    for (profile, err) in errors {
+        eprintln!(
+            "{}",
+            format!("error from profile '{profile}': {err:#}").red()
+        );
+    }
+
     render_results(&merged, output, max_direct, temp_dir, text_renderer)
 }
 
@@ -501,11 +539,12 @@ category: ["Commands reference", "test"]
     fn merge_single_profile_omits_profile_field() {
         let rows = vec![json!({"userData": {"message": "hello"}})];
         let per_profile = vec![("prod".to_string(), Ok(make_generic_response(rows, false)))];
-        let merged = merge_results(per_profile, false);
+        let (merged, errors) = merge_results(per_profile, false);
 
         assert_eq!(merged.rows.len(), 1);
         assert!(!merged.include_profile);
         assert!(merged.rows[0].get("profile").is_none());
+        assert!(errors.is_empty());
     }
 
     #[test]
@@ -526,11 +565,12 @@ category: ["Commands reference", "test"]
                 )),
             ),
         ];
-        let merged = merge_results(per_profile, true);
+        let (merged, errors) = merge_results(per_profile, true);
 
         assert_eq!(merged.rows.len(), 2);
         assert_eq!(merged.rows[0]["profile"], json!("prod"));
         assert_eq!(merged.rows[1]["profile"], json!("staging"));
+        assert!(errors.is_empty());
     }
 
     #[test]
@@ -542,10 +582,12 @@ category: ["Commands reference", "test"]
             ),
             ("bad".to_string(), Err(anyhow::anyhow!("network error"))),
         ];
-        let merged = merge_results(per_profile, true);
+        let (merged, errors) = merge_results(per_profile, true);
 
         assert_eq!(merged.rows.len(), 1);
         assert_eq!(merged.rows[0]["profile"], json!("good"));
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].0, "bad");
     }
 
     #[test]
@@ -553,10 +595,11 @@ category: ["Commands reference", "test"]
         let mut resp = make_generic_response(vec![], false);
         resp.warnings = vec!["too many results".to_string()];
         let per_profile = vec![("prod".to_string(), Ok(resp))];
-        let merged = merge_results(per_profile, true);
+        let (merged, errors) = merge_results(per_profile, true);
 
         assert_eq!(merged.warnings.len(), 1);
         assert!(merged.warnings[0].contains("[prod]"));
+        assert!(errors.is_empty());
     }
 
     #[test]
@@ -565,7 +608,8 @@ category: ["Commands reference", "test"]
             ("p1".to_string(), Ok(make_generic_response(vec![], true))),
             ("p2".to_string(), Ok(make_generic_response(vec![], true))),
         ];
-        let merged = merge_results(per_profile, true);
+        let (merged, errors) = merge_results(per_profile, true);
         assert!(merged.is_aggregate);
+        assert!(errors.is_empty());
     }
 }

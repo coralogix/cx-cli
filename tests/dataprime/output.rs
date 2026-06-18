@@ -484,3 +484,88 @@ fn aggregate_rows_do_not_affect_non_aggregate_log_parsing() {
     let record = parse_log_record(&out);
     assert_eq!(record.severity.as_deref(), Some("ERROR"));
 }
+
+// ── NDJSON error-line handling ────────────────────────────────────────────────
+
+/// An error line with a plain string value: `{"error": "some message"}`.
+#[test]
+fn ndjson_error_string_returns_err() {
+    let ndjson = r#"{"queryId":{"queryId":"abc"}}
+{"error":"query ran out of memory"}
+"#;
+    let result = parse_ndjson_response(ndjson);
+    assert!(result.is_err(), "expected Err, got Ok");
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("query failed"),
+        "message should contain 'query failed': {msg}"
+    );
+    assert!(
+        msg.contains("query ran out of memory"),
+        "message should contain the error reason: {msg}"
+    );
+}
+
+/// An error line with a nested subtype object: `{"error": {"someSubtype": {"errorMessage": "..."}}}`.
+/// This mirrors the proto3 JSON encoding pattern used for warnings
+/// (`{"warning": {"compileWarning": {"warningMessage": "..."}}}}).
+#[test]
+fn ndjson_error_object_with_error_message_returns_err() {
+    let ndjson = r#"{"queryId":{"queryId":"abc"}}
+{"error":{"queryError":{"errorMessage":"OOM: query ran out of memory"}}}
+"#;
+    let result = parse_ndjson_response(ndjson);
+    assert!(result.is_err(), "expected Err, got Ok");
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("OOM: query ran out of memory"),
+        "message should contain the nested errorMessage: {msg}"
+    );
+}
+
+/// An error line with an object that has a `message` key instead of `errorMessage`.
+#[test]
+fn ndjson_error_object_with_message_key_returns_err() {
+    let ndjson = r#"{"queryId":{"queryId":"abc"}}
+{"error":{"someSubtype":{"message":"compilation failed"}}}
+"#;
+    let result = parse_ndjson_response(ndjson);
+    assert!(result.is_err(), "expected Err, got Ok");
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("compilation failed"),
+        "message should contain the nested message: {msg}"
+    );
+}
+
+/// An error line with an unrecognised shape: falls back to including the raw JSON
+/// so information is never silently lost.
+#[test]
+fn ndjson_error_unknown_shape_includes_raw_json() {
+    let ndjson = r#"{"queryId":{"queryId":"abc"}}
+{"error":{"unknownField":42}}
+"#;
+    let result = parse_ndjson_response(ndjson);
+    assert!(result.is_err(), "expected Err, got Ok");
+    let msg = result.unwrap_err().to_string();
+    // The raw JSON of the error value should appear in the message as a fallback.
+    assert!(
+        msg.contains("unknownField") || msg.contains("42"),
+        "message should contain the raw error JSON as a fallback: {msg}"
+    );
+}
+
+/// An error line appearing before a result line still returns Err, not Ok with the
+/// subsequent results.
+#[test]
+fn ndjson_error_aborts_before_subsequent_results() {
+    let ndjson = r#"{"queryId":{"queryId":"abc"}}
+{"error":"query aborted"}
+{"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}
+"#;
+    let result = parse_ndjson_response(ndjson);
+    assert!(
+        result.is_err(),
+        "should return Err even though a result line follows the error"
+    );
+}

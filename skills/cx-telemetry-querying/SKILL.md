@@ -210,22 +210,6 @@ Not every question is answered by querying data. If the user's intent is operati
 
 ---
 
-## Update Notifications
-
-When `cx` runs in `--output agents` mode, the output may include a trailing `{"_meta": {"update": {...}}}` JSON object. Check for it after every command:
-
-```json
-{"_meta": {"update": {
-  "binary": { "current": "1.2.0", "latest": "1.3.0", "command": "brew upgrade cx" }
-}}}
-```
-
-If `_meta.update` is present, tell the user:
-> "A newer version of cx is available. Run `<command>` to upgrade."
-
-Then offer to run the suggested command on their behalf. The same block appears in `cx schema` output so you can check it at startup.
-
----
 
 ## Key Principles
 
@@ -234,4 +218,3 @@ Then offer to run the suggested command on their behalf. The same block appears 
 - **Parallel discovery**: for ambiguous questions, search metrics, logs, and spans concurrently
 - **Validate with code**: when unsure what a metric or field represents, check the codebase
 - **Pivot on failure**: if one pillar is empty, try another before giving up
-- **Surface update notices**: if `_meta.update` appears in any command output or in `cx schema`, inform the user and offer to run the upgrade command

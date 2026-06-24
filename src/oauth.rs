@@ -16,7 +16,7 @@ use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Ipv4Addr, Ipv6Addr, TcpListener, TcpStream};
 use std::time::Duration;
 
 use crate::config::{CredentialStorage, StoredOAuthTokens};
@@ -130,16 +130,76 @@ pub fn token_seconds_remaining(access_token: &str) -> Option<i64> {
 
 // ── OAuth protocol helpers ────────────────────────────────────────────────────
 
+/// Outcome of attempting to bind both loopback stacks on a single candidate port.
+enum PortBind {
+    /// Both `127.0.0.1` and `[::1]` bound — the ideal case.
+    Both(TcpListener, TcpListener),
+    /// Only `127.0.0.1` bound because IPv6 loopback is *unavailable* (`::1` is not
+    /// a configured address). Safe to use: `localhost` won't reach `::1` either.
+    Ipv4Only(TcpListener),
+    /// Port cannot be used: IPv4 bind failed, or — critically — `[::1]:port` is
+    /// already owned by *another* process. An IPv6-first browser would reach that
+    /// other service instead of our callback, so this port must be skipped rather
+    /// than served IPv4-only.
+    Unusable,
+}
+
+/// Try to bind both loopback stacks on `port`.
+///
+/// Binding the explicit `::1` address is IPv6-only and does not collide with the
+/// `127.0.0.1` socket on the same port. An `AddrInUse` error on `::1` means another
+/// process holds it (dangerous → `Unusable`); any other `::1` error means IPv6
+/// loopback is absent (safe → `Ipv4Only`).
+fn try_bind_port(port: u16) -> PortBind {
+    let Ok(v4) = TcpListener::bind((Ipv4Addr::LOCALHOST, port)) else {
+        return PortBind::Unusable;
+    };
+    match TcpListener::bind((Ipv6Addr::LOCALHOST, port)) {
+        Ok(v6) => PortBind::Both(v4, v6),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => PortBind::Unusable,
+        Err(_) => PortBind::Ipv4Only(v4),
+    }
+}
+
 /// Bind the first available port from `CALLBACK_PORTS`, tried in random order.
-/// Returns `(listener, port)` on success.
-pub fn bind_callback_listener() -> Result<(TcpListener, u16)> {
+/// Returns `(listeners, port)` on success.
+///
+/// Binds **both** loopback stacks on the chosen port: `127.0.0.1` (IPv4, required)
+/// and `[::1]` (IPv6, best-effort). The redirect URI handed to the browser uses
+/// the hostname `localhost`, which on macOS/Windows resolves to `::1` *first* — so
+/// browsers frequently connect over IPv6 before IPv4. Listening only on IPv4 (the
+/// previous behaviour) made those callbacks fail with "This site can't be reached".
+///
+/// Per candidate port (see [`try_bind_port`]):
+///   - both stacks bind → use it (preferred).
+///   - `::1` absent (IPv6 unavailable) → usable IPv4-only, kept only as a fallback.
+///   - `[::1]:port` owned by another process → **skip**, never served IPv4-only,
+///     because an IPv6-first browser would otherwise hit that other service and the
+///     callback would hang until timeout.
+///
+/// The IPv4-only fallback is used only when no candidate binds both stacks.
+pub fn bind_callback_listener() -> Result<(Vec<TcpListener>, u16)> {
     let mut ports: Vec<u16> = CALLBACK_PORTS.to_vec();
     ports.shuffle(&mut rand::rng());
+
+    // First usable IPv4-only port, kept as a fallback in case no port manages to
+    // bind both stacks (e.g. IPv6 loopback disabled on the host).
+    let mut ipv4_only_fallback: Option<(Vec<TcpListener>, u16)> = None;
+
     for &port in &ports {
-        if let Ok(listener) = TcpListener::bind(format!("127.0.0.1:{port}")) {
-            return Ok((listener, port));
+        match try_bind_port(port) {
+            PortBind::Both(v4, v6) => return Ok((vec![v4, v6], port)),
+            PortBind::Ipv4Only(v4) if ipv4_only_fallback.is_none() => {
+                ipv4_only_fallback = Some((vec![v4], port));
+            }
+            PortBind::Ipv4Only(_) | PortBind::Unusable => {}
         }
     }
+
+    if let Some(result) = ipv4_only_fallback {
+        return Ok(result);
+    }
+
     bail!(
         "Could not bind any OAuth callback port. All ports in the allow-list are in use: {}",
         CALLBACK_PORTS
@@ -165,32 +225,46 @@ fn urlencode(s: &str) -> String {
 /// Block the calling thread until the browser delivers the OAuth callback.
 /// Validates the `state` parameter and returns the `code`.
 ///
-/// Loops over incoming connections so that browser pre-flight requests
-/// (e.g. favicon fetches) do not consume the one accepted connection before
-/// the real redirect arrives.
+/// Polls every listener (IPv4 and IPv6 loopback) so the callback is accepted
+/// regardless of which stack the browser connects over. Loops over incoming
+/// connections so that browser pre-flight requests (e.g. favicon fetches) do not
+/// consume a connection before the real redirect arrives.
 ///
 /// **Note:** Uses synchronous blocking I/O.  Always call via
 /// `tokio::task::spawn_blocking` to avoid stalling the async runtime.
-fn wait_for_callback_blocking(listener: TcpListener, expected_state: String) -> Result<String> {
+fn wait_for_callback_blocking(
+    listeners: Vec<TcpListener>,
+    expected_state: String,
+) -> Result<String> {
     println!("Waiting for browser callback...");
+    for listener in &listeners {
+        listener
+            .set_nonblocking(true)
+            .context("Failed to set OAuth callback listener to non-blocking")?;
+    }
     loop {
-        let (stream, _) = listener.accept()?;
-        if let Some(code) = extract_and_respond(stream, &expected_state)? {
-            return Ok(code);
+        for listener in &listeners {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    // Handle the accepted connection with blocking reads/writes.
+                    stream
+                        .set_nonblocking(false)
+                        .context("Failed to set OAuth callback stream to blocking")?;
+                    if let Some(code) = extract_and_respond(stream, &expected_state)? {
+                        return Ok(code);
+                    }
+                    // Not an OAuth callback (e.g. favicon request) - keep waiting.
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e).context("OAuth callback listener accept failed"),
+            }
         }
-        // Not an OAuth callback (e.g. favicon request) - keep waiting.
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
 /// HTML returned to the browser after a successful OAuth login.
 ///
-/// Fully self-contained — no remote resources. Avoids third-party network requests
-/// from the callback URL (which still holds the OAuth `code` and `state` params in
-/// the query string). Mirrors the Figma "Auth callback / Success" design
-/// (node 9428-15414), with two intentional omissions for this localhost flow:
-///   - the reCAPTCHA footer (there is no reCAPTCHA on a local callback page), and
-///   - a "Close tab" button: browsers block `window.close()` for tabs they did not
-///     open, so — like `gh`, `gcloud`, etc. — we just tell the user to close the tab.
 const SUCCESS_PAGE_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -424,7 +498,7 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
         URL_SAFE_NO_PAD.encode(bytes)
     };
 
-    let (listener, port) = bind_callback_listener()?;
+    let (listeners, port) = bind_callback_listener()?;
     let redirect_uri = format!("http://localhost:{port}/callback");
 
     let scopes = SCOPES.join(" ");
@@ -447,7 +521,7 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
     // stall the async runtime.  Bail out if the user takes longer than 5 minutes.
     let code = tokio::time::timeout(
         Duration::from_secs(300),
-        tokio::task::spawn_blocking(move || wait_for_callback_blocking(listener, state)),
+        tokio::task::spawn_blocking(move || wait_for_callback_blocking(listeners, state)),
     )
     .await
     .context("OAuth login timed out after 5 minutes")?
@@ -596,6 +670,57 @@ pub async fn resolve_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpStream;
+
+    #[test]
+    fn bind_callback_listener_serves_loopback_on_every_bound_stack() {
+        let (listeners, port) = bind_callback_listener().expect("a callback port must bind");
+        assert!(!listeners.is_empty(), "must bind at least one listener");
+
+        // Every listener shares the single chosen port.
+        for l in &listeners {
+            assert_eq!(
+                l.local_addr().expect("local_addr").port(),
+                port,
+                "all listeners must share the chosen callback port"
+            );
+        }
+
+        // IPv4 loopback is mandatory and must accept a connection.
+        TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .expect("IPv4 loopback callback must be connectable");
+
+        // When a `::1` listener was bound (IPv6 loopback available), the browser's
+        // IPv6-first `localhost` connection must succeed too — this is the fix for
+        // the "site can't be reached" callback failure.
+        let has_ipv6 = listeners
+            .iter()
+            .any(|l| l.local_addr().map(|a| a.is_ipv6()).unwrap_or(false));
+        if has_ipv6 {
+            TcpStream::connect((Ipv6Addr::LOCALHOST, port))
+                .expect("IPv6 loopback callback must be connectable when ::1 is bound");
+        }
+    }
+
+    #[test]
+    fn try_bind_port_does_not_fall_back_to_ipv4_when_ipv6_is_occupied() {
+        // Squat on an IPv6 loopback port; its IPv4 counterpart stays free.
+        let Ok(v6_squatter) = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)) else {
+            // No IPv6 loopback on this host — the dangerous scenario can't occur.
+            return;
+        };
+        let port = v6_squatter.local_addr().expect("local_addr").port();
+
+        // `[::1]:port` is owned by another process, so the port must be reported
+        // Unusable — NOT served IPv4-only, which an IPv6-first browser would miss.
+        match try_bind_port(port) {
+            PortBind::Unusable => {}
+            PortBind::Both(..) => panic!("::1 was occupied; must not report Both"),
+            PortBind::Ipv4Only(_) => {
+                panic!("must not fall back to IPv4-only while another process owns ::1")
+            }
+        }
+    }
 
     fn sample_token_response(expires_in: Option<u64>, refresh: Option<&str>) -> TokenResponse {
         TokenResponse {

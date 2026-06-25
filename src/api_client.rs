@@ -51,10 +51,11 @@ impl CxClient {
     /// GET with optional query params, deserialize response into T.
     pub async fn get<T: DeserializeOwned>(&self, path: &str, params: &[(&str, &str)]) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
+        let req = self.inner.get(&url).query(params).build()?;
         if self.verbose {
-            eprintln!("[CxClient] GET {}", url);
+            eprintln!("[CxClient] GET {}", req.url());
         }
-        let resp = self.inner.get(&url).query(params).send().await?;
+        let resp = self.inner.execute(req).await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
     }
@@ -67,14 +68,15 @@ impl CxClient {
         headers: &[(&str, &str)],
     ) -> Result<String> {
         let url = format!("{}{path}", self.endpoint);
-        let mut req = self.inner.get(&url).query(params);
+        let mut builder = self.inner.get(&url).query(params);
         for (key, value) in headers {
-            req = req.header(*key, *value);
+            builder = builder.header(*key, *value);
         }
+        let req = builder.build()?;
         if self.verbose {
-            eprintln!("[CxClient] GET {}", url);
+            eprintln!("[CxClient] GET {}", req.url());
         }
-        let resp = req.send().await?;
+        let resp = self.inner.execute(req).await?;
         self.checked_text(resp).await
     }
 
@@ -164,10 +166,11 @@ impl CxClient {
         params: &[(&str, &str)],
     ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
+        let req = self.inner.post(&url).query(params).build()?;
         if self.verbose {
-            eprintln!("[CxClient] POST {}", url);
+            eprintln!("[CxClient] POST {}", req.url());
         }
-        let resp = self.inner.post(&url).query(params).send().await?;
+        let resp = self.inner.execute(req).await?;
         let text = self.checked_text(resp).await?;
         let json = if text.trim().is_empty() { "{}" } else { &text };
         Ok(serde_json::from_str(json)?)

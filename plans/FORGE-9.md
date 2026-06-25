@@ -2,7 +2,16 @@
 
 ## Goal
 
-When a task reaches the `pr_review` phase (Linear status `In Review`) without a PR in `TaskState.prs`, do **not** silently mark it `Pause.FAILED` with the terse "Reached review with no PR to monitor." reason. Instead, gate at step entry: attempt PR recovery from GitHub; if still nothing, pause with a clear, human-actionable `Pause.NEEDS_INPUT` so the human can act in Slack/Linear.
+When a task reaches the `pr_review` phase (Linear status `In Review`) without a PR in `TaskState.prs`, do **not** silently mark it `Pause.FAILED` with the terse "Reached review with no PR to monitor." reason. Instead, gate at step entry: attempt PR recovery from GitHub; if still nothing, pause with a clear, human-actionable `Pause.NEEDS_INPUT` so the human can act in Slack/Linear without manually dragging the card backwards.
+
+## Reproduction confirmed via FORGE-5
+
+Looked up FORGE-5 via the Linear MCP. Its `stateHistory` shows:
+
+- Implementation → In Review at 2026-06-24 14:05:27
+- In Review → Implementation at 2026-06-25 09:29:42 (a human manually dragged it back ~19h later)
+
+This is the failure-mode this ticket targets. The implementation step finished and advanced to In Review without any PR in state, `pr_monitor.poll()` ran, recovery found no PR on GitHub, and `mark_locally_failed(task.id, "Reached review with no PR to monitor.")` posted the "needs human" comment. The human's only resolution path was to manually drag the card back to Implementation. With this fix, the human instead gets a clear `NEEDS_INPUT` Slack message they can reply to — no board dragging.
 
 ## Approach: `pre_step` gate on `PrReviewStep`
 
@@ -10,10 +19,26 @@ Of the three options in the ticket I'm picking **the pre-step gate** (option 1) 
 
 - The step engine already has the perfect seam: `runner.py` runs `step.pre_step()` on `Stage.ENTERED`, and a `PAUSE` decision funnels through `pause_for_input` → `needs_human` (label, Linear comment, Slack `on_needs_human`, `Pause.NEEDS_INPUT`). That semantic — "I cannot proceed until a human gives me input" — fits "no PR to monitor" exactly. `Pause.FAILED` is the agent-error class; using it here is the bug.
 - Recovery (option 2) is already attempted inside `poll()` (`pr_monitor.py:126`). The gap is not that recovery doesn't happen — it's that when recovery fails we drop into the wrong terminal failure path. So this is fundamentally a pause-class / messaging problem, not a recovery-timing problem.
-- `NEEDS_INPUT` is resumable via Slack thread reply (`loop.py:236` allows `Pause.GATE | FAILED | NEEDS_INPUT`), so a human can answer "the PR is #123" or just "drop it" and the task re-runs `pre_step`. Re-running re-attempts recovery — exactly what we want.
+- `NEEDS_INPUT` is resumable via Slack thread reply (`loop.py:236` allows `Pause.GATE | FAILED | NEEDS_INPUT`), so a human can answer "the PR is #123" or just "drop it" and the task re-runs `pre_step`. Re-running re-attempts recovery — exactly what we want, and it removes the need for the manual board-drag observed in FORGE-5.
 - The work inside `poll()` stays unchanged, so all the existing PR-review behavior (merge/close/CI/conflict) is untouched.
 
 Option 3 (explicit validation in implementation's `post_step`) doesn't fix the case the ticket is actually about — a human or automation manually dragging a card to `In Review` without going through implementation. The `pre_step` gate catches both that case and the "implementation didn't open a PR" case in one place.
+
+## Run / check commands
+
+From `saga/` (per `CLAUDE.md` and `justfile`):
+
+- **Run command** — `just run` (`uv run saga run`). The orchestrator can't actually be brought up in this worktree (requires `LINEAR_OAUTH_TOKEN`, `GITHUB_APP_*` secrets, a Linear workspace, a Slack workspace). This is the documented "stop and surface the blocker" outcome — exercise the change via the unit-test suite instead, which is the canonical verification per `CLAUDE.md` ("Tests passing IS the verification").
+- **Lint** — `just lint` (ruff check + ruff format --check + ty check).
+- **Lint-fix** — `just lint-fix`.
+- **Tests** — `just test` (697 tests today; verified locally).
+- **Targeted** — `uv run pytest tests/test_orchestrator_pr_review.py -v`.
+
+### Before-state reproduction (verified)
+
+Ran `uv run pytest tests/test_orchestrator_pr_review.py::test_poll_marks_failed_when_no_pr_on_github_and_state_missing -v` — **PASSED**. That test encodes today's failure: with `ts.prs=[]`, `branch_name="feature/snir-28"`, and `get_pull_by_branch` returning `None`, `poll()` ends with `pause == Pause.FAILED`. This is the bug, and it's locked in by a green test today. The after-state assertion will be that the same starting conditions, driven through `consider()` (i.e. the real entry path), end with `pause == Pause.NEEDS_INPUT` instead.
+
+No CLI/UI artifact to capture — this is an orchestration/state-machine change with no user-visible interface beyond the test output. The before/after pytest output is the artifact, captured implicitly by the test diff.
 
 ## Files to change
 
@@ -58,7 +83,7 @@ Notes / invariants:
 - Re-reads `TaskState` from the store instead of trusting `ctx.ts` — the snapshot can be stale (open_pr writes during the agent turn), and the implementation step's `post_step` advanced us here moments ago, so we want the freshest read.
 - Pure code — does **not** ship a `pre_step.md`. The base-class `Step.pre_step` (which is the LLM pre-assessor) is bypassed entirely; overriding `pre_step` directly is the documented escape hatch (see `Step` docstring "seam methods ... carry dormant-in-v1 defaults a subclass overrides only when it needs to").
 - Returns `PROCEED` when `pr_monitor is None` to preserve the existing test `test_consider_noop_for_review_state_without_pr_review_phase` (no GitHub configured → step is a no-op via `work()` returning CONTINUE).
-- Required imports to add to `step.py`: `saga.services.linear.task_state_store as task_state_repo`, `PreAssessment`, `PreDecision` (from `saga.orchestrator.steps.deps`), `TaskState`.
+- Required imports to add to `step.py`: `saga.services.linear.task_state_store as task_state_repo`, `PreAssessment`, `PreDecision` (from `saga.orchestrator.steps.deps`), `TaskState` (from `saga.schemas.state`).
 
 ### 3. `src/saga/orchestrator/steps/review/pr_monitor.py` — keep the safety net in `poll()`
 
@@ -72,7 +97,7 @@ This is deliberate defense-in-depth — removing it would mean a future regressi
 ### 4. `tests/test_orchestrator_pr_review.py` — update + add tests
 
 **Update** the existing test `test_poll_marks_failed_when_no_pr_on_github_and_state_missing`:
-- This test currently asserts `pause == Pause.FAILED` when `poll()` is called directly with no PR. That still holds for the safety-net path. Keep the test but reframe its docstring to "the safety net in poll() still fires if pre_step is bypassed (direct poll())". The fix is at the `pre_step` layer, not `poll()`.
+- This test currently asserts `pause == Pause.FAILED` when `poll()` is called directly with no PR. That still holds for the safety-net path. Keep the test but reframe its docstring to "the safety net in poll() still fires if pre_step is bypassed (direct poll())". The user-facing fix is at the `pre_step` layer, not `poll()`.
 
 **Add** new tests in the existing recovery section:
 
@@ -84,9 +109,9 @@ This is deliberate defense-in-depth — removing it would mean a future regressi
 
 4. `test_pre_step_proceeds_when_pr_monitor_is_none` — config with no GitHub. Call `pre_step`. Assert `PreDecision.PROCEED` (so the no-GitHub no-op flow stays intact).
 
-5. **End-to-end** `test_consider_pauses_with_needs_input_when_in_review_without_pr` — drive through `orch.consider(task)` like the existing `test_consider_routes_pr_review_phase_to_maybe_poll_pr` test. `ts.prs=[]`, no PR on GitHub. After awaiting the dispatched agent task, assert `task_states["issue-1"].pause == Pause.NEEDS_INPUT` and `notifier.on_needs_human.assert_awaited_once()`. This is the success-criterion #3 test (a real exercise of the reproduction scenario from FORGE-5, ending in the new defensive behavior).
+5. **End-to-end** `test_consider_pauses_with_needs_input_when_in_review_without_pr` — drive through `orch.consider(task)` like the existing `test_consider_routes_pr_review_phase_to_maybe_poll_pr` test. `ts.prs=[]`, no PR on GitHub. After awaiting the dispatched agent task, assert `task_states["issue-1"].pause == Pause.NEEDS_INPUT` and `notifier.on_needs_human.assert_awaited_once()`. This is the success-criterion #3 test (a real exercise of the FORGE-5 reproduction scenario, ending in the new defensive behavior).
 
-For tests 1–4, build the `StepCtx` with the same `_ctx(orch, task, cfg, ts)` helper used elsewhere in this file. For test 5, use `_make_orch` + `consider` + `await agent.task` as in the existing consider tests.
+For tests 1–4, build the `StepCtx` with the same `_ctx(orch, task, cfg, ts)` helper used elsewhere in this file. For test 5, use `_make_orch` + `consider` + `await agent.task` as in the existing consider tests. Include a `notifier=NotifierHandle(channel="C1", thread_ts="ts1")` in the task state so `needs_human` actually awaits `on_needs_human` (it gates on `ts.notifier`).
 
 ## Order of changes
 
@@ -98,12 +123,13 @@ For tests 1–4, build the `StepCtx` with the same `_ctx(orch, task, cfg, ts)` h
 ## Edge cases & risks
 
 - **Branch name missing.** `recover_prs_from_github` already returns `[]` when `ts.branch_name` is unset (logs a warning). The pre_step pause reason includes `(unset)` so the human sees that the branch wasn't recorded.
-- **GitHub transient failure during recovery.** Each repo's `get_pull_by_branch` is wrapped in try/except already — a transient blip in one repo doesn't sink recovery for the others. If *all* repos error, `recovered == []` and we pause; the human reply re-runs `pre_step` which retries. This is exactly the behaviour we want.
+- **GitHub transient failure during recovery.** Each repo's `get_pull_by_branch` is wrapped in try/except already — a transient blip in one repo doesn't sink recovery for the others. If *all* repos error, `recovered == []` and we pause; the human reply re-runs `pre_step` which retries. This is the right behaviour.
 - **Multi-repo tickets.** Recovery already iterates `cfg.repos.values()` and accumulates one PR per repo. No change needed for multi-repo.
 - **`Pause.STOPPED` / canceled tickets.** The pre_step gate fires inside the runner; the runner is only reached when routing accepted the task, and routing already skips paused/abandoned tasks. The existing `mark_locally_failed` abandoned-state check in `loop.py:546` is unaffected.
-- **Resume semantics.** After the pause, a Slack thread reply or human label-removal goes through the existing `consume_thread_reply` / `_unblock` paths (both handle `NEEDS_INPUT`). On resume, `Stage` resets to `ENTERED`, so `pre_step` runs again — recovery is re-attempted, which is the right behaviour if the human opened the PR in the meantime.
+- **Resume semantics.** After the pause, a Slack thread reply or human label-removal goes through the existing `consume_thread_reply` / `_unblock` paths (both handle `NEEDS_INPUT`). On resume, `Stage` resets to `ENTERED`, so `pre_step` runs again — recovery is re-attempted, which is the right behaviour if the human opened the PR in the meantime. This is the path that replaces the manual board-drag we saw in FORGE-5.
 - **Subsequent poll ticks.** Once `pre_step` PROCEEDs and `set_stage(WORKING)` runs, subsequent ticks skip `pre_step` and go straight to `work()` (the existing poll loop). So the new gate only adds work on first entry, not on every poll tick.
 - **Test `test_poll_marks_failed_when_no_pr_on_github_and_state_missing`** still calls `poll()` directly (bypassing the runner / pre_step). That's the safety-net coverage and is kept intentionally. The new end-to-end test (#5 above) covers the user-facing path through `consider()`.
+- **Style.** All new code uses `X | None` (not `Optional`), absolute imports, f-strings, async-first, pydantic-typed values — per `.claude/rules/python-style.md`.
 
 ## Verification
 
@@ -113,13 +139,11 @@ Run from `saga/`:
 - `just test` — full suite (697 tests today).
 - Targeted: `uv run pytest tests/test_orchestrator_pr_review.py -v` (39 existing + 5 new = 44 expected).
 
-**Before-state observation:** `test_poll_marks_failed_when_no_pr_on_github_and_state_missing` passes today (verified) — it documents the current "pause=FAILED, Reached review with no PR to monitor." behavior. This is the bug. The new end-to-end test (#5) is the inverse assertion against the same starting conditions: after the fix, that same scenario lands in `NEEDS_INPUT` with a useful reason.
-
-The project cannot be brought up end-to-end in this worktree (requires `LINEAR_OAUTH_TOKEN`, `GITHUB_APP_*` secrets, a Linear workspace, Slack). The unit tests are the canonical verification per `CLAUDE.md` ("Tests passing IS the verification") and existing FORGE-5-class regressions are all covered by `tests/test_orchestrator_pr_review.py`.
+**Before-state baseline (already captured):** `test_poll_marks_failed_when_no_pr_on_github_and_state_missing` passes today — it documents the "pause=FAILED, Reached review with no PR to monitor." behavior. The new end-to-end test (#5) is the inverse assertion against the same starting conditions driven through `consider()`: after the fix, that same scenario lands in `NEEDS_INPUT` with a useful, branch-named reason and a `needs_human` Slack ping.
 
 ## Out of scope (explicit)
 
 - No change to `implementation/__init__.py` `post_step` — option 3 from the ticket is not pursued.
 - No change to how the agent calls `open_pr` (per the ticket's Out of Scope section).
 - No change to PR-search logic, only its invocation timing (added `pre_step` call site).
-- No artifact captures — this is a pure orchestration/state-machine change with no user-visible interface to screenshot; the test results are the artifact.
+- No artifact captures — this is a pure orchestration/state-machine change with no user-visible interface to screenshot; the pytest results are the artifact.

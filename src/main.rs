@@ -163,6 +163,10 @@ struct Cli {
     #[arg(long, global = true, help_heading = "Global Options")]
     read_only: bool,
 
+    /// Enable verbose debug logging of HTTP requests.
+    #[arg(long, short = 'v', global = true)]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -2685,7 +2689,12 @@ async fn main() -> Result<()> {
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = config::resolve_all(&cli.profile, effective_api_key, effective_region)
+    let configs = config::resolve_all(
+        &cli.profile,
+        effective_api_key.as_deref(),
+        effective_region.as_deref(),
+        cli.verbose,
+    )
         .await
         .map_err(|e| {
             eprintln!("Configuration error: {e}");

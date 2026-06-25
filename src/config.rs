@@ -321,6 +321,7 @@ pub struct ResolvedConfig {
     /// Default storage tier for DataPrime queries, resolved from the profile
     /// config. Falls back to `Archive` when the profile does not specify one.
     pub default_tier: crate::Tier,
+    pub verbose: bool,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -439,6 +440,7 @@ async fn resolve_single(
     profile_name: &str,
     api_key_override: Option<&str>,
     region_override: Option<&str>,
+    verbose: bool,
 ) -> Result<ResolvedConfig> {
     if !profile_file(profile_name)?.exists() {
         if let (Some(key), Some(region)) = (api_key_override, region_override) {
@@ -448,6 +450,7 @@ async fn resolve_single(
                 endpoint: region.api_endpoint().to_string(),
                 api_key: key.to_string(),
                 default_tier: crate::Tier::Archive,
+                verbose,
             });
         }
     }
@@ -514,6 +517,7 @@ async fn resolve_single(
         endpoint: profile.region.api_endpoint().to_string(),
         api_key: bearer,
         default_tier: profile.default_tier.unwrap_or(crate::Tier::Archive),
+        verbose,
     })
 }
 
@@ -524,10 +528,11 @@ pub async fn resolve(
     profile_override: Option<&str>,
     api_key_override: Option<&str>,
     region_override: Option<&str>,
+    verbose: bool,
 ) -> Result<ResolvedConfig> {
     let config = load_config()?;
     let name = profile_override.unwrap_or(&config.default_profile);
-    resolve_single(name, api_key_override, region_override).await
+    resolve_single(name, api_key_override, region_override, verbose).await
 }
 
 /// Resolve one or more named profiles into a list of `ResolvedConfig` values.
@@ -539,16 +544,17 @@ pub async fn resolve_all(
     profiles: &[String],
     api_key_override: Option<&str>,
     region_override: Option<&str>,
+    verbose: bool,
 ) -> Result<Vec<ResolvedConfig>> {
     if profiles.is_empty() {
         let cfg = load_config()?;
         return Ok(vec![
-            resolve_single(&cfg.default_profile, api_key_override, region_override).await?,
+            resolve_single(&cfg.default_profile, api_key_override, region_override, verbose).await?,
         ]);
     }
     let mut results = Vec::with_capacity(profiles.len());
     for name in profiles {
-        results.push(resolve_single(name, api_key_override, region_override).await?);
+        results.push(resolve_single(name, api_key_override, region_override, verbose).await?);
     }
     Ok(results)
 }

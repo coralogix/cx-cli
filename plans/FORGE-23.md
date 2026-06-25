@@ -28,20 +28,38 @@ The fix lives entirely inside `GenericAgentStep.work()`'s nudge loop, so it cove
 
 We do **not** touch:
 - `TriageResult` / other pydantic models or the MCP tool interfaces.
-- Triage prompt structure (`triage.md`) beyond, optionally, the nudge text.
+- Triage prompt structure (`triage.md`) beyond a one-sentence addendum to the existing MANDATORY FINAL ACTION paragraph.
 - Any other step's `post_step` / `verify`.
 
 ## Changes
 
 ### 1. `src/saga/orchestrator/steps/step.py`
 
-Add a small helper inside the step module (module-level private function) that inspects a turn's `chat_history` for the most-recent `record_<self.name>` MCP call:
+Add two small module-level helpers that inspect a turn's `chat_history` for the most-recent failed `record_<self.name>` MCP call:
 
 ```python
+from typing import Any
+
 from claude_agent_sdk import AssistantMessage
 from claude_agent_sdk.types import (
     Message, ToolResultBlock, ToolUseBlock, UserMessage,
 )
+
+
+def _render_tool_error(content: str | list[dict[str, Any]] | None) -> str:
+    """Flatten a ToolResultBlock.content payload to a single error string."""
+    if content is None:
+        return "(no error detail)"
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("content")
+            if text:
+                parts.append(str(text))
+    return "\n".join(parts) or "(no error detail)"
+
 
 def _last_record_tool_error(
     history: list[Message], tool_name: str
@@ -53,9 +71,6 @@ def _last_record_tool_error(
     SDK name is ``mcp__saga__<tool_name>``.
     """
     full_name = f"mcp__saga__{tool_name}"
-    # Walk forward, remembering each record_* tool_use_id as we see it; pair
-    # with the next ToolResultBlock whose tool_use_id matches. We want the LAST
-    # failed one (most recent), so update on every match.
     pending: dict[str, ToolUseBlock] = {}
     last_error: str | None = None
     for msg in history:
@@ -73,24 +88,7 @@ def _last_record_tool_error(
                     last_error = _render_tool_error(block.content)
                     pending.pop(block.tool_use_id, None)
     return last_error
-
-
-def _render_tool_error(content: str | list[dict[str, Any]] | None) -> str:
-    """Flatten a ToolResultBlock.content payload to a single error string."""
-    if content is None:
-        return "(no error detail)"
-    if isinstance(content, str):
-        return content
-    parts: list[str] = []
-    for item in content:
-        if isinstance(item, dict):
-            text = item.get("text") or item.get("content")
-            if text:
-                parts.append(str(text))
-    return "\n".join(parts) or "(no error detail)"
 ```
-
-(Imports added at the top of the module. `Any` is already imported indirectly through other modules; add `from typing import Any` if needed.)
 
 Then in `GenericAgentStep.work()`, replace the static nudge prompt block (`step.py:335-344`) with:
 
@@ -120,23 +118,27 @@ logger.warning(
 nudge_outcome = await session.send(nudge_prompt)
 ```
 
-Two other small but necessary tweaks in the same loop:
+Two other small details:
 
-- After a failed nudge call (`nudge_outcome` returns), keep using `nudge_outcome.chat_history` as the source for `_last_record_tool_error` on the *next* iteration. This is already the effect of `outcome = nudge_outcome` at the end of the loop body — confirm and keep it.
-- Leave the `reply_text is None` guard and `max_record_nudges()` budget unchanged. The nudge loop's structure stays identical; only the prompt is now informed by history.
+- After a failed nudge call, keep using the nudge's `chat_history` as the source for `_last_record_tool_error` on the *next* iteration. This is already the effect of `outcome = nudge_outcome` at the end of the loop body — confirm and keep it.
+- Leave the `reply_text is None` guard and `max_record_nudges()` budget unchanged.
 
-No imports of `_render_content` from `session_transcript.py` — we want a standalone helper without coupling to the transcript module.
+No imports of `_render_content` from `session_transcript.py` — keep the helper standalone.
 
 ### 2. `tests/test_triage_step.py`
 
-Add four regression tests, all under the existing "in-session nudge loop (FORGE-12)" section.
+Add four regression tests under the existing "in-session nudge loop (FORGE-12)" section (after `test_work_failed_during_nudge_returns_failed`).
 
-A small fixture helper (top of the file or alongside other helpers) to build a fake `chat_history` containing a record_triage tool call and an error result:
+A test helper that builds a fake `chat_history` containing a record_triage tool call and its error result:
 
 ```python
 def _history_with_failed_record(
     tool_name: str = "record_triage",
-    error_text: str = "Validation error: 1 validation error for TriageResult\\nrisk\\n  Input should be 'trivial', 'low', 'medium' or 'high' [type=enum, input_value='extreme', input_type=str]",
+    error_text: str = (
+        "Validation error: 1 validation error for TriageResult\n"
+        "risk\n  Input should be 'trivial', 'low', 'medium' or 'high' "
+        "[type=enum, input_value='extreme', input_type=str]"
+    ),
 ) -> list:
     from claude_agent_sdk import AssistantMessage
     from claude_agent_sdk.types import (
@@ -163,61 +165,56 @@ def _history_with_failed_record(
     ]
 ```
 
-(The exact `AssistantMessage` / `UserMessage` constructor signatures must match the SDK — confirm against `claude_agent_sdk.types`; the test currently does not instantiate these so we'll mirror the pattern used in `tests/test_session_transcript.py` where they are already constructed for tests.)
-
-Tests to add:
+(Verify the exact constructor signatures against `claude_agent_sdk.types`; mirror the pattern used in `tests/test_session_transcript.py` where these blocks are already instantiated in tests.)
 
 #### `test_work_nudge_surfaces_validation_error`
-Main turn returns `event="completed"` but with `chat_history` containing a failed `record_triage` call (validation error text). State has no triage result. Assert:
-- Nudge is sent (`session.send.call_count == 2`).
-- The nudge prompt text contains the original error text (e.g. "Validation error", "extreme").
-- The nudge prompt **does not** say "you ended your turn without calling".
+Main turn returns `event="completed"` with `chat_history=_history_with_failed_record()`; state has no triage result. Assert:
+- `session.send.call_count == 2`.
+- The nudge prompt text contains `"Validation error"` and `"extreme"`.
+- The nudge prompt does **not** contain `"ended your turn without calling"`.
 
 #### `test_work_nudge_surfaces_invalid_repos_error`
-Same shape, but error text is `"Invalid repos: ['repo-x']. Allowed repos: ['my-service']."`. Assert nudge prompt contains "Invalid repos" and "my-service".
+Same shape, but `error_text="Invalid repos: ['repo-x']. Allowed repos: ['my-service']."`. Assert nudge prompt contains `"Invalid repos"` and `"my-service"`.
 
 #### `test_work_nudge_generic_when_no_record_call_in_history`
-Main turn's `chat_history` contains only an `AssistantMessage` with a `TextBlock` — no record_triage tool call at all. Assert nudge prompt still contains "ended your turn without calling" (the legacy text) and does NOT contain "returned an error".
+Main turn's `chat_history` is `[AssistantMessage(content=[TextBlock(text="…")])]` — no record_triage tool call. Assert nudge prompt contains `"ended your turn without calling"` and does **not** contain `"returned an error"`.
 
 #### `test_work_second_nudge_surfaces_first_nudge_error`
 Main turn: no record call (legacy nudge fires).
 First nudge turn: agent calls `record_triage` but gets a different validation error (e.g. wrong `ticket_type`).
-Second nudge: assert the prompt now surfaces the first nudge's error text and that the call count is 3.
+Second nudge: assert the prompt now surfaces the first nudge's error text and that `session.send.call_count == 3`.
 
-We can implement this by giving `session.send` an `AsyncMock` with `side_effect` that returns three distinct `SessionTurnOutcome`s, each with its own `chat_history`.
+Implement by giving `session.send` an `AsyncMock` with `side_effect` that returns three distinct `SessionTurnOutcome`s, each with its own `chat_history`.
 
-#### Update the existing `test_work_nudge_fires_then_agent_records_returns_done`
-No behaviour change needed if the test asserts `"record_triage" in nudge_prompt` only — that substring is still present in the new generic and error-aware branches. Re-run after the edit; if assertions are stricter (they're not, currently), relax them.
+#### Existing tests
+`test_work_nudge_fires_then_agent_records_returns_done` (lines 1083-1084) asserts `"record_triage" in nudge_prompt` — that substring is present in both the new generic and error-aware branches, so it stays green. `test_work_nudges_exhausted_returns_failed` (line 1117) asserts on `result.summary`, which is unchanged. Both pass without edits.
 
-### 3. Prompt tweak (defense-in-depth, optional but cheap)
+### 3. Prompt addendum (defense-in-depth)
 
-In `src/saga/orchestrator/steps/triage/triage.md`, the "MANDATORY FINAL ACTION" paragraph (lines 186-187) already exists. Append a single sentence:
+In `src/saga/orchestrator/steps/triage/triage.md` after the existing MANDATORY FINAL ACTION paragraph (line 186-187), append one sentence:
 
 > If `record_triage` returns an `is_error` response, **read the error text, fix only the field it names, and call `record_triage` again** in the same turn. Do not end your turn until `record_triage` returns successfully.
 
-Mirror the same edit in `technical_plan.md` and `product_definition.md` for consistency. Two lines per file. Keep it minimal — the real fix is in code, this is just a hint.
-
-(Out-of-scope note in the ticket says "no refactoring beyond the nudge/validation fix" — adding one sentence to the existing mandatory-action paragraph qualifies as a focused nudge clarification, not a refactor.)
+Mirror the same addition in `technical_plan.md` and `product_definition.md` for consistency. One sentence per file.
 
 ## Order of changes
 
 1. Edit `src/saga/orchestrator/steps/step.py`:
-   - Add the two helpers `_last_record_tool_error` and `_render_tool_error` at module scope.
+   - Add the two helpers (`_render_tool_error`, `_last_record_tool_error`) at module scope.
    - Update the nudge loop's prompt construction to branch on `_last_record_tool_error`.
    - Add the required imports (`AssistantMessage`, `UserMessage`, `ToolUseBlock`, `ToolResultBlock`, `Any`).
 2. Add the four new tests in `tests/test_triage_step.py` (plus the `_history_with_failed_record` helper).
-3. Add the one-sentence prompt addendum to `triage.md`, `technical_plan.md`, `product_definition.md`.
+3. Add the one-sentence addendum to `triage.md`, `technical_plan.md`, `product_definition.md`.
 4. Run `just lint && just test`. Fix any ruff/ty findings (likely just import order).
 
 ## Edge cases & risks
 
-- **Multiple record_* calls in one turn.** The agent may retry inside the same turn. We want the *last* failed one — handled: we overwrite `last_error` on every match and don't carry forward a result that later succeeded (the loop only updates on `is_error=True`).
-- **Successful call followed by `ts.triage` write race.** If the agent's call succeeded but `ts.triage` is still `None` because of a stale read, the helper returns `None` and we fall back to the generic nudge — same behaviour as today. We don't make this any worse.
-- **`outcome.chat_history` is empty** (an SDK quirk or a `event="failed"` turn). The helper returns `None`; we fall back to the generic nudge. No crash because we iterate an empty list.
-- **`UserMessage.content` is a `str`, not a list of blocks** (the SDK allows both forms). The helper's `isinstance(msg.content, list)` guard skips that case cleanly. Tool results are always carried as lists in practice, so we don't lose anything.
-- **Error text containing markdown backticks.** Pydantic's `ValidationError.__str__()` includes the type tag in square brackets; safe to embed verbatim in the nudge prompt.
-- **Token cost.** A validation error string is small (~200 chars); the prompt grows by < 1KB. Negligible vs. main turn.
-- **Backwards compatibility.** Existing `test_work_nudge_fires_then_agent_records_returns_done` and `test_work_nudges_exhausted_returns_failed` keep passing because the new generic branch produces a prompt that still contains the `record_<step>` substring those tests assert on. Confirmed by reading their assertions (lines 1083-1084 and 1117 of `tests/test_triage_step.py`).
+- **Multiple record_* calls in one turn.** The agent may retry inside the same turn. We want the *last* failed one — handled: we overwrite `last_error` only on `is_error=True` matches; a later success leaves the last failed entry as the surfaced error, but if state was actually written we never enter the nudge loop, so this case is benign.
+- **`outcome.chat_history` is empty.** The helper returns `None`; we fall back to the generic nudge. No crash because we iterate an empty list.
+- **`UserMessage.content` is a `str`, not a list of blocks.** The `isinstance(msg.content, list)` guard skips that case cleanly.
+- **Error text containing markdown backticks or quotes.** Pydantic's `ValidationError.__str__()` is safe to embed verbatim in the nudge prompt — no escaping needed.
+- **Token cost.** A validation error string is small (~200 chars); the prompt grows by <1KB. Negligible.
+- **Backwards compatibility.** Existing nudge tests keep passing because the new generic branch still contains the `record_<step>` substring they assert on.
 - **`reply_text` path.** Unchanged — nudge loop is already bypassed when `reply_text is not None` (`step.py:328`).
 - **Shared helper used by all three steps.** Because the fix is in `GenericAgentStep`, `technical_plan` and `product_definition` automatically benefit. The ticket's "Out of scope" note explicitly blesses this.
 
@@ -231,11 +228,13 @@ Mirror the same edit in `technical_plan.md` and `product_definition.md` for cons
 | Full test suite | `just test` |
 | Targeted (this fix) | `uv run pytest tests/test_triage_step.py tests/test_technical_plan.py tests/test_product_definition.py tests/test_mcp_record_triage.py -q` |
 
-Pre-fix baseline (already captured): `uv run pytest tests/test_triage_step.py -q` → 37 passed.
+Pre-fix baseline (verified in this worktree): `uv run pytest tests/test_triage_step.py -q` → **37 passed**.
 
 ### Before-state observation
 
-The bug cannot be reproduced end-to-end in this worktree (no live Linear/Slack/Claude SDK) — the description even calls out "no specific reproduction steps available". The closest deterministic reproduction is the unit-level scenario the new tests encode: a `chat_history` containing a failed `record_triage` call, the nudge prompt should mention the error. Run `uv run pytest tests/test_triage_step.py::test_work_nudge_surfaces_validation_error -q` after writing the test (before the code change) — the test should **fail** because the current nudge prompt is generic. This *is* the before-state.
+The bug cannot be reproduced end-to-end in this worktree (no live Linear/Slack/Claude SDK), and the ticket itself notes "no specific reproduction steps available". The closest deterministic reproduction is the unit-level scenario the new tests encode: a `chat_history` containing a failed `record_triage` call → the nudge prompt should mention the error.
+
+Run `uv run pytest tests/test_triage_step.py::test_work_nudge_surfaces_validation_error -q` **after writing the test but before the code change** — the test should fail because the current nudge prompt is generic. That failure **is** the before-state reproduction.
 
 ### After-state observation
 
@@ -246,8 +245,6 @@ After the fix:
 - For the real system: when a triage agent passes `risk="extreme"`, the nudge now reads literally:
   > "Your previous call to the `record_triage` MCP tool returned an error and was NOT persisted: Validation error: 1 validation error for TriageResult / risk / Input should be 'trivial', 'low', 'medium' or 'high' …"
   > "Read the error carefully, fix ONLY the field(s) it names, and call `record_triage` again …"
-
-That gives the agent enough to fix the call on the next nudge turn, satisfying success criterion #2 ("no `record_triage` validation failures go unhandled").
 
 ### Success-criteria mapping
 

@@ -1,0 +1,30 @@
+# Compiled output
+/target/
+
+# Cargo lock (keep for binaries, remove for libraries)
+# Cargo.lock
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor/IDE
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Rust-specific
+**/*.rs.bk
+*.pdb
+
+# Claude Code
+.claude/scheduled_tasks.lock

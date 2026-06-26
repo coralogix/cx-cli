@@ -1,0 +1,48 @@
+name: Validate Skills
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'skills/**'
+      - '.github/workflows/skills.yml'
+      - 'scripts/verify-skills.sh'
+      - 'scripts/sync-shared-references.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skills-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate skills and reference sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install skills-ref
+        run: pip install "skills-ref==0.1.1"
+
+      - name: Validate all skills
+        run: |
+          exit_code=0
+          while IFS= read -r skill_file; do
+            skill_dir=$(dirname "$skill_file")
+            skill_name=$(basename "$skill_dir")
+            echo "Validating $skill_name..."
+            if ! agentskills validate "$skill_dir"; then
+              echo "::error::Skill '$skill_name' failed validation"
+              exit_code=1
+            fi
+          done < <(find skills -name "SKILL.md")
+          exit $exit_code
+
+      - name: Verify skills and reference sync
+        run: bash scripts/verify-skills.sh

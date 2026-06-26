@@ -1,0 +1,167 @@
+name: Build Verification
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+concurrency:
+  group: build-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Release Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      # Path filter only applies on pull_request - on push to master we always
+      # build (so the binary-size baseline gets refreshed). dorny/paths-filter
+      # is unreliable outside the pull_request context.
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        with:
+          toolchain: "1.94.1"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+
+      - name: Install Linux system dependencies
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
+      - name: Build release binary
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        run: cargo build --release --locked
+
+      - name: Report binary size
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        run: |
+          BINARY="target/release/cx"
+          SIZE_BYTES=$(stat -c%s "$BINARY")
+          SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$SIZE_BYTES")
+          echo "$SIZE_BYTES" > binary-size.txt
+          echo "## Binary Size" >> $GITHUB_STEP_SUMMARY
+          echo "| Binary | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`cx\` | $SIZE_HUMAN ($SIZE_BYTES bytes) |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload binary size baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-size-baseline
+          path: binary-size.txt
+          retention-days: 90
+
+      - name: Check binary size regression
+        if: github.event_name == 'pull_request' && steps.filter.outputs.code == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT=$(cat binary-size.txt)
+
+          # Download baseline from latest successful master build
+          RUN_ID=$(gh run list --branch master --workflow "Build Verification" \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId' \
+            -R "$GITHUB_REPOSITORY") || true
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::notice::No previous master build found. Skipping size comparison."
+            exit 0
+          fi
+
+          gh run download "$RUN_ID" --name binary-size-baseline --dir baseline-dir \
+            -R "$GITHUB_REPOSITORY" 2>/dev/null || {
+            echo "::notice::No baseline artifact found. Skipping size comparison."
+            exit 0
+          }
+
+          BASELINE=$(cat baseline-dir/binary-size.txt)
+          DELTA=$((CURRENT - BASELINE))
+          PERCENT=$(echo "scale=2; ($DELTA * 100) / $BASELINE" | bc)
+
+          BASELINE_HUMAN=$(numfmt --to=iec-i --suffix=B "$BASELINE")
+          CURRENT_HUMAN=$(numfmt --to=iec-i --suffix=B "$CURRENT")
+          DELTA_HUMAN=$(numfmt --to=iec-i --suffix=B -- "$DELTA")
+
+          echo "### Size Comparison (vs master)" >> $GITHUB_STEP_SUMMARY
+          echo "| Baseline | Current | Delta | Change |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| $BASELINE_HUMAN | $CURRENT_HUMAN | $DELTA_HUMAN | ${PERCENT}% |" >> $GITHUB_STEP_SUMMARY
+
+          if (( $(echo "$PERCENT > 20" | bc -l) )); then
+            if [[ "${{ contains(github.event.pull_request.labels.*.name, 'size-increase-expected') }}" == "true" ]]; then
+              echo "::notice::Binary size increased by ${PERCENT}% but 'size-increase-expected' label is set. Skipping enforcement."
+            else
+              echo "::error::Binary size increased by ${PERCENT}% (>20% threshold)"
+              exit 1
+            fi
+          elif (( $(echo "$PERCENT > 10" | bc -l) )); then
+            echo "::warning::Binary size increased by ${PERCENT}% (>10% threshold)"
+          fi
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    steps:
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        with:
+          toolchain: "1.94.1"
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        run: cross build --release --locked --target ${{ matrix.target }}

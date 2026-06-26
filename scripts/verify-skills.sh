@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Verify all skills in skills/ for cx-cli-specific conventions.
+# Agent Skills spec conformance is checked separately by `agentskills validate`.
+# Checks: metadata.version, trigger phrase count, command validation,
+# cross-reference validation, line count, and shared-reference sync.
+
+SKILLS_DIR="$(cd "$(dirname "$0")/../skills" && pwd)"
+ERRORS=0
+PASS=0
+TOTAL=0
+
+red()   { printf '\033[31m%s\033[0m' "$1"; }
+green() { printf '\033[32m%s\033[0m' "$1"; }
+
+fail() {
+    echo "  $(red FAIL): $1"
+    ERRORS=$((ERRORS + 1))
+}
+
+# Cache cx schema in a temp file
+SCHEMA_FILE=$(mktemp)
+trap 'rm -f "$SCHEMA_FILE"' EXIT
+
+SCHEMA_AVAILABLE=false
+if command -v cx &>/dev/null && cx schema > "$SCHEMA_FILE" 2>/dev/null; then
+    if [ -s "$SCHEMA_FILE" ]; then
+        SCHEMA_AVAILABLE=true
+    fi
+fi
+
+if ! $SCHEMA_AVAILABLE; then
+    echo "WARNING: cx schema unavailable, skipping command validation"
+fi
+
+for skill_dir in "$SKILLS_DIR"/*/; do
+    [ -d "$skill_dir" ] || continue
+    skill_file="$skill_dir/SKILL.md"
+    skill_name=$(basename "$skill_dir")
+
+    [ -f "$skill_file" ] || continue
+    TOTAL=$((TOTAL + 1))
+    skill_errors=0
+
+    echo "Checking: $skill_name"
+
+    # 1. Repo metadata check
+    frontmatter=$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$skill_file")
+    if ! echo "$frontmatter" | grep -q '^metadata:' || ! echo "$frontmatter" | grep -q '^  version:'; then
+        echo "  WARN: missing 'metadata.version' in frontmatter"
+    fi
+
+    # 2. Extract description for cx-cli trigger coverage checks.
+    desc_raw=$(awk '
+        /^---$/ && NR == 1 { next }
+        /^---$/ { exit }
+        /^description:/ {
+            in_desc = 1
+            sub(/^description:[[:space:]]*[>|]?[[:space:]]*/, "")
+            print
+            next
+        }
+        in_desc && /^[A-Za-z0-9_-]+:/ { exit }
+        in_desc {
+            sub(/^  /, "")
+            print
+        }
+    ' "$skill_file")
+
+    # 3. Trigger phrase count (quoted strings in description)
+    # Some skills use quoted trigger phrases, others use prose descriptions
+    phrase_count=$(echo "$desc_raw" | { grep -o '"[^"]*"' || true; } | wc -l | tr -d ' ')
+    desc_length=$(echo "$desc_raw" | wc -c | tr -d ' ' || echo 0)
+    if [ "$phrase_count" -lt 10 ] && [ "$desc_length" -lt 100 ]; then
+        fail "description too short ($desc_length chars) and only $phrase_count trigger phrases (need ≥10 phrases or ≥100 char description)"
+        skill_errors=$((skill_errors + 1))
+    fi
+
+    # 4. Command validation (top-level command only)
+    if $SCHEMA_AVAILABLE; then
+        top_cmds=$(grep -oE '`cx [a-z][-a-z0-9]+' "$skill_file" | \
+            sed 's/^`//' | awk '{print $2}' | sort -u)
+
+        while IFS= read -r top_cmd; do
+            [ -z "$top_cmd" ] && continue
+            # Skip common non-command words that follow 'cx'
+            case "$top_cmd" in
+                schema|profile|profiles) continue ;;
+            esac
+            if ! grep -q "\"name\": \"$top_cmd\"" "$SCHEMA_FILE"; then
+                fail "top-level command '$top_cmd' not found in cx schema"
+                skill_errors=$((skill_errors + 1))
+            fi
+        done <<< "$top_cmds"
+    fi
+
+    # 5. Cross-reference validation (skill references in Related Skills sections)
+    referenced_skills=$(awk '/[Rr]elated [Ss]kills/,0' "$skill_file" | \
+        grep -oE '`[a-z][-a-z0-9]+`' | tr -d '`' | sort -u || true)
+
+    if [ -n "$referenced_skills" ]; then
+        while IFS= read -r ref; do
+            [ -z "$ref" ] && continue
+            # Skip known non-skill references
+            case "$ref" in
+                cx|json|jq|from-file|o|p) continue ;;
+            esac
+            if [ ! -d "$SKILLS_DIR/$ref" ]; then
+                fail "referenced skill '$ref' not found in skills/"
+                skill_errors=$((skill_errors + 1))
+            fi
+        done <<< "$referenced_skills"
+    fi
+
+    # 6. Line count check
+    lines=$(wc -l < "$skill_file" | tr -d ' ')
+    if [ "$lines" -gt 400 ]; then
+        fail "SKILL.md is $lines lines (max 400)"
+        skill_errors=$((skill_errors + 1))
+    fi
+
+    # 7. Shared-reference sync check
+    refs_dir="$skill_dir/references"
+    if [ -d "$refs_dir" ]; then
+        for ref_file in "$refs_dir"/*.md; do
+            [ -f "$ref_file" ] || continue
+            ref_name=$(basename "$ref_file")
+            shared_file="$SKILLS_DIR/shared/$ref_name"
+            if [ -f "$shared_file" ]; then
+                if ! diff -q "$shared_file" "$ref_file" > /dev/null 2>&1; then
+                    fail "references/$ref_name is out of sync with shared/$ref_name — run scripts/sync-shared-references.sh"
+                    skill_errors=$((skill_errors + 1))
+                fi
+            fi
+        done
+    fi
+
+    if [ "$skill_errors" -eq 0 ]; then
+        echo "  $(green PASS) ($phrase_count triggers, $lines lines)"
+        PASS=$((PASS + 1))
+    fi
+done
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Results: $PASS/$TOTAL passed, $ERRORS errors"
+if [ "$ERRORS" -gt 0 ]; then
+    echo "$(red 'FAILED')"
+    exit 1
+else
+    echo "$(green 'ALL PASSED')"
+fi

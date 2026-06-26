@@ -123,14 +123,6 @@ fn alerts_suppression_rules_delete() {
 }
 
 #[test]
-fn incidents_acknowledge() {
-    assert_gated(
-        &["incidents", "acknowledge", "nonexistent"],
-        "incidents acknowledge",
-    );
-}
-
-#[test]
 fn notifications_connectors_delete() {
     assert_gated(
         &["notifications", "connectors", "delete", "nonexistent"],

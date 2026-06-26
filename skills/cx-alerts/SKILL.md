@@ -226,6 +226,7 @@ cx alerts suppression-rules create --from-file suppression-rule.json
 
 ### Related Skills
 
-- **`cx-incident-management`** - incident triage workflows that involve alerts, SLO monitoring, and notification verification
+- **`cx-cases`** - triage the cases that group alert events into investigations
+- **`cx-slos`** - the SLO definitions whose error-budget burn raises alerts
 - **`cx-observability-setup`** - setting up notification routing and webhook integrations for alerts
 - **`cx-telemetry-querying`** - investigate the telemetry behind a firing alert

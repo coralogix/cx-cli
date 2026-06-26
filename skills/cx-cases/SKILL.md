@@ -112,4 +112,5 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 ## Related Skills
 
 - **`cx-alerts`** — the alert definitions behind the events grouped into a case.
+- **`cx-slos`** — the SLO definitions whose breaches drive reliability cases.
 - **`cx-telemetry-querying`** — pivot from a case's impacted entities into logs/spans/metrics.

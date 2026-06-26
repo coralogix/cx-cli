@@ -21,7 +21,8 @@ Every command domain has a designated owning team. The owning team is responsibl
 | Alerts | `src/commands/alerts/`, `skills/cx-alerts/` | Domain team |
 | Dashboards | `src/commands/dashboards/`, `skills/cx-dashboards/` | Domain team |
 | Search fields | `src/commands/search_fields/`, `src/commands/dataprime/semantic_search.rs` | Domain team |
-| Incidents & SLOs | `src/commands/incidents/`, `src/commands/slos/`, `skills/cx-incident-management/` | Domain team |
+| Cases | `src/commands/cases/`, `skills/cx-cases/` | Domain team |
+| SLOs | `src/commands/slos/`, `skills/cx-slos/` | Domain team |
 | Notifications | `src/commands/connectors/`, `src/commands/routers/`, `src/commands/presets/`, `src/commands/notification_testing/` | Domain team |
 | Webhooks | `src/commands/webhooks/`, `src/commands/actions/` | Domain team |
 | IAM | `src/commands/api_keys/`, `src/commands/roles/`, `src/commands/scopes/`, `src/commands/users/`, `src/commands/team_groups/`, `src/commands/ip_access/`, `skills/cx-platform-admin/` | Domain team |

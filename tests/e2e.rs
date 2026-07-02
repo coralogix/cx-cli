@@ -42,8 +42,6 @@ mod e2m;
 mod enrichments;
 #[path = "e2e/extensions.rs"]
 mod extensions;
-#[path = "e2e/incidents.rs"]
-mod incidents;
 #[path = "e2e/integrations.rs"]
 mod integrations;
 #[path = "e2e/ip_access.rs"]

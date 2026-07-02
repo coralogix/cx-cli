@@ -233,7 +233,7 @@ cx command-b list -o json
 - **`cx-other-skill`** - description of relationship
 ```
 
-**Reference implementations:** `skills/cx-cost-optimization/SKILL.md` (5-command workflow) and `skills/cx-incident-management/SKILL.md` (multi-command orchestrator with cross-skill delegation).
+**Reference implementations:** `skills/cx-cost-optimization/SKILL.md` (5-command workflow) and `skills/cx-observability-setup/SKILL.md` (multi-command orchestrator with cross-skill delegation).
 
 ---
 

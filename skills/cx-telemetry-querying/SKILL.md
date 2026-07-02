@@ -200,7 +200,8 @@ Not every question is answered by querying data. If the user's intent is operati
 | User Intent | Route To |
 |---|---|
 | Reducing costs, checking usage, TCO policies | `cx-cost-optimization` |
-| Incident triage, SLO breaching, who got paged | `cx-incident-management` |
+| Triaging a case, who got paged, case timeline | `cx-cases` |
+| SLO status, error budget, service-level targets | `cx-slos` |
 | Setting up monitoring, webhooks, notifications | `cx-observability-setup` |
 | Configuring parsing rules, enrichments, E2M | `cx-data-pipeline` |
 | Access audit, API keys, user management | `cx-platform-admin` |

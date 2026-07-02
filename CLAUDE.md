@@ -24,7 +24,7 @@ Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 29 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 28 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -42,7 +42,6 @@ Observe:
 
 Detect & Respond:
   alerts             Manage alert definitions and suppression rules
-  incidents          Manage and triage incidents
   cases              Manage and triage cases
 
 Notifications:
@@ -145,7 +144,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 ### Skills
 
-`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Eight skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-dashboards`, `cx-incident-management`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
+`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Nine skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-cases`, `cx-slos`, `cx-dashboards`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
 
 ### Documentation
 
@@ -186,9 +185,8 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx tco` | `cx-cost-optimization` | Covered |
 | `cx retentions` | `cx-cost-optimization` | Covered |
 | `cx archive` | `cx-cost-optimization` | Covered |
-| `cx incidents` | `cx-incident-management` | Covered |
 | `cx cases` | `cx-cases` | Covered |
-| `cx slos` | `cx-incident-management` | Covered |
+| `cx slos` | `cx-slos` | Covered |
 | `cx parsing-rules` | `cx-data-pipeline` | Covered |
 | `cx enrichments` | `cx-data-pipeline` | Covered |
 | `cx e2m` | `cx-data-pipeline` | Covered |

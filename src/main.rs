@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::parser::ValueSource;
-use clap::{ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
 use clap_complete::env::CompleteEnv;
@@ -49,20 +49,6 @@ pub enum SearchByValueDataset {
     All,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum Muting {
-    Muted,
-    Unmuted,
-}
-
-fn incidents_list_arg_from_cli(matches: &ArgMatches, arg: &str) -> bool {
-    matches
-        .subcommand_matches("incidents")
-        .and_then(|m| m.subcommand_matches("list"))
-        .and_then(|m| m.value_source(arg))
-        == Some(ValueSource::CommandLine)
-}
-
 /// Coralogix CLI - the observability backbone for AI agents and engineering teams.
 #[derive(Parser)]
 #[command(
@@ -87,7 +73,6 @@ fn incidents_list_arg_from_cli(matches: &ArgMatches, arg: &str) -> bool {
 
 \x1b[1m\x1b[4mDetect & Respond:\x1b[0m
   \x1b[1malerts\x1b[0m             Manage alert definitions and suppression rules
-  \x1b[1mincidents\x1b[0m          Manage and triage incidents
   \x1b[1mcases\x1b[0m               Manage and triage cases
 
 \x1b[1m\x1b[4mNotifications:\x1b[0m
@@ -320,19 +305,6 @@ Examples:
     Alerts {
         #[command(subcommand)]
         cmd: AlertsCmd,
-    },
-
-    /// Manage and triage incidents.
-    #[command(after_help = "\
-Examples:
-  cx incidents list
-  cx incidents list --severity CRITICAL
-  cx incidents get <incident-id>
-  cx incidents acknowledge <id1> <id2>
-  cx incidents resolve <id>")]
-    Incidents {
-        #[command(subcommand)]
-        cmd: IncidentsCmd,
     },
 
     /// Manage and triage cases.
@@ -1028,154 +1000,6 @@ Examples:
         #[command(subcommand)]
         cmd: SuppressionRulesCmd,
     },
-}
-
-#[derive(Subcommand)]
-#[allow(clippy::large_enum_variant)]
-enum IncidentsCmd {
-    /// List incidents with optional filters.
-    #[command(after_help = "\
-Examples:
-  cx incidents list
-  cx incidents list --severity CRITICAL
-  cx incidents list --status TRIGGERED
-  cx incidents list --start now-24h --order-by created_at --limit 50")]
-    List {
-        /// Filter by status. Repeatable. Values: TRIGGERED, ACKNOWLEDGED, RESOLVED.
-        #[arg(long)]
-        status: Vec<String>,
-
-        /// Filter by severity. Repeatable. Values: INFO, WARNING, ERROR, CRITICAL.
-        #[arg(long)]
-        severity: Vec<String>,
-
-        /// Filter by incident state. Repeatable. Values: TRIGGERED, RESOLVED.
-        #[arg(long)]
-        state: Vec<String>,
-
-        /// Filter by assignee user ID. Repeatable.
-        #[arg(long)]
-        assignee: Vec<String>,
-
-        /// Filter by application name. Repeatable.
-        #[arg(long = "application-name")]
-        application_name: Vec<String>,
-
-        /// Filter by subsystem name. Repeatable.
-        #[arg(long = "subsystem-name")]
-        subsystem_name: Vec<String>,
-
-        /// Filter by contextual label as key=value. Repeatable.
-        #[arg(long = "contextual-label")]
-        contextual_label: Vec<String>,
-
-        /// Search query text.
-        #[arg(long = "query")]
-        search_query: Option<String>,
-
-        /// Incident field for --query (e.g. name, id, severity, status).
-        #[arg(long = "query-field")]
-        search_field: Option<String>,
-
-        /// Contextual label field for --query.
-        #[arg(long = "query-contextual-label")]
-        search_contextual_label: Option<String>,
-
-        /// Filter by muting state.
-        #[arg(long, value_enum)]
-        muting: Option<Muting>,
-
-        /// Created-at range start (ISO 8601 or relative, e.g. now-24h).
-        #[arg(long = "start")]
-        start: Option<String>,
-
-        /// Created-at range end (ISO 8601 or relative, e.g. now).
-        #[arg(long = "end")]
-        end: Option<String>,
-
-        /// Incident-duration range start (ISO 8601 or relative).
-        #[arg(long = "duration-start")]
-        duration_start: Option<String>,
-
-        /// Incident-duration range end (ISO 8601 or relative).
-        #[arg(long = "duration-end")]
-        duration_end: Option<String>,
-
-        /// Field to sort by (e.g. created_at, severity, name, status).
-        #[arg(long = "order-by")]
-        order_by: Option<String>,
-
-        /// Sort direction: ASC or DESC.
-        #[arg(long = "order-direction", default_value = "DESC")]
-        order_direction: String,
-
-        /// Number of incidents to request per API page.
-        #[arg(long = "page-size", default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..))]
-        page_size: u32,
-
-        /// Page token returned by the API.
-        #[arg(long = "page-token")]
-        page_token: Option<String>,
-
-        /// Maximum incidents to return per profile. Use --all to fetch every page.
-        #[arg(long, default_value_t = 100, conflicts_with = "all", value_parser = clap::value_parser!(u32).range(1..))]
-        limit: u32,
-
-        /// Fetch every available page.
-        #[arg(long, action = ArgAction::SetTrue)]
-        all: bool,
-    },
-    /// Get a single incident by ID.
-    Get {
-        /// Incident ID.
-        id: String,
-    },
-    /// Acknowledge one or more incidents [requires --yes].
-    Acknowledge {
-        /// Incident IDs to acknowledge.
-        #[arg(required = true)]
-        ids: Vec<String>,
-    },
-    /// Resolve one or more incidents [requires --yes].
-    Resolve {
-        /// Incident IDs to resolve.
-        #[arg(required = true)]
-        ids: Vec<String>,
-    },
-    /// Close one or more incidents [requires --yes].
-    Close {
-        /// Incident IDs to close.
-        #[arg(required = true)]
-        ids: Vec<String>,
-    },
-    /// Assign one or more incidents to a user [requires --yes].
-    Assign {
-        /// Incident IDs to assign.
-        #[arg(required = true)]
-        ids: Vec<String>,
-
-        /// User ID to assign to.
-        #[arg(long)]
-        user_id: String,
-    },
-    /// Unassign one or more incidents [requires --yes].
-    Unassign {
-        /// Incident IDs to unassign.
-        #[arg(required = true)]
-        ids: Vec<String>,
-    },
-    /// List incident events.
-    #[command(after_help = "\
-Examples:
-  cx incidents events
-  cx incidents events --incident-id <id>")]
-    Events {
-        /// Filter events by incident ID.
-        #[arg(long)]
-        incident_id: Option<String>,
-    },
-    /// Get incident aggregations.
-    Aggregations,
 }
 
 #[derive(Subcommand)]
@@ -2947,94 +2771,6 @@ async fn main() -> Result<()> {
                         commands::suppression_rules::run_delete(&targets, &id).await?;
                     }
                 },
-            },
-
-            Commands::Incidents { cmd } => match cmd {
-                IncidentsCmd::List {
-                    status,
-                    severity,
-                    state,
-                    assignee,
-                    application_name,
-                    subsystem_name,
-                    contextual_label,
-                    search_query,
-                    search_field,
-                    search_contextual_label,
-                    muting,
-                    start,
-                    end,
-                    duration_start,
-                    duration_end,
-                    order_by,
-                    order_direction,
-                    page_size,
-                    page_token,
-                    limit,
-                    all,
-                } => {
-                    let is_muted = muting.map(|m| matches!(m, Muting::Muted));
-                    let show_next_page_token = incidents_list_arg_from_cli(&matches, "page_size")
-                        || incidents_list_arg_from_cli(&matches, "page_token");
-                    let options = commands::incidents::ListIncidentsOptions {
-                        statuses: status,
-                        severities: severity,
-                        states: state,
-                        assignees: assignee,
-                        application_names: application_name,
-                        subsystem_names: subsystem_name,
-                        contextual_labels: contextual_label,
-                        search_query,
-                        search_field,
-                        search_contextual_label,
-                        is_muted,
-                        created_start: start,
-                        created_end: end,
-                        duration_start,
-                        duration_end,
-                        order_by,
-                        order_direction: Some(order_direction),
-                        page_size,
-                        page_token,
-                        limit: if all { None } else { Some(limit as usize) },
-                        show_next_page_token,
-                    };
-                    commands::incidents::run_list(&targets, options, output).await?;
-                }
-                IncidentsCmd::Get { id } => {
-                    commands::incidents::run_get(&targets, &id, output).await?;
-                }
-                IncidentsCmd::Acknowledge { ids } => {
-                    confirm_destructive("Acknowledge incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_acknowledge(&targets, &ids).await?;
-                }
-                IncidentsCmd::Resolve { ids } => {
-                    confirm_destructive("Resolve incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_resolve(&targets, &ids).await?;
-                }
-                IncidentsCmd::Close { ids } => {
-                    confirm_destructive("Close incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_close(&targets, &ids).await?;
-                }
-                IncidentsCmd::Assign { ids, user_id } => {
-                    confirm_destructive(
-                        &format!("Assign incident(s) to '{user_id}'?"),
-                        yes,
-                        agent_mode,
-                    )?;
-                    commands::incidents::run_assign(&targets, &ids, &user_id).await?;
-                }
-                IncidentsCmd::Unassign { ids } => {
-                    confirm_destructive("Unassign incident(s)?", yes, agent_mode)?;
-                    commands::incidents::run_unassign(&targets, &ids).await?;
-                }
-                IncidentsCmd::Events { incident_id } => {
-                    commands::incidents::run_events(&targets, incident_id.as_deref(), output)
-                        .await?;
-                }
-                IncidentsCmd::Aggregations => {
-                    commands::incidents::run_aggregations(&targets, output).await?;
-                }
             },
 
             Commands::Cases { cmd } => match cmd {

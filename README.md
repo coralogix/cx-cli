@@ -15,7 +15,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 ## What you can do
 
 - Query any signal-logs, metrics, spans, and RUM data-with DataPrime or PromQL, and render results as tables, raw JSON, or a token-efficient format for AI agents.
-- Manage the full Coralogix stack: alerts, incidents, notifications, IAM, SLOs, dashboards, data pipeline rules, TCO policies, and more.
+- Manage the full Coralogix stack: alerts, cases, notifications, IAM, SLOs, dashboards, data pipeline rules, TCO policies, and more.
 - Run the same command across multiple profiles or regions in a single invocation with multi-profile fan-out.
 - Give your AI agent a single entry point to production observability: `cx schema` dumps the entire command tree as JSON so agents can self-discover capabilities without manual documentation.
 - Find the right log or span field by describing it in natural language.
@@ -143,7 +143,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | Command | Purpose |
 |---|---|
 | `cx alerts` | Manage alerts: `list`, `get`, `create`, `delete`, `enable`, `disable`, `events`, `event-stats`, `suppression-rules` |
-| `cx incidents` | Manage and triage incidents |
+| `cx cases` | Manage and triage cases |
 
 **Notifications**
 
@@ -251,7 +251,7 @@ Install globally for all projects:
 npx skills add coralogix/cx-cli -g
 ```
 
-Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-dashboards`, `cx-cost-optimization`, `cx-incident-management`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](https://github.com/coralogix/cx-cli/blob/master/skills/README.md) for per-skill usage.
+Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-dashboards`, `cx-cost-optimization`, `cx-cases`, `cx-slos`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](https://github.com/coralogix/cx-cli/blob/master/skills/README.md) for per-skill usage.
 
 ## Multi-profile fan-out
 

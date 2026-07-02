@@ -174,7 +174,7 @@ Use the `cx-dashboards` skill for the full dashboard creation workflow.
 
 ### 7. Create SLOs
 
-Use the `cx-incident-management` skill for SLO creation and monitoring.
+Use the `cx-slos` skill for SLO creation and monitoring.
 
 ---
 
@@ -262,6 +262,7 @@ cx webhooks actions reorder --from-file order.json
 ## Related Skills
 
 - **`cx-dashboards`** - dashboard creation and replace workflow
-- **`cx-incident-management`** - SLO creation and alert triage workflows
+- **`cx-slos`** - SLO creation and error-budget monitoring
+- **`cx-cases`** - triage the cases raised when alerts fire
 - **`cx-alerts`** - alert definitions that trigger notifications
 - **`cx-telemetry-querying`** - verify data flows after setup

@@ -14,7 +14,7 @@ use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::render;
 use api::{
-    DashboardFolderItem, DashboardSearchResult, DashboardsApi, QueryByFieldResult,
+    DashboardFolderItem, DashboardSearchResult, DashboardsApi, IssueSeverity, QueryByFieldResult,
     QuerySearchResult,
 };
 
@@ -1097,6 +1097,176 @@ pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> R
             ),
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
+    }
+    Ok(())
+}
+
+// ── Check (CheckDashboard) ────────────────────────────────────────────────────
+
+/// Build the `CheckDashboardRequest` JSON body for the `dashboardId` oneof arm.
+fn check_body_from_id(dashboard_id: &str) -> Value {
+    json!({ "dashboardId": dashboard_id })
+}
+
+/// Build the `CheckDashboardRequest` JSON body for the `dashboard` oneof arm,
+/// reusing `read_dashboard_body` to normalize a bare doc or a
+/// `{ "dashboard": {...} }` wrapper into the inner dashboard object.
+fn check_body_from_file(from_file: &str) -> Result<Value> {
+    let dashboard = read_dashboard_body(from_file)?;
+    Ok(json!({ "dashboard": dashboard }))
+}
+
+/// Colorize a severity string for text output.
+fn severity_colored(severity: IssueSeverity) -> String {
+    let s = match severity {
+        IssueSeverity::SeverityError => "SEVERITY_ERROR",
+        IssueSeverity::SeverityWarning => "SEVERITY_WARNING",
+        IssueSeverity::SeverityUnspecified => "SEVERITY_UNSPECIFIED",
+    };
+    match severity {
+        IssueSeverity::SeverityError => s.red().to_string(),
+        IssueSeverity::SeverityWarning => s.yellow().to_string(),
+        IssueSeverity::SeverityUnspecified => s.dimmed().to_string(),
+    }
+}
+
+/// Build one issue row as JSON for `json` / `agents` output.
+fn issue_json_row(issue: &api::DashboardCheckIssue, profile: &str, include_profile: bool) -> Value {
+    let mut row = serde_json::to_value(issue).unwrap_or_else(|_| json!({}));
+    if include_profile {
+        if let Value::Object(ref mut m) = row {
+            m.insert(
+                JSON_KEY_PROFILE.to_string(),
+                Value::String(profile.to_string()),
+            );
+        }
+    }
+    row
+}
+
+/// Validate a dashboard definition without persisting it
+/// (`DashboardsService.CheckDashboard`).
+///
+/// Exactly one of `from_file` or `dashboard_id` must be supplied:
+/// - `from_file` — path to a JSON file (or `-` for stdin) holding either a
+///   bare dashboard doc or a `{ "dashboard": {...} }` wrapper.
+/// - `dashboard_id` — validate a stored dashboard by id.
+///
+/// Read-only. Exits non-zero if any error-severity issue is found (CI gate).
+/// In multi-profile fan-out, any profile returning error-severity issues
+/// causes a non-zero exit, even if other profiles are clean — this is a
+/// deliberate carve-out from the usual "exit 0 if any profile succeeds" rule,
+/// because `check` is a validation gate first.
+pub async fn run_check(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: Option<&str>,
+    dashboard_id: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    // Mutually exclusive sources. clap enforces "both" via `conflicts_with`;
+    // we guard "neither" here with a clear message.
+    let body = match (from_file, dashboard_id) {
+        (Some(path), None) => {
+            eprintln!("{}", "Checking dashboard from file...".dimmed());
+            check_body_from_file(path)?
+        }
+        (None, Some(id)) => {
+            if id.trim().is_empty() {
+                bail!("dashboard id cannot be empty");
+            }
+            eprintln!("{}", format!("Checking dashboard {id}...").dimmed());
+            check_body_from_id(id)
+        }
+        (Some(_), Some(_)) => {
+            bail!("`--from-file` and `<dashboard_id>` are mutually exclusive; specify one")
+        }
+        (None, None) => {
+            bail!("specify either `--from-file <path>` or a `<dashboard_id>` to check")
+        }
+    };
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        async move {
+            let api = DashboardsApi::new(&t.client);
+            Ok(api.check(&body).await?)
+        }
+    })
+    .await;
+
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
+    let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => all_issues.push((profile, resp.issues)),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
+        }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+
+    // CI-gate semantics: any error-severity issue (in any profile) fails.
+    let total_errors = all_issues
+        .iter()
+        .flat_map(|(_, issues)| issues.iter())
+        .filter(|i| i.severity.is_failure())
+        .count();
+    let total_issues = all_issues.iter().map(|(_, i)| i.len()).sum::<usize>();
+
+    // Render.
+    match output {
+        OutputFormat::Json => {
+            let mut rows: Vec<Value> = Vec::new();
+            for (profile, issues) in &all_issues {
+                for issue in issues {
+                    rows.push(issue_json_row(issue, profile, include_profile));
+                }
+            }
+            render::render_json(&rows)?;
+        }
+        OutputFormat::Agents => {
+            let mut rows: Vec<Value> = Vec::new();
+            for (profile, issues) in &all_issues {
+                for issue in issues {
+                    rows.push(issue_json_row(issue, profile, include_profile));
+                }
+            }
+            render::render_agents(&rows)?;
+        }
+        OutputFormat::Text => {
+            if total_issues == 0 {
+                println!("{}", "Dashboard is valid (no issues)".green());
+            } else {
+                let mut rows: Vec<Vec<String>> = Vec::new();
+                for (profile, issues) in &all_issues {
+                    for issue in issues {
+                        let mut row = Vec::with_capacity(4);
+                        if include_profile {
+                            row.push(profile.clone());
+                        }
+                        row.push(severity_colored(issue.severity));
+                        row.push(issue.location.clone().unwrap_or_default());
+                        row.push(issue.message.clone().unwrap_or_default());
+                        rows.push(row);
+                    }
+                }
+                render::render_table(&["Severity", "Location", "Message"], rows, include_profile);
+            }
+        }
+    }
+
+    if total_errors > 0 {
+        bail!(
+            "dashboard check found {total_errors} error(s) across profile(s); {} warning(s) ignored",
+            total_issues - total_errors
+        );
     }
     Ok(())
 }

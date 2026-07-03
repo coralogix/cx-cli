@@ -220,3 +220,81 @@ fn dashboards_search_exits_ok() {
         "dashboards search should exit 0 even with empty results"
     );
 }
+
+#[test]
+#[ignore]
+fn dashboards_check_valid_dashboard_exits_ok() {
+    if harness::require_creds("dashboards_check_valid_dashboard_exits_ok").is_none() {
+        return;
+    }
+    let Some(id) = discover_dashboard_id() else {
+        eprintln!(
+            "[e2e] skipping dashboards_check_valid_dashboard_exits_ok: no dashboards available on test team"
+        );
+        return;
+    };
+    // POST /mgmt/openapi/5/dashboards/check/v1 with { "dashboardId": <id> }.
+    // A real dashboard must validate cleanly (no error-severity issues), so
+    // the command must exit 0. JSON output is an array of issue rows; an
+    // empty array is the valid-dashboard case.
+    let v = harness::run_ok_json(&["dashboards", "check", &id, "-o", "json"]);
+    harness::assert_array(&v);
+}
+
+#[test]
+#[ignore]
+fn dashboards_check_from_file_round_trip() {
+    if harness::require_creds("dashboards_check_from_file_round_trip").is_none() {
+        return;
+    }
+    let Some(id) = discover_dashboard_id() else {
+        eprintln!(
+            "[e2e] skipping dashboards_check_from_file_round_trip: no dashboards available on test team"
+        );
+        return;
+    };
+
+    // 1. Get the existing dashboard as JSON.
+    let original = harness::run_ok_json(&["dashboards", "get", &id, "-o", "json"]);
+
+    // Extract the inner dashboard object (may be top-level or nested),
+    // mirroring dashboards_replace_round_trip.
+    let dashboard = if original.get("dashboard").is_some() {
+        original.get("dashboard").unwrap().clone()
+    } else {
+        original.clone()
+    };
+
+    // 2. Write it to a temp file and validate it with `check --from-file`.
+    // Read-only — no mutation of test-team state.
+    let tmp = std::env::temp_dir().join("cx_e2e_check_dashboard.json");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&dashboard).unwrap())
+        .expect("write temp file");
+
+    let output = harness::cx()
+        .args([
+            "dashboards",
+            "check",
+            "--from-file",
+            tmp.to_str().unwrap(),
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute cx");
+
+    std::fs::remove_file(&tmp).ok();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Checking dashboard from file"),
+        "expected 'Checking dashboard from file' on stderr, got: {stderr}"
+    );
+
+    // A real dashboard should validate cleanly (no error-severity issues),
+    // so the command must exit 0.
+    assert!(
+        output.status.success(),
+        "dashboards check --from-file should exit 0 for a valid dashboard, stderr: {stderr}"
+    );
+}

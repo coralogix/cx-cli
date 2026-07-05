@@ -116,15 +116,6 @@ pub struct SearchUsersResponse {
     pub next_page_token: Option<i64>,
 }
 
-/// Response from `GET /identity/whoami`, which identifies the team (and user)
-/// the current API key belongs to. Fields are snake_case in the payload.
-#[derive(Debug, Deserialize)]
-pub struct Whoami {
-    pub team_id: Option<i64>,
-    pub team_name: Option<String>,
-    pub user_name: Option<String>,
-}
-
 /// In-memory lookup over the team-members list, used to convert between
 /// opaque user IDs (the API's currency) and email addresses (what humans
 /// recognize). Built once per command invocation per profile.
@@ -188,7 +179,6 @@ const CLOSED_BASE: &str = "/mgmt/openapi/5/cases/closed/v1";
 const RESOLVED_BASE: &str = "/mgmt/openapi/5/cases/resolved/v1";
 const NOTIFICATION_DELIVERIES_BASE: &str = "/mgmt/openapi/5/cases/notifications/v1/deliveries";
 const USERS_BASE: &str = "/mgmt/openapi/5/aaa/teams/v2";
-const WHOAMI_BASE: &str = "/identity/whoami";
 /// Page size for the paginated team-users search. The endpoint caps how many
 /// rows it returns per call, so we walk pages until `nextPageToken` is absent.
 const USERS_PAGE_SIZE: i64 = 300;
@@ -300,27 +290,11 @@ impl<'a> CasesApi<'a> {
         self.client.post(NOTIFICATION_DELIVERIES_BASE, &body).await
     }
 
-    /// Resolve the team ID for the current API key. The team-users search
-    /// endpoint embeds the team ID in its path, so we ask `/identity/whoami`,
-    /// which every key can read and which returns the caller's team.
-    async fn resolve_team_id(&self) -> anyhow::Result<String> {
-        let whoami: Whoami = self
-            .client
-            .get(WHOAMI_BASE, &[])
-            .await
-            .map_err(|e| anyhow!("failed to resolve team ID via /identity/whoami: {e:#}"))?;
-        whoami
-            .team_id
-            .map(|id| id.to_string())
-            .ok_or_else(|| anyhow!("/identity/whoami returned no team_id"))
-    }
-
     /// List all team members by walking the paginated team-users search
     /// endpoint (`GET /mgmt/openapi/5/aaa/teams/v2/{team_id}/search`) in pages
     /// of [`USERS_PAGE_SIZE`], following `nextPageToken` until it is absent.
     pub async fn list_teammates(&self) -> Result<Vec<TeamUser>> {
-        let team_id = self
-            .resolve_team_id()
+        let team_id = crate::identity::resolve_team_id(self.client)
             .await
             .map_err(|e| crate::error::CxError::Api {
                 status: 0,

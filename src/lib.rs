@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod error;
 pub mod execution;
+pub mod identity;
 pub mod install_method;
 pub mod keyring_store;
 pub mod oauth;

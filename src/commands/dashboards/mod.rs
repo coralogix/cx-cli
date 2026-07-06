@@ -1248,9 +1248,7 @@ pub async fn run_check(
                 for (profile, issues) in &all_issues {
                     for issue in issues {
                         let mut row = Vec::with_capacity(4);
-                        if include_profile {
-                            row.push(profile.clone());
-                        }
+                        row.push(profile.clone());
                         row.push(severity_colored(issue.severity));
                         row.push(issue.location.clone().unwrap_or_default());
                         row.push(issue.message.clone().unwrap_or_default());
@@ -1269,4 +1267,55 @@ pub async fn run_check(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression guard for the `render_table` profile-column contract.
+    ///
+    /// `format_table` strips the first cell of every row when
+    /// `include_profile` is false (single-profile mode). Callers must
+    /// therefore push the profile as the first element unconditionally;
+    /// conditional placement causes the severity column to be dropped and
+    /// the remaining columns to shift left. This test constructs rows the
+    /// same way `run_check` does and asserts the severity text survives
+    /// rendering in single-profile mode.
+    #[test]
+    fn run_check_rows_preserve_severity_in_single_profile_output() {
+        let profile = "mock-profile";
+        let issue = api::DashboardCheckIssue {
+            severity: api::IssueSeverity::SeverityWarning,
+            message: Some("Query uses deprecated function 'timeShift'".to_string()),
+            location: Some("/sections/1/rows/0/widgets/0/queries/0".to_string()),
+        };
+
+        // Mirrors the row construction in `run_check`'s Text branch.
+        let mut row = Vec::with_capacity(4);
+        row.push(profile.to_string());
+        row.push(severity_colored(issue.severity));
+        row.push(issue.location.clone().unwrap_or_default());
+        row.push(issue.message.clone().unwrap_or_default());
+
+        let rendered = render::format_table(
+            &["Severity", "Location", "Message"],
+            vec![row],
+            false, // single-profile mode
+        );
+
+        // Severity text must be present (the bug dropped it via skip(1)).
+        assert!(
+            rendered.contains("SEVERITY_WARNING"),
+            "severity column dropped in single-profile output: {rendered}"
+        );
+        assert!(
+            rendered.contains("/sections/1/rows/0/widgets/0/queries/0"),
+            "location column missing in single-profile output: {rendered}"
+        );
+        assert!(
+            rendered.contains("Query uses deprecated function 'timeShift'"),
+            "message column missing in single-profile output: {rendered}"
+        );
+    }
 }

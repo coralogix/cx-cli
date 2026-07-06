@@ -370,7 +370,7 @@ mod tests {
             Some("/sections/0/rows/1/widgets/2")
         );
         assert_eq!(resp.issues[1].severity, IssueSeverity::SeverityWarning);
-        assert!(resp.issues[1].severity.is_failure() == false);
+        assert!(!resp.issues[1].severity.is_failure());
 
         // The error-severity issue must be a failure, the warning must not.
         assert!(resp.issues[0].severity.is_failure());

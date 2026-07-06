@@ -1247,11 +1247,12 @@ pub async fn run_check(
                 let mut rows: Vec<Vec<String>> = Vec::new();
                 for (profile, issues) in &all_issues {
                     for issue in issues {
-                        let mut row = Vec::with_capacity(4);
-                        row.push(profile.clone());
-                        row.push(severity_colored(issue.severity));
-                        row.push(issue.location.clone().unwrap_or_default());
-                        row.push(issue.message.clone().unwrap_or_default());
+                        let row = vec![
+                            profile.clone(),
+                            severity_colored(issue.severity),
+                            issue.location.clone().unwrap_or_default(),
+                            issue.message.clone().unwrap_or_default(),
+                        ];
                         rows.push(row);
                     }
                 }
@@ -1292,11 +1293,12 @@ mod tests {
         };
 
         // Mirrors the row construction in `run_check`'s Text branch.
-        let mut row = Vec::with_capacity(4);
-        row.push(profile.to_string());
-        row.push(severity_colored(issue.severity));
-        row.push(issue.location.clone().unwrap_or_default());
-        row.push(issue.message.clone().unwrap_or_default());
+        let row = vec![
+            profile.to_string(),
+            severity_colored(issue.severity),
+            issue.location.clone().unwrap_or_default(),
+            issue.message.clone().unwrap_or_default(),
+        ];
 
         let rendered = render::format_table(
             &["Severity", "Location", "Message"],

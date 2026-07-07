@@ -36,22 +36,15 @@ fn parse_api_timestamp(ts: &str) -> Option<DateTime<Utc>> {
 /// Check hard rules for queries against `system/labs.cases.state_updates`.
 ///
 /// Returns an actionable warning string, or `None` when everything looks fine.
-pub fn check_cases_query_rules(
-    source: &str,
-    query: &str,
-    start_ts: &str,
-    end_ts: &str,
-) -> Option<String> {
-    let effective_source = if source == CASES_DATASET_SOURCE {
-        source.to_string()
-    } else {
-        INLINE_SOURCE_RE
-            .captures(query)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
-            .unwrap_or_default()
-    };
-    if effective_source != CASES_DATASET_SOURCE {
+///
+/// Only inspects inline `source` in the query text — not the CLI `--source` flag,
+/// which can disagree with what the query actually executes.
+pub fn check_cases_query_rules(query: &str, start_ts: &str, end_ts: &str) -> Option<String> {
+    let effective_source = INLINE_SOURCE_RE
+        .captures(query)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str());
+    if effective_source != Some(CASES_DATASET_SOURCE) {
         return None;
     }
 
@@ -103,20 +96,15 @@ mod tests {
 
     #[test]
     fn non_cases_source_returns_none() {
-        assert!(check_cases_query_rules("logs", "source logs | count", START, END).is_none());
-        assert!(check_cases_query_rules("", "source logs | count", START, END).is_none());
+        assert!(check_cases_query_rules("source logs | count", START, END).is_none());
     }
 
     #[test]
     fn inline_source_in_query_triggers_rules() {
         let end = "2024-01-01T00:30:00.000Z";
-        let warning = check_cases_query_rules(
-            "",
-            "source system/labs.cases.state_updates | count",
-            START,
-            end,
-        )
-        .unwrap();
+        let warning =
+            check_cases_query_rules("source system/labs.cases.state_updates | count", START, end)
+                .unwrap();
         assert!(warning.contains("Rule 1"));
         assert!(warning.contains("Rule 2/3"));
     }
@@ -124,27 +112,24 @@ mod tests {
     #[test]
     fn short_window_triggers_rule1() {
         let end = "2024-01-01T00:30:00.000Z";
-        let warning = check_cases_query_rules(CASES_DATASET_SOURCE, "| count", START, end).unwrap();
+        let warning =
+            check_cases_query_rules("source system/labs.cases.state_updates | count", START, end)
+                .unwrap();
         assert!(warning.contains("Rule 1"));
     }
 
     #[test]
     fn missing_dedup_triggers_rule2() {
-        let warning = check_cases_query_rules(
-            CASES_DATASET_SOURCE,
-            "source system/labs.cases.state_updates | count",
-            START,
-            END,
-        )
-        .unwrap();
+        let warning =
+            check_cases_query_rules("source system/labs.cases.state_updates | count", START, END)
+                .unwrap();
         assert!(warning.contains("Rule 2/3"));
     }
 
     #[test]
     fn dedupeby_caseid_is_safe() {
         assert!(check_cases_query_rules(
-            CASES_DATASET_SOURCE,
-            "| dedupeby caseId orderby $m.timestamp desc",
+            "source system/labs.cases.state_updates | dedupeby caseId orderby $m.timestamp desc",
             START,
             END
         )
@@ -154,8 +139,7 @@ mod tests {
     #[test]
     fn trigger_filter_is_safe() {
         assert!(check_cases_query_rules(
-            CASES_DATASET_SOURCE,
-            "| filter metadata.trigger == 'caseResolved'",
+            "source system/labs.cases.state_updates | filter metadata.trigger == 'caseResolved'",
             START,
             END
         )

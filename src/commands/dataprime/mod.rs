@@ -312,12 +312,7 @@ pub fn merge_results(
                 }
             }
             Err(e) => {
-                let msg = if let Some(w) = cases_warning {
-                    format!("{w}\n\nerror from profile '{profile}': {e:#}")
-                } else {
-                    format!("error from profile '{profile}': {e:#}")
-                };
-                eprintln!("{}", msg.red());
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
             }
         }
     }
@@ -406,7 +401,7 @@ pub async fn run_query(
 
     let start_fmt = parse_timestamp(start)?;
     let end_fmt = parse_timestamp(end)?;
-    let cases_warning = check_cases_query_rules(source, query, &start_fmt, &end_fmt);
+    let cases_warning = check_cases_query_rules(query, &start_fmt, &end_fmt);
 
     let include_profile = targets.len() > 1;
     let query = query.to_string();
@@ -583,19 +578,15 @@ category: ["Commands reference", "test"]
 
     // ── check_cases_query_rules integration via merge_results ────────────────
 
-    use crate::cases_query_rules::{check_cases_query_rules, CASES_DATASET_SOURCE};
+    use crate::cases_query_rules::check_cases_query_rules;
 
     const CASES_START: &str = "2024-01-01T00:00:00.000Z";
     const CASES_END: &str = "2024-01-01T02:00:00.000Z";
+    const CASES_QUERY: &str = "source system/labs.cases.state_updates | count";
 
     #[test]
     fn cases_warning_prepended_to_merged_warnings() {
-        let warning = check_cases_query_rules(
-            CASES_DATASET_SOURCE,
-            "source system/labs.cases.state_updates | count",
-            CASES_START,
-            CASES_END,
-        );
+        let warning = check_cases_query_rules(CASES_QUERY, CASES_START, CASES_END);
         assert!(
             warning.is_some(),
             "expected a warning from check_cases_query_rules"
@@ -616,8 +607,7 @@ category: ["Commands reference", "test"]
 
     #[test]
     fn cases_warning_plus_profile_warning_both_appear() {
-        let cases_warn =
-            check_cases_query_rules(CASES_DATASET_SOURCE, "| count", CASES_START, CASES_END);
+        let cases_warn = check_cases_query_rules(CASES_QUERY, CASES_START, CASES_END);
         assert!(cases_warn.is_some());
 
         let mut resp = make_generic_response(vec![], false);
@@ -636,15 +626,13 @@ category: ["Commands reference", "test"]
     }
 
     #[test]
-    fn cases_warning_prepended_to_profile_error_message() {
-        let cases_warn =
-            check_cases_query_rules(CASES_DATASET_SOURCE, "| count", CASES_START, CASES_END);
+    fn cases_warning_present_when_profile_errors() {
+        let cases_warn = check_cases_query_rules(CASES_QUERY, CASES_START, CASES_END);
         assert!(cases_warn.is_some());
         let warning_text = cases_warn.clone().unwrap();
 
-        // With a cases warning and a failed profile, the error printed to stderr
-        // embeds the cases_warning prefix. Verify the logic in merge_results
-        // by checking the warning path: the cases warning is still in merged.warnings.
+        // With a cases warning and a failed profile, the warning is still in
+        // merged.warnings (printed by render_results), not embedded in errors.
         let per_profile: Vec<(String, anyhow::Result<QueryGenericResponse>)> = vec![
             (
                 "good".to_string(),
@@ -671,8 +659,7 @@ category: ["Commands reference", "test"]
     #[test]
     fn no_cases_warning_when_query_has_dedup() {
         let warning = check_cases_query_rules(
-            CASES_DATASET_SOURCE,
-            "| dedupeby caseId orderby $m.timestamp desc",
+            "source system/labs.cases.state_updates | dedupeby caseId orderby $m.timestamp desc",
             CASES_START,
             CASES_END,
         );
@@ -687,8 +674,7 @@ category: ["Commands reference", "test"]
 
     #[test]
     fn no_cases_warning_for_non_cases_source() {
-        let warning =
-            check_cases_query_rules("logs", "source logs | limit 10", CASES_START, CASES_END);
+        let warning = check_cases_query_rules("source logs | limit 10", CASES_START, CASES_END);
         assert!(warning.is_none());
 
         let per_profile = vec![(

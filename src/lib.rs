@@ -1,5 +1,6 @@
 pub mod api_client;
 pub mod banner;
+pub mod cases_query_rules;
 pub mod commands;
 pub mod config;
 pub mod error;

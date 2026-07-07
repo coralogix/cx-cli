@@ -596,7 +596,10 @@ category: ["Commands reference", "test"]
             CASES_START,
             CASES_END,
         );
-        assert!(warning.is_some(), "expected a warning from check_cases_query_rules");
+        assert!(
+            warning.is_some(),
+            "expected a warning from check_cases_query_rules"
+        );
 
         let per_profile = vec![(
             "prod".to_string(),
@@ -613,12 +616,8 @@ category: ["Commands reference", "test"]
 
     #[test]
     fn cases_warning_plus_profile_warning_both_appear() {
-        let cases_warn = check_cases_query_rules(
-            CASES_DATASET_SOURCE,
-            "| count",
-            CASES_START,
-            CASES_END,
-        );
+        let cases_warn =
+            check_cases_query_rules(CASES_DATASET_SOURCE, "| count", CASES_START, CASES_END);
         assert!(cases_warn.is_some());
 
         let mut resp = make_generic_response(vec![], false);
@@ -638,12 +637,8 @@ category: ["Commands reference", "test"]
 
     #[test]
     fn cases_warning_prepended_to_profile_error_message() {
-        let cases_warn = check_cases_query_rules(
-            CASES_DATASET_SOURCE,
-            "| count",
-            CASES_START,
-            CASES_END,
-        );
+        let cases_warn =
+            check_cases_query_rules(CASES_DATASET_SOURCE, "| count", CASES_START, CASES_END);
         assert!(cases_warn.is_some());
         let warning_text = cases_warn.clone().unwrap();
 
@@ -661,7 +656,10 @@ category: ["Commands reference", "test"]
 
         // The cases warning appears in merged.warnings regardless of profile errors.
         assert!(
-            merged.warnings.iter().any(|w| w.contains("[Cases query warning]")),
+            merged
+                .warnings
+                .iter()
+                .any(|w| w.contains("[Cases query warning]")),
             "cases warning must be present even when a profile errors"
         );
         // The good profile's row is still included.
@@ -678,10 +676,7 @@ category: ["Commands reference", "test"]
             CASES_START,
             CASES_END,
         );
-        let per_profile = vec![(
-            "prod".to_string(),
-            Ok(make_generic_response(vec![], false)),
-        )];
+        let per_profile = vec![("prod".to_string(), Ok(make_generic_response(vec![], false)))];
         let merged = merge_results(per_profile, false, warning.as_deref());
 
         assert!(
@@ -692,7 +687,8 @@ category: ["Commands reference", "test"]
 
     #[test]
     fn no_cases_warning_for_non_cases_source() {
-        let warning = check_cases_query_rules("logs", "source logs | limit 10", CASES_START, CASES_END);
+        let warning =
+            check_cases_query_rules("logs", "source logs | limit 10", CASES_START, CASES_END);
         assert!(warning.is_none());
 
         let per_profile = vec![(

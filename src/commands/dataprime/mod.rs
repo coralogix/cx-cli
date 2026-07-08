@@ -13,6 +13,7 @@ pub mod semantic_search;
 
 use api::{DataprimeApi, QueryGenericResponse};
 
+use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
 use crate::spill::{maybe_spill, transform_for_agents, SpillOutcome};
@@ -257,17 +258,15 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
 async fn execute_query(
     target: Arc<ExecutionTarget>,
     query: &str,
-    start: &str,
-    end: &str,
+    start_ts: &str,
+    end_ts: &str,
     limit: u32,
     tier: Tier,
     source: &str,
 ) -> Result<QueryGenericResponse> {
     let api = DataprimeApi::new(&target.client);
-    let start_ts = parse_timestamp(start)?;
-    let end_ts = parse_timestamp(end)?;
     Ok(api
-        .query_generic(query, &start_ts, &end_ts, limit, tier, source)
+        .query_generic(query, start_ts, end_ts, limit, tier, source)
         .await?)
 }
 
@@ -283,9 +282,13 @@ pub struct MergedResults {
 pub fn merge_results(
     per_profile: Vec<(String, Result<QueryGenericResponse>)>,
     include_profile: bool,
+    cases_warning: Option<&str>,
 ) -> MergedResults {
     let mut rows: Vec<Value> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
+    if let Some(w) = cases_warning {
+        warnings.push(w.to_string());
+    }
     let mut is_aggregate: Option<bool> = None;
 
     for (profile, result) in per_profile {
@@ -308,7 +311,9 @@ pub fn merge_results(
                     rows.extend(resp.raw_results);
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
     }
 
@@ -394,16 +399,18 @@ pub async fn run_query(
 ) -> Result<()> {
     eprintln!("{}", "Querying...".dimmed());
 
+    let start_fmt = parse_timestamp(start)?;
+    let end_fmt = parse_timestamp(end)?;
+    let cases_warning = check_cases_query_rules(query, &start_fmt, &end_fmt);
+
     let include_profile = targets.len() > 1;
     let query = query.to_string();
     let source = source.to_string();
-    let start = start.to_string();
-    let end = end.to_string();
     let per_profile = fan_out(targets, |t| {
         let q = query.clone();
         let src = source.clone();
-        let s = start.clone();
-        let e = end.clone();
+        let s = start_fmt.clone();
+        let e = end_fmt.clone();
         async move {
             let effective_tier = tier.unwrap_or(t.cfg.default_tier);
             execute_query(t, &q, &s, &e, limit, effective_tier, &src).await
@@ -411,7 +418,7 @@ pub async fn run_query(
     })
     .await;
 
-    let merged = merge_results(per_profile, include_profile);
+    let merged = merge_results(per_profile, include_profile, cases_warning.as_deref());
     render_results(&merged, output, max_direct, temp_dir, text_renderer)
 }
 
@@ -501,7 +508,7 @@ category: ["Commands reference", "test"]
     fn merge_single_profile_omits_profile_field() {
         let rows = vec![json!({"userData": {"message": "hello"}})];
         let per_profile = vec![("prod".to_string(), Ok(make_generic_response(rows, false)))];
-        let merged = merge_results(per_profile, false);
+        let merged = merge_results(per_profile, false, None);
 
         assert_eq!(merged.rows.len(), 1);
         assert!(!merged.include_profile);
@@ -526,7 +533,7 @@ category: ["Commands reference", "test"]
                 )),
             ),
         ];
-        let merged = merge_results(per_profile, true);
+        let merged = merge_results(per_profile, true, None);
 
         assert_eq!(merged.rows.len(), 2);
         assert_eq!(merged.rows[0]["profile"], json!("prod"));
@@ -542,7 +549,7 @@ category: ["Commands reference", "test"]
             ),
             ("bad".to_string(), Err(anyhow::anyhow!("network error"))),
         ];
-        let merged = merge_results(per_profile, true);
+        let merged = merge_results(per_profile, true, None);
 
         assert_eq!(merged.rows.len(), 1);
         assert_eq!(merged.rows[0]["profile"], json!("good"));
@@ -553,7 +560,7 @@ category: ["Commands reference", "test"]
         let mut resp = make_generic_response(vec![], false);
         resp.warnings = vec!["too many results".to_string()];
         let per_profile = vec![("prod".to_string(), Ok(resp))];
-        let merged = merge_results(per_profile, true);
+        let merged = merge_results(per_profile, true, None);
 
         assert_eq!(merged.warnings.len(), 1);
         assert!(merged.warnings[0].contains("[prod]"));
@@ -565,7 +572,118 @@ category: ["Commands reference", "test"]
             ("p1".to_string(), Ok(make_generic_response(vec![], true))),
             ("p2".to_string(), Ok(make_generic_response(vec![], true))),
         ];
-        let merged = merge_results(per_profile, true);
+        let merged = merge_results(per_profile, true, None);
         assert!(merged.is_aggregate);
+    }
+
+    // ── check_cases_query_rules integration via merge_results ────────────────
+
+    use crate::cases_query_rules::check_cases_query_rules;
+
+    const CASES_START: &str = "2024-01-01T00:00:00.000Z";
+    const CASES_END: &str = "2024-01-01T02:00:00.000Z";
+    const CASES_QUERY: &str = "source system/labs.cases.state_updates | count";
+
+    #[test]
+    fn cases_warning_prepended_to_merged_warnings() {
+        let warning = check_cases_query_rules(CASES_QUERY, CASES_START, CASES_END);
+        assert!(
+            warning.is_some(),
+            "expected a warning from check_cases_query_rules"
+        );
+
+        let per_profile = vec![(
+            "prod".to_string(),
+            Ok(make_generic_response(vec![json!({"data": 1})], false)),
+        )];
+        let merged = merge_results(per_profile, false, warning.as_deref());
+
+        assert_eq!(merged.warnings.len(), 1);
+        assert!(
+            merged.warnings[0].contains("[Cases query warning]"),
+            "cases warning should be in merged warnings"
+        );
+    }
+
+    #[test]
+    fn cases_warning_plus_profile_warning_both_appear() {
+        let cases_warn = check_cases_query_rules(CASES_QUERY, CASES_START, CASES_END);
+        assert!(cases_warn.is_some());
+
+        let mut resp = make_generic_response(vec![], false);
+        resp.warnings = vec!["too many results".to_string()];
+        let per_profile = vec![("prod".to_string(), Ok(resp))];
+        let merged = merge_results(per_profile, true, cases_warn.as_deref());
+
+        assert_eq!(
+            merged.warnings.len(),
+            2,
+            "should have one cases warning and one profile warning"
+        );
+        assert!(merged.warnings[0].contains("[Cases query warning]"));
+        assert!(merged.warnings[1].contains("[prod]"));
+        assert!(merged.warnings[1].contains("too many results"));
+    }
+
+    #[test]
+    fn cases_warning_present_when_profile_errors() {
+        let cases_warn = check_cases_query_rules(CASES_QUERY, CASES_START, CASES_END);
+        assert!(cases_warn.is_some());
+        let warning_text = cases_warn.clone().unwrap();
+
+        // With a cases warning and a failed profile, the warning is still in
+        // merged.warnings (printed by render_results), not embedded in errors.
+        let per_profile: Vec<(String, anyhow::Result<QueryGenericResponse>)> = vec![
+            (
+                "good".to_string(),
+                Ok(make_generic_response(vec![json!({"ok": true})], false)),
+            ),
+            ("bad".to_string(), Err(anyhow::anyhow!("timeout"))),
+        ];
+        let merged = merge_results(per_profile, true, cases_warn.as_deref());
+
+        // The cases warning appears in merged.warnings regardless of profile errors.
+        assert!(
+            merged
+                .warnings
+                .iter()
+                .any(|w| w.contains("[Cases query warning]")),
+            "cases warning must be present even when a profile errors"
+        );
+        // The good profile's row is still included.
+        assert_eq!(merged.rows.len(), 1);
+        // The warning text is non-empty (contains Rule content).
+        assert!(warning_text.contains("Rule"));
+    }
+
+    #[test]
+    fn no_cases_warning_when_query_has_dedup() {
+        let warning = check_cases_query_rules(
+            "source system/labs.cases.state_updates | dedupeby caseId orderby $m.timestamp desc",
+            CASES_START,
+            CASES_END,
+        );
+        let per_profile = vec![("prod".to_string(), Ok(make_generic_response(vec![], false)))];
+        let merged = merge_results(per_profile, false, warning.as_deref());
+
+        assert!(
+            merged.warnings.is_empty(),
+            "no warnings expected for a compliant cases query"
+        );
+    }
+
+    #[test]
+    fn no_cases_warning_for_non_cases_source() {
+        let warning = check_cases_query_rules("source logs | limit 10", CASES_START, CASES_END);
+        assert!(warning.is_none());
+
+        let per_profile = vec![(
+            "prod".to_string(),
+            Ok(make_generic_response(vec![json!({"msg": "hi"})], false)),
+        )];
+        let merged = merge_results(per_profile, false, warning.as_deref());
+
+        assert!(merged.warnings.is_empty());
+        assert_eq!(merged.rows.len(), 1);
     }
 }

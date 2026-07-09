@@ -42,7 +42,8 @@ Example — reading a conversation (drop the app filter for a global question):
 ```dataprime
 source spans
 | filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
-| filter ['chat','generate_content','text_completion'].arrayContains(tags['gen_ai.operation.name']:string) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
+| filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
+| filter tags['gen_ai.input.messages']:string != null   // spans that actually carry the conversation
 | choose $m.timestamp as ts, $d.traceID as trace_id,
          $l.applicationName as application, $l.subsystemName as subsystem,
          tags['gen_ai.conversation.id']:string as conversation,
@@ -51,6 +52,9 @@ source spans
          tags['gen_ai.output.messages']:string as output_messages
 | orderby ts desc
 ```
+This selects the raw messages blobs (all roles) for you to read. To pull out only the
+**user**/**assistant** turns in-query, use the regex extraction under **Extracting conversation
+text** below.
 
 ---
 
@@ -151,8 +155,9 @@ A **policy** is a configurable check. The same policy can act as an **evaluation
 scoring/flagging) and/or a **guardrail** (real-time block). UI categories: Hallucinations,
 Security, Toxicity, Topics, User experience, Compliance, plus Custom (typed Quality or Security).
 
-**Evaluations** run on spans and write results back as tags:
-- Built-in: `gen_ai.{prompt|response|conversation}.evaluations.{eval_type}.{score|label|version|details}`.
+**Evaluations** run on spans and write results back as tags. The target is **`prompt` or
+`response`** (the backend supports only these two — ignore the unused `conversation` enum value):
+- Built-in: `gen_ai.{prompt|response}.evaluations.{eval_type}.{score|label|version|details}`.
   **`label == 'p1'` marks a flagged issue.**
 - Custom: `gen_ai.{target}.evaluations.custom.{0..9}.{name,target,category,triggered,score,label}`
   (`triggered` is the string `"true"`/`"false"`).
@@ -175,8 +180,12 @@ the `cx ai-center` commands, not span queries.
 
 ## DataPrime query library (Q1–Q15, runnable)
 
-Keep the GenAI filter, set the time range, and scope to one app with
-`| filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'` (drop for org-wide).
+Q1–Q15 are the queries behind the AI Center UI widgets — here to **show the agent how each
+metric is computed, not as mandatory copy-paste**. If the user asks something the UI already
+answers, use the matching Q as-is; if it's close, take the relevant fields and adjust; if it's
+new, compose your own using these as reference. Keep the GenAI filter, set the time range, and
+scope to one app with `| filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'`
+(drop for org-wide).
 
 **Q1 — Key insights (batched)** — Models Used, Time to Response, Token Usage, Estimated Cost,
 Errors, Guardrail Actions, AI Spans, Unique Users:
@@ -197,21 +206,20 @@ source spans
 > metric, run a minimal query with only that aggregation (and the `create` lines it needs). TTR only → `… | aggregate avg(duration) as ttr_avg`
 > (or `percentile(0.95, duration)`; selector 0.5/0.75/0.9/0.95/0.99). Issue Rate = Q9.
 
-**Q2 — Response time over time:**
+**Q2 — Response time (avg + percentiles):**
 ```dataprime
 source spans
 | filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
 | filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
-| groupby roundTime($m.timestamp, <interval>ms) as Time
-  aggregate avg(duration) as avg, percentile(0.75, duration) as p75, percentile(0.90, duration) as p90, percentile(0.95, duration) as p95, percentile(0.99, duration) as p99
-| orderby Time
+| aggregate avg(duration) as avg, percentile(0.75, duration) as p75, percentile(0.90, duration) as p90, percentile(0.95, duration) as p95, percentile(0.99, duration) as p99
 ```
+For a response-time **trend over time**, add `| groupby roundTime($m.timestamp, <interval>ms) as Time` before the aggregate and `| orderby Time` after.
 
-**Q3 — Latency by model:** as Q2 but `groupby firstNonNull(tags['gen_ai.request.model']:string,'unknown') as model` (no time bucket), `orderby avg desc`.
+**Q3 — Latency by model:** as Q2 but `groupby firstNonNull(tags['gen_ai.request.model']:string,'unknown') as model`, `orderby avg desc`.
 
 **Q4 — Top slowest apps/spans:** groupby `$l.applicationName, $l.subsystemName` (apps) or `$l.operationName` (spans), `aggregate avg(duration) as avg | orderby avg desc | limit 5`.
 
-**Q5 — Cost & tokens over time:**
+**Q5 — Cost & tokens (totals):**
 ```dataprime
 source spans
 | filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
@@ -221,26 +229,22 @@ source spans
 | create cache_read from firstNonNull(tags['gen_ai.usage.cache_read.input_tokens']:number, tags['gen_ai.usage.cache_read_input_tokens']:number, 0)
 | create cache_creation from firstNonNull(tags['gen_ai.usage.cache_creation.input_tokens']:number, tags['gen_ai.usage.cache_creation_input_tokens']:number, 0)
 | create cost from firstNonNull(tags['gen_ai.prompt_price']:number,0) + firstNonNull(tags['gen_ai.response_price']:number,0)
-| groupby roundTime($m.timestamp, <interval>ms) as Time
-  aggregate sum(cost) as cost, sum(input_tokens) as inputTokens, sum(output_tokens) as outputTokens, sum(cache_read) as cacheReadTokens, sum(cache_creation) as cacheCreationTokens
-| orderby Time
+| aggregate sum(cost) as cost, sum(input_tokens) as inputTokens, sum(output_tokens) as outputTokens, sum(cache_read) as cacheReadTokens, sum(cache_creation) as cacheCreationTokens
 ```
-Cache Hit Rate = `sum(cacheReadTokens)/sum(inputTokens)`. Drop `roundTime` for total KPIs.
+Cache Hit Rate = `sum(cacheReadTokens)/sum(inputTokens)`. For a cost/tokens **trend over time**, add `| groupby roundTime($m.timestamp, <interval>ms) as Time` before the aggregate and `| orderby Time` after.
 
-**Q6 — Cost by model:** as Q5 without time bucket, `groupby firstNonNull(tags['gen_ai.request.model']:string,'unknown') as model | orderby cost desc`.
+**Q6 — Cost by model:** as Q5 but `groupby firstNonNull(tags['gen_ai.request.model']:string,'unknown') as model | orderby cost desc`.
 
-**Q7 — Most expensive apps / high-spending users:** as Q5 without time bucket, `groupby $l.applicationName,$l.subsystemName` (apps) or the `user` expr, `aggregate sum(cost) as cost, sum(input_tokens+output_tokens) as tokens | orderby cost desc | limit 5`.
+**Q7 — Most expensive apps / high-spending users:** as Q5 but `groupby $l.applicationName,$l.subsystemName` (apps) or the `user` expr, `aggregate sum(cost) as cost, sum(input_tokens+output_tokens) as tokens | orderby cost desc | limit 5`.
 
-**Q8 — Errors over time / top errored:**
+**Q8 — Errors (count) / top errored:**
 ```dataprime
 source spans
 | filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
 | filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
-| groupby roundTime($m.timestamp, <interval>ms) as Time
-  aggregate count() as total, count_if(tags['otel.status_code']:string == 'ERROR') as errors
-| orderby Time
+| aggregate count() as total, count_if(tags['otel.status_code']:string == 'ERROR') as errors
 ```
-Top errored: replace groupby with `$l.applicationName,$l.subsystemName` (or `$l.operationName`), `aggregate count_if(tags['otel.status_code']:string=='ERROR') as errors | orderby errors desc | limit 5`.
+For an errors **trend over time**, add `| groupby roundTime($m.timestamp, <interval>ms) as Time` before the aggregate and `| orderby Time` after. Top errored apps/spans: `groupby $l.applicationName,$l.subsystemName` (or `$l.operationName`) `aggregate count_if(tags['otel.status_code']:string=='ERROR') as errors | orderby errors desc | limit 5`.
 
 **Q9 — Issue rate (trace-level).** An issue on a target = any built-in eval `label == 'p1'`
 OR any custom eval `custom.{0..9}` with `triggered == 'true'` OR a guardrail that fired on
@@ -314,7 +318,7 @@ source spans
 | create bucket from round(tags['gen_ai.response.evaluations.{eval}.score']:number, 1)
 | groupby bucket aggregate count() as n | orderby bucket
 ```
-Trend: `groupby roundTime($m.timestamp, <interval>ms) as Time aggregate avg(tags['gen_ai.response.evaluations.{eval}.score']:number) as avg_score`. Swap `response`→`prompt`/`conversation` for other targets.
+Trend: `groupby roundTime($m.timestamp, <interval>ms) as Time aggregate avg(tags['gen_ai.response.evaluations.{eval}.score']:number) as avg_score`. Swap `response`→`prompt` for the other target.
 
 ---
 

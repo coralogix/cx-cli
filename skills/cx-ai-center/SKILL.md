@@ -14,6 +14,12 @@ metadata:
 
 # AI Center Skill
 
+**This is the tool for anything about AI/GenAI applications** — both **questions** about their
+behavior (prompts/responses, quality, hallucinations, guardrails, security, cost/tokens, errors,
+latency — everything AI apps expose through their GenAI spans/tags) and **actions** to manage them
+(applications, evaluations/policies, policy↔app links, model pricing). If a request touches an AI
+application or its GenAI telemetry, use this skill.
+
 Coralogix **AI Center** observes, evaluates, and guards GenAI/LLM applications. This skill
 answers questions about AI apps from two sources:
 
@@ -51,9 +57,9 @@ Use `--read-only` (or `CX_READ_ONLY=1`) to block every write at the CLI level �
 exploration.
 
 ### Agent Mode
-When running inside an AI agent (Claude Code, Cursor, Codex, …), cx detects the agent
-environment and fails fast on writes instead of hanging on a stdin prompt. The error tells
-you to get user confirmation, then re-run with `--yes`.
+When running inside an AI agent (Claude Code, Cursor, Codex, …), cx detects it and — instead of
+showing a confirmation prompt that would hang forever (no human is there to type y/n) — stops
+immediately with an error telling you to get the user's approval, then re-run with `--yes`.
 
 ### What cannot be deleted
 By design there is **no** command to delete a custom-evaluation policy, delete an AI
@@ -68,8 +74,6 @@ For **content** questions (quality, hallucination, sentiment, topics) read the a
 `gen_ai.input.messages` / `gen_ai.output.messages` and cite the `traceID` — don't rely on
 verdict tags alone. Full guidance + the query library:
 [references/ai-center-queries.md](references/ai-center-queries.md).
-
-All output formats support `-o json` and `-o agents`; multi-profile fan-out via `-p a -p b`.
 
 ---
 
@@ -159,6 +163,5 @@ latency, errors, tool calls, and per-user analysis.
 ## Related Skills
 
 - `cx-telemetry-querying` — general logs/spans/metrics/DataPrime querying (the engine behind
-  the span queries here).
+  the `cx spans` queries used here).
 - `cx-olly` — the conversational AI assistant (`cx olly ask`).
-- `cx-cost-optimization` — broader Coralogix cost/usage analysis.

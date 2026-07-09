@@ -130,20 +130,6 @@ The `--from-file` bodies match the AI v3 API shape; use `-` to read JSON from st
 cx ai-center applications list -o json | jq '[.[] | select(.guardrailsIntegrated==false)]'
 ```
 
-### Policy configuration for one app
-```bash
-# What evaluations are configured on app X?
-cx ai-center evaluations list --application "production" --subsystem "cx-llm-gateway"
-# What custom policies are linked to it? (need the app UUID)
-cx ai-center custom-evaluations list-for-application <application-id>
-```
-
-### Coverage / gap analysis
-```bash
-# Which eval types are under-used across the team?
-cx ai-center coverage -o json
-```
-
 ### Enable a policy on an app (write — confirm first!)
 ```bash
 # 1. Describe to the user; 2. get approval; 3. then:

@@ -101,8 +101,6 @@ All use the Olly KB semantic-search-service API with gateway permission `legacy-
 - `integrations` = extensions + contextual-data
 - `iam` = api-keys + roles + scopes + users + team-groups + ip-access
 
-**`cx ai-center` (risky):** AI Center (GenAI) configuration commands over the AI v3 REST API (`/mgmt/openapi/5/ai/...`; proto `com/coralogixapis/ai/v3`). Subcommand groups: `applications` (list/get), `evaluations` (list/get/create/update/delete), `custom-evaluations` (list/list-for-application/create/update/add-policy/remove-policy), `coverage`, and `model-pricing` (get/set). Configuration only — GenAI telemetry (prompts, cost, latency, verdicts) is span data, queried via `cx spans`. By design there is **no delete** for custom-evaluation policies, applications, or model pricing (detach a policy via `remove-policy`).
-
 **Risky commands:** `iam`, `archive`, and `ai-center` are marked `(risky)` in help output. All write operations (create, update, delete, enable, disable, set, set-status) under these commands require interactive confirmation. Pass `--yes` to skip the prompt (e.g., in scripts or CI). Non-interactive terminals without `--yes` get a clear error. The confirmation logic lives in `src/safety.rs`.
 
 ## Architecture

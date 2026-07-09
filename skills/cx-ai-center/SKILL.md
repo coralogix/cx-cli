@@ -33,7 +33,7 @@ A single question often spans both: e.g. *"which apps lack guardrails"* is confi
 
 ## Destructive Operation Safety
 
-All write operations (`create`, `update`, `delete`, `add-policy`, `remove-policy`, `set`)
+All write operations (`create`, `update`, `delete`, `add`, `remove`, `set`)
 require interactive confirmation. `ai-center` is a **risky** command, so writes are also
 gated by `allow_risky_commands` in `~/.cx/config.toml`. To skip the prompt in scripts, pass
 `--yes`.
@@ -58,7 +58,7 @@ you to get user confirmation, then re-run with `--yes`.
 ### What cannot be deleted
 By design there is **no** command to delete a custom-evaluation policy, delete an AI
 application, or delete model pricing. To "remove" a policy from an app, detach it with
-`remove-policy` — the policy object itself survives and can be re-attached.
+`custom-evaluations remove` — the policy object itself survives and can be re-attached.
 
 ---
 
@@ -93,7 +93,7 @@ before calling a by-id or write command — never guess or pass the display name
 |---------|---------|
 | `cx ai-center evaluations list` | All configured evaluations |
 | `cx ai-center evaluations list --application <app> --subsystem <sub>` | Scope to one app (the pair) |
-| `cx ai-center evaluations list --evaluation-type <TYPE>` | Filter by type |
+| `cx ai-center evaluations list --evaluation-type <TYPE>` | Filter by type — `<TYPE>` is the API enum (e.g. `PII`, `TOXICITY`, `PROMPT_INJECTION`; the keys from `coverage`), **not** the lowercase form |
 | `cx ai-center evaluations get <evaluation-id>` | One evaluation by UUID |
 | `cx ai-center evaluations create --from-file eval.json` | Create/enable an evaluation *(write)* |
 | `cx ai-center evaluations update <evaluation-id> --from-file patch.json` | Partial update *(write)* |
@@ -107,8 +107,8 @@ before calling a by-id or write command — never guess or pass the display name
 | `cx ai-center custom-evaluations list-for-application <application-id>` | Policies linked to one app |
 | `cx ai-center custom-evaluations create --from-file policy.json` | Create a custom policy *(write)* |
 | `cx ai-center custom-evaluations update <id> --from-file patch.json` | Partial update *(write)* |
-| `cx ai-center custom-evaluations add-policy <evaluation-id> <application-id>` | Attach a policy to an app *(write)* |
-| `cx ai-center custom-evaluations remove-policy <evaluation-id> <application-id>` | Detach (reversible) *(write)* |
+| `cx ai-center custom-evaluations add <evaluation-id> <application-id>` | Attach a policy to an app *(write)* |
+| `cx ai-center custom-evaluations remove <evaluation-id> <application-id>` | Detach (reversible) *(write)* |
 
 ### Coverage & model pricing
 

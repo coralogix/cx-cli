@@ -1932,8 +1932,8 @@ Examples:
   cx ai-center custom-evaluations list
   cx ai-center custom-evaluations list-for-application <application-id>
   cx ai-center custom-evaluations create --from-file policy.json
-  cx ai-center custom-evaluations add-policy <evaluation-id> <application-id>
-  cx ai-center custom-evaluations remove-policy <evaluation-id> <application-id>")]
+  cx ai-center custom-evaluations add <evaluation-id> <application-id>
+  cx ai-center custom-evaluations remove <evaluation-id> <application-id>")]
     CustomEvaluations {
         #[command(subcommand)]
         cmd: CustomEvaluationsCmd,
@@ -1961,7 +1961,8 @@ enum ApplicationsCmd {
         /// Number of applications to skip for pagination.
         #[arg(long)]
         page_offset: Option<u32>,
-        /// Filter to apps using this evaluation type (repeatable).
+        /// Filter to apps using this evaluation type, as the API enum (e.g. PII,
+        /// TOXICITY, PROMPT_INJECTION — the keys from `coverage`). Repeatable.
         #[arg(long = "evaluation-type")]
         evaluation_type: Vec<String>,
     },
@@ -1982,7 +1983,8 @@ enum EvaluationsCmd {
         /// Scope to one subsystem (pair with --application).
         #[arg(long)]
         subsystem: Option<String>,
-        /// Filter by evaluation type.
+        /// Filter by evaluation type, as the API enum (e.g. PII, TOXICITY,
+        /// PROMPT_INJECTION — the keys returned by `coverage`).
         #[arg(long = "evaluation-type")]
         evaluation_type: Option<String>,
         /// Maximum number of evaluations to return.
@@ -2042,14 +2044,14 @@ enum CustomEvaluationsCmd {
         id: String,
     },
     /// Attach a custom evaluation (policy) to an application [requires --yes].
-    AddPolicy {
+    Add {
         /// Custom evaluation UUID.
         evaluation_id: String,
         /// Application UUID.
         application_id: String,
     },
     /// Detach a custom evaluation (policy) from an application [requires --yes].
-    RemovePolicy {
+    Remove {
         /// Custom evaluation UUID.
         evaluation_id: String,
         /// Application UUID.
@@ -3730,7 +3732,7 @@ async fn main() -> Result<()> {
                         )
                         .await?;
                     }
-                    CustomEvaluationsCmd::AddPolicy {
+                    CustomEvaluationsCmd::Add {
                         evaluation_id,
                         application_id,
                     } => {
@@ -3749,7 +3751,7 @@ async fn main() -> Result<()> {
                         )
                         .await?;
                     }
-                    CustomEvaluationsCmd::RemovePolicy {
+                    CustomEvaluationsCmd::Remove {
                         evaluation_id,
                         application_id,
                     } => {

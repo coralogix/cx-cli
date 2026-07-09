@@ -461,31 +461,34 @@ async fn run_custom_evaluations_table(
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(resp) => {
-                for ce in resp.items {
-                    let mut v = json!({
-                        "id": ce.id,
-                        "name": ce.name,
-                        "description": ce.description,
-                        "applicationIds": ce.application_ids,
-                    });
-                    if include_profile {
-                        v.as_object_mut()
-                            .unwrap()
-                            .insert("profile".into(), Value::String(profile.clone()));
-                    }
-                    all_json.push(v);
+            // Items are raw API objects: the text table reads a few columns, but
+            // JSON/agents output keeps the full policy (config, instructions, etc.).
+            Ok(items) => {
+                for mut item in items {
+                    let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
+                    let name = item.get("name").and_then(Value::as_str).unwrap_or_default();
+                    let description = item
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let app_count = item
+                        .get("applicationIds")
+                        .and_then(Value::as_array)
+                        .map(|a| a.len())
+                        .unwrap_or(0);
                     rows.push(vec![
                         profile.clone(),
-                        ce.id.unwrap_or_default(),
-                        ce.name.unwrap_or_default(),
-                        ce.application_ids.len().to_string(),
-                        ce.description
-                            .unwrap_or_default()
-                            .chars()
-                            .take(60)
-                            .collect(),
+                        id.to_string(),
+                        name.to_string(),
+                        app_count.to_string(),
+                        description.chars().take(60).collect(),
                     ]);
+                    if include_profile {
+                        if let Some(obj) = item.as_object_mut() {
+                            obj.insert("profile".into(), Value::String(profile.clone()));
+                        }
+                    }
+                    all_json.push(item);
                 }
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),

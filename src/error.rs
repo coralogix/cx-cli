@@ -8,9 +8,6 @@ pub enum CxError {
     #[error("Permission denied: {0}")]
     Permission(String),
 
-    #[error("Invalid argument: {0}")]
-    Invalid(String),
-
     #[error("API request failed ({status}): {message}")]
     Api { status: u16, message: String },
 

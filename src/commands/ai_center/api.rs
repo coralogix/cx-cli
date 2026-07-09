@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::api_client::CxClient;
-use crate::error::{CxError, Result};
+use crate::error::Result;
 
 /// openapi-facade management gateway mount that fronts the AI v3 proto routes.
 const AI_BASE: &str = "/mgmt/openapi/5/ai";
@@ -76,35 +76,13 @@ pub struct ListEvaluationsResponse {
     pub ai_evaluations: Vec<AiEvaluation>,
 }
 
-/// One custom evaluation (policy).
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomEvaluation {
-    #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub application_ids: Vec<String>,
-}
-
+/// Wrapper for the two custom-evaluation list routes, which both return `{ "items": [...] }`.
+/// Items are kept as raw `Value` so JSON/agents output preserves every policy field
+/// (config, instructions, examples, policyType, …); the text table reads what it needs.
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListCustomEvaluationsResponse {
-    /// Both `GET /custom-evaluations/v3` and the `by-application` route wrap in `items`.
+pub struct CustomEvaluationItems {
     #[serde(default)]
-    pub items: Vec<CustomEvaluation>,
-}
-
-/// Reject a blank path-segment id before building a URL, so an empty/whitespace id
-/// can't collapse to an empty path segment and silently hit the wrong route.
-fn require_id(value: &str, name: &str) -> Result<()> {
-    if value.trim().is_empty() {
-        return Err(CxError::Invalid(format!("{name} is required")));
-    }
-    Ok(())
+    pub items: Vec<Value>,
 }
 
 // --- API ---
@@ -132,7 +110,6 @@ impl<'a> AiCenterApi<'a> {
 
     /// GET /ai/applications/v3/{id}.
     pub async fn get_application(&self, id: &str) -> Result<Value> {
-        require_id(id, "application_id")?;
         self.client
             .get(&format!("{AI_BASE}/applications/v3/{id}"), &[])
             .await
@@ -150,7 +127,6 @@ impl<'a> AiCenterApi<'a> {
 
     /// GET /ai/evaluations/v3/{id}.
     pub async fn get_evaluation(&self, id: &str) -> Result<Value> {
-        require_id(id, "evaluation_id")?;
         self.client
             .get(&format!("{AI_BASE}/evaluations/v3/{id}"), &[])
             .await
@@ -163,25 +139,28 @@ impl<'a> AiCenterApi<'a> {
             .await
     }
 
-    /// GET /ai/custom-evaluations/v3 — all custom evaluations.
-    pub async fn list_custom_evaluations(&self) -> Result<ListCustomEvaluationsResponse> {
-        self.client
+    /// GET /ai/custom-evaluations/v3 — all custom evaluations (raw items).
+    pub async fn list_custom_evaluations(&self) -> Result<Vec<Value>> {
+        let resp: CustomEvaluationItems = self
+            .client
             .get(&format!("{AI_BASE}/custom-evaluations/v3"), &[])
-            .await
+            .await?;
+        Ok(resp.items)
     }
 
-    /// GET /ai/custom-evaluations/v3/by-application/{application_id}.
+    /// GET /ai/custom-evaluations/v3/by-application/{application_id} (raw items).
     pub async fn list_custom_evaluations_for_application(
         &self,
         application_id: &str,
-    ) -> Result<ListCustomEvaluationsResponse> {
-        require_id(application_id, "application_id")?;
-        self.client
+    ) -> Result<Vec<Value>> {
+        let resp: CustomEvaluationItems = self
+            .client
             .get(
                 &format!("{AI_BASE}/custom-evaluations/v3/by-application/{application_id}"),
                 &[],
             )
-            .await
+            .await?;
+        Ok(resp.items)
     }
 
     /// GET /ai/model-pricing/v3 — the team's custom model pricing overrides.
@@ -202,7 +181,6 @@ impl<'a> AiCenterApi<'a> {
 
     /// PATCH /ai/evaluations/v3/{id}.
     pub async fn update_evaluation(&self, id: &str, body: &Value) -> Result<Value> {
-        require_id(id, "evaluation_id")?;
         self.client
             .patch(&format!("{AI_BASE}/evaluations/v3/{id}"), body)
             .await
@@ -210,7 +188,6 @@ impl<'a> AiCenterApi<'a> {
 
     /// DELETE /ai/evaluations/v3/{id} — remove an evaluation from its application.
     pub async fn delete_evaluation(&self, id: &str) -> Result<Value> {
-        require_id(id, "evaluation_id")?;
         self.client
             .delete(&format!("{AI_BASE}/evaluations/v3/{id}"))
             .await
@@ -225,7 +202,6 @@ impl<'a> AiCenterApi<'a> {
 
     /// PATCH /ai/custom-evaluations/v3/{id}.
     pub async fn update_custom_evaluation(&self, id: &str, body: &Value) -> Result<Value> {
-        require_id(id, "evaluation_id")?;
         self.client
             .patch(&format!("{AI_BASE}/custom-evaluations/v3/{id}"), body)
             .await
@@ -238,8 +214,6 @@ impl<'a> AiCenterApi<'a> {
         evaluation_id: &str,
         application_id: &str,
     ) -> Result<Value> {
-        require_id(evaluation_id, "evaluation_id")?;
-        require_id(application_id, "application_id")?;
         self.client
             .post_empty(
                 &format!(
@@ -257,8 +231,6 @@ impl<'a> AiCenterApi<'a> {
         evaluation_id: &str,
         application_id: &str,
     ) -> Result<Value> {
-        require_id(evaluation_id, "evaluation_id")?;
-        require_id(application_id, "application_id")?;
         self.client
             .delete(&format!(
                 "{AI_BASE}/custom-evaluations/v3/{evaluation_id}/applications/{application_id}"
@@ -322,22 +294,19 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_custom_evaluations() {
+    fn custom_evaluation_items_preserve_full_object() {
+        // Items are raw Values, so every policy field (incl. config/instructions)
+        // survives for JSON/agents output, not just the columns the table reads.
         let body = json!({
             "items": [
-                { "id": "c-1", "name": "No PII", "description": "block pii", "applicationIds": ["a-1", "a-2"] }
+                { "id": "c-1", "name": "No PII", "description": "block pii",
+                  "applicationIds": ["a-1", "a-2"],
+                  "config": { "instructions": "reject PII", "policyType": "SECURITY" } }
             ]
         });
-        let resp: ListCustomEvaluationsResponse = serde_json::from_value(body).unwrap();
+        let resp: CustomEvaluationItems = serde_json::from_value(body).unwrap();
         assert_eq!(resp.items.len(), 1);
-        assert_eq!(resp.items[0].name.as_deref(), Some("No PII"));
-        assert_eq!(resp.items[0].application_ids.len(), 2);
-    }
-
-    #[test]
-    fn require_id_rejects_blank() {
-        assert!(require_id("", "application_id").is_err());
-        assert!(require_id("   ", "evaluation_id").is_err());
-        assert!(require_id("abc", "evaluation_id").is_ok());
+        assert_eq!(resp.items[0]["name"], "No PII");
+        assert_eq!(resp.items[0]["config"]["policyType"], "SECURITY");
     }
 }

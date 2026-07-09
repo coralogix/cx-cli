@@ -79,5 +79,3 @@ fn discover_application_id() -> Option<String> {
         })
         .clone()
 }
-
-

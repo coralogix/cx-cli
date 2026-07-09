@@ -2,8 +2,8 @@
 //!
 //! Read/write access to the AI application inventory, configured evaluations/policies,
 //! coverage, custom evaluations, and model pricing — the configuration that is *not*
-//! in span telemetry. Telemetry (GenAI spans) is queried separately via `cx spans` /
-//! `cx logs`. See the `cx-ai-center` skill.
+//! in span telemetry. Telemetry (GenAI spans) is queried separately via `cx spans`.
+//! See the `cx-ai-center` skill.
 
 pub mod api;
 

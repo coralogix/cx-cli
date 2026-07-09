@@ -1,23 +1,9 @@
 //! REST client for the Coralogix AI Center (AI v3) configuration APIs.
 //!
-//! Wraps the `AiApplicationsService` / `AiEvaluationsService` gateway routes
-//! (defined in cx-management-apis proto `com/coralogixapis/ai/v3`). The proto
-//! `google.api.http` annotations declare paths like `/ai/applications/v3`, but at
-//! runtime those routes are served by openapi-facade under the management gateway
-//! mount `/mgmt/openapi/5` (the same mount every other management command uses), so
-//! every path is prefixed with [`AI_BASE`].
-//!
-//! Exposes only the AI v3 operations the CLI surfaces:
-//! - Reads: applications, evaluations, evaluation coverage (apps per eval type),
-//!   custom evaluations, model pricing.
-//! - Evaluation writes: create / update / delete a per-application evaluation.
-//! - Custom-evaluation (policy) writes: create / update (no real delete — detaching a
-//!   policy from an app is done via [`AiCenterApi::remove_policy_from_application`]).
-//! - Policy linking: add / remove a custom evaluation to/from an application.
-//! - Model pricing: set the team's per-model pricing overrides.
-//!
-//! Deliberately **not** implemented (no surface may perform them): custom-evaluation
-//! policy deletion, AI-application deletion, and model-pricing deletion.
+//! The proto (`com/coralogixapis/ai/v3`) annotates paths like `/ai/applications/v3`,
+//! but openapi-facade serves them under the management gateway mount `/mgmt/openapi/5`
+//! (the mount every management command uses) — hence the [`AI_BASE`] prefix. There is
+//! deliberately no delete for custom-evaluation policies, applications, or pricing.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -331,7 +317,6 @@ mod tests {
         assert_eq!(resp.ai_evaluations.len(), 2);
         assert_eq!(resp.ai_evaluations[0].config_type(), "toxicity");
         assert_eq!(resp.ai_evaluations[0].is_enabled, Some(true));
-        // Missing config → "-" and no panic.
         assert_eq!(resp.ai_evaluations[1].config_type(), "-");
         assert_eq!(resp.ai_evaluations[1].is_enabled, None);
     }

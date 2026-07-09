@@ -1,9 +1,3 @@
-//! E2E sanity checks for `cx ai-center` against a real Coralogix test team.
-//!
-//! Read-only only: these verify the commands run end-to-end (exit 0, valid JSON).
-//! Mutating operations (create/update/delete, policy link/unlink, set pricing) are
-//! deliberately NOT exercised — they touch shared test-team state.
-
 use std::sync::OnceLock;
 
 use crate::harness;
@@ -47,7 +41,6 @@ fn ai_center_coverage() {
     if harness::require_creds("ai_center_coverage").is_none() {
         return;
     }
-    // Coverage returns an object mapping eval type -> app count; just assert valid JSON + exit 0.
     harness::run_ok_json(&["ai-center", "coverage", "-o", "json"]);
 }
 

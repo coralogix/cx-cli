@@ -58,8 +58,8 @@ source spans
 
 **Granularity.** An **AI span** = one AI operation (an LLM call, embeddings, retrieval/agent/
 tool/workflow step, or a Guardrails SDK invocation). An **interaction** = the full trace
-(`traceID`) of one exchange. Count widgets are **span-level** (matching the UI); the only
-trace-level rate is Issue Rate (Q9). For a deduplicated interaction count use
+(`traceID`) of one exchange. Counts (AI spans, errors, guardrail actions) are **span-level**;
+the only trace-level rate is Issue Rate (Q9). For a deduplicated interaction count use
 `distinct_count(traceID)` and say so.
 
 **Find GenAI spans — the mandatory filter on every AI Center query.** `source spans` also
@@ -68,7 +68,7 @@ returns wrong answers.
 ```dataprime
 | filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
 ```
-For views that also include guardrail spans (AI Spans count, Issue-rate / Guardrail widgets),
+To also include guardrail spans (for AI-span counts and issue/guardrail rates),
 add `|| tags['otel.library.name']:string == 'cx_guardrails.client'`. Guardrail spans have
 `tags['otel.library.name'] == 'cx_guardrails.client'` (and `tags['guardrails.triggered'] == 'true'` when fired).
 
@@ -193,8 +193,8 @@ source spans
             distinct_count(user) as unique_users,
             collect(firstNonNull(tags['gen_ai.request.model']:string, ''), distinct=true) as models_used
 ```
-> Q1 is the UI's **batched** query. When the user asks for **one** metric, run a minimal query
-> with only that aggregation (and the `create` lines it needs). TTR only → `… | aggregate avg(duration) as ttr_avg`
+> Q1 is a **batched** query computing many metrics at once. When the user asks for **one**
+> metric, run a minimal query with only that aggregation (and the `create` lines it needs). TTR only → `… | aggregate avg(duration) as ttr_avg`
 > (or `percentile(0.95, duration)`; selector 0.5/0.75/0.9/0.95/0.99). Issue Rate = Q9.
 
 **Q2 — Response time over time:**
@@ -329,10 +329,9 @@ Trend: `groupby roundTime($m.timestamp, <interval>ms) as Time aggregate avg(tags
    CAPS, "that's not what I asked", abandonment). Response quality / `finish_reason` / evals are
    secondary — never the headline. Don't pivot a satisfaction question into "the app is broken".
 
-**Answer shape:** lead with a plain summary (roughly the split), then show evidence — a few
-satisfied sessions (quote the user turn + `traceID`) and a few dissatisfied ones. An example is a
-**verbatim quote of the user's own message** + traceID, not a description of the agent's reply.
-Never paste raw lists of trace/span IDs.
+**Answer shape:** summarize the split, then back it with a few **verbatim user-message quotes +
+their `traceID`** (satisfied and dissatisfied) — an example is the user's own words, not a
+description of the agent's reply. Don't dump raw ID lists.
 
 - **Topic analysis** ("what do users ask about?") is an LLM-judgment task — read recent user
   turns and cluster the asks yourself; report themes + how many you read. Don't bucket with
@@ -346,36 +345,6 @@ Never paste raw lists of trace/span IDs.
   confirm by reading the messages.
 - **Root cause:** `otel.status_code=='ERROR'` (+ `error.type`), then read messages + errored
   child spans; watch truncation, tool failures, retrieval misses.
-
----
-
-## Widget → query reference (which Qn each AI Center UI widget uses)
-
-**Overview (global) & Application Drilldown (per app):** Models Used / Time to Response /
-Token Usage / Estimated Cost / Errors / Guardrail Actions / AI Spans / Unique Users → **Q1**;
-Response Time Trends → **Q2**; Latency by Model → **Q3**; Top Slowest → **Q4**; Cost & Tokens
-over time / Cache Hit Rate → **Q5**; Cost by Model → **Q6**; Most Expensive Apps / High-Spend
-Users → **Q7**; Errors over time / Top Errored → **Q8**; Issue Rate / Prompt & Response Issues
-/ Issue Distribution / Top Apps With Issues → **Q9**; Tool Calls → **Q10**.
-
-**Application Catalog:** header KPIs = Q1/Q9 without app scope; the grid = `cx ai-center
-applications list` (gives `guardrailsIntegrated`) merged with per-app Q1 metrics grouped by
-`$l.applicationName,$l.subsystemName`; Guarded % = calc from the list.
-
-**AI Explorer** (the "read the messages" grid): **Q11**. Columns: Timestamp, Input, Output,
-Tokens, Cost, User, Security issues, Quality issues, Duration.
-
-**Policy Catalog / Policy Configuration** (config, not spans): `cx ai-center evaluations list` /
-`cx ai-center custom-evaluations list` / `cx ai-center coverage`; per-app =
-`cx ai-center evaluations list --application <app> --subsystem <sub>`. To change state use
-`cx ai-center evaluations update` / `create` / `delete`, or `add-policy` / `remove-policy`.
-
-**AI-SPM:** Total AI Applications = `cx ai-center applications list`; Total Security Violations
-= security `p1` count (Q9 restricted to security types); User Insights = **Q13**. The **AI
-Security Posture Score** is backend-computed — no query/command returns it; describe it and
-point the user to the AI-SPM page. **AI App Discovery** (GitHub scan) is not available via the
-CLI (the scan service only accepts user-session auth) — explain what it shows and point to the
-AI-SPM page.
 
 ---
 
@@ -398,3 +367,7 @@ AI-SPM page.
   reading messages.
 - **Guarded status / configured policies / inventory / coverage** — configuration; use the
   `cx ai-center` commands, not spans.
+- **AI Security Posture Score** — backend-computed; no CLI command or span query returns it.
+  Say so rather than trying to derive it.
+- **AI App Discovery** (GitHub repo scan) — not reachable from the CLI (the scan service only
+  accepts user-session auth). Explain it exists; don't attempt to fetch it.

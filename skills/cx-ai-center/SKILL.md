@@ -118,7 +118,10 @@ before calling a by-id or write command — never guess or pass the display name
 | `cx ai-center model-pricing get` | Team's custom per-model pricing overrides |
 | `cx ai-center model-pricing set --from-file prices.json` | Set team pricing (team-wide, new data only) *(write)* |
 
-The `--from-file` bodies match the AI v3 API shape; use `-` to read JSON from stdin.
+The `--from-file` bodies for `evaluations` and `custom-evaluations` match the AI v3 API
+shape verbatim; use `-` to read JSON from stdin. **Exception:** `model-pricing set` takes just
+the raw `model→price` map (e.g. `{"gpt-4o": { ... }}`) — cx wraps it as `{"prices": …}` for you,
+so do **not** include the outer `prices` envelope.
 
 ---
 

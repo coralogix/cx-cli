@@ -170,8 +170,8 @@ impl<'a> AiCenterApi<'a> {
             .await
     }
 
-    /// GET /ai/evaluation-counts/v3/per-type — coverage: app count per eval type.
-    pub async fn coverage(&self) -> Result<Value> {
+    /// GET /ai/evaluation-counts/v3/per-type — app count per evaluation type (coverage).
+    pub async fn count_apps_per_eval_type(&self) -> Result<Value> {
         self.client
             .get(&format!("{AI_BASE}/evaluation-counts/v3/per-type"), &[])
             .await

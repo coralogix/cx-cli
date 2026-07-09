@@ -6,7 +6,7 @@ use wiremock::matchers::{body_json, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::ai_center::{
-    run_add_policy, run_applications_get, run_applications_list, run_coverage,
+    run_add_policy, run_applications_get, run_applications_list, run_count,
     run_custom_evaluations_for_application, run_custom_evaluations_list, run_evaluations_delete,
     run_evaluations_list, run_model_pricing_get, run_model_pricing_set, run_remove_policy,
 };
@@ -104,9 +104,9 @@ async fn coverage_hits_per_type_endpoint() {
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_coverage(&targets, OutputFormat::Json)
+    run_count(&targets, OutputFormat::Json)
         .await
-        .expect("coverage should succeed");
+        .expect("count should succeed");
 }
 
 #[tokio::test]

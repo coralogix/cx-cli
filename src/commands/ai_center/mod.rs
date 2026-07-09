@@ -398,15 +398,18 @@ pub async fn run_evaluations_delete(
     emit_objects(&all, include_profile, output, "No result.")
 }
 
-// ── Coverage ────────────────────────────────────────────────────────
+// ── Count (evaluation coverage) ─────────────────────────────────────
 
-pub async fn run_coverage(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
-    eprintln!("{}", "Fetching AI evaluation coverage...".dimmed());
+pub async fn run_count(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
+    eprintln!(
+        "{}",
+        "Counting AI applications per evaluation type...".dimmed()
+    );
     let include_profile = targets.len() > 1;
 
     let per_profile = fan_out(targets, |t| async move {
         let api = AiCenterApi::new(&t.client);
-        Ok(api.coverage().await?)
+        Ok(api.count_apps_per_eval_type().await?)
     })
     .await;
 

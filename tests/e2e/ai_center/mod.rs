@@ -43,12 +43,12 @@ fn ai_center_evaluations_list() {
 
 #[test]
 #[ignore]
-fn ai_center_coverage() {
-    if harness::require_creds("ai_center_coverage").is_none() {
+fn ai_center_count() {
+    if harness::require_creds("ai_center_count").is_none() {
         return;
     }
-    // Coverage returns an object mapping eval type -> count; just assert valid JSON + exit 0.
-    harness::run_ok_json(&["ai-center", "coverage", "-o", "json"]);
+    // Count returns an object mapping eval type -> app count; just assert valid JSON + exit 0.
+    harness::run_ok_json(&["ai-center", "count", "-o", "json"]);
 }
 
 #[test]

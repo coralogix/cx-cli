@@ -366,7 +366,7 @@ applications list` (gives `guardrailsIntegrated`) merged with per-app Q1 metrics
 Tokens, Cost, User, Security issues, Quality issues, Duration.
 
 **Policy Catalog / Policy Configuration** (config, not spans): `cx ai-center evaluations list` /
-`cx ai-center custom-evaluations list` / `cx ai-center coverage`; per-app =
+`cx ai-center custom-evaluations list` / `cx ai-center count`; per-app =
 `cx ai-center evaluations list --application <app> --subsystem <sub>`. To change state use
 `cx ai-center evaluations update` / `create` / `delete`, or `add-policy` / `remove-policy`.
 

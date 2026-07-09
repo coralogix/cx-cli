@@ -14,75 +14,43 @@ use crate::error::Result;
 /// openapi-facade management gateway mount that fronts the AI v3 proto routes.
 const AI_BASE: &str = "/mgmt/openapi/5/ai";
 
-// --- Response types (only the fields the text tables render; JSON/agents pass raw) ---
+// --- Response types ---
+//
+// All three list routes return their rows as raw `Value`s so JSON/agents output
+// preserves every field the API sends; the text renderers read the columns they
+// need off the raw object. Each wrapper just names the array key the route uses.
 
-/// One AI application (a GenAI `application` + `subsystem` pair).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AiApplication {
+struct ApplicationItems {
     #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default)]
-    pub application: Option<String>,
-    #[serde(default)]
-    pub subsystem: Option<String>,
-    #[serde(default)]
-    pub guardrails_integrated: Option<bool>,
+    ai_applications: Vec<Value>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ListApplicationsResponse {
+struct EvaluationItems {
     #[serde(default)]
-    pub ai_applications: Vec<AiApplication>,
+    ai_evaluations: Vec<Value>,
 }
 
-/// One configured evaluation/policy on an application.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AiEvaluation {
-    #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default)]
-    pub application: Option<String>,
-    #[serde(default)]
-    pub subsystem: Option<String>,
-    #[serde(default)]
-    pub target: Option<String>,
-    #[serde(default)]
-    pub is_enabled: Option<bool>,
-    #[serde(default)]
-    pub threshold: Option<f64>,
-    /// Type-specific config (a proto `oneof`); kept raw. The variant key names the type.
-    #[serde(default)]
-    pub config: Value,
-}
-
-impl AiEvaluation {
-    /// Best-effort evaluation-type label from the `config` oneof's variant key.
-    pub fn config_type(&self) -> String {
-        self.config
-            .as_object()
-            .and_then(|m| m.keys().next())
-            .cloned()
-            .unwrap_or_else(|| "-".to_string())
-    }
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListEvaluationsResponse {
-    #[serde(default)]
-    pub ai_evaluations: Vec<AiEvaluation>,
+/// Best-effort evaluation-type label from an evaluation item's `config` oneof
+/// (the variant key names the type); "-" when absent.
+pub fn eval_config_type(item: &Value) -> String {
+    item.get("config")
+        .and_then(Value::as_object)
+        .and_then(|m| m.keys().next())
+        .cloned()
+        .unwrap_or_else(|| "-".to_string())
 }
 
 /// Wrapper for the two custom-evaluation list routes, which both return `{ "items": [...] }`.
 /// Items are kept as raw `Value` so JSON/agents output preserves every policy field
 /// (config, instructions, examples, policyType, …); the text table reads what it needs.
 #[derive(Debug, Default, Deserialize)]
-pub struct CustomEvaluationItems {
+struct CustomEvaluationItems {
     #[serde(default)]
-    pub items: Vec<Value>,
+    items: Vec<Value>,
 }
 
 // --- API ---
@@ -98,14 +66,13 @@ impl<'a> AiCenterApi<'a> {
 
     // ── Reads ────────────────────────────────────────────────────────
 
-    /// GET /ai/applications/v3 — list AI applications (incl. `guardrailsIntegrated`).
-    pub async fn list_applications(
-        &self,
-        params: &[(&str, &str)],
-    ) -> Result<ListApplicationsResponse> {
-        self.client
+    /// GET /ai/applications/v3 — list AI applications (raw items).
+    pub async fn list_applications(&self, params: &[(&str, &str)]) -> Result<Vec<Value>> {
+        let resp: ApplicationItems = self
+            .client
             .get(&format!("{AI_BASE}/applications/v3"), params)
-            .await
+            .await?;
+        Ok(resp.ai_applications)
     }
 
     /// GET /ai/applications/v3/{id}.
@@ -115,14 +82,13 @@ impl<'a> AiCenterApi<'a> {
             .await
     }
 
-    /// GET /ai/evaluations/v3 — configured evaluations/policies (optionally per app).
-    pub async fn list_evaluations(
-        &self,
-        params: &[(&str, &str)],
-    ) -> Result<ListEvaluationsResponse> {
-        self.client
+    /// GET /ai/evaluations/v3 — configured evaluations/policies (raw items; optionally per app).
+    pub async fn list_evaluations(&self, params: &[(&str, &str)]) -> Result<Vec<Value>> {
+        let resp: EvaluationItems = self
+            .client
             .get(&format!("{AI_BASE}/evaluations/v3"), params)
-            .await
+            .await?;
+        Ok(resp.ai_evaluations)
     }
 
     /// GET /ai/evaluations/v3/{id}.
@@ -256,28 +222,29 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn deserialize_list_applications() {
+    fn application_items_preserve_full_object() {
+        // Raw items keep every field (incl. createdAt/companyId) for JSON/agents.
         let body = json!({
             "aiApplications": [
-                { "id": "a-1", "application": "Production", "subsystem": "Advisor", "guardrailsIntegrated": true },
-                { "id": "a-2", "application": "Staging", "subsystem": "Chatbot", "guardrailsIntegrated": false }
+                { "id": "a-1", "application": "Production", "subsystem": "Advisor",
+                  "guardrailsIntegrated": true, "companyId": "42", "createdAt": "2026-01-01" }
             ]
         });
-        let resp: ListApplicationsResponse = serde_json::from_value(body).unwrap();
-        assert_eq!(resp.ai_applications.len(), 2);
-        assert_eq!(resp.ai_applications[0].id.as_deref(), Some("a-1"));
-        assert_eq!(resp.ai_applications[0].guardrails_integrated, Some(true));
-        assert_eq!(resp.ai_applications[1].guardrails_integrated, Some(false));
+        let resp: ApplicationItems = serde_json::from_value(body).unwrap();
+        assert_eq!(resp.ai_applications.len(), 1);
+        assert_eq!(resp.ai_applications[0]["id"], "a-1");
+        assert_eq!(resp.ai_applications[0]["guardrailsIntegrated"], true);
+        assert_eq!(resp.ai_applications[0]["companyId"], "42");
     }
 
     #[test]
-    fn deserialize_empty_applications() {
-        let resp: ListApplicationsResponse = serde_json::from_value(json!({})).unwrap();
+    fn empty_application_items() {
+        let resp: ApplicationItems = serde_json::from_value(json!({})).unwrap();
         assert!(resp.ai_applications.is_empty());
     }
 
     #[test]
-    fn deserialize_list_evaluations_and_config_type() {
+    fn evaluation_items_and_config_type() {
         let body = json!({
             "aiEvaluations": [
                 { "id": "e-1", "application": "Prod", "subsystem": "Sub", "isEnabled": true,
@@ -285,12 +252,11 @@ mod tests {
                 { "id": "e-2", "application": "Prod", "subsystem": "Sub" }
             ]
         });
-        let resp: ListEvaluationsResponse = serde_json::from_value(body).unwrap();
+        let resp: EvaluationItems = serde_json::from_value(body).unwrap();
         assert_eq!(resp.ai_evaluations.len(), 2);
-        assert_eq!(resp.ai_evaluations[0].config_type(), "toxicity");
-        assert_eq!(resp.ai_evaluations[0].is_enabled, Some(true));
-        assert_eq!(resp.ai_evaluations[1].config_type(), "-");
-        assert_eq!(resp.ai_evaluations[1].is_enabled, None);
+        assert_eq!(eval_config_type(&resp.ai_evaluations[0]), "toxicity");
+        assert_eq!(resp.ai_evaluations[0]["isEnabled"], true);
+        assert_eq!(eval_config_type(&resp.ai_evaluations[1]), "-");
     }
 
     #[test]

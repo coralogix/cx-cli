@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use colored::Colorize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
@@ -93,6 +93,21 @@ fn emit_objects(
     Ok(())
 }
 
+/// Read a string field off a raw item for a text-table column ("" if absent).
+fn col<'a>(item: &'a Value, key: &str) -> &'a str {
+    item.get(key).and_then(Value::as_str).unwrap_or_default()
+}
+
+/// Tag a raw item with its profile (multi-profile mode) and return it.
+fn tag_item(mut item: Value, include_profile: bool, profile: &str) -> Value {
+    if include_profile {
+        if let Some(obj) = item.as_object_mut() {
+            obj.insert("profile".into(), Value::String(profile.to_string()));
+        }
+    }
+    item
+}
+
 /// Collect per-profile `Value` results, printing per-profile errors to stderr and
 /// tagging each object with its profile in multi-profile mode.
 fn collect_objects(per_profile: Vec<(String, Result<Value>)>, include_profile: bool) -> Vec<Value> {
@@ -147,27 +162,18 @@ pub async fn run_applications_list(
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(resp) => {
-                for app in resp.ai_applications {
-                    let mut v = json!({
-                        "id": app.id,
-                        "application": app.application,
-                        "subsystem": app.subsystem,
-                        "guardrailsIntegrated": app.guardrails_integrated,
-                    });
-                    if include_profile {
-                        v.as_object_mut()
-                            .unwrap()
-                            .insert("profile".into(), Value::String(profile.clone()));
-                    }
-                    all_json.push(v);
+            Ok(items) => {
+                for item in items {
                     rows.push(vec![
                         profile.clone(),
-                        app.id.unwrap_or_default(),
-                        app.application.unwrap_or_default(),
-                        app.subsystem.unwrap_or_default(),
-                        render::bool_display(app.guardrails_integrated),
+                        col(&item, "id").to_string(),
+                        col(&item, "application").to_string(),
+                        col(&item, "subsystem").to_string(),
+                        render::bool_display(
+                            item.get("guardrailsIntegrated").and_then(Value::as_bool),
+                        ),
                     ]);
+                    all_json.push(tag_item(item, include_profile, &profile));
                 }
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
@@ -251,35 +257,22 @@ pub async fn run_evaluations_list(
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, result) in per_profile {
         match result {
-            Ok(resp) => {
-                for ev in resp.ai_evaluations {
-                    let config_type = ev.config_type();
-                    let mut v = json!({
-                        "id": ev.id,
-                        "application": ev.application,
-                        "subsystem": ev.subsystem,
-                        "type": config_type,
-                        "target": ev.target,
-                        "isEnabled": ev.is_enabled,
-                        "threshold": ev.threshold,
-                        "config": ev.config,
-                    });
-                    if include_profile {
-                        v.as_object_mut()
-                            .unwrap()
-                            .insert("profile".into(), Value::String(profile.clone()));
-                    }
-                    all_json.push(v);
+            Ok(items) => {
+                for item in items {
                     rows.push(vec![
                         profile.clone(),
-                        ev.id.unwrap_or_default(),
-                        ev.application.unwrap_or_default(),
-                        ev.subsystem.unwrap_or_default(),
-                        config_type,
-                        ev.target.unwrap_or_default(),
-                        render::bool_display(ev.is_enabled),
-                        ev.threshold.map(|t| t.to_string()).unwrap_or_default(),
+                        col(&item, "id").to_string(),
+                        col(&item, "application").to_string(),
+                        col(&item, "subsystem").to_string(),
+                        api::eval_config_type(&item),
+                        col(&item, "target").to_string(),
+                        render::bool_display(item.get("isEnabled").and_then(Value::as_bool)),
+                        item.get("threshold")
+                            .and_then(Value::as_f64)
+                            .map(|t| t.to_string())
+                            .unwrap_or_default(),
                     ]);
+                    all_json.push(tag_item(item, include_profile, &profile));
                 }
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
@@ -464,13 +457,7 @@ async fn run_custom_evaluations_table(
             // Items are raw API objects: the text table reads a few columns, but
             // JSON/agents output keeps the full policy (config, instructions, etc.).
             Ok(items) => {
-                for mut item in items {
-                    let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
-                    let name = item.get("name").and_then(Value::as_str).unwrap_or_default();
-                    let description = item
-                        .get("description")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
+                for item in items {
                     let app_count = item
                         .get("applicationIds")
                         .and_then(Value::as_array)
@@ -478,17 +465,12 @@ async fn run_custom_evaluations_table(
                         .unwrap_or(0);
                     rows.push(vec![
                         profile.clone(),
-                        id.to_string(),
-                        name.to_string(),
+                        col(&item, "id").to_string(),
+                        col(&item, "name").to_string(),
                         app_count.to_string(),
-                        description.chars().take(60).collect(),
+                        col(&item, "description").chars().take(60).collect(),
                     ]);
-                    if include_profile {
-                        if let Some(obj) = item.as_object_mut() {
-                            obj.insert("profile".into(), Value::String(profile.clone()));
-                        }
-                    }
-                    all_json.push(item);
+                    all_json.push(tag_item(item, include_profile, &profile));
                 }
             }
             Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),

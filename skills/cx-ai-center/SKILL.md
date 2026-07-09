@@ -62,14 +62,12 @@ application, or delete model pricing. To "remove" a policy from an app, detach i
 
 ---
 
-## Golden rule: read the interactions, not just the verdicts
+## Golden rule
 
-For **content** questions (quality, hallucination, sentiment, frustration, satisfaction,
-topics) the conversation is primary — read the actual `gen_ai.input.messages` /
-`gen_ai.output.messages` and reason about them, don't rely only on evaluator verdict tags.
-For everything else (counts, cost, error/issue rates) compute from tags/aggregations. Always
-cite the `traceID` of any interaction you reference, and report how many interactions matched
-vs. how many you read. Full guidance and queries: [references/ai-center-queries.md](references/ai-center-queries.md).
+For **content** questions (quality, hallucination, sentiment, topics) read the actual
+`gen_ai.input.messages` / `gen_ai.output.messages` and cite the `traceID` — don't rely on
+verdict tags alone. Full guidance + the query library:
+[references/ai-center-queries.md](references/ai-center-queries.md).
 
 All output formats support `-o json` and `-o agents`; multi-profile fan-out via `-p a -p b`.
 
@@ -154,26 +152,18 @@ cx ai-center evaluations create --from-file eval.json --yes
 ```
 
 ### Read the actual conversations (telemetry, not config)
-Use `cx spans` — see [references/ai-center-queries.md](references/ai-center-queries.md) for the
-full query library. Quick example — the last 5 interactions for an app:
-```bash
-cx spans "source spans | filter \$l.applicationName == 'production' && (tags['gen_ai.system']:string != null || tags['gen_ai.operation.name']:string != null) | choose \$d.traceID as trace_id, tags['gen_ai.input.messages']:string as input_messages, tags['gen_ai.output.messages']:string as output_messages | orderby \$m.timestamp desc" --start now-1d
-```
+Use `cx spans` with the query library in
+[references/ai-center-queries.md](references/ai-center-queries.md) — reading messages, cost,
+latency, errors, tool calls, and per-user analysis.
 
 ---
 
 ## Key principles
 
-- **Config vs. telemetry:** inventory / evaluations / policies / coverage / pricing come from
-  `cx ai-center` (backend config). Content / cost / tokens / latency / errors / verdicts come
-  from GenAI **spans** via `cx spans`. Don't try to answer config questions from spans, or
-  content questions from config.
-- **Always scope span queries to GenAI spans** with the mandatory GenAI filter (see the
-  reference) — `source spans` also holds ordinary APM traffic that would corrupt AI metrics.
-- **An AI application is a `(applicationName, subsystemName)` pair** — the apps returned by
-  `applications list`, not every `applicationName` in spans.
-- **Read messages for content questions; cite `traceID`.** Report matched-vs-read counts.
-- **Confirm before writes.** Describe → get approval → run with `--yes`.
+- **Config vs. telemetry:** inventory / evaluations / policies / coverage / pricing → `cx ai-center`;
+  content / cost / latency / errors / verdicts → GenAI spans via `cx spans`. Don't answer one
+  from the other.
+- **Confirm before writes.** Describe the operation, get approval, then run with `--yes`.
 
 ---
 

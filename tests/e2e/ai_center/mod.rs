@@ -80,7 +80,4 @@ fn discover_application_id() -> Option<String> {
         .clone()
 }
 
-// Mutating commands (evaluations create/update/delete, custom-evaluations
-// create/update, add-policy/remove-policy, model-pricing set) are intentionally
-// left uncovered in e2e: they mutate shared test-team configuration and there is no
-// paired-undo plan. Exercise them manually with --yes against a disposable team.
+

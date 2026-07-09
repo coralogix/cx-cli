@@ -56,6 +56,9 @@ terminal_size = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 humantime = "2"
 
+# Regex (cases query rule validation)
+regex = "1"
+
 # URL building
 url = "2"
 

@@ -378,6 +378,7 @@ dependencies = [
  "keyring",
  "open",
  "rand",
+ "regex",
  "reqwest",
  "rustls",
  "serde",

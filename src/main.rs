@@ -503,7 +503,7 @@ Examples:
 Examples:
   cx ai-center applications list
   cx ai-center evaluations list --application <app> --subsystem <sub>
-  cx ai-center count
+  cx ai-center coverage
   cx ai-center custom-evaluations list
   cx ai-center model-pricing get"
     )]
@@ -1938,8 +1938,8 @@ Examples:
         #[command(subcommand)]
         cmd: CustomEvaluationsCmd,
     },
-    /// Count AI applications per evaluation type (evaluation coverage).
-    Count,
+    /// Show evaluation coverage — AI applications per evaluation type.
+    Coverage,
     /// View and set the team's custom model-pricing overrides.
     #[command(after_help = "\
 Examples:
@@ -3769,8 +3769,8 @@ async fn main() -> Result<()> {
                         .await?;
                     }
                 },
-                AiCenterCmd::Count => {
-                    commands::ai_center::run_count(&targets, output).await?;
+                AiCenterCmd::Coverage => {
+                    commands::ai_center::run_coverage(&targets, output).await?;
                 }
                 AiCenterCmd::ModelPricing { cmd } => match cmd {
                     ModelPricingCmd::Get => {

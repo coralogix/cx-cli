@@ -43,7 +43,7 @@ gated by `allow_risky_commands` in `~/.cx/config.toml`. To skip the prompt in sc
 2. Wait for the user to confirm.
 3. Only then execute with `--yes`.
 
-Read operations (`list`, `get`, `count`, `list-for-application`, `model-pricing get`) do
+Read operations (`list`, `get`, `coverage`, `list-for-application`, `model-pricing get`) do
 not require confirmation and can be run freely.
 
 ### Read-Only Mode
@@ -116,7 +116,7 @@ before calling a by-id or write command — never guess or pass the display name
 
 | Command | Purpose |
 |---------|---------|
-| `cx ai-center count` | Map of each evaluation type → number of apps using it (coverage / gap analysis) |
+| `cx ai-center coverage` | Map of each evaluation type → number of apps using it (coverage / gap analysis) |
 | `cx ai-center model-pricing get` | Team's custom per-model pricing overrides |
 | `cx ai-center model-pricing set --from-file prices.json` | Set team pricing (team-wide, new data only) *(write)* |
 
@@ -143,7 +143,7 @@ cx ai-center custom-evaluations list-for-application <application-id>
 ### Coverage / gap analysis
 ```bash
 # Which eval types are under-used across the team?
-cx ai-center count -o json
+cx ai-center coverage -o json
 ```
 
 ### Enable a policy on an app (write — confirm first!)

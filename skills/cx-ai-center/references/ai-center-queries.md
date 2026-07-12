@@ -151,7 +151,7 @@ cache_creation are disjoint. Custom per-model pricing is team-wide, new data onl
 ## Evaluations, Guardrails & Policies
 
 A **policy** is a configurable check. The same policy can act as an **evaluation** (post-hoc
-scoring/flagging) and/or a **guardrail** (real-time block). UI categories: Hallucinations,
+scoring/flagging) and/or a **guardrail** (real-time block). UI evaluations categories: Hallucinations,
 Security, Toxicity, Topics, User experience, Compliance, plus Custom (typed Quality or Security).
 
 **Evaluations** run on spans and write results back as tags. The target is **`prompt` or

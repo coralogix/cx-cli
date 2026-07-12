@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod ai_center;
 pub mod alerts;
 pub mod api_keys;
 pub mod cases;

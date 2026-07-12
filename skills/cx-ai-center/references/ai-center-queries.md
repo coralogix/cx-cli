@@ -61,8 +61,7 @@ text** below.
 ## How AI Center data is stored
 
 **Granularity.** An **AI span** = one AI operation (an LLM call, embeddings, retrieval/agent/
-tool/workflow step, or a Guardrails SDK invocation). An **interaction** = the full trace
-(`traceID`) of one exchange. Counts (AI spans, errors, guardrail actions) are **span-level**;
+tool/workflow step, or a Guardrails SDK invocation). An **interaction** = multiple span under the same traceID, containing one exchange and the surrounding spans and operation. Counts (AI spans, errors, guardrail actions) are **span-level**;
 the only trace-level rate is Issue Rate (Q9). For a deduplicated interaction count use
 `distinct_count(traceID)` and say so.
 

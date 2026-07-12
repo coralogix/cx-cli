@@ -41,11 +41,9 @@ Read the interactions the question needs, ordered by recency — don't add a man
 Report how many matched vs. how many you read (e.g. "312 matched; I read the 200 most
 recent") and offer to narrow. Cite the `traceID` of any interaction you reference.
 
-You usually **won't know the exact `applicationName`/`subsystemName` up front** — run
-`cx ai-center applications list` first to get the exact pairs. The app filter below is
-**optional**: keep it to scope to one app, **drop it** for org-wide questions, or **group by**
-`$l.applicationName, $l.subsystemName` for comparative ones (e.g. "which Olly region is most
-active").
+Use `cx ai-center applications list` to get the exact `applicationName`/`subsystemName` pairs.
+The app filter below is **optional**: keep it to scope to one app, **drop it** for org-wide
+questions, or **group by** `$l.applicationName, $l.subsystemName` to compare.
 
 Example — reading a conversation (drop the app filter for a global question):
 ```dataprime

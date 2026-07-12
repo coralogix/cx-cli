@@ -4,9 +4,8 @@ description: >
   Use this skill for any question or action about the user's AI/GenAI applications or agents —
   their behavior, prompts/responses, quality, hallucinations, guardrails, security, cost/tokens,
   errors, evaluations/policies, model pricing, or configuration — including comparing or tracking
-  agents over time. Invoke it even when the request doesn't say "AI"/"LLM"/"agent" explicitly
-  (e.g. "which of my agents…", "compare my agent to last week"). It covers both analyzing AI
-  telemetry (GenAI spans) and managing AI Center config via the `cx ai-center` commands.
+  agents over time. It covers both analyzing AI telemetry (GenAI spans) and managing AI Center
+  config via the `cx ai-center` commands.
 metadata:
   version: "0.1.0"
 ---

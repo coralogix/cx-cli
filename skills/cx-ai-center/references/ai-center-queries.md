@@ -110,12 +110,20 @@ model's turn (may carry `tool_call` parts); `tool` = a tool's output fed back (`
 not `user`); `system` = the system prompt (usually index 0). To read what the user asked, take
 `text` parts of `role:'user'` messages.
 
-> **Two conventions carry the conversation — read both.** The current one is
-> `gen_ai.input.messages` / `gen_ai.output.messages`; the older indexed one is
-> `gen_ai.prompt.<n>.content` / `gen_ai.completion.<n>.content` (with `.role`). Different SDKs
-> emit one or the other, so read the current convention first and use the indexed keys when it's
-> absent — `firstNonNull(tags['gen_ai.input.messages']:string, tags['gen_ai.prompt.0.content']:string)`.
-> Do this everywhere you read prompt/response content below.
+> **Two conventions carry the conversation — handle both.**
+> - **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — a **single** JSON blob
+>   holding **all** turns.
+> - **Older indexed:** **one tag per message**, numbered from 0 — `gen_ai.prompt.<n>.role` /
+>   `gen_ai.prompt.<n>.content` for each **input** message (`n = 0,1,2,…` in order) and
+>   `gen_ai.completion.<n>.role` / `gen_ai.completion.<n>.content` for the **output** message(s).
+>   So `gen_ai.prompt.0.content` is just the **first** message; the whole conversation is spread
+>   across `prompt.0, prompt.1, …` and `completion.0, …`.
+>
+> Different SDKs emit one convention or the other. **Prefer `input.messages`; when it is null,
+> fall back to the indexed keys** — read `gen_ai.prompt.<n>` / `gen_ai.completion.<n>` across all
+> `n` (not just `.0`) to reconstruct the full conversation. For a single value you can combine
+> them in one expression, input first: `firstNonNull(tags['gen_ai.input.messages']:string, tags['gen_ai.prompt.0.content']:string)`.
+> Apply this fallback everywhere you read prompt/response content below.
 
 **Extracting conversation text** (cheaper than parsing the whole blob). First-turn user ask +
 assistant reply — note the content capture `(?:[^"\\]|\\.)*` spans escaped quotes so messages

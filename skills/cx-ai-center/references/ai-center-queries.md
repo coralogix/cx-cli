@@ -43,7 +43,7 @@ Example — reading a conversation (drop the app filter for a global question):
 source spans
 | filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
 | filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
-| filter tags['gen_ai.input.messages']:string != null   // spans that actually carry the conversation
+| filter tags['gen_ai.input.messages']:string != null   // for spans that carry a conversation
 | choose $m.timestamp as ts, $d.traceID as trace_id,
          $l.applicationName as application, $l.subsystemName as subsystem,
          tags['gen_ai.conversation.id']:string as conversation,

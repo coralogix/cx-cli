@@ -86,7 +86,7 @@ add `|| tags['otel.library.name']:string == 'cx_guardrails.client'`. Guardrail s
 by `tags['otel.library.name'] == 'cx_guardrails.client'`; from there, filter by whatever the
 question needs — `tags['guardrails.triggered'] == 'true'` for **fired** guardrails, `== 'false'`
 for ones that **passed**, or the per-policy `gen_ai.{prompt|response}.guardrails.{policy}.triggered`
-tags for a specific guardrail. Don't assume triggered-only.
+tags for a specific guardrail.
 
 > An **AI application** is a GenAI `($l.applicationName, $l.subsystemName)` **pair** — the apps
 > returned by `cx ai-center applications list`, not every `applicationName` in spans. **AI error
@@ -110,12 +110,12 @@ model's turn (may carry `tool_call` parts); `tool` = a tool's output fed back (`
 not `user`); `system` = the system prompt (usually index 0). To read what the user asked, take
 `text` parts of `role:'user'` messages.
 
-> **Prefer `gen_ai.input.messages` / `gen_ai.output.messages`; fall back to the indexed keys.**
-> Read the current convention (`input.messages`/`output.messages`) first. Some SDKs still emit
-> the older **indexed** convention — `gen_ai.prompt.<n>.content` / `gen_ai.completion.<n>.content`
-> (and `.role`) — and the backend parses/evaluates/renders those too. So when the `…messages`
-> fields are absent, fall back to the indexed keys (e.g. `firstNonNull(tags['gen_ai.input.messages']:string, tags['gen_ai.prompt.0.content']:string)`).
-> This fallback applies **everywhere** you read prompt/response content below.
+> **Two conventions carry the conversation — read both.** The current one is
+> `gen_ai.input.messages` / `gen_ai.output.messages`; the older indexed one is
+> `gen_ai.prompt.<n>.content` / `gen_ai.completion.<n>.content` (with `.role`). Different SDKs
+> emit one or the other, so read the current convention first and use the indexed keys when it's
+> absent — `firstNonNull(tags['gen_ai.input.messages']:string, tags['gen_ai.prompt.0.content']:string)`.
+> Do this everywhere you read prompt/response content below.
 
 **Extracting conversation text** (cheaper than parsing the whole blob). First-turn user ask +
 assistant reply — note the content capture `(?:[^"\\]|\\.)*` spans escaped quotes so messages

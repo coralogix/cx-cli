@@ -1,16 +1,12 @@
 ---
 name: cx-ai-center
 description: >
-  Use this skill for ANY question or action about the user's AI/GenAI applications or agents —
-  even when they don't say "AI"/"LLM" explicitly. Trigger on: "which of my agents", "out of my
-  LLM applications", "is my agent behaving", "which agent deviates from its task", "compare my
-  agent's system prompt to last week", "compare two agents", "analyze AI interactions", "GenAI
-  observability", "which apps lack guardrails", "AI evaluations/policies", "custom evaluations",
-  "evaluation coverage", "hallucinations", "prompt injection", "toxicity", "PII in prompts",
-  "guardrails", "read the prompts/responses", "LLM cost and tokens", "model pricing", "AI error
-  rate", "agent tool calls", "user frustration/satisfaction", "topics users ask about", "session
-  walkthrough", "AI Center" — or whenever the request concerns an AI application/agent, its
-  prompts/responses, quality, safety, cost, or configuration, even if only implied.
+  Use this skill for any question or action about the user's AI/GenAI applications or agents —
+  their behavior, prompts/responses, quality, hallucinations, guardrails, security, cost/tokens,
+  errors, evaluations/policies, model pricing, or configuration — including comparing or tracking
+  agents over time. Invoke it even when the request doesn't say "AI"/"LLM"/"agent" explicitly
+  (e.g. "which of my agents…", "compare my agent to last week"). It covers both analyzing AI
+  telemetry (GenAI spans) and managing AI Center config via the `cx ai-center` commands.
 metadata:
   version: "0.1.0"
 ---
@@ -64,12 +60,15 @@ When running inside an AI agent (Claude Code, Cursor, Codex, …), cx detects it
 showing a confirmation prompt that would hang forever (no human is there to type y/n) — stops
 immediately with an error telling you to get the user's approval, then re-run with `--yes`.
 
-### What cannot be deleted
-By design there is **no** command to delete a custom-evaluation policy, delete an AI
-application, or delete model pricing. To "remove" a policy from an app, detach it with
-`custom-evaluations remove` — the policy object itself survives and can be re-attached.
-Model pricing is **team-wide** (not attached per app, so there's nothing to "detach"); to reset
-or change it, run `model-pricing set` with a new map — it replaces the whole set.
+### No delete commands (by design)
+The CLI intentionally exposes **no delete** for custom-evaluation policies, AI applications, or
+model pricing — even though the AI v3 API has those delete endpoints, `cx ai-center` does not
+surface them.
+- **Custom-evaluation policy:** can't be deleted; to take it off an app, detach with
+  `custom-evaluations remove` (the policy object survives and can be re-attached).
+- **Model pricing:** no delete command. It's **team-wide** (not per-app), so to change or clear
+  it, run `model-pricing set` with a new map (an empty map `{}` clears all overrides) — `set`
+  replaces the whole set.
 
 ---
 

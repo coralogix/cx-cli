@@ -119,10 +119,9 @@ not `user`); `system` = the system prompt (usually index 0). To read what the us
 >   So `gen_ai.prompt.0.content` is just the **first** message; the whole conversation is spread
 >   across `prompt.0, prompt.1, …` and `completion.0, …`.
 >
-> Different SDKs emit one convention or the other. **Prefer `input.messages`; when it is null,
-> fall back to the indexed keys** — read `gen_ai.prompt.<n>` / `gen_ai.completion.<n>` across all
-> `n` (not just `.0`) to reconstruct the full conversation. For a single value you can combine
-> them in one expression, input first: `firstNonNull(tags['gen_ai.input.messages']:string, tags['gen_ai.prompt.0.content']:string)`.
+> Different SDKs emit one convention or the other. **Prefer `input.messages` / `output.messages`;
+> when they are null, fall back to the indexed keys** — read `gen_ai.prompt.<n>` /
+> `gen_ai.completion.<n>` across all `n` (not just `.0`) to reconstruct the full conversation.
 > Apply this fallback everywhere you read prompt/response content below.
 
 **Extracting conversation text** (cheaper than parsing the whole blob). First-turn user ask +

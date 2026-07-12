@@ -2,17 +2,15 @@
 name: cx-ai-center
 description: >
   Use this skill for ANY question or action about the user's AI/GenAI applications or agents —
-  even when they don't say "AI"/"LLM" explicitly. Trigger on phrases like "which of my agents",
-  "out of my LLM applications", "how is my agent doing", "is my agent behaving", "which agent
-  deviates from its task", "compare the system prompt of my agent to a week ago", "compare two
-  agents", "analyze AI interactions", "GenAI observability", "which AI apps do I have", "which
-  apps lack guardrails", "AI evaluations", "AI policies", "custom evaluations", "evaluation
-  coverage", "hallucinations", "prompt injection", "toxicity", "PII in prompts", "guardrails",
-  "read the prompts/responses", "LLM cost and tokens", "model pricing overrides", "AI error
-  rate", "agent tool calls", "user frustration/satisfaction with the AI", "topics users ask
-  about", "session walkthrough", "AI Center" — or whenever the request concerns an AI
-  application, agent, its prompts/responses, quality, safety, cost, or configuration, even if
-  the words "AI"/"agent"/"LLM" are only implied.
+  even when they don't say "AI"/"LLM" explicitly. Trigger on: "which of my agents", "out of my
+  LLM applications", "is my agent behaving", "which agent deviates from its task", "compare my
+  agent's system prompt to last week", "compare two agents", "analyze AI interactions", "GenAI
+  observability", "which apps lack guardrails", "AI evaluations/policies", "custom evaluations",
+  "evaluation coverage", "hallucinations", "prompt injection", "toxicity", "PII in prompts",
+  "guardrails", "read the prompts/responses", "LLM cost and tokens", "model pricing", "AI error
+  rate", "agent tool calls", "user frustration/satisfaction", "topics users ask about", "session
+  walkthrough", "AI Center" — or whenever the request concerns an AI application/agent, its
+  prompts/responses, quality, safety, cost, or configuration, even if only implied.
 metadata:
   version: "0.1.0"
 ---

@@ -26,24 +26,33 @@ policies, coverage, pricing) use the `cx ai-center` commands documented in the p
 
 Each interaction's spans carry the **conversation** (`gen_ai.input.messages` = the full chat
 history sent to the model — system/user/assistant/tool turns — and `gen_ai.output.messages` =
-the model's response) plus model, tokens, cost, latency, errors, tool calls, and pre-computed
-eval/guardrail verdict tags. **Match the data to the question:** for **content** questions
+the model's response) plus model, tokens, cost, latency, errors, and tool calls. Evaluations,
+when configured, add **optional** verdict tags on the GenAI span; guardrails are **optional**
+too and live on **separate** guardrail spans (`otel.library.name == 'cx_guardrails.client'`),
+not on the GenAI span. **Match the data to the question:** for **content** questions
 (quality, hallucination, sentiment, frustration, satisfaction, topics) read the input/output
-messages and reason about them; for everything else use the relevant tags/aggregations. When
-reading a conversation use only the **user** and **assistant** turns; skip `system`/`tool`.
-Pull the system prompt only for system-prompt questions (`gen_ai.system_instructions` and/or
-the `role:'system'` message, usually index 0 — check both).
+messages and reason about them; for everything else use the relevant tags/aggregations. For
+plain dialogue read the **user**/**assistant** turns, but the `system`/`tool` turns matter too
+when you're debugging an agent or sub-agent (tool calls, the task it was given). Pull the system
+prompt for system-prompt questions (`gen_ai.system_instructions` and/or the `role:'system'`
+message, usually index 0 — check both).
 
 Read the interactions the question needs, ordered by recency — don't add a manual `limit`.
 Report how many matched vs. how many you read (e.g. "312 matched; I read the 200 most
 recent") and offer to narrow. Cite the `traceID` of any interaction you reference.
+
+You usually **won't know the exact `applicationName`/`subsystemName` up front** — run
+`cx ai-center applications list` first to get the exact pairs. The app filter below is
+**optional**: keep it to scope to one app, **drop it** for org-wide questions, or **group by**
+`$l.applicationName, $l.subsystemName` for comparative ones (e.g. "which Olly region is most
+active").
 
 Example — reading a conversation (drop the app filter for a global question):
 ```dataprime
 source spans
 | filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
 | filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
-| filter tags['gen_ai.input.messages']:string != null   // spans that actually carry the conversation
+| filter tags['gen_ai.input.messages']:string != null   // for spans that carry a conversation
 | choose $m.timestamp as ts, $d.traceID as trace_id,
          $l.applicationName as application, $l.subsystemName as subsystem,
          tags['gen_ai.conversation.id']:string as conversation,
@@ -61,10 +70,10 @@ text** below.
 ## How AI Center data is stored
 
 **Granularity.** An **AI span** = one AI operation (an LLM call, embeddings, retrieval/agent/
-tool/workflow step, or a Guardrails SDK invocation). An **interaction** = the full trace
-(`traceID`) of one exchange. Counts (AI spans, errors, guardrail actions) are **span-level**;
-the only trace-level rate is Issue Rate (Q9). For a deduplicated interaction count use
-`distinct_count(traceID)` and say so.
+tool/workflow step, or a Guardrails SDK invocation). An **interaction** = the multiple spans
+under one `traceID` — one exchange plus the surrounding spans and operations. Counts (AI spans,
+errors, guardrail actions) are **span-level**; the only trace-level rate is Issue Rate (Q9). For
+a deduplicated interaction count use `distinct_count(traceID)` and say so.
 
 **Find GenAI spans — the mandatory filter on every AI Center query.** `source spans` also
 holds ordinary APM traffic; omitting this filter computes AI metrics over non-AI data and
@@ -73,8 +82,11 @@ returns wrong answers.
 | filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
 ```
 To also include guardrail spans (for AI-span counts and issue/guardrail rates),
-add `|| tags['otel.library.name']:string == 'cx_guardrails.client'`. Guardrail spans have
-`tags['otel.library.name'] == 'cx_guardrails.client'` (and `tags['guardrails.triggered'] == 'true'` when fired).
+add `|| tags['otel.library.name']:string == 'cx_guardrails.client'`. Guardrail spans are marked
+by `tags['otel.library.name'] == 'cx_guardrails.client'`; from there, filter by whatever the
+question needs — `tags['guardrails.triggered'] == 'true'` for **fired** guardrails, `== 'false'`
+for ones that **passed**, or the per-policy `gen_ai.{prompt|response}.guardrails.{policy}.triggered`
+tags for a specific guardrail. Don't assume triggered-only.
 
 > An **AI application** is a GenAI `($l.applicationName, $l.subsystemName)` **pair** — the apps
 > returned by `cx ai-center applications list`, not every `applicationName` in spans. **AI error
@@ -98,10 +110,12 @@ model's turn (may carry `tool_call` parts); `tool` = a tool's output fed back (`
 not `user`); `system` = the system prompt (usually index 0). To read what the user asked, take
 `text` parts of `role:'user'` messages.
 
-> **Never use the deprecated indexed convention** (`gen_ai.prompt.<n>.content` /
-> `gen_ai.completion.<n>.content`) — current data isn't written that way; querying them returns
-> null/stale results. Always use `gen_ai.input.messages` / `gen_ai.output.messages` directly,
-> even if `cx search-fields` surfaces the old keys.
+> **Prefer `gen_ai.input.messages` / `gen_ai.output.messages`; fall back to the indexed keys.**
+> Read the current convention (`input.messages`/`output.messages`) first. Some SDKs still emit
+> the older **indexed** convention — `gen_ai.prompt.<n>.content` / `gen_ai.completion.<n>.content`
+> (and `.role`) — and the backend parses/evaluates/renders those too. So when the `…messages`
+> fields are absent, fall back to the indexed keys (e.g. `firstNonNull(tags['gen_ai.input.messages']:string, tags['gen_ai.prompt.0.content']:string)`).
+> This fallback applies **everywhere** you read prompt/response content below.
 
 **Extracting conversation text** (cheaper than parsing the whole blob). First-turn user ask +
 assistant reply — note the content capture `(?:[^"\\]|\\.)*` spans escaped quotes so messages
@@ -116,10 +130,12 @@ Every turn (multi-turn): concat input history with the model's reply, match with
 ```dataprime
 | create convo from concat(tags['gen_ai.input.messages']:string, tags['gen_ai.output.messages']:string)
 | extract convo into turns using multi_regexp(e=/"role"\s*:\s*"(?:user|assistant)"[\s\S]*?"content"\s*:\s*"(?:[^"\\]|\\.)*"/)
-| explode turns into turn original preserve
+| explode turns into turn original preserve   // `original preserve` keeps the parent row's other columns (e.g. $d.traceID) on every exploded turn
 | extract turn into m using regexp(e=/"role"\s*:\s*"(?<role>\w+)"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
 | choose $d.traceID as trace_id, m.role, m.text
 ```
+(`explode` normally drops the source row's other fields; `original preserve` keeps them, so each
+turn still carries its `traceID`.)
 
 **Span attributes (GenAI spans).** Span kind — `gen_ai.operation.name`: `chat` (also
 `generate_content`, `text_completion`), `embeddings`, `retrieval` (RAG), `create_agent`,
@@ -152,8 +168,9 @@ cache_creation are disjoint. Custom per-model pricing is team-wide, new data onl
 ## Evaluations, Guardrails & Policies
 
 A **policy** is a configurable check. The same policy can act as an **evaluation** (post-hoc
-scoring/flagging) and/or a **guardrail** (real-time block). UI categories: Hallucinations,
-Security, Toxicity, Topics, User experience, Compliance, plus Custom (typed Quality or Security).
+scoring/flagging) and/or a **guardrail** (real-time block). UI evaluation categories:
+Hallucinations, Security, Toxicity, Topics, User experience, Compliance, plus Custom (typed
+Quality or Security).
 
 **Evaluations** run on spans and write results back as tags. The target is **`prompt` or
 `response`** (the backend supports only these two — ignore the unused `conversation` enum value):
@@ -170,11 +187,13 @@ Security, Toxicity, Topics, User experience, Compliance, plus Custom (typed Qual
 **Guardrails** act in real time via the `cx-guardrails` SDK and **block** on violation. Each
 invocation is a span (`otel.library.name == 'cx_guardrails.client'`) with
 `tags['guardrails.triggered'] == 'true'` when it fired; `$l.operationName` starts with
-`guardrails.prompt`/`guardrails.response`. Prebuilt: Prompt Injection, PII, Toxicity.
+`guardrails.prompt`/`guardrails.response`. Prebuilt: Prompt Injection, PII, Toxicity — plus
+**custom** guardrails.
 
 **Configuration is not telemetry.** Which policies exist, which are enabled per app, the
-inventory, guarded status (`guardrailsIntegrated`), and coverage come from the backend — use
-the `cx ai-center` commands, not span queries.
+inventory, guarded status (`guardrailsIntegrated`), coverage, and the team's **custom model
+pricing** (`cx ai-center model-pricing get`) come from the backend — use the `cx ai-center`
+commands, not span queries.
 
 ---
 
@@ -348,16 +367,33 @@ description of the agent's reply. Don't dump raw ID lists.
 - **Quality / hallucination:** optionally pre-filter `…evaluations.{name}.label=='p1'`, but
   confirm by reading the messages.
 - **Root cause:** `otel.status_code=='ERROR'` (+ `error.type`), then read messages + errored
-  child spans; watch truncation, tool failures, retrieval misses.
+  child spans; watch truncation, tool failures, retrieval misses. **Pull the whole trace
+  (`filter $d.traceID == '<id>'`), not just the GenAI spans** — the cause often lives in a
+  sibling **non-GenAI** span (a DB call, HTTP request, retrieval step).
+- **Agent behaving off-task / deviating from its instructions:** read the **system prompt**
+  (`gen_ai.system_instructions` and/or the `role:'system'` turn) alongside the user/assistant
+  turns, and judge whether the responses stayed within the task the system prompt defines.
+  Cite the `traceID`s where it drifted.
 
 ---
 
 ## Examples (question → approach)
-- *"Average time to response for Financial Advisor last 24h?"* → **Q1** (`ttr_avg`) with
-  `$l.subsystemName == 'Financial Advisor'`, `--start now-1d` (or **Q2** for the trend;
+> When a question names an app/agent, **run `cx ai-center applications list` first** to resolve
+> the exact `applicationName`/`subsystemName` pair before scoping a query.
+
+- *"Which of my agents / LLM apps do I have?"* → `cx ai-center applications list`.
+- *"Average time to response for Financial Advisor last 24h?"* → list apps to get the exact
+  pair, then **Q1** (`ttr_avg`) scoped to it, `--start now-1d` (or **Q2** for the trend;
   `percentile(0.95, duration)` for P95).
 - *"Token spend by model this week?"* → **Q6**, `--start now-7d`.
 - *"Which apps have the highest error rate?"* → **Q8** top variant, no app scope.
+- *"Which region / agent is the most active?"* → GenAI filter, no app scope, `groupby
+  $l.applicationName, $l.subsystemName aggregate count() as spans | orderby spans desc`.
+- *"Which agent deviates from its intended task?"* → read each agent's **system prompt** +
+  user/assistant turns and judge drift (see the agent-deviation playbook); cite traceIDs.
+- *"Compare agent X now vs a week ago"* / *"compare agent X to agent Y"* → run the relevant Q
+  twice with different `--start`/`--end` windows, or grouped by `$l.applicationName,$l.subsystemName`,
+  and diff the results (e.g. cost, error rate, latency, or the system prompt via a trace from each).
 - *"Are users frustrated in app X?"* → Phase 1 frustration playbook (**Q11** to read the
   conversations; quote user turns + traceIDs).
 - *"Which apps lack guardrails?"* → `cx ai-center applications list -o json | jq '[.[]|select(.guardrailsIntegrated==false)]'` (config).

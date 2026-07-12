@@ -1,13 +1,18 @@
 ---
 name: cx-ai-center
 description: >
-  Use this skill when the user asks to "analyze AI interactions", "GenAI observability",
-  "which AI apps do I have", "which apps lack guardrails", "AI evaluations", "AI policies",
-  "custom evaluations", "evaluation coverage", "hallucinations", "prompt injection",
-  "toxicity", "PII in prompts", "guardrails", "read the prompts/responses",
-  "LLM cost and tokens", "model pricing overrides", "AI error rate", "agent tool calls",
-  "user frustration/satisfaction with the AI", "topics users ask about", "session walkthrough",
-  "AI Center", or wants to observe, evaluate, or govern GenAI/LLM applications with the cx CLI.
+  Use this skill for ANY question or action about the user's AI/GenAI applications or agents —
+  even when they don't say "AI"/"LLM" explicitly. Trigger on phrases like "which of my agents",
+  "out of my LLM applications", "how is my agent doing", "is my agent behaving", "which agent
+  deviates from its task", "compare the system prompt of my agent to a week ago", "compare two
+  agents", "analyze AI interactions", "GenAI observability", "which AI apps do I have", "which
+  apps lack guardrails", "AI evaluations", "AI policies", "custom evaluations", "evaluation
+  coverage", "hallucinations", "prompt injection", "toxicity", "PII in prompts", "guardrails",
+  "read the prompts/responses", "LLM cost and tokens", "model pricing overrides", "AI error
+  rate", "agent tool calls", "user frustration/satisfaction with the AI", "topics users ask
+  about", "session walkthrough", "AI Center" — or whenever the request concerns an AI
+  application, agent, its prompts/responses, quality, safety, cost, or configuration, even if
+  the words "AI"/"agent"/"LLM" are only implied.
 metadata:
   version: "0.1.0"
 ---
@@ -65,6 +70,8 @@ immediately with an error telling you to get the user's approval, then re-run wi
 By design there is **no** command to delete a custom-evaluation policy, delete an AI
 application, or delete model pricing. To "remove" a policy from an app, detach it with
 `custom-evaluations remove` — the policy object itself survives and can be re-attached.
+Model pricing is **team-wide** (not attached per app, so there's nothing to "detach"); to reset
+or change it, run `model-pricing set` with a new map — it replaces the whole set.
 
 ---
 
@@ -79,8 +86,10 @@ verdict tags alone. Full guidance + the query library:
 
 ## CLI Commands
 
-**IDs are UUIDs.** Get an `application_id` / `evaluation_id` from the matching `list` command
-before calling a by-id or write command — never guess or pass the display name.
+**Show names to the user; use UUIDs only internally.** When presenting results, refer to apps
+and evaluations by their human names (application/subsystem, evaluation name), not raw UUIDs.
+The UUID is only needed to *call* a by-id or write command — resolve it yourself from the
+matching `list` command (never guess or make the user paste a UUID).
 
 ### Applications (inventory + guarded status)
 

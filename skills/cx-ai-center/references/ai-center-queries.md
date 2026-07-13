@@ -118,8 +118,10 @@ for series); duration = `$m.duration` (µs).
 
 Prefer `input.messages` / `output.messages`; when null, use the indexed tags.
 
-**Current convention — extract text** (`(?:[^"\\]|\\.)*` spans escaped quotes so long messages
-aren't truncated):
+**Current convention — extract text.** Use the regex (not a raw fetch of `input.messages`): it
+returns only user + model text and never the system prompt, whether that prompt sits at index 0 of
+the array or in a separate tag. (`(?:[^"\\]|\\.)*` spans escaped quotes so long messages aren't
+truncated.)
 ```dataprime
 | extract tags['gen_ai.input.messages']:string into u using regexp(e=/"role"\s*:\s*"user"[\s\S]*?"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
 | extract tags['gen_ai.output.messages']:string into a using regexp(e=/"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)

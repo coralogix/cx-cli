@@ -76,8 +76,9 @@ surface them.
 For **content** questions (quality, hallucination, sentiment, topics) read the actual
 conversation and cite the `traceID` — don't rely on verdict tags alone. The transcript lives in
 one of two conventions (`gen_ai.input.messages`/`output.messages`, or the older indexed
-`gen_ai.prompt.<n>`/`completion.<n>` tags); read it with the **Reading conversations** queries in
-the library, which handle both and exclude the system prompt and tool traffic. Full guidance:
+`gen_ai.prompt.<n>`/`completion.<n>` tags); read it with the **Reading conversations (content
+questions)** queries in the library, which handle both and exclude the system prompt and tool
+traffic. Full guidance:
 [references/ai-center-queries.md](references/ai-center-queries.md).
 
 ---

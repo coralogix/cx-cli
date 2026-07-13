@@ -91,7 +91,9 @@ for series); duration = `$m.duration` (µs).
 `tool` / `system`, part `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
 `blob`/`file`/`uri`.
 
-**Reading conversations (content questions).** For "are `<APP>`/`<SUB>` customers satisfied",
+### Reading conversations (content questions)
+
+For "are `<APP>`/`<SUB>` customers satisfied",
 "do users repeat themselves", quality, hallucination, "did the agent answer" — the answer is in
 the **user asks + model replies**, not verdict/score tags. Read the user's `type:"text"` messages
 and the model's `type:"text"` replies. **Build the query to exclude** the system prompt
@@ -183,7 +185,7 @@ preserve order); `redact` strips it. Same content-level caveat as the current co
 | `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` / cache token fields | Token usage |
 | `gen_ai.prompt_price` / `gen_ai.response_price` / `gen_ai.read_cache_price` / `gen_ai.write_cache_price` | Cost (USD) |
 | `gen_ai.response.finish_reasons` | Stop reason (`~ 'length'` = truncated, `~ 'tool_call'` = tool use) |
-| `gen_ai.input.messages` / `gen_ai.output.messages` (current) or `gen_ai.prompt.<n>` / `gen_ai.completion.<n>` (indexed) | Conversation transcript — read via the **Reading conversations** queries, don't grep raw |
+| `gen_ai.input.messages` / `gen_ai.output.messages` (current) or `gen_ai.prompt.<n>` / `gen_ai.completion.<n>` (indexed) | Conversation transcript — read via the **Reading conversations (content questions)** queries, don't grep raw |
 | `gen_ai.tool.{name,call.arguments,call.result}` / `gen_ai.tool.definitions` | Tools executed / advertised |
 | `gen_ai.{target}.evaluations.{type}.{score,label}`, `…evaluations.custom.{0..9}.{…}`, `guardrails.triggered` | Eval/guardrail results (see below) |
 
@@ -397,7 +399,7 @@ description of the agent's reply. Don't dump raw ID lists.
   keyword filters.
 - **Counting a specific term** ("how often do users mention RUM?") is narrower — decide if they
   want a count, list, or examples. Match **user turns** at the **word level** (a bare `~ 'rum'`
-  also hits *forum/premium*) — extract them first with the **Reading conversations** queries — and
+  also hits *forum/premium*) — extract them first with the **Reading conversations (content questions)** queries — and
   **never grep the whole `gen_ai.input.messages` blob (or the indexed `prompt.<n>` tags)**: they
   carry the system prompt + tool definitions, so they match nearly everything. Report counts as a
   floor.

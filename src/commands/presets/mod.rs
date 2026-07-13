@@ -18,7 +18,7 @@ fn preset_to_json(preset: &Preset, include_profile: bool, profile: &str) -> Valu
         "name": preset.display_name(),
         "connector_type": preset.display_connector_type(),
         "is_default": preset.is_default,
-        "is_custom": preset.is_custom,
+        "is_custom": preset.display_is_custom(),
     });
     if include_profile {
         if let Value::Object(ref mut m) = v {
@@ -43,6 +43,13 @@ fn read_from_file(path: &str) -> Result<Value> {
         std::fs::read_to_string(path)?
     };
     Ok(serde_json::from_str(&raw)?)
+}
+
+fn custom_preset_request_body(body: Value) -> Value {
+    match body {
+        Value::Object(ref map) if map.contains_key("preset") => body,
+        _ => json!({ "preset": body }),
+    }
 }
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -90,7 +97,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                         preset.display_name().to_string(),
                         preset.display_connector_type(),
                         render::bool_display(preset.is_default),
-                        render::bool_display(preset.is_custom),
+                        render::bool_display(preset.display_is_custom()),
                     ]
                 })
                 .collect();
@@ -156,7 +163,7 @@ pub async fn run_create(
     from_file: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    let body = read_from_file(from_file)?;
+    let body = custom_preset_request_body(read_from_file(from_file)?);
     eprintln!("{}", "Creating preset...".dimmed());
     let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| {
@@ -203,7 +210,7 @@ pub async fn run_update(
     from_file: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    let body = read_from_file(from_file)?;
+    let body = custom_preset_request_body(read_from_file(from_file)?);
     eprintln!("{}", "Updating preset...".dimmed());
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();

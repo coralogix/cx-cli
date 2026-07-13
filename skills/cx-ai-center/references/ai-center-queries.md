@@ -24,44 +24,30 @@ policies, coverage, pricing) use the `cx ai-center` commands documented in the p
 
 ## Golden rule: read the interactions, not just the verdicts
 
-Each interaction's spans carry the **conversation** (`gen_ai.input.messages` = the full chat
-history sent to the model — system/user/assistant/tool turns — and `gen_ai.output.messages` =
-the model's response) plus model, tokens, cost, latency, errors, and tool calls. Evaluations,
-when configured, add **optional** verdict tags on the GenAI span; guardrails are **optional**
-too and live on **separate** guardrail spans (`otel.library.name == 'cx_guardrails.client'`),
-not on the GenAI span. **Match the data to the question:** for **content** questions
-(quality, hallucination, sentiment, frustration, satisfaction, topics) read the input/output
-messages and reason about them; for everything else use the relevant tags/aggregations. For
-plain dialogue read the **user**/**assistant** turns, but the `system`/`tool` turns matter too
-when you're debugging an agent or sub-agent (tool calls, the task it was given). Pull the system
-prompt for system-prompt questions (`gen_ai.system_instructions` and/or the `role:'system'`
-message, usually index 0 — check both).
+Each interaction's spans carry the **conversation** plus model, tokens, cost, latency, errors,
+and tool calls. Two conventions store the conversation: **current** — `gen_ai.input.messages` /
+`gen_ai.output.messages` (one JSON-array string per side); **older indexed** —
+`gen_ai.prompt.<n>.{role,content}` / `gen_ai.completion.<n>.{role,content}` (one tag per message).
+Evaluations, when configured, add **optional** verdict tags on the GenAI span; guardrails are
+**optional** too and live on **separate** guardrail spans
+(`otel.library.name == 'cx_guardrails.client'`), not on the GenAI span. **Match the data to the
+question:** for **content** questions (quality, hallucination, sentiment, frustration,
+satisfaction, topics) read the conversation and reason about it; for everything else use the
+relevant tags/aggregations. Pull the system prompt only for system-prompt questions
+(`gen_ai.system_instructions` and/or the `role:'system'` turn, usually index 0 — check both).
 
 Read the interactions the question needs, ordered by recency — don't add a manual `limit`.
 Report how many matched vs. how many you read (e.g. "312 matched; I read the 200 most
 recent") and offer to narrow. Cite the `traceID` of any interaction you reference.
 
 Use `cx ai-center applications list` to get the exact `applicationName`/`subsystemName` pairs.
-The app filter below is **optional**: keep it to scope to one app, **drop it** for org-wide
-questions, or **group by** `$l.applicationName, $l.subsystemName` to compare.
+The app filter in the queries below is **optional**: keep it to scope to one app, **drop it** for
+org-wide questions, or **group by** `$l.applicationName, $l.subsystemName` to compare.
 
-Example — reading a conversation (drop the app filter for a global question):
-```dataprime
-source spans
-| filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
-| filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
-| filter tags['gen_ai.input.messages']:string != null   // for spans that carry a conversation
-| choose $m.timestamp as ts, $d.traceID as trace_id,
-         $l.applicationName as application, $l.subsystemName as subsystem,
-         tags['gen_ai.conversation.id']:string as conversation,
-         tags['gen_ai.request.model']:string as model,
-         tags['gen_ai.input.messages']:string as input_messages,
-         tags['gen_ai.output.messages']:string as output_messages
-| orderby ts desc
-```
-This selects the raw messages blobs (all roles) for you to read. To pull out only the
-**user**/**assistant** turns in-query, use the regex extraction under **Extracting conversation
-text** below.
+**To read the actual user+assistant transcript** — both conventions, system prompt and tool
+traffic excluded — use the queries under **Reading conversations (content questions)** below.
+Don't hand-select the raw `input.messages` blob for content questions: it carries the system
+prompt and tool traffic and bloats context.
 
 ---
 
@@ -197,7 +183,7 @@ preserve order); `redact` strips it. Same content-level caveat as the current co
 | `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` / cache token fields | Token usage |
 | `gen_ai.prompt_price` / `gen_ai.response_price` / `gen_ai.read_cache_price` / `gen_ai.write_cache_price` | Cost (USD) |
 | `gen_ai.response.finish_reasons` | Stop reason (`~ 'length'` = truncated, `~ 'tool_call'` = tool use) |
-| `gen_ai.input.messages` / `gen_ai.output.messages` | Conversation transcript (read these for content) |
+| `gen_ai.input.messages` / `gen_ai.output.messages` (current) or `gen_ai.prompt.<n>` / `gen_ai.completion.<n>` (indexed) | Conversation transcript — read via the **Reading conversations** queries, don't grep raw |
 | `gen_ai.tool.{name,call.arguments,call.result}` / `gen_ai.tool.definitions` | Tools executed / advertised |
 | `gen_ai.{target}.evaluations.{type}.{score,label}`, `…evaluations.custom.{0..9}.{…}`, `guardrails.triggered` | Eval/guardrail results (see below) |
 
@@ -341,8 +327,9 @@ source spans
 Calls-per-interaction: `groupby traceID aggregate count_if(is_tool) as n | groupby n aggregate count() as cnt`.
 Tool usage %: `aggregate distinct_count(traceID) as total, distinct_count_if(is_tool, traceID) as with_tools`.
 
-**Q11 — Read interactions / AI Explorer:** the "read a conversation" query at the top (select
-`gen_ai.input.messages` / `gen_ai.output.messages`, tokens, cost, user, duration).
+**Q11 — Read interactions / AI Explorer:** use the **Reading conversations (content questions)**
+queries (current-convention `jsonobject`, indexed-convention `$d:string` + `multi_regexp`) to get
+the clean user+assistant transcript; add tokens/cost/user/duration tags alongside if needed.
 
 **Q12 — Session walkthrough:** `filter traceID == '<traceID>'` then read ordered turns.
 
@@ -372,6 +359,9 @@ source spans
          tags['gen_ai.input.messages']:string as input_messages, tags['gen_ai.output.messages']:string as output_messages
 | orderby ts asc | limit 200
 ```
+This is a raw per-step dump (tools included) for debugging an agent run. For the clean
+user+assistant transcript — either convention, system prompt/tools excluded — use the
+**Reading conversations (content questions)** queries instead.
 
 **Q15 — Evaluation score distribution / trend** (score is a 0–1 float, separate from `p1`):
 ```dataprime
@@ -389,8 +379,10 @@ Trend: `groupby roundTime($m.timestamp, <interval>ms) as Time aggregate avg(tags
 
 **Method for sentiment / satisfaction / frustration:**
 1. Scope to recent interactions (order by recency; no manual `limit`). State matched-vs-read.
-2. **Read the conversations — don't keyword-search for emotion.** Group by session
-   (`gen_ai.conversation.id`, fall back to `traceID`) and read each session's turns in order.
+2. **Read the conversations — don't keyword-search for emotion.** Use the **Reading conversations
+   (content questions)** queries (current or indexed convention) to get clean user+assistant
+   transcripts, group by session (`gen_ai.conversation.id`, fall back to `traceID`), and read each
+   session's turns in order.
 3. **Judge from the USER's side.** Read user turns: satisfied (got their answer, "thanks",
    no re-asks) vs not (re-asks/rephrasing, rising turns, negative wording, excessive `?`/`!`/
    CAPS, "that's not what I asked", abandonment). Response quality / `finish_reason` / evals are
@@ -405,9 +397,10 @@ description of the agent's reply. Don't dump raw ID lists.
   keyword filters.
 - **Counting a specific term** ("how often do users mention RUM?") is narrower — decide if they
   want a count, list, or examples. Match **user turns** at the **word level** (a bare `~ 'rum'`
-  also hits *forum/premium*), and **never grep the whole `gen_ai.input.messages` blob** (it
-  contains the system prompt + tool definitions, so it matches nearly everything). Report counts
-  as a floor.
+  also hits *forum/premium*) — extract them first with the **Reading conversations** queries — and
+  **never grep the whole `gen_ai.input.messages` blob (or the indexed `prompt.<n>` tags)**: they
+  carry the system prompt + tool definitions, so they match nearly everything. Report counts as a
+  floor.
 - **Quality / hallucination:** optionally pre-filter `…evaluations.{name}.label=='p1'`, but
   confirm by reading the messages.
 - **Root cause:** `otel.status_code=='ERROR'` (+ `error.type`), then read messages + errored

@@ -31,7 +31,7 @@ answers questions about AI apps from two sources:
 
 A single question often spans both: e.g. *"which apps lack guardrails"* is config
 (`cx ai-center applications list`), while *"what are users asking my chatbot"* is telemetry
-(`cx spans '…'`, reading `gen_ai.input.messages`).
+(`cx spans '…'`, reading the conversation from the GenAI spans).
 
 ---
 
@@ -74,8 +74,10 @@ surface them.
 ## Golden rule
 
 For **content** questions (quality, hallucination, sentiment, topics) read the actual
-`gen_ai.input.messages` / `gen_ai.output.messages` and cite the `traceID` — don't rely on
-verdict tags alone. Full guidance + the query library:
+conversation and cite the `traceID` — don't rely on verdict tags alone. The transcript lives in
+one of two conventions (`gen_ai.input.messages`/`output.messages`, or the older indexed
+`gen_ai.prompt.<n>`/`completion.<n>` tags); read it with the **Reading conversations** queries in
+the library, which handle both and exclude the system prompt and tool traffic. Full guidance:
 [references/ai-center-queries.md](references/ai-center-queries.md).
 
 ---

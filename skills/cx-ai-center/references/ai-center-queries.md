@@ -143,36 +143,20 @@ Every turn (multi-turn): concat input history with the model's reply, match with
 (`explode` normally drops the source row's other fields; `original preserve` keeps them, so each
 turn still carries its `traceID`.)
 
-**Indexed convention** (`gen_ai.prompt.<n>` / `gen_ai.completion.<n>`) — when `input.messages` /
-`output.messages` are absent. Here each message is **its own numbered tag**
-(`gen_ai.prompt.<n>.role` / `.content`, `gen_ai.completion.<n>.role` / `.content`; `n = 0,1,2,…`).
-DataPrime has no way to iterate an unknown set of numbered keys (there's no `tags.keys()`), so
-**don't** try to reconstruct it inside the query. Instead fetch the whole tag map for the one span
-that carries the prompt tags and read the numbered keys off the returned object:
+**Indexed convention** (`gen_ai.prompt.<n>` / `gen_ai.completion.<n>`, `n = 0,1,2,…`) — when
+`input.messages` / `output.messages` are absent. One numbered tag per message. Fetch the whole map
+and pick from the JSON (DataPrime can't iterate numbered keys):
 ```dataprime
 source spans
-| filter tags['gen_ai.prompt.0.role'] != null   // the LLM span holding the indexed prompt tags
+| filter tags['gen_ai.prompt.0.role'] != null
 | choose $d.traceID as trace_id, $d.tags as tags
 | limit 1
 ```
-The returned `tags` object contains every `gen_ai.prompt.<n>.*` and `gen_ai.completion.<n>.*`;
-read them in index order — **the picking happens on the JSON you got back, not in DataPrime.** To
-get the latest user ask, scan the `prompt.<n>.role` entries and take the **highest `n` whose
-`.role == "user"`**, then read that `prompt.<n>.content`; the reply is the `completion.<n>`
-turn(s). (There's no in-query way to compute this — DataPrime can't iterate the numbered keys, so
-the agent does it on the returned object.) Notes from real spans:
-- **Filter on `.role`, not `.content`** — every message has a `.role`, but tool-call turns
-  (prompt **or** completion) carry `…tool_calls.*` and **no `.content`**, so a `.content` filter
-  can miss the span.
-- **Key off `.role`, not the index.** The system prompt is the turn whose `.role == "system"`
-  (its `.content` is the system prompt) — typically `.0`, but identify it by role, not position.
-  The user's ask, when present, is the next `role:"user"` turn (e.g. `prompt.1`). Roles are
-  `system` / `user` / `assistant` / `tool`. A multi-agent/handoff span may have **no `user` turn
-  at all** (the ask lives on an earlier agent's span) — so read the roles, don't assume the ask is
-  here.
-- Indices run as high as the history is long (a real weather-agent span used
-  `gen_ai.prompt.0`…`.11`), which is exactly why this "grab the map, pick from the JSON" approach
-  beats any fixed index ladder — no hard-coded ceiling.
+- Key off `.role` (`system`/`user`/`assistant`/`tool`), not the index. Latest user ask = highest
+  `n` where `prompt.<n>.role == "user"`; read its `.content`. Reply = the `completion.<n>` turn(s).
+- Tool-call turns (prompt or completion) have `…tool_calls.*` and **no `.content`** — that's why
+  the filter uses `.role`, not `.content`.
+- A handoff span may have **no `user` turn** (the ask is on an earlier span).
 
 **Span attributes (GenAI spans).** Span kind — `gen_ai.operation.name`: `chat` (also
 `generate_content`, `text_completion`), `embeddings`, `retrieval` (RAG), `create_agent`,

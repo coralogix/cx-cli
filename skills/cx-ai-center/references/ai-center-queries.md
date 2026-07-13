@@ -102,8 +102,9 @@ roles as flat per-message tags — `gen_ai.prompt.<n>.{role,content}` /
 **Two conventions carry the conversation — handle both** (pick by which tags exist: use the
 **Current** query when `gen_ai.input.messages` is present, the **Indexed** query when
 `gen_ai.prompt.0.role` is present):
-- **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — a **single JSON blob** per side
-  holding **all** turns as `{role, parts:[{type, content}]}` objects.
+- **Current:** `gen_ai.input.messages` and `gen_ai.output.messages` are each **one tag holding a
+  JSON array of `{role, parts:[{type, content}]}` messages** — `input.messages` = the full input
+  history (all prior turns), `output.messages` = the model's response turn(s).
 - **Older indexed:** **one tag per message**, numbered from 0 — `gen_ai.prompt.<n>.role` /
   `gen_ai.prompt.<n>.content` for each **input** message and `gen_ai.completion.<n>.role` /
   `gen_ai.completion.<n>.content` for the **output** message(s). `gen_ai.prompt.0` is the first

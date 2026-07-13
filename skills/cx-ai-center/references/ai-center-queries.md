@@ -152,8 +152,12 @@ source spans
 | choose $d.traceID as trace_id, $d.tags as tags
 | limit 1
 ```
-- Key off `.role` (`system`/`user`/`assistant`/`tool`), not the index. Latest user ask = highest
-  `n` where `prompt.<n>.role == "user"`; read its `.content`. Reply = the `completion.<n>` turn(s).
+- **System prompt:** the `prompt.<n>` where `.role == "system"` → read its `.content`.
+- **User input (full history):** the highest `n` where `prompt.<n>.role == "user"` → its
+  `.content`. The last user turn carries the accumulated conversation, so it's the one to read.
+- **Model output:** the `completion.<n>` turn(s) → `.content` (or `…tool_calls.*` if it answered
+  with a tool call).
+- Key off `.role` (`system`/`user`/`assistant`/`tool`), **not the index**.
 - Tool-call turns (prompt or completion) have `…tool_calls.*` and **no `.content`** — that's why
   the filter uses `.role`, not `.content`.
 - A handoff span may have **no `user` turn** (the ask is on an earlier span).

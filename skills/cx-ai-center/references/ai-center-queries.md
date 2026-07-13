@@ -184,7 +184,7 @@ preserve order); `redact` strips it. Same content-level caveat as the current co
 | `enduser.id` / `user.id` (+ fallbacks above) | End user |
 | `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` / cache token fields | Token usage |
 | `gen_ai.prompt_price` / `gen_ai.response_price` / `gen_ai.read_cache_price` / `gen_ai.write_cache_price` | Cost (USD) |
-| `gen_ai.response.finish_reasons` | Stop reason (`~ 'length'` = truncated, `~ 'tool_call'` = tool use) |
+| `gen_ai.response.finish_reasons` | Stop reason (`~ 'length'` = truncated; `~ 'tool_'` = tool call — values seen: `tool_call`/`tool_calls`/`tool_use`) |
 | `gen_ai.input.messages` / `gen_ai.output.messages` (current) or `gen_ai.prompt.<n>` / `gen_ai.completion.<n>` (indexed) | Conversation transcript — read via the **Reading conversations (content questions)** queries, don't grep raw |
 | `gen_ai.tool.{name,call.arguments,call.result}` / `gen_ai.tool.definitions` | Tools executed / advertised |
 | `gen_ai.{target}.evaluations.{type}.{score,label}`, `…evaluations.custom.{0..9}.{…}`, `guardrails.triggered` | Eval/guardrail results (see below) |
@@ -320,7 +320,7 @@ Issue Distribution / Top Apps With Issues = the same detection grouped by eval *
 source spans
 | filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'
 | filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
-| create is_tool from (tags['gen_ai.operation.name']:string == 'execute_tool' || tags['gen_ai.response.finish_reasons']:string ~ 'tool_call')
+| create is_tool from (tags['gen_ai.operation.name']:string == 'execute_tool' || tags['gen_ai.response.finish_reasons']:string ~ 'tool_')
 | filter is_tool
 | extract tags['gen_ai.output.messages']:string into msg_tool using regexp(e=/"type"\s*:\s*"tool_call".*?"name"\s*:\s*"(?<name>[^"]+)"/)
 | create tool from firstNonNull(tags['gen_ai.tool.name']:string, msg_tool.name, 'unknown')
@@ -429,7 +429,8 @@ description of the agent's reply. Don't dump raw ID lists.
 - *"Which region / agent is the most active?"* → GenAI filter, no app scope, `groupby
   $l.applicationName, $l.subsystemName aggregate count() as spans | orderby spans desc`.
 - *"Which agent deviates from its intended task?"* → read each agent's **system prompt** +
-  user/assistant turns and judge drift (see the agent-deviation playbook); cite traceIDs.
+  user/assistant turns and judge drift (see the *Agent behaving off-task* bullet in Phase 1);
+  cite traceIDs.
 - *"Compare agent X now vs a week ago"* / *"compare agent X to agent Y"* → run the relevant Q
   twice with different `--start`/`--end` windows, or grouped by `$l.applicationName,$l.subsystemName`,
   and diff the results (e.g. cost, error rate, latency, or the system prompt via a trace from each).

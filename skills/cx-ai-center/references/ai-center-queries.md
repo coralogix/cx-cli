@@ -105,48 +105,81 @@ for series); duration = `$m.duration` (µs).
 `tool` / `system`, part `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
 `blob`/`file`/`uri`.
 
-**What to read — the actual conversation, not tags.** For any question about *what was said*
-(quality, satisfaction, hallucination, whether the user repeated themselves, did the agent answer):
-read the **whole `input.messages` + `output.messages`** (or `prompt.<n>` + `completion.<n>`),
-**every turn except the system prompt**. Verdict/score tags are a summary, not the content.
-- Turns: `role:"user"` (the asks), `role:"assistant"` (answers + `tool_call`s), `role:"tool"`
-  (tool results). Message `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
-  `blob`/`file`/`uri`.
-- **Skip the system prompt** — the `role:"system"` message, or the separate
-  `gen_ai.system_instructions` tag. It's static and often large; not what the user said.
+**Reading conversations (content questions).** For "are `<APP>`/`<SUB>` customers satisfied",
+"do users repeat themselves", quality, hallucination, "did the agent answer" — the answer is in
+the **user asks + model replies**, not verdict/score tags. Read the user's `type:"text"` messages
+and the model's `type:"text"` replies. **Build the query to exclude** the system prompt
+(`role:"system"` turn or the `gen_ai.system_instructions` tag) and tool traffic (`tool_call` /
+`tool_call_response`, `role:"tool"`) so they never enter the result — the system prompt especially
+would bloat context. (Read the system prompt only when the question is whether the agent followed
+its instructions.)
 
-**Two conventions:**
-- **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — one JSON blob per side, each
-  turn `{role, parts:[{type, content}]}`.
-- **Older indexed:** one tag per message — `gen_ai.prompt.<n>.{role,content}` (input),
-  `gen_ai.completion.<n>.{role,content}` (output), `n = 0,1,2,…`.
+**Flow:** (1) filter to the app — `$l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'`;
+(2) key each conversation — `firstNonNull(tags['gen_ai.conversation.id']:string, $d.traceID)`;
+(3) extract only user + model text (below); read each conversation's turns in order, judge from the
+user's side.
 
-Prefer `input.messages` / `output.messages`; when null, use the indexed tags.
+**Two conventions** — pick by which tags exist: use the **Current** query when
+`gen_ai.input.messages` is present; use the **Indexed** query when `gen_ai.prompt.0.role` is present.
+- **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — one JSON blob per side.
+- **Older indexed:** `gen_ai.prompt.<n>.{role,content}` / `gen_ai.completion.<n>.{role,content}`.
 
-**Read the conversation** — fetch both sides and read every turn, ignoring the `role:"system"` one:
+**Current convention — general conversation read.** Parse the messages JSON with `jsonobject()`,
+keep `user`/`assistant` roles (drops `system` + `tool`) and `type:"text"` parts (drops `tool_call`
+/ `tool_call_response`), and collect one transcript per span. Scope by adding
+`| filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'` after `source spans`; a
+span's `input.messages` accumulates the prior turns, so the fullest span of a conversation holds the
+whole history:
 ```dataprime
 source spans
-| filter $d.traceID == '<trace-id>' && tags['gen_ai.input.messages'] != null
-| choose $d.spanID as span_id, tags['gen_ai.input.messages'] as input, tags['gen_ai.output.messages'] as output
+| filter $d.tags['gen_ai.input.messages'] != null || $d.tags['gen_ai.output.messages'] != null
+| create input_json from concat('{"messages":', firstNonNull($d.tags['gen_ai.input.messages'], '[]'), '}')
+| create output_json from concat('{"messages":', firstNonNull($d.tags['gen_ai.output.messages'], '[]'), '}')
+| extract $d.input_json into input_parsed using jsonobject()
+| extract $d.output_json into output_parsed using jsonobject()
+| create all_messages from arrayConcat($d.input_parsed.messages, $d.output_parsed.messages)
+| explode $d.all_messages into $d.message original preserve
+| filter ['user','assistant'].arrayContains($d.message.role)
+| explode $d.message.parts into $d.part original preserve
+| filter $d.part.type == 'text' && trim(firstNonNull($d.part.content, '')) != ''
+| create line from concat($d.message.role, ': ', $d.part.content)
+| groupby $d.traceID as trace_id, $d.spanID as span_id aggregate collect($d.line) as lines
+| create conversation_text from arrayJoin($d.lines, '\n')
+| choose trace_id, span_id, conversation_text
 ```
-Indexed: `| choose $d.spanID as span_id, $d.tags as tags` and read the `prompt.<n>` / `completion.<n>`
-keys, skipping `role:"system"`.
+This keeps `type:"text"` parts only. Some SDKs embed model reasoning (`<thinking>…</thinking>`) or
+serialize a tool call into a text part (e.g. `ResponseFunctionToolCall(…)`) — those are inside the
+content, so they can appear in the transcript; treat them as noise when judging.
 
-**Extract one field at scale** — only when you need *just* the user or model text as a column to
-aggregate over many spans (e.g. count/group), not to read a conversation. Also skips the system
-prompt (`(?:[^"\\]|\\.)*` spans escaped quotes so long messages aren't truncated):
+Aggregate instead of read (e.g. top user questions): keep only `$d.message.role == 'user'` before
+the parts explode, then `| groupby $d.part.content aggregate count() as times | orderby times desc`.
+
+**Indexed convention — general conversation read.** The messages are separate numbered tags
+(`gen_ai.prompt.<n>.*`), so there's no JSON string to parse and DataPrime can't enumerate the
+numbered keys directly. Instead serialize the whole span with `$d:string` and `multi_regexp` every
+`role`/`content` pair at once (any message count, no hardcoded range); group by index to re-pair
+role with content, then keep `user`/`assistant` with non-empty content (drops `system`, `role:"tool"`
+results, and tool-call turns which have no `.content`):
 ```dataprime
-| extract tags['gen_ai.input.messages']:string into u using regexp(e=/"role"\s*:\s*"user"[\s\S]*?"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
-| extract tags['gen_ai.output.messages']:string into a using regexp(e=/"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
-| choose $d.traceID as trace_id, u.text as user_input, a.text as model_output
+source spans
+| filter $d.tags['gen_ai.prompt.0.role'] != null
+| create doc_json from $d:string
+| extract doc_json into matches using multi_regexp(e=/"gen_ai\.(prompt|completion)\.(\d+)\.(role|content)":"((?:[^"\\]|\\.)*)"/)
+| explode matches into m original preserve
+| extract m into p using regexp(e=/"gen_ai\.(?<grp>prompt|completion)\.(?<idx>\d+)\.(?<kind>role|content)":"(?<value>(?:[^"\\]|\\.)*)"/)
+| groupby $d.traceID as trace_id, $d.spanID as span_id, p.grp:string as grp, p.idx:number as idx
+    aggregate any_value(if(p.kind == 'role', p.value:string, null)) as role,
+              any_value(if(p.kind == 'content', p.value:string, null)) as content
+| filter (role == 'user' || role == 'assistant') && content != null && trim(content) != ''
+| create line from concat(if(grp == 'prompt', '0', '1'), ':', padLeft(idx:string, 5, '0'), ':::', role, ': ', content)
+| groupby trace_id, span_id aggregate arrayJoin(arraySort(collect(line)), '\n') as conversation_text
+| redact conversation_text matching /[01]:\d{5}:::/ to ''
+| choose trace_id, span_id, conversation_text
 ```
-All user turns — `multi_regexp` + `explode`:
-```dataprime
-| extract tags['gen_ai.input.messages']:string into turns using multi_regexp(e=/"role"\s*:\s*"user"[\s\S]*?"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?:[^"\\]|\\.)*"/)
-| explode turns into turn original preserve
-| extract turn into m using regexp(e=/"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
-| choose $d.traceID as trace_id, m.text as user_input
-```
+The `grp`/`idx` sort prefix orders prompt-before-completion and ascending index (`collect` doesn't
+preserve order); `redact` strips it. Same content-level caveat as the current convention
+(`<thinking>…` / tool-call-as-text can appear). Scope with
+`| filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'`.
 
 **Span attributes (GenAI spans).** Span kind — `gen_ai.operation.name`: `chat` (also
 `generate_content`, `text_completion`), `embeddings`, `retrieval` (RAG), `create_agent`,

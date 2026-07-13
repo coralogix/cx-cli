@@ -30,7 +30,7 @@ errors, and tool calls. Two conventions store the conversation — current
 `gen_ai.completion.<n>`); see **Reading conversations (content questions)** for each one's exact
 shape and how to read it. Evaluations, when configured, add **optional** verdict tags on the GenAI
 span; guardrails are **optional** too and live on **separate** guardrail spans
-(`otel.library.name == 'cx_guardrails.client'`), not on the GenAI span. **Match the data to the
+(`otel.library.name == 'cx_guardrails.client'`). **Match the data to the
 question:** for **content** questions (quality, hallucination, sentiment, frustration,
 satisfaction, topics) read the conversation and reason about it; for everything else use the
 relevant tags/aggregations. For plain dialogue read the **`user`**/**`assistant`** turns (via the **Reading conversations

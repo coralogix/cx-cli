@@ -29,9 +29,11 @@ answers questions about AI apps from two sources:
   See [references/ai-center-queries.md](references/ai-center-queries.md) for the full,
   runnable query library, span schema, and playbooks.
 
-A single question often spans both: e.g. *"which apps lack guardrails"* is config
-(`cx ai-center applications list`), while *"what are users asking my chatbot"* is telemetry
-(`cx spans '…'`, reading the conversation from the GenAI spans).
+Match the source to the question: *"which apps lack guardrails"* → config
+(`cx ai-center applications list`); *"what are users asking my chatbot"* → telemetry
+(`cx spans '…'`, reading the conversation from the GenAI spans). Some questions need **both** —
+e.g. *"is my chatbot's PII policy actually catching PII?"* joins config (is the policy enabled)
+with telemetry (the PII verdicts + the messages).
 
 ---
 

@@ -105,12 +105,12 @@ for series); duration = `$m.duration` (µs).
 `tool` / `system`, part `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
 `blob`/`file`/`uri`.
 
-**What to read (both encodings):**
+**What to read (both conventions):**
 - **User input** = `type:"text"` parts of `role:"user"` messages — read all of them.
 - **Model output** = `type:"text"` parts of the response.
 - **System prompt** = the `role:"system"` message's text.
 
-**Two encodings:**
+**Two conventions:**
 - **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — one JSON blob per side, each
   turn `{role, parts:[{type, content}]}`.
 - **Older indexed:** one tag per message — `gen_ai.prompt.<n>.{role,content}` (input),

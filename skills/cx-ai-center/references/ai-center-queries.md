@@ -24,17 +24,21 @@ policies, coverage, pricing) use the `cx ai-center` commands documented in the p
 
 ## Golden rule: read the interactions, not just the verdicts
 
-Each interaction's spans carry the **conversation** plus model, tokens, cost, latency, errors,
-and tool calls. Two conventions store the conversation: **current** — `gen_ai.input.messages` /
-`gen_ai.output.messages` (one JSON-array string per side); **older indexed** —
-`gen_ai.prompt.<n>.{role,content}` / `gen_ai.completion.<n>.{role,content}` (one tag per message).
-Evaluations, when configured, add **optional** verdict tags on the GenAI span; guardrails are
-**optional** too and live on **separate** guardrail spans
+Each interaction's **GenAI spans** carry the **conversation** plus model, tokens, cost, latency,
+errors, and tool calls. Two conventions store the conversation — current
+(`gen_ai.input.messages` / `gen_ai.output.messages`) and older indexed (`gen_ai.prompt.<n>` /
+`gen_ai.completion.<n>`); see **Reading conversations (content questions)** for each one's exact
+shape and how to read it. Evaluations, when configured, add **optional** verdict tags on the GenAI
+span; guardrails are **optional** too and live on **separate** guardrail spans
 (`otel.library.name == 'cx_guardrails.client'`), not on the GenAI span. **Match the data to the
 question:** for **content** questions (quality, hallucination, sentiment, frustration,
 satisfaction, topics) read the conversation and reason about it; for everything else use the
-relevant tags/aggregations. Pull the system prompt only for system-prompt questions
-(`gen_ai.system_instructions` and/or the `role:'system'` turn, usually index 0 — check both).
+relevant tags/aggregations. For plain dialogue read the **`user`**/**`assistant`** turns (via the **Reading conversations
+(content questions)** queries below), but the **`system`**/**`tool`** turns matter too when you're
+debugging an agent or sub-agent (the tool calls it made and the task it was given). Pull the system prompt only for system-prompt questions —
+it lives in the `gen_ai.system_instructions` tag **or** the `role:"system"` turn: the first
+`role:"system"` message inside `gen_ai.input.messages` (current) / `gen_ai.prompt.0.content` when
+`gen_ai.prompt.0.role == "system"` (indexed). Check both places.
 
 Read the interactions the question needs, ordered by recency — don't add a manual `limit`.
 Report how many matched vs. how many you read (e.g. "312 matched; I read the 200 most
@@ -87,9 +91,11 @@ for series); duration = `$m.duration` (µs).
 | create user from firstNonNull(tags['enduser.id'], tags['user.id'], tags['gen_ai.request.user'], tags['traceloop.association.properties.user_id'], tags['langsmith.metadata.user_id'])
 ```
 
-**Message formats.** Messages are `{role, parts:[{type, content}]}`; roles `user` / `assistant` /
-`tool` / `system`, part `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
-`blob`/`file`/`uri`.
+**Message formats.** `gen_ai.input.messages` / `gen_ai.output.messages` are JSON arrays of
+`{role, parts:[{type, content}]}` (part `type` = `text`, `tool_call`, `tool_call_response`,
+`reasoning`, `blob`/`file`/`uri`). (The older indexed convention stores the same
+roles as flat per-message tags — `gen_ai.prompt.<n>.{role,content}` /
+`gen_ai.completion.<n>.{role,content}`, no `parts` array — see Reading conversations below.)
 
 ### Reading conversations (content questions)
 
@@ -102,15 +108,18 @@ and the model's `type:"text"` replies. **Build the query to exclude** the system
 would bloat context. (Read the system prompt only when the question is whether the agent followed
 its instructions.)
 
-**Flow:** (1) filter to the app — `$l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'`;
-(2) key each conversation — `firstNonNull(tags['gen_ai.conversation.id']:string, $d.traceID)`;
-(3) extract only user + model text (below); read each conversation's turns in order, judge from the
-user's side.
-
-**Two conventions** — pick by which tags exist: use the **Current** query when
-`gen_ai.input.messages` is present; use the **Indexed** query when `gen_ai.prompt.0.role` is present.
-- **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — one JSON blob per side.
-- **Older indexed:** `gen_ai.prompt.<n>.{role,content}` / `gen_ai.completion.<n>.{role,content}`.
+**Two conventions carry the conversation — handle both** (pick by which tags exist: use the
+**Current** query when `gen_ai.input.messages` is present, the **Indexed** query when
+`gen_ai.prompt.0.role` is present):
+- **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — a **single JSON blob** per side
+  holding **all** turns as `{role, parts:[{type, content}]}` objects.
+- **Older indexed:** **one tag per message**, numbered from 0 — `gen_ai.prompt.<n>.role` /
+  `gen_ai.prompt.<n>.content` for each **input** message and `gen_ai.completion.<n>.role` /
+  `gen_ai.completion.<n>.content` for the **output** message(s). `gen_ai.prompt.0` is the first
+  message (usually the system prompt); the conversation is spread across `prompt.0, prompt.1, …`
+  and `completion.0, …`. An assistant turn that calls tools carries
+  `gen_ai.prompt.<n>.tool_calls.*` (function name/arguments/id) and **no** `.content`; a tool
+  **result** comes back as `role:"tool"` with its output in `.content`.
 
 **Current convention — general conversation read.** Parse the messages JSON with `jsonobject()`,
 keep `user`/`assistant` roles (drops `system` + `tool`) and `type:"text"` parts (drops `tool_call`

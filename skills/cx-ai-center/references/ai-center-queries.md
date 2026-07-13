@@ -105,10 +105,15 @@ for series); duration = `$m.duration` (µs).
 `tool` / `system`, part `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
 `blob`/`file`/`uri`.
 
-**What to read (both conventions):**
-- **User input** = `type:"text"` parts of `role:"user"` messages — read all of them.
-- **Model output** = `type:"text"` parts of the response.
-- **System prompt** = the `role:"system"` message's text.
+**What to read — the actual conversation, not tags.** For any question about *what was said*
+(quality, satisfaction, hallucination, whether the user repeated themselves, did the agent answer):
+read the **whole `input.messages` + `output.messages`** (or `prompt.<n>` + `completion.<n>`),
+**every turn except the system prompt**. Verdict/score tags are a summary, not the content.
+- Turns: `role:"user"` (the asks), `role:"assistant"` (answers + `tool_call`s), `role:"tool"`
+  (tool results). Message `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
+  `blob`/`file`/`uri`.
+- **Skip the system prompt** — the `role:"system"` message, or the separate
+  `gen_ai.system_instructions` tag. It's static and often large; not what the user said.
 
 **Two conventions:**
 - **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — one JSON blob per side, each
@@ -118,10 +123,18 @@ for series); duration = `$m.duration` (µs).
 
 Prefer `input.messages` / `output.messages`; when null, use the indexed tags.
 
-**Current convention — extract text.** Use the regex (not a raw fetch of `input.messages`): it
-returns only user + model text and never the system prompt, whether that prompt sits at index 0 of
-the array or in a separate tag. (`(?:[^"\\]|\\.)*` spans escaped quotes so long messages aren't
-truncated.)
+**Read the conversation** — fetch both sides and read every turn, ignoring the `role:"system"` one:
+```dataprime
+source spans
+| filter $d.traceID == '<trace-id>' && tags['gen_ai.input.messages'] != null
+| choose $d.spanID as span_id, tags['gen_ai.input.messages'] as input, tags['gen_ai.output.messages'] as output
+```
+Indexed: `| choose $d.spanID as span_id, $d.tags as tags` and read the `prompt.<n>` / `completion.<n>`
+keys, skipping `role:"system"`.
+
+**Extract one field at scale** — only when you need *just* the user or model text as a column to
+aggregate over many spans (e.g. count/group), not to read a conversation. Also skips the system
+prompt (`(?:[^"\\]|\\.)*` spans escaped quotes so long messages aren't truncated):
 ```dataprime
 | extract tags['gen_ai.input.messages']:string into u using regexp(e=/"role"\s*:\s*"user"[\s\S]*?"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
 | extract tags['gen_ai.output.messages']:string into a using regexp(e=/"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
@@ -134,16 +147,6 @@ All user turns — `multi_regexp` + `explode`:
 | extract turn into m using regexp(e=/"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
 | choose $d.traceID as trace_id, m.text as user_input
 ```
-
-**Indexed convention — same rule, flat tags:**
-```dataprime
-source spans
-| filter $d.traceID == '<trace-id>' && tags['gen_ai.prompt.0.role'] != null
-| choose $d.spanID as span_id, $d.tags as tags
-```
-- **User input** = each `prompt.<n>` with `.role == "user"` → `.content`.
-- **Model output** = `completion.<n>.content`.
-- **System prompt** = the `prompt.<n>` with `.role == "system"` → `.content`.
 
 **Span attributes (GenAI spans).** Span kind — `gen_ai.operation.name`: `chat` (also
 `generate_content`, `text_completion`), `embeddings`, `retrieval` (RAG), `create_agent`,

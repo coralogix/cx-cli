@@ -129,8 +129,22 @@ matching `list` command (never guess or make the user paste a UUID).
 
 The `--from-file` bodies for `evaluations` and `custom-evaluations` match the AI v3 API
 shape verbatim; use `-` to read JSON from stdin. **Exception:** `model-pricing set` takes just
-the raw `model→price` map (e.g. `{"gpt-4o": { ... }}`) — cx wraps it as `{"prices": …}` for you,
-so do **not** include the outer `prices` envelope.
+the raw `model→price` map — cx wraps it as `{"prices": …}` for you, so do **not** include the
+outer `prices` envelope. Each model maps to a price object; all four fields are optional doubles
+(USD per **one million** tokens), omit the ones that don't apply:
+
+```json
+{
+  "gpt-4o": {
+    "inputPricePerMillionTokens": 2.5,
+    "outputPricePerMillionTokens": 10,
+    "cacheReadPricePerMillionTokens": 1.25,
+    "cacheWritePricePerMillionTokens": 3.75
+  }
+}
+```
+
+An empty map `{}` clears all overrides (set replaces the whole set — it's team-wide, new data only).
 
 ---
 

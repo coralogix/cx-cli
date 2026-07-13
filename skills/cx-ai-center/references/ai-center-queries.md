@@ -82,7 +82,7 @@ returns wrong answers.
 To also include guardrail spans (for AI-span counts and issue/guardrail rates),
 add `|| tags['otel.library.name']:string == 'cx_guardrails.client'`. Guardrail spans are marked
 by `tags['otel.library.name'] == 'cx_guardrails.client'`; from there, filter by whatever the
-question needs — `tags['guardrails.triggered'] == 'true'` for **fired** guardrails, `== 'false'`
+question needs — `tags['guardrails.triggered'] == 'true'` for **triggered** guardrails, `== 'false'`
 for ones that **passed**, or the per-policy `gen_ai.{prompt|response}.guardrails.{policy}.triggered`
 tags for a specific guardrail.
 
@@ -114,6 +114,7 @@ not `user`); `system` = the system prompt (usually index 0). To read what the us
 > - **Older indexed:** **one tag per message**, numbered from 0 — `gen_ai.prompt.<n>.role` /
 >   `gen_ai.prompt.<n>.content` for each **input** message (`n = 0,1,2,…` in order) and
 >   `gen_ai.completion.<n>.role` / `gen_ai.completion.<n>.content` for the **output** message(s).
+>   Tool-call turns (prompt **or** completion) carry `…tool_calls.*` instead of a `.content`.
 >   So `gen_ai.prompt.0.content` is just the **first** message; the whole conversation is spread
 >   across `prompt.0, prompt.1, …` and `completion.0, …`.
 >
@@ -141,6 +142,37 @@ Every turn (multi-turn): concat input history with the model's reply, match with
 ```
 (`explode` normally drops the source row's other fields; `original preserve` keeps them, so each
 turn still carries its `traceID`.)
+
+**Indexed convention** (`gen_ai.prompt.<n>` / `gen_ai.completion.<n>`) — when `input.messages` /
+`output.messages` are absent. Here each message is **its own numbered tag**
+(`gen_ai.prompt.<n>.role` / `.content`, `gen_ai.completion.<n>.role` / `.content`; `n = 0,1,2,…`).
+DataPrime has no way to iterate an unknown set of numbered keys (there's no `tags.keys()`), so
+**don't** try to reconstruct it inside the query. Instead fetch the whole tag map for the one span
+that carries the prompt tags and read the numbered keys off the returned object:
+```dataprime
+source spans
+| filter tags['gen_ai.prompt.0.role'] != null   // the LLM span holding the indexed prompt tags
+| choose $d.traceID as trace_id, $d.tags as tags
+| limit 1
+```
+The returned `tags` object contains every `gen_ai.prompt.<n>.*` and `gen_ai.completion.<n>.*`;
+read them in index order — **the picking happens on the JSON you got back, not in DataPrime.** To
+get the latest user ask, scan the `prompt.<n>.role` entries and take the **highest `n` whose
+`.role == "user"`**, then read that `prompt.<n>.content`; the reply is the `completion.<n>`
+turn(s). (There's no in-query way to compute this — DataPrime can't iterate the numbered keys, so
+the agent does it on the returned object.) Notes from real spans:
+- **Filter on `.role`, not `.content`** — every message has a `.role`, but tool-call turns
+  (prompt **or** completion) carry `…tool_calls.*` and **no `.content`**, so a `.content` filter
+  can miss the span.
+- **Key off `.role`, not the index.** The system prompt is the turn whose `.role == "system"`
+  (its `.content` is the system prompt) — typically `.0`, but identify it by role, not position.
+  The user's ask, when present, is the next `role:"user"` turn (e.g. `prompt.1`). Roles are
+  `system` / `user` / `assistant` / `tool`. A multi-agent/handoff span may have **no `user` turn
+  at all** (the ask lives on an earlier agent's span) — so read the roles, don't assume the ask is
+  here.
+- Indices run as high as the history is long (a real weather-agent span used
+  `gen_ai.prompt.0`…`.11`), which is exactly why this "grab the map, pick from the JSON" approach
+  beats any fixed index ladder — no hard-coded ceiling.
 
 **Span attributes (GenAI spans).** Span kind — `gen_ai.operation.name`: `chat` (also
 `generate_content`, `text_completion`), `embeddings`, `retrieval` (RAG), `create_agent`,
@@ -191,7 +223,7 @@ Quality or Security).
 
 **Guardrails** act in real time via the `cx-guardrails` SDK and **block** on violation. Each
 invocation is a span (`otel.library.name == 'cx_guardrails.client'`) with
-`tags['guardrails.triggered'] == 'true'` when it fired; `$l.operationName` starts with
+`tags['guardrails.triggered'] == 'true'` when it triggered; `$l.operationName` starts with
 `guardrails.prompt`/`guardrails.response`. Prebuilt: Prompt Injection, PII, Toxicity — plus
 **custom** guardrails.
 
@@ -271,7 +303,7 @@ source spans
 For an errors **trend over time**, add `| groupby roundTime($m.timestamp, <interval>ms) as Time` before the aggregate and `| orderby Time` after. Top errored apps/spans: `groupby $l.applicationName,$l.subsystemName` (or `$l.operationName`) `aggregate count_if(tags['otel.status_code']:string=='ERROR') as errors | orderby errors desc | limit 5`.
 
 **Q9 — Issue rate (trace-level).** An issue on a target = any built-in eval `label == 'p1'`
-OR any custom eval `custom.{0..9}` with `triggered == 'true'` OR a guardrail that fired on
+OR any custom eval `custom.{0..9}` with `triggered == 'true'` OR a guardrail that triggered on
 that target. Repeat the `{eval}` term per enabled eval type and the `custom.{n}` term per
 configured index (for AI-SPM use only security types):
 ```dataprime

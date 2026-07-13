@@ -101,66 +101,47 @@ for series); duration = `$m.duration` (µs).
 | create user from firstNonNull(tags['enduser.id'], tags['user.id'], tags['gen_ai.request.user'], tags['traceloop.association.properties.user_id'], tags['langsmith.metadata.user_id'])
 ```
 
-**Message formats.** `gen_ai.input.messages` / `gen_ai.output.messages` are JSON arrays of
-`{role, parts:[{type, content}]}` (part `type` = `text`, `tool_call`, `tool_call_response`,
-`reasoning`, `blob`/`file`/`uri`). Roles: `user` = the end user's turn; `assistant` = the
-model's turn (may carry `tool_call` parts); `tool` = a tool's output fed back (`role:'tool'`,
-not `user`); `system` = the system prompt (usually index 0). To read what the user asked, take
-`text` parts of `role:'user'` messages.
+**Message formats.** Messages are `{role, parts:[{type, content}]}`; roles `user` / `assistant` /
+`tool` / `system`, part `type` ∈ `text`, `tool_call`, `tool_call_response`, `reasoning`,
+`blob`/`file`/`uri`.
 
-> **Two conventions carry the conversation — handle both.**
-> - **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — a **single** JSON blob
->   holding **all** turns.
-> - **Older indexed:** **one tag per message**, numbered from 0 — `gen_ai.prompt.<n>.role` /
->   `gen_ai.prompt.<n>.content` for each **input** message (`n = 0,1,2,…` in order) and
->   `gen_ai.completion.<n>.role` / `gen_ai.completion.<n>.content` for the **output** message(s).
->   Tool-call turns (prompt **or** completion) carry `…tool_calls.*` instead of a `.content`.
->   So `gen_ai.prompt.0.content` is just the **first** message; the whole conversation is spread
->   across `prompt.0, prompt.1, …` and `completion.0, …`.
->
-> Different SDKs emit one convention or the other. **Prefer `input.messages` / `output.messages`;
-> when they are null, fall back to the indexed keys** — read `gen_ai.prompt.<n>` /
-> `gen_ai.completion.<n>` across all `n` (not just `.0`) to reconstruct the full conversation.
-> Apply this fallback everywhere you read prompt/response content below.
+**What to read (both encodings):**
+- **User input** = `type:"text"` parts of `role:"user"` messages — read all of them.
+- **Model output** = `type:"text"` parts of the response.
+- **System prompt** = the `role:"system"` message's text.
 
-**Extracting conversation text** (cheaper than parsing the whole blob). First-turn user ask +
-assistant reply — note the content capture `(?:[^"\\]|\\.)*` spans escaped quotes so messages
-aren't truncated:
+**Two encodings:**
+- **Current:** `gen_ai.input.messages` / `gen_ai.output.messages` — one JSON blob per side, each
+  turn `{role, parts:[{type, content}]}`.
+- **Older indexed:** one tag per message — `gen_ai.prompt.<n>.{role,content}` (input),
+  `gen_ai.completion.<n>.{role,content}` (output), `n = 0,1,2,…`.
+
+Prefer `input.messages` / `output.messages`; when null, use the indexed tags.
+
+**Current convention — extract text** (`(?:[^"\\]|\\.)*` spans escaped quotes so long messages
+aren't truncated):
 ```dataprime
 | extract tags['gen_ai.input.messages']:string into u using regexp(e=/"role"\s*:\s*"user"[\s\S]*?"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
-| extract tags['gen_ai.output.messages']:string into a using regexp(e=/"role"\s*:\s*"assistant"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
-| choose $d.traceID as trace_id, u.text as user_text, a.text as assistant_text
+| extract tags['gen_ai.output.messages']:string into a using regexp(e=/"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
+| choose $d.traceID as trace_id, u.text as user_input, a.text as model_output
 ```
-Every turn (multi-turn): concat input history with the model's reply, match with
-`multi_regexp`, `explode`, re-extract:
+All user turns — `multi_regexp` + `explode`:
 ```dataprime
-| create convo from concat(tags['gen_ai.input.messages']:string, tags['gen_ai.output.messages']:string)
-| extract convo into turns using multi_regexp(e=/"role"\s*:\s*"(?:user|assistant)"[\s\S]*?"content"\s*:\s*"(?:[^"\\]|\\.)*"/)
-| explode turns into turn original preserve   // `original preserve` keeps the parent row's other columns (e.g. $d.traceID) on every exploded turn
-| extract turn into m using regexp(e=/"role"\s*:\s*"(?<role>\w+)"[\s\S]*?"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
-| choose $d.traceID as trace_id, m.role, m.text
+| extract tags['gen_ai.input.messages']:string into turns using multi_regexp(e=/"role"\s*:\s*"user"[\s\S]*?"type"\s*:\s*"text"[\s\S]*?"content"\s*:\s*"(?:[^"\\]|\\.)*"/)
+| explode turns into turn original preserve
+| extract turn into m using regexp(e=/"content"\s*:\s*"(?<text>(?:[^"\\]|\\.)*)"/)
+| choose $d.traceID as trace_id, m.text as user_input
 ```
-(`explode` normally drops the source row's other fields; `original preserve` keeps them, so each
-turn still carries its `traceID`.)
 
-**Indexed convention** (`gen_ai.prompt.<n>` / `gen_ai.completion.<n>`, `n = 0,1,2,…`) — when
-`input.messages` / `output.messages` are absent. One numbered tag per message. Fetch the whole map
-and pick from the JSON (DataPrime can't iterate numbered keys):
+**Indexed convention — same rule, flat tags:**
 ```dataprime
 source spans
-| filter tags['gen_ai.prompt.0.role'] != null
-| choose $d.traceID as trace_id, $d.tags as tags
-| limit 1
+| filter $d.traceID == '<trace-id>' && tags['gen_ai.prompt.0.role'] != null
+| choose $d.spanID as span_id, $d.tags as tags
 ```
-- **System prompt:** the `prompt.<n>` where `.role == "system"` → read its `.content`.
-- **User input (full history):** the highest `n` where `prompt.<n>.role == "user"` → its
-  `.content`. The last user turn carries the accumulated conversation, so it's the one to read.
-- **Model output:** the `completion.<n>` turn(s) → `.content` (or `…tool_calls.*` if it answered
-  with a tool call).
-- Key off `.role` (`system`/`user`/`assistant`/`tool`), **not the index**.
-- Tool-call turns (prompt or completion) have `…tool_calls.*` and **no `.content`** — that's why
-  the filter uses `.role`, not `.content`.
-- A handoff span may have **no `user` turn** (the ask is on an earlier span).
+- **User input** = each `prompt.<n>` with `.role == "user"` → `.content`.
+- **Model output** = `completion.<n>.content`.
+- **System prompt** = the `prompt.<n>` with `.role == "system"` → `.content`.
 
 **Span attributes (GenAI spans).** Span kind — `gen_ai.operation.name`: `chat` (also
 `generate_content`, `text_completion`), `embeddings`, `retrieval` (RAG), `create_agent`,

@@ -99,15 +99,6 @@ roles as flat per-message tags — `gen_ai.prompt.<n>.{role,content}` /
 
 ### Reading conversations (content questions)
 
-For "are `<APP>`/`<SUB>` customers satisfied",
-"do users repeat themselves", quality, hallucination, "did the agent answer" — the answer is in
-the **user asks + model replies**, not verdict/score tags. Read the user's `type:"text"` messages
-and the model's `type:"text"` replies. **Build the query to exclude** the system prompt
-(`role:"system"` turn or the `gen_ai.system_instructions` tag) and tool traffic (`tool_call` /
-`tool_call_response`, `role:"tool"`) so they never enter the result — the system prompt especially
-would bloat context. (Read the system prompt only when the question is whether the agent followed
-its instructions.)
-
 **Two conventions carry the conversation — handle both** (pick by which tags exist: use the
 **Current** query when `gen_ai.input.messages` is present, the **Indexed** query when
 `gen_ai.prompt.0.role` is present):

@@ -35,8 +35,8 @@ question:** for **content** questions (quality, hallucination, sentiment, frustr
 satisfaction, topics) read the conversation and reason about it; for everything else use the
 relevant tags/aggregations. For plain dialogue read the **`user`**/**`assistant`** turns (via the **Reading conversations
 (content questions)** queries below), but the **`system`**/**`tool`** turns matter too when you're
-debugging an agent or sub-agent (the tool calls it made and the task it was given). Pull the system prompt only for system-prompt questions —
-it lives in the `gen_ai.system_instructions` tag **or** the `role:"system"` turn: the first
+debugging an agent or sub-agent (the tool calls it made and the task it was given). The system
+prompt lives in the `gen_ai.system_instructions` tag **or** the `role:"system"` turn: the first
 `role:"system"` message inside `gen_ai.input.messages` (current) / `gen_ai.prompt.0.content` when
 `gen_ai.prompt.0.role == "system"` (indexed). Check both places.
 

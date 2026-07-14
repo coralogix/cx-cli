@@ -40,6 +40,9 @@ Observe:
   views              Manage saved views and view folders
   slos               Manage SLO definitions
 
+AI:
+  ai-center (risky)  Manage AI Center applications, evaluations, policies, and pricing
+
 Detect & Respond:
   alerts             Manage alert definitions and suppression rules
   cases              Manage and triage cases
@@ -98,7 +101,7 @@ All use the Olly KB semantic-search-service API with gateway permission `legacy-
 - `integrations` = extensions + contextual-data
 - `iam` = api-keys + roles + scopes + users + team-groups + ip-access
 
-**Risky commands:** `iam` and `archive` are marked `(risky)` in help output. All write operations (create, update, delete, enable, disable, set, set-status) under these commands require interactive confirmation. Pass `--yes` to skip the prompt (e.g., in scripts or CI). Non-interactive terminals without `--yes` get a clear error. The confirmation logic lives in `src/safety.rs`.
+**Risky commands:** `iam`, `archive`, and `ai-center` are marked `(risky)` in help output. All write operations (create, update, delete, enable, disable, set, set-status) under these commands require interactive confirmation. Pass `--yes` to skip the prompt (e.g., in scripts or CI). Non-interactive terminals without `--yes` get a clear error. The confirmation logic lives in `src/safety.rs`.
 
 ## Architecture
 
@@ -186,6 +189,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx retentions` | `cx-cost-optimization` | Covered |
 | `cx archive` | `cx-cost-optimization` | Covered |
 | `cx cases` | `cx-cases` | Covered |
+| `cx ai-center` | `cx-ai-center` | Covered (loads `ai-center-queries.md` + `dataprime-reference.md` + `spans-querying.md`) |
 | `cx slos` | `cx-slos` | Covered |
 | `cx parsing-rules` | `cx-data-pipeline` | Covered |
 | `cx enrichments` | `cx-data-pipeline` | Covered |

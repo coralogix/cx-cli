@@ -16,6 +16,8 @@ mod harness;
 
 #[path = "e2e/actions.rs"]
 mod actions;
+#[path = "e2e/ai_center/mod.rs"]
+mod ai_center;
 #[path = "e2e/alerts/mod.rs"]
 mod alerts;
 #[path = "e2e/api_keys.rs"]

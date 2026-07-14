@@ -28,3 +28,6 @@
 
 # Claude Code
 .claude/scheduled_tasks.lock
+
+# Local graphify knowledge-graph output (never commit)
+graphify-out/

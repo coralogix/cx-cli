@@ -1,6 +1,6 @@
 [package]
 name = "coralogix-cli"
-version = "0.1.10"
+version = "0.1.13"
 edition = "2021"
 description = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 repository = "https://github.com/coralogix/cx-cli"
@@ -55,6 +55,9 @@ terminal_size = "0.4"
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
 humantime = "2"
+
+# Regex (cases query rule validation)
+regex = "1"
 
 # URL building
 url = "2"

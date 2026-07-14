@@ -362,9 +362,6 @@ source spans
          tags['gen_ai.input.messages']:string as input_messages, tags['gen_ai.output.messages']:string as output_messages
 | orderby ts asc | limit 200
 ```
-This is a raw per-step dump (tools included) for debugging an agent run. For the clean
-user+assistant transcript — either convention, system prompt/tools excluded — use the
-**Reading conversations (content questions)** queries instead.
 
 **Q15 — Evaluation score distribution / trend** (score is a 0–1 float, separate from `p1`):
 ```dataprime

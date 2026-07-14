@@ -55,6 +55,11 @@ copy_refs "cx-telemetry-querying" \
     "rum-querying.md" \
     "rum-fields.md"
 
+# cx-ai-center: DataPrime + spans references for GenAI span analysis
+copy_refs "cx-ai-center" \
+    "dataprime-reference.md" \
+    "spans-querying.md"
+
 # cx-dashboards: query language and data-source references
 copy_refs "cx-dashboards" \
     "dataprime-reference.md" \

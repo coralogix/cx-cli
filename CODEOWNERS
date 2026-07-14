@@ -30,6 +30,10 @@
 /skills/telemetry-querying/            @coralogix/team-cxai
 /assets/                               @coralogix/team-cxai
 
+# === AI Center (GenAI applications, evaluations, policies, pricing) ===
+**/ai_center/                          @coralogix/team-cxai
+/skills/cx-ai-center/                  @coralogix/team-cxai
+
 # === config-surface (alerts, dashboards) ===
 **/alerts/                             @coralogix/team-cxai
 **/dashboards/                         @coralogix/team-cxai

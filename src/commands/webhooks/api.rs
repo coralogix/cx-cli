@@ -37,7 +37,7 @@ impl Webhook {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListWebhooksResponse {
-    #[serde(default)]
+    #[serde(default, rename = "deployed")]
     pub webhooks: Vec<Webhook>,
 }
 
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn deserialize_list_response() {
         let json = json!({
-            "webhooks": [
+            "deployed": [
                 { "id": "wh-001", "name": "Slack Notify", "type": "slack", "url": "https://hooks.slack.com/..." }
             ]
         });
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn deserialize_empty_list() {
-        let json = json!({ "webhooks": [] });
+        let json = json!({ "deployed": [] });
         let resp: ListWebhooksResponse = serde_json::from_value(json).unwrap();
         assert!(resp.webhooks.is_empty());
     }

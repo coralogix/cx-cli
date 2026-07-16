@@ -13,7 +13,7 @@ async fn list_webhooks_from_mock() {
     let server = MockServer::start().await;
 
     let body = json!({
-        "webhooks": [
+        "deployed": [
             { "id": "wh-001", "name": "Slack Notify", "type": "slack", "url": "https://hooks.slack.com/abc" }
         ]
     });
@@ -39,7 +39,7 @@ async fn list_webhooks_with_trailing_slash_endpoint() {
     let server = MockServer::start().await;
 
     let body = json!({
-        "webhooks": [
+        "deployed": [
             { "id": "wh-001", "name": "Slack Notify", "type": "slack", "url": "https://hooks.slack.com/abc" }
         ]
     });

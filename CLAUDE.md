@@ -20,7 +20,7 @@ cargo test --test e2e -- --ignored --test-threads=1   # E2E vs. Coralogix test t
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
-Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
+Rust toolchain is pinned to **1.96.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 

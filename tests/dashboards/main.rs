@@ -1,13 +1,14 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+use rand::RngExt;
 use serde_json::json;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::dashboards::api::DashboardsApi;
 use coralogix_cli::commands::dashboards::{
-    run_catalog, run_delete, run_folders_delete, run_replace,
+    run_catalog, run_check, run_delete, run_folders_delete, run_replace,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -322,4 +323,241 @@ async fn delete_dashboard_folder_from_mock() {
     run_folders_delete(&targets, "folder-xyz")
         .await
         .expect("run_folders_delete should succeed");
+}
+
+// ── run_check (CheckDashboard) ────────────────────────────────────────────────
+
+/// Path of the CheckDashboard endpoint, as called by `DashboardsApi::check`.
+const CHECK_PATH: &str = "/mgmt/openapi/5/dashboards/check/v1";
+
+/// Minimal valid dashboard JSON used for the `--from-file` check tests.
+/// `read_dashboard_body` requires a `layout` field, so include one.
+/// Uses a unique filename per call to avoid races when tests run in parallel.
+fn write_minimal_dashboard() -> std::path::PathBuf {
+    let mut rng = rand::rng();
+    let suffix: String = (0..8)
+        .map(|_| format!("{:02x}", rng.random::<u8>()))
+        .collect();
+    let tmp = std::env::temp_dir().join(format!("cx_test_check_dashboard_{suffix}.json"));
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(&json!({
+            "name": "Test Dashboard",
+            "layout": { "sections": [] }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    tmp
+}
+
+/// Verify that `run_check --from-file` prints the green "valid" message and
+/// exits 0 when the mock returns no issues.
+#[tokio::test]
+async fn run_check_from_file_text_output_valid() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(CHECK_PATH))
+        .and(body_partial_json(
+            json!({ "dashboard": { "layout": { "sections": [] } } }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "issues": [] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = write_minimal_dashboard();
+
+    run_check(
+        &targets,
+        Some(tmp.to_str().unwrap()),
+        None,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("run_check with no issues should succeed (exit 0)");
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+/// Verify that `run_check` returns a non-zero error when the mock returns an
+/// error-severity issue (CI-gate semantics).
+#[tokio::test]
+async fn run_check_with_errors_returns_nonzero() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "issues": [
+            {
+                "severity": "SEVERITY_ERROR",
+                "message": "Widget 'cpu-chart' references undefined variable 'env'",
+                "location": "/sections/0/rows/1/widgets/2"
+            }
+        ]
+    });
+
+    Mock::given(method("POST"))
+        .and(path(CHECK_PATH))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = write_minimal_dashboard();
+
+    let err = run_check(
+        &targets,
+        Some(tmp.to_str().unwrap()),
+        None,
+        OutputFormat::Text,
+    )
+    .await
+    .expect_err("run_check should fail (non-zero) when SEVERITY_ERROR issues are present");
+
+    assert!(
+        err.to_string().contains("error(s)"),
+        "error should mention errors found: {err}"
+    );
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+/// Verify that `run_check` exits 0 when the mock returns only warning-severity
+/// issues (warnings print but do not fail the CI gate).
+#[tokio::test]
+async fn run_check_with_warnings_exits_zero() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "issues": [
+            {
+                "severity": "SEVERITY_WARNING",
+                "message": "Query uses deprecated function 'timeShift'",
+                "location": "/sections/1/rows/0/widgets/0/queries/0"
+            }
+        ]
+    });
+
+    Mock::given(method("POST"))
+        .and(path(CHECK_PATH))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = write_minimal_dashboard();
+
+    run_check(
+        &targets,
+        Some(tmp.to_str().unwrap()),
+        None,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("run_check with only warnings should succeed (exit 0)");
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+/// Verify that `run_check <dashboard_id>` sends the `dashboardId` oneof field
+/// in the request body (not the `dashboard` arm).
+#[tokio::test]
+async fn run_check_by_id_sends_dashboard_id_in_body() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(CHECK_PATH))
+        .and(body_partial_json(json!({ "dashboardId": "dash-abc-123" })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "issues": [] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    run_check(&targets, None, Some("dash-abc-123"), OutputFormat::Text)
+        .await
+        .expect("run_check by id should succeed");
+}
+
+/// Verify that `run_check` renders issues as a JSON array in json output mode.
+#[tokio::test]
+async fn run_check_json_output_succeeds() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "issues": [
+            {
+                "severity": "SEVERITY_ERROR",
+                "message": "bad widget",
+                "location": "/sections/0/rows/0/widgets/0"
+            },
+            {
+                "severity": "SEVERITY_WARNING",
+                "message": "deprecated fn",
+                "location": "/sections/1/rows/0/widgets/0/queries/0"
+            }
+        ]
+    });
+
+    Mock::given(method("POST"))
+        .and(path(CHECK_PATH))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let tmp = write_minimal_dashboard();
+
+    // JSON output path runs even when errors are present; the non-zero exit
+    // happens *after* rendering. We assert the render path does not panic and
+    // that the call still returns the expected Err (CI gate).
+    let err = run_check(
+        &targets,
+        Some(tmp.to_str().unwrap()),
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("run_check should fail when SEVERITY_ERROR issues are present");
+
+    assert!(
+        err.to_string().contains("error(s)"),
+        "error should mention errors found: {err}"
+    );
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+/// Verify that `run_check` bails with a clear message when neither
+/// `--from-file` nor `<dashboard_id>` is supplied (the runtime guard that
+/// backs up clap's `conflicts_with`).
+#[tokio::test]
+async fn run_check_neither_source_fails() {
+    let server = MockServer::start().await;
+    let target = common::test_target("mock-profile", &server.uri());
+    let targets = vec![target];
+
+    let err = run_check(&targets, None, None, OutputFormat::Text)
+        .await
+        .expect_err("run_check should fail when no source is supplied");
+
+    assert!(
+        err.to_string().contains("specify either"),
+        "error should direct the user to supply a source: {err}"
+    );
 }

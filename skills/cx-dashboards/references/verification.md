@@ -1,6 +1,6 @@
 # Phase 5: Live-verify every query through the cx CLI
 
-Every PromQL and DataPrime query in the draft dashboard must successfully run through `cx` before Phase 7 ships it. This is where invented metric names, typoed field paths, and malformed DataPrime pipelines get caught.
+Every PromQL and DataPrime query in the draft dashboard must successfully run through `cx` before Phase 8 ships it. This is where invented metric names, typoed field paths, and malformed DataPrime pipelines get caught.
 
 ---
 

@@ -12,7 +12,7 @@ cargo test -- --ignored             # Run integration tests (system keyring requ
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
-Rust toolchain is pinned to **1.94.1** via `rust-toolchain.toml`.
+Rust toolchain is pinned to **1.96.1** via `rust-toolchain.toml`.
 
 Before submitting a PR, verify:
 

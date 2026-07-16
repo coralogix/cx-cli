@@ -1,6 +1,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+use rand::RngExt;
 use serde_json::json;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -331,8 +332,13 @@ const CHECK_PATH: &str = "/mgmt/openapi/5/dashboards/check/v1";
 
 /// Minimal valid dashboard JSON used for the `--from-file` check tests.
 /// `read_dashboard_body` requires a `layout` field, so include one.
+/// Uses a unique filename per call to avoid races when tests run in parallel.
 fn write_minimal_dashboard() -> std::path::PathBuf {
-    let tmp = std::env::temp_dir().join("cx_test_check_dashboard.json");
+    let mut rng = rand::rng();
+    let suffix: String = (0..8)
+        .map(|_| format!("{:02x}", rng.random::<u8>()))
+        .collect();
+    let tmp = std::env::temp_dir().join(format!("cx_test_check_dashboard_{suffix}.json"));
     std::fs::write(
         &tmp,
         serde_json::to_string_pretty(&json!({

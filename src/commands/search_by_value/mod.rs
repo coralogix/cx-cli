@@ -72,6 +72,7 @@ pub async fn run(
 
     match output {
         OutputFormat::Json => render::render_json(&json_rows)?,
+        OutputFormat::Yaml => render::render_yaml(&json_rows)?,
         OutputFormat::Agents => render::render_agents(&json_rows)?,
         OutputFormat::Text => {
             if all_results.is_empty() {

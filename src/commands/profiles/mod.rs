@@ -27,7 +27,7 @@ const OAUTH_REGIONS: &[&str] = &[
     "Custom (specify URL + client ID)",
 ];
 
-const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
+const OUTPUT_FORMATS: &[&str] = &["text", "json", "yaml", "agents"];
 
 /// Storage backend choices presented to the user. The first element is the
 /// label shown in the prompt; the second is the variant it maps to. Order
@@ -219,6 +219,7 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
         .prompt()?;
     profile.default_output_format = Some(match format_str {
         "json" => OutputFormat::Json,
+        "yaml" => OutputFormat::Yaml,
         "agents" => OutputFormat::Agents,
         _ => OutputFormat::Text,
     });

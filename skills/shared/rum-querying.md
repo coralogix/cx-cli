@@ -166,11 +166,11 @@ Use the `LT` (Load Time) web vital for page loading time questions. Group by `$d
 
 ## Troubleshooting
 
-If a query returns no results, change **one thing at a time**:
+If a query returns no results, change **one thing at a time**. Keep the query window as **narrow** as possible and widen it deliberately — start from the window you already have rather than jumping to a huge range:
 
-1. **Extend the time range**: `--start now-7d` or `--start now-30d`
-2. **Relax filters**: remove the most restrictive condition
-3. **Verify field names**: run a sample query with `-o json` to inspect actual fields
-4. **Try archive tier**: `--tier archive --start now-30d` for older data
+1. **Relax filters**: remove the most restrictive condition
+2. **Verify field names**: run a sample query with `-o json` to inspect actual fields
+3. **Extend the time range**: widen gradually from your current window (e.g. `now-24h` → `now-7d` → `now-30d`)
+4. **Try archive tier**: for older data, add `--tier archive` and widen the window to cover the period you're after
 
 **Note:** Filtering by `cx_rum` fields will show **only RUM/frontend logs** and hide backend logs. This is expected when analyzing RUM data.

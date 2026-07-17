@@ -110,6 +110,8 @@ cx spans "filter \$l.serviceName == 'api'" --start now-6h
 
 **Prefer a field-targeted `~`/`filter` when you know the field** — for **precision**: because `wildfind` matches tokens anywhere in the record, it can't be narrowed to a specific field.
 
+**Performance:** `wildfind` with very short search terms (only a few characters) is much slower — prefer longer, more specific terms.
+
 The **one exception**: when the user provides a specific string and you don't know which field contains it:
 
 ```bash

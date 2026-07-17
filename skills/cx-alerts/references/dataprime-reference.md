@@ -66,7 +66,7 @@ All fields are accessed through three namespaces:
 | `wildfind` | Token match across the whole record (see note below) | `wildfind 'connection refused'` |
 | `lucene` | Filter using Lucene syntax (`field:value`, field names relative to `$d`, combine with `AND`/`OR`/parens) | `lucene 'field:"value"'` |
 
-> **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions - use it as its own pipeline stage.
+> **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions - use it as its own pipeline stage. `wildfind` with very short search terms (only a few characters) is much slower — prefer longer, more specific terms.
 
 ### Aggregation
 

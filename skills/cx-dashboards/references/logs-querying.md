@@ -87,6 +87,8 @@ cx logs "filter \$l.subsystemname == 'payments'" --tier archive --start now-7d
 
 **Prefer a field-targeted `~`/`filter` when you know the field** — for **precision**: because `wildfind` matches tokens anywhere in the record, it can't be narrowed to a specific field and will match the term in fields you didn't intend.
 
+**Performance:** `wildfind` with very short search terms (only a few characters) is much slower — prefer longer, more specific terms.
+
 The **one exception**: when the user provides a specific, quoted error message or log string and you don't know which field contains it:
 
 ```bash

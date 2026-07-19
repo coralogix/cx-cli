@@ -61,7 +61,9 @@ prompt and tool traffic and bloats context.
 tool/workflow step, or a Guardrails SDK invocation). An **interaction** = the multiple spans
 under one `traceID` — one exchange plus the surrounding spans and operations. Counts (AI spans,
 errors, guardrail actions) are **span-level**; the only trace-level rate is Issue Rate (Q9). For
-a deduplicated interaction count use `distinct_count(traceID)` and say so.
+a deduplicated interaction count use `distinct_count(traceID)` and say so. For very
+high-cardinality counts, use `approx_count_distinct(traceID)` to avoid memory blowups when an
+exact number isn't needed.
 
 **Find GenAI spans — the mandatory filter on every AI Center query.** `source spans` also
 holds ordinary APM traffic; omitting this filter computes AI metrics over non-AI data and

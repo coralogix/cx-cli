@@ -63,10 +63,10 @@ All fields are accessed through three namespaces:
 | `filter` | Keep rows matching a condition | `filter $m.severity == ERROR` |
 | `choose` | Select specific fields | `choose $m.timestamp, $d.message` |
 | `limit` | Cap the number of results | `limit 10` |
-| `wildfind` | Search all fields for a string (see note below) | `wildfind 'connection refused'` |
-| `lucene` | Filter using Lucene syntax | `lucene 'key:field:"value"'` |
+| `wildfind` | Token match across the whole record (see note below) | `wildfind 'connection refused'` |
+| `lucene` | Filter using Lucene syntax (`field:value`, field names relative to `$d`, combine with `AND`/`OR`/parens) | `lucene 'field:"value"'` |
 
-> **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions - use it as its own pipeline stage.
+> **Note on `wildfind`:** It is a standalone command, not a condition within `filter`. You cannot combine it with other filter expressions - use it as its own pipeline stage. `wildfind` with very short search terms (only a few characters) is much slower — prefer longer, more specific terms.
 
 ### Aggregation
 
@@ -85,7 +85,7 @@ All fields are accessed through three namespaces:
 | `create` | Add a computed field | `create latency_ms from $m.duration / 1000` |
 | `orderby` | Sort results | `orderby $d.timestamp desc` |
 | `extract` | Parse fields with regex or JSON | See [Text Extraction](#text-extraction) |
-| `dedupeby` | Remove duplicates by a field | `dedupeby $m.templateid` |
+| `dedupeby` | Remove duplicates by a field (cost grows with number of distinct keys) | `dedupeby $m.templateid` |
 
 ## Operators
 
@@ -94,10 +94,12 @@ All fields are accessed through three namespaces:
 | `==` | Equals | `filter $m.severity == ERROR` |
 | `!=` | Not equals | `filter $l.subsystemname != 'test'` |
 | `>`, `<`, `>=`, `<=` | Comparison | `filter $d.response_time > 1000` |
-| `~` | Contains (substring match) | `filter $d.message ~ 'timeout'` |
+| `~` | Case-insensitive token match (matches whole tokens, not arbitrary substrings) | `filter $d.message ~ 'timeout'` |
 | `&&` | AND | `filter $m.severity == ERROR && $l.applicationname == 'api'` |
 | `\|\|` | OR | `filter $m.severity == ERROR \|\| $m.severity == CRITICAL` |
 | `!= null` | Field exists | `filter $d.some_field != null` |
+
+> **`~` vs `contains()`:** `~` is a **case-insensitive, token-based** match — it matches whole tokens (words), so `~ 'timeout'` also matches `TIMEOUT` and `Timeout`. `contains()` is a **case-sensitive raw substring** match — `contains('time')` matches inside `timeout`, but only in that exact case. Use `~` for word/term search; use `contains()` when you need an exact-case partial-string match.
 
 ## Type Conversions
 
@@ -132,9 +134,12 @@ filter $d.http['status/code'] == 500
 | `median($field)` | Median value |
 | `stddev($field)` | Standard deviation |
 | `variance($field)` | Variance |
-| `distinct_count($field)` | Count unique values |
+| `distinct_count($field)` | Count unique values (exact) |
+| `approx_count_distinct($field)` | Approximate count of unique values |
 | `any_value($field)` | Random sample value |
 | `collect($field)` | Collect values into an array |
+
+> **`distinct_count` vs `approx_count_distinct`:** Exact `distinct_count` can be slow or run out of memory on high-cardinality fields. When an exact count isn't required, use `approx_count_distinct` instead.
 
 Example - full CLI invocation:
 ```bash
@@ -212,9 +217,11 @@ extract $d.json_payload into parsed using jsonobject() | filter $d.parsed.status
 # Remove duplicates by log template
 dedupeby $m.templateid
 
-# Dedupe by a custom field
-dedupeby $d.request_id
+# Keep one row per key (cost grows with the number of distinct keys)
+dedupeby $d.session_id
 ```
+
+> **Performance:** `dedupeby` cost scales with the number of **distinct keys** it tracks, so it gets slow and memory-heavy on high-cardinality or near-unique keys (e.g. a request id). Cardinality depends on your data and time window — a key like session or trace id can still be large. Keep `dedupeby` when you genuinely need one representative row per key; to cut cost, narrow the input first (tighter `filter`, smaller time window) rather than swapping in `filter`/`limit` (which does **not** keep one row per key) or an aggregation (which changes the row shape) unless that different output is acceptable. The `dedupeby <key> orderby ...` form (keep the latest row per key) is heavier still.
 
 ## Built-In Documentation
 

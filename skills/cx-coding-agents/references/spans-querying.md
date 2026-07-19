@@ -10,7 +10,7 @@ Spans are the fundamental unit of tracing data. **Traces are not stored as singl
 
 This means:
 - **Metadata (`$m.*`)** and **labels (`$l.*`)** are predictable - you can always filter on timestamp, duration, service name, and operation name without discovery.
-- **User data (`$d.*`)** contains trace identifiers (`traceID`, `spanID`, `parentSpanID`) and application-specific tags/attributes that vary by service. Always verify custom `$d` fields before assuming they exist.
+- **User data (`$d.*`)** contains trace identifiers (`traceID`, `spanID`, `parentId`) and application-specific tags/attributes that vary by service. Exact attribute names depend on the instrumentation and can differ across tenants, so verify `$d` fields with a sample query before assuming they exist.
 
 ---
 
@@ -48,7 +48,7 @@ The `source spans` is automatically injected - do not include it in the query.
 | `$l.operationName` | Operation name - the span title (e.g. "POST /checkout", "db.query"). |
 | `$d.traceID` | Trace ID - groups spans into a single trace. |
 | `$d.spanID` | Unique span identifier. |
-| `$d.parentSpanID` | Parent span ID (empty string for root spans). |
+| `$d.parentId` | Parent span ID. Root spans have `parentId == null` (not an empty string). |
 | `$d.*` | Application-specific tags and attributes (see [Field Discovery](#field-discovery)). |
 
 > **Note on label fields:** The meaning of `$l.applicationName` and `$l.subsystemName` varies by customer - they may represent environments, teams, regions, or something else entirely. Don't assume what they map to. Use `cx search-fields` or sample queries to verify actual values.
@@ -106,7 +106,11 @@ cx spans "filter \$l.serviceName == 'api'" --start now-6h
 
 ### Wildfind Policy
 
-**Avoid `wildfind` by default.** It scans all fields and is expensive.
+`wildfind` runs the same **case-insensitive, token-based** match as `~` (whole tokens, not arbitrary substrings), but over the whole record instead of a single field — it matches tokens anywhere, in any field.
+
+**Prefer a field-targeted `~`/`filter` when you know the field** — for **precision**: because `wildfind` matches tokens anywhere in the record, it can't be narrowed to a specific field.
+
+**Performance:** `wildfind` with very short search terms (only a few characters) is much slower — prefer longer, more specific terms.
 
 The **one exception**: when the user provides a specific string and you don't know which field contains it:
 
@@ -184,14 +188,14 @@ cx spans "filter \$l.serviceName == '<service>' && \$m.duration > 1000000 | dist
 
 ### 3. Troubleshooting
 
-If a query returns no results, change **one thing at a time**:
+If a query returns no results, change **one thing at a time**. Keep the query window as **narrow** as possible and widen it deliberately — start from the window you already have rather than jumping to a huge range:
 
-1. **Extend the time range**: `--start now-6h` or `--start now-24h`
-2. **Relax filters**: remove the most restrictive condition
-3. **Check field availability**: the field you're filtering by may only exist in a subset of spans
-4. **Verify field names**: run a sample query with `-o json` to inspect the actual schema
-5. **Check service names**: service names are case-sensitive
-6. **Try archive tier**: `--tier archive --start now-30d` for older data
+1. **Relax filters**: remove the most restrictive condition
+2. **Check field availability**: the field you're filtering by may only exist in a subset of spans
+3. **Verify field names**: run a sample query with `-o json` to inspect the actual schema
+4. **Check service names**: service names are case-sensitive
+5. **Extend the time range**: widen gradually from your current window (e.g. `now-1h` → `now-6h` → `now-24h`)
+6. **Try archive tier**: for older data, add `--tier archive` and widen the window to cover the period you're after
 
 ---
 

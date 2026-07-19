@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::Value;
 
@@ -35,6 +35,8 @@ pub async fn run(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<(String, SemanticFieldResult)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -43,8 +45,14 @@ pub async fn run(
                     all_results.push((profile.clone(), r));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

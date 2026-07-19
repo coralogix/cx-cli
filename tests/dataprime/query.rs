@@ -233,3 +233,163 @@ async fn multi_profile_fan_out_tags_rows() {
     .await
     .expect("multi-profile fan-out should succeed");
 }
+
+#[tokio::test]
+async fn dataprime_query_all_profiles_failing_returns_err() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .respond_with(ResponseTemplate::new(500).set_body_string(
+            r#"{"message":"Query execution failed: java.lang.OutOfMemoryError: Java heap space"}"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    let result = run_query(
+        &targets,
+        "source logs",
+        "logs",
+        "2024-06-22T00:00:00Z",
+        "2024-06-22T23:59:59Z",
+        100,
+        Some(Tier::FrequentSearch),
+        OutputFormat::Text,
+        None,
+        "/tmp",
+        None,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "a total query failure must surface as an error, not a silent empty result"
+    );
+}
+
+#[tokio::test]
+async fn dataprime_query_ndjson_unrecognized_envelope_returns_err() {
+    let server = MockServer::start().await;
+
+    // Simulates a backend that dies mid-stream (e.g. a real OOM) and emits an
+    // envelope this client doesn't recognize, after already sending a 200.
+    let ndjson = [
+        r#"{"queryId":{"queryId":"test-query-id"}}"#,
+        r#"{"error":{"message":"engine out of memory"}}"#,
+    ]
+    .join("\n");
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(&ndjson))
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    let result = run_query(
+        &targets,
+        "source logs",
+        "logs",
+        "2024-06-22T00:00:00Z",
+        "2024-06-22T23:59:59Z",
+        100,
+        Some(Tier::FrequentSearch),
+        OutputFormat::Text,
+        None,
+        "/tmp",
+        None,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "a mid-stream NDJSON error envelope must surface as an error, not a silent empty result"
+    );
+}
+
+#[tokio::test]
+async fn dataprime_query_non_completed_statistics_status_returns_err() {
+    let server = MockServer::start().await;
+
+    // Real Coralogix behavior (discovered via live reproduction): every query
+    // ends with a `statistics` envelope; a non-"COMPLETED" status is how the
+    // engine reports a failure that happens after the 200 has already been
+    // sent (e.g. a real OOM mid-execution).
+    let ndjson = [
+        r#"{"queryId":{"queryId":"test-query-id"}}"#,
+        r#"{"statistics":{"status":"FAILED","outputRowCount":"0"}}"#,
+    ]
+    .join("\n");
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(&ndjson))
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    let result = run_query(
+        &targets,
+        "source logs",
+        "logs",
+        "2024-06-22T00:00:00Z",
+        "2024-06-22T23:59:59Z",
+        100,
+        Some(Tier::FrequentSearch),
+        OutputFormat::Text,
+        None,
+        "/tmp",
+        None,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "a non-COMPLETED statistics status must surface as an error, not a silent empty result"
+    );
+}
+
+#[tokio::test]
+async fn dataprime_query_completed_statistics_with_zero_rows_succeeds() {
+    let server = MockServer::start().await;
+
+    // A query that legitimately matches nothing still ends with a COMPLETED
+    // statistics line and no `result` line - must NOT be treated as an error.
+    let ndjson = [
+        r#"{"queryId":{"queryId":"test-query-id"}}"#,
+        r#"{"statistics":{"status":"COMPLETED","outputRowCount":"0"}}"#,
+    ]
+    .join("\n");
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(&ndjson))
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_query(
+        &targets,
+        "source logs",
+        "logs",
+        "2024-06-22T00:00:00Z",
+        "2024-06-22T23:59:59Z",
+        100,
+        Some(Tier::FrequentSearch),
+        OutputFormat::Text,
+        None,
+        "/tmp",
+        None,
+    )
+    .await
+    .expect("a legitimately empty result with COMPLETED status must still succeed");
+}

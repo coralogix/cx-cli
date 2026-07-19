@@ -9,7 +9,7 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::Value;
 use toon_format::encode_default as toon_encode;
@@ -110,7 +110,12 @@ fn tag_item(mut item: Value, include_profile: bool, profile: &str) -> Value {
 
 /// Collect per-profile `Value` results, printing per-profile errors to stderr and
 /// tagging each object with its profile in multi-profile mode.
-fn collect_objects(per_profile: Vec<(String, Result<Value>)>, include_profile: bool) -> Vec<Value> {
+fn collect_objects(
+    per_profile: Vec<(String, Result<Value>)>,
+    include_profile: bool,
+) -> Result<Vec<Value>> {
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -120,10 +125,16 @@ fn collect_objects(per_profile: Vec<(String, Result<Value>)>, include_profile: b
                 }
                 all.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
     }
-    all
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+    Ok(all)
 }
 
 // ── Applications ────────────────────────────────────────────────────
@@ -158,6 +169,8 @@ pub async fn run_applications_list(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, result) in per_profile {
@@ -176,8 +189,14 @@ pub async fn run_applications_list(
                     all_json.push(tag_item(item, include_profile, &profile));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     emit_table(
@@ -208,7 +227,7 @@ pub async fn run_applications_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "AI application not found.")
 }
 
@@ -253,6 +272,8 @@ pub async fn run_evaluations_list(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, result) in per_profile {
@@ -275,8 +296,14 @@ pub async fn run_evaluations_list(
                     all_json.push(tag_item(item, include_profile, &profile));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     emit_table(
@@ -315,7 +342,7 @@ pub async fn run_evaluations_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "AI evaluation not found.")
 }
 
@@ -337,7 +364,7 @@ pub async fn run_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Created AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -363,7 +390,7 @@ pub async fn run_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Updated AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -386,7 +413,7 @@ pub async fn run_evaluations_delete(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Deleted AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -403,7 +430,7 @@ pub async fn run_coverage(targets: &[Arc<ExecutionTarget>], output: OutputFormat
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "No coverage data.")
 }
 
@@ -450,6 +477,8 @@ async fn run_custom_evaluations_table(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, result) in per_profile {
@@ -473,8 +502,14 @@ async fn run_custom_evaluations_table(
                     all_json.push(tag_item(item, include_profile, &profile));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     emit_table(
@@ -505,7 +540,7 @@ pub async fn run_custom_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Created custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -531,7 +566,7 @@ pub async fn run_custom_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Updated custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -562,7 +597,7 @@ pub async fn run_add_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Attached policy to application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -593,7 +628,7 @@ pub async fn run_remove_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Detached policy from application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -613,7 +648,7 @@ pub async fn run_model_pricing_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "No model pricing overrides.")
 }
 
@@ -635,7 +670,7 @@ pub async fn run_model_pricing_set(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Set model pricing.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }

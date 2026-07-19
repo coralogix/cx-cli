@@ -2,7 +2,7 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::Value;
 use toon_format::encode_default as toon_encode;
@@ -38,6 +38,8 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -47,8 +49,14 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
                 }
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -87,6 +95,8 @@ pub async fn run_metrics_create(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -97,8 +107,14 @@ pub async fn run_metrics_create(
                 );
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -130,6 +146,8 @@ pub async fn run_metrics_update(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -140,8 +158,14 @@ pub async fn run_metrics_update(
                 );
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -166,14 +190,22 @@ pub async fn run_metrics_enable(targets: &[Arc<ExecutionTarget>]) -> Result<()> 
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(()) => eprintln!(
                 "{}",
                 format!("Metrics archive enabled in profile '{profile}'.").green()
             ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     Ok(())
 }
@@ -188,14 +220,22 @@ pub async fn run_metrics_disable(targets: &[Arc<ExecutionTarget>]) -> Result<()>
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(()) => eprintln!(
                 "{}",
                 format!("Metrics archive disabled in profile '{profile}'.").green()
             ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     Ok(())
 }
@@ -218,6 +258,8 @@ pub async fn run_metrics_validate(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -231,8 +273,14 @@ pub async fn run_metrics_validate(
                 );
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -263,6 +311,8 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -272,8 +322,14 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
                 }
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -312,6 +368,8 @@ pub async fn run_logs_set(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -322,8 +380,14 @@ pub async fn run_logs_set(
                 );
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

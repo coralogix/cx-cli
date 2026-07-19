@@ -10,7 +10,7 @@ use crate::api_client::CxClient;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamGroup {
-    pub group_id: Option<i64>,
+    pub group_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
     pub team_id: Option<i64>,
@@ -69,7 +69,7 @@ pub struct UpdateTeamGroupResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteTeamGroupResponse {
-    pub group_id: Option<i64>,
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,14 +147,14 @@ mod tests {
         let json = json!({
             "groups": [
                 {
-                    "groupId": 101,
+                    "groupId": "101",
                     "name": "Engineering",
                     "description": "Eng team",
                     "teamId": 1234,
                     "createdAt": "2024-01-01T00:00:00Z"
                 },
                 {
-                    "groupId": 102,
+                    "groupId": "102",
                     "name": "DevOps"
                 }
             ],
@@ -180,7 +180,7 @@ mod tests {
     fn deserialize_get_response() {
         let json = json!({
             "group": {
-                "groupId": 101,
+                "groupId": "101",
                 "name": "Engineering",
                 "description": "Eng team"
             }
@@ -193,7 +193,7 @@ mod tests {
     fn deserialize_get_by_name_response() {
         let json = json!({
             "group": {
-                "groupId": 101,
+                "groupId": "101",
                 "name": "Engineering"
             }
         });
@@ -204,16 +204,16 @@ mod tests {
     #[test]
     fn deserialize_create_response() {
         let json = json!({
-            "group": { "groupId": 201, "name": "New Group" }
+            "group": { "groupId": "201", "name": "New Group" }
         });
         let resp: CreateTeamGroupResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.group.unwrap().group_id, Some(201));
+        assert_eq!(resp.group.unwrap().group_id, Some("201".to_string()));
     }
 
     #[test]
     fn deserialize_update_response() {
         let json = json!({
-            "group": { "groupId": 101, "name": "Updated Group" }
+            "group": { "groupId": "101", "name": "Updated Group" }
         });
         let resp: UpdateTeamGroupResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.group.unwrap().display_name(), "Updated Group");
@@ -221,9 +221,9 @@ mod tests {
 
     #[test]
     fn deserialize_delete_response() {
-        let json = json!({ "groupId": 101 });
+        let json = json!({ "groupId": "101" });
         let resp: DeleteTeamGroupResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.group_id, Some(101));
+        assert_eq!(resp.group_id, Some("101".to_string()));
     }
 
     #[test]

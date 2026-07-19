@@ -2,7 +2,7 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
@@ -56,6 +56,8 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TeamGroup)> = Vec::new();
     for (profile, result) in per_profile {
@@ -66,8 +68,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                     all_items.push((profile.clone(), group));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -87,7 +95,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                 .map(|(profile, group)| {
                     vec![
                         profile.clone(),
-                        group.group_id.map(|id| id.to_string()).unwrap_or_default(),
+                        group.group_id.clone().unwrap_or_default(),
                         group.display_name().to_string(),
                         String::new(), // Members count not available in list response
                         group.display_description().to_string(),
@@ -122,6 +130,8 @@ pub async fn run_get(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TeamGroup)> = Vec::new();
     for (profile, result) in per_profile {
@@ -132,8 +142,14 @@ pub async fn run_get(
                     all_items.push((profile.clone(), group));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -153,7 +169,7 @@ pub async fn run_get(
                 .map(|(profile, group)| {
                     vec![
                         profile.clone(),
-                        group.group_id.map(|id| id.to_string()).unwrap_or_default(),
+                        group.group_id.clone().unwrap_or_default(),
                         group.display_name().to_string(),
                         group.display_description().to_string(),
                         group.group_type.clone().unwrap_or_default(),
@@ -191,6 +207,8 @@ pub async fn run_get_by_name(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TeamGroup)> = Vec::new();
     for (profile, result) in per_profile {
@@ -201,8 +219,14 @@ pub async fn run_get_by_name(
                     all_items.push((profile.clone(), group));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -222,7 +246,7 @@ pub async fn run_get_by_name(
                 .map(|(profile, group)| {
                     vec![
                         profile.clone(),
-                        group.group_id.map(|id| id.to_string()).unwrap_or_default(),
+                        group.group_id.clone().unwrap_or_default(),
                         group.display_name().to_string(),
                         group.display_description().to_string(),
                         group.group_type.clone().unwrap_or_default(),
@@ -261,6 +285,8 @@ pub async fn run_users(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -270,8 +296,14 @@ pub async fn run_users(
                 }
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -311,6 +343,8 @@ pub async fn run_create(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -319,7 +353,7 @@ pub async fn run_create(
                     let name = group.display_name().to_string();
                     let id = group
                         .group_id
-                        .map(|id| id.to_string())
+                        .clone()
                         .unwrap_or_else(|| "unknown".to_string());
                     eprintln!(
                         "{}",
@@ -329,8 +363,14 @@ pub async fn run_create(
                     all_results.push(group_to_json(&group, include_profile, &profile));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -365,6 +405,8 @@ pub async fn run_update(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -377,8 +419,14 @@ pub async fn run_update(
                     all_results.push(group_to_json(&group, targets.len() > 1, &profile));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -405,14 +453,22 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], group_id: &str) -> Res
         }
     })
     .await;
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(()) => eprintln!(
                 "{}",
                 format!("Team group {group_id} deleted in profile '{profile}'.").green()
             ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     Ok(())
 }

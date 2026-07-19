@@ -2,7 +2,7 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
@@ -106,6 +106,8 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         Ok(api.list().await?)
     })
     .await;
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, CustomEnrichment)> = Vec::new();
     for (profile, result) in per_profile {
@@ -116,8 +118,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                     all_items.push((profile.clone(), ce));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
@@ -170,6 +178,8 @@ pub async fn run_get(
         }
     })
     .await;
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -179,8 +189,14 @@ pub async fn run_get(
                 }
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -218,6 +234,8 @@ pub async fn run_create(
         }
     })
     .await;
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -234,8 +252,14 @@ pub async fn run_create(
                     all_results.push(ce_to_json(&ce, include_profile, &profile));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -265,6 +289,8 @@ pub async fn run_update(
         }
     })
     .await;
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -275,8 +301,14 @@ pub async fn run_update(
                 );
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -302,14 +334,22 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(()) => eprintln!(
                 "{}",
                 format!("Custom enrichment {id} deleted in profile '{profile}'.").green()
             ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     Ok(())
 }
@@ -335,12 +375,20 @@ pub async fn run_search(
         }
     })
     .await;
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(val) => all_results.push(val),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,

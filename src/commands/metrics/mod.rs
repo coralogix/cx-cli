@@ -359,12 +359,20 @@ pub async fn run_query(
     .await;
 
     // Merge: convert each profile's response to optionally tagged rows.
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => all_rows.extend(instant_response_to_rows(&profile, resp, include_profile)),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -426,12 +434,20 @@ pub async fn run_query_range(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => all_rows.extend(range_response_to_rows(&profile, resp, include_profile)),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -497,6 +513,8 @@ pub async fn run_search(
         })
         .await;
 
+        let target_count = per_profile.len();
+        let mut error_count = 0usize;
         let mut all_results: Vec<(String, SemanticMetricResult)> = Vec::new();
         for (profile, result) in per_profile {
             match result {
@@ -505,8 +523,14 @@ pub async fn run_search(
                         all_results.push((profile.clone(), r));
                     }
                 }
-                Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+                Err(e) => {
+                    error_count += 1;
+                    eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+                }
             }
+        }
+        if target_count > 0 && error_count == target_count {
+            bail!("all profiles returned errors; see above for details");
         }
 
         match output {
@@ -565,6 +589,8 @@ pub async fn run_search(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_matches: Vec<(String, String)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -573,8 +599,14 @@ pub async fn run_search(
                     all_matches.push((profile.clone(), n));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -638,6 +670,8 @@ pub async fn run_get_labels(
     })
     .await;
 
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     let mut all_labels: Vec<(String, String)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
@@ -646,8 +680,14 @@ pub async fn run_get_labels(
                     all_labels.push((profile.clone(), l));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

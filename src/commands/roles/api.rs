@@ -10,10 +10,10 @@ use crate::api_client::CxClient;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomRole {
-    pub role_id: Option<i64>,
+    pub role_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
-    pub parent_role_id: Option<i64>,
+    pub parent_role_id: Option<String>,
     pub parent_role_name: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
@@ -37,7 +37,7 @@ impl CustomRole {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemRole {
-    pub role_id: Option<i64>,
+    pub role_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
     #[serde(default)]
@@ -81,7 +81,7 @@ pub struct GetCustomRoleResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRoleResponse {
-    pub id: Option<i64>,
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,7 +147,7 @@ mod tests {
         let json = json!({
             "roles": [
                 {
-                    "roleId": 101,
+                    "roleId": "101",
                     "name": "Developer",
                     "description": "Dev access",
                     "parentRoleName": "ReadOnly",
@@ -155,7 +155,7 @@ mod tests {
                     "teamId": 1234
                 },
                 {
-                    "roleId": 102,
+                    "roleId": "102",
                     "name": "Admin",
                     "permissions": []
                 }
@@ -181,7 +181,7 @@ mod tests {
         let json = json!({
             "roles": [
                 {
-                    "roleId": 1,
+                    "roleId": "1",
                     "name": "Admin",
                     "description": "Full access",
                     "permissions": ["*"]
@@ -199,7 +199,7 @@ mod tests {
     fn deserialize_get_custom_role() {
         let json = json!({
             "role": {
-                "roleId": 101,
+                "roleId": "101",
                 "name": "Developer",
                 "permissions": ["logs:read"]
             }
@@ -210,9 +210,9 @@ mod tests {
 
     #[test]
     fn deserialize_create_response() {
-        let json = json!({ "id": 201 });
+        let json = json!({ "id": "201" });
         let resp: CreateRoleResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.id, Some(201));
+        assert_eq!(resp.id, Some("201".to_string()));
     }
 
     #[test]

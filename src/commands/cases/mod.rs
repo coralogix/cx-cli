@@ -2,7 +2,7 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use colored::Colorize;
 use serde_json::Value;
 use toon_format::encode_default as toon_encode;
@@ -299,6 +299,8 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<(Value, TeammateDirectory)> = Vec::new();
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok((mut val, directory)) => {
@@ -310,8 +312,14 @@ pub async fn run_get(
                 }
                 all_results.push((val, directory));
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     // Most renderers want only the JSON values; the directory we keep for the
@@ -721,6 +729,8 @@ pub async fn run_events_list(
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok((resp, directory)) => {
@@ -734,8 +744,14 @@ pub async fn run_events_list(
                     all_json.push(event);
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -816,6 +832,8 @@ pub async fn run_event_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(mut val) => {
@@ -824,8 +842,14 @@ pub async fn run_event_get(
                 }
                 all_results.push(val);
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -875,6 +899,8 @@ pub async fn run_notifications(
     // Response shape: { "deliveriesByCase": { "<case-id>": { "notificationDeliveries": [ ... ] } } }
     // For text/json rendering, flatten into rows tagged with caseId so the output is tabular-friendly.
     let mut all_json: Vec<Value> = Vec::new();
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(val) => {
@@ -898,8 +924,14 @@ pub async fn run_notifications(
                     }
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -964,6 +996,8 @@ fn finish_lifecycle(
     success_label: &str,
 ) -> Result<()> {
     let mut all_results: Vec<Value> = Vec::new();
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(mut v) => {
@@ -976,8 +1010,14 @@ fn finish_lifecycle(
                     format!("{success_label} in profile '{profile}'.").green()
                 );
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

@@ -7,9 +7,33 @@ use crate::api_client::CxClient;
 
 // --- Response types ---
 
+/// The Team Groups API documents numeric IDs (e.g. `groupId: 101`) but some responses send
+/// them as strings; accept either so deserialization doesn't break on conforming responses.
+fn deserialize_opt_id_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IdValue {
+        String(String),
+        Number(i64),
+    }
+
+    Ok(
+        Option::<IdValue>::deserialize(deserializer)?.map(|v| match v {
+            IdValue::String(s) => s,
+            IdValue::Number(n) => n.to_string(),
+        }),
+    )
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamGroup {
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
     pub group_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
@@ -69,6 +93,7 @@ pub struct UpdateTeamGroupResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteTeamGroupResponse {
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
     pub group_id: Option<String>,
 }
 
@@ -223,6 +248,21 @@ mod tests {
     fn deserialize_delete_response() {
         let json = json!({ "groupId": "101" });
         let resp: DeleteTeamGroupResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.group_id, Some("101".to_string()));
+    }
+
+    #[test]
+    fn deserialize_numeric_group_ids() {
+        let json = json!({
+            "groups": [
+                { "groupId": 101, "name": "Engineering" }
+            ]
+        });
+        let resp: ListTeamGroupsResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.groups[0].group_id, Some("101".to_string()));
+
+        let delete_json = json!({ "groupId": 101 });
+        let resp: DeleteTeamGroupResponse = serde_json::from_value(delete_json).unwrap();
         assert_eq!(resp.group_id, Some("101".to_string()));
     }
 

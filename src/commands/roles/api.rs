@@ -7,12 +7,37 @@ use crate::api_client::CxClient;
 
 // --- Response types ---
 
+/// The Roles API documents numeric IDs (e.g. `roleId: 101`) but some responses send them
+/// as strings; accept either so deserialization doesn't break on conforming responses.
+fn deserialize_opt_id_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IdValue {
+        String(String),
+        Number(i64),
+    }
+
+    Ok(
+        Option::<IdValue>::deserialize(deserializer)?.map(|v| match v {
+            IdValue::String(s) => s,
+            IdValue::Number(n) => n.to_string(),
+        }),
+    )
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomRole {
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
     pub role_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
     pub parent_role_id: Option<String>,
     pub parent_role_name: Option<String>,
     #[serde(default)]
@@ -37,6 +62,7 @@ impl CustomRole {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemRole {
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
     pub role_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
@@ -81,6 +107,7 @@ pub struct GetCustomRoleResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRoleResponse {
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
     pub id: Option<String>,
 }
 
@@ -213,6 +240,35 @@ mod tests {
         let json = json!({ "id": "201" });
         let resp: CreateRoleResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.id, Some("201".to_string()));
+    }
+
+    #[test]
+    fn deserialize_numeric_ids() {
+        let json = json!({
+            "roles": [
+                {
+                    "roleId": 101,
+                    "name": "Developer",
+                    "parentRoleId": 1,
+                    "permissions": []
+                }
+            ]
+        });
+        let resp: ListCustomRolesResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.roles[0].role_id, Some("101".to_string()));
+        assert_eq!(resp.roles[0].parent_role_id, Some("1".to_string()));
+
+        let create_json = json!({ "id": 201 });
+        let resp: CreateRoleResponse = serde_json::from_value(create_json).unwrap();
+        assert_eq!(resp.id, Some("201".to_string()));
+
+        let system_json = json!({
+            "roles": [
+                { "roleId": 1, "name": "Admin", "permissions": ["*"] }
+            ]
+        });
+        let resp: ListSystemRolesResponse = serde_json::from_value(system_json).unwrap();
+        assert_eq!(resp.roles[0].role_id, Some("1".to_string()));
     }
 
     #[test]

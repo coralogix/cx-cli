@@ -12,6 +12,7 @@ pub mod dashboards;
 pub mod data_archive;
 pub mod data_usage;
 pub mod dataprime;
+pub mod datasets;
 pub mod docs;
 pub mod e2m;
 pub mod enrichments;

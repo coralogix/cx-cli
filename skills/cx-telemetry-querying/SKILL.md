@@ -13,6 +13,7 @@ description: |
   "query metrics", "check CPU usage", "run a PromQL query",
   "check error rate", "look up a metric", "check memory usage",
   "how do I write a DataPrime query", "DataPrime syntax",
+  "list datasets", "what datasets exist", "system dataset", "custom dataset",
   or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM.
 metadata:
   version: "0.2.0"
@@ -141,6 +142,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx search-fields "<value>" -s value --dataset logs` | Find log fields that contain a known value | When you know a value but not which log field holds it — also reveals field type from the returned values |
 | `cx search-fields "<value>" -s value --dataset spans` | Find span fields that contain a known value | When you know a value but not which span attribute holds it |
 | `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | When you want to search across both logs and spans at once |
+| `cx datasets list` | List system and user-defined DataPrime datasets | Before querying `system/...` or `default/...` sources — use the exact `source` path returned |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |
 | `cx dashboards search "<description>"` | Find existing dashboards by natural-language description | Before creating a new dashboard — check if one already exists |

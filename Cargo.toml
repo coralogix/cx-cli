@@ -72,6 +72,8 @@ futures = "0.3.32"
 
 # Gzip decompression for artifact downloads
 flate2 = "1"
+prost = "0.13"
+prost-types = "0.13"
 
 # ── Platform-specific keyring backends ─────────────────────────────────────────
 # macOS: Keychain
@@ -91,6 +93,7 @@ keyring = { version = "3", features = ["sync-secret-service"] }
 wiremock = "0.6"
 assert_cmd = "2"
 dotenvy = "0.15"
+prost = "0.13"
 
 [profile.release]
 strip = true

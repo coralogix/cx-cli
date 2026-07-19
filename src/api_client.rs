@@ -144,6 +144,77 @@ impl CxClient {
         Ok(serde_json::from_str(json)?)
     }
 
+    /// POST raw bytes with custom headers, returning the raw response body.
+    ///
+    /// Used for gRPC-Web unary calls (`application/grpc-web+proto`). Forces
+    /// HTTP/1.1 because Cloudflare's HTTP/2 path rejects gRPC-Web framing for
+    /// these dataset services.
+    pub async fn post_bytes(
+        &self,
+        path: &str,
+        body: Vec<u8>,
+        headers: &[(&str, &str)],
+    ) -> Result<Vec<u8>> {
+        let url = format!("{}{path}", self.endpoint);
+        let mut req = self
+            .inner
+            .post(&url)
+            .version(reqwest::Version::HTTP_11)
+            .body(body);
+        for (key, value) in headers {
+            req = req.header(*key, *value);
+        }
+        let resp = req.send().await?;
+        self.checked_bytes(resp).await
+    }
+
+    /// Like [`Self::checked_text`], but returns raw bytes.
+    async fn checked_bytes(&self, resp: reqwest::Response) -> Result<Vec<u8>> {
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(resp.bytes().await?.to_vec());
+        }
+
+        let code = status.as_u16();
+        let retry_after = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+        let body = resp.text().await.unwrap_or_default();
+        let detail = extract_error_detail(&body);
+
+        match status {
+            StatusCode::UNAUTHORIZED => Err(CxError::Auth(match detail {
+                Some(d) => format!("{d}. Run `cx profiles add` to update credentials."),
+                None => "Invalid or expired API key. Run `cx profiles add` to update credentials."
+                    .into(),
+            })),
+            StatusCode::FORBIDDEN => Err(CxError::Permission(match detail {
+                Some(d) => d,
+                None => {
+                    "You do not have permission for this operation. Check your API key's scopes."
+                        .into()
+                }
+            })),
+            StatusCode::TOO_MANY_REQUESTS => Err(CxError::Api {
+                status: code,
+                message: match (detail, retry_after) {
+                    (Some(d), Some(secs)) => format!("{d}. Retry after {secs} seconds."),
+                    (Some(d), None) => d,
+                    (None, Some(secs)) => {
+                        format!("Rate limited by the API. Retry after {secs} seconds.")
+                    }
+                    (None, None) => "Rate limited by the API. Wait and retry.".into(),
+                },
+            }),
+            _ => Err(CxError::Api {
+                status: code,
+                message: detail.unwrap_or(body),
+            }),
+        }
+    }
+
     /// Validate the HTTP status of a response and read the body as text.
     async fn checked_text(&self, resp: reqwest::Response) -> Result<String> {
         let status = resp.status();

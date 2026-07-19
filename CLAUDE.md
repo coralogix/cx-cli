@@ -34,6 +34,7 @@ Query:
   dataprime          DataPrime language reference and raw queries
   docs               Search and fetch official Coralogix product documentation
   search-fields      Search log/span fields by description or value content
+  datasets           List system and user-defined DataPrime datasets
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -78,6 +79,8 @@ Local:
 ```
 
 **`cx search-fields -s value`:** Calls Olly Knowledge Base `POST /api/v1/search-by-value` on the region API base URL. The platform ingress uses gateway permission `legacy-archive-queries:Execute` (AAA id 40); `dataset_type` in the JSON body (`logs` / `spans` / `all`) is still enforced in-app by the service. See `olly-knowledge-base` `apps/values-reader-service/AGENTS.md` and `platform/defaults/networking/defaults.yaml`.
+
+**`cx datasets list`:** Lists system (`system/...`) and user-defined (`default/...` or other dataspace) datasets available for DataPrime, matching Olly's `list_datasets` tool. Calls archive dataset v2 `GetSystemDatasets` / `GetUserDefinedDatasets` over gRPC-Web HTTP against the region API base URL. Does not include `get_system_dataset_info`.
 
 **`cx dashboards` semantic search:** Three Olly Knowledge Base-powered subcommands for discovering dashboards and queries:
 - `cx dashboards search <description>` — Find dashboards matching a natural-language description
@@ -128,7 +131,7 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 - **`src/commands/dataprime/api.rs`** - DataPrime query API (logs & traces via NDJSON)
 - **`src/commands/dataprime/semantic_search.rs`** - Semantic Search HTTP API (fields + metrics)
 - **`src/commands/metrics/api.rs`** - PromQL queries (instant, range, search, labels)
-- **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, parsing-rules, tco, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
+- **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, parsing-rules, tco, usage, archive, integrations, iam, slos, search-fields, datasets, profiles, cleanup, dataprime docs, schema)
 - **`src/time.rs`** - Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/render.rs`** - Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/agents output
 - **`src/spill.rs`** - Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)
@@ -181,6 +184,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx docs` | `coralogix-docs` | Covered |
 | `cx logs` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
+| `cx datasets` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx alerts` | `cx-alerts` | Covered |
 | `cx dashboards` | `cx-dashboards` | Covered |

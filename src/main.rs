@@ -65,6 +65,7 @@ pub enum SearchByValueDataset {
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
   \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
+  \x1b[1mdatasets\x1b[0m           List system and user-defined DataPrime datasets
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
@@ -553,6 +554,16 @@ Examples:
         offset: u32,
     },
 
+    /// List system and user-defined DataPrime datasets.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list -o json")]
+    Datasets {
+        #[command(subcommand)]
+        cmd: DatasetsCmd,
+    },
+
     /// DataPrime language reference and documentation.
     Dataprime {
         #[command(subcommand)]
@@ -625,6 +636,21 @@ enum ProfilesCmd {
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
     },
+}
+
+#[derive(Subcommand)]
+enum DatasetsCmd {
+    /// List system and user-defined datasets available for DataPrime queries.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list -o json
+  cx datasets list -o agents
+
+Notes:
+  Always-available sources `source logs` and `source spans` are included in the
+  response. Use the exact `source` path when querying custom datasets.")]
+    List,
 }
 
 #[derive(Subcommand)]
@@ -4100,6 +4126,12 @@ async fn main() -> Result<()> {
                         output,
                     )
                     .await?;
+                }
+            },
+
+            Commands::Datasets { cmd } => match cmd {
+                DatasetsCmd::List => {
+                    commands::datasets::run_list(&targets, output).await?;
                 }
             },
 

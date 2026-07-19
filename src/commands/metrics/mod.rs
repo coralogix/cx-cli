@@ -13,7 +13,7 @@ use api::{MetricsApi, PromQueryInstantResponse, PromQueryRangeResponse};
 use crate::api_client::CxClient;
 use crate::commands::dataprime::semantic_search::{semantic_metric_lookup, SemanticMetricResult};
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use crate::time::parse_timestamp;
 
@@ -359,20 +359,9 @@ pub async fn run_query(
     .await;
 
     // Merge: convert each profile's response to optionally tagged rows.
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => all_rows.extend(instant_response_to_rows(&profile, resp, include_profile)),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, resp) in collect_successes(per_profile)? {
+        all_rows.extend(instant_response_to_rows(&profile, resp, include_profile));
     }
 
     match output {
@@ -434,20 +423,9 @@ pub async fn run_query_range(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => all_rows.extend(range_response_to_rows(&profile, resp, include_profile)),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, resp) in collect_successes(per_profile)? {
+        all_rows.extend(range_response_to_rows(&profile, resp, include_profile));
     }
 
     match output {
@@ -513,24 +491,11 @@ pub async fn run_search(
         })
         .await;
 
-        let target_count = per_profile.len();
-        let mut error_count = 0usize;
         let mut all_results: Vec<(String, SemanticMetricResult)> = Vec::new();
-        for (profile, result) in per_profile {
-            match result {
-                Ok(results) => {
-                    for r in results {
-                        all_results.push((profile.clone(), r));
-                    }
-                }
-                Err(e) => {
-                    error_count += 1;
-                    eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-                }
+        for (profile, results) in collect_successes(per_profile)? {
+            for r in results {
+                all_results.push((profile.clone(), r));
             }
-        }
-        if target_count > 0 && error_count == target_count {
-            bail!("all profiles returned errors; see above for details");
         }
 
         match output {
@@ -589,24 +554,11 @@ pub async fn run_search(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_matches: Vec<(String, String)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(names) => {
-                for n in names {
-                    all_matches.push((profile.clone(), n));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, names) in collect_successes(per_profile)? {
+        for n in names {
+            all_matches.push((profile.clone(), n));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -670,24 +622,11 @@ pub async fn run_get_labels(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_labels: Vec<(String, String)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(labels) => {
-                for l in labels {
-                    all_labels.push((profile.clone(), l));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, labels) in collect_successes(per_profile)? {
+        for l in labels {
+            all_labels.push((profile.clone(), l));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

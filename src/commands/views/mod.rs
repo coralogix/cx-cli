@@ -2,13 +2,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{View, ViewFolder, ViewsApi};
 
@@ -65,26 +65,13 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         Ok(api.list().await?)
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, View)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for view in resp.views {
-                    all_json.push(view_to_json(&view, include_profile, &profile));
-                    all_items.push((profile.clone(), view));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for view in resp.views {
+            all_json.push(view_to_json(&view, include_profile, &profile));
+            all_items.push((profile.clone(), view));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
@@ -132,25 +119,12 @@ pub async fn run_get(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -187,32 +161,19 @@ pub async fn run_create(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(view) = resp.view {
-                    eprintln!(
-                        "{}",
-                        format!(
-                            "Created view '{}' in profile '{profile}'.",
-                            view.display_name()
-                        )
-                        .green()
-                    );
-                    all_results.push(view_to_json(&view, include_profile, &profile));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        if let Some(view) = resp.view {
+            eprintln!(
+                "{}",
+                format!(
+                    "Created view '{}' in profile '{profile}'.",
+                    view.display_name()
+                )
+                .green()
+            );
+            all_results.push(view_to_json(&view, include_profile, &profile));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -244,26 +205,13 @@ pub async fn run_update(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated view in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated view in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -289,22 +237,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("View {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("View {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -322,26 +259,13 @@ pub async fn run_folders_list(
         Ok(api.list_folders().await?)
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ViewFolder)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for folder in resp.folders {
-                    all_json.push(folder_to_json(&folder, include_profile, &profile));
-                    all_items.push((profile.clone(), folder));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for folder in resp.folders {
+            all_json.push(folder_to_json(&folder, include_profile, &profile));
+            all_items.push((profile.clone(), folder));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
@@ -388,25 +312,12 @@ pub async fn run_folders_get(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -443,32 +354,19 @@ pub async fn run_folders_create(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(folder) = resp.folder {
-                    eprintln!(
-                        "{}",
-                        format!(
-                            "Created folder '{}' in profile '{profile}'.",
-                            folder.display_name()
-                        )
-                        .green()
-                    );
-                    all_results.push(folder_to_json(&folder, include_profile, &profile));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        if let Some(folder) = resp.folder {
+            eprintln!(
+                "{}",
+                format!(
+                    "Created folder '{}' in profile '{profile}'.",
+                    folder.display_name()
+                )
+                .green()
+            );
+            all_results.push(folder_to_json(&folder, include_profile, &profile));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -500,26 +398,13 @@ pub async fn run_folders_update(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated folder in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated folder in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -545,22 +430,11 @@ pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> R
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Folder {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Folder {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }

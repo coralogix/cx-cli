@@ -9,7 +9,7 @@ pub mod api;
 
 use crate::config::OutputFormat;
 use crate::error::CxError;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{normalize_alert_payload, AlertDef, AlertsApi};
 
@@ -90,32 +90,19 @@ pub async fn run_list(
     .await;
 
     // Merge & filter
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertDef)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for alert in resp.alert_defs {
-                    if let Some(filter) = name_filter {
-                        let name = alert.display_name().to_lowercase();
-                        if !name.contains(&filter.to_lowercase()) {
-                            continue;
-                        }
-                    }
-                    all_json.push(alert_to_json(&alert, include_profile, &profile));
-                    all_items.push((profile.clone(), alert));
+    for (profile, resp) in collect_successes(per_profile)? {
+        for alert in resp.alert_defs {
+            if let Some(filter) = name_filter {
+                let name = alert.display_name().to_lowercase();
+                if !name.contains(&filter.to_lowercase()) {
+                    continue;
                 }
             }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+            all_json.push(alert_to_json(&alert, include_profile, &profile));
+            all_items.push((profile.clone(), alert));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     // Render
@@ -183,25 +170,12 @@ pub async fn run_get(
     .await;
 
     // Merge - collect raw API responses
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
 
     // Render
@@ -294,38 +268,23 @@ pub async fn run_create(
     .await;
 
     // Merge
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(alert) = resp.alert_def {
-                    let name = alert.display_name();
-                    let id = alert.id.as_deref().unwrap_or("unknown");
-                    eprintln!(
-                        "{}",
-                        format!("Created alert '{name}' (ID: {id}) in profile '{profile}'.")
-                            .green()
-                    );
-                    let json = alert_to_json(&alert, include_profile, &profile);
-                    all_results.push(json);
-                } else {
-                    eprintln!(
-                        "{}",
-                        format!("Alert created in profile '{profile}' but response was empty.")
-                            .yellow()
-                    );
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        if let Some(alert) = resp.alert_def {
+            let name = alert.display_name();
+            let id = alert.id.as_deref().unwrap_or("unknown");
+            eprintln!(
+                "{}",
+                format!("Created alert '{name}' (ID: {id}) in profile '{profile}'.").green()
+            );
+            let json = alert_to_json(&alert, include_profile, &profile);
+            all_results.push(json);
+        } else {
+            eprintln!(
+                "{}",
+                format!("Alert created in profile '{profile}' but response was empty.").yellow()
+            );
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     // Render
@@ -359,22 +318,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Deleted alert {alert_id} in profile '{profile}'.").green()
-            ),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Deleted alert {alert_id} in profile '{profile}'.").green()
+        );
     }
 
     Ok(())
@@ -424,22 +372,11 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Alert {alert_id} enabled in profile '{profile}'.").green()
-            ),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Alert {alert_id} enabled in profile '{profile}'.").green()
+        );
     }
 
     Ok(())
@@ -462,22 +399,11 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Alert {alert_id} disabled in profile '{profile}'.").green()
-            ),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Alert {alert_id} disabled in profile '{profile}'.").green()
+        );
     }
 
     Ok(())
@@ -552,26 +478,13 @@ pub async fn run_events(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Value)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(events) => {
-                for event in events {
-                    all_json.push(event_to_json(&event, include_profile, &profile));
-                    all_items.push((profile.clone(), event));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, events) in collect_successes(per_profile)? {
+        for event in events {
+            all_json.push(event_to_json(&event, include_profile, &profile));
+            all_items.push((profile.clone(), event));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -627,29 +540,16 @@ pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFor
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for mut stat in resp.stats {
-                    if include_profile {
-                        if let Value::Object(ref mut m) = stat {
-                            m.insert("profile".to_string(), Value::String(profile.clone()));
-                        }
-                    }
-                    all_json.push(stat);
+    for (profile, resp) in collect_successes(per_profile)? {
+        for mut stat in resp.stats {
+            if include_profile {
+                if let Value::Object(ref mut m) = stat {
+                    m.insert("profile".to_string(), Value::String(profile.clone()));
                 }
             }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+            all_json.push(stat);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

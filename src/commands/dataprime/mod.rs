@@ -15,7 +15,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::spill::{maybe_spill, transform_for_agents, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;
@@ -284,8 +284,6 @@ pub fn merge_results(
     include_profile: bool,
     cases_warning: Option<&str>,
 ) -> Result<MergedResults> {
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut rows: Vec<Value> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     if let Some(w) = cases_warning {
@@ -293,35 +291,23 @@ pub fn merge_results(
     }
     let mut is_aggregate: Option<bool> = None;
 
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for w in resp.warnings {
-                    warnings.push(format!("[{profile}] {w}"));
-                }
-                if is_aggregate.is_none() {
-                    is_aggregate = Some(resp.is_aggregate);
-                }
-                if include_profile {
-                    rows.extend(resp.raw_results.into_iter().map(|mut row| {
-                        if let Value::Object(ref mut m) = row {
-                            m.insert("profile".to_string(), Value::String(profile.clone()));
-                        }
-                        row
-                    }));
-                } else {
-                    rows.extend(resp.raw_results);
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for w in resp.warnings {
+            warnings.push(format!("[{profile}] {w}"));
         }
-    }
-
-    if target_count > 0 && error_count == target_count {
-        anyhow::bail!("all profiles returned errors; see above for details");
+        if is_aggregate.is_none() {
+            is_aggregate = Some(resp.is_aggregate);
+        }
+        if include_profile {
+            rows.extend(resp.raw_results.into_iter().map(|mut row| {
+                if let Value::Object(ref mut m) = row {
+                    m.insert("profile".to_string(), Value::String(profile.clone()));
+                }
+                row
+            }));
+        } else {
+            rows.extend(resp.raw_results);
+        }
     }
 
     Ok(MergedResults {

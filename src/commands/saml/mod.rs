@@ -2,13 +2,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::SamlApi;
 
@@ -45,25 +45,12 @@ pub async fn run_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> 
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
 
     match output {
@@ -96,25 +83,12 @@ pub async fn run_sp_params(targets: &[Arc<ExecutionTarget>], output: OutputForma
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
 
     match output {
@@ -153,26 +127,13 @@ pub async fn run_set_idp(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Set SAML IDP parameters in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Set SAML IDP parameters in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {
@@ -201,25 +162,12 @@ pub async fn run_set_active(targets: &[Arc<ExecutionTarget>], active: bool) -> R
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => {
-                let status = if active { "activated" } else { "deactivated" };
-                eprintln!(
-                    "{}",
-                    format!("SAML {status} in profile '{profile}'.").green()
-                );
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        let status = if active { "activated" } else { "deactivated" };
+        eprintln!(
+            "{}",
+            format!("SAML {status} in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }

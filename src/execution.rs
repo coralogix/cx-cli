@@ -8,9 +8,9 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use colored::Colorize;
 use futures::future::join_all;
-use serde_json::Value;
 
 use crate::api_client::CxClient;
 use crate::config::ResolvedConfig;
@@ -68,43 +68,33 @@ where
     join_all(futures).await
 }
 
-// ── Row tagging ───────────────────────────────────────────────────────────────
+// ── Error collection ──────────────────────────────────────────────────────────
 
-/// Inject a `"profile"` key into each JSON object row when `include_profile` is true.
+/// Drain per-profile fan-out results: print every failure to stderr in the
+/// standard red format, and return the successful `(profile, value)` pairs in
+/// input order.
 ///
-/// Non-object values are passed through unchanged so callers don't need to
-/// guard against unexpected shapes.
-pub fn tag_rows(rows: Vec<Value>, profile: &str, include_profile: bool) -> Vec<Value> {
-    if !include_profile {
-        return rows;
-    }
-    rows.into_iter()
-        .map(|mut row| {
-            if let Value::Object(ref mut m) = row {
-                m.insert("profile".to_string(), Value::String(profile.to_string()));
-            }
-            row
-        })
-        .collect()
-}
-
-/// Merge per-profile results into a single flat list of optionally tagged rows.
-///
-/// Errors are printed to stderr; successful results are tagged with
-/// their source `profile_name` (when `include_profile` is true) and appended
-/// in profile order.
-pub fn merge_tagged_results(
-    per_profile: Vec<(String, Result<Vec<Value>>)>,
-    include_profile: bool,
-) -> Vec<Value> {
-    let mut all: Vec<Value> = Vec::new();
+/// Bails when there was at least one target and *all* of them failed, so a
+/// total failure surfaces as an error instead of rendering as a silently
+/// empty result (FORGE-482). Partial failure (some targets ok) returns `Ok`
+/// with the survivors - behavior per docs/multi-profile.md is unchanged.
+pub fn collect_successes<T>(per_profile: Vec<(String, Result<T>)>) -> Result<Vec<(String, T)>> {
+    let target_count = per_profile.len();
+    let mut successes = Vec::with_capacity(target_count);
+    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
-            Ok(rows) => all.extend(tag_rows(rows, &profile, include_profile)),
-            Err(e) => eprintln!("error from profile '{profile}': {e:#}"),
+            Ok(v) => successes.push((profile, v)),
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
         }
     }
-    all
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+    Ok(successes)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -112,81 +102,49 @@ pub fn merge_tagged_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
-    fn tag_rows_injects_profile_key_when_enabled() {
-        let rows = vec![
-            json!({"timestamp": "2024-01-01T00:00:00Z", "message": "hello"}),
-            json!({"timestamp": "2024-01-01T00:00:01Z", "message": "world"}),
-        ];
-        let tagged = tag_rows(rows, "prod", true);
-        for row in &tagged {
-            assert_eq!(row["profile"], json!("prod"));
-        }
+    fn collect_successes_returns_all_when_none_fail() {
+        let per_profile: Vec<(String, Result<i32>)> =
+            vec![("prod".to_string(), Ok(1)), ("staging".to_string(), Ok(2))];
+        let successes = collect_successes(per_profile).expect("should not bail");
+        assert_eq!(
+            successes,
+            vec![("prod".to_string(), 1), ("staging".to_string(), 2)]
+        );
     }
 
     #[test]
-    fn tag_rows_skips_profile_when_disabled() {
-        let rows = vec![json!({"timestamp": "2024-01-01T00:00:00Z", "message": "hello"})];
-        let tagged = tag_rows(rows.clone(), "prod", false);
-        assert!(tagged[0].get("profile").is_none());
-        assert_eq!(tagged[0]["message"], json!("hello"));
-    }
-
-    #[test]
-    fn tag_rows_passes_non_object_values_through() {
-        let rows = vec![json!("plain string"), json!(42)];
-        let tagged = tag_rows(rows.clone(), "p", true);
-        assert_eq!(tagged[0], json!("plain string"));
-        assert_eq!(tagged[1], json!(42));
-    }
-
-    #[test]
-    fn merge_tagged_results_combines_rows_with_profile_when_enabled() {
-        let per_profile = vec![
-            (
-                "prod".to_string(),
-                Ok(vec![json!({"a": 1}), json!({"a": 2})]),
-            ),
-            ("staging".to_string(), Ok(vec![json!({"a": 3})])),
-        ];
-        let merged = merge_tagged_results(per_profile, true);
-
-        assert_eq!(merged.len(), 3);
-        assert_eq!(merged[0]["profile"], json!("prod"));
-        assert_eq!(merged[1]["profile"], json!("prod"));
-        assert_eq!(merged[2]["profile"], json!("staging"));
-    }
-
-    #[test]
-    fn merge_tagged_results_omits_profile_when_disabled() {
-        let per_profile = vec![("prod".to_string(), Ok(vec![json!({"a": 1})]))];
-        let merged = merge_tagged_results(per_profile, false);
-
-        assert_eq!(merged.len(), 1);
-        assert!(merged[0].get("profile").is_none());
-        assert_eq!(merged[0]["a"], json!(1));
-    }
-
-    #[test]
-    fn merge_tagged_results_skips_errored_profiles() {
-        let per_profile: Vec<(String, Result<Vec<Value>>)> = vec![
-            ("good".to_string(), Ok(vec![json!({"a": 1})])),
+    fn collect_successes_skips_errored_profiles_on_partial_failure() {
+        let per_profile: Vec<(String, Result<i32>)> = vec![
+            ("good".to_string(), Ok(1)),
             ("bad".to_string(), Err(anyhow::anyhow!("simulated error"))),
-            ("also-good".to_string(), Ok(vec![json!({"a": 2})])),
+            ("also-good".to_string(), Ok(2)),
         ];
-        let merged = merge_tagged_results(per_profile, true);
-
-        assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0]["profile"], json!("good"));
-        assert_eq!(merged[1]["profile"], json!("also-good"));
+        let successes = collect_successes(per_profile).expect("partial failure should not bail");
+        assert_eq!(
+            successes,
+            vec![("good".to_string(), 1), ("also-good".to_string(), 2)]
+        );
     }
 
     #[test]
-    fn tag_rows_overwrites_existing_profile_key() {
-        let rows = vec![json!({"profile": "old", "data": "x"})];
-        let tagged = tag_rows(rows, "new", true);
-        assert_eq!(tagged[0]["profile"], json!("new"));
+    fn collect_successes_bails_when_every_target_fails() {
+        let per_profile: Vec<(String, Result<i32>)> = vec![
+            ("a".to_string(), Err(anyhow::anyhow!("boom"))),
+            ("b".to_string(), Err(anyhow::anyhow!("boom"))),
+        ];
+        let result = collect_successes(per_profile);
+        assert!(
+            result.is_err(),
+            "a total failure must surface as an error, not a silent empty result"
+        );
+    }
+
+    #[test]
+    fn collect_successes_does_not_bail_on_empty_input() {
+        let per_profile: Vec<(String, Result<i32>)> = vec![];
+        let successes = collect_successes(per_profile).expect("empty fan-out is not a failure");
+        assert!(successes.is_empty());
     }
 }

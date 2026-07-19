@@ -11,7 +11,7 @@ use toon_format::encode_default as toon_encode;
 pub mod api;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{
     DashboardFolderItem, DashboardSearchResult, DashboardsApi, IssueSeverity, QueryByFieldResult,
@@ -125,24 +125,11 @@ async fn collect_semantic_search_results(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<(String, DashboardSearchResult)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for r in resp.results {
-                    all_results.push((profile.clone(), r));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for r in resp.results {
+            all_results.push((profile.clone(), r));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     Ok(all_results)
 }
@@ -207,24 +194,11 @@ async fn collect_query_search_results(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<(String, QuerySearchResult)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for r in resp.results {
-                    all_results.push((profile.clone(), r));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for r in resp.results {
+            all_results.push((profile.clone(), r));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     Ok(all_results)
 }
@@ -279,24 +253,11 @@ async fn collect_queries_by_field_results(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<(String, QueryByFieldResult)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for r in resp.queries {
-                    all_results.push((profile.clone(), r));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for r in resp.queries {
+            all_results.push((profile.clone(), r));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     Ok(all_results)
 }
@@ -388,26 +349,13 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, api::DashboardCatalogItem)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for item in resp.items {
-                    all_rows.push(catalog_item_to_json(&item, include_profile, &profile));
-                    all_items.push((profile.clone(), item));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for item in resp.items {
+            all_rows.push(catalog_item_to_json(&item, include_profile, &profile));
+            all_items.push((profile.clone(), item));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -541,25 +489,12 @@ pub async fn run_get(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
 
     match output {
@@ -697,42 +632,29 @@ pub async fn run_create(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut resp) => {
-                let created_id = resp
-                    .get("dashboardId")
+    for (profile, mut resp) in collect_successes(per_profile)? {
+        let created_id = resp
+            .get("dashboardId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                resp.get("id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
-                    .or_else(|| {
-                        resp.get("id")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .or_else(|| {
-                        resp.get("dashboard")
-                            .and_then(|d| d.get("id"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .unwrap_or_else(|| "unknown".to_string());
+            })
+            .or_else(|| {
+                resp.get("dashboard")
+                    .and_then(|d| d.get("id"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "unknown".to_string());
 
-                if include_profile {
-                    render::tag_get_result(&mut resp, &profile);
-                }
-                all_results.push((profile, created_id, resp));
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+        if include_profile {
+            render::tag_get_result(&mut resp, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push((profile, created_id, resp));
     }
 
     match output {
@@ -927,26 +849,13 @@ pub async fn run_folders_list(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, DashboardFolderItem)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for item in resp.folders {
-                    all_rows.push(folder_item_to_json(&item, include_profile, &profile));
-                    all_items.push((profile.clone(), item));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for item in resp.folders {
+            all_rows.push(folder_item_to_json(&item, include_profile, &profile));
+            all_items.push((profile.clone(), item));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -1015,35 +924,22 @@ pub async fn run_folders_create(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut resp) => {
-                let created_id = resp
-                    .get("folderId")
+    for (profile, mut resp) in collect_successes(per_profile)? {
+        let created_id = resp
+            .get("folderId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                resp.get("id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
-                    .or_else(|| {
-                        resp.get("id")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .unwrap_or_else(|| "unknown".to_string());
-                if include_profile {
-                    render::tag_get_result(&mut resp, &profile);
-                }
-                all_results.push((profile, created_id, resp));
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        if include_profile {
+            render::tag_get_result(&mut resp, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push((profile, created_id, resp));
     }
 
     match output {
@@ -1196,20 +1092,9 @@ pub async fn run_check(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => all_issues.push((profile, resp.issues)),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, resp) in collect_successes(per_profile)? {
+        all_issues.push((profile, resp.issues));
     }
 
     // CI-gate semantics: any error-severity issue (in any profile) fails.

@@ -2,13 +2,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{CustomRole, RolesApi, SystemRole};
 
@@ -74,24 +74,11 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, CustomRole)> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for role in resp.roles {
-                    all_json.push(custom_role_to_json(&role, include_profile, &profile));
-                    all_items.push((profile.clone(), role));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for role in resp.roles {
+            all_json.push(custom_role_to_json(&role, include_profile, &profile));
+            all_items.push((profile.clone(), role));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -154,23 +141,10 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(role) = resp.role {
-                    all_results.push(custom_role_to_json(&role, include_profile, &profile));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        if let Some(role) = resp.role {
+            all_results.push(custom_role_to_json(&role, include_profile, &profile));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -210,32 +184,19 @@ pub async fn run_create(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                let id = resp.id.clone().unwrap_or_else(|| "unknown".to_string());
-                eprintln!(
-                    "{}",
-                    format!("Created custom role (ID: {id}) in profile '{profile}'.").green()
-                );
-                let mut v = json!({ "id": resp.id });
-                if targets.len() > 1 {
-                    if let Value::Object(ref mut m) = v {
-                        m.insert("profile".to_string(), Value::String(profile.to_string()));
-                    }
-                }
-                all_results.push(v);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+    for (profile, resp) in collect_successes(per_profile)? {
+        let id = resp.id.clone().unwrap_or_else(|| "unknown".to_string());
+        eprintln!(
+            "{}",
+            format!("Created custom role (ID: {id}) in profile '{profile}'.").green()
+        );
+        let mut v = json!({ "id": resp.id });
+        if targets.len() > 1 {
+            if let Value::Object(ref mut m) = v {
+                m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(v);
     }
 
     match output {
@@ -271,25 +232,12 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated custom role in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated custom role in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {
@@ -316,22 +264,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Custom role {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Custom role {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -348,24 +285,11 @@ pub async fn run_system(targets: &[Arc<ExecutionTarget>], output: OutputFormat) 
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, SystemRole)> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for role in resp.roles {
-                    all_json.push(system_role_to_json(&role, include_profile, &profile));
-                    all_items.push((profile.clone(), role));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for role in resp.roles {
+            all_json.push(system_role_to_json(&role, include_profile, &profile));
+            all_items.push((profile.clone(), role));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

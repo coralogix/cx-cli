@@ -9,13 +9,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::AiCenterApi;
 
@@ -114,25 +114,12 @@ fn collect_objects(
     per_profile: Vec<(String, Result<Value>)>,
     include_profile: bool,
 ) -> Result<Vec<Value>> {
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all.push(val);
     }
     Ok(all)
 }
@@ -169,34 +156,19 @@ pub async fn run_applications_list(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(items) => {
-                for item in items {
-                    rows.push(vec![
-                        profile.clone(),
-                        col(&item, "id").to_string(),
-                        col(&item, "application").to_string(),
-                        col(&item, "subsystem").to_string(),
-                        render::bool_display(
-                            item.get("guardrailsIntegrated").and_then(Value::as_bool),
-                        ),
-                    ]);
-                    all_json.push(tag_item(item, include_profile, &profile));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, items) in collect_successes(per_profile)? {
+        for item in items {
+            rows.push(vec![
+                profile.clone(),
+                col(&item, "id").to_string(),
+                col(&item, "application").to_string(),
+                col(&item, "subsystem").to_string(),
+                render::bool_display(item.get("guardrailsIntegrated").and_then(Value::as_bool)),
+            ]);
+            all_json.push(tag_item(item, include_profile, &profile));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     emit_table(
@@ -272,38 +244,25 @@ pub async fn run_evaluations_list(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(items) => {
-                for item in items {
-                    rows.push(vec![
-                        profile.clone(),
-                        col(&item, "id").to_string(),
-                        col(&item, "application").to_string(),
-                        col(&item, "subsystem").to_string(),
-                        api::eval_config_type(&item),
-                        col(&item, "target").to_string(),
-                        render::bool_display(item.get("isEnabled").and_then(Value::as_bool)),
-                        item.get("threshold")
-                            .and_then(Value::as_f64)
-                            .map(|t| t.to_string())
-                            .unwrap_or_default(),
-                    ]);
-                    all_json.push(tag_item(item, include_profile, &profile));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, items) in collect_successes(per_profile)? {
+        for item in items {
+            rows.push(vec![
+                profile.clone(),
+                col(&item, "id").to_string(),
+                col(&item, "application").to_string(),
+                col(&item, "subsystem").to_string(),
+                api::eval_config_type(&item),
+                col(&item, "target").to_string(),
+                render::bool_display(item.get("isEnabled").and_then(Value::as_bool)),
+                item.get("threshold")
+                    .and_then(Value::as_f64)
+                    .map(|t| t.to_string())
+                    .unwrap_or_default(),
+            ]);
+            all_json.push(tag_item(item, include_profile, &profile));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     emit_table(
@@ -477,39 +436,26 @@ async fn run_custom_evaluations_table(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            // Items are raw API objects: the text table reads a few columns, but
-            // JSON/agents output keeps the full policy (config, instructions, etc.).
-            Ok(items) => {
-                for item in items {
-                    let app_count = item
-                        .get("applicationIds")
-                        .and_then(Value::as_array)
-                        .map(|a| a.len())
-                        .unwrap_or(0);
-                    rows.push(vec![
-                        profile.clone(),
-                        col(&item, "id").to_string(),
-                        col(&item, "name").to_string(),
-                        app_count.to_string(),
-                        col(&item, "description").chars().take(60).collect(),
-                    ]);
-                    all_json.push(tag_item(item, include_profile, &profile));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    // Items are raw API objects: the text table reads a few columns, but
+    // JSON/agents output keeps the full policy (config, instructions, etc.).
+    for (profile, items) in collect_successes(per_profile)? {
+        for item in items {
+            let app_count = item
+                .get("applicationIds")
+                .and_then(Value::as_array)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            rows.push(vec![
+                profile.clone(),
+                col(&item, "id").to_string(),
+                col(&item, "name").to_string(),
+                app_count.to_string(),
+                col(&item, "description").chars().take(60).collect(),
+            ]);
+            all_json.push(tag_item(item, include_profile, &profile));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     emit_table(

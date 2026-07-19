@@ -2,13 +2,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{Router, RoutersApi};
 
@@ -55,26 +55,13 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Router)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for router in resp.routers {
-                    all_json.push(router_to_json(&router, include_profile, &profile));
-                    all_items.push((profile.clone(), router));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for router in resp.routers {
+            all_json.push(router_to_json(&router, include_profile, &profile));
+            all_items.push((profile.clone(), router));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -129,25 +116,12 @@ pub async fn run_get(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
 
     match output {
@@ -187,32 +161,19 @@ pub async fn run_create(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(router) = resp.router {
-                    eprintln!(
-                        "{}",
-                        format!(
-                            "Created router '{}' in profile '{profile}'.",
-                            router.display_name()
-                        )
-                        .green()
-                    );
-                    all_results.push(router_to_json(&router, include_profile, &profile));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        if let Some(router) = resp.router {
+            eprintln!(
+                "{}",
+                format!(
+                    "Created router '{}' in profile '{profile}'.",
+                    router.display_name()
+                )
+                .green()
+            );
+            all_results.push(router_to_json(&router, include_profile, &profile));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -241,26 +202,13 @@ pub async fn run_update(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated router in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated router in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -286,22 +234,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Router {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, ()) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Router {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -321,20 +258,9 @@ pub async fn run_validate_matcher(
         }
     })
     .await;
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => all_results.push(val),
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (_profile, val) in collect_successes(per_profile)? {
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,

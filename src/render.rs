@@ -5,9 +5,10 @@
 //!
 //! ## Profile key convention
 //!
-//! List commands inject a `"profile"` key into JSON rows via `execution::tag_rows`.
-//! Get commands use `"_profile"` (underscore-prefixed) as a rendering hint that
-//! should not appear in user-facing JSON output - see [`tag_get_result`].
+//! List commands inject a `"profile"` key into JSON rows inline while merging
+//! `execution::collect_successes` results. Get commands use `"_profile"`
+//! (underscore-prefixed) as a rendering hint that should not appear in
+//! user-facing JSON output - see [`tag_get_result`].
 
 use anyhow::Result;
 use colored::Colorize;

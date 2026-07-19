@@ -2,13 +2,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{Extension, ExtensionsApi};
 
@@ -57,24 +57,11 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Extension)> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for ext in resp.extensions {
-                    all_json.push(extension_to_json(&ext, include_profile, &profile));
-                    all_items.push((profile.clone(), ext));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for ext in resp.extensions {
+            all_json.push(extension_to_json(&ext, include_profile, &profile));
+            all_items.push((profile.clone(), ext));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -131,24 +118,11 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
 
     match output {
@@ -182,24 +156,11 @@ pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Extension)> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for ext in resp.deployed_extensions {
-                    all_json.push(extension_to_json(&ext, include_profile, &profile));
-                    all_items.push((profile.clone(), ext));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in collect_successes(per_profile)? {
+        for ext in resp.deployed_extensions {
+            all_json.push(extension_to_json(&ext, include_profile, &profile));
+            all_items.push((profile.clone(), ext));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -255,25 +216,12 @@ pub async fn run_deploy(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Extension deployed in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Extension deployed in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {
@@ -306,25 +254,12 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Extension updated in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Extension updated in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {
@@ -357,25 +292,12 @@ pub async fn run_undeploy(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Extension undeployed in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    for (profile, val) in collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Extension undeployed in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {

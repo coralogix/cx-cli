@@ -2,13 +2,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use colored::Colorize;
 use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{Case, CasesApi, TeammateDirectory};
 
@@ -299,27 +299,14 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<(Value, TeammateDirectory)> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok((mut val, directory)) => {
-                if let Some(case) = val.get_mut("case") {
-                    substitute_assignee_email(case, &directory);
-                }
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push((val, directory));
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, (mut val, directory)) in collect_successes(per_profile)? {
+        if let Some(case) = val.get_mut("case") {
+            substitute_assignee_email(case, &directory);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        all_results.push((val, directory));
     }
 
     // Most renderers want only the JSON values; the directory we keep for the
@@ -729,29 +716,16 @@ pub async fn run_events_list(
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok((resp, directory)) => {
-                for mut event in resp.events {
-                    substitute_user_emails(&mut event, &directory);
-                    if include_profile {
-                        if let Value::Object(ref mut m) = event {
-                            m.insert("profile".to_string(), Value::String(profile.clone()));
-                        }
-                    }
-                    all_json.push(event);
+    for (profile, (resp, directory)) in collect_successes(per_profile)? {
+        for mut event in resp.events {
+            substitute_user_emails(&mut event, &directory);
+            if include_profile {
+                if let Value::Object(ref mut m) = event {
+                    m.insert("profile".to_string(), Value::String(profile.clone()));
                 }
             }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+            all_json.push(event);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -832,24 +806,11 @@ pub async fn run_event_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut val) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(val);
     }
 
     match output {
@@ -899,39 +860,26 @@ pub async fn run_notifications(
     // Response shape: { "deliveriesByCase": { "<case-id>": { "notificationDeliveries": [ ... ] } } }
     // For text/json rendering, flatten into rows tagged with caseId so the output is tabular-friendly.
     let mut all_json: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                let map = val.get("deliveriesByCase").and_then(|v| v.as_object());
-                if let Some(map) = map {
-                    for (case_id, payload) in map {
-                        let deliveries = payload
-                            .get("notificationDeliveries")
-                            .and_then(|v| v.as_array())
-                            .cloned()
-                            .unwrap_or_default();
-                        for mut delivery in deliveries {
-                            if let Value::Object(ref mut m) = delivery {
-                                m.insert("caseId".to_string(), Value::String(case_id.clone()));
-                                if include_profile {
-                                    m.insert("profile".to_string(), Value::String(profile.clone()));
-                                }
-                            }
-                            all_json.push(delivery);
+    for (profile, val) in collect_successes(per_profile)? {
+        let map = val.get("deliveriesByCase").and_then(|v| v.as_object());
+        if let Some(map) = map {
+            for (case_id, payload) in map {
+                let deliveries = payload
+                    .get("notificationDeliveries")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                for mut delivery in deliveries {
+                    if let Value::Object(ref mut m) = delivery {
+                        m.insert("caseId".to_string(), Value::String(case_id.clone()));
+                        if include_profile {
+                            m.insert("profile".to_string(), Value::String(profile.clone()));
                         }
                     }
+                    all_json.push(delivery);
                 }
             }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -996,28 +944,15 @@ fn finish_lifecycle(
     success_label: &str,
 ) -> Result<()> {
     let mut all_results: Vec<Value> = Vec::new();
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut v) => {
-                if include_profile {
-                    render::tag_get_result(&mut v, &profile);
-                }
-                all_results.push(v);
-                eprintln!(
-                    "{}",
-                    format!("{success_label} in profile '{profile}'.").green()
-                );
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, mut v) in collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut v, &profile);
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+        all_results.push(v);
+        eprintln!(
+            "{}",
+            format!("{success_label} in profile '{profile}'.").green()
+        );
     }
 
     match output {

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use colored::Colorize;
 use serde_json::Value;
 
 use crate::commands::dataprime::semantic_search::{semantic_field_lookup, SemanticFieldResult};
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 
 pub async fn run(
@@ -35,24 +35,11 @@ pub async fn run(
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<(String, SemanticFieldResult)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(results) => {
-                for r in results {
-                    all_results.push((profile.clone(), r));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, results) in collect_successes(per_profile)? {
+        for r in results {
+            all_results.push((profile.clone(), r));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {

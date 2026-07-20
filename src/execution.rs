@@ -78,7 +78,7 @@ where
 /// total failure surfaces as an error instead of rendering as a silently
 /// empty result (FORGE-482). Partial failure (some targets ok) returns `Ok`
 /// with the survivors - behavior per docs/multi-profile.md is unchanged.
-pub fn collect_successes<T>(per_profile: Vec<(String, Result<T>)>) -> Result<Vec<(String, T)>> {
+pub fn report_errors_and_collect_successes<T>(per_profile: Vec<(String, Result<T>)>) -> Result<Vec<(String, T)>> {
     let target_count = per_profile.len();
     let mut successes = Vec::with_capacity(target_count);
     let mut error_count = 0usize;
@@ -107,7 +107,7 @@ mod tests {
     fn collect_successes_returns_all_when_none_fail() {
         let per_profile: Vec<(String, Result<i32>)> =
             vec![("prod".to_string(), Ok(1)), ("staging".to_string(), Ok(2))];
-        let successes = collect_successes(per_profile).expect("should not bail");
+        let successes = report_errors_and_collect_successes(per_profile).expect("should not bail");
         assert_eq!(
             successes,
             vec![("prod".to_string(), 1), ("staging".to_string(), 2)]
@@ -121,7 +121,7 @@ mod tests {
             ("bad".to_string(), Err(anyhow::anyhow!("simulated error"))),
             ("also-good".to_string(), Ok(2)),
         ];
-        let successes = collect_successes(per_profile).expect("partial failure should not bail");
+        let successes = report_errors_and_collect_successes(per_profile).expect("partial failure should not bail");
         assert_eq!(
             successes,
             vec![("good".to_string(), 1), ("also-good".to_string(), 2)]
@@ -134,7 +134,7 @@ mod tests {
             ("a".to_string(), Err(anyhow::anyhow!("boom"))),
             ("b".to_string(), Err(anyhow::anyhow!("boom"))),
         ];
-        let result = collect_successes(per_profile);
+        let result = report_errors_and_collect_successes(per_profile);
         assert!(
             result.is_err(),
             "a total failure must surface as an error, not a silent empty result"
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn collect_successes_does_not_bail_on_empty_input() {
         let per_profile: Vec<(String, Result<i32>)> = vec![];
-        let successes = collect_successes(per_profile).expect("empty fan-out is not a failure");
+        let successes = report_errors_and_collect_successes(per_profile).expect("empty fan-out is not a failure");
         assert!(successes.is_empty());
     }
 }

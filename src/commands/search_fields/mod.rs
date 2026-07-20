@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::commands::dataprime::semantic_search::{semantic_field_lookup, SemanticFieldResult};
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 
 pub async fn run(
@@ -36,7 +36,7 @@ pub async fn run(
     .await;
 
     let mut all_results: Vec<(String, SemanticFieldResult)> = Vec::new();
-    for (profile, results) in collect_successes(per_profile)? {
+    for (profile, results) in report_errors_and_collect_successes(per_profile)? {
         for r in results {
             all_results.push((profile.clone(), r));
         }

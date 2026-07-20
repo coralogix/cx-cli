@@ -15,7 +15,7 @@ use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::AiCenterApi;
 
@@ -115,7 +115,7 @@ fn collect_objects(
     include_profile: bool,
 ) -> Result<Vec<Value>> {
     let mut all: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -158,7 +158,7 @@ pub async fn run_applications_list(
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, items) in collect_successes(per_profile)? {
+    for (profile, items) in report_errors_and_collect_successes(per_profile)? {
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -246,7 +246,7 @@ pub async fn run_evaluations_list(
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, items) in collect_successes(per_profile)? {
+    for (profile, items) in report_errors_and_collect_successes(per_profile)? {
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -440,7 +440,7 @@ async fn run_custom_evaluations_table(
     let mut rows: Vec<Vec<String>> = Vec::new();
     // Items are raw API objects: the text table reads a few columns, but
     // JSON/agents output keeps the full policy (config, instructions, etc.).
-    for (profile, items) in collect_successes(per_profile)? {
+    for (profile, items) in report_errors_and_collect_successes(per_profile)? {
         for item in items {
             let app_count = item
                 .get("applicationIds")

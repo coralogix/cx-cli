@@ -15,7 +15,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::spill::{maybe_spill, transform_for_agents, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;
@@ -291,7 +291,7 @@ pub fn merge_results(
     }
     let mut is_aggregate: Option<bool> = None;
 
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for w in resp.warnings {
             warnings.push(format!("[{profile}] {w}"));
         }

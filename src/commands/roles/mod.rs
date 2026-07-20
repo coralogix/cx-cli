@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{CustomRole, RolesApi, SystemRole};
 
@@ -74,7 +74,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, CustomRole)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for role in resp.roles {
             all_json.push(custom_role_to_json(&role, include_profile, &profile));
             all_items.push((profile.clone(), role));
@@ -141,7 +141,7 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(role) = resp.role {
             all_results.push(custom_role_to_json(&role, include_profile, &profile));
         }
@@ -184,7 +184,7 @@ pub async fn run_create(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         let id = resp.id.clone().unwrap_or_else(|| "unknown".to_string());
         eprintln!(
             "{}",
@@ -232,7 +232,7 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated custom role in profile '{profile}'.").green()
@@ -264,7 +264,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Custom role {id} deleted in profile '{profile}'.").green()
@@ -285,7 +285,7 @@ pub async fn run_system(targets: &[Arc<ExecutionTarget>], output: OutputFormat) 
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, SystemRole)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for role in resp.roles {
             all_json.push(system_role_to_json(&role, include_profile, &profile));
             all_items.push((profile.clone(), role));

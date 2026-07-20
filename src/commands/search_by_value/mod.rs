@@ -8,7 +8,7 @@ pub mod api;
 
 use crate::commands::dashboards::profiled_api_row_to_json;
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::SearchByValueResult;
 
@@ -44,7 +44,7 @@ pub async fn run(
     .await;
 
     let mut all_results: Vec<(String, SearchByValueResult)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for r in resp.matches {
             all_results.push((profile.clone(), r));
         }

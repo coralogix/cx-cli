@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{View, ViewFolder, ViewsApi};
 
@@ -67,7 +67,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     .await;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, View)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for view in resp.views {
             all_json.push(view_to_json(&view, include_profile, &profile));
             all_items.push((profile.clone(), view));
@@ -120,7 +120,7 @@ pub async fn run_get(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -162,7 +162,7 @@ pub async fn run_create(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(view) = resp.view {
             eprintln!(
                 "{}",
@@ -206,7 +206,7 @@ pub async fn run_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated view in profile '{profile}'.").green()
@@ -237,7 +237,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("View {id} deleted in profile '{profile}'.").green()
@@ -261,7 +261,7 @@ pub async fn run_folders_list(
     .await;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ViewFolder)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for folder in resp.folders {
             all_json.push(folder_to_json(&folder, include_profile, &profile));
             all_items.push((profile.clone(), folder));
@@ -313,7 +313,7 @@ pub async fn run_folders_get(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -355,7 +355,7 @@ pub async fn run_folders_create(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(folder) = resp.folder {
             eprintln!(
                 "{}",
@@ -399,7 +399,7 @@ pub async fn run_folders_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated folder in profile '{profile}'.").green()
@@ -430,7 +430,7 @@ pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> R
         }
     })
     .await;
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Folder {id} deleted in profile '{profile}'.").green()

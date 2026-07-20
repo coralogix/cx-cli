@@ -8,7 +8,7 @@ use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::RetentionsApi;
 
@@ -41,7 +41,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -87,7 +87,7 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated retention settings in profile '{profile}'.").green()
@@ -118,7 +118,7 @@ pub async fn run_activate(targets: &[Arc<ExecutionTarget>]) -> Result<()> {
     })
     .await;
 
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Retention activated in profile '{profile}'.").green()
@@ -140,7 +140,7 @@ pub async fn run_status(targets: &[Arc<ExecutionTarget>], output: OutputFormat) 
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }

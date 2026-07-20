@@ -11,7 +11,7 @@ use toon_format::encode_default as toon_encode;
 pub mod api;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{
     DashboardFolderItem, DashboardSearchResult, DashboardsApi, IssueSeverity, QueryByFieldResult,
@@ -126,7 +126,7 @@ async fn collect_semantic_search_results(
     .await;
 
     let mut all_results: Vec<(String, DashboardSearchResult)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for r in resp.results {
             all_results.push((profile.clone(), r));
         }
@@ -195,7 +195,7 @@ async fn collect_query_search_results(
     .await;
 
     let mut all_results: Vec<(String, QuerySearchResult)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for r in resp.results {
             all_results.push((profile.clone(), r));
         }
@@ -254,7 +254,7 @@ async fn collect_queries_by_field_results(
     .await;
 
     let mut all_results: Vec<(String, QueryByFieldResult)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for r in resp.queries {
             all_results.push((profile.clone(), r));
         }
@@ -351,7 +351,7 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
 
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, api::DashboardCatalogItem)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for item in resp.items {
             all_rows.push(catalog_item_to_json(&item, include_profile, &profile));
             all_items.push((profile.clone(), item));
@@ -490,7 +490,7 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -633,7 +633,7 @@ pub async fn run_create(
     .await;
 
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
-    for (profile, mut resp) in collect_successes(per_profile)? {
+    for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
         let created_id = resp
             .get("dashboardId")
             .and_then(|v| v.as_str())
@@ -851,7 +851,7 @@ pub async fn run_folders_list(
 
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, DashboardFolderItem)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for item in resp.folders {
             all_rows.push(folder_item_to_json(&item, include_profile, &profile));
             all_items.push((profile.clone(), item));
@@ -925,7 +925,7 @@ pub async fn run_folders_create(
     .await;
 
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
-    for (profile, mut resp) in collect_successes(per_profile)? {
+    for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
         let created_id = resp
             .get("folderId")
             .and_then(|v| v.as_str())
@@ -1093,7 +1093,7 @@ pub async fn run_check(
     .await;
 
     let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         all_issues.push((profile, resp.issues));
     }
 

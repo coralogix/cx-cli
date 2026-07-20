@@ -8,7 +8,7 @@ use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::NotificationTestingApi;
 
@@ -62,7 +62,7 @@ pub async fn run_test_connector(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (_profile, val) in collect_successes(per_profile)? {
+    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
         all_results.push(val);
     }
     render_results(&all_results, output)
@@ -84,7 +84,7 @@ pub async fn run_test_destination(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (_profile, val) in collect_successes(per_profile)? {
+    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
         all_results.push(val);
     }
     render_results(&all_results, output)
@@ -106,7 +106,7 @@ pub async fn run_test_preset(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (_profile, val) in collect_successes(per_profile)? {
+    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
         all_results.push(val);
     }
     render_results(&all_results, output)
@@ -128,7 +128,7 @@ pub async fn run_test_routing_condition(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (_profile, val) in collect_successes(per_profile)? {
+    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
         all_results.push(val);
     }
     render_results(&all_results, output)
@@ -150,7 +150,7 @@ pub async fn run_test_template_render(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (_profile, val) in collect_successes(per_profile)? {
+    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
         all_results.push(val);
     }
     render_results(&all_results, output)

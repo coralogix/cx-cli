@@ -8,7 +8,7 @@ use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::EnrichmentsApi;
 
@@ -121,7 +121,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -147,7 +147,7 @@ pub async fn run_add(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Added enrichments in profile '{profile}'.").green()
@@ -173,7 +173,7 @@ pub async fn run_remove(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Removed enrichments in profile '{profile}'.").green()
@@ -200,7 +200,7 @@ pub async fn run_overwrite(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Overwrote enrichments in profile '{profile}'.").green()
@@ -219,7 +219,7 @@ pub async fn run_limit(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -237,7 +237,7 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }

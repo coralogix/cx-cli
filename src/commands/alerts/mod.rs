@@ -9,7 +9,7 @@ pub mod api;
 
 use crate::config::OutputFormat;
 use crate::error::CxError;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{normalize_alert_payload, AlertDef, AlertsApi};
 
@@ -92,7 +92,7 @@ pub async fn run_list(
     // Merge & filter
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertDef)> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for alert in resp.alert_defs {
             if let Some(filter) = name_filter {
                 let name = alert.display_name().to_lowercase();
@@ -171,7 +171,7 @@ pub async fn run_get(
 
     // Merge - collect raw API responses
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -269,7 +269,7 @@ pub async fn run_create(
 
     // Merge
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(alert) = resp.alert_def {
             let name = alert.display_name();
             let id = alert.id.as_deref().unwrap_or("unknown");
@@ -318,7 +318,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
     })
     .await;
 
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Deleted alert {alert_id} in profile '{profile}'.").green()
@@ -372,7 +372,7 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
     })
     .await;
 
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Alert {alert_id} enabled in profile '{profile}'.").green()
@@ -399,7 +399,7 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
     })
     .await;
 
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Alert {alert_id} disabled in profile '{profile}'.").green()
@@ -480,7 +480,7 @@ pub async fn run_events(
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Value)> = Vec::new();
-    for (profile, events) in collect_successes(per_profile)? {
+    for (profile, events) in report_errors_and_collect_successes(per_profile)? {
         for event in events {
             all_json.push(event_to_json(&event, include_profile, &profile));
             all_items.push((profile.clone(), event));
@@ -541,7 +541,7 @@ pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFor
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
-    for (profile, resp) in collect_successes(per_profile)? {
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         for mut stat in resp.stats {
             if include_profile {
                 if let Value::Object(ref mut m) = stat {

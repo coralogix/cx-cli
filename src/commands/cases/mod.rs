@@ -8,7 +8,7 @@ use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::{Case, CasesApi, TeammateDirectory};
 
@@ -299,7 +299,7 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<(Value, TeammateDirectory)> = Vec::new();
-    for (profile, (mut val, directory)) in collect_successes(per_profile)? {
+    for (profile, (mut val, directory)) in report_errors_and_collect_successes(per_profile)? {
         if let Some(case) = val.get_mut("case") {
             substitute_assignee_email(case, &directory);
         }
@@ -716,7 +716,7 @@ pub async fn run_events_list(
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
-    for (profile, (resp, directory)) in collect_successes(per_profile)? {
+    for (profile, (resp, directory)) in report_errors_and_collect_successes(per_profile)? {
         for mut event in resp.events {
             substitute_user_emails(&mut event, &directory);
             if include_profile {
@@ -806,7 +806,7 @@ pub async fn run_event_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -860,7 +860,7 @@ pub async fn run_notifications(
     // Response shape: { "deliveriesByCase": { "<case-id>": { "notificationDeliveries": [ ... ] } } }
     // For text/json rendering, flatten into rows tagged with caseId so the output is tabular-friendly.
     let mut all_json: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         let map = val.get("deliveriesByCase").and_then(|v| v.as_object());
         if let Some(map) = map {
             for (case_id, payload) in map {
@@ -944,7 +944,7 @@ fn finish_lifecycle(
     success_label: &str,
 ) -> Result<()> {
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut v) in collect_successes(per_profile)? {
+    for (profile, mut v) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut v, &profile);
         }

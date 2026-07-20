@@ -8,7 +8,7 @@ use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
 use crate::render;
 use api::DataArchiveApi;
 
@@ -39,7 +39,7 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -83,7 +83,7 @@ pub async fn run_metrics_create(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Created metrics archive config in profile '{profile}'.").green()
@@ -121,7 +121,7 @@ pub async fn run_metrics_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated metrics archive config in profile '{profile}'.").green()
@@ -151,7 +151,7 @@ pub async fn run_metrics_enable(targets: &[Arc<ExecutionTarget>]) -> Result<()> 
     })
     .await;
 
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Metrics archive enabled in profile '{profile}'.").green()
@@ -170,7 +170,7 @@ pub async fn run_metrics_disable(targets: &[Arc<ExecutionTarget>]) -> Result<()>
     })
     .await;
 
-    for (profile, ()) in collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Metrics archive disabled in profile '{profile}'.").green()
@@ -198,7 +198,7 @@ pub async fn run_metrics_validate(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -238,7 +238,7 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -282,7 +282,7 @@ pub async fn run_logs_set(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Logs archive target set in profile '{profile}'.").green()

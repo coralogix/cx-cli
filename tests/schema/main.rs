@@ -21,7 +21,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 29, "expected 29 top-level commands");
+    assert_eq!(commands.len(), 30, "expected 30 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()
@@ -44,6 +44,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(names.contains(&"docs"), "missing docs");
     assert!(names.contains(&"olly"), "missing olly");
     assert!(names.contains(&"ai-center"), "missing ai-center");
+    assert!(names.contains(&"datasets"), "missing datasets");
 
     // Verify old commands are gone
     assert!(
@@ -97,6 +98,16 @@ fn schema_outputs_valid_json_with_expected_commands() {
         .collect();
     assert!(docs_subs.contains(&"search"));
     assert!(docs_subs.contains(&"fetch"));
+
+    // Verify datasets subcommands
+    let datasets = commands.iter().find(|c| c["name"] == "datasets").unwrap();
+    let datasets_subs: Vec<&str> = datasets["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert!(datasets_subs.contains(&"list"));
 
     // Regression (FORGE-125): schema must distinguish options from positionals
     // so agents build commands the CLI accepts.

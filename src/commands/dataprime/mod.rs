@@ -15,7 +15,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::spill::{maybe_spill, transform_for_agents, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;

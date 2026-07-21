@@ -13,7 +13,7 @@ use api::{MetricsApi, PromQueryInstantResponse, PromQueryRangeResponse};
 use crate::api_client::CxClient;
 use crate::commands::dataprime::semantic_search::{semantic_metric_lookup, SemanticMetricResult};
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use crate::time::parse_timestamp;
 

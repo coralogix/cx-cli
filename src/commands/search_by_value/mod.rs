@@ -8,7 +8,7 @@ pub mod api;
 
 use crate::commands::dashboards::profiled_api_row_to_json;
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::SearchByValueResult;
 

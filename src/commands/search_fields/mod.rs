@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::commands::dataprime::semantic_search::{semantic_field_lookup, SemanticFieldResult};
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 
 pub async fn run(

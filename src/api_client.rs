@@ -169,10 +169,7 @@ impl CxClient {
     }
 
     /// Like [`Self::checked_text`], but returns raw bytes and response headers.
-    async fn checked_bytes(
-        &self,
-        resp: reqwest::Response,
-    ) -> Result<(Vec<u8>, header::HeaderMap)> {
+    async fn checked_bytes(&self, resp: reqwest::Response) -> Result<(Vec<u8>, header::HeaderMap)> {
         let status = resp.status();
         if status.is_success() {
             let headers = resp.headers().clone();

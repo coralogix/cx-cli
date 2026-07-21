@@ -327,15 +327,15 @@ fn parse_grpc_web_unary_response(body: &[u8]) -> Result<Vec<u8>> {
         }
     }
 
-    let status = grpc_status.unwrap_or(0);
-    if status != 0 {
-        return Err(CxError::Api {
-            status: 502,
-            message: format!(
-                "gRPC error (status {status}): {}",
-                grpc_message.unwrap_or_else(|| "unknown error".into())
-            ),
-        });
+    if let Some(status) = grpc_status {
+        if status != 0 {
+            return Err(CxError::Api {
+                status: status as u16,
+                message: grpc_message
+                    .filter(|m| !m.is_empty())
+                    .unwrap_or_else(|| format!("gRPC status {status}")),
+            });
+        }
     }
 
     Ok(message)
@@ -488,7 +488,7 @@ mod tests {
         body.extend_from_slice(trailers);
         let err = parse_grpc_web_unary_response(&body).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("status 7"), "{msg}");
+        assert!(msg.contains("(7)"), "{msg}");
         assert!(msg.contains("Permission denied"), "{msg}");
     }
 

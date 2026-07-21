@@ -266,7 +266,7 @@ fn timestamp_to_iso(ts: Option<&prost_types::Timestamp>) -> Option<String> {
 async fn grpc_web_unary(client: &CxClient, path: &str) -> Result<Vec<u8>> {
     // Empty protobuf message framed as gRPC-Web: flags(0) + length(0) + body.
     let request_frame = vec![0, 0, 0, 0, 0];
-    let response = client
+    let (body, headers) = client
         .post_bytes(
             path,
             request_frame,
@@ -278,14 +278,24 @@ async fn grpc_web_unary(client: &CxClient, path: &str) -> Result<Vec<u8>> {
             ],
         )
         .await?;
-    parse_grpc_web_unary_response(&response)
+    parse_grpc_web_unary_response(&body, &headers)
 }
 
-fn parse_grpc_web_unary_response(body: &[u8]) -> Result<Vec<u8>> {
+fn parse_grpc_web_unary_response(
+    body: &[u8],
+    headers: &reqwest::header::HeaderMap,
+) -> Result<Vec<u8>> {
     let mut offset = 0;
     let mut message = Vec::new();
-    let mut grpc_status: Option<u32> = None;
-    let mut grpc_message: Option<String> = None;
+    // Trailers-only responses put grpc-status on HTTP headers.
+    let mut grpc_status: Option<u32> = headers
+        .get("grpc-status")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok());
+    let mut grpc_message: Option<String> = headers
+        .get("grpc-message")
+        .and_then(|v| v.to_str().ok())
+        .map(percent_decode);
 
     while offset + 5 <= body.len() {
         let flags = body[offset];
@@ -474,7 +484,8 @@ mod tests {
         body.extend_from_slice(&(trailers.len() as u32).to_be_bytes());
         body.extend_from_slice(trailers);
 
-        let decoded_bytes = parse_grpc_web_unary_response(&body).unwrap();
+        let decoded_bytes =
+            parse_grpc_web_unary_response(&body, &reqwest::header::HeaderMap::new()).unwrap();
         let decoded = GetSystemDatasetsResponse::decode(decoded_bytes.as_slice()).unwrap();
         assert_eq!(decoded.datasets[0].dataset, "engine.queries");
     }
@@ -486,7 +497,8 @@ mod tests {
         body.push(0x80);
         body.extend_from_slice(&(trailers.len() as u32).to_be_bytes());
         body.extend_from_slice(trailers);
-        let err = parse_grpc_web_unary_response(&body).unwrap_err();
+        let err =
+            parse_grpc_web_unary_response(&body, &reqwest::header::HeaderMap::new()).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("(7)"), "{msg}");
         assert!(msg.contains("Permission denied"), "{msg}");

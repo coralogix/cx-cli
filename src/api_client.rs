@@ -154,7 +154,7 @@ impl CxClient {
         path: &str,
         body: Vec<u8>,
         headers: &[(&str, &str)],
-    ) -> Result<Vec<u8>> {
+    ) -> Result<(Vec<u8>, header::HeaderMap)> {
         let url = format!("{}{path}", self.endpoint);
         let mut req = self
             .inner
@@ -168,11 +168,15 @@ impl CxClient {
         self.checked_bytes(resp).await
     }
 
-    /// Like [`Self::checked_text`], but returns raw bytes.
-    async fn checked_bytes(&self, resp: reqwest::Response) -> Result<Vec<u8>> {
+    /// Like [`Self::checked_text`], but returns raw bytes and response headers.
+    async fn checked_bytes(
+        &self,
+        resp: reqwest::Response,
+    ) -> Result<(Vec<u8>, header::HeaderMap)> {
         let status = resp.status();
         if status.is_success() {
-            return Ok(resp.bytes().await?.to_vec());
+            let headers = resp.headers().clone();
+            return Ok((resp.bytes().await?.to_vec(), headers));
         }
 
         let code = status.as_u16();

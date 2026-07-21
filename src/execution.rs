@@ -81,18 +81,16 @@ where
 pub fn report_errors_and_collect_successes<T>(per_profile: Vec<(String, Result<T>)>) -> Result<Vec<(String, T)>> {
     let target_count = per_profile.len();
     let mut successes = Vec::with_capacity(target_count);
-    let mut error_count = 0usize;
     for (profile, result) in per_profile {
         match result {
             Ok(v) => successes.push((profile, v)),
             Err(e) => {
-                error_count += 1;
                 eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
             }
         }
     }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
+    if successes.is_empty() && target_count > 0 {
+        bail!("all profiles returned errors");
     }
     Ok(successes)
 }

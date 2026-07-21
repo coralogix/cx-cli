@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{ApiKeysApi, KeyInfo};
 
@@ -170,11 +170,12 @@ pub async fn run_create(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let name = resp.name.as_deref().unwrap_or("unknown");
-        let id = resp.key_id.as_deref().unwrap_or("unknown");
-        eprintln!(
-            "{}",
-            format!("Created API key '{name}' (ID: {id}) in profile '{profile}'.").green()
+        render::print_created(
+            "Created",
+            "API key",
+            resp.name.as_deref(),
+            resp.key_id.as_deref(),
+            &profile,
         );
         let mut v = json!({
             "key_id": resp.key_id,

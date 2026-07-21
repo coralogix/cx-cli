@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{CustomRole, RolesApi, SystemRole};
 
@@ -185,11 +185,7 @@ pub async fn run_create(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let id = resp.id.clone().unwrap_or_else(|| "unknown".to_string());
-        eprintln!(
-            "{}",
-            format!("Created custom role (ID: {id}) in profile '{profile}'.").green()
-        );
+        render::print_created("Created", "custom role", None, resp.id.as_deref(), &profile);
         let mut v = json!({ "id": resp.id });
         if targets.len() > 1 {
             if let Value::Object(ref mut m) = v {

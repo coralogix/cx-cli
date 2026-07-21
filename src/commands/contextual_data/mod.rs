@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{ContextualDataApi, ContextualDataIntegration};
 
@@ -134,14 +134,15 @@ pub async fn run_get(
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         // Normalize: API returns {integrationDetail: {integration: {...}, ...}}
         // Extract the inner integration and flatten to match list output.
-        if let Some(detail) = val.get("integrationDetail") {
-            if let Some(inner) = detail.get("integration") {
-                val = json!({
-                    "id": inner.get("id"),
-                    "name": inner.get("name"),
-                    "description": inner.get("description"),
-                });
-            }
+        if let Some(inner) = val
+            .get("integrationDetail")
+            .and_then(|d| d.get("integration"))
+        {
+            val = json!({
+                "id": inner.get("id"),
+                "name": inner.get("name"),
+                "description": inner.get("description"),
+            });
         }
         if include_profile {
             render::tag_get_result(&mut val, &profile);
@@ -188,11 +189,12 @@ pub async fn run_create(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let id = resp.integration_id.as_deref().unwrap_or("unknown");
-        eprintln!(
-            "{}",
-            format!("Created contextual data integration (ID: {id}) in profile '{profile}'.")
-                .green()
+        render::print_created(
+            "Created",
+            "contextual data integration",
+            None,
+            resp.integration_id.as_deref(),
+            &profile,
         );
         let mut v = json!({ "id": resp.integration_id });
         if include_profile {

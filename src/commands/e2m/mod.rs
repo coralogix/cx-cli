@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{E2mApi, E2mDefinition};
 
@@ -200,11 +200,7 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(def) = resp.e2m {
             let name = def.display_name().to_string();
-            let id = def.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created E2M '{name}' (ID: {id}) in profile '{profile}'.").green()
-            );
+            render::print_created("Created", "E2M", Some(&name), def.id.as_deref(), &profile);
             all_results.push(e2m_to_json(&def, include_profile, &profile));
         }
     }
@@ -246,11 +242,7 @@ pub async fn run_update(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(def) = resp.e2m {
             let name = def.display_name().to_string();
-            let id = def.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Updated E2M '{name}' (ID: {id}) in profile '{profile}'.").green()
-            );
+            render::print_created("Updated", "E2M", Some(&name), def.id.as_deref(), &profile);
             all_results.push(e2m_to_json(&def, include_profile, &profile));
         }
     }

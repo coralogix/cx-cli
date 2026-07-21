@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{Slo, SlosApi};
 
@@ -198,11 +198,7 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
-            let id = slo.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created SLO '{name}' (ID: {id}) in profile '{profile}'.").green()
-            );
+            render::print_created("Created", "SLO", Some(&name), slo.id.as_deref(), &profile);
             all_results.push(slo_to_json(&slo, include_profile, &profile));
         } else {
             eprintln!(
@@ -249,11 +245,7 @@ pub async fn run_update(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
-            let id = slo.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Updated SLO '{name}' (ID: {id}) in profile '{profile}'.").green()
-            );
+            render::print_created("Updated", "SLO", Some(&name), slo.id.as_deref(), &profile);
             all_results.push(slo_to_json(&slo, include_profile, &profile));
         } else {
             eprintln!(

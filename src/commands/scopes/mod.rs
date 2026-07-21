@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{Scope, ScopesApi};
 
@@ -188,10 +188,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(scope) = resp.scope {
             let name = scope.display_name().to_string();
-            let id = scope.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created scope '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "scope",
+                Some(&name),
+                scope.id.as_deref(),
+                &profile,
             );
             all_results.push(scope_to_json(&scope, targets.len() > 1, &profile));
         }

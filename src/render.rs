@@ -73,6 +73,35 @@ pub fn bool_display(v: Option<bool>) -> String {
     }
 }
 
+/// Print a create/update success line to stderr.
+///
+/// Prints green with the ID when the API response included one. Otherwise
+/// prints a yellow warning rather than fabricating a placeholder ID - a
+/// missing ID from an otherwise-successful response is unusual enough to
+/// flag, not paper over.
+///
+/// `name` is `None` for resources that have no display name of their own
+/// (e.g. a bare integration or role ID).
+pub fn print_created(verb: &str, kind: &str, name: Option<&str>, id: Option<&str>, profile: &str) {
+    let subject = match name {
+        Some(name) => format!("{kind} '{name}'"),
+        None => kind.to_string(),
+    };
+    match id {
+        Some(id) => eprintln!(
+            "{}",
+            format!("{verb} {subject} (ID: {id}) in profile '{profile}'.").green()
+        ),
+        None => eprintln!(
+            "{}",
+            format!(
+                "{verb} {subject} in profile '{profile}', but the response did not include an ID."
+            )
+            .yellow()
+        ),
+    }
+}
+
 // ── Text tables ──────────────────────────────────────────────────────────────
 
 /// Build a text table string with an optional "Profile" column.

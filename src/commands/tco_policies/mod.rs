@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{TcoPoliciesApi, TcoPolicy};
 
@@ -201,10 +201,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(policy) = resp.policy {
             let name = policy.display_name().to_string();
-            let id = policy.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created TCO policy '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "TCO policy",
+                Some(&name),
+                policy.id.as_deref(),
+                &profile,
             );
             all_results.push(policy_to_json(&policy, include_profile, &profile));
         }
@@ -246,10 +248,12 @@ pub async fn run_update(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(policy) = resp.policy {
             let name = policy.display_name().to_string();
-            let id = policy.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Updated TCO policy '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Updated",
+                "TCO policy",
+                Some(&name),
+                policy.id.as_deref(),
+                &profile,
             );
             all_results.push(policy_to_json(&policy, include_profile, &profile));
         }

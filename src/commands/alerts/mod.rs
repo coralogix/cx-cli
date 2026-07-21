@@ -9,7 +9,7 @@ pub mod api;
 
 use crate::config::OutputFormat;
 use crate::error::CxError;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{normalize_alert_payload, AlertDef, AlertsApi};
 
@@ -272,10 +272,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(alert) = resp.alert_def {
             let name = alert.display_name();
-            let id = alert.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created alert '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "alert",
+                Some(&name),
+                alert.id.as_deref(),
+                &profile,
             );
             let json = alert_to_json(&alert, include_profile, &profile);
             all_results.push(json);

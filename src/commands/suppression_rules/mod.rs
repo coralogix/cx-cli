@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{AlertSchedulerRule, AlertSchedulersApi};
 
@@ -178,11 +178,7 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
-            let id = rule.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created rule '{name}' (ID: {id}) in profile '{profile}'.").green()
-            );
+            render::print_created("Created", "rule", Some(name), rule.id.as_deref(), &profile);
             all_results.push(rule_to_json(&rule, include_profile, &profile));
         }
     }

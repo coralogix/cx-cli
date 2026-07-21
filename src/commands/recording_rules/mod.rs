@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{RecordingRuleGroup, RecordingRulesApi};
 
@@ -202,11 +202,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(group) = resp.group {
             let name = group.display_name().to_string();
-            let id = group.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created recording rule group '{name}' (ID: {id}) in profile '{profile}'.")
-                    .green()
+            render::print_created(
+                "Created",
+                "recording rule group",
+                Some(&name),
+                group.id.as_deref(),
+                &profile,
             );
             all_results.push(group_to_json(&group, include_profile, &profile));
         }

@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{Integration, IntegrationsApi};
 
@@ -170,10 +170,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(integration) = resp.deployment {
             let name = integration.name.clone().unwrap_or_default();
-            let id = integration.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created integration '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "integration",
+                Some(&name),
+                integration.id.as_deref(),
+                &profile,
             );
             all_results.push(rg_to_json(&integration, include_profile, &profile));
         }

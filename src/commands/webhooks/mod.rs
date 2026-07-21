@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{Webhook, WebhooksApi};
 
@@ -166,10 +166,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(webhook) = resp.webhook {
             let name = webhook.name.clone().unwrap_or_default();
-            let id = webhook.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created webhook '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "webhook",
+                Some(&name),
+                webhook.id.as_deref(),
+                &profile,
             );
             all_results.push(webhook_to_json(&webhook, include_profile, &profile));
         }

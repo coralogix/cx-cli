@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{Action, ActionsApi};
 
@@ -166,10 +166,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(action) = resp.action {
             let name = action.display_name().to_string();
-            let id = action.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created action '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "action",
+                Some(&name),
+                action.id.as_deref(),
+                &profile,
             );
             all_results.push(action_to_json(&action, include_profile, &profile));
         }

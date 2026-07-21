@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{TeamGroup, TeamGroupsApi};
 
@@ -295,13 +295,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(group) = resp.group {
             let name = group.display_name().to_string();
-            let id = group
-                .group_id
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string());
-            eprintln!(
-                "{}",
-                format!("Created team group '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "team group",
+                Some(&name),
+                group.group_id.as_deref(),
+                &profile,
             );
             all_results.push(group_to_json(&group, include_profile, &profile));
         }

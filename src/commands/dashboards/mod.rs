@@ -11,7 +11,7 @@ use toon_format::encode_default as toon_encode;
 pub mod api;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{
     DashboardFolderItem, DashboardSearchResult, DashboardsApi, IssueSeverity, QueryByFieldResult,
@@ -24,6 +24,30 @@ use crate::safety::confirm_destructive;
 
 /// JSON key for the source profile when merging multi-profile dashboard REST rows.
 const JSON_KEY_PROFILE: &str = "profile";
+
+/// Look up a string value at a JSON pointer path (e.g. `/dashboard/id`).
+fn json_str_at(v: &Value, pointer: &str) -> Option<String> {
+    v.pointer(pointer)
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+/// Extract a dashboard ID from a create/replace response, trying the shapes
+/// the API has been observed to return: a top-level `dashboardId`, a
+/// top-level `id`, or a nested `dashboard.id`.
+fn dashboard_id_from_response(resp: &Value) -> String {
+    json_str_at(resp, "/dashboardId")
+        .or_else(|| json_str_at(resp, "/id"))
+        .or_else(|| json_str_at(resp, "/dashboard/id"))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Extract a folder ID from a folder-create response, trying `folderId` then `id`.
+fn folder_id_from_response(resp: &Value) -> String {
+    json_str_at(resp, "/folderId")
+        .or_else(|| json_str_at(resp, "/id"))
+        .unwrap_or_else(|| "unknown".to_string())
+}
 
 /// Builds one catalog row as JSON for `json` / `agents` output after fan-out.
 ///
@@ -634,22 +658,7 @@ pub async fn run_create(
 
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
     for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
-        let created_id = resp
-            .get("dashboardId")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .or_else(|| {
-                resp.get("id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            })
-            .or_else(|| {
-                resp.get("dashboard")
-                    .and_then(|d| d.get("id"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            })
-            .unwrap_or_else(|| "unknown".to_string());
+        let created_id = dashboard_id_from_response(&resp);
 
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
@@ -745,22 +754,7 @@ pub async fn run_replace(
     for (profile, result) in per_profile {
         match result {
             Ok(mut resp) => {
-                let replaced_id = resp
-                    .get("dashboardId")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .or_else(|| {
-                        resp.get("id")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .or_else(|| {
-                        resp.get("dashboard")
-                            .and_then(|d| d.get("id"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                    })
-                    .unwrap_or_else(|| "unknown".to_string());
+                let replaced_id = dashboard_id_from_response(&resp);
 
                 if include_profile {
                     render::tag_get_result(&mut resp, &profile);
@@ -926,16 +920,7 @@ pub async fn run_folders_create(
 
     let mut all_results: Vec<(String, String, Value)> = Vec::new();
     for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
-        let created_id = resp
-            .get("folderId")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .or_else(|| {
-                resp.get("id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            })
-            .unwrap_or_else(|| "unknown".to_string());
+        let created_id = folder_id_from_response(&resp);
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
         }

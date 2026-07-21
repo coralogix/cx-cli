@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{report_errors_and_collect_successes, fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{Connector, ConnectorsApi};
 
@@ -166,10 +166,12 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(conn) = resp.connector {
             let name = conn.display_name().to_string();
-            let id = conn.id.as_deref().unwrap_or("unknown");
-            eprintln!(
-                "{}",
-                format!("Created connector '{name}' (ID: {id}) in profile '{profile}'.").green()
+            render::print_created(
+                "Created",
+                "connector",
+                Some(&name),
+                conn.id.as_deref(),
+                &profile,
             );
             all_results.push(connector_to_json(&conn, include_profile, &profile));
         }

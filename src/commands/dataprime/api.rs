@@ -177,13 +177,20 @@ pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
                     "query did not complete successfully (status: {status}): {line}"
                 )));
             }
-        } else {
-            // Unrecognized envelope. Don't silently drop it and report
-            // whatever rows were collected so far as a complete success.
+        } else if value.get("error").is_some() || value.get("errors").is_some() {
+            // Explicit mid-stream error envelope: the engine can report a
+            // failure in the response body after the 200 has been sent, rather
+            // than via the terminal `statistics` status. Surface it instead of
+            // reporting whatever rows arrived first as a complete success.
             let detail =
                 crate::api_client::extract_error_detail(line).unwrap_or_else(|| line.to_string());
             return Err(crate::error::CxError::QueryStream(detail));
         }
+        // Any other line is an unrecognized, non-error envelope (e.g. a future
+        // progress/heartbeat line). Skip it rather than failing an
+        // otherwise-successful query - the authoritative outcome is the
+        // terminal `statistics` status handled above, and a real failure also
+        // arrives as a non-COMPLETED status or an explicit error envelope.
     }
     Ok((rows, warnings))
 }
@@ -479,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn ndjson_unrecognized_envelope_with_message_returns_query_stream_err() {
+    fn ndjson_error_envelope_with_message_returns_query_stream_err() {
         let raw = r#"{"queryId":{"queryId":"test-query-id"}}
 {"error":{"message":"engine out of memory"}}"#;
         let err = parse_ndjson_response(raw).unwrap_err();
@@ -492,17 +499,17 @@ mod tests {
     }
 
     #[test]
-    fn ndjson_unrecognized_envelope_without_message_falls_back_to_raw_line() {
+    fn ndjson_unknown_benign_envelope_is_skipped() {
+        // An unrecognized, non-error envelope (e.g. a future progress/heartbeat
+        // line) must not fail an otherwise-successful query: the authoritative
+        // outcome is the terminal COMPLETED statistics status.
         let raw = r#"{"queryId":{"queryId":"test-query-id"}}
-{"somethingUnexpected":true}"#;
-        let err = parse_ndjson_response(raw).unwrap_err();
-        match err {
-            crate::error::CxError::QueryStream(msg) => {
-                assert!(!msg.is_empty());
-                assert!(msg.contains("somethingUnexpected"));
-            }
-            other => panic!("expected QueryStream error, got: {other:?}"),
-        }
+{"progress":{"percent":50}}
+{"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}
+{"statistics":{"status":"COMPLETED","outputRowCount":"1"}}"#;
+        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(warnings.is_empty());
     }
 
     #[test]

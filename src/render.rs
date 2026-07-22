@@ -6,7 +6,7 @@
 //! ## Profile key convention
 //!
 //! List commands inject a `"profile"` key into JSON rows inline while merging
-//! `execution::collect_successes` results. Get commands use `"_profile"`
+//! `execution::report_errors_and_collect_successes` results. Get commands use `"_profile"`
 //! (underscore-prefixed) as a rendering hint that should not appear in
 //! user-facing JSON output - see [`tag_get_result`].
 

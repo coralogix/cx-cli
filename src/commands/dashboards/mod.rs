@@ -34,19 +34,18 @@ fn json_str_at(v: &Value, pointer: &str) -> Option<String> {
 
 /// Extract a dashboard ID from a create/replace response, trying the shapes
 /// the API has been observed to return: a top-level `dashboardId`, a
-/// top-level `id`, or a nested `dashboard.id`.
-fn dashboard_id_from_response(resp: &Value) -> String {
+/// top-level `id`, or a nested `dashboard.id`. Returns `None` when the
+/// response carried no ID so callers can flag that rather than fabricate one.
+fn dashboard_id_from_response(resp: &Value) -> Option<String> {
     json_str_at(resp, "/dashboardId")
         .or_else(|| json_str_at(resp, "/id"))
         .or_else(|| json_str_at(resp, "/dashboard/id"))
-        .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// Extract a folder ID from a folder-create response, trying `folderId` then `id`.
-fn folder_id_from_response(resp: &Value) -> String {
-    json_str_at(resp, "/folderId")
-        .or_else(|| json_str_at(resp, "/id"))
-        .unwrap_or_else(|| "unknown".to_string())
+/// Extract a folder ID from a folder-create response, trying `folderId` then
+/// `id`. Returns `None` when the response carried no ID.
+fn folder_id_from_response(resp: &Value) -> Option<String> {
+    json_str_at(resp, "/folderId").or_else(|| json_str_at(resp, "/id"))
 }
 
 /// Builds one catalog row as JSON for `json` / `agents` output after fan-out.
@@ -656,44 +655,31 @@ pub async fn run_create(
     })
     .await;
 
-    let mut all_results: Vec<(String, String, Value)> = Vec::new();
+    let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
         let created_id = dashboard_id_from_response(&resp);
-
+        render::print_created(
+            "Created",
+            "dashboard",
+            Some(&name),
+            created_id.as_deref(),
+            &profile,
+        );
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
         }
-        all_results.push((profile, created_id, resp));
+        all_results.push(resp);
     }
 
     match output {
-        OutputFormat::Json => {
-            let vals: Vec<Value> = all_results.iter().map(|(_, _, v)| v.clone()).collect();
-            render::render_json_auto(&vals)?;
-        }
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
-            let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
-            let toon =
-                toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
-        OutputFormat::Text => {
-            if include_profile {
-                let rows: Vec<Vec<String>> = all_results
-                    .iter()
-                    .map(|(profile, id, _)| vec![profile.clone(), id.clone(), name.clone()])
-                    .collect();
-                render::render_table(&["ID", "Name"], rows, true);
-            } else {
-                let (_, id, _) = &all_results[0];
-                println!(
-                    "{}",
-                    format!("Created dashboard '{name}' (ID: {id})")
-                        .green()
-                        .bold()
-                );
-            }
-        }
+        // Status lines already printed to stderr via `print_created`.
+        OutputFormat::Text => {}
     }
 
     Ok(())
@@ -750,52 +736,31 @@ pub async fn run_replace(
     })
     .await;
 
-    let mut all_results: Vec<(String, String, Value)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut resp) => {
-                let replaced_id = dashboard_id_from_response(&resp);
-
-                if include_profile {
-                    render::tag_get_result(&mut resp, &profile);
-                }
-                all_results.push((profile, replaced_id, resp));
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
+        let replaced_id = dashboard_id_from_response(&resp);
+        render::print_created(
+            "Replaced",
+            "dashboard",
+            Some(&name),
+            replaced_id.as_deref(),
+            &profile,
+        );
+        if include_profile {
+            render::tag_get_result(&mut resp, &profile);
         }
+        all_results.push(resp);
     }
 
     match output {
-        OutputFormat::Json => {
-            let vals: Vec<Value> = all_results.iter().map(|(_, _, v)| v.clone()).collect();
-            render::render_json_auto(&vals)?;
-        }
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
-            let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
-            let toon =
-                toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
-        OutputFormat::Text => {
-            if all_results.is_empty() {
-                return Ok(());
-            }
-            if include_profile {
-                let rows: Vec<Vec<String>> = all_results
-                    .iter()
-                    .map(|(profile, id, _)| vec![profile.clone(), id.clone(), name.clone()])
-                    .collect();
-                render::render_table(&["ID", "Name"], rows, true);
-            } else {
-                let (_, id, _) = &all_results[0];
-                println!(
-                    "{}",
-                    format!("Replaced dashboard '{name}' (ID: {id})")
-                        .green()
-                        .bold()
-                );
-            }
-        }
+        // Status lines already printed to stderr via `print_created`.
+        OutputFormat::Text => {}
     }
 
     Ok(())
@@ -815,14 +780,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Dashboard {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Dashboard {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -918,41 +880,31 @@ pub async fn run_folders_create(
     })
     .await;
 
-    let mut all_results: Vec<(String, String, Value)> = Vec::new();
+    let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
         let created_id = folder_id_from_response(&resp);
+        render::print_created(
+            "Created",
+            "dashboard folder",
+            Some(name),
+            created_id.as_deref(),
+            &profile,
+        );
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
         }
-        all_results.push((profile, created_id, resp));
+        all_results.push(resp);
     }
 
     match output {
-        OutputFormat::Json => {
-            let vals: Vec<Value> = all_results.iter().map(|(_, _, v)| v.clone()).collect();
-            render::render_json_auto(&vals)?;
-        }
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Agents => {
-            let vals: Vec<&Value> = all_results.iter().map(|(_, _, v)| v).collect();
-            let toon =
-                toon_encode(&vals).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
-        OutputFormat::Text => {
-            if include_profile {
-                let rows: Vec<Vec<String>> = all_results
-                    .iter()
-                    .map(|(profile, id, _)| vec![profile.clone(), id.clone(), name.to_string()])
-                    .collect();
-                render::render_table(&["ID", "Name"], rows, true);
-            } else {
-                let (_, id, _) = &all_results[0];
-                println!(
-                    "{}",
-                    format!("Created folder '{name}' (ID: {id})").green().bold()
-                );
-            }
-        }
+        // Status lines already printed to stderr via `print_created`.
+        OutputFormat::Text => {}
     }
 
     Ok(())
@@ -970,14 +922,11 @@ pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> R
         }
     })
     .await;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Folder {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Folder {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }

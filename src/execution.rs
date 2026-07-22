@@ -83,16 +83,34 @@ pub fn report_errors_and_collect_successes<T>(
 ) -> Result<Vec<(String, T)>> {
     let target_count = per_profile.len();
     let mut successes = Vec::with_capacity(target_count);
+    let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     for (profile, result) in per_profile {
         match result {
             Ok(v) => successes.push((profile, v)),
-            Err(e) => {
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+            Err(e) => errors.push((profile, e)),
         }
     }
+
+    // Total failure: surface as an error instead of a silently empty result
+    // (FORGE-482).
     if successes.is_empty() && target_count > 0 {
-        bail!("all profiles returned errors");
+        // With a single target there is nothing to aggregate - propagate its
+        // actual error so the user sees the real cause, not a generic
+        // "all profiles failed" line stacked on top of the printed error.
+        if let [_] = errors.as_slice() {
+            let (profile, e) = errors.into_iter().next().expect("one error present");
+            return Err(e.context(format!("profile '{profile}' failed")));
+        }
+        for (profile, e) in &errors {
+            eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+        }
+        bail!("all {target_count} profiles returned errors");
+    }
+
+    // Partial failure: report the failed profiles and return the survivors,
+    // per docs/multi-profile.md.
+    for (profile, e) in errors {
+        eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
     }
     Ok(successes)
 }

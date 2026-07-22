@@ -73,3 +73,4 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "Set up parsing rules for our new service"
 - "Who has access to production?"
 - "Configure Slack notifications for critical alerts"
+- "Add a route for the Checkout Service Errors alert"

@@ -10,9 +10,11 @@ description: >
   "create notification connector", "set up email alerts", "configure PagerDuty",
   "notification routing", "deploy extension", "test webhook",
   "notification preset", "test notification", "webhook actions",
+  "add a route", "route an alert", "route alert to Slack", "create a router",
+  "routing rule", "route alerts by label",
   or wants to set up, configure, or manage the observability stack for a service or team.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Observability Setup Skill
@@ -142,11 +144,39 @@ cx notifications connectors create --from-file slack-connector.json
 
 ### 3. Configure Notification Routing
 
-Route alerts to the right channels:
+Route alerts to the right channels. A router matches requests by **routing labels**, then its
+ordered **rules** decide the destinations. See **`references/notification-routing.md`** for the full
+payload schema, condition syntax, and gotchas before building `router.json`.
 
 ```bash
 cx notifications routers create --from-file router.json
 ```
+
+Minimal router that sends one specific alert to a Slack connector (default preset):
+
+```json
+{
+  "router": {
+    "name": "[otel-demo] Checkout Service Errors",
+    "routingLabels": { "service": "otel-demo", "team": "knowledge-base-demo" },
+    "rules": [
+      {
+        "name": "Checkout Service Errors",
+        "entityType": "ALERTS",
+        "condition": "alertDef.name == \"[otel-demo] Checkout Service Errors\"",
+        "targets": [ { "connectorId": "<connector-id>" } ]
+      }
+    ]
+  }
+}
+```
+
+**Two things that trip agents up (details in the reference file):**
+- `entityType` in a **create request** is the bare form `"ALERTS"` — NOT the `"ENTITY_TYPE_ALERTS"`
+  form that `get`/`list` return. Don't paste a `get` response into a create.
+- A router's `routingLabels` map to the alert's `routing.*` `entityLabels`
+  (`service`→`routing.service`, `team`→`routing.team`). Declare only labels the alert actually
+  carries, or the router won't match. Label matching is automatic — no alert edit needed.
 
 ### 4. Set Up Webhooks
 
@@ -196,11 +226,16 @@ cx notifications connectors create --from-file connector.json
 
 ### 3. Create a Router
 
+See **`references/notification-routing.md`** for the router schema and condition syntax.
+
 ```bash
 cx notifications routers create --from-file router.json
 ```
 
 ### 4. Assign or Create a Preset
+
+`presetId` is optional on a routing target — omit it to use the connector's default preset. To
+customize formatting instead:
 
 ```bash
 cx notifications presets list -o json
@@ -256,6 +291,14 @@ cx webhooks actions reorder --from-file order.json
 - **Use `--from-file`** for complex JSON payloads - pipe from stdin or use a file
 - **Template from existing** - `cx <command> get <id> -o json > template.json` before creating
 - **Check connector types first** - `cx notifications connectors types` and `cx webhooks types` before creating
+
+---
+
+## Additional resources
+
+### Reference files
+
+- **`references/notification-routing.md`** - Full Notification Center router schema (GlobalRouter, RoutingRule, RoutingTarget, routingLabels), the `entityType` request-vs-response enum gotcha, routing-label ↔ alert `entityLabels` mapping, Tera condition variables and examples, a worked "route one alert to Slack" example, and troubleshooting.
 
 ---
 

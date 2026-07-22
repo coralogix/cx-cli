@@ -58,7 +58,7 @@ interaction you reference.
 steps.** *Step 1* — get the capped distinct trace IDs (cheap, IDs only):
 ```dataprime
 source spans
-| filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null)
+| filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
 | filter tags['gen_ai.input.messages'] != null || tags['gen_ai.output.messages'] != null || tags['gen_ai.prompt.0.role'] != null
 | distinct $d.traceID
 | limit 100

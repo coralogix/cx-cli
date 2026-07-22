@@ -60,7 +60,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     for (profile, result) in per_profile {
         match result {
             Ok(resp) => {
-                for webhook in resp.webhooks {
+                for webhook in resp.deployed {
                     all_json.push(webhook_to_json(&webhook, include_profile, &profile));
                     all_items.push((profile.clone(), webhook));
                 }

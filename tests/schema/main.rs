@@ -97,4 +97,42 @@ fn schema_outputs_valid_json_with_expected_commands() {
         .collect();
     assert!(docs_subs.contains(&"search"));
     assert!(docs_subs.contains(&"fetch"));
+
+    // Regression (FORGE-125): schema must distinguish options from positionals
+    // so agents build commands the CLI accepts.
+    let alerts_subs = alerts["subcommands"].as_array().unwrap();
+
+    // `alerts list --name` is an option, not a positional.
+    let list = alerts_subs.iter().find(|s| s["name"] == "list").unwrap();
+    let name_arg = list["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["name"] == "name")
+        .expect("alerts list should expose a 'name' argument");
+    assert_eq!(
+        name_arg["positional"], false,
+        "alerts list --name must be reported as an option, not positional"
+    );
+    assert_eq!(
+        name_arg["flag"], "--name",
+        "alerts list --name must advertise its flag string"
+    );
+
+    // `alerts get <alert_id>` is a genuine positional with no flag.
+    let get = alerts_subs.iter().find(|s| s["name"] == "get").unwrap();
+    let id_arg = get["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["name"] == "alert_id")
+        .expect("alerts get should expose an 'alert_id' argument");
+    assert_eq!(
+        id_arg["positional"], true,
+        "alerts get <alert_id> must be reported as positional"
+    );
+    assert!(
+        id_arg.get("flag").is_none(),
+        "positional args must not advertise a flag"
+    );
 }

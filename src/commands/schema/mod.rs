@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::Command;
+use clap::{ArgAction, Command};
 use serde_json::{json, Value};
 
 use crate::update_check;
@@ -38,8 +38,10 @@ fn build_command(cmd: &Command) -> Value {
         .get_arguments()
         .filter(|arg| arg.get_id() != "help" && arg.get_id() != "version")
         .map(|arg| {
+            let positional = arg.is_positional();
             let mut obj = json!({
                 "name": arg.get_id().as_str(),
+                "positional": positional,
                 "required": arg.is_required_set(),
             });
             if let Some(help) = arg.get_help() {
@@ -48,7 +50,20 @@ fn build_command(cmd: &Command) -> Value {
             if let Some(vals) = arg.get_default_values().first() {
                 obj["default"] = json!(vals.to_string_lossy());
             }
-            if let Some(value_names) = arg.get_value_names() {
+            // For options, tell agents exactly how to pass the argument.
+            if let Some(long) = arg.get_long() {
+                obj["flag"] = json!(format!("--{long}"));
+            }
+            if let Some(short) = arg.get_short() {
+                obj["short"] = json!(format!("-{short}"));
+            }
+            // Boolean flags (e.g. `--yes`) take no value; everything else
+            // carries a value hint from its placeholder name.
+            let takes_no_value =
+                matches!(arg.get_action(), ArgAction::SetTrue | ArgAction::SetFalse);
+            if takes_no_value {
+                obj["type"] = json!("boolean");
+            } else if let Some(value_names) = arg.get_value_names() {
                 let type_name = value_names
                     .first()
                     .map(|v| v.to_lowercase())

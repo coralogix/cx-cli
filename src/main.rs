@@ -868,6 +868,28 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
+    /// Validate a dashboard definition without persisting it (CheckDashboard).
+    ///
+    /// Read-only. Exits non-zero if any error-severity issue is found (CI gate).
+    /// In multi-profile fan-out, any profile returning error-severity issues
+    /// causes a non-zero exit, even if other profiles are clean.
+    #[command(after_help = "\
+Examples:
+  cx dashboards check --from-file dash.json
+  cx dashboards check --from-file -            # read from stdin
+  cx dashboards check 01234abcd                 # validate a stored dashboard by id
+  cx -p prod -p staging dashboards check 01234abcd   # multi-profile")]
+    Check {
+        /// Path to a JSON file with the dashboard definition. Use '-' for stdin.
+        /// Accepts either a bare dashboard document or a `{\"dashboard\": {...}}` wrapper.
+        /// Mutually exclusive with <DASHBOARD_ID>.
+        #[arg(long, conflicts_with = "dashboard_id")]
+        from_file: Option<String>,
+
+        /// Validate an existing dashboard by id. Mutually exclusive with --from-file.
+        #[arg(conflicts_with = "from_file")]
+        dashboard_id: Option<String>,
+    },
     /// Delete a dashboard [requires --yes].
     Delete {
         /// Dashboard ID.
@@ -2825,6 +2847,18 @@ async fn main() -> Result<()> {
                 DashboardsCmd::Replace { from_file } => {
                     commands::dashboards::run_replace(
                         &targets, &from_file, output, yes, agent_mode,
+                    )
+                    .await?;
+                }
+                DashboardsCmd::Check {
+                    from_file,
+                    dashboard_id,
+                } => {
+                    commands::dashboards::run_check(
+                        &targets,
+                        from_file.as_deref(),
+                        dashboard_id.as_deref(),
+                        output,
                     )
                     .await?;
                 }

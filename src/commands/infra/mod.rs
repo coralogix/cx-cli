@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 pub mod api;
 
-use api::{InfraApi, ResourceTypeMapping};
+use api::{InfraApi, ListResourcesParams, ResourceData, ResourceTypeMapping};
 
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
@@ -14,6 +14,10 @@ use crate::render;
 
 /// JSON key for the source profile when merging multi-profile infra REST rows.
 const JSON_KEY_PROFILE: &str = "profile";
+
+/// Scope filter keys accepted by the infrastructure resources API. Validated
+/// client-side so a typo fails fast instead of round-tripping for a 400.
+const ALLOWED_SCOPE_KEYS: [&str; 3] = ["service", "environment", "team"];
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
@@ -29,25 +33,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
     })
     .await;
 
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    let mut merged: Vec<(String, ResourceTypeMapping)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for mapping in resp.resource_types {
-                    merged.push((profile.clone(), mapping));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
-    }
+    let merged = merge_fan_out(per_profile, |resp| resp.resource_types)?;
 
     match output {
         OutputFormat::Json | OutputFormat::Agents => {
@@ -55,11 +41,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
                 .iter()
                 .map(|(profile, m)| type_mapping_to_json(m, include_profile, profile))
                 .collect();
-            if output == OutputFormat::Json {
-                render::render_json(&rows)?;
-            } else {
-                render::render_agents(&rows)?;
-            }
+            render_machine_rows(output, &rows)?;
         }
         OutputFormat::Text => {
             if merged.is_empty() {
@@ -95,19 +77,169 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
     Ok(())
 }
 
+/// `cx infra resources list` - list resources of a given category and type.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_list(
+    targets: &[Arc<ExecutionTarget>],
+    category: &str,
+    resource_type: &str,
+    name_filter: Option<&str>,
+    scope: &[String],
+    start_row: Option<i64>,
+    end_row: Option<i64>,
+    output: OutputFormat,
+) -> Result<()> {
+    let scope_filters = parse_scope_filters(scope)?;
+
+    eprintln!("{}", "Fetching resources...".dimmed());
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |target| {
+        let scope_filters = scope_filters.clone();
+        let category = category.to_string();
+        let resource_type = resource_type.to_string();
+        let name_filter = name_filter.map(String::from);
+        async move {
+            let api = InfraApi::new(&target.client);
+            let params = ListResourcesParams {
+                category: &category,
+                resource_type: &resource_type,
+                name_filter: name_filter.as_deref(),
+                scope_filters: &scope_filters,
+                start_row,
+                end_row,
+            };
+            Ok(api.list(&params).await?)
+        }
+    })
+    .await;
+
+    let mut total_count: i64 = 0;
+    let merged = merge_fan_out(per_profile, |resp| {
+        total_count += resp.total_count.unwrap_or(resp.resources.len() as i64);
+        resp.resources
+    })?;
+
+    match output {
+        OutputFormat::Json | OutputFormat::Agents => {
+            let rows: Vec<Value> = merged
+                .iter()
+                .map(|(profile, r)| resource_to_json(r, include_profile, profile))
+                .collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if merged.is_empty() {
+                render::print_no_results("No resources found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = merged
+                .iter()
+                .map(|(profile, r)| {
+                    vec![
+                        profile.clone(),
+                        display_or_dash(r.resource_id.as_deref()),
+                        display_or_dash(r.name.as_deref()),
+                    ]
+                })
+                .collect();
+            render::render_table(&["Resource ID", "Name"], rows, include_profile);
+            eprintln!(
+                "{}",
+                format!(
+                    "Showing {} of {} total resources",
+                    merged.len(),
+                    total_count
+                )
+                .dimmed()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Builds one resource-type row as JSON for `json` / `agents` output after fan-out.
-///
-/// When `include_profile` is true (multiple `--profile`), injects the profile key so
-/// merged arrays stay attributable per account; text mode uses a separate table path.
-fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profile: &str) -> Value {
-    let mut v = json!({
-        "category": item.category_type.as_ref().and_then(|c| c.category.clone()),
-        "type": item.category_type.as_ref().and_then(|c| c.type_name.clone()),
-        "resource_type": item.resource_type,
-        "label": item.label,
+/// Flattens fan-out results into `(profile, item)` pairs, printing per-profile
+/// errors to stderr (non-fatal) and erroring only when **all** profiles fail,
+/// so CI/scripts see a non-zero exit when nothing succeeded.
+fn merge_fan_out<R, T>(
+    per_profile: Vec<(String, Result<R>)>,
+    mut extract: impl FnMut(R) -> Vec<T>,
+) -> Result<Vec<(String, T)>> {
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
+    let mut merged: Vec<(String, T)> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => {
+                for item in extract(resp) {
+                    merged.push((profile.clone(), item));
+                }
+            }
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
+        }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+    Ok(merged)
+}
+
+/// Renders merged JSON rows for the two machine formats. Callers handle
+/// `OutputFormat::Text` themselves, so it is rejected here.
+fn render_machine_rows(output: OutputFormat, rows: &[Value]) -> Result<()> {
+    match output {
+        OutputFormat::Json => render::render_json(rows),
+        OutputFormat::Agents => render::render_agents(rows),
+        OutputFormat::Text => bail!("render_machine_rows called with text output"),
+    }
+}
+
+/// Parses repeatable `--scope key=value` flags and validates keys against
+/// [`ALLOWED_SCOPE_KEYS`].
+fn parse_scope_filters(scope: &[String]) -> Result<Vec<(String, String)>> {
+    scope
+        .iter()
+        .map(|raw| {
+            let Some((key, value)) = raw.split_once('=') else {
+                bail!("invalid --scope '{raw}': expected key=value");
+            };
+            let key = key.trim();
+            let value = value.trim();
+            if !ALLOWED_SCOPE_KEYS.contains(&key) {
+                bail!(
+                    "unknown --scope key '{key}'; allowed keys: {}",
+                    ALLOWED_SCOPE_KEYS.join(", ")
+                );
+            }
+            if value.is_empty() {
+                bail!("invalid --scope '{raw}': value must be non-empty");
+            }
+            Ok((key.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+/// Builds one resource row as JSON for `json` / `agents` output after fan-out.
+fn resource_to_json(item: &ResourceData, include_profile: bool, profile: &str) -> Value {
+    let v = json!({
+        "resource_id": item.resource_id,
+        "name": item.name,
+        "columns": item.columns,
     });
+    tag_profile(v, include_profile, profile)
+}
+
+/// Injects the profile key into a JSON row when `include_profile` is true
+/// (multiple `--profile`), so merged arrays stay attributable per account;
+/// text mode uses a separate table path.
+fn tag_profile(mut v: Value, include_profile: bool, profile: &str) -> Value {
     if include_profile {
         if let Value::Object(ref mut m) = v {
             m.insert(
@@ -117,6 +249,17 @@ fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profi
         }
     }
     v
+}
+
+/// Builds one resource-type row as JSON for `json` / `agents` output after fan-out.
+fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profile: &str) -> Value {
+    let v = json!({
+        "category": item.category_type.as_ref().and_then(|c| c.category.clone()),
+        "type": item.category_type.as_ref().and_then(|c| c.type_name.clone()),
+        "resource_type": item.resource_type,
+        "label": item.label,
+    });
+    tag_profile(v, include_profile, profile)
 }
 
 fn display_or_dash(value: Option<&str>) -> String {

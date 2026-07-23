@@ -531,7 +531,8 @@ Examples:
     /// Query infrastructure resources and their health.
     #[command(after_help = "\
 Examples:
-  cx infra resources types")]
+  cx infra resources types
+  cx infra resources list --category Hosts --type EC2_Instances")]
     Infra {
         #[command(subcommand)]
         cmd: InfraCmd,
@@ -2563,7 +2564,8 @@ enum InfraCmd {
     /// Query infrastructure resources.
     #[command(after_help = "\
 Examples:
-  cx infra resources types")]
+  cx infra resources types
+  cx infra resources list --category Hosts --type EC2_Instances --scope environment=prod")]
     Resources {
         #[command(subcommand)]
         cmd: InfraResourcesCmd,
@@ -2574,6 +2576,38 @@ Examples:
 enum InfraResourcesCmd {
     /// List the available resource types (category/type pairs).
     Types,
+    /// List resources of a given category and type.
+    #[command(after_help = "\
+Examples:
+  cx infra resources list --category Hosts --type EC2_Instances
+  cx infra resources list --category Hosts --type EC2_Instances --name-filter web
+  cx infra resources list --category Hosts --type EC2_Instances --scope service=checkout --scope environment=prod
+  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200")]
+    List {
+        /// Resource category (discover with `cx infra resources types`).
+        #[arg(long)]
+        category: String,
+
+        /// Resource type within the category (discover with `cx infra resources types`).
+        #[arg(long)]
+        r#type: String,
+
+        /// Filter resources by name.
+        #[arg(long)]
+        name_filter: Option<String>,
+
+        /// Scope filter as key=value; repeatable. Keys: service, environment, team.
+        #[arg(long)]
+        scope: Vec<String>,
+
+        /// First row of the page window (0-based; default 0).
+        #[arg(long)]
+        start_row: Option<i64>,
+
+        /// Row after the last one of the page window (default: start-row + 100).
+        #[arg(long)]
+        end_row: Option<i64>,
+    },
 }
 
 #[tokio::main]
@@ -4141,6 +4175,26 @@ async fn main() -> Result<()> {
                 InfraCmd::Resources { cmd } => match cmd {
                     InfraResourcesCmd::Types => {
                         commands::infra::run_types(&targets, output).await?;
+                    }
+                    InfraResourcesCmd::List {
+                        category,
+                        r#type,
+                        name_filter,
+                        scope,
+                        start_row,
+                        end_row,
+                    } => {
+                        commands::infra::run_list(
+                            &targets,
+                            &category,
+                            &r#type,
+                            name_filter.as_deref(),
+                            &scope,
+                            start_row,
+                            end_row,
+                            output,
+                        )
+                        .await?;
                     }
                 },
             },

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::api_client::CxClient;
 use crate::error::Result;
@@ -46,6 +48,28 @@ pub struct ResourceData {
     pub columns: HashMap<String, String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetHealthHistoryResponse {
+    #[serde(default)]
+    pub health_history: Vec<HealthHistoryEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HealthHistoryEntry {
+    /// RFC 3339 timestamp of the daily sample.
+    pub timestamp: Option<String>,
+    /// `Healthy`, `Critical`, or `Unmonitored`.
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetRawDataResponse {
+    /// The raw resource document; `null` when the document is cleanly missing.
+    pub raw_data: Option<Value>,
+}
+
 /// Query parameters for [`InfraApi::list`]. Scope filters are sent as flat
 /// `scopeFilter.{key}` query parameters, matching the API contract.
 pub struct ListResourcesParams<'p> {
@@ -60,6 +84,20 @@ pub struct ListResourcesParams<'p> {
 // ── API ────────────────────────────────────────────────────────────────────────
 
 const BASE_PATH: &str = "/infrastructure/resources/v1";
+
+/// Resource ids embed reserved characters (`:`, `|`, `=`) and travel as a URL
+/// path segment, so encode everything except RFC 3986 unreserved characters.
+const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
+
+/// Percent-encodes a resource id for use as a URL path segment, so users can
+/// pass ids exactly as returned by `list`.
+pub fn encode_resource_id(resource_id: &str) -> String {
+    utf8_percent_encode(resource_id, PATH_SEGMENT_ENCODE_SET).to_string()
+}
 
 pub struct InfraApi<'a> {
     client: &'a CxClient,
@@ -100,6 +138,21 @@ impl<'a> InfraApi<'a> {
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
         self.client.get(BASE_PATH, &query_refs).await
+    }
+
+    /// Get the daily health status history for one resource, oldest first.
+    pub async fn health_history(&self, resource_id: &str) -> Result<GetHealthHistoryResponse> {
+        let path = format!(
+            "{BASE_PATH}/{}/health-history",
+            encode_resource_id(resource_id)
+        );
+        self.client.get(&path, &[]).await
+    }
+
+    /// Get the raw resource document for one resource.
+    pub async fn raw_data(&self, resource_id: &str) -> Result<GetRawDataResponse> {
+        let path = format!("{BASE_PATH}/{}/raw-data", encode_resource_id(resource_id));
+        self.client.get(&path, &[]).await
     }
 }
 
@@ -207,5 +260,58 @@ mod tests {
         });
         let resp: GetResourcesResponse = serde_json::from_value(json).unwrap();
         assert!(resp.resources[0].columns.is_empty());
+    }
+
+    #[test]
+    fn deserialize_health_history_response() {
+        let json = json!({
+            "healthHistory": [
+                { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" },
+                { "timestamp": "2026-07-02T00:00:00Z", "status": "Critical" },
+                { "timestamp": "2026-07-03T00:00:00Z", "status": "Unmonitored" }
+            ]
+        });
+
+        let resp: GetHealthHistoryResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.health_history.len(), 3);
+        assert_eq!(
+            resp.health_history[0].timestamp.as_deref(),
+            Some("2026-07-01T00:00:00Z")
+        );
+        assert_eq!(resp.health_history[1].status.as_deref(), Some("Critical"));
+    }
+
+    #[test]
+    fn deserialize_empty_health_history_response() {
+        let json = json!({});
+        let resp: GetHealthHistoryResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.health_history.is_empty());
+    }
+
+    #[test]
+    fn deserialize_raw_data_response() {
+        let json = json!({
+            "rawData": { "host_id": "i-abc123", "tags": { "env": "prod" } }
+        });
+        let resp: GetRawDataResponse = serde_json::from_value(json).unwrap();
+        let doc = resp.raw_data.unwrap();
+        assert_eq!(doc["host_id"], "i-abc123");
+        assert_eq!(doc["tags"]["env"], "prod");
+    }
+
+    #[test]
+    fn deserialize_null_raw_data_response() {
+        let json = json!({ "rawData": null });
+        let resp: GetRawDataResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.raw_data.is_none());
+    }
+
+    #[test]
+    fn encode_resource_id_escapes_reserved_characters() {
+        assert_eq!(
+            encode_resource_id("1001234:host_id=i-abc|123"),
+            "1001234%3Ahost_id%3Di-abc%7C123"
+        );
+        assert_eq!(encode_resource_id("plain-id_1.2~3"), "plain-id_1.2~3");
     }
 }

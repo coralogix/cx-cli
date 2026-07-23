@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 pub mod api;
 
-use api::{InfraApi, ListResourcesParams, ResourceData, ResourceTypeMapping};
+use api::{HealthHistoryEntry, InfraApi, ListResourcesParams, ResourceData, ResourceTypeMapping};
 
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, ExecutionTarget};
@@ -160,6 +160,119 @@ pub async fn run_list(
     Ok(())
 }
 
+/// `cx infra resources health-history <resource-id>` - daily health status samples,
+/// oldest first.
+pub async fn run_health_history(
+    targets: &[Arc<ExecutionTarget>],
+    resource_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", "Fetching health history...".dimmed());
+
+    let include_profile = targets.len() > 1;
+    let id = resource_id.to_string();
+
+    let per_profile = fan_out(targets, |target| {
+        let id = id.clone();
+        async move {
+            let api = InfraApi::new(&target.client);
+            Ok(api.health_history(&id).await?)
+        }
+    })
+    .await;
+
+    let merged = merge_fan_out(per_profile, |resp| resp.health_history)?;
+
+    match output {
+        OutputFormat::Json | OutputFormat::Agents => {
+            let rows: Vec<Value> = merged
+                .iter()
+                .map(|(profile, entry)| health_entry_to_json(entry, include_profile, profile))
+                .collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if merged.is_empty() {
+                render::print_no_results("No health history found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = merged
+                .iter()
+                .map(|(profile, entry)| {
+                    vec![
+                        profile.clone(),
+                        display_or_dash(entry.timestamp.as_deref()),
+                        display_or_dash(entry.status.as_deref()),
+                    ]
+                })
+                .collect();
+            render::render_table(&["Timestamp", "Status"], rows, include_profile);
+        }
+    }
+
+    Ok(())
+}
+
+/// `cx infra resources raw-data <resource-id>` - the raw resource document.
+pub async fn run_raw_data(
+    targets: &[Arc<ExecutionTarget>],
+    resource_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", "Fetching raw resource data...".dimmed());
+
+    let include_profile = targets.len() > 1;
+    let id = resource_id.to_string();
+
+    let per_profile = fan_out(targets, |target| {
+        let id = id.clone();
+        async move {
+            let api = InfraApi::new(&target.client);
+            Ok(api.raw_data(&id).await?)
+        }
+    })
+    .await;
+
+    // Merge - one document per profile; a 200 with null raw data means the
+    // document is cleanly missing, so note it on stderr and move on.
+    let target_count = per_profile.len();
+    let mut error_count = 0usize;
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, result) in per_profile {
+        match result {
+            Ok(resp) => match resp.raw_data {
+                Some(mut doc) => {
+                    if include_profile {
+                        render::tag_get_result(&mut doc, &profile);
+                    }
+                    all_results.push(doc);
+                }
+                None => eprintln!(
+                    "{}",
+                    format!("no raw data for this resource in profile '{profile}'").yellow()
+                ),
+            },
+            Err(e) => {
+                error_count += 1;
+                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+            }
+        }
+    }
+    if target_count > 0 && error_count == target_count {
+        bail!("all profiles returned errors; see above for details");
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => render::render_agents(&all_results)?,
+        OutputFormat::Text => {
+            render::render_get_text(&all_results, include_profile, "No raw data found.", None)?;
+        }
+    }
+
+    Ok(())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Flattens fan-out results into `(profile, item)` pairs, printing per-profile
@@ -249,6 +362,15 @@ fn tag_profile(mut v: Value, include_profile: bool, profile: &str) -> Value {
         }
     }
     v
+}
+
+/// Builds one health-history row as JSON for `json` / `agents` output after fan-out.
+fn health_entry_to_json(item: &HealthHistoryEntry, include_profile: bool, profile: &str) -> Value {
+    let v = json!({
+        "timestamp": item.timestamp,
+        "status": item.status,
+    });
+    tag_profile(v, include_profile, profile)
 }
 
 /// Builds one resource-type row as JSON for `json` / `agents` output after fan-out.

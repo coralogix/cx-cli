@@ -2565,7 +2565,9 @@ enum InfraCmd {
     #[command(after_help = "\
 Examples:
   cx infra resources types
-  cx infra resources list --category Hosts --type EC2_Instances --scope environment=prod")]
+  cx infra resources list --category Hosts --type EC2_Instances --scope environment=prod
+  cx infra resources health-history \"1001234:host_id=i-abc123\"
+  cx infra resources raw-data \"1001234:host_id=i-abc123\"")]
     Resources {
         #[command(subcommand)]
         cmd: InfraResourcesCmd,
@@ -2607,6 +2609,23 @@ Examples:
         /// Row after the last one of the page window (default: start-row + 100).
         #[arg(long)]
         end_row: Option<i64>,
+    },
+    /// Show the daily health status history for a resource.
+    #[command(after_help = "\
+Examples:
+  cx infra resources health-history \"1001234:host_id=i-abc123\"")]
+    HealthHistory {
+        /// Resource ID, exactly as returned by `cx infra resources list`.
+        resource_id: String,
+    },
+    /// Fetch the raw resource document as JSON.
+    #[command(after_help = "\
+Examples:
+  cx infra resources raw-data \"1001234:host_id=i-abc123\"
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json")]
+    RawData {
+        /// Resource ID, exactly as returned by `cx infra resources list`.
+        resource_id: String,
     },
 }
 
@@ -4195,6 +4214,13 @@ async fn main() -> Result<()> {
                             output,
                         )
                         .await?;
+                    }
+                    InfraResourcesCmd::HealthHistory { resource_id } => {
+                        commands::infra::run_health_history(&targets, &resource_id, output)
+                            .await?;
+                    }
+                    InfraResourcesCmd::RawData { resource_id } => {
+                        commands::infra::run_raw_data(&targets, &resource_id, output).await?;
                     }
                 },
             },

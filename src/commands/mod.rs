@@ -16,6 +16,7 @@ pub mod docs;
 pub mod e2m;
 pub mod enrichments;
 pub mod extensions;
+pub mod infra;
 pub mod integrations;
 pub mod ip_access;
 pub mod logs;

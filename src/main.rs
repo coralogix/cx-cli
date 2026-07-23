@@ -70,6 +70,7 @@ pub enum SearchByValueDataset {
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
   \x1b[1mviews\x1b[0m              Manage saved views and view folders
   \x1b[1mslos\x1b[0m               Manage SLO definitions
+  \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -525,6 +526,15 @@ Examples:
     Slos {
         #[command(subcommand)]
         cmd: SlosCmd,
+    },
+
+    /// Query infrastructure resources and their health.
+    #[command(after_help = "\
+Examples:
+  cx infra resources types")]
+    Infra {
+        #[command(subcommand)]
+        cmd: InfraCmd,
     },
 
     /// Search log/span fields by description or by value content.
@@ -2548,6 +2558,24 @@ Examples:
     },
 }
 
+#[derive(Subcommand)]
+enum InfraCmd {
+    /// Query infrastructure resources.
+    #[command(after_help = "\
+Examples:
+  cx infra resources types")]
+    Resources {
+        #[command(subcommand)]
+        cmd: InfraResourcesCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum InfraResourcesCmd {
+    /// List the available resource types (category/type pairs).
+    Types,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -4107,6 +4135,14 @@ async fn main() -> Result<()> {
                     confirm_destructive(&format!("Delete SLO '{id}'?"), yes, agent_mode)?;
                     commands::slos::run_delete(&targets, &id).await?;
                 }
+            },
+
+            Commands::Infra { cmd } => match cmd {
+                InfraCmd::Resources { cmd } => match cmd {
+                    InfraResourcesCmd::Types => {
+                        commands::infra::run_types(&targets, output).await?;
+                    }
+                },
             },
 
             Commands::SearchFields {

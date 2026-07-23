@@ -387,3 +387,79 @@ fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profi
 fn display_or_dash(value: Option<&str>) -> String {
     value.filter(|s| !s.is_empty()).unwrap_or("-").to_string()
 }
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_scope_filters_accepts_allowed_keys() {
+        let scope = vec![
+            "service=checkout".to_string(),
+            "environment=prod".to_string(),
+            "team=platform".to_string(),
+        ];
+        let filters = parse_scope_filters(&scope).unwrap();
+        assert_eq!(
+            filters,
+            vec![
+                ("service".to_string(), "checkout".to_string()),
+                ("environment".to_string(), "prod".to_string()),
+                ("team".to_string(), "platform".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_scope_filters_trims_whitespace() {
+        let scope = vec![" service = checkout ".to_string()];
+        let filters = parse_scope_filters(&scope).unwrap();
+        assert_eq!(
+            filters,
+            vec![("service".to_string(), "checkout".to_string())]
+        );
+    }
+
+    #[test]
+    fn parse_scope_filters_rejects_missing_equals() {
+        let err = parse_scope_filters(&["service".to_string()]).unwrap_err();
+        assert!(err.to_string().contains("expected key=value"));
+    }
+
+    #[test]
+    fn parse_scope_filters_rejects_unknown_key() {
+        let err = parse_scope_filters(&["region=us-east-1".to_string()]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown --scope key 'region'"));
+        assert!(msg.contains("service, environment, team"));
+    }
+
+    #[test]
+    fn parse_scope_filters_rejects_empty_value() {
+        let err = parse_scope_filters(&["service=".to_string()]).unwrap_err();
+        assert!(err.to_string().contains("must be non-empty"));
+    }
+
+    #[test]
+    fn parse_scope_filters_empty_input_yields_no_filters() {
+        assert!(parse_scope_filters(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tag_profile_inserts_key_only_when_multi_profile() {
+        let tagged = tag_profile(json!({"a": 1}), true, "prod");
+        assert_eq!(tagged["profile"], "prod");
+
+        let untagged = tag_profile(json!({"a": 1}), false, "prod");
+        assert!(untagged.get("profile").is_none());
+    }
+
+    #[test]
+    fn display_or_dash_falls_back_on_none_and_empty() {
+        assert_eq!(display_or_dash(Some("value")), "value");
+        assert_eq!(display_or_dash(Some("")), "-");
+        assert_eq!(display_or_dash(None), "-");
+    }
+}

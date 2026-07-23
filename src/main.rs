@@ -528,7 +528,7 @@ Examples:
         cmd: SlosCmd,
     },
 
-    /// Query infrastructure resources and their health.
+    /// Query infrastructure resources and their data.
     #[command(after_help = "\
 Examples:
   cx infra resources types

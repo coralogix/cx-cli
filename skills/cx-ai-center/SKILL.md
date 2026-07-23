@@ -124,6 +124,10 @@ matching `list` command (never guess or make the user paste a UUID).
 | `cx ai-center custom-evaluations add <evaluation-id> <application-id>` | Attach a policy to an app *(write)* |
 | `cx ai-center custom-evaluations remove <evaluation-id> <application-id>` | Detach (reversible) *(write)* |
 
+> **By-id is prebuilt-only.** `evaluations get <id>` fetches a **prebuilt/configured** evaluation.
+> Custom policies have **no** get-by-id — find one via `custom-evaluations list` /
+> `list-for-application` and match by `id`/name.
+
 ### Coverage & model pricing
 
 | Command | Purpose |
@@ -133,7 +137,9 @@ matching `list` command (never guess or make the user paste a UUID).
 | `cx ai-center model-pricing set --from-file prices.json` | Set team pricing (team-wide, new data only) *(write)* |
 
 The `--from-file` bodies for `evaluations` and `custom-evaluations` match the AI v3 API
-shape verbatim; use `-` to read JSON from stdin. **Exception:** `model-pricing set` takes just
+shape verbatim; use `-` to read JSON from stdin. For `evaluations create`, `target` is
+**required** and must be uppercase (`PROMPT` or `RESPONSE`); for `custom-evaluations create`,
+`name`, `instructions`, and `policyType` are required. **Exception:** `model-pricing set` takes just
 the raw `model→price` map — cx wraps it as `{"prices": …}` for you, so do **not** include the
 outer `prices` envelope. Each model maps to a price object; all four fields are optional doubles
 (USD per **one million** tokens), omit the ones that don't apply:
@@ -150,6 +156,8 @@ outer `prices` envelope. Each model maps to a price object; all four fields are 
 ```
 
 An empty map `{}` clears all overrides (set replaces the whole set — it's team-wide, new data only).
+`model-pricing get` returns the wrapper `{ "pricing": { "id", "companyId", "prices": { … } } }` — the
+per-model overrides live under `prices` (empty when none are set).
 
 ---
 
@@ -165,7 +173,8 @@ cx ai-center applications list -o json | jq '[.[] | select(.guardrailsIntegrated
 ```bash
 # 1. Describe to the user; 2. get approval; 3. then:
 cx ai-center evaluations create --from-file eval.json --yes
-# eval.json: { "application": "...", "subsystem": "...", "config": { "<type>": {...} }, "isEnabled": true }
+# eval.json: { "application": "...", "subsystem": "...", "target": "PROMPT", "config": { "<type>": {...} }, "isEnabled": true }
+# `target` is REQUIRED and must be UPPERCASE — "PROMPT" or "RESPONSE" (the API rejects lowercase / a missing target).
 ```
 
 ### Read the actual conversations (telemetry, not config)

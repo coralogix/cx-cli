@@ -71,6 +71,9 @@ pub enum SearchByValueDataset {
   \x1b[1mviews\x1b[0m              Manage saved views and view folders
   \x1b[1mslos\x1b[0m               Manage SLO definitions
 
+\x1b[1m\x1b[4mAI:\x1b[0m
+  \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
+
 \x1b[1m\x1b[4mDetect & Respond:\x1b[0m
   \x1b[1malerts\x1b[0m             Manage alert definitions and suppression rules
   \x1b[1mcases\x1b[0m               Manage and triage cases
@@ -497,6 +500,22 @@ Examples:
         cmd: DataArchiveCmd,
     },
 
+    /// Manage AI Center (GenAI) applications, evaluations, policies, and pricing.
+    #[command(
+        name = "ai-center",
+        after_help = "\
+Examples:
+  cx ai-center applications list
+  cx ai-center evaluations list --application <app> --subsystem <sub>
+  cx ai-center coverage
+  cx ai-center custom-evaluations list
+  cx ai-center model-pricing get"
+    )]
+    AiCenter {
+        #[command(subcommand)]
+        cmd: AiCenterCmd,
+    },
+
     /// Manage SLO definitions.
     #[command(after_help = "\
 Examples:
@@ -568,7 +587,10 @@ Examples:
 
 impl Commands {
     fn is_risky(&self) -> bool {
-        matches!(self, Self::Iam { .. } | Self::DataArchive { .. })
+        matches!(
+            self,
+            Self::Iam { .. } | Self::DataArchive { .. } | Self::AiCenter { .. }
+        )
     }
 
     fn is_olly(&self) -> bool {
@@ -849,6 +871,28 @@ Examples:
         /// is generated automatically.
         #[arg(long, default_value = "-")]
         from_file: String,
+    },
+    /// Validate a dashboard definition without persisting it (CheckDashboard).
+    ///
+    /// Read-only. Exits non-zero if any error-severity issue is found (CI gate).
+    /// In multi-profile fan-out, any profile returning error-severity issues
+    /// causes a non-zero exit, even if other profiles are clean.
+    #[command(after_help = "\
+Examples:
+  cx dashboards check --from-file dash.json
+  cx dashboards check --from-file -            # read from stdin
+  cx dashboards check 01234abcd                 # validate a stored dashboard by id
+  cx -p prod -p staging dashboards check 01234abcd   # multi-profile")]
+    Check {
+        /// Path to a JSON file with the dashboard definition. Use '-' for stdin.
+        /// Accepts either a bare dashboard document or a `{\"dashboard\": {...}}` wrapper.
+        /// Mutually exclusive with <DASHBOARD_ID>.
+        #[arg(long, conflicts_with = "dashboard_id")]
+        from_file: Option<String>,
+
+        /// Validate an existing dashboard by id. Mutually exclusive with --from-file.
+        #[arg(conflicts_with = "from_file")]
+        dashboard_id: Option<String>,
     },
     /// Delete a dashboard [requires --yes].
     Delete {
@@ -1886,6 +1930,174 @@ enum ViewFoldersCmd {
 }
 
 #[derive(Subcommand)]
+enum AiCenterCmd {
+    /// Manage AI applications (inventory + guarded status).
+    #[command(after_help = "\
+Examples:
+  cx ai-center applications list
+  cx ai-center applications get <application-id>")]
+    Applications {
+        #[command(subcommand)]
+        cmd: ApplicationsCmd,
+    },
+    /// Manage configured evaluations/policies on applications.
+    #[command(after_help = "\
+Examples:
+  cx ai-center evaluations list --application <app> --subsystem <sub>
+  cx ai-center evaluations get <evaluation-id>
+  cx ai-center evaluations create --from-file eval.json
+  cx ai-center evaluations update <evaluation-id> --from-file eval.json
+  cx ai-center evaluations delete <evaluation-id>")]
+    Evaluations {
+        #[command(subcommand)]
+        cmd: EvaluationsCmd,
+    },
+    /// Manage custom evaluation policies and their application links.
+    #[command(after_help = "\
+Examples:
+  cx ai-center custom-evaluations list
+  cx ai-center custom-evaluations list-for-application <application-id>
+  cx ai-center custom-evaluations create --from-file policy.json
+  cx ai-center custom-evaluations add <evaluation-id> <application-id>
+  cx ai-center custom-evaluations remove <evaluation-id> <application-id>")]
+    CustomEvaluations {
+        #[command(subcommand)]
+        cmd: CustomEvaluationsCmd,
+    },
+    /// Show evaluation coverage — AI applications per evaluation type.
+    Coverage,
+    /// View and set the team's custom model-pricing overrides.
+    #[command(after_help = "\
+Examples:
+  cx ai-center model-pricing get
+  cx ai-center model-pricing set --from-file pricing.json")]
+    ModelPricing {
+        #[command(subcommand)]
+        cmd: ModelPricingCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ApplicationsCmd {
+    /// List AI applications (incl. guarded status).
+    List {
+        /// Maximum number of applications to return.
+        #[arg(long)]
+        page_size: Option<u32>,
+        /// Number of applications to skip for pagination.
+        #[arg(long)]
+        page_offset: Option<u32>,
+        /// Filter to apps using this evaluation type, as the API enum (e.g. PII,
+        /// TOXICITY, PROMPT_INJECTION — the keys from `coverage`). Repeatable.
+        #[arg(long = "evaluation-type")]
+        evaluation_type: Vec<String>,
+    },
+    /// Get one AI application by UUID.
+    Get {
+        /// Application UUID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum EvaluationsCmd {
+    /// List configured evaluations (optionally scoped to one app).
+    List {
+        /// Scope to one application (pair with --subsystem).
+        #[arg(long)]
+        application: Option<String>,
+        /// Scope to one subsystem (pair with --application).
+        #[arg(long)]
+        subsystem: Option<String>,
+        /// Filter by evaluation type, as the API enum (e.g. PII, TOXICITY,
+        /// PROMPT_INJECTION — the keys returned by `coverage`).
+        #[arg(long = "evaluation-type")]
+        evaluation_type: Option<String>,
+        /// Maximum number of evaluations to return.
+        #[arg(long)]
+        page_size: Option<u32>,
+        /// Number of evaluations to skip for pagination.
+        #[arg(long)]
+        page_offset: Option<u32>,
+    },
+    /// Get one configured evaluation by UUID.
+    Get {
+        /// Evaluation UUID.
+        id: String,
+    },
+    /// Create (enable) an evaluation on an application from a JSON file [requires --yes].
+    Create {
+        /// Path to JSON file with the evaluation body. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a configured evaluation by UUID from a JSON file [requires --yes].
+    Update {
+        /// Path to JSON file with the partial update. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+        /// Evaluation UUID.
+        id: String,
+    },
+    /// Delete a configured evaluation by UUID [requires --yes].
+    Delete {
+        /// Evaluation UUID.
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum CustomEvaluationsCmd {
+    /// List all custom evaluation policies.
+    List,
+    /// List custom evaluations linked to an application (by UUID).
+    ListForApplication {
+        /// Application UUID.
+        application_id: String,
+    },
+    /// Create a custom evaluation policy from a JSON file [requires --yes].
+    Create {
+        /// Path to JSON file with the custom evaluation body. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+    /// Update a custom evaluation policy by UUID from a JSON file [requires --yes].
+    Update {
+        /// Path to JSON file with the partial update. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+        /// Custom evaluation UUID.
+        id: String,
+    },
+    /// Attach a custom evaluation (policy) to an application [requires --yes].
+    Add {
+        /// Custom evaluation UUID.
+        evaluation_id: String,
+        /// Application UUID.
+        application_id: String,
+    },
+    /// Detach a custom evaluation (policy) from an application [requires --yes].
+    Remove {
+        /// Custom evaluation UUID.
+        evaluation_id: String,
+        /// Application UUID.
+        application_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModelPricingCmd {
+    /// Get the team's custom per-model pricing overrides.
+    Get,
+    /// Set the team's per-model pricing overrides from a JSON file [requires --yes].
+    Set {
+        /// Path to JSON file with the model→price map. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum IamCmd {
     /// Manage API keys.
     #[command(after_help = "\
@@ -2644,6 +2856,18 @@ async fn main() -> Result<()> {
                 DashboardsCmd::Replace { from_file } => {
                     commands::dashboards::run_replace(
                         &targets, &from_file, output, yes, agent_mode,
+                    )
+                    .await?;
+                }
+                DashboardsCmd::Check {
+                    from_file,
+                    dashboard_id,
+                } => {
+                    commands::dashboards::run_check(
+                        &targets,
+                        from_file.as_deref(),
+                        dashboard_id.as_deref(),
+                        output,
                     )
                     .await?;
                 }
@@ -3454,6 +3678,156 @@ async fn main() -> Result<()> {
                 },
             },
 
+            Commands::AiCenter { cmd } => match cmd {
+                AiCenterCmd::Applications { cmd } => match cmd {
+                    ApplicationsCmd::List {
+                        page_size,
+                        page_offset,
+                        evaluation_type,
+                    } => {
+                        commands::ai_center::run_applications_list(
+                            &targets,
+                            page_size,
+                            page_offset,
+                            &evaluation_type,
+                            output,
+                        )
+                        .await?;
+                    }
+                    ApplicationsCmd::Get { id } => {
+                        commands::ai_center::run_applications_get(&targets, &id, output).await?;
+                    }
+                },
+                AiCenterCmd::Evaluations { cmd } => match cmd {
+                    EvaluationsCmd::List {
+                        application,
+                        subsystem,
+                        evaluation_type,
+                        page_size,
+                        page_offset,
+                    } => {
+                        commands::ai_center::run_evaluations_list(
+                            &targets,
+                            application.as_deref(),
+                            subsystem.as_deref(),
+                            evaluation_type.as_deref(),
+                            page_size,
+                            page_offset,
+                            output,
+                        )
+                        .await?;
+                    }
+                    EvaluationsCmd::Get { id } => {
+                        commands::ai_center::run_evaluations_get(&targets, &id, output).await?;
+                    }
+                    EvaluationsCmd::Create { from_file } => {
+                        confirm_destructive("Create a new AI evaluation?", yes, agent_mode)?;
+                        commands::ai_center::run_evaluations_create(&targets, &from_file, output)
+                            .await?;
+                    }
+                    EvaluationsCmd::Update { from_file, id } => {
+                        confirm_destructive(
+                            &format!("Update AI evaluation '{id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::ai_center::run_evaluations_update(
+                            &targets, &id, &from_file, output,
+                        )
+                        .await?;
+                    }
+                    EvaluationsCmd::Delete { id } => {
+                        confirm_destructive(
+                            &format!("Delete AI evaluation '{id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::ai_center::run_evaluations_delete(&targets, &id, output).await?;
+                    }
+                },
+                AiCenterCmd::CustomEvaluations { cmd } => match cmd {
+                    CustomEvaluationsCmd::List => {
+                        commands::ai_center::run_custom_evaluations_list(&targets, output).await?;
+                    }
+                    CustomEvaluationsCmd::ListForApplication { application_id } => {
+                        commands::ai_center::run_custom_evaluations_for_application(
+                            &targets,
+                            &application_id,
+                            output,
+                        )
+                        .await?;
+                    }
+                    CustomEvaluationsCmd::Create { from_file } => {
+                        confirm_destructive("Create a new custom evaluation?", yes, agent_mode)?;
+                        commands::ai_center::run_custom_evaluations_create(
+                            &targets, &from_file, output,
+                        )
+                        .await?;
+                    }
+                    CustomEvaluationsCmd::Update { from_file, id } => {
+                        confirm_destructive(
+                            &format!("Update custom evaluation '{id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::ai_center::run_custom_evaluations_update(
+                            &targets, &id, &from_file, output,
+                        )
+                        .await?;
+                    }
+                    CustomEvaluationsCmd::Add {
+                        evaluation_id,
+                        application_id,
+                    } => {
+                        confirm_destructive(
+                            &format!(
+                                "Attach policy '{evaluation_id}' to application '{application_id}'?"
+                            ),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::ai_center::run_add_policy(
+                            &targets,
+                            &evaluation_id,
+                            &application_id,
+                            output,
+                        )
+                        .await?;
+                    }
+                    CustomEvaluationsCmd::Remove {
+                        evaluation_id,
+                        application_id,
+                    } => {
+                        confirm_destructive(
+                            &format!(
+                                "Detach policy '{evaluation_id}' from application '{application_id}'?"
+                            ),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::ai_center::run_remove_policy(
+                            &targets,
+                            &evaluation_id,
+                            &application_id,
+                            output,
+                        )
+                        .await?;
+                    }
+                },
+                AiCenterCmd::Coverage => {
+                    commands::ai_center::run_coverage(&targets, output).await?;
+                }
+                AiCenterCmd::ModelPricing { cmd } => match cmd {
+                    ModelPricingCmd::Get => {
+                        commands::ai_center::run_model_pricing_get(&targets, output).await?;
+                    }
+                    ModelPricingCmd::Set { from_file } => {
+                        confirm_destructive("Set team model pricing?", yes, agent_mode)?;
+                        commands::ai_center::run_model_pricing_set(&targets, &from_file, output)
+                            .await?;
+                    }
+                },
+            },
             Commands::Iam { cmd } => match cmd {
                 IamCmd::ApiKeys { cmd } => match cmd {
                     ApiKeysCmd::List => {

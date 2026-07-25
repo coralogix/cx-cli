@@ -91,8 +91,12 @@ A single events dataset that captures every state-change emitted by the Cases se
           "alertType": "METRIC_THRESHOLD",
           "priority": "P4",
           "groupingType": "COMBINATION_ALERT",
-          "groupings": { "service": "payment-api", "region": "us-west-2" },
-          "permutations": {},
+          "permutations": [
+            [
+              { "key": "coralogix.metadata.applicationName", "value": "monitoring24",       "permutationIndex": 0 },
+              { "key": "coralogix.metadata.subsystemName",   "value": "no_subsystem_name", "permutationIndex": 0 }
+            ]
+          ],
           "labels": { "metric": "cpu", "team": "platform" },
           "state": "TRIGGERED",
           "isNoData": false,
@@ -105,10 +109,12 @@ A single events dataset that captures every state-change emitted by the Cases se
         }
       ]
     },
-    "groupings": {
-      "service": ["payment-api"],
-      "region":  ["us-west-2"]
-    },
+    "permutations": [
+      [
+        { "key": "coralogix.metadata.applicationName", "value": "monitoring24",       "permutationIndex": 0 },
+        { "key": "coralogix.metadata.subsystemName",   "value": "no_subsystem_name", "permutationIndex": 0 }
+      ]
+    ],
     "labels": {
       "metric":          ["cpu"],
       "team":            ["platform"],
@@ -121,7 +127,7 @@ A single events dataset that captures every state-change emitted by the Cases se
       { "type": "pagerduty" },
       { "type": "email" }
     ],
-    "aiSummary": "CPU saturation on payment-api in us-west-2 cleared after autoscaler added two pods.",
+    "aiSummary": "CPU saturation on monitoring24 cleared after autoscaler added two pods.",
     "impactedEntities": [
       { "kind": "apmService",  "name": "payment-api", "language": "go" },
       { "kind": "apmDatabase", "name": "orders_db",   "system": "postgresql", "source": "db.name" }
@@ -185,15 +191,19 @@ Per-element fields:
 | `alertDefinitionId` / `alertVersionId` | Stable IDs. Useful for joining with alert-side data via the `alerts` skill / `get_alerts_object`. |
 | `priority` | Alert priority at trigger (independent of case priority). |
 | `groupingType` | `STANDARD` / `COMPOSITE_ALERT` / `COMBINATION_ALERT`. The latter two mean the indicator combines multiple sub-conditions. |
+| `permutations` | Per-indicator permutations list — same `[[{key, value, permutationIndex}]]` structure as the root field. Contains the actual observed label combinations that fired this indicator. |
 | `state` | `TRIGGERED` (still firing) / `RESOLVED` / `NO_DATA` (signal dropped, **not** a recovery) / `MUTED`. |
 | `triggeredAt` / `resolvedAt` | Indicator-side timing (different from case-level resolution). |
 
-#### Groupings & labels (routing / attribution)
+#### Permutations & labels (routing / attribution)
 
-Both `groupings` and `labels` are `{ key: string[] }`
+`permutations` — the actual observed label combinations that produced this case. Each element of `permutations` is a **permutation-group**: a list of `{key, value, permutationIndex}` objects representing one real co-occurring set of key/value pairs.
 
-- `groupings` — the dimensions used to group the case (e.g. `service`, `region`, `cluster`).
-- `labels` — free-form labels. The `routing.*` prefix is the convention for routing config:
+- Exists at two levels:
+  - **Per-indicator** (`indicators.alerts[].permutations`): the combinations that fired a specific alert indicator.
+  - **Root/case level** (`permutations`): a merged view across all indicators for the whole case.
+
+`labels` — free-form labels. The `routing.*` prefix is the convention for routing config:
   - `routing.team` — owner team (use this for "MTTR per team" style queries).
   - `routing.environment` — env (`prod`, `staging`, …).
   - `routing.service` — service tag.
@@ -248,8 +258,6 @@ After this, the full row stays at top level (`status`, `priority`, `createdAt`, 
 
 The two patterns are interchangeable; pick whichever keeps the rest of the pipeline shortest.
 
-**Exceptions** — you may skip dedup only when you are *intentionally* counting events (not cases), e.g. "how many `caseResolved` triggers fired"; in that case `filter metadata.trigger == 'caseResolved' | distinct caseId | count` is still the correct shape because `distinct caseId` is the dedup.
-
 ### Rule 3 — When asking about a one-time lifecycle event, filter on `metadata.trigger`
 
 Most questions about a single lifecycle moment (activation, resolution, closure, …) read better as a trigger filter than as dedup-then-filter. The trigger filter naturally excludes heartbeats *and* keeps the query simple:
@@ -268,6 +276,17 @@ This works because most lifecycle triggers fire **once per case** in the normal 
 | Heartbeat | Periodic | **Never** use as a lifecycle event; filter out or use Rule 2 dedup. |
 
 **When in doubt, ask:** am I counting **events of a kind** or **cases in a state**? Events of a kind → Rule 3 (trigger filter). Cases in a state → Rule 2 (dedup to latest row).
+
+### Dedup comes first
+
+**Always dedup before you do anything else** (bucket, explode, aggregate). Because heartbeats repeat the full event payload — including nested arrays like `kpiBreaches.breachedKpis` and `indicators.alerts` — any operation on raw events inflates row counts by the number of heartbeats per case. This causes double-counting and can OOM on large windows.
+
+The only exception is a trigger-filtered query (Rule 3), where `filter metadata.trigger == '...'` already excludes heartbeats.
+
+Do not be clever or try to do it in one pass: the first command after `source` is the per-case dedup keyed on `caseId` alone, then add buckets, explodes, filters, and a separate final `groupby`.
+
+- Don't fold a bucket into the dedup key: `| groupby day, caseId aggregate ...`. Dedup on `caseId` alone first, then bucket off `latest`/`last_seen`.
+- Don't rely on `caseId` inside an aggregate without dedup: `| groupby kpiType, breachStatus aggregate distinct_count(caseId)` still scans heartbeats; dedup first.
 
 ## Query examples
 
@@ -383,6 +402,26 @@ source system/labs.cases.state_updates
   | limit 1000
 ```
 
+### Week-over-week comparison
+
+Compare case or alert volume between two periods. Dedup per `caseId` across the full window first, then assign the period bucket from `last_seen` (see Rule 2). 
+
+```dataprime
+source system/labs.cases.state_updates
+  | groupby caseId aggregate
+      max_by($m.timestamp, $d) as latest,
+      max($m.timestamp) as last_seen
+  | create period from if(last_seen >= now() - 7d, 'this_week', 'last_week')
+  | explode latest.indicators.alerts into alert original preserve
+  | filter alert.state == 'TRIGGERED'
+  | groupby period aggregate distinct_count(caseId) as triggering_cases
+```
+
+Notes:
+- `max($m.timestamp) as last_seen` captures when the case was last seen in the window; this drives period assignment.
+- For open-case counts instead of triggered alerts, replace the `explode` + `filter alert.state` lines with `| filter latest.status == 'ACTIVE' | groupby period aggregate count() as active_cases`.
+- Adjust the split offset (`7d`) to match the user's intent — e.g. `30d` for month-over-month.
+
 ### MTTR / MTTA / MTBI per team
 
 Per-team KPIs, dedup-then-explode pattern. The `labels['routing.team']` label drives team attribution; missing values bucket as `unassigned`. Default window `last 14d` — adjust to the user's intent:
@@ -420,6 +459,79 @@ source system/labs.cases.state_updates
   | dedupeby id
 ```
 
+### Filtering / aggregating by permutations
+
+#### 1. Discover permutation keys and their values
+
+```dataprime
+source system/labs.cases.state_updates
+| dedupeby $d.caseId orderby $m.timestamp desc
+| explode permutations into perm original preserve
+| explode perm into kv original preserve
+| filter kv.key != null
+| create k from kv.key
+| create v from kv.value
+| groupby k, v aggregate count() as pair_count
+| groupby k aggregate collect(v) as values, count() as distinct_value_count
+| orderby distinct_value_count desc
+```
+
+Then filter cases by the matching key/value using the patterns below. Some keys (e.g. geo/city) have hundreds of values — add `| filter k ~ '<key-substr>'` before the final `groupby` to scope discovery to one dimension.
+
+#### 2. Filter by a single key/value pair
+
+```dataprime
+source system/labs.cases.state_updates
+| dedupeby $d.caseId orderby $m.timestamp desc
+| explode permutations into perm original preserve
+| explode perm into kv original preserve
+| filter kv.key ~ 'subsystemName' && kv.value == 'incident-helper'
+| dedupeby $d.caseId
+```
+
+#### 3. Filter by multiple key/value pairs that must co-occur in the same permutation
+
+Dataprime can't express "N conditions in the same exploded group" in one pass. Workaround: group on `permutationIndex` and use `count_if` per condition.
+
+**Recommended — `inArray` subquery** (keeps full `$d` access on the outer query; no per-field `any_value` re-export needed; avoids OOM from re-exporting the whole `$d`):
+
+```dataprime
+source system/labs.cases.state_updates
+| filter $d.caseId.inArray((|
+  source system/labs.cases.state_updates
+  | dedupeby $d.caseId orderby $m.timestamp desc
+  | explode permutations into perm original preserve
+  | explode perm into kv original preserve
+  | groupby $d.caseId, kv.permutationIndex aggregate
+    count_if(kv.key ~ 'applicationName' && kv.value == 'cx10') as application_name_hit,
+    count_if(kv.key ~ 'subsystemName' && kv.value == 'incident-helper') as subsystem_name_hit
+  | filter application_name_hit > 0 && subsystem_name_hit > 0
+  | distinct $d.caseId
+|))
+| dedupeby $d.caseId
+```
+
+**Fallback — `groupby` + `any_value`** (use when you need only a few specific fields in the output; re-export each field you need via `any_value(...)`; do not re-export the whole `$d` — that OOMs):
+
+```dataprime
+source system/labs.cases.state_updates
+| dedupeby $d.caseId orderby $m.timestamp desc
+| explode permutations into perm original preserve
+| explode perm into kv original preserve
+| groupby $d.caseId, kv.permutationIndex aggregate
+    count_if(kv.key ~ 'applicationName' && kv.value == 'cx10') as application_name_hit,
+    count_if(kv.key ~ 'subsystemName' && kv.value == 'incident-helper') as subsystem_name_hit,
+    any_value($d.caseId)     as case_id,
+    any_value($d.caseNumber) as case_number,
+    any_value($d.title)      as title,
+    any_value($d.status)     as status,
+    any_value($d.caseUrl)    as case_url,
+    any_value($m.timestamp)  as timestamp
+    // any_value(...) needed for every field you want to re-export/show
+| filter application_name_hit > 0 && subsystem_name_hit > 0
+| dedupeby case_id
+```
+
 ## Best Practices
 - See the query examples for default queries to base off for user questions.
 - When building a query, **ALWAYS** follow the **Hard Rules**
@@ -429,5 +541,7 @@ source system/labs.cases.state_updates
   1. Source the dataset: `source system/labs.cases.state_updates` with a time
   2. Filter to the events you care about (e.g. `filter metadata.trigger == 'caseResolved'` for resolution analytics, or no trigger filter when you want the latest state of every case).
   3. Dedup per `caseId` if you're answering a "cases" question (Pattern A or B).
-  4. Explode any array you need to fan out over (`indicators.alerts`, `kpiBreaches.breachedKpis`, `labels['routing.<key>']`, `impactedEntities`).
+  4. Explode any array you need to fan out over (`indicators.alerts`, `kpiBreaches.breachedKpis`, `labels['routing.<key>']`, `impactedEntities`, or double-explode `permutations` → `perm` → `kv`).
   5. Aggregate / project / order / limit.
+- A user's term (a service, country, application, etc.) may be a permutation key or value. When a user asks about such a term, *always* first check if it's a group by key or value using the "Discover permutation keys and their values" example.
+- Hard rules: Dedup always precedes bucketing, period assignment, and derived field creation. Any `create`, `groupby`, or `explode` on raw events before dedup operates on heartbeat-inflated rows and produces wrong results. For example, in a week-over-week comparison: dedup across the full window first and derive `last_seen` from the dedup step, then assign the period bucket from `last_seen` — never use `create period from if($m.timestamp ...)` on raw events, and never use `$m.timestamp` directly for period assignment.

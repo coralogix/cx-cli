@@ -51,7 +51,7 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 
 Severity keywords are used **without quotes** in DataPrime:
 
-`DEBUG` | `INFO` | `WARNING` | `ERROR` | `CRITICAL`
+`VERBOSE` | `DEBUG` | `INFO` | `WARNING` | `ERROR` | `CRITICAL`
 
 ```bash
 cx logs 'filter $m.severity == ERROR'
@@ -79,9 +79,15 @@ cx logs 'filter $m.severity == ERROR | groupby $l.subsystemname aggregate count(
 cx logs "filter \$l.subsystemname == 'payments'" --tier archive --start now-7d
 ```
 
+> **`~` (text match):** `~` is a **case-insensitive, token-based** match — `~ 'timeout'` also matches `TIMEOUT`/`Timeout`, and it matches whole tokens (words), not arbitrary substrings. For a **case-sensitive raw substring** match, use `contains()` instead. See the operator table in `dataprime-reference.md`.
+
 ### Wildfind Policy
 
-**Avoid `wildfind` by default.** It scans all fields and returns noisy results, especially for generic terms.
+`wildfind` runs the same **case-insensitive, token-based** match as `~` (whole tokens, not arbitrary substrings), but over the whole record instead of a single field — it matches tokens anywhere, in any field.
+
+**Prefer a field-targeted `~`/`filter` when you know the field** — for **precision**: because `wildfind` matches tokens anywhere in the record, it can't be narrowed to a specific field and will match the term in fields you didn't intend.
+
+**Performance:** `wildfind` with very short search terms (only a few characters) is much slower — prefer longer, more specific terms.
 
 The **one exception**: when the user provides a specific, quoted error message or log string and you don't know which field contains it:
 
@@ -174,12 +180,12 @@ cx logs "filter \$l.subsystemname == 'checkout' && \$m.severity == ERROR | group
 
 ### 4. Troubleshooting
 
-If a query returns no results, change **one thing at a time**:
+If a query returns no results, change **one thing at a time**. Keep the query window as **narrow** as possible and widen it deliberately — start from the window you already have rather than jumping to a huge range:
 
-1. **Extend the time range**: `--start now-6h` or `--start now-24h`
-2. **Relax filters**: remove the most restrictive condition
-3. **Verify field names**: run a sample query with `-o json` to inspect the actual schema
-4. **Try archive tier**: `--tier archive --start now-30d` for older data
+1. **Relax filters**: remove the most restrictive condition
+2. **Verify field names**: run a sample query with `-o json` to inspect the actual schema
+3. **Extend the time range**: widen gradually from your current window (e.g. `now-1h` → `now-6h` → `now-24h`)
+4. **Try archive tier**: for older data, add `--tier archive` and widen the window to cover the period you're after
 
 ---
 

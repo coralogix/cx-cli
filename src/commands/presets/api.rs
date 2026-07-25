@@ -17,6 +17,7 @@ pub struct Preset {
     pub connector_type: Option<String>,
     pub is_default: Option<bool>,
     pub is_custom: Option<bool>,
+    pub preset_type: Option<String>,
 }
 
 impl Preset {
@@ -30,12 +31,20 @@ impl Preset {
             .map(|s| s.strip_prefix("CONNECTOR_TYPE_").unwrap_or(s).to_string())
             .unwrap_or_else(|| "-".to_string())
     }
+
+    pub fn display_is_custom(&self) -> Option<bool> {
+        self.is_custom.or_else(|| {
+            self.preset_type
+                .as_deref()
+                .map(|preset_type| preset_type == "CUSTOM")
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListPresetsResponse {
-    #[serde(default)]
+    #[serde(default, alias = "presetSummaries")]
     pub presets: Vec<Preset>,
 }
 
@@ -71,7 +80,7 @@ impl<'a> PresetsApi<'a> {
     }
 
     pub async fn list(&self) -> Result<ListPresetsResponse> {
-        let path = format!("{PRESETS_BASE}/summaries");
+        let path = format!("{PRESETS_BASE}:summariesList");
         self.client.get(&path, &[]).await
     }
 
@@ -81,12 +90,12 @@ impl<'a> PresetsApi<'a> {
     }
 
     pub async fn create(&self, body: &Value) -> Result<CreatePresetResponse> {
-        let path = format!("{PRESETS_BASE}/custom");
+        let path = format!("{PRESETS_BASE}:createCustom");
         self.client.post(&path, body).await
     }
 
     pub async fn replace(&self, body: &Value) -> Result<Value> {
-        let path = format!("{PRESETS_BASE}/custom");
+        let path = format!("{PRESETS_BASE}:replaceCustom");
         self.client.put(&path, body).await
     }
 
@@ -96,7 +105,7 @@ impl<'a> PresetsApi<'a> {
     }
 
     pub async fn set_default(&self, id: &str) -> Result<SetDefaultPresetResponse> {
-        let path = format!("{PRESETS_BASE}/{id}/default");
+        let path = format!("{PRESETS_BASE}/{id}/default/apply");
         self.client.post(&path, &serde_json::json!({})).await
     }
 }
@@ -111,20 +120,18 @@ mod tests {
     #[test]
     fn deserialize_list_response() {
         let json = json!({
-            "presets": [
+            "presetSummaries": [
                 {
                     "id": "preset-001",
                     "name": "Default Slack",
-                    "connectorType": "CONNECTOR_TYPE_SLACK",
-                    "isDefault": true,
-                    "isCustom": false
+                    "connectorType": "SLACK",
+                    "presetType": "SYSTEM"
                 },
                 {
                     "id": "preset-002",
                     "name": "Custom PD",
-                    "connectorType": "CONNECTOR_TYPE_PAGERDUTY",
-                    "isDefault": false,
-                    "isCustom": true
+                    "connectorType": "PAGERDUTY",
+                    "presetType": "CUSTOM"
                 }
             ]
         });
@@ -133,7 +140,8 @@ mod tests {
         assert_eq!(resp.presets.len(), 2);
         assert_eq!(resp.presets[0].display_name(), "Default Slack");
         assert_eq!(resp.presets[0].display_connector_type(), "SLACK");
-        assert_eq!(resp.presets[0].is_default, Some(true));
+        assert_eq!(resp.presets[0].display_is_custom(), Some(false));
+        assert_eq!(resp.presets[1].display_is_custom(), Some(true));
     }
 
     #[test]
@@ -157,6 +165,7 @@ mod tests {
             connector_type: None,
             is_default: None,
             is_custom: None,
+            preset_type: None,
         };
         assert_eq!(preset.display_name(), "-");
         assert_eq!(preset.display_connector_type(), "-");

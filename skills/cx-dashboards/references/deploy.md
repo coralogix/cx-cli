@@ -1,4 +1,4 @@
-# Phase 7: Deploy via `cx dashboards create`
+# Phase 8: Deploy via `cx dashboards create`
 
 Don't tell the user to paste JSON into the Coralogix UI - deploy the dashboard directly.
 

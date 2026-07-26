@@ -8,7 +8,7 @@ pub mod api;
 
 use crate::commands::dashboards::profiled_api_row_to_json;
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::SearchByValueResult;
 
@@ -30,7 +30,6 @@ pub async fn run(
     );
 
     let include_profile = targets.len() > 1;
-    let target_count = targets.len();
     let query_owned = query.to_string();
     let dataset_owned = dataset.to_string();
     let per_profile = fan_out(targets, |target| {
@@ -44,23 +43,11 @@ pub async fn run(
     })
     .await;
 
-    let mut error_count = 0usize;
     let mut all_results: Vec<(String, SearchByValueResult)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for r in resp.matches {
-                    all_results.push((profile.clone(), r));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for r in resp.matches {
+            all_results.push((profile.clone(), r));
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     let json_rows: Vec<Value> = all_results

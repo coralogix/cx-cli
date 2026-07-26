@@ -19,6 +19,9 @@ pub enum CxError {
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Query stream error: {0}")]
+    QueryStream(String),
 }
 
 pub type Result<T> = std::result::Result<T, CxError>;

@@ -15,7 +15,7 @@ use serde_json::Value;
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::AiCenterApi;
 
@@ -110,20 +110,18 @@ fn tag_item(mut item: Value, include_profile: bool, profile: &str) -> Value {
 
 /// Collect per-profile `Value` results, printing per-profile errors to stderr and
 /// tagging each object with its profile in multi-profile mode.
-fn collect_objects(per_profile: Vec<(String, Result<Value>)>, include_profile: bool) -> Vec<Value> {
+fn collect_objects(
+    per_profile: Vec<(String, Result<Value>)>,
+    include_profile: bool,
+) -> Result<Vec<Value>> {
     let mut all: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
+        all.push(val);
     }
-    all
+    Ok(all)
 }
 
 // ── Applications ────────────────────────────────────────────────────
@@ -160,23 +158,16 @@ pub async fn run_applications_list(
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(items) => {
-                for item in items {
-                    rows.push(vec![
-                        profile.clone(),
-                        col(&item, "id").to_string(),
-                        col(&item, "application").to_string(),
-                        col(&item, "subsystem").to_string(),
-                        render::bool_display(
-                            item.get("guardrailsIntegrated").and_then(Value::as_bool),
-                        ),
-                    ]);
-                    all_json.push(tag_item(item, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        for item in items {
+            rows.push(vec![
+                profile.clone(),
+                col(&item, "id").to_string(),
+                col(&item, "application").to_string(),
+                col(&item, "subsystem").to_string(),
+                render::bool_display(item.get("guardrailsIntegrated").and_then(Value::as_bool)),
+            ]);
+            all_json.push(tag_item(item, include_profile, &profile));
         }
     }
 
@@ -208,7 +199,7 @@ pub async fn run_applications_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "AI application not found.")
 }
 
@@ -255,27 +246,22 @@ pub async fn run_evaluations_list(
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(items) => {
-                for item in items {
-                    rows.push(vec![
-                        profile.clone(),
-                        col(&item, "id").to_string(),
-                        col(&item, "application").to_string(),
-                        col(&item, "subsystem").to_string(),
-                        api::eval_config_type(&item),
-                        col(&item, "target").to_string(),
-                        render::bool_display(item.get("isEnabled").and_then(Value::as_bool)),
-                        item.get("threshold")
-                            .and_then(Value::as_f64)
-                            .map(|t| t.to_string())
-                            .unwrap_or_default(),
-                    ]);
-                    all_json.push(tag_item(item, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        for item in items {
+            rows.push(vec![
+                profile.clone(),
+                col(&item, "id").to_string(),
+                col(&item, "application").to_string(),
+                col(&item, "subsystem").to_string(),
+                api::eval_config_type(&item),
+                col(&item, "target").to_string(),
+                render::bool_display(item.get("isEnabled").and_then(Value::as_bool)),
+                item.get("threshold")
+                    .and_then(Value::as_f64)
+                    .map(|t| t.to_string())
+                    .unwrap_or_default(),
+            ]);
+            all_json.push(tag_item(item, include_profile, &profile));
         }
     }
 
@@ -315,7 +301,7 @@ pub async fn run_evaluations_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "AI evaluation not found.")
 }
 
@@ -337,7 +323,7 @@ pub async fn run_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Created AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -363,7 +349,7 @@ pub async fn run_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Updated AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -386,7 +372,7 @@ pub async fn run_evaluations_delete(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Deleted AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -403,7 +389,7 @@ pub async fn run_coverage(targets: &[Arc<ExecutionTarget>], output: OutputFormat
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "No coverage data.")
 }
 
@@ -452,28 +438,23 @@ async fn run_custom_evaluations_table(
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            // Items are raw API objects: the text table reads a few columns, but
-            // JSON/agents output keeps the full policy (config, instructions, etc.).
-            Ok(items) => {
-                for item in items {
-                    let app_count = item
-                        .get("applicationIds")
-                        .and_then(Value::as_array)
-                        .map(|a| a.len())
-                        .unwrap_or(0);
-                    rows.push(vec![
-                        profile.clone(),
-                        col(&item, "id").to_string(),
-                        col(&item, "name").to_string(),
-                        app_count.to_string(),
-                        col(&item, "description").chars().take(60).collect(),
-                    ]);
-                    all_json.push(tag_item(item, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    // Items are raw API objects: the text table reads a few columns, but
+    // JSON/agents output keeps the full policy (config, instructions, etc.).
+    for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        for item in items {
+            let app_count = item
+                .get("applicationIds")
+                .and_then(Value::as_array)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            rows.push(vec![
+                profile.clone(),
+                col(&item, "id").to_string(),
+                col(&item, "name").to_string(),
+                app_count.to_string(),
+                col(&item, "description").chars().take(60).collect(),
+            ]);
+            all_json.push(tag_item(item, include_profile, &profile));
         }
     }
 
@@ -505,7 +486,7 @@ pub async fn run_custom_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Created custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -531,7 +512,7 @@ pub async fn run_custom_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Updated custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -562,7 +543,7 @@ pub async fn run_add_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Attached policy to application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -593,7 +574,7 @@ pub async fn run_remove_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Detached policy from application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -613,7 +594,7 @@ pub async fn run_model_pricing_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     emit_objects(&all, include_profile, output, "No model pricing overrides.")
 }
 
@@ -635,7 +616,7 @@ pub async fn run_model_pricing_set(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile);
+    let all = collect_objects(per_profile, include_profile)?;
     eprintln!("{}", "Set model pricing.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }

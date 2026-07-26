@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{CustomEnrichment, CustomEnrichmentsApi};
 
@@ -108,15 +108,10 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     .await;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, CustomEnrichment)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for ce in resp.custom_enrichments {
-                    all_json.push(ce_to_json(&ce, include_profile, &profile));
-                    all_items.push((profile.clone(), ce));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for ce in resp.custom_enrichments {
+            all_json.push(ce_to_json(&ce, include_profile, &profile));
+            all_items.push((profile.clone(), ce));
         }
     }
     match output {
@@ -171,16 +166,11 @@ pub async fn run_get(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -219,22 +209,17 @@ pub async fn run_create(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(ce) = resp.custom_enrichment {
-                    eprintln!(
-                        "{}",
-                        format!(
-                            "Created custom enrichment '{}' in profile '{profile}'.",
-                            ce.display_name()
-                        )
-                        .green()
-                    );
-                    all_results.push(ce_to_json(&ce, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(ce) = resp.custom_enrichment {
+            eprintln!(
+                "{}",
+                format!(
+                    "Created custom enrichment '{}' in profile '{profile}'.",
+                    ce.display_name()
+                )
+                .green()
+            );
+            all_results.push(ce_to_json(&ce, include_profile, &profile));
         }
     }
     match output {
@@ -266,17 +251,12 @@ pub async fn run_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated custom enrichment in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated custom enrichment in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -302,14 +282,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Custom enrichment {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Custom enrichment {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -336,11 +313,8 @@ pub async fn run_search(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => all_results.push(val),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,

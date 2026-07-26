@@ -214,7 +214,7 @@ fn normalize_endpoint(endpoint: &str) -> String {
 ///
 /// Returns `None` when the body is not JSON, none of the fields are present,
 /// or every candidate is an empty string.
-fn extract_error_detail(body: &str) -> Option<String> {
+pub(crate) fn extract_error_detail(body: &str) -> Option<String> {
     let v: Value = serde_json::from_str(body).ok()?;
     let non_empty = |val: &Value| val.as_str().filter(|s| !s.is_empty()).map(String::from);
     non_empty(&v["message"])

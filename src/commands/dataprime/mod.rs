@@ -15,7 +15,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::spill::{maybe_spill, transform_for_agents, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;
@@ -283,7 +283,7 @@ pub fn merge_results(
     per_profile: Vec<(String, Result<QueryGenericResponse>)>,
     include_profile: bool,
     cases_warning: Option<&str>,
-) -> MergedResults {
+) -> Result<MergedResults> {
     let mut rows: Vec<Value> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     if let Some(w) = cases_warning {
@@ -291,38 +291,31 @@ pub fn merge_results(
     }
     let mut is_aggregate: Option<bool> = None;
 
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for w in resp.warnings {
-                    warnings.push(format!("[{profile}] {w}"));
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for w in resp.warnings {
+            warnings.push(format!("[{profile}] {w}"));
+        }
+        if is_aggregate.is_none() {
+            is_aggregate = Some(resp.is_aggregate);
+        }
+        if include_profile {
+            rows.extend(resp.raw_results.into_iter().map(|mut row| {
+                if let Value::Object(ref mut m) = row {
+                    m.insert("profile".to_string(), Value::String(profile.clone()));
                 }
-                if is_aggregate.is_none() {
-                    is_aggregate = Some(resp.is_aggregate);
-                }
-                if include_profile {
-                    rows.extend(resp.raw_results.into_iter().map(|mut row| {
-                        if let Value::Object(ref mut m) = row {
-                            m.insert("profile".to_string(), Value::String(profile.clone()));
-                        }
-                        row
-                    }));
-                } else {
-                    rows.extend(resp.raw_results);
-                }
-            }
-            Err(e) => {
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
+                row
+            }));
+        } else {
+            rows.extend(resp.raw_results);
         }
     }
 
-    MergedResults {
+    Ok(MergedResults {
         rows,
         warnings,
         is_aggregate: is_aggregate.unwrap_or(false),
         include_profile,
-    }
+    })
 }
 
 /// Render merged results to stdout.
@@ -418,7 +411,7 @@ pub async fn run_query(
     })
     .await;
 
-    let merged = merge_results(per_profile, include_profile, cases_warning.as_deref());
+    let merged = merge_results(per_profile, include_profile, cases_warning.as_deref())?;
     render_results(&merged, output, max_direct, temp_dir, text_renderer)
 }
 
@@ -508,7 +501,7 @@ category: ["Commands reference", "test"]
     fn merge_single_profile_omits_profile_field() {
         let rows = vec![json!({"userData": {"message": "hello"}})];
         let per_profile = vec![("prod".to_string(), Ok(make_generic_response(rows, false)))];
-        let merged = merge_results(per_profile, false, None);
+        let merged = merge_results(per_profile, false, None).unwrap();
 
         assert_eq!(merged.rows.len(), 1);
         assert!(!merged.include_profile);
@@ -533,7 +526,7 @@ category: ["Commands reference", "test"]
                 )),
             ),
         ];
-        let merged = merge_results(per_profile, true, None);
+        let merged = merge_results(per_profile, true, None).unwrap();
 
         assert_eq!(merged.rows.len(), 2);
         assert_eq!(merged.rows[0]["profile"], json!("prod"));
@@ -549,7 +542,7 @@ category: ["Commands reference", "test"]
             ),
             ("bad".to_string(), Err(anyhow::anyhow!("network error"))),
         ];
-        let merged = merge_results(per_profile, true, None);
+        let merged = merge_results(per_profile, true, None).unwrap();
 
         assert_eq!(merged.rows.len(), 1);
         assert_eq!(merged.rows[0]["profile"], json!("good"));
@@ -560,7 +553,7 @@ category: ["Commands reference", "test"]
         let mut resp = make_generic_response(vec![], false);
         resp.warnings = vec!["too many results".to_string()];
         let per_profile = vec![("prod".to_string(), Ok(resp))];
-        let merged = merge_results(per_profile, true, None);
+        let merged = merge_results(per_profile, true, None).unwrap();
 
         assert_eq!(merged.warnings.len(), 1);
         assert!(merged.warnings[0].contains("[prod]"));
@@ -572,8 +565,31 @@ category: ["Commands reference", "test"]
             ("p1".to_string(), Ok(make_generic_response(vec![], true))),
             ("p2".to_string(), Ok(make_generic_response(vec![], true))),
         ];
-        let merged = merge_results(per_profile, true, None);
+        let merged = merge_results(per_profile, true, None).unwrap();
         assert!(merged.is_aggregate);
+    }
+
+    #[test]
+    fn merge_single_profile_failure_returns_err() {
+        let per_profile: Vec<(String, anyhow::Result<QueryGenericResponse>)> =
+            vec![("prod".to_string(), Err(anyhow::anyhow!("boom")))];
+        let result = merge_results(per_profile, false, None);
+
+        assert!(result.is_err(), "single failing profile must bail");
+    }
+
+    #[test]
+    fn merge_all_profiles_failing_returns_err() {
+        let per_profile: Vec<(String, anyhow::Result<QueryGenericResponse>)> = vec![
+            ("prod".to_string(), Err(anyhow::anyhow!("timeout"))),
+            ("staging".to_string(), Err(anyhow::anyhow!("auth failed"))),
+        ];
+        let result = merge_results(per_profile, true, None);
+
+        assert!(
+            result.is_err(),
+            "must bail when every profile in the fan-out failed"
+        );
     }
 
     // ── check_cases_query_rules integration via merge_results ────────────────
@@ -596,7 +612,7 @@ category: ["Commands reference", "test"]
             "prod".to_string(),
             Ok(make_generic_response(vec![json!({"data": 1})], false)),
         )];
-        let merged = merge_results(per_profile, false, warning.as_deref());
+        let merged = merge_results(per_profile, false, warning.as_deref()).unwrap();
 
         assert_eq!(merged.warnings.len(), 1);
         assert!(
@@ -613,7 +629,7 @@ category: ["Commands reference", "test"]
         let mut resp = make_generic_response(vec![], false);
         resp.warnings = vec!["too many results".to_string()];
         let per_profile = vec![("prod".to_string(), Ok(resp))];
-        let merged = merge_results(per_profile, true, cases_warn.as_deref());
+        let merged = merge_results(per_profile, true, cases_warn.as_deref()).unwrap();
 
         assert_eq!(
             merged.warnings.len(),
@@ -640,7 +656,7 @@ category: ["Commands reference", "test"]
             ),
             ("bad".to_string(), Err(anyhow::anyhow!("timeout"))),
         ];
-        let merged = merge_results(per_profile, true, cases_warn.as_deref());
+        let merged = merge_results(per_profile, true, cases_warn.as_deref()).unwrap();
 
         // The cases warning appears in merged.warnings regardless of profile errors.
         assert!(
@@ -664,7 +680,7 @@ category: ["Commands reference", "test"]
             CASES_END,
         );
         let per_profile = vec![("prod".to_string(), Ok(make_generic_response(vec![], false)))];
-        let merged = merge_results(per_profile, false, warning.as_deref());
+        let merged = merge_results(per_profile, false, warning.as_deref()).unwrap();
 
         assert!(
             merged.warnings.is_empty(),
@@ -681,7 +697,7 @@ category: ["Commands reference", "test"]
             "prod".to_string(),
             Ok(make_generic_response(vec![json!({"msg": "hi"})], false)),
         )];
-        let merged = merge_results(per_profile, false, warning.as_deref());
+        let merged = merge_results(per_profile, false, warning.as_deref()).unwrap();
 
         assert!(merged.warnings.is_empty());
         assert_eq!(merged.rows.len(), 1);

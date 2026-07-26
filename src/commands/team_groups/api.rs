@@ -7,10 +7,34 @@ use crate::api_client::CxClient;
 
 // --- Response types ---
 
+/// The Team Groups API documents numeric IDs (e.g. `groupId: 101`) but some responses send
+/// them as strings; accept either so deserialization doesn't break on conforming responses.
+fn deserialize_opt_id_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IdValue {
+        String(String),
+        Number(i64),
+    }
+
+    Ok(
+        Option::<IdValue>::deserialize(deserializer)?.map(|v| match v {
+            IdValue::String(s) => s,
+            IdValue::Number(n) => n.to_string(),
+        }),
+    )
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamGroup {
-    pub group_id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
+    pub group_id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
     pub team_id: Option<i64>,
@@ -69,7 +93,8 @@ pub struct UpdateTeamGroupResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteTeamGroupResponse {
-    pub group_id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_opt_id_string")]
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,14 +172,14 @@ mod tests {
         let json = json!({
             "groups": [
                 {
-                    "groupId": 101,
+                    "groupId": "101",
                     "name": "Engineering",
                     "description": "Eng team",
                     "teamId": 1234,
                     "createdAt": "2024-01-01T00:00:00Z"
                 },
                 {
-                    "groupId": 102,
+                    "groupId": "102",
                     "name": "DevOps"
                 }
             ],
@@ -180,7 +205,7 @@ mod tests {
     fn deserialize_get_response() {
         let json = json!({
             "group": {
-                "groupId": 101,
+                "groupId": "101",
                 "name": "Engineering",
                 "description": "Eng team"
             }
@@ -193,7 +218,7 @@ mod tests {
     fn deserialize_get_by_name_response() {
         let json = json!({
             "group": {
-                "groupId": 101,
+                "groupId": "101",
                 "name": "Engineering"
             }
         });
@@ -204,16 +229,16 @@ mod tests {
     #[test]
     fn deserialize_create_response() {
         let json = json!({
-            "group": { "groupId": 201, "name": "New Group" }
+            "group": { "groupId": "201", "name": "New Group" }
         });
         let resp: CreateTeamGroupResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.group.unwrap().group_id, Some(201));
+        assert_eq!(resp.group.unwrap().group_id, Some("201".to_string()));
     }
 
     #[test]
     fn deserialize_update_response() {
         let json = json!({
-            "group": { "groupId": 101, "name": "Updated Group" }
+            "group": { "groupId": "101", "name": "Updated Group" }
         });
         let resp: UpdateTeamGroupResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.group.unwrap().display_name(), "Updated Group");
@@ -221,9 +246,24 @@ mod tests {
 
     #[test]
     fn deserialize_delete_response() {
-        let json = json!({ "groupId": 101 });
+        let json = json!({ "groupId": "101" });
         let resp: DeleteTeamGroupResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.group_id, Some(101));
+        assert_eq!(resp.group_id, Some("101".to_string()));
+    }
+
+    #[test]
+    fn deserialize_numeric_group_ids() {
+        let json = json!({
+            "groups": [
+                { "groupId": 101, "name": "Engineering" }
+            ]
+        });
+        let resp: ListTeamGroupsResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.groups[0].group_id, Some("101".to_string()));
+
+        let delete_json = json!({ "groupId": 101 });
+        let resp: DeleteTeamGroupResponse = serde_json::from_value(delete_json).unwrap();
+        assert_eq!(resp.group_id, Some("101".to_string()));
     }
 
     #[test]

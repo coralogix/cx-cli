@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{CustomRole, RolesApi, SystemRole};
 
@@ -74,15 +74,10 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, CustomRole)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for role in resp.roles {
-                    all_json.push(custom_role_to_json(&role, include_profile, &profile));
-                    all_items.push((profile.clone(), role));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for role in resp.roles {
+            all_json.push(custom_role_to_json(&role, include_profile, &profile));
+            all_items.push((profile.clone(), role));
         }
     }
 
@@ -103,7 +98,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                 .map(|(profile, role)| {
                     vec![
                         profile.clone(),
-                        role.role_id.map(|id| id.to_string()).unwrap_or_default(),
+                        role.role_id.clone().unwrap_or_default(),
                         role.display_name().to_string(),
                         role.display_description().to_string(),
                         role.parent_role_name.clone().unwrap_or_default(),
@@ -146,14 +141,9 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(role) = resp.role {
-                    all_results.push(custom_role_to_json(&role, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(role) = resp.role {
+            all_results.push(custom_role_to_json(&role, include_profile, &profile));
         }
     }
 
@@ -194,27 +184,15 @@ pub async fn run_create(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                let id = resp
-                    .id
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "unknown".to_string());
-                eprintln!(
-                    "{}",
-                    format!("Created custom role (ID: {id}) in profile '{profile}'.").green()
-                );
-                let mut v = json!({ "id": resp.id });
-                if targets.len() > 1 {
-                    if let Value::Object(ref mut m) = v {
-                        m.insert("profile".to_string(), Value::String(profile.to_string()));
-                    }
-                }
-                all_results.push(v);
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        render::print_created("Created", "custom role", None, resp.id.as_deref(), &profile);
+        let mut v = json!({ "id": resp.id });
+        if targets.len() > 1 {
+            if let Value::Object(ref mut m) = v {
+                m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
+        all_results.push(v);
     }
 
     match output {
@@ -250,17 +228,12 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated custom role in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated custom role in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {
@@ -287,14 +260,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Custom role {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Custom role {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -311,15 +281,10 @@ pub async fn run_system(targets: &[Arc<ExecutionTarget>], output: OutputFormat) 
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, SystemRole)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for role in resp.roles {
-                    all_json.push(system_role_to_json(&role, include_profile, &profile));
-                    all_items.push((profile.clone(), role));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for role in resp.roles {
+            all_json.push(system_role_to_json(&role, include_profile, &profile));
+            all_items.push((profile.clone(), role));
         }
     }
 
@@ -340,7 +305,7 @@ pub async fn run_system(targets: &[Arc<ExecutionTarget>], output: OutputFormat) 
                 .map(|(profile, role)| {
                     vec![
                         profile.clone(),
-                        role.role_id.map(|id| id.to_string()).unwrap_or_default(),
+                        role.role_id.clone().unwrap_or_default(),
                         role.display_name().to_string(),
                         role.display_description().to_string(),
                         role.permissions_count().to_string(),

@@ -2,8 +2,10 @@
 
 Complete schema and gotchas for **Notification Center routers** (`cx notifications routers …`).
 A router matches incoming notification requests (from alerts, cases, etc.) by **routing labels**,
-then evaluates ordered **rules**; the first rule whose **condition** passes delivers to that rule's
-**targets** (connector + optional preset). Unmatched requests fall through to `fallbackTargets`.
+then evaluates its **rules**. **Every** rule whose **condition** passes delivers to that rule's
+**targets** (connector + optional preset) — evaluation does not stop at the first match, so multiple
+rules can fire for the same request. `fallbackTargets` are used only when the router matches (by
+labels) but **no** rule condition passes; if no router matches at all, the request is dropped.
 
 CLI → API mapping (all under `/mgmt/openapi/5/notifications/notification-center/v1`):
 
@@ -55,8 +57,8 @@ The top-level object is wrapped in `router`:
 | `description` | string | Optional. |
 | `routingLabels` | object | `{ service?, team?, environment? }` — see label matching below. |
 | `disabled` | bool | Optional; `true` = router does not evaluate. |
-| `rules` | array | Ordered `RoutingRule`s; first matching rule wins. |
-| `fallbackTargets` | array | `{ entityType, target: RoutingTarget }` used when no rule matches. On a **regular (labeled) router the fallback target references a connector only** (no preset). |
+| `rules` | array | `RoutingRule`s; **every** rule whose condition passes sends to its targets (no first-match short-circuit). |
+| `fallbackTargets` | array | `{ entityType, target: RoutingTarget }` used only when the router matches but **no** rule condition passes. On a **regular (labeled) router the fallback target references a connector only** (no preset). |
 | `entityType` | enum | **Reserved for the default router (`router_default`)** — do NOT set it on a regular labeled router. Set `entityType` per-rule instead. |
 | `id` | string | Set only on `update` (full replace). |
 

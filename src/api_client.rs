@@ -23,6 +23,10 @@ impl CxClient {
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
         );
+        headers.insert(
+            header::HeaderName::from_static("x-cx-sdk-version"),
+            header::HeaderValue::from_static(concat!("cx-cli-", env!("CARGO_PKG_VERSION"))),
+        );
 
         let inner = Client::builder()
             .default_headers(headers)
@@ -286,7 +290,7 @@ fn normalize_endpoint(endpoint: &str) -> String {
 ///
 /// Returns `None` when the body is not JSON, none of the fields are present,
 /// or every candidate is an empty string.
-fn extract_error_detail(body: &str) -> Option<String> {
+pub(crate) fn extract_error_detail(body: &str) -> Option<String> {
     let v: Value = serde_json::from_str(body).ok()?;
     let non_empty = |val: &Value| val.as_str().filter(|s| !s.is_empty()).map(String::from);
     non_empty(&v["message"])

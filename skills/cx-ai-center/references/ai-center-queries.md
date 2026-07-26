@@ -40,9 +40,43 @@ prompt lives in the `gen_ai.system_instructions` tag **or** the `role:"system"` 
 `role:"system"` message inside `gen_ai.input.messages` (current) / `gen_ai.prompt.0.content` when
 `gen_ai.prompt.0.role == "system"` (indexed). Check both places.
 
-Read the interactions the question needs, ordered by recency — don't add a manual `limit`.
-Report how many matched vs. how many you read (e.g. "312 matched; I read the 200 most
-recent") and offer to narrow. Cite the `traceID` of any interaction you reference.
+**Cap the volume first — sample, don't read them all.** When the answer comes from **reading the
+conversations** (satisfaction, sentiment, topics, quality, summaries, "read the last day and tell
+me if X"), never run the heavy query over *all* of an app's interactions — cap to **≤150** (100
+default; 50–150 when each unit is large) and read only that sample. Report how many matched vs.
+how many you read (e.g. "312 matched; I read 100") and offer to narrow. Cite the `traceID` of any
+interaction you reference.
+
+**Do NOT sample in two cases:**
+1. **An exact metric** — `count`/`distinct_count`, sums (cost, tokens), error/issue rates,
+   percentiles, "how many…". Compute over *all* matching data (still scoped by a tight time window
+   + indexed filters); a sample gives a wrong number.
+2. **A specific target / needle** — a given `traceID`, one user's session, "the last 5 traces", or
+   "does **any** interaction do X". Filter **directly** to the target; sampling could miss it.
+
+**Trace-level reads (one interaction at a time — sentiment, topics, per-session content) → two
+steps.** *Step 1* — get the capped distinct trace IDs (cheap, IDs only):
+```dataprime
+source spans
+| filter (tags['gen_ai.system']:string != null || tags['gen_ai.provider.name']:string != null || tags['gen_ai.operation.name']:string != null) && !(['cursor-agent','codex_cli_rs','codex-app-server','github-copilot','gemini-cli'].arrayContains($l.serviceName))
+| filter tags['gen_ai.input.messages'] != null || tags['gen_ai.output.messages'] != null || tags['gen_ai.prompt.0.role'] != null
+| distinct $d.traceID
+| limit 100
+```
+*Step 2* — paste those IDs and run the requested (heavy) query over **only** those traces:
+```dataprime
+source spans
+| filter ['TRACE_1','TRACE_2', … ].arrayContains($d.traceID)
+| … the requested query …
+```
+**Span-level reads** (per span, no per-interaction grouping): skip the ID round-trip — add
+`| limit <N>` (≤150) right after the GenAI spans filter. Keep the GenAI filter and add the
+question's own scope (time window, app, user/model) on the Step-1 query; Step 2 inherits it via the
+trace IDs. The same two-step cap applies to the indexed convention.
+
+**Scope before you scan:** start with a narrow time window (widen only if needed), anchor on
+indexed `$l`/`$m` fields before matching/reading `$d.*` payload, and discover an unknown field
+cheaply (a `limit 5` sample) instead of guessing with a full scan.
 
 Use `cx ai-center applications list` to get the exact `applicationName`/`subsystemName` pairs.
 The app filter in the queries below is **optional**: keep it to scope to one app, **drop it** for
@@ -117,7 +151,9 @@ roles as flat per-message tags — `gen_ai.prompt.<n>.{role,content}` /
 
 **Current convention — general conversation read.** Parse the messages JSON with `jsonobject()`,
 keep `user`/`assistant` roles (drops `system` + `tool`) and `type:"text"` parts (drops `tool_call`
-/ `tool_call_response`), and collect one transcript per span. Scope by adding
+/ `tool_call_response`), and collect one transcript per span. **Run this over the capped trace IDs**
+(see *Cap the volume first* — this is the Step-2 heavy read, not a full scan): prepend
+`| filter ['ID1','ID2', … ].arrayContains($d.traceID)` after `source spans`. Scope by adding
 `| filter $l.applicationName == '<APP>' && $l.subsystemName == '<SUB>'` after `source spans`; a
 span's `input.messages` accumulates the prior turns, so the fullest span of a conversation holds the
 whole history:
@@ -145,8 +181,9 @@ content, so they can appear in the transcript; treat them as noise when judging.
 Aggregate instead of read (e.g. top user questions): keep only `$d.message.role == 'user'` before
 the parts explode, then `| groupby $d.part.content aggregate count() as times | orderby times desc`.
 
-**Indexed convention — general conversation read.** The messages are separate numbered tags
-(`gen_ai.prompt.<n>.*`), so there's no JSON string to parse and DataPrime can't enumerate the
+**Indexed convention — general conversation read.** Run this over the capped IDs too (see *Cap the
+volume first* — prepend the same `['ID1', … ].arrayContains($d.traceID)` filter). The messages are
+separate numbered tags (`gen_ai.prompt.<n>.*`), so there's no JSON string to parse and DataPrime can't enumerate the
 numbered keys directly. Instead serialize the whole span with `$d:string` and `multi_regexp` every
 `role`/`content` pair at once (any message count, no hardcoded range); group by index to re-pair
 role with content, then keep `user`/`assistant` with non-empty content (drops `system`, `role:"tool"`
@@ -380,7 +417,7 @@ Trend: `groupby roundTime($m.timestamp, <interval>ms) as Time aggregate avg(tags
 ## Phase 1 — interaction intelligence (read the content)
 
 **Method for sentiment / satisfaction / frustration:**
-1. Scope to recent interactions (order by recency; no manual `limit`). State matched-vs-read.
+1. Take a **capped sample** for the app (see *Cap the volume first* — ≤150, 100 default), don't read them all. State matched-vs-read.
 2. **Read the conversations — don't keyword-search for emotion.** Use the **Reading conversations
    (content questions)** queries (current or indexed convention) to get clean user+assistant
    transcripts, group by session (`gen_ai.conversation.id`, fall back to `traceID`), and read each
@@ -394,8 +431,8 @@ Trend: `groupby roundTime($m.timestamp, <interval>ms) as Time aggregate avg(tags
 their `traceID`** (satisfied and dissatisfied) — an example is the user's own words, not a
 description of the agent's reply. Don't dump raw ID lists.
 
-- **Topic analysis** ("what do users ask about?") is an LLM-judgment task — read recent user
-  turns and cluster the asks yourself; report themes + how many you read. Don't bucket with
+- **Topic analysis** ("what do users ask about?") is an LLM-judgment task — read the **user turns of your capped sample**
+  (see *Cap the volume first*) and cluster the asks yourself; report themes + how many you read. Don't bucket with
   keyword filters.
 - **Counting a specific term** ("how often do users mention RUM?") is narrower — decide if they
   want a count, list, or examples. Match **user turns** at the **word level** (a bare `~ 'rum'`

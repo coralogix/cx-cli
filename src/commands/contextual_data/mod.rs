@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{ContextualDataApi, ContextualDataIntegration};
 
@@ -60,16 +60,11 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ContextualDataIntegration)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for wrapper in resp.integrations {
-                    let item: ContextualDataIntegration = wrapper.into();
-                    all_json.push(item_to_json(&item, include_profile, &profile));
-                    all_items.push((profile.clone(), item));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for wrapper in resp.integrations {
+            let item: ContextualDataIntegration = wrapper.into();
+            all_json.push(item_to_json(&item, include_profile, &profile));
+            all_items.push((profile.clone(), item));
         }
     }
 
@@ -136,27 +131,23 @@ pub async fn run_get(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                // Normalize: API returns {integrationDetail: {integration: {...}, ...}}
-                // Extract the inner integration and flatten to match list output.
-                if let Some(detail) = val.get("integrationDetail") {
-                    if let Some(inner) = detail.get("integration") {
-                        val = json!({
-                            "id": inner.get("id"),
-                            "name": inner.get("name"),
-                            "description": inner.get("description"),
-                        });
-                    }
-                }
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        // Normalize: API returns {integrationDetail: {integration: {...}, ...}}
+        // Extract the inner integration and flatten to match list output.
+        if let Some(inner) = val
+            .get("integrationDetail")
+            .and_then(|d| d.get("integration"))
+        {
+            val = json!({
+                "id": inner.get("id"),
+                "name": inner.get("name"),
+                "description": inner.get("description"),
+            });
         }
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        all_results.push(val);
     }
 
     match output {
@@ -197,27 +188,21 @@ pub async fn run_create(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                let id = resp.integration_id.as_deref().unwrap_or("unknown");
-                eprintln!(
-                    "{}",
-                    format!(
-                        "Created contextual data integration (ID: {id}) in profile '{profile}'."
-                    )
-                    .green()
-                );
-                let mut v = json!({ "id": resp.integration_id });
-                if include_profile {
-                    if let Value::Object(ref mut m) = v {
-                        m.insert("profile".to_string(), Value::String(profile.to_string()));
-                    }
-                }
-                all_results.push(v);
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        render::print_created(
+            "Created",
+            "contextual data integration",
+            None,
+            resp.integration_id.as_deref(),
+            &profile,
+        );
+        let mut v = json!({ "id": resp.integration_id });
+        if include_profile {
+            if let Value::Object(ref mut m) = v {
+                m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
         }
+        all_results.push(v);
     }
 
     match output {
@@ -256,18 +241,12 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated contextual data integration {id} in profile '{profile}'.")
-                        .green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated contextual data integration {id} in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {
@@ -297,14 +276,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Contextual data integration {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Contextual data integration {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -331,16 +307,11 @@ pub async fn run_definition(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
+        all_results.push(val);
     }
 
     match output {
@@ -383,17 +354,12 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Test completed in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Test completed in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
 
     match output {

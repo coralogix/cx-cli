@@ -151,7 +151,9 @@ pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
             continue;
         }
         let value: Value = serde_json::from_str(line)?;
-        if let Some(batch) = value
+        if value.get("queryId").is_some() {
+            continue;
+        } else if let Some(batch) = value
             .get("result")
             .and_then(|r| r.get("results"))
             .and_then(|r| r.as_array())
@@ -163,7 +165,32 @@ pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
                     warnings.push(msg.to_string());
                 }
             }
+        } else if let Some(stats) = value.get("statistics") {
+            // Every query - success or failure - ends with a statistics
+            // envelope. `status` is the authoritative outcome: a query that
+            // died mid-execution (e.g. an engine OOM) reports a non-COMPLETED
+            // status here rather than an HTTP-level error, since the 200
+            // response has already been sent by the time it happens.
+            let status = stats.get("status").and_then(|s| s.as_str()).unwrap_or("");
+            if status != "COMPLETED" {
+                return Err(crate::error::CxError::QueryStream(format!(
+                    "query did not complete successfully (status: {status}): {line}"
+                )));
+            }
+        } else if value.get("error").is_some() || value.get("errors").is_some() {
+            // Explicit mid-stream error envelope: the engine can report a
+            // failure in the response body after the 200 has been sent, rather
+            // than via the terminal `statistics` status. Surface it instead of
+            // reporting whatever rows arrived first as a complete success.
+            let detail =
+                crate::api_client::extract_error_detail(line).unwrap_or_else(|| line.to_string());
+            return Err(crate::error::CxError::QueryStream(detail));
         }
+        // Any other line is an unrecognized, non-error envelope (e.g. a future
+        // progress/heartbeat line). Skip it rather than failing an
+        // otherwise-successful query - the authoritative outcome is the
+        // terminal `statistics` status handled above, and a real failure also
+        // arrives as a non-COMPLETED status or an explicit error envelope.
     }
     Ok((rows, warnings))
 }
@@ -411,6 +438,78 @@ mod tests {
                 .map(|(k, v)| json!({"key": k, "value": v}))
                 .collect(),
         )
+    }
+
+    // ── parse_ndjson_response ─────────────────────────────────────────────────
+
+    #[test]
+    fn ndjson_ignores_query_id_line() {
+        let raw = r#"{"queryId":{"queryId":"test-query-id"}}
+{"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}"#;
+        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn ndjson_completed_statistics_line_is_benign() {
+        let raw = r#"{"queryId":{"queryId":"test-query-id"}}
+{"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}
+{"statistics":{"status":"COMPLETED","outputRowCount":"1"}}"#;
+        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn ndjson_completed_statistics_line_on_zero_rows_is_not_an_error() {
+        // A query that legitimately matches nothing still ends with a
+        // COMPLETED statistics line and no `result` line at all.
+        let raw = r#"{"queryId":{"queryId":"test-query-id"}}
+{"statistics":{"status":"COMPLETED","outputRowCount":"0"}}"#;
+        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        assert!(rows.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn ndjson_non_completed_statistics_status_returns_query_stream_err() {
+        let raw = r#"{"queryId":{"queryId":"test-query-id"}}
+{"statistics":{"status":"FAILED","outputRowCount":"0"}}"#;
+        let err = parse_ndjson_response(raw).unwrap_err();
+        match err {
+            crate::error::CxError::QueryStream(msg) => {
+                assert!(msg.contains("FAILED"), "got: {msg}");
+            }
+            other => panic!("expected QueryStream error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ndjson_error_envelope_with_message_returns_query_stream_err() {
+        let raw = r#"{"queryId":{"queryId":"test-query-id"}}
+{"error":{"message":"engine out of memory"}}"#;
+        let err = parse_ndjson_response(raw).unwrap_err();
+        match err {
+            crate::error::CxError::QueryStream(msg) => {
+                assert!(msg.contains("engine out of memory"), "got: {msg}");
+            }
+            other => panic!("expected QueryStream error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ndjson_unknown_benign_envelope_is_skipped() {
+        // An unrecognized, non-error envelope (e.g. a future progress/heartbeat
+        // line) must not fail an otherwise-successful query: the authoritative
+        // outcome is the terminal COMPLETED statistics status.
+        let raw = r#"{"queryId":{"queryId":"test-query-id"}}
+{"progress":{"percent":50}}
+{"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}
+{"statistics":{"status":"COMPLETED","outputRowCount":"1"}}"#;
+        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(warnings.is_empty());
     }
 
     #[test]

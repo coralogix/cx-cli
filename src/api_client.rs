@@ -23,6 +23,10 @@ impl CxClient {
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
         );
+        headers.insert(
+            header::HeaderName::from_static("x-cx-sdk-version"),
+            header::HeaderValue::from_static(concat!("cx-cli-", env!("CARGO_PKG_VERSION"))),
+        );
 
         let inner = Client::builder()
             .default_headers(headers)

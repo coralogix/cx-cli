@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::api_client::CxClient;
@@ -278,4 +278,24 @@ async fn error_500_with_raw_body() {
         msg.contains("something went wrong"),
         "expected raw body in error, got: {msg}"
     );
+}
+
+#[tokio::test]
+async fn sdk_version_header_is_sent() {
+    init_tls();
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/test"))
+        .and(header(
+            "x-cx-sdk-version",
+            concat!("cx-cli-", env!("CARGO_PKG_VERSION")),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = CxClient::new(server.uri(), "test-key").unwrap();
+    let _: Value = client.get("/test", &[]).await.unwrap();
 }

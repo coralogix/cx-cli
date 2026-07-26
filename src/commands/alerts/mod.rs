@@ -9,7 +9,7 @@ pub mod api;
 
 use crate::config::OutputFormat;
 use crate::error::CxError;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{normalize_alert_payload, AlertDef, AlertsApi};
 
@@ -92,21 +92,16 @@ pub async fn run_list(
     // Merge & filter
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertDef)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for alert in resp.alert_defs {
-                    if let Some(filter) = name_filter {
-                        let name = alert.display_name().to_lowercase();
-                        if !name.contains(&filter.to_lowercase()) {
-                            continue;
-                        }
-                    }
-                    all_json.push(alert_to_json(&alert, include_profile, &profile));
-                    all_items.push((profile.clone(), alert));
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for alert in resp.alert_defs {
+            if let Some(filter) = name_filter {
+                let name = alert.display_name().to_lowercase();
+                if !name.contains(&filter.to_lowercase()) {
+                    continue;
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            all_json.push(alert_to_json(&alert, include_profile, &profile));
+            all_items.push((profile.clone(), alert));
         }
     }
 
@@ -176,16 +171,11 @@ pub async fn run_get(
 
     // Merge - collect raw API responses
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
+        all_results.push(val);
     }
 
     // Render
@@ -279,28 +269,23 @@ pub async fn run_create(
 
     // Merge
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(alert) = resp.alert_def {
-                    let name = alert.display_name();
-                    let id = alert.id.as_deref().unwrap_or("unknown");
-                    eprintln!(
-                        "{}",
-                        format!("Created alert '{name}' (ID: {id}) in profile '{profile}'.")
-                            .green()
-                    );
-                    let json = alert_to_json(&alert, include_profile, &profile);
-                    all_results.push(json);
-                } else {
-                    eprintln!(
-                        "{}",
-                        format!("Alert created in profile '{profile}' but response was empty.")
-                            .yellow()
-                    );
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(alert) = resp.alert_def {
+            let name = alert.display_name();
+            render::print_created(
+                "Created",
+                "alert",
+                Some(&name),
+                alert.id.as_deref(),
+                &profile,
+            );
+            let json = alert_to_json(&alert, include_profile, &profile);
+            all_results.push(json);
+        } else {
+            eprintln!(
+                "{}",
+                format!("Alert created in profile '{profile}' but response was empty.").yellow()
+            );
         }
     }
 
@@ -335,14 +320,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
     })
     .await;
 
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Deleted alert {alert_id} in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Deleted alert {alert_id} in profile '{profile}'.").green()
+        );
     }
 
     Ok(())
@@ -392,14 +374,11 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
     })
     .await;
 
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Alert {alert_id} enabled in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Alert {alert_id} enabled in profile '{profile}'.").green()
+        );
     }
 
     Ok(())
@@ -422,14 +401,11 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
     })
     .await;
 
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Alert {alert_id} disabled in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Alert {alert_id} disabled in profile '{profile}'.").green()
+        );
     }
 
     Ok(())
@@ -506,15 +482,10 @@ pub async fn run_events(
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Value)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(events) => {
-                for event in events {
-                    all_json.push(event_to_json(&event, include_profile, &profile));
-                    all_items.push((profile.clone(), event));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, events) in report_errors_and_collect_successes(per_profile)? {
+        for event in events {
+            all_json.push(event_to_json(&event, include_profile, &profile));
+            all_items.push((profile.clone(), event));
         }
     }
 
@@ -572,19 +543,14 @@ pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFor
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for mut stat in resp.stats {
-                    if include_profile {
-                        if let Value::Object(ref mut m) = stat {
-                            m.insert("profile".to_string(), Value::String(profile.clone()));
-                        }
-                    }
-                    all_json.push(stat);
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for mut stat in resp.stats {
+            if include_profile {
+                if let Value::Object(ref mut m) = stat {
+                    m.insert("profile".to_string(), Value::String(profile.clone()));
                 }
             }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+            all_json.push(stat);
         }
     }
 

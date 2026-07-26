@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{View, ViewFolder, ViewsApi};
 
@@ -67,15 +67,10 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     .await;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, View)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for view in resp.views {
-                    all_json.push(view_to_json(&view, include_profile, &profile));
-                    all_items.push((profile.clone(), view));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for view in resp.views {
+            all_json.push(view_to_json(&view, include_profile, &profile));
+            all_items.push((profile.clone(), view));
         }
     }
     match output {
@@ -125,16 +120,11 @@ pub async fn run_get(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -172,22 +162,17 @@ pub async fn run_create(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(view) = resp.view {
-                    eprintln!(
-                        "{}",
-                        format!(
-                            "Created view '{}' in profile '{profile}'.",
-                            view.display_name()
-                        )
-                        .green()
-                    );
-                    all_results.push(view_to_json(&view, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(view) = resp.view {
+            eprintln!(
+                "{}",
+                format!(
+                    "Created view '{}' in profile '{profile}'.",
+                    view.display_name()
+                )
+                .green()
+            );
+            all_results.push(view_to_json(&view, include_profile, &profile));
         }
     }
     match output {
@@ -221,17 +206,12 @@ pub async fn run_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated view in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated view in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -257,14 +237,11 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
         }
     })
     .await;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("View {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("View {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }
@@ -284,15 +261,10 @@ pub async fn run_folders_list(
     .await;
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ViewFolder)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for folder in resp.folders {
-                    all_json.push(folder_to_json(&folder, include_profile, &profile));
-                    all_items.push((profile.clone(), folder));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for folder in resp.folders {
+            all_json.push(folder_to_json(&folder, include_profile, &profile));
+            all_items.push((profile.clone(), folder));
         }
     }
     match output {
@@ -341,16 +313,11 @@ pub async fn run_folders_get(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(mut val) => {
-                if include_profile {
-                    render::tag_get_result(&mut val, &profile);
-                }
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
         }
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -388,22 +355,17 @@ pub async fn run_folders_create(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                if let Some(folder) = resp.folder {
-                    eprintln!(
-                        "{}",
-                        format!(
-                            "Created folder '{}' in profile '{profile}'.",
-                            folder.display_name()
-                        )
-                        .green()
-                    );
-                    all_results.push(folder_to_json(&folder, include_profile, &profile));
-                }
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(folder) = resp.folder {
+            eprintln!(
+                "{}",
+                format!(
+                    "Created folder '{}' in profile '{profile}'.",
+                    folder.display_name()
+                )
+                .green()
+            );
+            all_results.push(folder_to_json(&folder, include_profile, &profile));
         }
     }
     match output {
@@ -437,17 +399,12 @@ pub async fn run_folders_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(val) => {
-                eprintln!(
-                    "{}",
-                    format!("Updated folder in profile '{profile}'.").green()
-                );
-                all_results.push(val);
-            }
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Updated folder in profile '{profile}'.").green()
+        );
+        all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -473,14 +430,11 @@ pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> R
         }
     })
     .await;
-    for (profile, result) in per_profile {
-        match result {
-            Ok(()) => eprintln!(
-                "{}",
-                format!("Folder {id} deleted in profile '{profile}'.").green()
-            ),
-            Err(e) => eprintln!("{}", format!("error from profile '{profile}': {e:#}").red()),
-        }
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+        eprintln!(
+            "{}",
+            format!("Folder {id} deleted in profile '{profile}'.").green()
+        );
     }
     Ok(())
 }

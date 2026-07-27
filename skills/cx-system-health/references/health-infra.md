@@ -14,7 +14,7 @@ nodes/pods showing up", "is my metrics coverage complete".
 
 | # | Condition | Kind | Check | Fail → |
 |---|---|---|---|---|
-| 1 | Core infra metrics arriving now | Presence | `cx metrics search --name '*container_cpu*'` / `'*kube_pod*'` | **missing** → `cx-onboarding` `onboarding-metrics-infra.md` |
+| 1 | Core infra metrics arriving now | Presence | `cx metrics query 'container_cpu_usage_seconds_total'` / `'kube_pod_info'` (instant — non-empty = live *now*; `metrics search` reads the untimed catalog and can't prove liveness) | **missing** → `cx-onboarding` `onboarding-metrics-infra.md` |
 | 2 | Still flowing (no stop vs baseline) | Continuity | `cx metrics query 'rate(<key_metric>[5m])'` recent vs earlier | **degraded** (stopped) → check collector scrape |
 | 3 | Entity-mapping labels present (node/pod/host identifiers) | Completeness | inspect labels on infra metrics | **degraded** → ensure infra semantic conventions |
 | 4 | Expected metric names match dashboard/experience needs | Completeness | `cx metrics search --name '*<expected>*'` | **degraded** → naming mismatch (see below) |

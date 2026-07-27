@@ -49,12 +49,12 @@ the docs (reuse existing scrape config; no re-instrumentation).
 ## Verify (close the loop)
 
 ```bash
-# Is the metric present?
+# Find the exact metric name (catalog lookup — untimed, so it can't prove the metric is live)
 cx metrics search --name '*<metric>*'
-# Query it (PromQL)
+# Prove it's arriving now (instant PromQL query — a non-empty series means it's live)
 cx metrics query 'rate(<metric>[5m])'
 # Infra metrics arriving?
-cx metrics search --name '*container_cpu*'
+cx metrics query 'container_cpu_usage_seconds_total'
 ```
 
 Expected: the metric appears in search and returns a series; infra metrics like `container_cpu_*` /

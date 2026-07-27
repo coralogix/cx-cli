@@ -67,8 +67,9 @@ The collector emits its **own** telemetry. Confirm the pods are up, then confirm
 
 ```bash
 kubectl get pods -n <namespace> | grep -i coralogix   # receiver + gateway Running
-# Collector / cluster metrics arriving?
-cx metrics search --name '*otelcol*'
+# Collector metrics arriving now? (instant query — result >0 means collectors are reporting;
+# `metrics search --name '*otelcol*'` only lists the untimed catalog, so use it just to find names)
+cx metrics query 'count({__name__=~"otelcol_.*"})'
 # Any signal tagged with the cluster arriving?
 cx logs "filter \$l.applicationname == '<my-cluster>'" --start now-15m --limit 5
 ```

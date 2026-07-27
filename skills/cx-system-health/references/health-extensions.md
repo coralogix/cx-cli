@@ -16,7 +16,7 @@ the integration for `<tech>` actually working".
 
 | # | Condition | Kind | Check | Fail → |
 |---|---|---|---|---|
-| 1 | The extension is installed/configured | Presence | `cx integrations list` | **missing** → install (route to setup) |
+| 1 | The extension is installed/configured | Presence | `cx integrations extensions deployed` (install-state lives here, *not* `cx integrations list`, which lists ordinary integrations) | **missing** → install (route to setup) |
 | 2 | The signal the extension parses is arriving | Presence | `cx logs/metrics/spans` for the extension's expected source | **missing** → `cx-onboarding` |
 | 3 | Data matches the extension's expected fields/format | Completeness | inspect sample vs the extension's schema | **degraded** → fix parsing/attributes |
 | 4 | *TODO (PM):* extension-specific quality conditions | Quality | | |
@@ -29,7 +29,7 @@ the integration for `<tech>` actually working".
 
 ## TODO (owning PM)
 
-Fill the extension-specific conditions, the exact `cx integrations` output to expect, and the mapping
+Fill the extension-specific conditions, the exact `cx integrations extensions deployed` output to expect, and the mapping
 from "extension X" → "signals + fields it requires". Consider generating this per-extension from the
 extension catalog rather than hand-authoring each.
 

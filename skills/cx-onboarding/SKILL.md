@@ -61,18 +61,22 @@ prerequisites → minimal config → verify → common failures → tier & cost 
 
 Confirm these before instrumenting anything. Most "no data" cases fail here.
 
-1. **`cx` CLI installed and a profile configured.**
+1. **`cx` CLI installed and a query profile configured.** The profile powers the read-only
+   verification queries in this skill, so it authenticates to the **query** API — `cx profiles add`
+   requires a **Team Key or Personal Key**, *not* a Send-Your-Data key (ingress keys cannot query).
    ```bash
    cx profiles list            # is there a profile?
-   cx profiles add <name>      # if not: prompts for region + Send-Your-Data API key
+   cx profiles add <name>      # if not: prompts for region + a Team/Personal (query) API key
    ```
-   The profile's **region** determines the ingress endpoint. Never hardcode a region — read it
-   from the profile. Region → endpoint mapping is in the
+   The profile's **region** also resolves the ingress endpoint used when sending data. Never hardcode
+   a region — read it from the profile. Region → endpoint mapping is in the
    [Coralogix endpoints doc](https://coralogix.com/docs/integrations/coralogix-endpoints/).
 
-2. **A Send-Your-Data API key.** Ingestion authenticates with
-   `Authorization: Bearer <send-your-data-api-key>` — this is a *different* key from the query API
-   key. See [Send-Your-Data API key](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/).
+2. **A Send-Your-Data API key — a *separate* credential from the profile key above.** *Ingestion*
+   authenticates with `Authorization: Bearer <send-your-data-api-key>`; this is a **different** key
+   from the Team/Personal key the `cx` profile uses to *query*. Keep the two distinct — the profile key
+   never ingests, and the Send-Your-Data key never appears in a `cx` profile. See
+   [Send-Your-Data API key](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/).
 
 3. **The OTLP endpoint pattern.** All native ingestion is OpenTelemetry over gRPC:
    `ingress.<coralogix-domain>:443`. Resolve `<coralogix-domain>` from the profile region.
@@ -122,8 +126,10 @@ cx logs "filter \$l.applicationname == '<app>'" --start now-15m --limit 5
 # Spans landed?
 cx spans "filter \$l.serviceName == '<service>'" --start now-15m --limit 5
 
-# Metric present?
-cx metrics search --name '*<metric>*'
+# Metric arriving *now*? `metrics search` reads the untimed name catalog, so on its own it can't tell
+# "arriving now" from "seen once, long ago" — use it to find the name, then prove liveness with a query.
+cx metrics search --name '*<metric>*'    # discover the exact metric name from the catalog
+cx metrics query '<metric>'              # instant query at now → non-empty result means it's live
 ```
 
 If nothing appears after ~5–10 minutes: extend the time range, re-check the app/subsystem name used,

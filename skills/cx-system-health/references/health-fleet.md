@@ -30,15 +30,15 @@ running".
 
 | # | Condition (failure mode) | Category | Check | Fail → |
 |---|---|---|---|---|
-| 1 | Collectors emitting their own telemetry at all | Availability | `cx metrics search --name '*otelcol*'` | no fleet → `cx-onboarding` `onboarding-fleet.md` |
+| 1 | Collectors emitting their own telemetry at all | Availability | `cx metrics query 'count({__name__=~"otelcol_.*"})'` (instant — result >0 = collectors reporting *now*; `metrics search` only lists the untimed catalog) | no fleet → `cx-onboarding` `onboarding-fleet.md` |
 | 2 | **Agent down** — each expected collector still reporting (none silently gone) | Availability | per-collector `otelcol_*` now vs baseline (`--start now-24h --end now-1h`) | Critical → check pod/host, redeploy |
 | 3 | All expected **roles** present (DaemonSet agent · cluster collector · gateway) | Availability | confirm each role reports (a DaemonSet fleet can be healthy while the gateway is not) | Warning/Critical → fix the Helm release for the missing role |
 | 4 | **Throughput drop** — data still flowing at expected volume (not nop-config) | Freshness | compare recent throughput vs baseline; "no data in 5 min" style | Warning/Critical → nop/rejected config or upstream stop |
 | 5 | **Config rejected / restart loop** — collector accepted its config and is stable | Other | `otelcol_exporter_send_failed_*` / restart counts / collector logs | Critical → endpoint/key/resources; re-push valid config |
 | 6 | **Version drift** — collectors on the intended config/agent version | Other | compare version each collector reports via OpAMP vs intended Fleet config | Warning → push intended config via Fleet Management (OpAMP) |
 
-*(These are exactly the modes the Fleet Health experience surfaces per agent → cluster → fleet. When the
-1.2 health API ships, call it instead of the queries above — same contract.)*
+*(These are exactly the modes the Fleet Health experience surfaces per agent → cluster → fleet. If a
+Fleet Health API ships later, call it instead of the queries above — same contract.)*
 
 ## Verdict → remediation
 

@@ -84,14 +84,19 @@ Health checks use read-only `cx` queries (no ingestion quota, no AI Units):
 # Continuity: is the signal still arriving? (compare recent vs a baseline window)
 cx logs "filter \$l.applicationname == '<app>'" --start now-15m --limit 1
 cx spans "filter \$l.serviceName == '<service>'" --start now-15m --limit 1
-cx metrics search --name '*<key-metric>*'
+# For metrics, a time-bounded PromQL query — NOT `metrics search`, which reads the untimed name
+# catalog and would report a metric that stopped flowing as still present (a false "healthy"):
+cx metrics query '<key-metric>'                                        # live now? (instant, at now)
+cx metrics query-range '<key-metric>' --start now-24h --end now --step 1h   # recent vs baseline
 
 # Completeness: are the required attributes present?
 cx spans "filter \$l.serviceName == '<service>'" --limit 5 -o json   # inspect for service.name, error, duration
 cx search-fields "<attribute the experience needs>" --dataset spans
 
-# Extensions/integrations present?
-cx integrations list        # what's configured; cross-check against expected extensions
+# Extensions present? Extension install-state lives under the extensions subcommand,
+# not `cx integrations list` (which lists ordinary integrations):
+cx integrations extensions deployed        # installed extensions; cross-check against expected ones
+cx integrations extensions list            # what extensions are available to install
 ```
 
 Each reference spells out the exact conditions and queries for its surface.

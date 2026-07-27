@@ -27,6 +27,13 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
 
+### Setup / Onboarding
+
+| Skill | Description |
+|---|---|
+| `cx-onboarding` | Get telemetry INTO Coralogix — deploy the collector, instrument logs/spans/metrics/RUM, and verify data lands. Loads per-signal reference files; the setup counterpart to `cx-telemetry-querying`. |
+| `cx-system-health` | Check whether telemetry already in Coralogix is healthy/complete enough for an experience or extension — coverage, continuity, quality. Emits verdicts and routes gaps back to `cx-onboarding`. Terminal companion to the UI health dashboards. |
+
 ## Requirements
 
 - [`cx` CLI](https://github.com/coralogix/cx-cli) installed and configured with a valid profile (`cx profiles add`)
@@ -73,3 +80,9 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "Set up parsing rules for our new service"
 - "Who has access to production?"
 - "Configure Slack notifications for critical alerts"
+- "Onboard my Kubernetes cluster to Coralogix"
+- "Install the Coralogix OpenTelemetry collector"
+- "Send traces from my checkout service to Coralogix APM"
+- "Set up Fleet Management for my collectors"
+- "Is my APM data healthy and complete?"
+- "Why is Infra Explorer empty even though metrics are flowing?"

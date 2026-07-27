@@ -24,7 +24,7 @@ Rust toolchain is pinned to **1.96.1** via `rust-toolchain.toml`.
 
 ## Command Hierarchy
 
-The CLI is organized into 28 commands grouped by domain. `cx --help` shows this layout:
+The CLI is organized into 30 commands grouped by domain. `cx --help` shows this layout:
 
 ```
 Query:
@@ -39,6 +39,7 @@ Observe:
   dashboards         Manage dashboards and dashboard folders
   views              Manage saved views and view folders
   slos               Manage SLO definitions
+  infra              Query infrastructure resources and their data
 
 AI:
   ai-center (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -147,7 +148,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 ### Skills
 
-`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Nine skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-cases`, `cx-slos`, `cx-dashboards`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
+`skills/` contains Claude Code skill plugins for AI-driven observability investigation. Ten skills cover all CLI commands: `cx-telemetry-querying` (logs, spans, metrics, RUM, DataPrime — gateway with pillar-specific reference files), `cx-alerts`, `cx-cases`, `cx-slos`, `cx-dashboards`, `cx-infra`, `cx-cost-optimization`, `cx-data-pipeline`, `cx-observability-setup`, and `cx-platform-admin`. Shared reference files (DataPrime syntax, PromQL guidelines, telemetry-pillar how-tos) live in `skills/shared/` and are distributed to consuming skills via `scripts/sync-shared-references.sh`.
 
 ### Documentation
 
@@ -202,6 +203,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx integrations` | `cx-observability-setup` | Covered |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx olly` | `cx-olly` | Covered |
+| `cx infra` | `cx-infra` | Covered |
 | `cx profiles` | - | Local command |
 | `cx cleanup` | - | Local command |
 

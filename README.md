@@ -25,7 +25,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 ## Features
 
 - DataPrime and PromQL at the terminal-Coralogix's proprietary query languages work end-to-end without leaving the shell.
-- 28 commands across 9 domains-from querying signals to managing IAM, notifications, TCO, and archiving-all in one binary.
+- 29 commands across 10 domains-from querying signals to managing IAM, notifications, TCO, AI Center, and archiving-all in one binary.
 - Multi-profile fan-out with `-p prod-eu -p prod-us <command>`-run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
 - `agents` output format-token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
 - `cx schema`-outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
@@ -137,6 +137,12 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx dashboards` | Manage or search dashboards and folders |
 | `cx views` | Manage saved views and view folders |
 | `cx slos` | Manage SLO definitions |
+
+**AI Center**
+
+| Command | Purpose |
+|---|---|
+| `cx ai-center` (risky) | Manage AI Center applications, evaluations, policies, and pricing: `applications`, `evaluations`, `custom-evaluations`, `coverage`, `model-pricing` |
 
 **Detect & Respond**
 

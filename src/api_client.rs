@@ -9,10 +9,11 @@ use crate::error::{CxError, Result};
 pub struct CxClient {
     inner: Client,
     endpoint: String,
+    verbose: bool,
 }
 
 impl CxClient {
-    pub fn new(endpoint: impl Into<String>, api_key: &str) -> Result<Self> {
+    pub fn new(endpoint: impl Into<String>, api_key: &str, verbose: bool) -> Result<Self> {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             header::AUTHORIZATION,
@@ -36,6 +37,7 @@ impl CxClient {
         Ok(Self {
             inner,
             endpoint: normalize_endpoint(&endpoint.into()),
+            verbose,
         })
     }
 
@@ -43,6 +45,9 @@ impl CxClient {
     /// Used for NDJSON / streaming endpoints (e.g. DataPrime query).
     pub async fn post_raw(&self, path: &str, body: &Value) -> Result<String> {
         let url = format!("{}{path}", self.endpoint);
+        if self.verbose {
+            eprintln!("[CxClient] POST {}", url);
+        }
         let resp = self.inner.post(&url).json(body).send().await?;
         self.checked_text(resp).await
     }
@@ -50,7 +55,11 @@ impl CxClient {
     /// GET with optional query params, deserialize response into T.
     pub async fn get<T: DeserializeOwned>(&self, path: &str, params: &[(&str, &str)]) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.get(&url).query(params).send().await?;
+        let req = self.inner.get(&url).query(params).build()?;
+        if self.verbose {
+            eprintln!("[CxClient] GET {}", req.url());
+        }
+        let resp = self.inner.execute(req).await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
     }
@@ -63,11 +72,15 @@ impl CxClient {
         headers: &[(&str, &str)],
     ) -> Result<String> {
         let url = format!("{}{path}", self.endpoint);
-        let mut req = self.inner.get(&url).query(params);
+        let mut builder = self.inner.get(&url).query(params);
         for (key, value) in headers {
-            req = req.header(*key, *value);
+            builder = builder.header(*key, *value);
         }
-        let resp = req.send().await?;
+        let req = builder.build()?;
+        if self.verbose {
+            eprintln!("[CxClient] GET {}", req.url());
+        }
+        let resp = self.inner.execute(req).await?;
         self.checked_text(resp).await
     }
 
@@ -88,6 +101,9 @@ impl CxClient {
         for (key, value) in headers {
             req = req.header(*key, *value);
         }
+        if self.verbose {
+            eprintln!("[CxClient] POST {}", url);
+        }
         let resp = req.send().await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
@@ -96,6 +112,9 @@ impl CxClient {
     /// PUT JSON body, deserialize response into T.
     pub async fn put<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
+        if self.verbose {
+            eprintln!("[CxClient] PUT {}", url);
+        }
         let resp = self.inner.put(&url).json(body).send().await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
@@ -105,6 +124,9 @@ impl CxClient {
     /// Falls back to deserializing `{}` when the response body is empty.
     pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
+        if self.verbose {
+            eprintln!("[CxClient] DELETE {}", url);
+        }
         let resp = self.inner.delete(&url).send().await?;
         let text = self.checked_text(resp).await?;
         let json = if text.trim().is_empty() { "{}" } else { &text };
@@ -119,6 +141,9 @@ impl CxClient {
         body: &Value,
     ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
+        if self.verbose {
+            eprintln!("[CxClient] DELETE {}", url);
+        }
         let resp = self.inner.delete(&url).json(body).send().await?;
         let text = self.checked_text(resp).await?;
         let json = if text.trim().is_empty() { "{}" } else { &text };
@@ -128,6 +153,9 @@ impl CxClient {
     /// PATCH JSON body, deserialize response into T.
     pub async fn patch<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
+        if self.verbose {
+            eprintln!("[CxClient] PATCH {}", url);
+        }
         let resp = self.inner.patch(&url).json(body).send().await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
@@ -142,7 +170,11 @@ impl CxClient {
         params: &[(&str, &str)],
     ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.post(&url).query(params).send().await?;
+        let req = self.inner.post(&url).query(params).build()?;
+        if self.verbose {
+            eprintln!("[CxClient] POST {}", req.url());
+        }
+        let resp = self.inner.execute(req).await?;
         let text = self.checked_text(resp).await?;
         let json = if text.trim().is_empty() { "{}" } else { &text };
         Ok(serde_json::from_str(json)?)

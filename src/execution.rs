@@ -30,7 +30,7 @@ pub struct ExecutionTarget {
 impl ExecutionTarget {
     /// Build an `ExecutionTarget` from an already-resolved config.
     pub fn new(cfg: ResolvedConfig) -> Result<Self> {
-        let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
+        let client = CxClient::new(&cfg.endpoint, &cfg.api_key, cfg.verbose)?;
         let profile_name = cfg.profile_name.clone();
         Ok(Self {
             profile_name,

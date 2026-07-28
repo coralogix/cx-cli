@@ -413,11 +413,14 @@ pub async fn run_update(
     .await;
 
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Updated case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_comment(
@@ -444,11 +447,14 @@ pub async fn run_comment(
     .await;
 
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Added comment to case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_assign(
@@ -505,11 +511,14 @@ pub async fn run_assign(
     .await;
 
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Assigned case '{case_id}' to '{user}'"),
     )
+    .await
 }
 
 pub async fn run_unassign(
@@ -528,11 +537,14 @@ pub async fn run_unassign(
     })
     .await;
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Unassigned case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_acknowledge(
@@ -551,11 +563,14 @@ pub async fn run_acknowledge(
     })
     .await;
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Acknowledged case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_unacknowledge(
@@ -574,11 +589,14 @@ pub async fn run_unacknowledge(
     })
     .await;
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Unacknowledged case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_resolve(
@@ -600,11 +618,14 @@ pub async fn run_resolve(
     })
     .await;
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Resolved case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_close(
@@ -623,11 +644,14 @@ pub async fn run_close(
     })
     .await;
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Closed case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_set_priority(
@@ -654,11 +678,14 @@ pub async fn run_set_priority(
     })
     .await;
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Set priority of case '{case_id}' to {normalized}"),
     )
+    .await
 }
 
 pub async fn run_clear_priority(
@@ -680,11 +707,14 @@ pub async fn run_clear_priority(
     })
     .await;
     finish_lifecycle(
+        targets,
+        case_id,
         per_profile,
         targets.len() > 1,
         output,
         &format!("Cleared priority override of case '{case_id}'"),
     )
+    .await
 }
 
 pub async fn run_events_list(
@@ -936,8 +966,11 @@ pub async fn run_notifications(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Collect per-profile lifecycle results, emit a success/error line per profile,
-/// and render JSON/agents output for the returned payloads.
-fn finish_lifecycle(
+/// print a "View in Coralogix" console link when one can be resolved, and
+/// render JSON/agents output for the returned payloads.
+async fn finish_lifecycle(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
     per_profile: Vec<(String, Result<Value>)>,
     include_profile: bool,
     output: OutputFormat,
@@ -953,6 +986,11 @@ fn finish_lifecycle(
             "{}",
             format!("{success_label} in profile '{profile}'.").green()
         );
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::case_url(&base, case_id));
+            }
+        }
     }
 
     match output {

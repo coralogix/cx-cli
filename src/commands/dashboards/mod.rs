@@ -665,6 +665,13 @@ pub async fn run_create(
             created_id.as_deref(),
             &profile,
         );
+        if let Some(id) = &created_id {
+            if let Some(target) = crate::execution::find_target(targets, &profile) {
+                if let Some(base) = target.console_base().await {
+                    render::print_console_link(&crate::console_url::dashboard_url(&base, id));
+                }
+            }
+        }
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
         }
@@ -746,6 +753,13 @@ pub async fn run_replace(
             replaced_id.as_deref(),
             &profile,
         );
+        if let Some(id) = &replaced_id {
+            if let Some(target) = crate::execution::find_target(targets, &profile) {
+                if let Some(base) = target.console_base().await {
+                    render::print_console_link(&crate::console_url::dashboard_url(&base, id));
+                }
+            }
+        }
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
         }

@@ -279,6 +279,13 @@ pub async fn run_create(
                 alert.id.as_deref(),
                 &profile,
             );
+            if let Some(id) = alert.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::alert_url(&base, id));
+                    }
+                }
+            }
             let json = alert_to_json(&alert, include_profile, &profile);
             all_results.push(json);
         } else {

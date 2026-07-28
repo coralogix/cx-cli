@@ -89,6 +89,9 @@ pub async fn run_list(
     end_row: Option<i64>,
     output: OutputFormat,
 ) -> Result<()> {
+    let category = require_non_empty(category, "--category")?;
+    let resource_type = require_non_empty(resource_type, "--type")?;
+    let name_filter = name_filter.map(str::trim).filter(|s| !s.is_empty());
     let scope_filters = parse_scope_filters(scope)?;
 
     eprintln!("{}", "Fetching resources...".dimmed());
@@ -167,7 +170,12 @@ pub async fn run_health_history(
     resource_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!("{}", "Fetching health history...".dimmed());
+    let resource_id = require_non_empty(resource_id, "resource id")?;
+
+    eprintln!(
+        "{}",
+        format!("Fetching health history for '{resource_id}'...").dimmed()
+    );
 
     let include_profile = targets.len() > 1;
     let id = resource_id.to_string();
@@ -219,7 +227,12 @@ pub async fn run_raw_data(
     resource_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!("{}", "Fetching raw resource data...".dimmed());
+    let resource_id = require_non_empty(resource_id, "resource id")?;
+
+    eprintln!(
+        "{}",
+        format!("Fetching raw resource data for '{resource_id}'...").dimmed()
+    );
 
     let include_profile = targets.len() > 1;
     let id = resource_id.to_string();
@@ -314,6 +327,17 @@ fn render_machine_rows(output: OutputFormat, rows: &[Value]) -> Result<()> {
     }
 }
 
+/// Trims a required string input and rejects it when nothing remains, so an
+/// empty `--category ""` fails fast instead of sending an empty query
+/// parameter to the API.
+fn require_non_empty<'v>(value: &'v str, field_name: &str) -> Result<&'v str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!("{field_name} must not be empty");
+    }
+    Ok(trimmed)
+}
+
 /// Parses repeatable `--scope key=value` flags and validates keys against
 /// [`ALLOWED_SCOPE_KEYS`].
 fn parse_scope_filters(scope: &[String]) -> Result<Vec<(String, String)>> {
@@ -332,7 +356,7 @@ fn parse_scope_filters(scope: &[String]) -> Result<Vec<(String, String)>> {
                 );
             }
             if value.is_empty() {
-                bail!("invalid --scope '{raw}': value must be non-empty");
+                bail!("invalid --scope '{raw}': value must not be empty");
             }
             Ok((key.to_string(), value.to_string()))
         })
@@ -395,6 +419,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn require_non_empty_trims_and_accepts_values() {
+        assert_eq!(require_non_empty(" Hosts ", "--category").unwrap(), "Hosts");
+    }
+
+    #[test]
+    fn require_non_empty_rejects_empty_and_whitespace() {
+        let err = require_non_empty("", "--category").unwrap_err();
+        assert!(err.to_string().contains("--category must not be empty"));
+
+        let err = require_non_empty("   ", "resource id").unwrap_err();
+        assert!(err.to_string().contains("resource id must not be empty"));
+    }
+
+    #[test]
     fn parse_scope_filters_accepts_allowed_keys() {
         let scope = vec![
             "service=checkout".to_string(),
@@ -439,7 +477,7 @@ mod tests {
     #[test]
     fn parse_scope_filters_rejects_empty_value() {
         let err = parse_scope_filters(&["service=".to_string()]).unwrap_err();
-        assert!(err.to_string().contains("must be non-empty"));
+        assert!(err.to_string().contains("must not be empty"));
     }
 
     #[test]

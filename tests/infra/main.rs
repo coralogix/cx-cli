@@ -8,7 +8,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use coralogix_cli::commands::infra::{run_health_history, run_list, run_raw_data, run_types};
 use coralogix_cli::config::OutputFormat;
 
-const BASE: &str = "/infrastructure/resources/v1";
+const BASE: &str = "/mgmt/api/infrastructure/resources/v1";
 
 fn types_body() -> serde_json::Value {
     json!({

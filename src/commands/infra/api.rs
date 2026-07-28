@@ -7,6 +7,8 @@ use serde_json::Value;
 use crate::api_client::CxClient;
 use crate::error::Result;
 
+const BASE_PATH: &str = "/mgmt/api/infrastructure/resources/v1";
+
 // ── Response types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -82,8 +84,6 @@ pub struct ListResourcesParams<'p> {
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────
-
-const BASE_PATH: &str = "/infrastructure/resources/v1";
 
 /// Resource ids embed reserved characters (`:`, `|`, `=`) and travel as a URL
 /// path segment, so encode everything except RFC 3986 unreserved characters.

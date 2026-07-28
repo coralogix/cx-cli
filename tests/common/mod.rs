@@ -28,6 +28,8 @@ pub fn test_target_with_token(
         api_key: api_key.to_string(),
         endpoint: base_url.to_string(),
         default_tier: coralogix_cli::Tier::Archive,
+        console_url: None,
+        console_domain: None,
     };
     Arc::new(ExecutionTarget::new(cfg).expect("test_target: failed to build ExecutionTarget"))
 }

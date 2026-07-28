@@ -100,13 +100,11 @@ impl Region {
     /// the team is a required subdomain (see `identity::resolve_team_subdomain`),
     /// this only supplies the domain that comes after it.
     ///
-    /// Values were captured from the live web app's embedded runtime config
-    /// (`window.__cxConfig.appUrlEnding`) on 2026-07-28, not from
-    /// documentation - `curl https://<known-team>.<candidate-host>/` and grep
-    /// for `"appUrlEnding":"..."` in the returned `index.html`. `ap1` and
-    /// `stg1` could not be reached from the environment used to gather this
-    /// table and are left unmapped (`None`) rather than guessed; verify and
-    /// fill them in when a reachable environment is available.
+    /// Values match the documented per-region app hostnames in the
+    /// Coralogix endpoints reference
+    /// (<https://coralogix.com/docs/integrations/coralogix-endpoints/#how-to-find-the-correct-endpoints>).
+    /// `stg1` is an internal/staging environment not listed there and is
+    /// left unmapped (`None`) rather than guessed.
     ///
     /// Returns `None` when no console host can be derived, notably for
     /// `Region::Custom` (an arbitrary user-supplied API endpoint has no
@@ -116,13 +114,13 @@ impl Region {
     pub fn console_domain(&self) -> Option<&'static str> {
         match self {
             Region::Us1 => Some("app.coralogix.us"),
-            Region::Us2 => Some("cx498.coralogix.com"),
-            Region::Us3 => Some("us3.coralogix.com"),
+            Region::Us2 => Some("app.cx498.coralogix.com"),
+            Region::Us3 => Some("app.us3.coralogix.com"),
             Region::Eu1 => Some("coralogix.com"),
             Region::Eu2 => Some("app.eu2.coralogix.com"),
-            Region::Ap1 => None,
+            Region::Ap1 => Some("app.coralogix.in"),
             Region::Ap2 => Some("app.coralogixsg.com"),
-            Region::Ap3 => Some("ap3.coralogix.com"),
+            Region::Ap3 => Some("app.ap3.coralogix.com"),
             Region::Stg1 => None,
             Region::Custom(_) => None,
         }
@@ -783,20 +781,23 @@ default_profile = "my-profile"
     #[test]
     fn region_console_domain_known_regions() {
         assert_eq!(Region::Us1.console_domain(), Some("app.coralogix.us"));
-        assert_eq!(Region::Us2.console_domain(), Some("cx498.coralogix.com"));
-        assert_eq!(Region::Us3.console_domain(), Some("us3.coralogix.com"));
+        assert_eq!(
+            Region::Us2.console_domain(),
+            Some("app.cx498.coralogix.com")
+        );
+        assert_eq!(Region::Us3.console_domain(), Some("app.us3.coralogix.com"));
         assert_eq!(Region::Eu1.console_domain(), Some("coralogix.com"));
         assert_eq!(Region::Eu2.console_domain(), Some("app.eu2.coralogix.com"));
+        assert_eq!(Region::Ap1.console_domain(), Some("app.coralogix.in"));
         assert_eq!(Region::Ap2.console_domain(), Some("app.coralogixsg.com"));
-        assert_eq!(Region::Ap3.console_domain(), Some("ap3.coralogix.com"));
+        assert_eq!(Region::Ap3.console_domain(), Some("app.ap3.coralogix.com"));
     }
 
     #[test]
-    fn region_console_domain_unverified_regions_are_none() {
-        // ap1 / stg1 console domains could not be verified from the sandbox
-        // used to build this table (see Region::console_domain doc comment).
-        // Deliberately None rather than guessed.
-        assert_eq!(Region::Ap1.console_domain(), None);
+    fn region_console_domain_stg1_is_none() {
+        // stg1 is an internal/staging environment not listed in the
+        // documented endpoints table (see Region::console_domain doc
+        // comment). Deliberately None rather than guessed.
         assert_eq!(Region::Stg1.console_domain(), None);
     }
 

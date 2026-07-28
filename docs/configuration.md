@@ -210,16 +210,16 @@ The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in 
 | Region | Console domain |
 |---|---|
 | `us1` | `app.coralogix.us` |
-| `us2` | `cx498.coralogix.com` |
-| `us3` | `us3.coralogix.com` |
+| `us2` | `app.cx498.coralogix.com` |
+| `us3` | `app.us3.coralogix.com` |
 | `eu1` | `coralogix.com` |
 | `eu2` | `app.eu2.coralogix.com` |
-| `ap1` | *(unknown - no link printed)* |
+| `ap1` | `app.coralogix.in` |
 | `ap2` | `app.coralogixsg.com` |
-| `ap3` | `ap3.coralogix.com` |
+| `ap3` | `app.ap3.coralogix.com` |
 | `stg1` | *(unknown - no link printed)* |
 
-Set `console_url` explicitly in the profile TOML to override this table or to enable console links for regions with no known domain (e.g. `stg1`, `ap1`, or a `Custom` region running a self-hosted console).
+Set `console_url` explicitly in the profile TOML to override this table or to enable console links for regions with no known domain (e.g. `stg1`, or a `Custom` region running a self-hosted console).
 
 ## Environment variables
 

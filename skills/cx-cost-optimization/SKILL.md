@@ -24,7 +24,7 @@ Use this skill when investigating or reducing Coralogix data costs. It covers th
 
 | Command | Subcommands | Purpose |
 |---|---|---|
-| `cx usage` | `summary`, `daily`, `logs-count`, `spans-count`, `export-status` | Measure current data consumption |
+| `cx usage` | `summary`, `daily`, `logs-count`, `spans-count`, `export-status`, `capabilities`, `query` | Measure current data consumption and billable usage |
 | `cx tco` | `list`, `get`, `create`, `update`, `delete`, `reorder`, `test`, `settings`, `settings-update` | Manage TCO (Total Cost of Ownership) policies |
 | `cx retentions` | `list`, `update`, `activate`, `status` | Manage data retention periods |
 | `cx archive logs` | `get`, `set` | Configure logs archive target |
@@ -38,7 +38,35 @@ Key flags:
 - `cx usage summary` accepts `--start`/`--end` time filters
 - `cx usage logs-count` and `cx usage spans-count` accept `--start`/`--end` time filters, defaulting to the last 24h, plus `--resolution` (default `1h`), `--subsystem-aggregation`, `--application-aggregation`, and repeated `--param KEY=VALUE` for API filter query params
 - Data usage summary and count endpoints are documented as newline-delimited JSON over `Accept: text/event-stream`; the CLI handles that transport and normalizes count chunks into `.result.logsCount[]` or `.result.spansCount[]`.
+- `cx usage capabilities` is the required first step: it returns the labels, measurements, units, and request limits that the public Data Usage Query API currently supports for the selected tenant
+- `cx usage query` is the required second step: submit only a JSON request derived from the immediately preceding `capabilities` response with exactly one of `--query '<json>'` or `--from-file <path>` (`--from-file -` reads stdin)
 - `cx tco create/update`, `cx retentions update`, `cx archive logs set`, `cx archive metrics create/update/validate` use `--from-file <path>` (or `-` for stdin)
+
+---
+
+## Authoritative Billable Usage Queries
+
+For billable totals, quota units, plan consumption, or a supported usage breakdown, use this mandatory two-step workflow:
+
+1. Run `cx usage capabilities` in the current session.
+2. Build and run `cx usage query` using only that response.
+
+Do not call `cx usage query` first and do not guess labels, measurement kinds, units, filter values, intervals, or request limits. They are tenant-specific and can change.
+
+```bash
+# Inspect the currently valid dimensions and constraints
+cx usage capabilities -o json
+
+# Submit a capabilities-derived request inline
+cx usage query --query '{"daily":{"relativeRange":"DAILY_RELATIVE_RANGE_LAST_7_DAYS"}}' -o json
+
+# Or read the same request from a file or stdin
+cx usage query --from-file usage-query.json -o json
+printf '%s' '{"daily":{"relativeRange":"DAILY_RELATIVE_RANGE_LAST_7_DAYS"}}' \
+  | cx usage query --from-file - -o json
+```
+
+Load [`references/data-usage-query-api.md`](references/data-usage-query-api.md) before creating the query body. It defines the capability and response schemas, valid interval forms, and limits.
 
 ---
 
@@ -47,6 +75,17 @@ Key flags:
 Follow these steps to diagnose and reduce costs:
 
 ### Step 1: Measure Current Usage
+
+For billable totals, quota units, plan consumption, or supported breakdowns, first follow the mandatory two-step workflow above:
+
+```bash
+cx usage capabilities -o json
+cx usage query --from-file usage-query.json -o json
+```
+
+Build `usage-query.json` only from the immediately preceding capabilities response. Do not use the legacy commands below as a substitute for an authoritative billing answer.
+
+For a legacy consumption overview and log/span record counts, use:
 
 ```bash
 cx usage summary -o json
@@ -266,3 +305,7 @@ Usage metrics support these grouping dimensions: `pillar`, `entity_type`, `prior
 ## Related Skills
 
 - **`cx-telemetry-querying`** - investigate what data is being ingested (query logs, metrics, and spans to identify high-volume sources)
+
+## Reference Files
+
+- **[`references/data-usage-query-api.md`](references/data-usage-query-api.md)** - capabilities and query schemas, interval rules, limits, and response interpretation

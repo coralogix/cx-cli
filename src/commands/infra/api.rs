@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde::Deserialize;
@@ -46,8 +46,9 @@ pub struct GetResourcesResponse {
 pub struct ResourceData {
     pub resource_id: Option<String>,
     pub name: Option<String>,
+    /// `BTreeMap` so that `serde_json` maintains column order.
     #[serde(default)]
-    pub columns: HashMap<String, String>,
+    pub columns: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -304,6 +305,36 @@ mod tests {
         let json = json!({ "rawData": null });
         let resp: GetRawDataResponse = serde_json::from_value(json).unwrap();
         assert!(resp.raw_data.is_none());
+    }
+
+    /// a `HashMap` would emit its keys in randomized iteration order - identical
+    /// invocations producing different output. `BTreeMap` pins it to sorted order.
+    #[test]
+    fn resource_columns_serialize_in_stable_sorted_order() {
+        let json = json!({
+            "resources": [{
+                "resourceId": "1001234:host_id=i-abc123",
+                "name": "web-server-1",
+                "columns": {
+                    "region": "us-east-1",
+                    "instance_type": "m5.large",
+                    "availability_zone": "us-east-1a",
+                    "state": "running"
+                }
+            }]
+        });
+
+        let resp: GetResourcesResponse = serde_json::from_value(json).unwrap();
+        let columns = &resp.resources[0].columns;
+
+        assert_eq!(
+            columns.keys().collect::<Vec<_>>(),
+            vec!["availability_zone", "instance_type", "region", "state"]
+        );
+        assert_eq!(
+            serde_json::to_string(columns).unwrap(),
+            r#"{"availability_zone":"us-east-1a","instance_type":"m5.large","region":"us-east-1","state":"running"}"#
+        );
     }
 
     #[test]

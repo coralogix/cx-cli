@@ -132,11 +132,12 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 
 **Observe**
 
-| Command | Purpose |
-|---|---|
-| `cx dashboards` | Manage or search dashboards and folders |
-| `cx views` | Manage saved views and view folders |
-| `cx slos` | Manage SLO definitions |
+| Command         | Purpose                                                                |
+|-----------------|------------------------------------------------------------------------|
+| `cx dashboards` | Manage or search dashboards and folders                                |
+| `cx views`      | Manage saved views and view folders                                    |
+| `cx slos`       | Manage SLO definitions                                                 |
+| `cx infra`      | Get infrastructure data: `types`, `list`, `health-history`, `raw-data` |
 
 **AI Center**
 

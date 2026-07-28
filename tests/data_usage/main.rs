@@ -93,13 +93,43 @@ async fn data_usage_query_forwards_json_body_from_file() {
     let targets = vec![common::test_target("test-profile", &server.uri())];
     let result = run_query(
         &targets,
-        file_path.to_str().expect("temporary path is valid UTF-8"),
+        Some(file_path.to_str().expect("temporary path is valid UTF-8")),
+        None,
         OutputFormat::Json,
     )
     .await;
     std::fs::remove_file(file_path).unwrap();
 
     result.expect("run_query should succeed");
+}
+
+#[tokio::test]
+async fn data_usage_query_forwards_inline_json_body() {
+    let server = MockServer::start().await;
+    let query = json!({
+        "daily": {"relativeRange": "DAILY_RELATIVE_RANGE_LAST_7_DAYS"},
+        "limit": {"perBucket": 1},
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dataplan/data-usage/v1/query"))
+        .and(body_json(&query))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "queryRange": {
+                "start": "2026-07-01T00:00:00Z",
+                "end": "2026-07-08T00:00:00Z",
+            },
+            "buckets": [],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let inline_query = serde_json::to_string(&query).unwrap();
+    run_query(&targets, None, Some(&inline_query), OutputFormat::Json)
+        .await
+        .expect("run_query should accept inline JSON");
 }
 
 #[tokio::test]

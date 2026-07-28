@@ -83,7 +83,12 @@ fn read_query_from_file(path: &str) -> Result<Value> {
         std::fs::read_to_string(path)?
     };
 
-    let query: Value = serde_json::from_str(&raw)?;
+    parse_query(&raw)
+}
+
+fn parse_query(raw: &str) -> Result<Value> {
+    let query: Value = serde_json::from_str(raw)
+        .map_err(|error| anyhow::anyhow!("data usage query must be valid JSON: {error}"))?;
     if !query.is_object() {
         anyhow::bail!("data usage query must be a JSON object");
     }
@@ -402,10 +407,15 @@ pub async fn run_capabilities(
 /// Submit a capabilities-derived Data Usage Query API request.
 pub async fn run_query(
     targets: &[Arc<ExecutionTarget>],
-    from_file: &str,
+    from_file: Option<&str>,
+    inline_query: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
-    let query = read_query_from_file(from_file)?;
+    let query = match (from_file, inline_query) {
+        (Some(path), None) => read_query_from_file(path)?,
+        (None, Some(raw)) => parse_query(raw)?,
+        _ => anyhow::bail!("provide exactly one of --from-file or --query"),
+    };
     eprintln!("{}", "Querying data usage...".dimmed());
 
     let include_profile = targets.len() > 1;
@@ -445,7 +455,7 @@ pub async fn run_query(
 
 #[cfg(test)]
 mod tests {
-    use super::read_query_from_file;
+    use super::{parse_query, read_query_from_file};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn write_query(contents: &str) -> std::path::PathBuf {
@@ -479,5 +489,26 @@ mod tests {
         std::fs::remove_file(path).unwrap();
 
         assert!(error.to_string().contains("must be a JSON object"));
+    }
+
+    #[test]
+    fn parse_query_accepts_inline_json_object() {
+        let query =
+            parse_query(r#"{"daily":{"relativeRange":"DAILY_RELATIVE_RANGE_LAST_7_DAYS"}}"#)
+                .unwrap();
+
+        assert_eq!(
+            query["daily"]["relativeRange"],
+            "DAILY_RELATIVE_RANGE_LAST_7_DAYS"
+        );
+    }
+
+    #[test]
+    fn parse_query_reports_invalid_json_clearly() {
+        let error = parse_query("sdfg").unwrap_err();
+
+        assert!(error
+            .to_string()
+            .starts_with("data usage query must be valid JSON:"));
     }
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::parser::ValueSource;
-use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
 use clap_complete::env::CompleteEnv;
@@ -1434,18 +1434,30 @@ Output:
     /// Show the labels, measurements, and limits supported by the Data Usage Query API.
     Capabilities,
     /// Query billable data usage using a capabilities-derived JSON request.
-    #[command(after_help = "\
+    #[command(
+        group(
+            ArgGroup::new("query_input")
+                .required(true)
+                .args(["from_file", "query"])
+        ),
+        after_help = "\
 Workflow:
   1. Run `cx usage capabilities -o json`.
   2. Build a request using only the returned labels, measurements, and limits.
 
 Examples:
   cx usage query --from-file query.json
-  cat query.json | cx usage query --from-file -")]
+  cx usage query --query '{\"daily\":{\"relativeRange\":\"DAILY_RELATIVE_RANGE_LAST_7_DAYS\"}}'
+  cat query.json | cx usage query --from-file -"
+    )]
     Query {
-        /// Path to a JSON query request (required). Use '-' for stdin.
-        #[arg(long)]
-        from_file: String,
+        /// Path to a JSON query request. Use '-' for stdin. Mutually exclusive with --query.
+        #[arg(long, conflicts_with = "query")]
+        from_file: Option<String>,
+
+        /// Inline JSON query request. Mutually exclusive with --from-file.
+        #[arg(long, conflicts_with = "from_file")]
+        query: Option<String>,
     },
     /// Show export status.
     ExportStatus,
@@ -3283,8 +3295,14 @@ async fn main() -> Result<()> {
                 DataUsageCmd::Capabilities => {
                     commands::data_usage::run_capabilities(&targets, output).await?;
                 }
-                DataUsageCmd::Query { from_file } => {
-                    commands::data_usage::run_query(&targets, &from_file, output).await?;
+                DataUsageCmd::Query { from_file, query } => {
+                    commands::data_usage::run_query(
+                        &targets,
+                        from_file.as_deref(),
+                        query.as_deref(),
+                        output,
+                    )
+                    .await?;
                 }
                 DataUsageCmd::ExportStatus => {
                     commands::data_usage::run_export_status(&targets, output).await?;

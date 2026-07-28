@@ -39,14 +39,14 @@ Key flags:
 - `cx usage logs-count` and `cx usage spans-count` accept `--start`/`--end` time filters, defaulting to the last 24h, plus `--resolution` (default `1h`), `--subsystem-aggregation`, `--application-aggregation`, and repeated `--param KEY=VALUE` for API filter query params
 - Data usage summary and count endpoints are documented as newline-delimited JSON over `Accept: text/event-stream`; the CLI handles that transport and normalizes count chunks into `.result.logsCount[]` or `.result.spansCount[]`.
 - `cx usage capabilities` is the required first step: it returns the labels, measurements, units, and request limits that the public Data Usage Query API currently supports for the selected tenant
-- `cx usage query --from-file <path>` is the required second step: submit only a JSON request derived from the immediately preceding `capabilities` response; pass `--from-file -` to read it from stdin
+- `cx usage query` is the required second step: submit only a JSON request derived from the immediately preceding `capabilities` response with exactly one of `--query '<json>'` or `--from-file <path>` (`--from-file -` reads stdin)
 - `cx tco create/update`, `cx retentions update`, `cx archive logs set`, `cx archive metrics create/update/validate` use `--from-file <path>` (or `-` for stdin)
 
 ---
 
 ## Authoritative Billable Usage Queries
 
-For billable totals, quota units, plan consumption, or a supported usage breakdown, the public Data Usage Query API is a mandatory two-step workflow:
+For billable totals, quota units, plan consumption, or a supported usage breakdown, use this mandatory two-step workflow:
 
 1. Run `cx usage capabilities` in the current session.
 2. Build and run `cx usage query` using only that response.
@@ -57,70 +57,16 @@ Do not call `cx usage query` first and do not guess labels, measurement kinds, u
 # Inspect the currently valid dimensions and constraints
 cx usage capabilities -o json
 
-# Submit a capabilities-derived request from a file
-cx usage query --from-file usage-query.json -o json
+# Submit a capabilities-derived request inline
+cx usage query --query '{"daily":{"relativeRange":"DAILY_RELATIVE_RANGE_LAST_7_DAYS"}}' -o json
 
-# Or send a JSON request through stdin
+# Or read the same request from a file or stdin
+cx usage query --from-file usage-query.json -o json
 printf '%s' '{"daily":{"relativeRange":"DAILY_RELATIVE_RANGE_LAST_7_DAYS"}}' \
   | cx usage query --from-file - -o json
 ```
 
-The live capabilities response contains this schema:
-
-```json
-{
-  "supportedLabels": [
-    {
-      "key": "string",
-      "keyDescription": "string",
-      "highCardinality": true,
-      "knownValues": [{"value": "string", "description": "string"}]
-    }
-  ],
-  "supportedMeasurements": [
-    {
-      "kind": "MEASUREMENT_KIND_*",
-      "description": "string",
-      "unit": "MEASUREMENT_UNIT_*"
-    }
-  ],
-  "maxUsageEntriesPerMessage": 10000,
-  "maxGroupByLabels": 6,
-  "maxFilters": 100,
-  "maxFilterValues": 100
-}
-```
-
-Build the query body only from that response:
-
-```json
-{
-  "daily": {
-    "relativeRange": "DAILY_RELATIVE_RANGE_LAST_7_DAYS"
-  },
-  "groupBy": {
-    "keys": ["pillar"]
-  },
-  "filters": [
-    {
-      "key": "pillar",
-      "operator": "FILTER_OPERATOR_IN",
-      "values": ["logs"]
-    }
-  ],
-  "measurementKindFilter": [
-    "MEASUREMENT_KIND_PROCESSED_DATA_SIZE"
-  ],
-  "limit": {
-    "perBucket": 10
-  }
-}
-```
-
-- Send exactly one of `daily` or `hourly`. Use either its relative range or absolute range, not both.
-- Daily absolute ranges are UTC date ranges; hourly absolute timestamps must be UTC hour-aligned. Both are half-open `[start, end)` intervals.
-- `groupBy`, `filters`, `measurementKindFilter`, and `limit` are optional; keep their counts within the returned maxima. Filter high-cardinality labels before grouping them.
-- A query response contains `queryRange`, daily or hourly `buckets`, then `entries` per label combination. Each measurement exposes the raw string `measuredValue`, its `measuredUnit`, and billable `cxQuotaUnits.value`.
+Load [`references/data-usage-query-api.md`](references/data-usage-query-api.md) before creating the query body. It defines the capability and response schemas, valid interval forms, and limits.
 
 ---
 
@@ -129,6 +75,17 @@ Build the query body only from that response:
 Follow these steps to diagnose and reduce costs:
 
 ### Step 1: Measure Current Usage
+
+For billable totals, quota units, plan consumption, or supported breakdowns, first follow the mandatory two-step workflow above:
+
+```bash
+cx usage capabilities -o json
+cx usage query --from-file usage-query.json -o json
+```
+
+Build `usage-query.json` only from the immediately preceding capabilities response. Do not use the legacy commands below as a substitute for an authoritative billing answer.
+
+For a legacy consumption overview and log/span record counts, use:
 
 ```bash
 cx usage summary -o json
@@ -348,3 +305,7 @@ Usage metrics support these grouping dimensions: `pillar`, `entity_type`, `prior
 ## Related Skills
 
 - **`cx-telemetry-querying`** - investigate what data is being ingested (query logs, metrics, and spans to identify high-volume sources)
+
+## Reference Files
+
+- **[`references/data-usage-query-api.md`](references/data-usage-query-api.md)** - capabilities and query schemas, interval rules, limits, and response interpretation

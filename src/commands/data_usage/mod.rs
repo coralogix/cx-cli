@@ -68,6 +68,28 @@ fn build_count_query_params(options: &CountCommandOptions<'_>) -> Result<Vec<(St
     Ok(params)
 }
 
+fn read_query_from_file(path: &str) -> Result<Value> {
+    let raw = if path == "-" {
+        eprintln!("{}", "Reading data usage query from stdin...".dimmed());
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        eprintln!(
+            "{}",
+            format!("Reading data usage query from {path}...").dimmed()
+        );
+        std::fs::read_to_string(path)?
+    };
+
+    let query: Value = serde_json::from_str(&raw)?;
+    if !query.is_object() {
+        anyhow::bail!("data usage query must be a JSON object");
+    }
+    Ok(query)
+}
+
 pub async fn run_summary(
     targets: &[Arc<ExecutionTarget>],
     start: Option<&str>,
@@ -336,4 +358,126 @@ pub async fn run_export_status(
     }
 
     Ok(())
+}
+
+/// Fetch the tenant's supported Data Usage Query API dimensions and limits.
+pub async fn run_capabilities(
+    targets: &[Arc<ExecutionTarget>],
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", "Fetching data usage capabilities...".dimmed());
+
+    let include_profile = targets.len() > 1;
+    let per_profile = fan_out(targets, |t| async move {
+        let api = DataUsageApi::new(&t.client);
+        Ok(api.capabilities().await?)
+    })
+    .await;
+
+    let mut all_results = Vec::new();
+    for (profile, mut value) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut value, &profile);
+        }
+        all_results.push(value);
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            for value in &all_results {
+                println!("{}", serde_json::to_string_pretty(value)?);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Submit a capabilities-derived Data Usage Query API request.
+pub async fn run_query(
+    targets: &[Arc<ExecutionTarget>],
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    let query = read_query_from_file(from_file)?;
+    eprintln!("{}", "Querying data usage...".dimmed());
+
+    let include_profile = targets.len() > 1;
+    let per_profile = fan_out(targets, |t| {
+        let query = query.clone();
+        async move {
+            let api = DataUsageApi::new(&t.client);
+            Ok(api.query(&query).await?)
+        }
+    })
+    .await;
+
+    let mut all_results = Vec::new();
+    for (profile, mut value) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut value, &profile);
+        }
+        all_results.push(value);
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Agents => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            for value in &all_results {
+                println!("{}", serde_json::to_string_pretty(value)?);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_query_from_file;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn write_query(contents: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "cx-data-usage-query-unit-{}.json",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn read_query_from_file_accepts_json_object() {
+        let path = write_query(r#"{"daily":{"relativeRange":"DAILY_RELATIVE_RANGE_LAST_7_DAYS"}}"#);
+        let query = read_query_from_file(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            query["daily"]["relativeRange"],
+            "DAILY_RELATIVE_RANGE_LAST_7_DAYS"
+        );
+    }
+
+    #[test]
+    fn read_query_from_file_rejects_non_object_json() {
+        let path = write_query(r#"["not","a","query"]"#);
+        let error = read_query_from_file(path.to_str().unwrap()).unwrap_err();
+        std::fs::remove_file(path).unwrap();
+
+        assert!(error.to_string().contains("must be a JSON object"));
+    }
 }

@@ -46,6 +46,7 @@ pub struct ExportStatusResponse {
 
 const DATA_USAGE_BASE: &str = "/mgmt/openapi/5/dataplans/data-usage/v2";
 const DATA_USAGE_ACCEPT: &str = "text/event-stream";
+const DATA_USAGE_QUERY_BASE: &str = "/mgmt/openapi/5/dataplan/data-usage/v1";
 
 pub struct DataUsageApi<'a> {
     client: &'a CxClient,
@@ -90,6 +91,16 @@ impl<'a> DataUsageApi<'a> {
     pub async fn export_status(&self) -> Result<Value> {
         let path = format!("{DATA_USAGE_BASE}/export-status");
         self.client.get(&path, &[]).await
+    }
+
+    pub async fn capabilities(&self) -> Result<Value> {
+        let path = format!("{DATA_USAGE_QUERY_BASE}/capabilities");
+        self.client.get(&path, &[]).await
+    }
+
+    pub async fn query(&self, body: &Value) -> Result<Value> {
+        let path = format!("{DATA_USAGE_QUERY_BASE}/query");
+        self.client.post(&path, body).await
     }
 }
 

@@ -24,7 +24,7 @@ Use this skill when investigating or reducing Coralogix data costs. It covers th
 
 | Command | Subcommands | Purpose |
 |---|---|---|
-| `cx usage` | `summary`, `daily`, `logs-count`, `spans-count`, `export-status` | Measure current data consumption |
+| `cx usage` | `summary`, `daily`, `logs-count`, `spans-count`, `export-status`, `capabilities`, `query` | Measure current data consumption and billable usage |
 | `cx tco` | `list`, `get`, `create`, `update`, `delete`, `reorder`, `test`, `settings`, `settings-update` | Manage TCO (Total Cost of Ownership) policies |
 | `cx retentions` | `list`, `update`, `activate`, `status` | Manage data retention periods |
 | `cx archive logs` | `get`, `set` | Configure logs archive target |
@@ -38,7 +38,89 @@ Key flags:
 - `cx usage summary` accepts `--start`/`--end` time filters
 - `cx usage logs-count` and `cx usage spans-count` accept `--start`/`--end` time filters, defaulting to the last 24h, plus `--resolution` (default `1h`), `--subsystem-aggregation`, `--application-aggregation`, and repeated `--param KEY=VALUE` for API filter query params
 - Data usage summary and count endpoints are documented as newline-delimited JSON over `Accept: text/event-stream`; the CLI handles that transport and normalizes count chunks into `.result.logsCount[]` or `.result.spansCount[]`.
+- `cx usage capabilities` is the required first step: it returns the labels, measurements, units, and request limits that the public Data Usage Query API currently supports for the selected tenant
+- `cx usage query --from-file <path>` is the required second step: submit only a JSON request derived from the immediately preceding `capabilities` response; pass `--from-file -` to read it from stdin
 - `cx tco create/update`, `cx retentions update`, `cx archive logs set`, `cx archive metrics create/update/validate` use `--from-file <path>` (or `-` for stdin)
+
+---
+
+## Authoritative Billable Usage Queries
+
+For billable totals, quota units, plan consumption, or a supported usage breakdown, the public Data Usage Query API is a mandatory two-step workflow:
+
+1. Run `cx usage capabilities` in the current session.
+2. Build and run `cx usage query` using only that response.
+
+Do not call `cx usage query` first and do not guess labels, measurement kinds, units, filter values, intervals, or request limits. They are tenant-specific and can change.
+
+```bash
+# Inspect the currently valid dimensions and constraints
+cx usage capabilities -o json
+
+# Submit a capabilities-derived request from a file
+cx usage query --from-file usage-query.json -o json
+
+# Or send a JSON request through stdin
+printf '%s' '{"daily":{"relativeRange":"DAILY_RELATIVE_RANGE_LAST_7_DAYS"}}' \
+  | cx usage query --from-file - -o json
+```
+
+The live capabilities response contains this schema:
+
+```json
+{
+  "supportedLabels": [
+    {
+      "key": "string",
+      "keyDescription": "string",
+      "highCardinality": true,
+      "knownValues": [{"value": "string", "description": "string"}]
+    }
+  ],
+  "supportedMeasurements": [
+    {
+      "kind": "MEASUREMENT_KIND_*",
+      "description": "string",
+      "unit": "MEASUREMENT_UNIT_*"
+    }
+  ],
+  "maxUsageEntriesPerMessage": 10000,
+  "maxGroupByLabels": 6,
+  "maxFilters": 100,
+  "maxFilterValues": 100
+}
+```
+
+Build the query body only from that response:
+
+```json
+{
+  "daily": {
+    "relativeRange": "DAILY_RELATIVE_RANGE_LAST_7_DAYS"
+  },
+  "groupBy": {
+    "keys": ["pillar"]
+  },
+  "filters": [
+    {
+      "key": "pillar",
+      "operator": "FILTER_OPERATOR_IN",
+      "values": ["logs"]
+    }
+  ],
+  "measurementKindFilter": [
+    "MEASUREMENT_KIND_PROCESSED_DATA_SIZE"
+  ],
+  "limit": {
+    "perBucket": 10
+  }
+}
+```
+
+- Send exactly one of `daily` or `hourly`. Use either its relative range or absolute range, not both.
+- Daily absolute ranges are UTC date ranges; hourly absolute timestamps must be UTC hour-aligned. Both are half-open `[start, end)` intervals.
+- `groupBy`, `filters`, `measurementKindFilter`, and `limit` are optional; keep their counts within the returned maxima. Filter high-cardinality labels before grouping them.
+- A query response contains `queryRange`, daily or hourly `buckets`, then `entries` per label combination. Each measurement exposes the raw string `measuredValue`, its `measuredUnit`, and billable `cxQuotaUnits.value`.
 
 ---
 

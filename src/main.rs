@@ -342,7 +342,9 @@ Examples:
   cx usage summary
   cx usage daily --type processed-gbs
   cx usage logs-count
-  cx usage spans-count --start now-24h --end now"
+  cx usage spans-count --start now-24h --end now
+  cx usage capabilities
+  cx usage query --from-file query.json"
     )]
     DataUsage {
         #[command(subcommand)]
@@ -1428,6 +1430,22 @@ Output:
         /// Extra raw query parameter in KEY=VALUE form. Repeat for filters.* fields.
         #[arg(long = "param")]
         params: Vec<String>,
+    },
+    /// Show the labels, measurements, and limits supported by the Data Usage Query API.
+    Capabilities,
+    /// Query billable data usage using a capabilities-derived JSON request.
+    #[command(after_help = "\
+Workflow:
+  1. Run `cx usage capabilities -o json`.
+  2. Build a request using only the returned labels, measurements, and limits.
+
+Examples:
+  cx usage query --from-file query.json
+  cat query.json | cx usage query --from-file -")]
+    Query {
+        /// Path to a JSON query request (required). Use '-' for stdin.
+        #[arg(long)]
+        from_file: String,
     },
     /// Show export status.
     ExportStatus,
@@ -3261,6 +3279,12 @@ async fn main() -> Result<()> {
                         },
                     )
                     .await?;
+                }
+                DataUsageCmd::Capabilities => {
+                    commands::data_usage::run_capabilities(&targets, output).await?;
+                }
+                DataUsageCmd::Query { from_file } => {
+                    commands::data_usage::run_query(&targets, &from_file, output).await?;
                 }
                 DataUsageCmd::ExportStatus => {
                     commands::data_usage::run_export_status(&targets, output).await?;

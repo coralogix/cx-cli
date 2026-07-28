@@ -9,7 +9,7 @@ pub mod api;
 use api::{HealthHistoryEntry, InfraApi, ListResourcesParams, ResourceData, ResourceTypeMapping};
 
 use crate::config::OutputFormat;
-use crate::execution::{fan_out, ExecutionTarget};
+use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 
 /// JSON key for the source profile when merging multi-profile infra REST rows.
@@ -33,7 +33,12 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
     })
     .await;
 
-    let merged = merge_fan_out(per_profile, |resp| resp.resource_types)?;
+    let mut merged: Vec<(String, ResourceTypeMapping)> = Vec::new();
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for mapping in resp.resource_types {
+            merged.push((profile.clone(), mapping));
+        }
+    }
 
     match output {
         OutputFormat::Json | OutputFormat::Agents => {
@@ -119,10 +124,13 @@ pub async fn run_list(
     .await;
 
     let mut total_count: i64 = 0;
-    let merged = merge_fan_out(per_profile, |resp| {
+    let mut merged: Vec<(String, ResourceData)> = Vec::new();
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         total_count += resp.total_count.unwrap_or(resp.resources.len() as i64);
-        resp.resources
-    })?;
+        for resource in resp.resources {
+            merged.push((profile.clone(), resource));
+        }
+    }
 
     match output {
         OutputFormat::Json | OutputFormat::Agents => {
@@ -189,7 +197,12 @@ pub async fn run_health_history(
     })
     .await;
 
-    let merged = merge_fan_out(per_profile, |resp| resp.health_history)?;
+    let mut merged: Vec<(String, HealthHistoryEntry)> = Vec::new();
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for entry in resp.health_history {
+            merged.push((profile.clone(), entry));
+        }
+    }
 
     match output {
         OutputFormat::Json | OutputFormat::Agents => {
@@ -248,31 +261,20 @@ pub async fn run_raw_data(
 
     // Merge - one document per profile; a 200 with null raw data means the
     // document is cleanly missing, so note it on stderr and move on.
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => match resp.raw_data {
-                Some(mut doc) => {
-                    if include_profile {
-                        render::tag_get_result(&mut doc, &profile);
-                    }
-                    all_results.push(doc);
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        match resp.raw_data {
+            Some(mut doc) => {
+                if include_profile {
+                    render::tag_get_result(&mut doc, &profile);
                 }
-                None => eprintln!(
-                    "{}",
-                    format!("no raw data for this resource in profile '{profile}'").yellow()
-                ),
-            },
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
+                all_results.push(doc);
             }
+            None => eprintln!(
+                "{}",
+                format!("no raw data for this resource in profile '{profile}'").yellow()
+            ),
         }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
     }
 
     match output {
@@ -287,35 +289,6 @@ pub async fn run_raw_data(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Flattens fan-out results into `(profile, item)` pairs, printing per-profile
-/// errors to stderr (non-fatal) and erroring only when **all** profiles fail,
-/// so CI/scripts see a non-zero exit when nothing succeeded.
-fn merge_fan_out<R, T>(
-    per_profile: Vec<(String, Result<R>)>,
-    mut extract: impl FnMut(R) -> Vec<T>,
-) -> Result<Vec<(String, T)>> {
-    let target_count = per_profile.len();
-    let mut error_count = 0usize;
-    let mut merged: Vec<(String, T)> = Vec::new();
-    for (profile, result) in per_profile {
-        match result {
-            Ok(resp) => {
-                for item in extract(resp) {
-                    merged.push((profile.clone(), item));
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("{}", format!("error from profile '{profile}': {e:#}").red());
-            }
-        }
-    }
-    if target_count > 0 && error_count == target_count {
-        bail!("all profiles returned errors; see above for details");
-    }
-    Ok(merged)
-}
 
 /// Renders merged JSON rows for the two machine formats. Callers handle
 /// `OutputFormat::Text` themselves, so it is rejected here.

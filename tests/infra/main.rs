@@ -322,8 +322,11 @@ async fn api_error_body_surfaces_in_message() {
     let err = run_types(&targets, OutputFormat::Json)
         .await
         .expect_err("400 from the only profile should error");
-    // The service's {"error": ...} body must survive into the user-facing message.
-    assert!(err.to_string().contains("see above for details"));
+    // With a single profile the actual error propagates (FORGE-482), so the
+    // service's {"error": ...} body must survive into the error chain.
+    let chain = format!("{err:#}");
+    assert!(chain.contains("category is required and must be non-empty"));
+    assert!(chain.contains("profile 'test-profile' failed"));
 }
 
 #[tokio::test]

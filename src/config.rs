@@ -92,6 +92,41 @@ impl Region {
             Region::Custom(url) => url.as_str(),
         }
     }
+
+    /// Base domain (no scheme, no team subdomain) of the Coralogix web
+    /// console for this region.
+    ///
+    /// Console URLs have the shape `https://<team>.<console_domain>/...` -
+    /// the team is a required subdomain (see `identity::resolve_team_subdomain`),
+    /// this only supplies the domain that comes after it.
+    ///
+    /// Values were captured from the live web app's embedded runtime config
+    /// (`window.__cxConfig.appUrlEnding`) on 2026-07-28, not from
+    /// documentation - `curl https://<known-team>.<candidate-host>/` and grep
+    /// for `"appUrlEnding":"..."` in the returned `index.html`. `ap1` and
+    /// `stg1` could not be reached from the environment used to gather this
+    /// table and are left unmapped (`None`) rather than guessed; verify and
+    /// fill them in when a reachable environment is available.
+    ///
+    /// Returns `None` when no console host can be derived, notably for
+    /// `Region::Custom` (an arbitrary user-supplied API endpoint has no
+    /// implied web console) - callers should skip printing a link in that
+    /// case rather than fabricate one. A profile can still provide a console
+    /// base explicitly via `Profile::console_url`.
+    pub fn console_domain(&self) -> Option<&'static str> {
+        match self {
+            Region::Us1 => Some("app.coralogix.us"),
+            Region::Us2 => Some("cx498.coralogix.com"),
+            Region::Us3 => Some("us3.coralogix.com"),
+            Region::Eu1 => Some("coralogix.com"),
+            Region::Eu2 => Some("app.eu2.coralogix.com"),
+            Region::Ap1 => None,
+            Region::Ap2 => Some("app.coralogixsg.com"),
+            Region::Ap3 => Some("ap3.coralogix.com"),
+            Region::Stg1 => None,
+            Region::Custom(_) => None,
+        }
+    }
 }
 
 impl std::fmt::Display for Region {
@@ -309,6 +344,16 @@ pub struct Profile {
     /// Falls back to `Archive` when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_tier: Option<crate::Tier>,
+    /// Explicit override for the Coralogix web console base URL used to build
+    /// "View in Coralogix" links (e.g. `https://acme.app.eu2.coralogix.com`).
+    /// Include the team subdomain - console links resolve to a team, and the
+    /// team name is not always derivable automatically.
+    ///
+    /// When unset, the CLI derives a base from `region.console_domain()` plus
+    /// the team subdomain reported by `GET /identity/whoami`. When neither is
+    /// available (e.g. `Region::Custom`), no console link is printed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_url: Option<String>,
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -321,6 +366,12 @@ pub struct ResolvedConfig {
     /// Default storage tier for DataPrime queries, resolved from the profile
     /// config. Falls back to `Archive` when the profile does not specify one.
     pub default_tier: crate::Tier,
+    /// Explicit console base URL override from `Profile::console_url`, with
+    /// any trailing slash trimmed. Takes precedence over `console_domain`.
+    pub console_url: Option<String>,
+    /// Console domain derived from `region.console_domain()`. `None` for
+    /// `Region::Custom` and any other region with no known web console.
+    pub console_domain: Option<String>,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -448,6 +499,8 @@ async fn resolve_single(
                 endpoint: region.api_endpoint().to_string(),
                 api_key: key.to_string(),
                 default_tier: crate::Tier::Archive,
+                console_url: None,
+                console_domain: region.console_domain().map(str::to_string),
             });
         }
     }
@@ -514,6 +567,11 @@ async fn resolve_single(
         endpoint: profile.region.api_endpoint().to_string(),
         api_key: bearer,
         default_tier: profile.default_tier.unwrap_or(crate::Tier::Archive),
+        console_url: profile
+            .console_url
+            .as_deref()
+            .map(|s| s.trim_end_matches('/').to_string()),
+        console_domain: profile.region.console_domain().map(str::to_string),
     })
 }
 
@@ -706,6 +764,8 @@ default_profile = "my-profile"
             api_key: "k".to_string(),
             endpoint: "https://api.eu2.coralogix.com".to_string(),
             default_tier: crate::Tier::Archive,
+            console_url: None,
+            console_domain: None,
         };
         assert_eq!(cfg.profile_name, "prod");
     }
@@ -718,6 +778,34 @@ default_profile = "my-profile"
     #[test]
     fn region_api_endpoint_us1() {
         assert_eq!(Region::Us1.api_endpoint(), "https://api.us1.coralogix.com");
+    }
+
+    #[test]
+    fn region_console_domain_known_regions() {
+        assert_eq!(Region::Us1.console_domain(), Some("app.coralogix.us"));
+        assert_eq!(Region::Us2.console_domain(), Some("cx498.coralogix.com"));
+        assert_eq!(Region::Us3.console_domain(), Some("us3.coralogix.com"));
+        assert_eq!(Region::Eu1.console_domain(), Some("coralogix.com"));
+        assert_eq!(Region::Eu2.console_domain(), Some("app.eu2.coralogix.com"));
+        assert_eq!(Region::Ap2.console_domain(), Some("app.coralogixsg.com"));
+        assert_eq!(Region::Ap3.console_domain(), Some("ap3.coralogix.com"));
+    }
+
+    #[test]
+    fn region_console_domain_unverified_regions_are_none() {
+        // ap1 / stg1 console domains could not be verified from the sandbox
+        // used to build this table (see Region::console_domain doc comment).
+        // Deliberately None rather than guessed.
+        assert_eq!(Region::Ap1.console_domain(), None);
+        assert_eq!(Region::Stg1.console_domain(), None);
+    }
+
+    #[test]
+    fn region_console_domain_custom_is_none() {
+        assert_eq!(
+            Region::Custom("https://api.myenv.example.com".to_string()).console_domain(),
+            None
+        );
     }
 
     #[test]
@@ -761,6 +849,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            console_url: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -791,6 +880,7 @@ api_key = "mykey"
             }),
             default_output_format: None,
             default_tier: None,
+            console_url: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -816,6 +906,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            console_url: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -905,6 +996,7 @@ api_key = "mykey"
                 oauth_tokens: None,
                 default_output_format: None,
                 default_tier: None,
+                console_url: None,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -942,6 +1034,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            console_url: None,
         };
         save_profile("default", &profile).unwrap();
 
@@ -965,6 +1058,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            console_url: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -989,6 +1083,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            console_url: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1013,6 +1108,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            console_url: None,
         };
         save_profile(name, &profile).unwrap();
 

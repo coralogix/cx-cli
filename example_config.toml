@@ -26,3 +26,9 @@ default_output_format = "text"
 # api_key = "cxp_your_api_key_here"
 # region = "eu1"
 # label = "production"
+#
+# Optional: override the web console base URL used to build "View in
+# Coralogix" links printed after dashboard/alert/case mutations. Only needed
+# for regions with no built-in console domain (e.g. "stg1", "ap1") or custom
+# environments. See docs/configuration.md#console-links.
+# console_url = "https://acme.app.eu2.coralogix.com"

@@ -114,6 +114,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
 | `label` | No | Free-form label, for example `"production"` |
+| `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links (e.g. `https://acme.app.eu2.coralogix.com`). See [Console links](#console-links). |
 
 ### OAuth-specific fields
 
@@ -195,6 +196,30 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 | `ap3` | `https://api.ap3.coralogix.com` |
 
 A fully qualified HTTPS URL can be used as a region value for non-standard environments.
+
+## Console links
+
+After a successful `cx dashboards create`/`replace`, `cx alerts create`, or a `cx cases` lifecycle mutation (`update`, `assign`, `resolve`, `close`, `set-priority`, etc.), `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
+
+The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:
+
+1. **`console_url`** in the profile TOML, if set - used as-is (see the field table above).
+2. A known **console domain** for the profile's region (table below), combined with the team subdomain fetched from `GET /identity/whoami`. The result is cached per invocation, so printing multiple links in one command only calls `/identity/whoami` once.
+3. **No link is printed** if the region has no known console domain (`Region::Custom`, and any other region without an entry in the table below) or the team subdomain can't be resolved.
+
+| Region | Console domain |
+|---|---|
+| `us1` | `app.coralogix.us` |
+| `us2` | `cx498.coralogix.com` |
+| `us3` | `us3.coralogix.com` |
+| `eu1` | `coralogix.com` |
+| `eu2` | `app.eu2.coralogix.com` |
+| `ap1` | *(unknown - no link printed)* |
+| `ap2` | `app.coralogixsg.com` |
+| `ap3` | `ap3.coralogix.com` |
+| `stg1` | *(unknown - no link printed)* |
+
+Set `console_url` explicitly in the profile TOML to override this table or to enable console links for regions with no known domain (e.g. `stg1`, `ap1`, or a `Custom` region running a self-hosted console).
 
 ## Environment variables
 

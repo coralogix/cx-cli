@@ -1,8 +1,0 @@
-{
-  "daily": {
-    "relativeRange": "DAILY_RELATIVE_RANGE_LAST_7_DAYS"
-  },
-  "limit": {
-    "perBucket": 1
-  }
-}

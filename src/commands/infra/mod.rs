@@ -293,13 +293,17 @@ pub async fn run_raw_data(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Renders merged JSON rows for the two machine formats. Callers handle
-/// `OutputFormat::Text` themselves, so it is rejected here.
+/// Renders merged JSON rows for the two machine formats.
+///
+/// Every caller peels `OutputFormat::Text` off first and renders its own table,
+/// so reaching here with `Text` is a bug in this module rather than bad input.
 fn render_machine_rows(output: OutputFormat, rows: &[Value]) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json(rows),
         OutputFormat::Agents => render::render_agents(rows),
-        OutputFormat::Text => bail!("render_machine_rows called with text output"),
+        OutputFormat::Text => {
+            unreachable!("callers render text themselves; only Json/Agents reach here")
+        }
     }
 }
 
@@ -360,7 +364,8 @@ fn build_list_envelope(
     Value::Object(envelope)
 }
 
-/// Renders the `list` envelope for the two machine formats.
+/// Renders the `list` envelope for the two machine formats. `Text` is unreachable
+/// for the same reason as in [`render_machine_rows`].
 fn render_machine_envelope(output: OutputFormat, envelope: &Value) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json_auto(std::slice::from_ref(envelope)),
@@ -370,7 +375,9 @@ fn render_machine_envelope(output: OutputFormat, envelope: &Value) -> Result<()>
             println!("{encoded}");
             Ok(())
         }
-        OutputFormat::Text => bail!("render_machine_envelope called with text output"),
+        OutputFormat::Text => {
+            unreachable!("callers render text themselves; only Json/Agents reach here")
+        }
     }
 }
 

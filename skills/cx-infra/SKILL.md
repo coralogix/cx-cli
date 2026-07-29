@@ -53,7 +53,11 @@ is healthy, and what its raw data contains.
 - Pass resource IDs **exactly as returned by `list`** (quote them — they contain
   `:` and `=`); the CLI percent-encodes them for you.
 
-## Workflow
+## Inspection Workflow
+
+Three steps, and only because each one supplies an input the next one requires:
+`types` gives the mandatory `--category`/`--type`, `list` gives the `resource_id`.
+Answering "is `web-server-1` healthy?" is these three calls — nothing more.
 
 1. **Discover what exists** — categories and types are dynamic, so never guess:
 
@@ -61,65 +65,58 @@ is healthy, and what its raw data contains.
    cx infra resources types -o json
    ```
 
-2. **List resources** of the category/type you care about, narrowing with
-   name and scope filters:
+2. **List resources** of that category/type, narrowing with name and scope filters:
 
    ```bash
    cx infra resources list --category Hosts --type EC2_Instances \
      --name-filter web --scope environment=prod -o json
    ```
 
-   ```bash
-   # Just the ids and names — note rows live under .resources
-   cx infra resources list --category Hosts --type EC2_Instances -o json \
-     | jq '[.resources[] | {resource_id, name}]'
-   ```
-
-   ```bash
-   # How big is the fleet, and did this window cover it?
-   cx infra resources list --category Hosts --type EC2_Instances -o json \
-     | jq '{total_count, returned_count}'
-
-   # Next window, if there is one
-   cx infra resources list --category Hosts --type EC2_Instances \
-     --start-row 100 --end-row 200 -o json
-   ```
-
-3. **Check health** for a specific resource. Statuses are `Healthy`,
-   `Critical`, or `Unmonitored`, one sample per day, oldest first:
+3. **Inspect one resource** using a `resource_id` from step 2. Statuses are
+   `Healthy`, `Critical`, or `Unmonitored`, one sample per day, oldest first:
 
    ```bash
    cx infra resources health-history "1001234:host_id=i-abc123" -o json
-
-   # Only the days it was Critical
-   cx infra resources health-history "1001234:host_id=i-abc123" -o json \
-     | jq '[.[] | select(.status == "Critical")]'
    ```
 
-4. **Inspect the raw document** when you need source-specific detail
-   (tags, instance metadata, configuration):
+   `raw-data` is the **alternative** to this step, not a follow-on — use it
+   instead when you need source-specific detail rather than health.
 
-   ```bash
-   cx infra resources raw-data "1001234:host_id=i-abc123" -o json
-   ```
+## Examples
 
-5. **Pivot to other domains by name, never by resource id** — `resource_id` is
-   infra-specific and no other command understands it. The interoperable keys
-   are the resource **`name`** and the **`service`** scope value:
+### Just the ids and names
 
-   ```bash
-   # Discover which log/span fields contain the resource name
-   cx search-fields "web-server-1" -s value --dataset logs
+```bash
+# Rows live under .resources — `list` returns an envelope
+cx infra resources list --category Hosts --type EC2_Instances -o json \
+  | jq '[.resources[] | {resource_id, name}]'
+```
 
-   # Query logs for the service the resource belongs to
-   cx logs "filter \$l.subsystemname == 'checkout'"
+### Check fleet size, and whether one window covered it
 
-   # Alert definitions mentioning the resource or its service
-   cx alerts list --name "web-server-1"
+```bash
+cx infra resources list --category Hosts --type EC2_Instances -o json \
+  | jq '{total_count, returned_count}'
 
-   # Dashboards covering the resource or its service
-   cx dashboards search "web-server-1 host health"
-   ```
+# Next window, if there is one
+cx infra resources list --category Hosts --type EC2_Instances \
+  --start-row 100 --end-row 200 -o json
+```
+
+### Find when a resource went critical
+
+```bash
+# health-history returns a bare array, so no .resources here
+cx infra resources health-history "1001234:host_id=i-abc123" -o json \
+  | jq '[.[] | select(.status == "Critical")]'
+```
+
+### Read the raw resource document
+
+```bash
+# Source-specific detail: tags, instance metadata, configuration
+cx infra resources raw-data "1001234:host_id=i-abc123" -o json
+```
 
 ## Key Principles
 
@@ -129,8 +126,11 @@ is healthy, and what its raw data contains.
   the CLI handles URL encoding.
 - **Scope keys are a fixed set** (`service`, `environment`, `team`) — unknown
   keys are rejected client-side before any request is made.
-- **A missing raw document is not an error** — `raw-data` reports "no raw data"
-  on stderr and emits nothing; treat it as a cleanly absent document.
+- **A missing raw document is not an error** — `raw-data` exits 0 and emits an
+  *empty result* on **stdout**: `[]` in `json`, `[0]:` in `agents`, and
+  `No raw data found.` in text. Only the per-profile note (`no raw data for this
+  resource in profile '<name>'`) goes to stderr. Parse the empty stdout result as
+  a cleanly absent document, not a failure — and do not expect stdout to be blank.
 - **Use `-o json` with `jq`** for filtering; use `-o agents` for token-efficient
   output in agent contexts.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) tags each row with

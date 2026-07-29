@@ -44,6 +44,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(names.contains(&"docs"), "missing docs");
     assert!(names.contains(&"olly"), "missing olly");
     assert!(names.contains(&"ai-center"), "missing ai-center");
+    assert!(names.contains(&"infra"), "missing infra");
 
     // Verify old commands are gone
     assert!(

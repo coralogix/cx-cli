@@ -38,7 +38,7 @@ pub struct CategoryType {
 pub struct GetResourcesResponse {
     #[serde(default)]
     pub resources: Vec<ResourceData>,
-    pub total_count: Option<i64>,
+    pub total_count: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -231,7 +231,7 @@ mod tests {
 
         let resp: GetResourcesResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.resources.len(), 2);
-        assert_eq!(resp.total_count, Some(42));
+        assert_eq!(resp.total_count, 42);
         let first = &resp.resources[0];
         assert_eq!(
             first.resource_id.as_deref(),
@@ -247,10 +247,25 @@ mod tests {
 
     #[test]
     fn deserialize_empty_resources_response() {
-        let json = json!({});
+        let json = json!({ "totalCount": 0 });
         let resp: GetResourcesResponse = serde_json::from_value(json).unwrap();
         assert!(resp.resources.is_empty());
-        assert_eq!(resp.total_count, None);
+        assert_eq!(resp.total_count, 0);
+    }
+
+    /// `totalCount` is the caller's only stop condition when paging, so a
+    /// response missing it must fail loudly rather than default to `0` - which
+    /// would report an empty fleet while returning rows.
+    #[test]
+    fn deserialize_resources_response_requires_total_count() {
+        let json = json!({
+            "resources": [{ "resourceId": "1001234:host_id=i-abc123", "name": "web-server-1" }]
+        });
+        let err = serde_json::from_value::<GetResourcesResponse>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("totalCount"),
+            "error should name the missing field, got: {err}"
+        );
     }
 
     #[test]
@@ -321,7 +336,8 @@ mod tests {
                     "availability_zone": "us-east-1a",
                     "state": "running"
                 }
-            }]
+            }],
+            "totalCount": 1
         });
 
         let resp: GetResourcesResponse = serde_json::from_value(json).unwrap();

@@ -33,7 +33,15 @@ fn infra_list() {
         "-o",
         "json",
     ]);
-    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "name"]);
+    // `list` returns an envelope, not a bare array: callers page with
+    // `--start-row`/`--end-row` and `total_count` is their only stop condition.
+    harness::assert_object_with_keys(&v, &["total_count", "returned_count", "resources"]);
+    assert!(
+        v["total_count"].is_i64(),
+        "total_count should be a number, got {:?} - callers have no stop condition without it",
+        v["total_count"]
+    );
+    harness::assert_array_of_objects_with_keys(&v["resources"], &["resource_id", "name"]);
 }
 
 #[test]
@@ -102,7 +110,8 @@ fn discover_resource_id() -> Option<String> {
                 "json",
             ]);
             let v = harness::parse_json(&stdout)?;
-            v.as_array()?
+            v.get("resources")?
+                .as_array()?
                 .iter()
                 .find_map(|item| item.get("resource_id")?.as_str().map(String::from))
         })

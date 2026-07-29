@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use colored::Colorize;
 use serde_json::{json, Value};
+use toon_format::encode_default as toon_encode;
 
 pub mod api;
 
@@ -123,14 +124,19 @@ pub async fn run_list(
     })
     .await;
 
-    let mut total_count: i64 = 0;
+    let mut counts: Vec<ProfileCounts> = Vec::new();
     let mut merged: Vec<(String, ResourceData)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        total_count += resp.total_count.unwrap_or(resp.resources.len() as i64);
+        counts.push(ProfileCounts {
+            profile: profile.clone(),
+            total_count: resp.total_count,
+            returned_count: resp.resources.len(),
+        });
         for resource in resp.resources {
             merged.push((profile.clone(), resource));
         }
     }
+    let total_count = aggregate_total(&counts);
 
     match output {
         OutputFormat::Json | OutputFormat::Agents => {
@@ -138,7 +144,8 @@ pub async fn run_list(
                 .iter()
                 .map(|(profile, r)| resource_to_json(r, include_profile, profile))
                 .collect();
-            render_machine_rows(output, &rows)?;
+            let envelope = build_list_envelope(total_count, rows, &counts, include_profile);
+            render_machine_envelope(output, &envelope)?;
         }
         OutputFormat::Text => {
             if merged.is_empty() {
@@ -158,12 +165,7 @@ pub async fn run_list(
             render::render_table(&["Resource ID", "Name"], rows, include_profile);
             eprintln!(
                 "{}",
-                format!(
-                    "Showing {} of {} total resources",
-                    merged.len(),
-                    total_count
-                )
-                .dimmed()
+                format_count_summary(merged.len(), total_count, &counts, include_profile).dimmed()
             );
         }
     }
@@ -298,6 +300,101 @@ fn render_machine_rows(output: OutputFormat, rows: &[Value]) -> Result<()> {
         OutputFormat::Agents => render::render_agents(rows),
         OutputFormat::Text => bail!("render_machine_rows called with text output"),
     }
+}
+
+/// Per-profile row counts for one `list` invocation. `total_count` is the
+/// profile's fleet-wide match count, independent of the page window.
+struct ProfileCounts {
+    profile: String,
+    total_count: i64,
+    returned_count: usize,
+}
+
+/// Sums the per-profile totals. Saturating: a fan-out across profiles whose
+/// totals sum past `i64::MAX` should clamp rather than wrap into a negative.
+fn aggregate_total(counts: &[ProfileCounts]) -> i64 {
+    counts
+        .iter()
+        .fold(0i64, |acc, c| acc.saturating_add(c.total_count))
+}
+
+/// Builds the `list` result envelope.
+///
+/// `list` is the only infra subcommand that wraps its rows instead of emitting a
+/// bare array, because `--start-row`/`--end-row` make the caller responsible for
+/// paging and `total_count` is the only stop condition available to them. Fleets
+/// can run to hundreds of thousands of resources, so the CLI deliberately does
+/// not page on the caller's behalf - it just reports the total.
+///
+/// `total_count` counts every resource matching the query, not just the rows in
+/// this window, so it is normally larger than `returned_count`.
+///
+/// Key order is meaningful: the counts precede `resources` so a consumer reading
+/// a truncated stream still sees the stop condition before the row payload.
+fn build_list_envelope(
+    total_count: i64,
+    rows: Vec<Value>,
+    counts: &[ProfileCounts],
+    include_profile: bool,
+) -> Value {
+    let mut envelope = serde_json::Map::new();
+    envelope.insert("total_count".to_string(), json!(total_count));
+    envelope.insert("returned_count".to_string(), json!(rows.len()));
+
+    if include_profile {
+        let per_profile: Vec<Value> = counts
+            .iter()
+            .map(|c| {
+                json!({
+                    JSON_KEY_PROFILE: c.profile,
+                    "total_count": c.total_count,
+                    "returned_count": c.returned_count,
+                })
+            })
+            .collect();
+        envelope.insert("counts_by_profile".to_string(), Value::Array(per_profile));
+    }
+
+    envelope.insert("resources".to_string(), Value::Array(rows));
+    Value::Object(envelope)
+}
+
+/// Renders the `list` envelope for the two machine formats.
+fn render_machine_envelope(output: OutputFormat, envelope: &Value) -> Result<()> {
+    match output {
+        OutputFormat::Json => render::render_json_auto(std::slice::from_ref(envelope)),
+        OutputFormat::Agents => {
+            let encoded =
+                toon_encode(envelope).map_err(|e| anyhow!("TOON encoding failed: {e}"))?;
+            println!("{encoded}");
+            Ok(())
+        }
+        OutputFormat::Text => bail!("render_machine_envelope called with text output"),
+    }
+}
+
+/// Formats the dimmed stderr summary line under the text-mode table. When fanning
+/// out, the per-profile lines show each profile's own returned-vs-total figures -
+/// the window applies per profile, so each is paged against its own total, not
+/// the sum.
+fn format_count_summary(
+    returned: usize,
+    total: i64,
+    counts: &[ProfileCounts],
+    include_profile: bool,
+) -> String {
+    let mut out = format!("Showing {returned} of {total} total resources");
+
+    if include_profile {
+        for c in counts {
+            out.push_str(&format!(
+                "\n  {}: {} of {}",
+                c.profile, c.returned_count, c.total_count
+            ));
+        }
+    }
+
+    out
 }
 
 /// Trims a required string input and rejects it when nothing remains, so an
@@ -467,10 +564,153 @@ mod tests {
         assert!(untagged.get("profile").is_none());
     }
 
+    // ── aggregate_total ──────────────────────────────────────────────────────
+
+    #[test]
+    fn aggregate_total_sums_profile_totals() {
+        let counts = counts(&[("prod", 150, 100), ("staging", 90, 90)]);
+        assert_eq!(aggregate_total(&counts), 240);
+    }
+
+    #[test]
+    fn aggregate_total_of_no_profiles_is_zero() {
+        assert_eq!(aggregate_total(&[]), 0);
+    }
+
+    /// Saturating rather than wrapping: a fan-out whose totals exceed `i64::MAX`
+    /// must clamp, not flip to a negative "total".
+    #[test]
+    fn aggregate_total_saturates_instead_of_overflowing() {
+        let counts = counts(&[("a", i64::MAX, 1), ("b", 1, 1)]);
+        assert_eq!(aggregate_total(&counts), i64::MAX);
+    }
+
+    // ── build_list_envelope ──────────────────────────────────────────────────
+
+    #[test]
+    fn envelope_reports_total_and_returned_counts() {
+        let counts = counts(&[("prod", 512_000, 100)]);
+        let envelope = build_list_envelope(512_000, rows(100), &counts, false);
+
+        assert_eq!(envelope["total_count"], 512_000);
+        assert_eq!(envelope["returned_count"], 100);
+        assert_eq!(envelope["resources"].as_array().unwrap().len(), 100);
+    }
+
+    /// The counts must precede `resources` so a consumer reading a truncated
+    /// stream still sees its stop condition before the row payload.
+    #[test]
+    fn envelope_orders_counts_before_resources() {
+        let counts = counts(&[("prod", 5, 5)]);
+        let envelope = build_list_envelope(5, rows(5), &counts, false);
+        let keys: Vec<&str> = envelope
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, vec!["total_count", "returned_count", "resources"]);
+    }
+
+    /// `returned_count` tracks the rows actually emitted, so a caller can tell a
+    /// partial window from a complete one by comparing it against `total_count`.
+    #[test]
+    fn envelope_distinguishes_a_partial_window_from_the_fleet_total() {
+        let counts = counts(&[("prod", 512_000, 100)]);
+        let envelope = build_list_envelope(512_000, rows(100), &counts, false);
+
+        assert_ne!(envelope["total_count"], envelope["returned_count"]);
+        assert_eq!(envelope["total_count"], 512_000);
+        assert_eq!(envelope["returned_count"], 100);
+    }
+
+    /// `returned_count` must reflect the rows actually emitted, not a per-profile
+    /// figure - under fan-out it is the merged row count across all profiles.
+    #[test]
+    fn envelope_returned_count_matches_the_emitted_row_count() {
+        let counts = counts(&[("prod", 150, 100), ("staging", 90, 90)]);
+        let envelope = build_list_envelope(240, rows(190), &counts, true);
+
+        assert_eq!(envelope["returned_count"], 190);
+        assert_eq!(
+            envelope["returned_count"].as_u64().unwrap() as usize,
+            envelope["resources"].as_array().unwrap().len()
+        );
+    }
+
+    #[test]
+    fn envelope_omits_per_profile_counts_for_a_single_profile() {
+        let counts = counts(&[("prod", 150, 100)]);
+        let envelope = build_list_envelope(150, rows(100), &counts, false);
+        assert!(envelope.get("counts_by_profile").is_none());
+    }
+
+    /// The page window applies per profile, so a summed total alone cannot tell
+    /// a caller which profile still has rows pending.
+    #[test]
+    fn envelope_breaks_counts_down_per_profile_when_fanning_out() {
+        let counts = counts(&[("prod", 150, 100), ("staging", 90, 90)]);
+        let envelope = build_list_envelope(240, rows(190), &counts, true);
+
+        let per_profile = envelope["counts_by_profile"].as_array().unwrap();
+        assert_eq!(per_profile.len(), 2);
+        assert_eq!(per_profile[0]["profile"], "prod");
+        assert_eq!(per_profile[0]["total_count"], 150);
+        assert_eq!(per_profile[0]["returned_count"], 100);
+        assert_eq!(per_profile[1]["profile"], "staging");
+        assert_eq!(per_profile[1]["total_count"], 90);
+        assert_eq!(per_profile[1]["returned_count"], 90);
+    }
+
+    #[test]
+    fn envelope_for_no_results_still_reports_counts() {
+        let envelope = build_list_envelope(0, rows(0), &counts(&[("prod", 0, 0)]), false);
+        assert_eq!(envelope["total_count"], 0);
+        assert_eq!(envelope["returned_count"], 0);
+        assert!(envelope["resources"].as_array().unwrap().is_empty());
+    }
+
+    // ── format_count_summary ─────────────────────────────────────────────────
+
+    #[test]
+    fn count_summary_reports_the_total() {
+        let counts = counts(&[("prod", 512_000, 100)]);
+        assert_eq!(
+            format_count_summary(100, 512_000, &counts, false),
+            "Showing 100 of 512000 total resources"
+        );
+    }
+
+    #[test]
+    fn count_summary_breaks_down_per_profile_when_fanning_out() {
+        let counts = counts(&[("prod", 150, 100), ("staging", 90, 90)]);
+        assert_eq!(
+            format_count_summary(190, 240, &counts, true),
+            "Showing 190 of 240 total resources\n  prod: 100 of 150\n  staging: 90 of 90"
+        );
+    }
+
     #[test]
     fn display_or_dash_falls_back_on_none_and_empty() {
         assert_eq!(display_or_dash(Some("value")), "value");
         assert_eq!(display_or_dash(Some("")), "-");
         assert_eq!(display_or_dash(None), "-");
+    }
+
+    fn counts(entries: &[(&str, i64, usize)]) -> Vec<ProfileCounts> {
+        entries
+            .iter()
+            .map(|(profile, total_count, returned_count)| ProfileCounts {
+                profile: profile.to_string(),
+                total_count: *total_count,
+                returned_count: *returned_count,
+            })
+            .collect()
+    }
+
+    fn rows(n: usize) -> Vec<Value> {
+        (0..n)
+            .map(|i| json!({ "resource_id": format!("id-{i}") }))
+            .collect()
     }
 }

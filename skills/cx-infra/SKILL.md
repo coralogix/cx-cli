@@ -33,6 +33,13 @@ is healthy, and what its raw data contains.
   (e.g. `--scope environment=prod --scope service=checkout`).
 - Pagination: `--start-row` / `--end-row` define a row window; the default is
   the first 100 rows. Page through large fleets in windows (0-100, 100-200, …).
+  **`list` never pages for you** — fleets can run to hundreds of thousands of
+  resources, so it returns one window and reports the total.
+- `list` wraps its rows in an envelope (`total_count`, `returned_count`,
+  `resources`) — the other subcommands return bare arrays. `total_count` is the
+  fleet-wide match count, always present and independent of the window, so use it
+  as the stop condition: keep paging while `start_row + returned_count <
+  total_count`.
 - Pass resource IDs **exactly as returned by `list`** (quote them — they contain
   `:` and `=`); the CLI percent-encodes them for you.
 
@@ -53,9 +60,19 @@ is healthy, and what its raw data contains.
    ```
 
    ```bash
-   # Just the ids and names
+   # Just the ids and names — note rows live under .resources
    cx infra resources list --category Hosts --type EC2_Instances -o json \
-     | jq '[.[] | {resource_id, name}]'
+     | jq '[.resources[] | {resource_id, name}]'
+   ```
+
+   ```bash
+   # How big is the fleet, and did this window cover it?
+   cx infra resources list --category Hosts --type EC2_Instances -o json \
+     | jq '{total_count, returned_count}'
+
+   # Next window, if there is one
+   cx infra resources list --category Hosts --type EC2_Instances \
+     --start-row 100 --end-row 200 -o json
    ```
 
 3. **Check health** for a specific resource. Statuses are `Healthy`,
@@ -107,7 +124,9 @@ is healthy, and what its raw data contains.
 - **Use `-o json` with `jq`** for filtering; use `-o agents` for token-efficient
   output in agent contexts.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) tags each row with
-  its profile so fleets can be compared across accounts.
+  its profile so fleets can be compared across accounts. The row window applies
+  per profile, so `list` adds a `counts_by_profile` breakdown — page each profile
+  against its own `total_count`, not the aggregate.
 - **Infra health is its own concept** — the `Healthy`/`Critical`/`Unmonitored`
   statuses are computed by the infrastructure domain and are not the same as
   Service Catalog health. Correlate them with telemetry signals;

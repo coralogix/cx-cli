@@ -114,7 +114,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
 | `label` | No | Free-form label, for example `"production"` |
-| `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links (e.g. `https://acme.app.eu2.coralogix.com`). See [Console links](#console-links). |
+| `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links (e.g. `https://acme.app.eu2.coralogix.com`). If unset, `cx` derives it from the region's console domain plus a team subdomain fetched via `GET /identity/whoami` - see [Console links](#console-links) for exactly how that lookup works. |
 
 ### OAuth-specific fields
 
@@ -203,9 +203,9 @@ After a successful `cx dashboards create`/`replace`, `cx alerts create`, or a `c
 
 The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:
 
-1. **`console_url`** in the profile TOML, if set - used as-is (see the field table above).
-2. A known **console domain** for the profile's region (table below), combined with the team subdomain fetched from `GET /identity/whoami`. The result is cached per invocation, so printing multiple links in one command only calls `/identity/whoami` once.
-3. **No link is printed** if the region has no known console domain (`Region::Custom`, and any other region without an entry in the table below) or the team subdomain can't be resolved.
+1. **`console_url`** in the profile TOML, if set - used as-is (see the field table above). No API call is made in this case.
+2. A known **console domain** for the profile's region (table below), combined with a team subdomain fetched from the profile's API. `cx` calls `GET /identity/whoami` (authenticated with the profile's own credentials - no extra permissions needed) and takes the subdomain from `team_url` if present, otherwise falling back to `team_name`. The value is lowercased and must consist only of ASCII letters, digits, and hyphens (valid hostname-label characters); if neither field is present, or the resulting value doesn't qualify as a hostname label (e.g. it contains spaces or non-ASCII characters), no link is printed. This call is best-effort and never fails the underlying command - it also runs only if you didn't set `console_url`. Its result is cached per invocation, so printing multiple links in one command only calls `/identity/whoami` once.
+3. **No link is printed** if the region has no known console domain (`Region::Custom`, and any other region without an entry in the table below), or if step 2's `/identity/whoami` call fails, or the team subdomain can't be extracted as described above.
 
 | Region | Console domain |
 |---|---|

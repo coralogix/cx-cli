@@ -18,11 +18,13 @@ pub struct GetAvailableResourceTypesResponse {
     pub resource_types: Vec<ResourceTypeMapping>,
 }
 
+/// The API also returns `resourceType`, which the CLI deliberately does not
+/// surface in any output format. This is intentional and will be added later on
+/// when the CLI will offer other commands that support it.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceTypeMapping {
     pub category_type: Option<CategoryType>,
-    pub resource_type: Option<String>,
     pub label: Option<String>,
 }
 
@@ -181,14 +183,42 @@ mod tests {
             ]
         });
 
+        // The payload deliberately still carries `resourceType`: the API sends it
+        // and the CLI must parse the rest without it.
         let resp: GetAvailableResourceTypesResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.resource_types.len(), 2);
         let first = &resp.resource_types[0];
         let category_type = first.category_type.as_ref().unwrap();
         assert_eq!(category_type.category.as_deref(), Some("Hosts"));
         assert_eq!(category_type.type_name.as_deref(), Some("EC2_Instances"));
-        assert_eq!(first.resource_type.as_deref(), Some("aws_ec2_instance"));
         assert_eq!(first.label.as_deref(), Some("EC2 Instances"));
+    }
+
+    /// `resourceType` is not surfaced in any output format, so it is left out of
+    /// [`ResourceTypeMapping`] entirely. The API keeps sending it, so deserializing
+    /// must ignore it rather than fail - this guards the absence of
+    /// `deny_unknown_fields`, which would turn the extra key into a hard error.
+    #[test]
+    fn deserialize_types_response_ignores_resource_type() {
+        let json = json!({
+            "resourceTypes": [
+                {
+                    "categoryType": { "category": "Hosts", "type": "EC2_Instances" },
+                    "resourceType": "aws_ec2_instance",
+                    "label": "EC2 Instances",
+                    "someFutureField": 42
+                }
+            ]
+        });
+
+        let resp: GetAvailableResourceTypesResponse =
+            serde_json::from_value(json).expect("unknown keys must be ignored, not rejected");
+        let first = &resp.resource_types[0];
+        assert_eq!(first.label.as_deref(), Some("EC2 Instances"));
+        assert_eq!(
+            first.category_type.as_ref().unwrap().type_name.as_deref(),
+            Some("EC2_Instances")
+        );
     }
 
     #[test]

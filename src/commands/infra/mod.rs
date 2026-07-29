@@ -67,16 +67,11 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
                                 .as_ref()
                                 .and_then(|c| c.type_name.as_deref()),
                         ),
-                        display_or_dash(m.resource_type.as_deref()),
                         display_or_dash(m.label.as_deref()),
                     ]
                 })
                 .collect();
-            render::render_table(
-                &["Category", "Type", "Resource Type", "Label"],
-                rows,
-                include_profile,
-            );
+            render::render_table(&["Category", "Type", "Label"], rows, include_profile);
         }
     }
 
@@ -532,7 +527,6 @@ fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profi
     let v = json!({
         "category": item.category_type.as_ref().and_then(|c| c.category.clone()),
         "type": item.category_type.as_ref().and_then(|c| c.type_name.clone()),
-        "resource_type": item.resource_type,
         "label": item.label,
     });
     tag_profile(v, include_profile, profile)

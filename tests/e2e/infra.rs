@@ -9,7 +9,14 @@ fn infra_types() {
         return;
     }
     let v = harness::run_ok_json(&["infra", "resources", "types", "-o", "json"]);
-    harness::assert_array_of_objects_with_keys(&v, &["category", "type", "resource_type"]);
+    harness::assert_array_of_objects_with_keys(&v, &["category", "type", "label"]);
+    // `resourceType` is returned by the API but deliberately not surfaced.
+    for item in v.as_array().unwrap_or(&vec![]) {
+        assert!(
+            item.get("resource_type").is_none(),
+            "resource_type must not be surfaced, got: {item}"
+        );
+    }
 }
 
 #[test]

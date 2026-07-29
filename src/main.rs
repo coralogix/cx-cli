@@ -2598,7 +2598,8 @@ Examples:
         #[arg(long)]
         name_filter: Option<String>,
 
-        /// Scope filter as key=value; repeatable. Keys: service, environment, team.
+        /// Scope filter as key=value; repeatable across different keys, at most
+        /// once per key. Keys: service, environment, team. Multiple keys AND together.
         #[arg(long)]
         scope: Vec<String>,
 

@@ -410,27 +410,42 @@ fn require_non_empty<'v>(value: &'v str, field_name: &str) -> Result<&'v str> {
 
 /// Parses repeatable `--scope key=value` flags and validates keys against
 /// [`ALLOWED_SCOPE_KEYS`].
+///
+/// Distinct keys are combined by the API with AND ("when more than one field is
+/// set, a resource must match all of them"). A key given twice is rejected: each
+/// scope field holds a single value server-side, so repeating one cannot express
+/// "either value".
+/// Failing here makes that intent explicit instead of quietly answering a
+/// different question.
 fn parse_scope_filters(scope: &[String]) -> Result<Vec<(String, String)>> {
-    scope
-        .iter()
-        .map(|raw| {
-            let Some((key, value)) = raw.split_once('=') else {
-                bail!("invalid --scope '{raw}': expected key=value");
-            };
-            let key = key.trim();
-            let value = value.trim();
-            if !ALLOWED_SCOPE_KEYS.contains(&key) {
-                bail!(
-                    "unknown --scope key '{key}'; allowed keys: {}",
-                    ALLOWED_SCOPE_KEYS.join(", ")
-                );
-            }
-            if value.is_empty() {
-                bail!("invalid --scope '{raw}': value must not be empty");
-            }
-            Ok((key.to_string(), value.to_string()))
-        })
-        .collect()
+    let mut filters: Vec<(String, String)> = Vec::new();
+
+    for raw in scope {
+        let Some((key, value)) = raw.split_once('=') else {
+            bail!("invalid --scope '{raw}': expected key=value");
+        };
+        let key = key.trim();
+        let value = value.trim();
+        if !ALLOWED_SCOPE_KEYS.contains(&key) {
+            bail!(
+                "unknown --scope key '{key}'; allowed keys: {}",
+                ALLOWED_SCOPE_KEYS.join(", ")
+            );
+        }
+        if value.is_empty() {
+            bail!("invalid --scope '{raw}': value must not be empty");
+        }
+        if let Some((_, existing)) = filters.iter().find(|(k, _)| k == key) {
+            bail!(
+                "--scope key '{key}' given more than once ('{existing}' then '{value}'); \
+                 each scope key accepts a single value and different keys combine with AND, \
+                 so repeating one cannot match either value - run one query per value"
+            );
+        }
+        filters.push((key.to_string(), value.to_string()));
+    }
+
+    Ok(filters)
 }
 
 /// Builds one resource row as JSON for `json` / `agents` output after fan-out.
@@ -553,6 +568,49 @@ mod tests {
     #[test]
     fn parse_scope_filters_empty_input_yields_no_filters() {
         assert!(parse_scope_filters(&[]).unwrap().is_empty());
+    }
+
+    /// Each scope field holds one value server-side and distinct keys AND
+    /// together, so a repeated key cannot mean "either". The service collapses
+    /// the query string into a `HashMap`, silently keeping only the last value -
+    /// so this must fail here rather than quietly filter on `b` alone.
+    #[test]
+    fn parse_scope_filters_rejects_a_repeated_key() {
+        let err =
+            parse_scope_filters(&["service=a".to_string(), "service=b".to_string()]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("'service' given more than once"), "got: {msg}");
+        assert!(msg.contains('a') && msg.contains('b'), "got: {msg}");
+    }
+
+    /// Rejected uniformly - "at most once per key" is a simpler rule to rely on
+    /// than one that quietly tolerates exact repeats.
+    #[test]
+    fn parse_scope_filters_rejects_a_repeated_key_even_with_the_same_value() {
+        let err =
+            parse_scope_filters(&["service=a".to_string(), "service=a".to_string()]).unwrap_err();
+        assert!(err.to_string().contains("given more than once"));
+    }
+
+    #[test]
+    fn parse_scope_filters_detects_a_repeat_after_trimming() {
+        let err = parse_scope_filters(&[" service = a ".to_string(), "service=b".to_string()])
+            .unwrap_err();
+        assert!(err.to_string().contains("given more than once"));
+    }
+
+    /// The repeat check must not reject distinct keys that share a value.
+    #[test]
+    fn parse_scope_filters_allows_distinct_keys_sharing_a_value() {
+        let filters =
+            parse_scope_filters(&["service=core".to_string(), "team=core".to_string()]).unwrap();
+        assert_eq!(
+            filters,
+            vec![
+                ("service".to_string(), "core".to_string()),
+                ("team".to_string(), "core".to_string()),
+            ]
+        );
     }
 
     #[test]

@@ -29,8 +29,12 @@ is healthy, and what its raw data contains.
 
 - All commands are **read-only** and support `-o json` / `-o agents` for
   structured output and `-p <profile>` (repeatable) for multi-profile fan-out.
-- `--scope` is repeatable; allowed keys are `service`, `environment`, `team`
-  (e.g. `--scope environment=prod --scope service=checkout`).
+- `--scope` is repeatable across **different** keys; allowed keys are `service`,
+  `environment`, `team` (e.g. `--scope environment=prod --scope service=checkout`).
+  Multiple keys combine with **AND** — a resource must match all of them. Each key
+  accepts a single value and may be given **at most once**; repeating one (e.g.
+  `--scope service=a --scope service=b`) is rejected. To cover several values for one key, run one query per
+  value and combine the results.
 - Pagination: `--start-row` / `--end-row` define a row window; the default is
   the first 100 rows. Page through large fleets in windows (0-100, 100-200, …).
   **`list` never pages for you** — fleets can run to hundreds of thousands of

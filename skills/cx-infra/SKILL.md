@@ -35,15 +35,21 @@ is healthy, and what its raw data contains.
   accepts a single value and may be given **at most once**; repeating one (e.g.
   `--scope service=a --scope service=b`) is rejected. To cover several values for one key, run one query per
   value and combine the results.
-- Pagination: `--start-row` / `--end-row` define a row window; the default is
-  the first 100 rows. Page through large fleets in windows (0-100, 100-200, …).
-  **`list` never pages for you** — fleets can run to hundreds of thousands of
-  resources, so it returns one window and reports the total.
+- Pagination: `--start-row` / `--end-row` define a row window (`--end-row` is
+  **exclusive**); the default is the first 100 rows, and omitting only `--end-row`
+  gives 100 rows from `--start-row`. Page through large fleets in windows
+  (0-100, 100-200, …). **`list` never pages for you** — fleets can run to hundreds
+  of thousands of resources, so it returns one window and reports the total.
+- **The window cannot reach past row 10,000.** The API rejects any request whose
+  `start-row + rows` exceeds 10,000, so paging cannot enumerate a fleet larger
+  than that even though `total_count` reports its true size. In any case,
+  narrow with `--name-filter` or `--scope` and page within each subset rather
+  than trying to walk the whole list.
 - `list` wraps its rows in an envelope (`total_count`, `returned_count`,
   `resources`) — the other subcommands return bare arrays. `total_count` is the
   fleet-wide match count, always present and independent of the window, so use it
   as the stop condition: keep paging while `start_row + returned_count <
-  total_count`.
+  total_count`, subject to the 10,000-row ceiling above.
 - Pass resource IDs **exactly as returned by `list`** (quote them — they contain
   `:` and `=`); the CLI percent-encodes them for you.
 

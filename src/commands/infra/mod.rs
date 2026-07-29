@@ -99,6 +99,7 @@ pub async fn run_list(
     let resource_type = require_non_empty(resource_type, "--type")?;
     let name_filter = name_filter.map(str::trim).filter(|s| !s.is_empty());
     let scope_filters = parse_scope_filters(scope)?;
+    validate_page_window(start_row, end_row)?;
 
     eprintln!("{}", "Fetching resources...".dimmed());
 
@@ -408,6 +409,40 @@ fn require_non_empty<'v>(value: &'v str, field_name: &str) -> Result<&'v str> {
     Ok(trimmed)
 }
 
+/// Validates the `--start-row` / `--end-row` page window.
+///
+/// The API coerces a bad window rather than rejecting it: a negative `startRow`
+/// is clamped to `0`, and a window whose end is at or before its start yields a
+/// row count of `0`.
+///
+/// Deliberately not checked here: the service's ceiling on `startRow + rows`.
+/// That is a server-side policy constant which the CLI should not mirror, and its
+/// 400 already names the limit and how to get under it.
+fn validate_page_window(start_row: Option<i64>, end_row: Option<i64>) -> Result<()> {
+    if let Some(start) = start_row {
+        if start < 0 {
+            bail!("--start-row must not be negative (got {start}); rows are 0-based");
+        }
+    }
+
+    if let Some(end) = end_row {
+        if end < 0 {
+            bail!("--end-row must not be negative (got {end})");
+        }
+    }
+
+    if let (Some(start), Some(end)) = (start_row, end_row) {
+        if end <= start {
+            bail!(
+                "--end-row ({end}) must be greater than --start-row ({start}); \
+                 --end-row is exclusive, so this window selects no rows"
+            );
+        }
+    }
+
+    Ok(())
+}
+
 /// Parses repeatable `--scope key=value` flags and validates keys against
 /// [`ALLOWED_SCOPE_KEYS`].
 ///
@@ -597,6 +632,55 @@ mod tests {
         let err = parse_scope_filters(&[" service = a ".to_string(), "service=b".to_string()])
             .unwrap_err();
         assert!(err.to_string().contains("given more than once"));
+    }
+
+    // ── validate_page_window ─────────────────────────────────────────────────
+
+    #[test]
+    fn page_window_accepts_an_ascending_window_and_open_ends() {
+        assert!(validate_page_window(None, None).is_ok());
+        assert!(validate_page_window(Some(0), Some(100)).is_ok());
+        assert!(validate_page_window(Some(100), Some(200)).is_ok());
+        assert!(validate_page_window(Some(100), None).is_ok());
+        assert!(validate_page_window(None, Some(50)).is_ok());
+        assert!(validate_page_window(Some(0), Some(1)).is_ok());
+    }
+
+    /// The API clamps a negative `startRow` to 0 and returns 200, so without this
+    /// check the caller silently gets the first window instead of an error.
+    #[test]
+    fn page_window_rejects_a_negative_start_row() {
+        let err = validate_page_window(Some(-5), None).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("--start-row must not be negative"),
+            "got: {msg}"
+        );
+        assert!(msg.contains("-5"), "got: {msg}");
+    }
+
+    #[test]
+    fn page_window_rejects_a_negative_end_row() {
+        let err = validate_page_window(None, Some(-1)).unwrap_err();
+        assert!(err.to_string().contains("--end-row must not be negative"));
+    }
+
+    /// An inverted window yields a row count of 0 server-side, so the caller sees
+    /// an empty result set and can easily read it as "no such resources".
+    #[test]
+    fn page_window_rejects_an_inverted_window() {
+        let err = validate_page_window(Some(200), Some(100)).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("must be greater than"), "got: {msg}");
+        assert!(msg.contains("100") && msg.contains("200"), "got: {msg}");
+    }
+
+    /// `--end-row` is exclusive, so an equal start and end can only ever return
+    /// nothing - always a mistake rather than a meaningful request.
+    #[test]
+    fn page_window_rejects_an_empty_window() {
+        let err = validate_page_window(Some(100), Some(100)).unwrap_err();
+        assert!(err.to_string().contains("selects no rows"));
     }
 
     /// The repeat check must not reject distinct keys that share a value.

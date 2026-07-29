@@ -2607,7 +2607,8 @@ Examples:
         #[arg(long)]
         start_row: Option<i64>,
 
-        /// Row after the last one of the page window (default: start-row + 100).
+        /// Row after the last one of the page window, exclusive (default:
+        /// start-row + 100). The API rejects windows reaching past row 10,000.
         #[arg(long)]
         end_row: Option<i64>,
     },

@@ -28,7 +28,11 @@ is healthy, and what its raw data contains.
 | `cx infra resources raw-data <resource-id>` | Raw resource document as JSON | - |
 
 - All commands are **read-only** and support `-o json` / `-o agents` for
-  structured output and `-p <profile>` (repeatable) for multi-profile fan-out.
+  structured output.
+- **Multi-profile fan-out applies to `types` and `list` only.** Repeat
+  `-p <profile>` on those to compare fleets across accounts. `health-history` and
+  `raw-data` take a resource id, which is scoped to one team, so they **reject**
+  more than one `-p` — run them once per profile instead.
 - `--scope` is repeatable across **different** keys; allowed keys are `service`,
   `environment`, `team` (e.g. `--scope environment=prod --scope service=checkout`).
   Multiple keys combine with **AND** — a resource must match all of them. Each key
@@ -128,15 +132,20 @@ cx infra resources raw-data "1001234:host_id=i-abc123" -o json
   keys are rejected client-side before any request is made.
 - **A missing raw document is not an error** — `raw-data` exits 0 and emits an
   *empty result* on **stdout**: `[]` in `json`, `[0]:` in `agents`, and
-  `No raw data found.` in text. Only the per-profile note (`no raw data for this
-  resource in profile '<name>'`) goes to stderr. Parse the empty stdout result as
-  a cleanly absent document, not a failure — and do not expect stdout to be blank.
+  `No raw data found.` in text. Only the note `no raw data for this resource` goes
+  to stderr. Parse the empty stdout result as a cleanly absent document, not a
+  failure — and do not expect stdout to be blank.
 - **Use `-o json` with `jq`** for filtering; use `-o agents` for token-efficient
   output in agent contexts.
-- **Multi-profile fan-out** with `-p <profile>` (repeatable) tags each row with
-  its profile so fleets can be compared across accounts. The row window applies
-  per profile, so `list` adds a `counts_by_profile` breakdown — page each profile
-  against its own `total_count`, not the aggregate.
+- **Multi-profile fan-out is for `types` and `list` only** — repeating
+  `-p <profile>` tags each row with its profile so fleets can be compared across
+  accounts. The row window applies per profile, so `list` adds a
+  `counts_by_profile` breakdown — page each profile against its own `total_count`,
+  not the aggregate. `health-history` and `raw-data` error on a second `-p`.
+- **A resource id never crosses profiles** — it embeds the team id
+  (`1001234:host_id=…`), so an id from one account cannot resolve in another. When
+  a multi-profile `list` turns up something worth inspecting, note its `profile`
+  field and query that single profile for its health or raw data.
 - **Infra health is its own concept** — the `Healthy`/`Critical`/`Unmonitored`
   statuses are computed by the infrastructure domain and are not the same as
   Service Catalog health. Correlate them with telemetry signals;

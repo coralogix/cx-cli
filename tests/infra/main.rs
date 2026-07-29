@@ -348,3 +348,102 @@ async fn all_output_formats_render() {
             .unwrap_or_else(|e| panic!("run_types should render {format:?}: {e:#}"));
     }
 }
+
+// ── Single-profile enforcement for the id-taking subcommands ──────────────────
+
+/// A resource id embeds the team id, so it can only resolve in the profile it
+/// came from. The command must refuse before issuing any request.
+#[tokio::test]
+async fn health_history_rejects_multiple_profiles() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "healthHistory": [] })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![
+        common::test_target("prod", &server.uri()),
+        common::test_target("staging", &server.uri()),
+    ];
+
+    let err = run_health_history(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
+        .await
+        .expect_err("health-history must reject multiple profiles");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("health-history"), "got: {msg}");
+    assert!(msg.contains("single profile"), "got: {msg}");
+    assert!(
+        msg.contains('2'),
+        "error should name the profile count, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn raw_data_rejects_multiple_profiles() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![
+        common::test_target("prod", &server.uri()),
+        common::test_target("staging", &server.uri()),
+    ];
+
+    let err = run_raw_data(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
+        .await
+        .expect_err("raw-data must reject multiple profiles");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("raw-data"), "got: {msg}");
+    assert!(msg.contains("single profile"), "got: {msg}");
+}
+
+/// `types` and `list` take no resource id, so comparing fleets across accounts
+/// is a supported use - the guard must not leak into them.
+#[tokio::test]
+async fn types_and_list_still_fan_out_across_profiles() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/types")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(types_body()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path(BASE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "resources": [{ "resourceId": "1001234:host_id=i-abc123", "name": "web-1" }],
+            "totalCount": 1
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let targets = vec![
+        common::test_target("prod", &server.uri()),
+        common::test_target("staging", &server.uri()),
+    ];
+
+    run_types(&targets, OutputFormat::Json)
+        .await
+        .expect("types should fan out");
+    run_list(
+        &targets,
+        "Hosts",
+        "EC2_Instances",
+        None,
+        &[],
+        None,
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("list should fan out");
+}

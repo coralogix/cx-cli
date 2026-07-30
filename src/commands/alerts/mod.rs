@@ -175,12 +175,12 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(target) = crate::execution::find_target(targets, &profile) {
-            if let Some(base) = target.console_base().await {
-                let url = crate::console_url::alert_url(&base, alert_id);
-                render::print_console_link(&url);
-                render::tag_console_url(&mut val, &url);
-            }
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::alert_url(b, alert_id)
+        })
+        .await
+        {
+            render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
     }
@@ -288,13 +288,10 @@ pub async fn run_create(
             );
             let mut console_url: Option<String> = None;
             if let Some(id) = alert.id.as_deref() {
-                if let Some(target) = crate::execution::find_target(targets, &profile) {
-                    if let Some(base) = target.console_base().await {
-                        let url = crate::console_url::alert_url(&base, id);
-                        render::print_console_link(&url);
-                        console_url = Some(url);
-                    }
-                }
+                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::alert_url(b, id)
+                })
+                .await;
             }
             let mut json = alert_to_json(&alert, include_profile, &profile);
             if let Some(url) = &console_url {
@@ -399,11 +396,10 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
             "{}",
             format!("Alert {alert_id} enabled in profile '{profile}'.").green()
         );
-        if let Some(target) = crate::execution::find_target(targets, &profile) {
-            if let Some(base) = target.console_base().await {
-                render::print_console_link(&crate::console_url::alert_url(&base, alert_id));
-            }
-        }
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::alert_url(b, alert_id)
+        })
+        .await;
     }
 
     Ok(())
@@ -431,11 +427,10 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
             "{}",
             format!("Alert {alert_id} disabled in profile '{profile}'.").green()
         );
-        if let Some(target) = crate::execution::find_target(targets, &profile) {
-            if let Some(base) = target.console_base().await {
-                render::print_console_link(&crate::console_url::alert_url(&base, alert_id));
-            }
-        }
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::alert_url(b, alert_id)
+        })
+        .await;
     }
 
     Ok(())

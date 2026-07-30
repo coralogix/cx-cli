@@ -306,12 +306,12 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(target) = crate::execution::find_target(targets, &profile) {
-            if let Some(base) = target.console_base().await {
-                let url = crate::console_url::case_url(&base, case_id);
-                render::print_console_link(&url);
-                render::tag_console_url(&mut val, &url);
-            }
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::case_url(b, case_id)
+        })
+        .await
+        {
+            render::tag_console_url(&mut val, &url);
         }
         all_results.push((val, directory));
     }
@@ -992,12 +992,12 @@ async fn finish_lifecycle(
             "{}",
             format!("{success_label} in profile '{profile}'.").green()
         );
-        if let Some(target) = crate::execution::find_target(targets, &profile) {
-            if let Some(base) = target.console_base().await {
-                let url = crate::console_url::case_url(&base, case_id);
-                render::print_console_link(&url);
-                render::tag_console_url(&mut v, &url);
-            }
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::case_url(b, case_id)
+        })
+        .await
+        {
+            render::tag_console_url(&mut v, &url);
         }
         all_results.push(v);
     }

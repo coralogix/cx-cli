@@ -46,28 +46,6 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
-/// Print the "View in Coralogix" link for the IAM API Keys settings page,
-/// if a console base URL can be resolved for `profile`. Returns the URL so
-/// callers can also embed it as a `consoleUrl` field in `-o json` /
-/// `-o agents` output via [`render::tag_console_url`].
-///
-/// API keys are managed from a flat settings page (`#/settings/api-keys`) -
-/// create/edit is a dialog with no id reflected in the URL - so every
-/// mutation links to that same page.
-async fn print_api_keys_console_link(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::iam_api_keys_url(&base);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching API keys...".dimmed());
     let include_profile = targets.len() > 1;
@@ -81,11 +59,21 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, KeyInfo)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = print_api_keys_console_link(targets, &profile).await;
+        // One static API keys settings page link per profile, not per key -
+        // tag only the first row of each profile's chunk so `-o agents`
+        // doesn't repeat the identical URL once per key.
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await;
+        let mut first = true;
         for key in resp.keys {
             let mut key_json = key_to_json(&key, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut key_json, url);
+            if first {
+                if let Some(url) = &console_url {
+                    render::tag_console_url(&mut key_json, url);
+                }
+                first = false;
             }
             all_json.push(key_json);
             all_items.push((profile.clone(), key));
@@ -156,7 +144,11 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_api_keys_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -207,7 +199,10 @@ pub async fn run_create(
             resp.key_id.as_deref(),
             &profile,
         );
-        let console_url = print_api_keys_console_link(targets, &profile).await;
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await;
         let mut v = json!({
             "key_id": resp.key_id,
             "name": resp.name,
@@ -262,7 +257,11 @@ pub async fn run_update(
             "{}",
             format!("Updated API key in profile '{profile}'.").green()
         );
-        if let Some(url) = print_api_keys_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -297,7 +296,10 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("API key {id} deleted in profile '{profile}'.").green()
         );
-        print_api_keys_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await;
     }
     Ok(())
 }
@@ -334,7 +336,11 @@ pub async fn run_send_data_keys(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_api_keys_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -390,7 +396,11 @@ pub async fn run_admin_list(targets: &[Arc<ExecutionTarget>], output: OutputForm
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_api_keys_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -436,7 +446,10 @@ pub async fn run_admin_delete(targets: &[Arc<ExecutionTarget>], ids: &[String]) 
             "{}",
             format!("Bulk deleted API keys in profile '{profile}'.").green()
         );
-        print_api_keys_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await;
     }
     Ok(())
 }
@@ -467,7 +480,10 @@ pub async fn run_admin_set_status(
             "{}",
             format!("Updated API key status in profile '{profile}'.").green()
         );
-        print_api_keys_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await;
     }
     Ok(())
 }

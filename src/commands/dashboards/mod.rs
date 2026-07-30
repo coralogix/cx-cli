@@ -487,24 +487,6 @@ pub async fn run_queries_by_field(
     Ok(())
 }
 
-/// Print the console link to stderr and return the URL so callers can also
-/// embed it as a `consoleUrl` field in `-o json` / `-o agents` output via
-/// [`render::tag_console_url`].
-async fn print_dashboard_console_link(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-    id: &str,
-) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::dashboard_url(&base, id);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
 pub async fn run_get(
     targets: &[Arc<ExecutionTarget>],
     dashboard_id: &str,
@@ -535,7 +517,11 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_dashboard_console_link(targets, &profile, dashboard_id).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::dashboard_url(b, dashboard_id)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -687,7 +673,12 @@ pub async fn run_create(
             &profile,
         );
         let console_url = match &created_id {
-            Some(id) => print_dashboard_console_link(targets, &profile, id).await,
+            Some(id) => {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::dashboard_url(b, id)
+                })
+                .await
+            }
             None => None,
         };
         if include_profile {
@@ -775,7 +766,12 @@ pub async fn run_replace(
             &profile,
         );
         let console_url = match &replaced_id {
-            Some(id) => print_dashboard_console_link(targets, &profile, id).await,
+            Some(id) => {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::dashboard_url(b, id)
+                })
+                .await
+            }
             None => None,
         };
         if include_profile {
@@ -1072,7 +1068,12 @@ pub async fn run_check(
     let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>, Option<String>)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         let console_url = match dashboard_id {
-            Some(id) => print_dashboard_console_link(targets, &profile, id).await,
+            Some(id) => {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::dashboard_url(b, id)
+                })
+                .await
+            }
             None => None,
         };
         all_issues.push((profile, resp.issues, console_url));
@@ -1086,17 +1087,20 @@ pub async fn run_check(
         .count();
     let total_issues = all_issues.iter().map(|(_, i, _)| i.len()).sum::<usize>();
 
-    // Render.
+    // Render. `console_url` is the same one dashboard's link for every issue
+    // in its profile's chunk, so it's attached only to the first row of that
+    // chunk rather than repeated on every issue - a 50-issue dashboard
+    // shouldn't repeat an identical URL 50 times in `-o agents` output.
     match output {
         OutputFormat::Json => {
             let mut rows: Vec<Value> = Vec::new();
             for (profile, issues, console_url) in &all_issues {
-                for issue in issues {
+                for (i, issue) in issues.iter().enumerate() {
                     rows.push(issue_json_row(
                         issue,
                         profile,
                         include_profile,
-                        console_url.as_deref(),
+                        if i == 0 { console_url.as_deref() } else { None },
                     ));
                 }
             }
@@ -1105,12 +1109,12 @@ pub async fn run_check(
         OutputFormat::Agents => {
             let mut rows: Vec<Value> = Vec::new();
             for (profile, issues, console_url) in &all_issues {
-                for issue in issues {
+                for (i, issue) in issues.iter().enumerate() {
                     rows.push(issue_json_row(
                         issue,
                         profile,
                         include_profile,
-                        console_url.as_deref(),
+                        if i == 0 { console_url.as_deref() } else { None },
                     ));
                 }
             }

@@ -181,13 +181,10 @@ pub async fn run_create(
             render::print_created("Created", "rule", Some(name), rule.id.as_deref(), &profile);
             let mut console_url: Option<String> = None;
             if let Some(id) = rule.id.as_deref() {
-                if let Some(target) = crate::execution::find_target(targets, &profile) {
-                    if let Some(base) = target.console_base().await {
-                        let url = crate::console_url::suppression_rule_url(&base, id);
-                        render::print_console_link(&url);
-                        console_url = Some(url);
-                    }
-                }
+                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::suppression_rule_url(b, id)
+                })
+                .await;
             }
             let mut rule_json = rule_to_json(&rule, include_profile, &profile);
             if let Some(url) = &console_url {
@@ -240,13 +237,10 @@ pub async fn run_update(
             );
             let mut console_url: Option<String> = None;
             if let Some(id) = rule.id.as_deref() {
-                if let Some(target) = crate::execution::find_target(targets, &profile) {
-                    if let Some(base) = target.console_base().await {
-                        let url = crate::console_url::suppression_rule_url(&base, id);
-                        render::print_console_link(&url);
-                        console_url = Some(url);
-                    }
-                }
+                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::suppression_rule_url(b, id)
+                })
+                .await;
             }
             let mut rule_json = rule_to_json(&rule, include_profile, &profile);
             if let Some(url) = &console_url {

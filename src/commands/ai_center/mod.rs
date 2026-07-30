@@ -124,42 +124,6 @@ fn collect_objects(
     Ok(all)
 }
 
-/// Print the "View in Coralogix" link for the AI Center Application Catalog
-/// page, if a console base URL can be resolved for `profile`. Returns the
-/// URL so callers can also embed it as a `consoleUrl` field in `-o json` /
-/// `-o agents` output via [`render::tag_console_url`].
-async fn print_ai_center_applications_console_link(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::ai_center_applications_url(&base);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
-/// Print the "View in Coralogix" link for the AI Center Evaluation Catalog
-/// page, if a console base URL can be resolved for `profile`. Returns the
-/// URL so callers can also embed it as a `consoleUrl` field in `-o json` /
-/// `-o agents` output via [`render::tag_console_url`].
-async fn print_ai_center_evaluations_console_link(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::ai_center_evaluations_url(&base);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
 // ── Applications ────────────────────────────────────────────────────
 
 pub async fn run_applications_list(
@@ -198,7 +162,14 @@ pub async fn run_applications_list(
         // Applications have no create/update/delete in this CLI - list/get are
         // the only entry points - so the Application Catalog link is attached
         // here rather than gated behind a mutation (same reasoning as `usage`).
-        let console_url = print_ai_center_applications_console_link(targets, &profile).await;
+        // One static "Application Catalog" page link per profile, not per
+        // application - tag only the first row of each profile's chunk so
+        // `-o agents` doesn't repeat the identical URL once per item.
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_applications_url(b)
+        })
+        .await;
+        let mut first = true;
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -208,8 +179,11 @@ pub async fn run_applications_list(
                 render::bool_display(item.get("guardrailsIntegrated").and_then(Value::as_bool)),
             ]);
             let mut item = tag_item(item, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut item, url);
+            if first {
+                if let Some(url) = &console_url {
+                    render::tag_console_url(&mut item, url);
+                }
+                first = false;
             }
             all_json.push(item);
         }
@@ -248,7 +222,11 @@ pub async fn run_applications_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_applications_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_applications_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -300,7 +278,14 @@ pub async fn run_evaluations_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = print_ai_center_evaluations_console_link(targets, &profile).await;
+        // One static "Eval Catalog" page link per profile, not per
+        // evaluation - tag only the first row of each profile's chunk so
+        // `-o agents` doesn't repeat the identical URL once per item.
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        let mut first = true;
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -316,8 +301,11 @@ pub async fn run_evaluations_list(
                     .unwrap_or_default(),
             ]);
             let mut item = tag_item(item, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut item, url);
+            if first {
+                if let Some(url) = &console_url {
+                    render::tag_console_url(&mut item, url);
+                }
+                first = false;
             }
             all_json.push(item);
         }
@@ -364,7 +352,11 @@ pub async fn run_evaluations_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -395,7 +387,11 @@ pub async fn run_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -430,7 +426,11 @@ pub async fn run_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -462,7 +462,11 @@ pub async fn run_evaluations_delete(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -535,7 +539,14 @@ async fn run_custom_evaluations_table(
     // Items are raw API objects: the text table reads a few columns, but
     // JSON/agents output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = print_ai_center_evaluations_console_link(targets, &profile).await;
+        // One static "Eval Catalog" page link per profile, not per custom
+        // evaluation - tag only the first row of each profile's chunk so
+        // `-o agents` doesn't repeat the identical URL once per item.
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        let mut first = true;
         for item in items {
             let app_count = item
                 .get("applicationIds")
@@ -550,8 +561,11 @@ async fn run_custom_evaluations_table(
                 col(&item, "description").chars().take(60).collect(),
             ]);
             let mut item = tag_item(item, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut item, url);
+            if first {
+                if let Some(url) = &console_url {
+                    render::tag_console_url(&mut item, url);
+                }
+                first = false;
             }
             all_json.push(item);
         }
@@ -590,7 +604,11 @@ pub async fn run_custom_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -625,7 +643,11 @@ pub async fn run_custom_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -665,7 +687,11 @@ pub async fn run_add_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);
@@ -705,7 +731,11 @@ pub async fn run_remove_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all.push(val);

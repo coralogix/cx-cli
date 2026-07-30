@@ -12,10 +12,12 @@ pub struct Whoami {
     pub team_id: Option<i64>,
     pub team_name: Option<String>,
     pub user_name: Option<String>,
-    /// The team's subdomain label, when the API returns one. Preferred over
-    /// `team_name` for building console URLs since a team's display name and
-    /// its URL subdomain are not guaranteed to match. Not present on all
-    /// `/identity/whoami` responses - callers fall back to `team_name`.
+    /// The team's subdomain label, when the API returns one. This is the
+    /// only field used to build console URLs - `team_name` is a display
+    /// name, not a URL label, so a team named e.g. "acmeprod" whose real
+    /// subdomain is "acme-prod" would otherwise produce a confidently wrong
+    /// link. Not present on all `/identity/whoami` responses - when absent,
+    /// callers skip the console link entirely rather than guess.
     #[serde(default)]
     pub team_url: Option<String>,
 }
@@ -38,12 +40,18 @@ pub async fn resolve_team_id(client: &CxClient) -> anyhow::Result<String> {
 
 /// Extract the hostname-safe team subdomain from a `Whoami` payload.
 ///
-/// Prefers `team_url`, falling back to `team_name`. Only labels made up of
-/// lowercase ASCII letters, digits, and hyphens are accepted - anything else
-/// (whitespace, unicode, empty string) cannot be a valid hostname label, so
-/// this returns `None` rather than build a broken console link.
+/// Uses `team_url` only - `team_name` is a display name, not a URL label
+/// (e.g. a team named "acmeprod" could have the real subdomain
+/// "acme-prod"), so falling back to it risks building a confidently wrong
+/// link. If `team_url` is absent, this returns `None` and callers skip the
+/// console link rather than guess from the display name.
+///
+/// Only labels made up of lowercase ASCII letters, digits, and hyphens are
+/// accepted - anything else (whitespace, unicode, empty string) cannot be a
+/// valid hostname label, so this returns `None` rather than build a broken
+/// console link.
 fn team_subdomain(whoami: &Whoami) -> Option<String> {
-    let candidate = whoami.team_url.as_deref().or(whoami.team_name.as_deref())?;
+    let candidate = whoami.team_url.as_deref()?;
     let lower = candidate.to_lowercase();
     if !lower.is_empty()
         && lower
@@ -107,14 +115,18 @@ mod tests {
     }
 
     #[test]
-    fn team_subdomain_falls_back_to_team_name() {
+    fn team_subdomain_does_not_fall_back_to_team_name() {
+        // team_name is a display name, not a URL label (e.g. "acmeprod" vs.
+        // the real subdomain "acme-prod") - guessing from it risks a
+        // confidently wrong link, so absence of team_url must yield None
+        // even when team_name looks hostname-safe.
         let w = Whoami {
             team_id: None,
             team_name: Some("acme".to_string()),
             user_name: None,
             team_url: None,
         };
-        assert_eq!(team_subdomain(&w), Some("acme".to_string()));
+        assert_eq!(team_subdomain(&w), None);
     }
 
     #[test]
@@ -132,9 +144,9 @@ mod tests {
     fn team_subdomain_rejects_invalid_label() {
         let w = Whoami {
             team_id: None,
-            team_name: Some("Acme Corp".to_string()), // contains a space
+            team_name: Some("Acme Corp".to_string()),
             user_name: None,
-            team_url: None,
+            team_url: Some("Acme Corp".to_string()), // contains a space
         };
         assert_eq!(team_subdomain(&w), None);
     }

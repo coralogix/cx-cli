@@ -122,12 +122,12 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(target) = crate::execution::find_target(targets, &profile) {
-            if let Some(base) = target.console_base().await {
-                let url = crate::console_url::notification_connector_url(&base, &id);
-                render::print_console_link(&url);
-                render::tag_console_url(&mut val, &url);
-            }
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::notification_connector_url(b, &id)
+        })
+        .await
+        {
+            render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
     }
@@ -182,13 +182,10 @@ pub async fn run_create(
             );
             let mut console_url: Option<String> = None;
             if let Some(id) = conn.id.as_deref() {
-                if let Some(target) = crate::execution::find_target(targets, &profile) {
-                    if let Some(base) = target.console_base().await {
-                        let url = crate::console_url::notification_connector_url(&base, id);
-                        render::print_console_link(&url);
-                        console_url = Some(url);
-                    }
-                }
+                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::notification_connector_url(b, id)
+                })
+                .await;
             }
             let mut json = connector_to_json(&conn, include_profile, &profile);
             if let Some(url) = &console_url {
@@ -238,12 +235,12 @@ pub async fn run_update(
             .and_then(crate::console_url::id_from_json)
             .or_else(|| crate::console_url::id_from_json(&val));
         if let Some(id) = extracted_id {
-            if let Some(target) = crate::execution::find_target(targets, &profile) {
-                if let Some(base) = target.console_base().await {
-                    let url = crate::console_url::notification_connector_url(&base, &id);
-                    render::print_console_link(&url);
-                    render::tag_console_url(&mut val, &url);
-                }
+            if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::notification_connector_url(b, &id)
+            })
+            .await
+            {
+                render::tag_console_url(&mut val, &url);
             }
         }
         all_results.push(val);

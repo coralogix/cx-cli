@@ -83,28 +83,6 @@ fn validate_enrichments_body(body: &Value, allow_empty: bool) -> Result<()> {
     Ok(())
 }
 
-/// Print the "View in Coralogix" link for the Enrichments page, if a
-/// console base URL can be resolved for `profile`, and return the URL so
-/// callers can also embed it as a `consoleUrl` field in `-o json` / `-o
-/// agents` output via [`render::tag_console_url`].
-///
-/// Enrichment rules are edited via an in-page dialog/sidebar on a single
-/// static page (`#/enrichments`) - there's no per-rule route - so every
-/// mutation links to that same page.
-async fn print_enrichments_console_link(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::enrichments_url(&base);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
 fn render_results(
     all_results: &[Value],
     output: OutputFormat,
@@ -147,7 +125,11 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::enrichments_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -177,7 +159,11 @@ pub async fn run_add(
             "{}",
             format!("Added enrichments in profile '{profile}'.").green()
         );
-        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::enrichments_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -206,7 +192,11 @@ pub async fn run_remove(
             "{}",
             format!("Removed enrichments in profile '{profile}'.").green()
         );
-        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::enrichments_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -236,7 +226,11 @@ pub async fn run_overwrite(
             "{}",
             format!("Overwrote enrichments in profile '{profile}'.").green()
         );
-        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::enrichments_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -257,7 +251,11 @@ pub async fn run_limit(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::enrichments_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -278,7 +276,11 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::enrichments_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);

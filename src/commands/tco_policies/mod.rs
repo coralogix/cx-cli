@@ -50,25 +50,6 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
-/// Print the "View in Coralogix" link for the TCO policies page, if a
-/// console base URL can be resolved for `profile`, and return the URL so
-/// callers can also embed it as a `consoleUrl` field in `-o json` /
-/// `-o agents` output via [`render::tag_console_url`].
-///
-/// TCO policy editing happens in an in-page dialog on a single static page
-/// (`#/tco-policies`) - there's no per-policy route - so every mutation
-/// (create/update/delete/reorder/settings-update) links to that same page.
-async fn print_tco_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::tco_url(&base);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -85,11 +66,21 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TcoPolicy)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = print_tco_console_link(targets, &profile).await;
+        // One static TCO policies page link per profile, not per policy -
+        // tag only the first row of each profile's chunk so `-o agents`
+        // doesn't repeat the identical URL once per item.
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::tco_url(b)
+        })
+        .await;
+        let mut first = true;
         for policy in resp.policies {
             let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut policy_json, url);
+            if first {
+                if let Some(url) = &console_url {
+                    render::tag_console_url(&mut policy_json, url);
+                }
+                first = false;
             }
             all_json.push(policy_json);
             all_items.push((profile.clone(), policy));
@@ -164,7 +155,11 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_tco_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::tco_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -236,7 +231,11 @@ pub async fn run_create(
                 &profile,
             );
             let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            if let Some(url) = print_tco_console_link(targets, &profile).await {
+            if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::tco_url(b)
+            })
+            .await
+            {
                 render::tag_console_url(&mut policy_json, &url);
             }
             all_results.push(policy_json);
@@ -287,7 +286,11 @@ pub async fn run_update(
                 &profile,
             );
             let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            if let Some(url) = print_tco_console_link(targets, &profile).await {
+            if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::tco_url(b)
+            })
+            .await
+            {
                 render::tag_console_url(&mut policy_json, &url);
             }
             all_results.push(policy_json);
@@ -327,7 +330,10 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("TCO policy {id} deleted in profile '{profile}'.").green()
         );
-        print_tco_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::tco_url(b)
+        })
+        .await;
     }
 
     Ok(())
@@ -356,7 +362,11 @@ pub async fn run_reorder(
             "{}",
             format!("Reordered TCO policies in profile '{profile}'.").green()
         );
-        if let Some(url) = print_tco_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::tco_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -394,7 +404,11 @@ pub async fn run_test(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(url) = print_tco_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::tco_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -433,7 +447,11 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_tco_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::tco_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -483,7 +501,11 @@ pub async fn run_settings_update(
             "{}",
             format!("Updated TCO settings in profile '{profile}'.").green()
         );
-        if let Some(url) = print_tco_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::tco_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);

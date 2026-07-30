@@ -45,28 +45,6 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
-/// Print the "View in Coralogix" link for the Team Members settings page,
-/// if a console base URL can be resolved for `profile`, and return the URL
-/// so callers can also embed it as a `consoleUrl` field in `-o json` /
-/// `-o agents` output via [`render::tag_console_url`].
-///
-/// Users are managed from a flat settings page (`#/settings/team/members`) -
-/// create/edit is a dialog with no id reflected in the URL - so every
-/// mutation links to that same page.
-async fn print_users_console_link(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::iam_users_url(&base);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
 pub async fn run_search(
     targets: &[Arc<ExecutionTarget>],
     query: Option<&str>,
@@ -117,11 +95,21 @@ pub async fn run_search(
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, User)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = print_users_console_link(targets, &profile).await;
+        // One static team-members page link per profile, not per user - tag
+        // only the first row of each profile's chunk so `-o agents` doesn't
+        // repeat the identical URL once per item.
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await;
+        let mut first = true;
         for user in resp.users {
             let mut user_json = user_to_json(&user, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut user_json, url);
+            if first {
+                if let Some(url) = &console_url {
+                    render::tag_console_url(&mut user_json, url);
+                }
+                first = false;
             }
             all_json.push(user_json);
             all_items.push((profile.clone(), user));
@@ -188,7 +176,11 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_users_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -238,7 +230,10 @@ pub async fn run_create(
             "{}",
             format!("Created user(s) in profile '{profile}'.").green()
         );
-        print_users_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await;
     }
 
     match output {
@@ -276,7 +271,10 @@ pub async fn run_update(
             )
             .green()
         );
-        let console_url = print_users_console_link(targets, &profile).await;
+        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await;
         let mut v = json!({ "user_account_ids": resp.user_account_ids });
         if targets.len() > 1 {
             if let Value::Object(ref mut m) = v {
@@ -333,7 +331,10 @@ pub async fn run_set_status(
             "{}",
             format!("Updated user status in profile '{profile}'.").green()
         );
-        print_users_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await;
     }
     Ok(())
 }

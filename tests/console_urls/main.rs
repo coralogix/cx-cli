@@ -2336,7 +2336,7 @@ async fn dashboard_check_by_id_prints_console_link() {
 /// object here - `check` returns a list of validation issues - so the URL is
 /// repeated per row via `issue_json_row`'s `console_url` parameter).
 #[tokio::test]
-async fn dashboard_check_by_id_json_output_includes_console_url_per_issue() {
+async fn dashboard_check_by_id_json_output_includes_console_url_on_first_issue_only() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/dashboards/check/v1"))
@@ -2378,11 +2378,19 @@ async fn dashboard_check_by_id_json_output_includes_console_url_per_issue() {
         .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
     let rows = parsed.as_array().expect("expected a JSON array of issues");
     assert_eq!(rows.len(), 2);
-    for row in rows {
-        assert_eq!(
-            row.get("consoleUrl").and_then(|v| v.as_str()),
-            Some("https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"),
-            "expected consoleUrl on every issue row: {row}"
+    // It's one static dashboard-page link for the whole check, not per-issue -
+    // only the first row should carry it so `-o agents` output doesn't repeat
+    // the identical URL once per issue.
+    assert_eq!(
+        rows[0].get("consoleUrl").and_then(|v| v.as_str()),
+        Some("https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"),
+        "expected consoleUrl on the first issue row: {}",
+        rows[0]
+    );
+    for row in &rows[1..] {
+        assert!(
+            row.get("consoleUrl").is_none(),
+            "expected no consoleUrl on subsequent issue rows: {row}"
         );
     }
 }

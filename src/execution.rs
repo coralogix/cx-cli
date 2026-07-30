@@ -75,6 +75,58 @@ impl ExecutionTarget {
             .await
             .clone()
     }
+
+    /// Resolve this target's console base URL, build a "View in Coralogix"
+    /// link with `build`, print it to stderr, and return it - so callers can
+    /// also embed it in `-o json` / `-o agents` output via
+    /// `render::tag_console_url`.
+    ///
+    /// This is the single place that ties `console_base` resolution to
+    /// printing: every command that prints a console link should go through
+    /// this method (or [`console_link_for_profile`] when working from a
+    /// `(profile_name, T)` pair rather than an `ExecutionTarget` directly)
+    /// instead of re-deriving the base/build/print/return sequence inline, so
+    /// there's exactly one place that can forget to print, or print without
+    /// returning a value to tag.
+    ///
+    /// Returns `None` (silently - a console link is always best-effort) if no
+    /// console base URL could be resolved for this target.
+    pub async fn console_link(&self, build: impl FnOnce(&str) -> String) -> Option<String> {
+        let base = self.console_base().await?;
+        let url = build(&base);
+        crate::render::print_console_link(&url);
+        Some(url)
+    }
+}
+
+/// Look up `profile`'s target in `targets`, then build+print+return its
+/// console link via [`ExecutionTarget::console_link`].
+///
+/// Collapses the `find_target` -> `console_base` -> build URL -> print ->
+/// return idiom that used to be repeated inline (or reimplemented behind
+/// bespoke per-command wrapper functions like `print_dashboard_console_link`)
+/// at every call site across command modules that print a "View in
+/// Coralogix" link after a fan-out. Callers only need to supply the
+/// `console_url::*` builder for their entity:
+///
+/// ```ignore
+/// if let Some(url) = execution::console_link_for_profile(targets, &profile, |b| {
+///     console_url::alert_url(b, &id)
+/// })
+/// .await
+/// {
+///     render::tag_console_url(&mut val, &url);
+/// }
+/// ```
+///
+/// Returns `None` if `profile` has no matching target, or if no console base
+/// URL could be resolved for it.
+pub async fn console_link_for_profile(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+    build: impl FnOnce(&str) -> String,
+) -> Option<String> {
+    find_target(targets, profile)?.console_link(build).await
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.
@@ -236,7 +288,8 @@ mod tests {
             .and(path("/identity/whoami"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "team_id": 1,
-                "team_name": "acme"
+                "team_name": "Acme Corp",
+                "team_url": "acme"
             })))
             .mount(&server)
             .await;
@@ -248,6 +301,29 @@ mod tests {
             target.console_base().await,
             Some("https://acme.app.eu2.coralogix.com".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn console_base_none_when_whoami_omits_team_url() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        // team_name is a display name, not a URL label - a team named
+        // "acmeprod" could have the real subdomain "acme-prod". Without
+        // team_url, guessing from team_name risks a confidently wrong link,
+        // so this must resolve to None rather than fall back to it.
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 1,
+                "team_name": "acmeprod"
+            })))
+            .mount(&server)
+            .await;
+
+        let target =
+            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
+                .unwrap();
+        assert_eq!(target.console_base().await, None);
     }
 
     #[tokio::test]
@@ -276,7 +352,8 @@ mod tests {
             .and(path("/identity/whoami"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "team_id": 1,
-                "team_name": "acme"
+                "team_name": "Acme Corp",
+                "team_url": "acme"
             })))
             .expect(1)
             .mount(&server)

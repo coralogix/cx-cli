@@ -26,28 +26,6 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
-/// Print the "View in Coralogix" link for the Archive settings page, if a
-/// console base URL can be resolved for `profile`. Returns the URL so
-/// callers can also embed it as a `consoleUrl` field in `-o json` /
-/// `-o agents` output via [`render::tag_console_url`].
-///
-/// Metrics- and logs-archive configuration both live on a single static
-/// page (`#/physical-locations`) - the editor is an in-page dialog, not a
-/// per-entity route - so every write here links to that same page.
-async fn print_archive_console_link(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-) -> Option<String> {
-    if let Some(target) = crate::execution::find_target(targets, profile) {
-        if let Some(base) = target.console_base().await {
-            let url = crate::console_url::archive_url(&base);
-            render::print_console_link(&url);
-            return Some(url);
-        }
-    }
-    None
-}
-
 // --- Metrics ---
 
 pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -65,7 +43,11 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_archive_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -113,7 +95,11 @@ pub async fn run_metrics_create(
             "{}",
             format!("Created metrics archive config in profile '{profile}'.").green()
         );
-        if let Some(url) = print_archive_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -154,7 +140,11 @@ pub async fn run_metrics_update(
             "{}",
             format!("Updated metrics archive config in profile '{profile}'.").green()
         );
-        if let Some(url) = print_archive_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -187,7 +177,10 @@ pub async fn run_metrics_enable(targets: &[Arc<ExecutionTarget>]) -> Result<()> 
             "{}",
             format!("Metrics archive enabled in profile '{profile}'.").green()
         );
-        print_archive_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await;
     }
     Ok(())
 }
@@ -207,7 +200,10 @@ pub async fn run_metrics_disable(targets: &[Arc<ExecutionTarget>]) -> Result<()>
             "{}",
             format!("Metrics archive disabled in profile '{profile}'.").green()
         );
-        print_archive_console_link(targets, &profile).await;
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await;
     }
     Ok(())
 }
@@ -239,7 +235,11 @@ pub async fn run_metrics_validate(
             "{}",
             format!("Validation complete in profile '{profile}'.").green()
         );
-        if let Some(url) = print_archive_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -278,7 +278,11 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = print_archive_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);
@@ -326,7 +330,11 @@ pub async fn run_logs_set(
             "{}",
             format!("Logs archive target set in profile '{profile}'.").green()
         );
-        if let Some(url) = print_archive_console_link(targets, &profile).await {
+        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::archive_url(b)
+        })
+        .await
+        {
             render::tag_console_url(&mut val, &url);
         }
         all_results.push(val);

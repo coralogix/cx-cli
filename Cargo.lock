@@ -377,6 +377,7 @@ dependencies = [
  "inquire",
  "keyring",
  "open",
+ "percent-encoding",
  "rand",
  "regex",
  "reqwest",

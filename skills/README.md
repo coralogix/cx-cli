@@ -8,13 +8,14 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 
 ### Investigation
 
-| Skill | Description |
-|---|---|
-| `cx-olly` | Interact with Coralogix's Observability Agent (Olly) - chat, follow-up questions, retrieve generated artifacts |
+| Skill | Description                                                                                                                                       |
+|---|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cx-olly` | Interact with Coralogix's Observability Agent (Olly) - chat, follow-up questions, retrieve generated artifacts                                    |
 | `cx-telemetry-querying` | Gateway for all telemetry investigation - logs, spans, metrics, RUM, and DataPrime queries. Loads pillar-specific reference files per query type. |
-| `coralogix-docs` | Search and fetch official Coralogix product documentation (`cx docs search`, `cx docs fetch`) — not live tenant data |
-| `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts` |
-| `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation |
+| `coralogix-docs` | Search and fetch official Coralogix product documentation (`cx docs search`, `cx docs fetch`) — not live tenant data                              |
+| `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts`                                                        |
+| `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation                                       |
+| `cx-infra` | Explore infrastructure resources - discover monitored resource types, list resources, check per-resource data                                     |
 
 ### Workflow
 
@@ -68,6 +69,7 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "What was the p99 latency over the last 24h?"
 - "Why is the checkout page slow for users?"
 - "Debug the 500 errors on the payment endpoint"
+- "Which of our EC2 instances were unhealthy this week?"
 - "How can we reduce our Coralogix costs?"
 - "Help me triage this case"
 - "Set up parsing rules for our new service"

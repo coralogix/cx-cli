@@ -193,7 +193,17 @@ def find_console_url(val) -> Optional[str]:
     return None
 
 
-ID_KEYS = ("id", "roleId", "scopeId", "groupId", "alertId", "viewId", "ruleId", "connectorId", "routerId")
+# Every `create` command in this repo renders its own `-o json` shape with a
+# top-level `id` field (checked against every command's `*_to_json()`/
+# `run_create()` in src/commands/*), with two confirmed exceptions:
+#   - `dashboards create` emits the *raw* API response verbatim (see
+#     `dashboard_id_from_response()` in src/commands/dashboards/mod.rs, which
+#     itself tries `dashboardId`, `id`, then nested `dashboard.id` - the API
+#     has been observed to use `dashboardId`).
+#   - `iam groups create` renders its own JSON but keeps the snake_case
+#     `group_id` key (see `group_to_json()` in src/commands/team_groups/mod.rs)
+#     rather than normalizing to `id` like every sibling command does.
+ID_KEYS = ("id", "dashboardId", "group_id")
 
 
 def find_id(val, depth: int = 0) -> Optional[str]:

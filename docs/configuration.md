@@ -203,12 +203,14 @@ After a successful `cx dashboards create`/`replace`, `cx alerts create`, `cx vie
 
 The web console is a single-page app that routes client-side off a `#/` hash fragment, so every link below includes that prefix (e.g. `.../#/dashboards/<id>`, not `.../dashboards/<id>`) - a link missing it would just load the console's default screen instead of the intended entity:
 
+All four link shapes below were cross-checked against the console frontend's own routing source (`coralogix/cx-web-workspace`), not just public docs, so none of them are guesses:
+
 | Command | Link shape | Source |
 |---|---|---|
-| `dashboards create`/`replace` | `{base}/#/dashboards/{id}` | Documented with an example at [Share Dashboard URLs](https://coralogix.com/docs/user-guides/custom-dashboards/tutorials/share-dashboard-content/) |
-| `alerts create` | `{base}/#/alerts/{id}` | Documented alert deep-link pattern (runbooks/webhooks reference `#/alerts/<id>`) |
-| `views create`/`update` | `{base}/#/explore?viewId={id}` | `cx views` manages the same "saved view" entity as Explore's documented `viewId` deep-link parameter (both live under the `data-exploration/views` API) - see [Deep links and URL parameters](https://coralogix.com/docs/user-guides/data_exploration/deep-links/) |
-| `cases` lifecycle mutations | `{base}/#/cases?id={id}` | The `#/cases` route and case-ID-based sharing are documented, but the exact query parameter name is not published anywhere we could find - `id` is a best-effort guess consistent with the shape of the other links above, not a confirmed URL |
+| `dashboards create`/`replace` | `{base}/#/dashboards/{id}` | Documented with an example at [Share Dashboard URLs](https://coralogix.com/docs/user-guides/custom-dashboards/tutorials/share-dashboard-content/); confirmed in frontend source (`libs/dashboards/_ui/src/lib/routing-utils.ts`'s `dashboardsEditUrl()` and the `:id` route under root `dashboards`) |
+| `alerts create` | `{base}/#/alerts/{id}` | Documented alert deep-link pattern (runbooks/webhooks reference `#/alerts/<id>`); confirmed in frontend source (`apps/web-app/src/app/alerts/alerts-routes.ts`, `:id` child route under `alerts`) |
+| `views create`/`update` | `{base}/#/explore?viewId={id}` | `cx views` manages the same "saved view" entity as Explore's documented `viewId` deep-link parameter (both live under the `data-exploration/views` API) - see [Deep links and URL parameters](https://coralogix.com/docs/user-guides/data_exploration/deep-links/); confirmed in frontend source (`libs/explore/v2/src/lib/services/share-url.service.ts`'s `viewIdParam()`) |
+| `cases` lifecycle mutations | `{base}/#/cases?id={id}` | No public doc names the exact query parameter, but it's confirmed directly in frontend source: `libs/cases/.../cases-query-params.constants.ts` defines `SELECTED_CASE_QUERY_PARAM = 'id'`, used by `insights-incidents-link.service.ts` to build case deep links as `/cases?id=<caseId>` |
 
 The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:
 

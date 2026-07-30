@@ -14,16 +14,28 @@
 //! The Coralogix web console is a single-page app that routes client-side
 //! off a `#/` hash fragment - the server only ever serves the app shell, so
 //! a link without the `#/` prefix silently loads the app's default screen
-//! instead of the intended entity. This is documented (with concrete
-//! examples) for dashboards and Explore deep links:
-//! - Dashboards: `https://<team>.<domain>/#/dashboards/<dashboard_id>` (see
-//!   "Share Dashboard URLs",
-//!   <https://coralogix.com/docs/user-guides/custom-dashboards/tutorials/share-dashboard-content/>)
+//! instead of the intended entity. Every route below was cross-checked
+//! against the console frontend's own routing source
+//! (`coralogix/cx-web-workspace`), not just public docs:
+//! - Dashboards: `https://<team>.<domain>/#/dashboards/<dashboard_id>` - also
+//!   documented at "Share Dashboard URLs",
+//!   <https://coralogix.com/docs/user-guides/custom-dashboards/tutorials/share-dashboard-content/>;
+//!   confirmed in source (`libs/dashboards/_ui/src/lib/routing-utils.ts`'s
+//!   `dashboardsEditUrl()` and the `:id` route under root `dashboards`)
 //! - Explore (incl. saved views): `https://<team>.<domain>/#/explore?<params>`,
-//!   e.g. `?viewId=<saved_view_id>` (see "Deep links and URL parameters",
-//!   <https://coralogix.com/docs/user-guides/data_exploration/deep-links/>)
-//! - Alerts: `https://<team>.<domain>/#/alerts/<alert_id>` (documented
-//!   pattern for alert deep links referenced from runbooks/webhooks)
+//!   e.g. `?viewId=<saved_view_id>` - also documented at "Deep links and URL
+//!   parameters", <https://coralogix.com/docs/user-guides/data_exploration/deep-links/>;
+//!   confirmed in source (`libs/explore/v2/src/lib/services/share-url.service.ts`'s
+//!   `viewIdParam()`)
+//! - Alerts: `https://<team>.<domain>/#/alerts/<alert_id>` - also documented
+//!   pattern for alert deep links referenced from runbooks/webhooks;
+//!   confirmed in source (`apps/web-app/src/app/alerts/alerts-routes.ts`,
+//!   `:id` child route under `alerts`)
+//! - Cases: `https://<team>.<domain>/#/cases?id=<case_id>` - not published in
+//!   any public doc, but confirmed in source
+//!   (`libs/cases/.../cases-query-params.constants.ts` defines
+//!   `SELECTED_CASE_QUERY_PARAM = 'id'`, used by
+//!   `insights-incidents-link.service.ts` to build case deep links)
 //!
 //! All builders below include the `#/` prefix accordingly. Query parameters
 //! on a hash-routed page live *inside* the fragment (`#/path?query=...`),
@@ -49,11 +61,11 @@ pub fn alert_url(base: &str, id: &str) -> String {
 
 /// Build the console URL for a case: `{base}/#/cases?id={urlencoded id}`.
 ///
-/// The `#/cases` route and the case ID's role in "sharing a case with a
-/// teammate" are documented, but the exact query parameter name is not
-/// published anywhere we could find - `id` is our best-effort guess,
-/// consistent with the shape of other Coralogix deep links. See the PR
-/// description's "Command coverage" section for the caveat.
+/// No public doc names the exact query parameter, but this is confirmed
+/// directly against the console frontend source
+/// (`coralogix/cx-web-workspace`): `SELECTED_CASE_QUERY_PARAM = 'id'` in
+/// `libs/cases/.../cases-query-params.constants.ts`, used by
+/// `insights-incidents-link.service.ts` to build `/cases?id=<caseId>` links.
 pub fn case_url(base: &str, id: &str) -> String {
     let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
     format!("{}/#/cases?id={encoded}", trim_base(base))

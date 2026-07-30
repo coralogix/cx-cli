@@ -67,7 +67,7 @@ If no `View in Coralogix:` line was printed (the profile's region has no known c
 Render the link as a markdown link using the dashboard **name** as the link text, e.g.:
 
 ```
-Dashboard: **[Order Service - Health](https://acme.app.eu2.coralogix.com/dashboards/abc123def456)**
+Dashboard: **[Order Service - Health](https://acme.app.eu2.coralogix.com/#/dashboards/abc123def456)**
 ```
 
 Then emit the summary defined in the main `SKILL.md` § "Output format for the user".

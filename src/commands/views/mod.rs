@@ -172,6 +172,13 @@ pub async fn run_create(
                 )
                 .green()
             );
+            if let Some(id) = &view.id {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::view_url(&base, id));
+                    }
+                }
+            }
             all_results.push(view_to_json(&view, include_profile, &profile));
         }
     }
@@ -211,6 +218,11 @@ pub async fn run_update(
             "{}",
             format!("Updated view in profile '{profile}'.").green()
         );
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::view_url(&base, &id));
+            }
+        }
         all_results.push(val);
     }
     match output {

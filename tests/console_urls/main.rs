@@ -1,7 +1,7 @@
 //! Integration tests for "View in Coralogix" console links (FORGE-586).
 //!
-//! After a successful `dashboards create`/`replace`, `alerts create`, or
-//! `cases` lifecycle mutation, the CLI should print a
+//! After a successful `dashboards create`/`replace`, `alerts create`,
+//! `views create`/`update`, or `cases` lifecycle mutation, the CLI should print a
 //! `View in Coralogix: <url>` line to stderr - purely informational, never
 //! affecting `-o json` / `-o agents` stdout.
 //!
@@ -132,7 +132,7 @@ async fn dashboard_create_prints_console_link_when_console_url_configured() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -184,7 +184,7 @@ async fn dashboard_replace_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -245,8 +245,111 @@ async fn alert_create_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"),
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/alerts/alert-xyz789"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── views create/update ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn view_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "view": {"id": "view-123", "name": "Demo View"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("view_create");
+    fs::write(&file_path, r#"{"name": "Demo View"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "views",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/explore?viewId=view-123"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn view_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path(
+            "/mgmt/openapi/5/data-exploration/views/v1/views/view-123",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"id": "view-123", "name": "Demo View"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("view_update");
+    fs::write(&file_path, r#"{"name": "Demo View"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "views",
+            "update",
+            "view-123",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/explore?viewId=view-123"
+        ),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -297,7 +400,8 @@ async fn case_resolve_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/cases?id=case-777"),
+        stderr
+            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/cases?id=case-777"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -411,6 +515,7 @@ async fn json_output_is_unaffected_by_console_link() {
 
     // The link still goes to stderr.
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr
-        .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"));
+    assert!(stderr.contains(
+        "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
+    ));
 }

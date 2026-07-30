@@ -199,7 +199,16 @@ A fully qualified HTTPS URL can be used as a region value for non-standard envir
 
 ## Console links
 
-After a successful `cx dashboards create`/`replace`, `cx alerts create`, or a `cx cases` lifecycle mutation (`update`, `assign`, `resolve`, `close`, `set-priority`, etc.), `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
+After a successful `cx dashboards create`/`replace`, `cx alerts create`, `cx views create`/`update`, or a `cx cases` lifecycle mutation (`update`, `assign`, `resolve`, `close`, `set-priority`, etc.), `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
+
+The web console is a single-page app that routes client-side off a `#/` hash fragment, so every link below includes that prefix (e.g. `.../#/dashboards/<id>`, not `.../dashboards/<id>`) - a link missing it would just load the console's default screen instead of the intended entity:
+
+| Command | Link shape | Source |
+|---|---|---|
+| `dashboards create`/`replace` | `{base}/#/dashboards/{id}` | Documented with an example at [Share Dashboard URLs](https://coralogix.com/docs/user-guides/custom-dashboards/tutorials/share-dashboard-content/) |
+| `alerts create` | `{base}/#/alerts/{id}` | Documented alert deep-link pattern (runbooks/webhooks reference `#/alerts/<id>`) |
+| `views create`/`update` | `{base}/#/explore?viewId={id}` | `cx views` manages the same "saved view" entity as Explore's documented `viewId` deep-link parameter (both live under the `data-exploration/views` API) - see [Deep links and URL parameters](https://coralogix.com/docs/user-guides/data_exploration/deep-links/) |
+| `cases` lifecycle mutations | `{base}/#/cases?id={id}` | The `#/cases` route and case-ID-based sharing are documented, but the exact query parameter name is not published anywhere we could find - `id` is a best-effort guess consistent with the shape of the other links above, not a confirmed URL |
 
 The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:
 

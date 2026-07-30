@@ -92,7 +92,7 @@ does not affect the exit code).
 | Flag | Meaning |
 |---|---|
 | `--profile <name>` | Passed straight through as `cx -p <name>`. Omit to use `CX_API_KEY`/`CX_REGION` env vars or your default `~/.cx` profile. |
-| `--cx-bin <path>` | Path to the `cx` binary. Default: `cx` on `PATH`, then `./target/debug/cx`, then `./target/release/cx` (resolved relative to the repo root). |
+| `--cx-bin <path>` | Path to the `cx` binary. Default: `./target/debug/cx`, then `./target/release/cx` (resolved relative to the repo root - i.e. **this branch's own build**), then `cx` on `PATH` as a last resort (with a warning, since that could be a different, older, globally-installed build that predates the change you're trying to verify). |
 | `--fixtures-dir <dir>` | Directory to read entity-creation fixtures from. Default: `scripts/verify_console_urls/fixtures/` (next to this script). |
 | `--case-id <id>` | An existing case ID (UUID or `CASE-123`-style readable ID) on your test team. Required to run the `cases` check at all - see "Cases" below. |
 | `--case-mutate` | Also exercise a real mutating case command against `--case-id` (see "Cases" below). Off by default. |

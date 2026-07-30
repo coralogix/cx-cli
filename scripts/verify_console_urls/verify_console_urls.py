@@ -105,19 +105,41 @@ class Report:
 
 
 def find_cx_bin(explicit: Optional[str]) -> str:
+    """Resolve the `cx` binary to run.
+
+    Deliberately prefers *this repo's own build* over whatever `cx` happens
+    to be on PATH: the whole point of this script is to verify the branch
+    you're currently working on, and a globally-installed `cx` (e.g. a
+    homebrew/cargo-install build from before this feature existed) would
+    silently test the wrong binary while looking like it worked - it still
+    runs, just without the code path being verified. So: repo-local
+    `target/debug/cx` / `target/release/cx` win over PATH; PATH is only a
+    last-resort fallback (e.g. for running this script from outside a clone
+    of this repo), and this function says so when it falls back to it.
+    """
     if explicit:
         return explicit
-    for candidate in (
-        shutil.which("cx"),
-        str(SCRIPT_DIR / "../../target/debug/cx"),
-        str(SCRIPT_DIR / "../../target/release/cx"),
-    ):
-        if candidate and Path(candidate).is_file():
-            return candidate
-        if candidate and shutil.which(candidate):
-            return candidate
+
+    debug_bin = SCRIPT_DIR / "../../target/debug/cx"
+    release_bin = SCRIPT_DIR / "../../target/release/cx"
+    for candidate in (debug_bin, release_bin):
+        if candidate.is_file():
+            return str(candidate)
+
+    path_bin = shutil.which("cx")
+    if path_bin:
+        print(
+            f"WARNING: no build found at {debug_bin} or {release_bin} - falling back to "
+            f"`cx` on PATH ({path_bin}), which may be a different, older build that "
+            "doesn't include this branch's changes. Run `cargo build --bin cx` from the "
+            "repo root (or pass --cx-bin explicitly) to make sure you're testing this "
+            "branch.",
+            file=sys.stderr,
+        )
+        return path_bin
+
     raise SystemExit(
-        "Could not find a `cx` binary. Build one with `cargo build` from the "
+        "Could not find a `cx` binary. Build one with `cargo build --bin cx` from the "
         "repo root, or pass --cx-bin /path/to/cx."
     )
 
@@ -651,8 +673,9 @@ def main() -> int:
     )
     parser.add_argument("--profile", help="cx profile to use (passed as `cx -p <profile>`). "
                          "Omit to use CX_API_KEY/CX_REGION env vars or the default ~/.cx profile.")
-    parser.add_argument("--cx-bin", help="Path to the cx binary (default: `cx` on PATH, "
-                         "then ./target/debug/cx, then ./target/release/cx).")
+    parser.add_argument("--cx-bin", help="Path to the cx binary (default: ./target/debug/cx, "
+                         "then ./target/release/cx - i.e. this branch's own build - then `cx` "
+                         "on PATH as a last resort, with a warning).")
     parser.add_argument("--fixtures-dir", default=str(FIXTURES_DIR),
                          help=f"Directory containing entity creation fixtures (default: {FIXTURES_DIR}).")
     parser.add_argument("--case-id", help="An existing case id on your test team, to check "

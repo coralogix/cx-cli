@@ -70,6 +70,7 @@ pub enum SearchByValueDataset {
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
   \x1b[1mviews\x1b[0m              Manage saved views and view folders
   \x1b[1mslos\x1b[0m               Manage SLO definitions
+  \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -525,6 +526,16 @@ Examples:
     Slos {
         #[command(subcommand)]
         cmd: SlosCmd,
+    },
+
+    /// Query infrastructure resources and their data.
+    #[command(after_help = "\
+Examples:
+  cx infra resources types
+  cx infra resources list --category Hosts --type EC2_Instances")]
+    Infra {
+        #[command(subcommand)]
+        cmd: InfraCmd,
     },
 
     /// Search log/span fields by description or by value content.
@@ -2548,6 +2559,78 @@ Examples:
     },
 }
 
+#[derive(Subcommand)]
+enum InfraCmd {
+    /// Query infrastructure resources.
+    #[command(after_help = "\
+Examples:
+  cx infra resources types
+  cx infra resources list --category Hosts --type EC2_Instances --scope environment=prod
+  cx infra resources health-history \"1001234:host_id=i-abc123\"
+  cx infra resources raw-data \"1001234:host_id=i-abc123\"")]
+    Resources {
+        #[command(subcommand)]
+        cmd: InfraResourcesCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum InfraResourcesCmd {
+    /// List the available resource types (category/type pairs).
+    Types,
+    /// List resources of a given category and type.
+    #[command(after_help = "\
+Examples:
+  cx infra resources list --category Hosts --type EC2_Instances
+  cx infra resources list --category Hosts --type EC2_Instances --name-filter web
+  cx infra resources list --category Hosts --type EC2_Instances --scope service=checkout --scope environment=prod
+  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200")]
+    List {
+        /// Resource category (discover with `cx infra resources types`).
+        #[arg(long)]
+        category: String,
+
+        /// Resource type within the category (discover with `cx infra resources types`).
+        #[arg(long)]
+        r#type: String,
+
+        /// Filter resources by name.
+        #[arg(long)]
+        name_filter: Option<String>,
+
+        /// Scope filter as key=value; repeatable across different keys, at most
+        /// once per key. Keys: service, environment, team. Multiple keys AND together.
+        #[arg(long)]
+        scope: Vec<String>,
+
+        /// First row of the page window (0-based; default 0).
+        #[arg(long)]
+        start_row: Option<i64>,
+
+        /// Row after the last one of the page window, exclusive (default:
+        /// start-row + 100). The API rejects windows reaching past row 10,000.
+        #[arg(long)]
+        end_row: Option<i64>,
+    },
+    /// Show the daily health status history for a resource.
+    #[command(after_help = "\
+Examples:
+  cx infra resources health-history \"1001234:host_id=i-abc123\"")]
+    HealthHistory {
+        /// Resource ID, exactly as returned by `cx infra resources list`.
+        resource_id: String,
+    },
+    /// Fetch the raw resource document as JSON.
+    #[command(after_help = "\
+Examples:
+  cx infra resources raw-data \"1001234:host_id=i-abc123\"
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json")]
+    RawData {
+        /// Resource ID, exactly as returned by `cx infra resources list`.
+        resource_id: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -4107,6 +4190,41 @@ async fn main() -> Result<()> {
                     confirm_destructive(&format!("Delete SLO '{id}'?"), yes, agent_mode)?;
                     commands::slos::run_delete(&targets, &id).await?;
                 }
+            },
+
+            Commands::Infra { cmd } => match cmd {
+                InfraCmd::Resources { cmd } => match cmd {
+                    InfraResourcesCmd::Types => {
+                        commands::infra::run_types(&targets, output).await?;
+                    }
+                    InfraResourcesCmd::List {
+                        category,
+                        r#type,
+                        name_filter,
+                        scope,
+                        start_row,
+                        end_row,
+                    } => {
+                        commands::infra::run_list(
+                            &targets,
+                            &category,
+                            &r#type,
+                            name_filter.as_deref(),
+                            &scope,
+                            start_row,
+                            end_row,
+                            output,
+                        )
+                        .await?;
+                    }
+                    InfraResourcesCmd::HealthHistory { resource_id } => {
+                        commands::infra::run_health_history(&targets, &resource_id, output)
+                            .await?;
+                    }
+                    InfraResourcesCmd::RawData { resource_id } => {
+                        commands::infra::run_raw_data(&targets, &resource_id, output).await?;
+                    }
+                },
             },
 
             Commands::SearchFields {

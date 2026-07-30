@@ -34,6 +34,10 @@
 **/ai_center/                          @coralogix/team-cxai
 /skills/cx-ai-center/                  @coralogix/team-cxai
 
+# === infrastructure (cloud resources catalog) ===
+**/infra/                              @coralogix/team-lumos
+/skills/cx-infra/                      @coralogix/team-lumos
+
 # === config-surface (alerts, dashboards) ===
 **/alerts/                             @coralogix/team-cxai
 **/dashboards/                         @coralogix/team-cxai

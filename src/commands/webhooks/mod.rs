@@ -46,17 +46,25 @@ fn read_from_file(path: &str) -> Result<Value> {
 }
 
 /// Print the "View in Coralogix" link for the Outgoing Webhooks list page,
-/// if a console base URL can be resolved for `profile`.
+/// if a console base URL can be resolved for `profile`, and return the URL
+/// so callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
 ///
 /// Webhook list routes by type category, not by instance - there's no
 /// per-webhook route confirmed in frontend source - so every mutation links
 /// to the general list page (`#/extensions/outbound-webhooks`).
-async fn print_webhooks_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+async fn print_webhooks_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::webhooks_url(&base));
+            let url = crate::console_url::webhooks_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -72,9 +80,13 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Webhook)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        print_webhooks_console_link(targets, &profile).await;
+        let console_url = print_webhooks_console_link(targets, &profile).await;
         for webhook in resp.deployed {
-            all_json.push(webhook_to_json(&webhook, include_profile, &profile));
+            let mut webhook_json = webhook_to_json(&webhook, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut webhook_json, url);
+            }
+            all_json.push(webhook_json);
             all_items.push((profile.clone(), webhook));
         }
     }
@@ -137,7 +149,9 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_webhooks_console_link(targets, &profile).await;
+        if let Some(url) = print_webhooks_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -189,8 +203,11 @@ pub async fn run_create(
                 webhook.id.as_deref(),
                 &profile,
             );
-            print_webhooks_console_link(targets, &profile).await;
-            all_results.push(webhook_to_json(&webhook, include_profile, &profile));
+            let mut webhook_json = webhook_to_json(&webhook, include_profile, &profile);
+            if let Some(url) = print_webhooks_console_link(targets, &profile).await {
+                render::tag_console_url(&mut webhook_json, &url);
+            }
+            all_results.push(webhook_json);
         }
     }
 
@@ -227,12 +244,14 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated webhook {id} in profile '{profile}'.").green()
         );
-        print_webhooks_console_link(targets, &profile).await;
+        if let Some(url) = print_webhooks_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -288,12 +307,14 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
-        print_webhooks_console_link(targets, &profile).await;
+        if let Some(url) = print_webhooks_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -328,7 +349,9 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_webhooks_console_link(targets, &profile).await;
+        if let Some(url) = print_webhooks_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 

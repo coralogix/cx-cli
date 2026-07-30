@@ -27,17 +27,25 @@ fn read_from_file(path: &str) -> Result<Value> {
 }
 
 /// Print the "View in Coralogix" link for the Archive settings page, if a
-/// console base URL can be resolved for `profile`.
+/// console base URL can be resolved for `profile`. Returns the URL so
+/// callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
 ///
 /// Metrics- and logs-archive configuration both live on a single static
 /// page (`#/physical-locations`) - the editor is an in-page dialog, not a
 /// per-entity route - so every write here links to that same page.
-async fn print_archive_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+async fn print_archive_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::archive_url(&base));
+            let url = crate::console_url::archive_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 // --- Metrics ---
@@ -57,7 +65,9 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_archive_console_link(targets, &profile).await;
+        if let Some(url) = print_archive_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -98,12 +108,14 @@ pub async fn run_metrics_create(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Created metrics archive config in profile '{profile}'.").green()
         );
-        print_archive_console_link(targets, &profile).await;
+        if let Some(url) = print_archive_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -137,12 +149,14 @@ pub async fn run_metrics_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated metrics archive config in profile '{profile}'.").green()
         );
-        print_archive_console_link(targets, &profile).await;
+        if let Some(url) = print_archive_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -225,7 +239,9 @@ pub async fn run_metrics_validate(
             "{}",
             format!("Validation complete in profile '{profile}'.").green()
         );
-        print_archive_console_link(targets, &profile).await;
+        if let Some(url) = print_archive_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -262,7 +278,9 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_archive_console_link(targets, &profile).await;
+        if let Some(url) = print_archive_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -303,12 +321,14 @@ pub async fn run_logs_set(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Logs archive target set in profile '{profile}'.").green()
         );
-        print_archive_console_link(targets, &profile).await;
+        if let Some(url) = print_archive_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 

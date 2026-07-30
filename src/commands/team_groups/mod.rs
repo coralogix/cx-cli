@@ -302,14 +302,21 @@ pub async fn run_create(
                 group.group_id.as_deref(),
                 &profile,
             );
+            let mut console_url: Option<String> = None;
             if let Some(id) = group.group_id.as_deref() {
                 if let Some(target) = crate::execution::find_target(targets, &profile) {
                     if let Some(base) = target.console_base().await {
-                        render::print_console_link(&crate::console_url::iam_group_url(&base, id));
+                        let url = crate::console_url::iam_group_url(&base, id);
+                        render::print_console_link(&url);
+                        console_url = Some(url);
                     }
                 }
             }
-            all_results.push(group_to_json(&group, include_profile, &profile));
+            let mut group_json = group_to_json(&group, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut group_json, url);
+            }
+            all_results.push(group_json);
         }
     }
 
@@ -352,14 +359,19 @@ pub async fn run_update(
                 "{}",
                 format!("Updated team group in profile '{profile}'.").green()
             );
+            let mut console_url: Option<String> = None;
             if let Some(target) = crate::execution::find_target(targets, &profile) {
                 if let Some(base) = target.console_base().await {
-                    render::print_console_link(&crate::console_url::iam_group_url(
-                        &base, &group_id,
-                    ));
+                    let url = crate::console_url::iam_group_url(&base, &group_id);
+                    render::print_console_link(&url);
+                    console_url = Some(url);
                 }
             }
-            all_results.push(group_to_json(&group, targets.len() > 1, &profile));
+            let mut group_json = group_to_json(&group, targets.len() > 1, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut group_json, url);
+            }
+            all_results.push(group_json);
         }
     }
 

@@ -177,7 +177,9 @@ pub async fn run_get(
         }
         if let Some(target) = crate::execution::find_target(targets, &profile) {
             if let Some(base) = target.console_base().await {
-                render::print_console_link(&crate::console_url::alert_url(&base, alert_id));
+                let url = crate::console_url::alert_url(&base, alert_id);
+                render::print_console_link(&url);
+                render::tag_console_url(&mut val, &url);
             }
         }
         all_results.push(val);
@@ -284,14 +286,20 @@ pub async fn run_create(
                 alert.id.as_deref(),
                 &profile,
             );
+            let mut console_url: Option<String> = None;
             if let Some(id) = alert.id.as_deref() {
                 if let Some(target) = crate::execution::find_target(targets, &profile) {
                     if let Some(base) = target.console_base().await {
-                        render::print_console_link(&crate::console_url::alert_url(&base, id));
+                        let url = crate::console_url::alert_url(&base, id);
+                        render::print_console_link(&url);
+                        console_url = Some(url);
                     }
                 }
             }
-            let json = alert_to_json(&alert, include_profile, &profile);
+            let mut json = alert_to_json(&alert, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut json, url);
+            }
             all_results.push(json);
         } else {
             eprintln!(

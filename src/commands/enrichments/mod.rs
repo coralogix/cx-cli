@@ -84,17 +84,25 @@ fn validate_enrichments_body(body: &Value, allow_empty: bool) -> Result<()> {
 }
 
 /// Print the "View in Coralogix" link for the Enrichments page, if a
-/// console base URL can be resolved for `profile`.
+/// console base URL can be resolved for `profile`, and return the URL so
+/// callers can also embed it as a `consoleUrl` field in `-o json` / `-o
+/// agents` output via [`render::tag_console_url`].
 ///
 /// Enrichment rules are edited via an in-page dialog/sidebar on a single
 /// static page (`#/enrichments`) - there's no per-rule route - so every
 /// mutation links to that same page.
-async fn print_enrichments_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+async fn print_enrichments_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::enrichments_url(&base));
+            let url = crate::console_url::enrichments_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 fn render_results(
@@ -139,7 +147,9 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_enrichments_console_link(targets, &profile).await;
+        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)
@@ -162,12 +172,14 @@ pub async fn run_add(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Added enrichments in profile '{profile}'.").green()
         );
-        print_enrichments_console_link(targets, &profile).await;
+        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -189,12 +201,14 @@ pub async fn run_remove(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Removed enrichments in profile '{profile}'.").green()
         );
-        print_enrichments_console_link(targets, &profile).await;
+        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -217,12 +231,14 @@ pub async fn run_overwrite(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Overwrote enrichments in profile '{profile}'.").green()
         );
-        print_enrichments_console_link(targets, &profile).await;
+        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -241,7 +257,9 @@ pub async fn run_limit(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_enrichments_console_link(targets, &profile).await;
+        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)
@@ -260,7 +278,9 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_enrichments_console_link(targets, &profile).await;
+        if let Some(url) = print_enrichments_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)

@@ -195,14 +195,21 @@ pub async fn run_create(
                 scope.id.as_deref(),
                 &profile,
             );
+            let mut console_url: Option<String> = None;
             if let Some(id) = scope.id.as_deref() {
                 if let Some(target) = crate::execution::find_target(targets, &profile) {
                     if let Some(base) = target.console_base().await {
-                        render::print_console_link(&crate::console_url::iam_scope_url(&base, id));
+                        let url = crate::console_url::iam_scope_url(&base, id);
+                        render::print_console_link(&url);
+                        console_url = Some(url);
                     }
                 }
             }
-            all_results.push(scope_to_json(&scope, targets.len() > 1, &profile));
+            let mut json = scope_to_json(&scope, targets.len() > 1, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut json, url);
+            }
+            all_results.push(json);
         }
     }
 
@@ -236,7 +243,7 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated scope in profile '{profile}'.").green()
@@ -244,7 +251,9 @@ pub async fn run_update(
         if let Some(id) = crate::console_url::id_from_json(&val) {
             if let Some(target) = crate::execution::find_target(targets, &profile) {
                 if let Some(base) = target.console_base().await {
-                    render::print_console_link(&crate::console_url::iam_scope_url(&base, &id));
+                    let url = crate::console_url::iam_scope_url(&base, &id);
+                    render::print_console_link(&url);
+                    render::tag_console_url(&mut val, &url);
                 }
             }
         }

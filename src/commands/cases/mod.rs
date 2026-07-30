@@ -308,7 +308,9 @@ pub async fn run_get(
         }
         if let Some(target) = crate::execution::find_target(targets, &profile) {
             if let Some(base) = target.console_base().await {
-                render::print_console_link(&crate::console_url::case_url(&base, case_id));
+                let url = crate::console_url::case_url(&base, case_id);
+                render::print_console_link(&url);
+                render::tag_console_url(&mut val, &url);
             }
         }
         all_results.push((val, directory));
@@ -986,16 +988,18 @@ async fn finish_lifecycle(
         if include_profile {
             render::tag_get_result(&mut v, &profile);
         }
-        all_results.push(v);
         eprintln!(
             "{}",
             format!("{success_label} in profile '{profile}'.").green()
         );
         if let Some(target) = crate::execution::find_target(targets, &profile) {
             if let Some(base) = target.console_base().await {
-                render::print_console_link(&crate::console_url::case_url(&base, case_id));
+                let url = crate::console_url::case_url(&base, case_id);
+                render::print_console_link(&url);
+                render::tag_console_url(&mut v, &url);
             }
         }
+        all_results.push(v);
     }
 
     match output {

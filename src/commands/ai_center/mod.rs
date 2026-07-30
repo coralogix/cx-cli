@@ -125,26 +125,39 @@ fn collect_objects(
 }
 
 /// Print the "View in Coralogix" link for the AI Center Application Catalog
-/// page, if a console base URL can be resolved for `profile`.
+/// page, if a console base URL can be resolved for `profile`. Returns the
+/// URL so callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
 async fn print_ai_center_applications_console_link(
     targets: &[Arc<ExecutionTarget>],
     profile: &str,
-) {
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::ai_center_applications_url(&base));
+            let url = crate::console_url::ai_center_applications_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 /// Print the "View in Coralogix" link for the AI Center Evaluation Catalog
-/// page, if a console base URL can be resolved for `profile`.
-async fn print_ai_center_evaluations_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+/// page, if a console base URL can be resolved for `profile`. Returns the
+/// URL so callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
+async fn print_ai_center_evaluations_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::ai_center_evaluations_url(&base));
+            let url = crate::console_url::ai_center_evaluations_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 // ── Applications ────────────────────────────────────────────────────
@@ -185,7 +198,7 @@ pub async fn run_applications_list(
         // Applications have no create/update/delete in this CLI - list/get are
         // the only entry points - so the Application Catalog link is attached
         // here rather than gated behind a mutation (same reasoning as `usage`).
-        print_ai_center_applications_console_link(targets, &profile).await;
+        let console_url = print_ai_center_applications_console_link(targets, &profile).await;
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -194,7 +207,11 @@ pub async fn run_applications_list(
                 col(&item, "subsystem").to_string(),
                 render::bool_display(item.get("guardrailsIntegrated").and_then(Value::as_bool)),
             ]);
-            all_json.push(tag_item(item, include_profile, &profile));
+            let mut item = tag_item(item, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut item, url);
+            }
+            all_json.push(item);
         }
     }
 
@@ -231,7 +248,9 @@ pub async fn run_applications_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_applications_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_applications_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     emit_objects(&all, include_profile, output, "AI application not found.")
@@ -281,7 +300,7 @@ pub async fn run_evaluations_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        let console_url = print_ai_center_evaluations_console_link(targets, &profile).await;
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -296,7 +315,11 @@ pub async fn run_evaluations_list(
                     .map(|t| t.to_string())
                     .unwrap_or_default(),
             ]);
-            all_json.push(tag_item(item, include_profile, &profile));
+            let mut item = tag_item(item, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut item, url);
+            }
+            all_json.push(item);
         }
     }
 
@@ -341,7 +364,9 @@ pub async fn run_evaluations_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     emit_objects(&all, include_profile, output, "AI evaluation not found.")
@@ -370,7 +395,9 @@ pub async fn run_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     eprintln!("{}", "Created AI evaluation.".green());
@@ -403,7 +430,9 @@ pub async fn run_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     eprintln!("{}", "Updated AI evaluation.".green());
@@ -433,7 +462,9 @@ pub async fn run_evaluations_delete(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     eprintln!("{}", "Deleted AI evaluation.".green());
@@ -504,7 +535,7 @@ async fn run_custom_evaluations_table(
     // Items are raw API objects: the text table reads a few columns, but
     // JSON/agents output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        let console_url = print_ai_center_evaluations_console_link(targets, &profile).await;
         for item in items {
             let app_count = item
                 .get("applicationIds")
@@ -518,7 +549,11 @@ async fn run_custom_evaluations_table(
                 app_count.to_string(),
                 col(&item, "description").chars().take(60).collect(),
             ]);
-            all_json.push(tag_item(item, include_profile, &profile));
+            let mut item = tag_item(item, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut item, url);
+            }
+            all_json.push(item);
         }
     }
 
@@ -555,7 +590,9 @@ pub async fn run_custom_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     eprintln!("{}", "Created custom evaluation.".green());
@@ -588,7 +625,9 @@ pub async fn run_custom_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     eprintln!("{}", "Updated custom evaluation.".green());
@@ -626,7 +665,9 @@ pub async fn run_add_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     eprintln!("{}", "Attached policy to application.".green());
@@ -664,7 +705,9 @@ pub async fn run_remove_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ai_center_evaluations_console_link(targets, &profile).await;
+        if let Some(url) = print_ai_center_evaluations_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all.push(val);
     }
     eprintln!("{}", "Detached policy from application.".green());

@@ -172,14 +172,21 @@ pub async fn run_create(
                 )
                 .green()
             );
+            let mut console_url: Option<String> = None;
             if let Some(id) = &view.id {
                 if let Some(target) = crate::execution::find_target(targets, &profile) {
                     if let Some(base) = target.console_base().await {
-                        render::print_console_link(&crate::console_url::view_url(&base, id));
+                        let url = crate::console_url::view_url(&base, id);
+                        render::print_console_link(&url);
+                        console_url = Some(url);
                     }
                 }
             }
-            all_results.push(view_to_json(&view, include_profile, &profile));
+            let mut view_json = view_to_json(&view, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut view_json, url);
+            }
+            all_results.push(view_json);
         }
     }
     match output {
@@ -213,14 +220,16 @@ pub async fn run_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated view in profile '{profile}'.").green()
         );
         if let Some(target) = crate::execution::find_target(targets, &profile) {
             if let Some(base) = target.console_base().await {
-                render::print_console_link(&crate::console_url::view_url(&base, &id));
+                let url = crate::console_url::view_url(&base, &id);
+                render::print_console_link(&url);
+                render::tag_console_url(&mut val, &url);
             }
         }
         all_results.push(val);

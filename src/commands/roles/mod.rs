@@ -186,10 +186,13 @@ pub async fn run_create(
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         render::print_created("Created", "custom role", None, resp.id.as_deref(), &profile);
+        let mut console_url: Option<String> = None;
         if let Some(id) = resp.id.as_deref() {
             if let Some(target) = crate::execution::find_target(targets, &profile) {
                 if let Some(base) = target.console_base().await {
-                    render::print_console_link(&crate::console_url::iam_role_url(&base, id));
+                    let url = crate::console_url::iam_role_url(&base, id);
+                    render::print_console_link(&url);
+                    console_url = Some(url);
                 }
             }
         }
@@ -198,6 +201,9 @@ pub async fn run_create(
             if let Value::Object(ref mut m) = v {
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
+        }
+        if let Some(url) = &console_url {
+            render::tag_console_url(&mut v, url);
         }
         all_results.push(v);
     }
@@ -235,14 +241,16 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated custom role in profile '{profile}'.").green()
         );
         if let Some(target) = crate::execution::find_target(targets, &profile) {
             if let Some(base) = target.console_base().await {
-                render::print_console_link(&crate::console_url::iam_role_url(&base, &id));
+                let url = crate::console_url::iam_role_url(&base, &id);
+                render::print_console_link(&url);
+                render::tag_console_url(&mut val, &url);
             }
         }
         all_results.push(val);

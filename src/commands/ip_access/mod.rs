@@ -30,13 +30,21 @@ fn read_from_file(path: &str) -> Result<Value> {
 }
 
 /// Print the "View in Coralogix" link for the Login Access Policy settings
-/// page, if a console base URL can be resolved for `profile`.
-async fn print_ip_access_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+/// page, if a console base URL can be resolved for `profile`, and return the
+/// URL so callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
+async fn print_ip_access_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::iam_ip_access_url(&base));
+            let url = crate::console_url::iam_ip_access_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 pub async fn run_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -54,7 +62,9 @@ pub async fn run_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> 
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_ip_access_console_link(targets, &profile).await;
+        if let Some(url) = print_ip_access_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -102,12 +112,15 @@ pub async fn run_create(
                 "{}",
                 format!("Created IP access settings (ID: {id}) in profile '{profile}'.").green()
             );
-            print_ip_access_console_link(targets, &profile).await;
-            all_results.push(json!({
+            let mut val = json!({
                 "id": settings.id,
                 "ip_access": settings.ip_access,
                 "enable_coralogix_customer_support_access": settings.enable_coralogix_customer_support_access,
-            }));
+            });
+            if let Some(url) = print_ip_access_console_link(targets, &profile).await {
+                render::tag_console_url(&mut val, &url);
+            }
+            all_results.push(val);
         }
     }
 
@@ -147,12 +160,15 @@ pub async fn run_update(
                 "{}",
                 format!("Updated IP access settings in profile '{profile}'.").green()
             );
-            print_ip_access_console_link(targets, &profile).await;
-            all_results.push(json!({
+            let mut val = json!({
                 "id": settings.id,
                 "ip_access": settings.ip_access,
                 "enable_coralogix_customer_support_access": settings.enable_coralogix_customer_support_access,
-            }));
+            });
+            if let Some(url) = print_ip_access_console_link(targets, &profile).await {
+                render::tag_console_url(&mut val, &url);
+            }
+            all_results.push(val);
         }
     }
 

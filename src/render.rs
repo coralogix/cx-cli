@@ -104,12 +104,31 @@ pub fn print_created(verb: &str, kind: &str, name: Option<&str>, id: Option<&str
 
 /// Print a "View in Coralogix" console link to stderr.
 ///
-/// Purely informational - callers only invoke this when a console base URL
-/// was successfully resolved (see `ExecutionTarget::console_base`) and an
-/// entity ID was extracted from the API response. Never printed to stdout,
-/// so `-o json` / `-o agents` payloads are unaffected.
+/// Callers only invoke this when a console base URL was successfully
+/// resolved (see `ExecutionTarget::console_base`) and an entity ID was
+/// extracted from the API response. This is the human-readable echo of the
+/// same URL that `tag_console_url` embeds in `-o json` / `-o agents`
+/// payloads - the two are always called together at each call site so the
+/// stderr line and the structured `consoleUrl` field never disagree.
 pub fn print_console_link(url: &str) {
     eprintln!("{}", format!("View in Coralogix: {url}").cyan());
+}
+
+/// Embed the "View in Coralogix" URL as a `consoleUrl` field directly in a
+/// JSON result object, so `-o json` / `-o agents` consumers get the link in
+/// the structured payload itself, not only as an informational stderr line.
+///
+/// Uses a plain (non-underscore-prefixed) key, since - unlike `_profile`,
+/// which is purely a rendering aid for multi-profile text mode -
+/// `consoleUrl` is meant to be consumed by callers of `-o json`/`-o agents`
+/// as real, documented output data (see `docs/configuration.md`'s
+/// "Console links" section). No-op if `val` isn't a JSON object (e.g. a
+/// bare scalar/array result), so it's always safe to call unconditionally
+/// alongside `print_console_link`.
+pub fn tag_console_url(val: &mut Value, url: &str) {
+    if let Value::Object(ref mut m) = val {
+        m.insert("consoleUrl".to_string(), Value::String(url.to_string()));
+    }
 }
 
 // ── Text tables ──────────────────────────────────────────────────────────────

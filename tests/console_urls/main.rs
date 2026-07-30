@@ -459,10 +459,17 @@ async fn no_console_link_when_region_has_no_known_console_domain() {
     );
 }
 
-// ── stdout is unaffected by the console link ─────────────────────────────────
+// ── stdout carries the console link as a `consoleUrl` field ──────────────────
 
+/// `-o json` output must embed the same URL that's echoed to stderr as a
+/// `consoleUrl` field on the result object - see `render::tag_console_url`.
+/// This intentionally supersedes an earlier version of this test
+/// (`json_output_is_unaffected_by_console_link`) which asserted the opposite:
+/// that stdout was untouched by the console-link feature. Per reviewer
+/// feedback, agent/script consumers of `-o json` / `-o agents` need the link
+/// in the structured payload too, not only as a human-readable stderr line.
 #[tokio::test]
-async fn json_output_is_unaffected_by_console_link() {
+async fn json_output_includes_console_url_field() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
@@ -506,14 +513,21 @@ async fn json_output_is_unaffected_by_console_link() {
     let _ = fs::remove_file(&file_path);
     assert!(output.status.success(), "{:?}", output);
 
-    // stdout must be exactly the API response - no console link text anywhere.
+    // stdout is the API response plus a `consoleUrl` field - no
+    // "View in Coralogix: " prefix text (that's stderr-only phrasing).
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-    assert_eq!(parsed, json!({"dashboardId": "dash-abc123"}));
+    assert_eq!(
+        parsed,
+        json!({
+            "dashboardId": "dash-abc123",
+            "consoleUrl": "https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123",
+        })
+    );
     assert!(!stdout.contains("View in Coralogix"));
 
-    // The link still goes to stderr.
+    // The human-readable line still goes to stderr too, with the same URL.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains(
         "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
@@ -2317,6 +2331,62 @@ async fn dashboard_check_by_id_prints_console_link() {
     );
 }
 
+/// `-o json` on `dashboards check <id>` must embed the same URL as a
+/// `consoleUrl` field on every issue row (there's no single "the dashboard"
+/// object here - `check` returns a list of validation issues - so the URL is
+/// repeated per row via `issue_json_row`'s `console_url` parameter).
+#[tokio::test]
+async fn dashboard_check_by_id_json_output_includes_console_url_per_issue() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/check/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "issues": [
+                {"severity": "SEVERITY_WARNING", "message": "deprecated function", "location": "/a"},
+                {"severity": "SEVERITY_ERROR", "message": "bad query", "location": "/b"},
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "check",
+            "dash-abc123",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    // Exits non-zero because of the error-severity issue - CI-gate semantics -
+    // but stdout should still have rendered the JSON rows first.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
+    let rows = parsed.as_array().expect("expected a JSON array of issues");
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        assert_eq!(
+            row.get("consoleUrl").and_then(|v| v.as_str()),
+            Some("https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"),
+            "expected consoleUrl on every issue row: {row}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn dashboard_check_from_file_prints_no_console_link() {
     let server = MockServer::start().await;
@@ -2395,6 +2465,53 @@ async fn alert_get_prints_console_link() {
             "View in Coralogix: https://acme.app.eu2.coralogix.com/#/alerts/alert-xyz789"
         ),
         "stderr did not contain the console link: {stderr}"
+    );
+}
+
+/// `-o json` on `alerts get` must embed the same URL as a `consoleUrl` field
+/// on the returned alert object (see `render::tag_console_url`), not only
+/// print it to stderr.
+#[tokio::test]
+async fn alert_get_json_output_includes_console_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-xyz789"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertDef": {"id": "alert-xyz789", "name": "Demo Alert"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "get",
+            "alert-xyz789",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
+    assert_eq!(
+        parsed.get("consoleUrl").and_then(|v| v.as_str()),
+        Some("https://acme.app.eu2.coralogix.com/#/alerts/alert-xyz789"),
+        "expected consoleUrl field in JSON output: {parsed}"
     );
 }
 

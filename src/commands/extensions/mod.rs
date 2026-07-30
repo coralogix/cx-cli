@@ -46,17 +46,25 @@ fn read_from_file(path: &str) -> Result<Value> {
 }
 
 /// Print the "View in Coralogix" link for the Integrations/Extensions list
-/// page, if a console base URL can be resolved for `profile`.
+/// page, if a console base URL can be resolved for `profile`, and return the
+/// URL so callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
 ///
 /// `cx integrations extensions` shares the same `#/extensions/integrations`
 /// list page as `cx integrations` proper - extensions are deployed/managed
 /// from the same list, not a dedicated per-instance route.
-async fn print_extensions_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+async fn print_extensions_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::integrations_url(&base));
+            let url = crate::console_url::integrations_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -72,9 +80,13 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Extension)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        print_extensions_console_link(targets, &profile).await;
+        let console_url = print_extensions_console_link(targets, &profile).await;
         for ext in resp.extensions {
-            all_json.push(extension_to_json(&ext, include_profile, &profile));
+            let mut val = extension_to_json(&ext, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut val, url);
+            }
+            all_json.push(val);
             all_items.push((profile.clone(), ext));
         }
     }
@@ -137,7 +149,9 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_extensions_console_link(targets, &profile).await;
+        if let Some(url) = print_extensions_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -173,9 +187,13 @@ pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Extension)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        print_extensions_console_link(targets, &profile).await;
+        let console_url = print_extensions_console_link(targets, &profile).await;
         for ext in resp.deployed_extensions {
-            all_json.push(extension_to_json(&ext, include_profile, &profile));
+            let mut val = extension_to_json(&ext, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut val, url);
+            }
+            all_json.push(val);
             all_items.push((profile.clone(), ext));
         }
     }
@@ -233,12 +251,14 @@ pub async fn run_deploy(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Extension deployed in profile '{profile}'.").green()
         );
-        print_extensions_console_link(targets, &profile).await;
+        if let Some(url) = print_extensions_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -272,12 +292,14 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Extension updated in profile '{profile}'.").green()
         );
-        print_extensions_console_link(targets, &profile).await;
+        if let Some(url) = print_extensions_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -311,12 +333,14 @@ pub async fn run_undeploy(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Extension undeployed in profile '{profile}'.").green()
         );
-        print_extensions_console_link(targets, &profile).await;
+        if let Some(url) = print_extensions_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 

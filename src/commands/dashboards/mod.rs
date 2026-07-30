@@ -487,12 +487,22 @@ pub async fn run_queries_by_field(
     Ok(())
 }
 
-async fn print_dashboard_console_link(targets: &[Arc<ExecutionTarget>], profile: &str, id: &str) {
+/// Print the console link to stderr and return the URL so callers can also
+/// embed it as a `consoleUrl` field in `-o json` / `-o agents` output via
+/// [`render::tag_console_url`].
+async fn print_dashboard_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+    id: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::dashboard_url(&base, id));
+            let url = crate::console_url::dashboard_url(&base, id);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 pub async fn run_get(
@@ -525,7 +535,9 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_dashboard_console_link(targets, &profile, dashboard_id).await;
+        if let Some(url) = print_dashboard_console_link(targets, &profile, dashboard_id).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -674,15 +686,15 @@ pub async fn run_create(
             created_id.as_deref(),
             &profile,
         );
-        if let Some(id) = &created_id {
-            if let Some(target) = crate::execution::find_target(targets, &profile) {
-                if let Some(base) = target.console_base().await {
-                    render::print_console_link(&crate::console_url::dashboard_url(&base, id));
-                }
-            }
-        }
+        let console_url = match &created_id {
+            Some(id) => print_dashboard_console_link(targets, &profile, id).await,
+            None => None,
+        };
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
+        }
+        if let Some(url) = &console_url {
+            render::tag_console_url(&mut resp, url);
         }
         all_results.push(resp);
     }
@@ -762,15 +774,15 @@ pub async fn run_replace(
             replaced_id.as_deref(),
             &profile,
         );
-        if let Some(id) = &replaced_id {
-            if let Some(target) = crate::execution::find_target(targets, &profile) {
-                if let Some(base) = target.console_base().await {
-                    render::print_console_link(&crate::console_url::dashboard_url(&base, id));
-                }
-            }
-        }
+        let console_url = match &replaced_id {
+            Some(id) => print_dashboard_console_link(targets, &profile, id).await,
+            None => None,
+        };
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
+        }
+        if let Some(url) = &console_url {
+            render::tag_console_url(&mut resp, url);
         }
         all_results.push(resp);
     }
@@ -984,7 +996,12 @@ fn severity_colored(severity: IssueSeverity) -> String {
 }
 
 /// Build one issue row as JSON for `json` / `agents` output.
-fn issue_json_row(issue: &api::DashboardCheckIssue, profile: &str, include_profile: bool) -> Value {
+fn issue_json_row(
+    issue: &api::DashboardCheckIssue,
+    profile: &str,
+    include_profile: bool,
+    console_url: Option<&str>,
+) -> Value {
     let mut row = serde_json::to_value(issue).unwrap_or_else(|_| json!({}));
     if include_profile {
         if let Value::Object(ref mut m) = row {
@@ -993,6 +1010,9 @@ fn issue_json_row(issue: &api::DashboardCheckIssue, profile: &str, include_profi
                 Value::String(profile.to_string()),
             );
         }
+    }
+    if let Some(url) = console_url {
+        render::tag_console_url(&mut row, url);
     }
     row
 }
@@ -1049,38 +1069,49 @@ pub async fn run_check(
     })
     .await;
 
-    let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
+    let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>, Option<String>)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(id) = dashboard_id {
-            print_dashboard_console_link(targets, &profile, id).await;
-        }
-        all_issues.push((profile, resp.issues));
+        let console_url = match dashboard_id {
+            Some(id) => print_dashboard_console_link(targets, &profile, id).await,
+            None => None,
+        };
+        all_issues.push((profile, resp.issues, console_url));
     }
 
     // CI-gate semantics: any error-severity issue (in any profile) fails.
     let total_errors = all_issues
         .iter()
-        .flat_map(|(_, issues)| issues.iter())
+        .flat_map(|(_, issues, _)| issues.iter())
         .filter(|i| i.severity.is_failure())
         .count();
-    let total_issues = all_issues.iter().map(|(_, i)| i.len()).sum::<usize>();
+    let total_issues = all_issues.iter().map(|(_, i, _)| i.len()).sum::<usize>();
 
     // Render.
     match output {
         OutputFormat::Json => {
             let mut rows: Vec<Value> = Vec::new();
-            for (profile, issues) in &all_issues {
+            for (profile, issues, console_url) in &all_issues {
                 for issue in issues {
-                    rows.push(issue_json_row(issue, profile, include_profile));
+                    rows.push(issue_json_row(
+                        issue,
+                        profile,
+                        include_profile,
+                        console_url.as_deref(),
+                    ));
                 }
             }
             render::render_json(&rows)?;
         }
         OutputFormat::Agents => {
             let mut rows: Vec<Value> = Vec::new();
-            for (profile, issues) in &all_issues {
+            for (profile, issues, console_url) in &all_issues {
                 for issue in issues {
-                    rows.push(issue_json_row(issue, profile, include_profile));
+                    rows.push(issue_json_row(
+                        issue,
+                        profile,
+                        include_profile,
+                        console_url.as_deref(),
+                    ));
                 }
             }
             render::render_agents(&rows)?;
@@ -1090,7 +1121,7 @@ pub async fn run_check(
                 println!("{}", "Dashboard is valid (no issues)".green());
             } else {
                 let mut rows: Vec<Vec<String>> = Vec::new();
-                for (profile, issues) in &all_issues {
+                for (profile, issues, _) in &all_issues {
                     for issue in issues {
                         let row = vec![
                             profile.clone(),

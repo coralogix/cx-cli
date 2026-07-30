@@ -51,17 +51,22 @@ fn read_from_file(path: &str) -> Result<Value> {
 }
 
 /// Print the "View in Coralogix" link for the TCO policies page, if a
-/// console base URL can be resolved for `profile`.
+/// console base URL can be resolved for `profile`, and return the URL so
+/// callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
 ///
 /// TCO policy editing happens in an in-page dialog on a single static page
 /// (`#/tco-policies`) - there's no per-policy route - so every mutation
 /// (create/update/delete/reorder/settings-update) links to that same page.
-async fn print_tco_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+async fn print_tco_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::tco_url(&base));
+            let url = crate::console_url::tco_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
@@ -80,9 +85,13 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TcoPolicy)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        print_tco_console_link(targets, &profile).await;
+        let console_url = print_tco_console_link(targets, &profile).await;
         for policy in resp.policies {
-            all_json.push(policy_to_json(&policy, include_profile, &profile));
+            let mut policy_json = policy_to_json(&policy, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut policy_json, url);
+            }
+            all_json.push(policy_json);
             all_items.push((profile.clone(), policy));
         }
     }
@@ -155,7 +164,9 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_tco_console_link(targets, &profile).await;
+        if let Some(url) = print_tco_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -224,8 +235,11 @@ pub async fn run_create(
                 policy.id.as_deref(),
                 &profile,
             );
-            print_tco_console_link(targets, &profile).await;
-            all_results.push(policy_to_json(&policy, include_profile, &profile));
+            let mut policy_json = policy_to_json(&policy, include_profile, &profile);
+            if let Some(url) = print_tco_console_link(targets, &profile).await {
+                render::tag_console_url(&mut policy_json, &url);
+            }
+            all_results.push(policy_json);
         }
     }
 
@@ -272,8 +286,11 @@ pub async fn run_update(
                 policy.id.as_deref(),
                 &profile,
             );
-            print_tco_console_link(targets, &profile).await;
-            all_results.push(policy_to_json(&policy, include_profile, &profile));
+            let mut policy_json = policy_to_json(&policy, include_profile, &profile);
+            if let Some(url) = print_tco_console_link(targets, &profile).await {
+                render::tag_console_url(&mut policy_json, &url);
+            }
+            all_results.push(policy_json);
         }
     }
 
@@ -334,12 +351,14 @@ pub async fn run_reorder(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Reordered TCO policies in profile '{profile}'.").green()
         );
-        print_tco_console_link(targets, &profile).await;
+        if let Some(url) = print_tco_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -374,8 +393,10 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
-        print_tco_console_link(targets, &profile).await;
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(url) = print_tco_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -412,7 +433,9 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_tco_console_link(targets, &profile).await;
+        if let Some(url) = print_tco_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -455,12 +478,14 @@ pub async fn run_settings_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated TCO settings in profile '{profile}'.").green()
         );
-        print_tco_console_link(targets, &profile).await;
+        if let Some(url) = print_tco_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 

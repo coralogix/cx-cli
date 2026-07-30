@@ -199,14 +199,21 @@ pub async fn run_create(
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
             render::print_created("Created", "SLO", Some(&name), slo.id.as_deref(), &profile);
+            let mut console_url: Option<String> = None;
             if let Some(id) = slo.id.as_deref() {
                 if let Some(target) = crate::execution::find_target(targets, &profile) {
                     if let Some(base) = target.console_base().await {
-                        render::print_console_link(&crate::console_url::slo_url(&base, id));
+                        let url = crate::console_url::slo_url(&base, id);
+                        render::print_console_link(&url);
+                        console_url = Some(url);
                     }
                 }
             }
-            all_results.push(slo_to_json(&slo, include_profile, &profile));
+            let mut slo_json = slo_to_json(&slo, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut slo_json, url);
+            }
+            all_results.push(slo_json);
         } else {
             eprintln!(
                 "{}",
@@ -253,14 +260,21 @@ pub async fn run_update(
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
             render::print_created("Updated", "SLO", Some(&name), slo.id.as_deref(), &profile);
+            let mut console_url: Option<String> = None;
             if let Some(id) = slo.id.as_deref() {
                 if let Some(target) = crate::execution::find_target(targets, &profile) {
                     if let Some(base) = target.console_base().await {
-                        render::print_console_link(&crate::console_url::slo_url(&base, id));
+                        let url = crate::console_url::slo_url(&base, id);
+                        render::print_console_link(&url);
+                        console_url = Some(url);
                     }
                 }
             }
-            all_results.push(slo_to_json(&slo, include_profile, &profile));
+            let mut slo_json = slo_to_json(&slo, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut slo_json, url);
+            }
+            all_results.push(slo_json);
         } else {
             eprintln!(
                 "{}",

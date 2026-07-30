@@ -49,18 +49,26 @@ fn read_from_file(path: &str) -> Result<Value> {
 }
 
 /// Print the "View in Coralogix" link for the Integrations list page, if a
-/// console base URL can be resolved for `profile`.
+/// console base URL can be resolved for `profile`. Returns the URL so
+/// callers can also embed it as a `consoleUrl` field in `-o json` /
+/// `-o agents` output via [`render::tag_console_url`].
 ///
 /// Contextual data integrations are managed from the same
 /// `#/extensions/integrations` area as `cx integrations` - no dedicated
 /// per-instance route was found in frontend source, so mutations link to
 /// the general list page.
-async fn print_contextual_data_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+async fn print_contextual_data_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) -> Option<String> {
     if let Some(target) = crate::execution::find_target(targets, profile) {
         if let Some(base) = target.console_base().await {
-            render::print_console_link(&crate::console_url::integrations_url(&base));
+            let url = crate::console_url::integrations_url(&base);
+            render::print_console_link(&url);
+            return Some(url);
         }
     }
+    None
 }
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -76,10 +84,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ContextualDataIntegration)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        print_contextual_data_console_link(targets, &profile).await;
+        let console_url = print_contextual_data_console_link(targets, &profile).await;
         for wrapper in resp.integrations {
             let item: ContextualDataIntegration = wrapper.into();
-            all_json.push(item_to_json(&item, include_profile, &profile));
+            let mut item_json = item_to_json(&item, include_profile, &profile);
+            if let Some(url) = &console_url {
+                render::tag_console_url(&mut item_json, url);
+            }
+            all_json.push(item_json);
             all_items.push((profile.clone(), item));
         }
     }
@@ -163,7 +175,9 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_contextual_data_console_link(targets, &profile).await;
+        if let Some(url) = print_contextual_data_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -213,12 +227,15 @@ pub async fn run_create(
             resp.integration_id.as_deref(),
             &profile,
         );
-        print_contextual_data_console_link(targets, &profile).await;
+        let console_url = print_contextual_data_console_link(targets, &profile).await;
         let mut v = json!({ "id": resp.integration_id });
         if include_profile {
             if let Value::Object(ref mut m) = v {
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
+        }
+        if let Some(url) = &console_url {
+            render::tag_console_url(&mut v, url);
         }
         all_results.push(v);
     }
@@ -259,12 +276,14 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated contextual data integration {id} in profile '{profile}'.").green()
         );
-        print_contextual_data_console_link(targets, &profile).await;
+        if let Some(url) = print_contextual_data_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -331,7 +350,9 @@ pub async fn run_definition(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        print_contextual_data_console_link(targets, &profile).await;
+        if let Some(url) = print_contextual_data_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 
@@ -375,12 +396,14 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
-        print_contextual_data_console_link(targets, &profile).await;
+        if let Some(url) = print_contextual_data_console_link(targets, &profile).await {
+            render::tag_console_url(&mut val, &url);
+        }
         all_results.push(val);
     }
 

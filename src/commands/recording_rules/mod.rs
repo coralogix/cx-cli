@@ -51,6 +51,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Recording Rules page, if a
+/// console base URL can be resolved for `profile`.
+///
+/// Recording rule groups are edited via an in-page dialog on a single
+/// static page (`#/recording-rules`) - there's no per-group route - so
+/// every mutation links to that same page.
+async fn print_recording_rules_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::recording_rules_url(&base));
+        }
+    }
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -209,6 +223,7 @@ pub async fn run_create(
                 group.id.as_deref(),
                 &profile,
             );
+            print_recording_rules_console_link(targets, &profile).await;
             all_results.push(group_to_json(&group, include_profile, &profile));
         }
     }
@@ -261,6 +276,7 @@ pub async fn run_update(
                 format!("Updated recording rule group '{name}' (ID: {id}) in profile '{profile}'.")
                     .green()
             );
+            print_recording_rules_console_link(targets, &profile).await;
             all_results.push(group_to_json(&group, include_profile, &profile));
         }
     }
@@ -301,6 +317,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Recording rule group {id} deleted in profile '{profile}'.").green()
         );
+        print_recording_rules_console_link(targets, &profile).await;
     }
 
     Ok(())

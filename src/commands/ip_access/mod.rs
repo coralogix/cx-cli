@@ -29,6 +29,16 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Login Access Policy settings
+/// page, if a console base URL can be resolved for `profile`.
+async fn print_ip_access_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::iam_ip_access_url(&base));
+        }
+    }
+}
+
 pub async fn run_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching IP access settings...".dimmed());
     let include_profile = targets.len() > 1;
@@ -91,6 +101,7 @@ pub async fn run_create(
                 "{}",
                 format!("Created IP access settings (ID: {id}) in profile '{profile}'.").green()
             );
+            print_ip_access_console_link(targets, &profile).await;
             all_results.push(json!({
                 "id": settings.id,
                 "ip_access": settings.ip_access,
@@ -135,6 +146,7 @@ pub async fn run_update(
                 "{}",
                 format!("Updated IP access settings in profile '{profile}'.").green()
             );
+            print_ip_access_console_link(targets, &profile).await;
             all_results.push(json!({
                 "id": settings.id,
                 "ip_access": settings.ip_access,
@@ -168,6 +180,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>]) -> Result<()> {
             "{}",
             format!("IP access settings deleted in profile '{profile}'.").green()
         );
+        print_ip_access_console_link(targets, &profile).await;
     }
     Ok(())
 }

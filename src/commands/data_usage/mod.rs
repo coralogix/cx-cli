@@ -95,6 +95,21 @@ fn parse_query(raw: &str) -> Result<Value> {
     Ok(query)
 }
 
+/// Print the "View in Coralogix" link for the Usage page, if a console base
+/// URL can be resolved for `profile`.
+///
+/// `cx usage` is read-only reporting - there's no created/updated entity -
+/// but a real console page exists for it (`#/settings/datausage`), so it
+/// still earns a link (per reviewer feedback: the "entity was created" bar
+/// was never the actual rule for this feature).
+async fn print_usage_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::usage_url(&base));
+        }
+    }
+}
+
 pub async fn run_summary(
     targets: &[Arc<ExecutionTarget>],
     start: Option<&str>,
@@ -134,6 +149,7 @@ pub async fn run_summary(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        print_usage_console_link(targets, &profile).await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -205,6 +221,7 @@ pub async fn run_daily(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        print_usage_console_link(targets, &profile).await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -256,6 +273,7 @@ pub async fn run_logs_count(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        print_usage_console_link(targets, &profile).await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -303,6 +321,7 @@ pub async fn run_spans_count(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        print_usage_console_link(targets, &profile).await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -342,6 +361,7 @@ pub async fn run_export_status(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        print_usage_console_link(targets, &profile).await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
@@ -381,6 +401,7 @@ pub async fn run_capabilities(
 
     let mut all_results = Vec::new();
     for (profile, mut value) in report_errors_and_collect_successes(per_profile)? {
+        print_usage_console_link(targets, &profile).await;
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }
@@ -430,6 +451,7 @@ pub async fn run_query(
 
     let mut all_results = Vec::new();
     for (profile, mut value) in report_errors_and_collect_successes(per_profile)? {
+        print_usage_console_link(targets, &profile).await;
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }

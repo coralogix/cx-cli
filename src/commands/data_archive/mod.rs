@@ -26,6 +26,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Archive settings page, if a
+/// console base URL can be resolved for `profile`.
+///
+/// Metrics- and logs-archive configuration both live on a single static
+/// page (`#/physical-locations`) - the editor is an in-page dialog, not a
+/// per-entity route - so every write here links to that same page.
+async fn print_archive_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::archive_url(&base));
+        }
+    }
+}
+
 // --- Metrics ---
 
 pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -88,6 +102,7 @@ pub async fn run_metrics_create(
             "{}",
             format!("Created metrics archive config in profile '{profile}'.").green()
         );
+        print_archive_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -126,6 +141,7 @@ pub async fn run_metrics_update(
             "{}",
             format!("Updated metrics archive config in profile '{profile}'.").green()
         );
+        print_archive_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -156,6 +172,7 @@ pub async fn run_metrics_enable(targets: &[Arc<ExecutionTarget>]) -> Result<()> 
             "{}",
             format!("Metrics archive enabled in profile '{profile}'.").green()
         );
+        print_archive_console_link(targets, &profile).await;
     }
     Ok(())
 }
@@ -175,6 +192,7 @@ pub async fn run_metrics_disable(targets: &[Arc<ExecutionTarget>]) -> Result<()>
             "{}",
             format!("Metrics archive disabled in profile '{profile}'.").green()
         );
+        print_archive_console_link(targets, &profile).await;
     }
     Ok(())
 }
@@ -287,6 +305,7 @@ pub async fn run_logs_set(
             "{}",
             format!("Logs archive target set in profile '{profile}'.").green()
         );
+        print_archive_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

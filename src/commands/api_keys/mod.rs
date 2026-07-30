@@ -46,6 +46,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the IAM API Keys settings page,
+/// if a console base URL can be resolved for `profile`.
+///
+/// API keys are managed from a flat settings page (`#/settings/api-keys`) -
+/// create/edit is a dialog with no id reflected in the URL - so every
+/// mutation links to that same page.
+async fn print_api_keys_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::iam_api_keys_url(&base));
+        }
+    }
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching API keys...".dimmed());
     let include_profile = targets.len() > 1;
@@ -177,6 +191,7 @@ pub async fn run_create(
             resp.key_id.as_deref(),
             &profile,
         );
+        print_api_keys_console_link(targets, &profile).await;
         let mut v = json!({
             "key_id": resp.key_id,
             "name": resp.name,
@@ -228,6 +243,7 @@ pub async fn run_update(
             "{}",
             format!("Updated API key in profile '{profile}'.").green()
         );
+        print_api_keys_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -260,6 +276,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("API key {id} deleted in profile '{profile}'.").green()
         );
+        print_api_keys_console_link(targets, &profile).await;
     }
     Ok(())
 }
@@ -392,6 +409,7 @@ pub async fn run_admin_delete(targets: &[Arc<ExecutionTarget>], ids: &[String]) 
             "{}",
             format!("Bulk deleted API keys in profile '{profile}'.").green()
         );
+        print_api_keys_console_link(targets, &profile).await;
     }
     Ok(())
 }
@@ -422,6 +440,7 @@ pub async fn run_admin_set_status(
             "{}",
             format!("Updated API key status in profile '{profile}'.").green()
         );
+        print_api_keys_console_link(targets, &profile).await;
     }
     Ok(())
 }

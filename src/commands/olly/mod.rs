@@ -19,6 +19,17 @@ use crate::spill::{self, maybe_spill, SpillOutcome};
 
 // ── Subcommand runners ─────────────────────────────────────────────────────────
 
+/// Print the "View in Coralogix" link for the Olly AI assistant page
+/// (`#/olly`), if a console base URL can be resolved for `target`.
+///
+/// Olly is single-profile only, so unlike other command groups this takes
+/// the resolved target directly rather than a profile name to look up.
+async fn print_olly_console_link(target: &ExecutionTarget) {
+    if let Some(base) = target.console_base().await {
+        render::print_console_link(&crate::console_url::olly_url(&base));
+    }
+}
+
 /// Send a message to the AI assistant.
 ///
 /// Creates a new chat if `chat_id` is None, otherwise continues an existing chat.
@@ -51,6 +62,8 @@ pub async fn run_ask(
 
     eprintln!("{}", "Sending message...".dimmed());
     let interaction = api.send_message(&chat_id, message, model, timeout).await?;
+
+    print_olly_console_link(target).await;
 
     // Render based on output format
     match output {

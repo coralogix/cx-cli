@@ -50,6 +50,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the TCO policies page, if a
+/// console base URL can be resolved for `profile`.
+///
+/// TCO policy editing happens in an in-page dialog on a single static page
+/// (`#/tco-policies`) - there's no per-policy route - so every mutation
+/// (create/update/delete/reorder/settings-update) links to that same page.
+async fn print_tco_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::tco_url(&base));
+        }
+    }
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -208,6 +222,7 @@ pub async fn run_create(
                 policy.id.as_deref(),
                 &profile,
             );
+            print_tco_console_link(targets, &profile).await;
             all_results.push(policy_to_json(&policy, include_profile, &profile));
         }
     }
@@ -255,6 +270,7 @@ pub async fn run_update(
                 policy.id.as_deref(),
                 &profile,
             );
+            print_tco_console_link(targets, &profile).await;
             all_results.push(policy_to_json(&policy, include_profile, &profile));
         }
     }
@@ -292,6 +308,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("TCO policy {id} deleted in profile '{profile}'.").green()
         );
+        print_tco_console_link(targets, &profile).await;
     }
 
     Ok(())
@@ -320,6 +337,7 @@ pub async fn run_reorder(
             "{}",
             format!("Reordered TCO policies in profile '{profile}'.").green()
         );
+        print_tco_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -438,6 +456,7 @@ pub async fn run_settings_update(
             "{}",
             format!("Updated TCO settings in profile '{profile}'.").green()
         );
+        print_tco_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

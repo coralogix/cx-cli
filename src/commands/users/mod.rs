@@ -45,6 +45,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Team Members settings page,
+/// if a console base URL can be resolved for `profile`.
+///
+/// Users are managed from a flat settings page (`#/settings/team/members`) -
+/// create/edit is a dialog with no id reflected in the URL - so every
+/// mutation links to that same page.
+async fn print_users_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::iam_users_url(&base));
+        }
+    }
+}
+
 pub async fn run_search(
     targets: &[Arc<ExecutionTarget>],
     query: Option<&str>,
@@ -208,6 +222,7 @@ pub async fn run_create(
             "{}",
             format!("Created user(s) in profile '{profile}'.").green()
         );
+        print_users_console_link(targets, &profile).await;
     }
 
     match output {
@@ -245,6 +260,7 @@ pub async fn run_update(
             )
             .green()
         );
+        print_users_console_link(targets, &profile).await;
         let mut v = json!({ "user_account_ids": resp.user_account_ids });
         if targets.len() > 1 {
             if let Value::Object(ref mut m) = v {
@@ -298,6 +314,7 @@ pub async fn run_set_status(
             "{}",
             format!("Updated user status in profile '{profile}'.").green()
         );
+        print_users_console_link(targets, &profile).await;
     }
     Ok(())
 }

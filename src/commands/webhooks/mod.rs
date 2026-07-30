@@ -45,6 +45,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Outgoing Webhooks list page,
+/// if a console base URL can be resolved for `profile`.
+///
+/// Webhook list routes by type category, not by instance - there's no
+/// per-webhook route confirmed in frontend source - so every mutation links
+/// to the general list page (`#/extensions/outbound-webhooks`).
+async fn print_webhooks_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::webhooks_url(&base));
+        }
+    }
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching webhooks...".dimmed());
     let include_profile = targets.len() > 1;
@@ -173,6 +187,7 @@ pub async fn run_create(
                 webhook.id.as_deref(),
                 &profile,
             );
+            print_webhooks_console_link(targets, &profile).await;
             all_results.push(webhook_to_json(&webhook, include_profile, &profile));
         }
     }
@@ -215,6 +230,7 @@ pub async fn run_update(
             "{}",
             format!("Updated webhook {id} in profile '{profile}'.").green()
         );
+        print_webhooks_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -247,6 +263,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Webhook {id} deleted in profile '{profile}'.").green()
         );
+        print_webhooks_console_link(targets, &profile).await;
     }
     Ok(())
 }

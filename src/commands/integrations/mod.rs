@@ -48,6 +48,21 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Integrations list page, if a
+/// console base URL can be resolved for `profile`.
+///
+/// Integration routes are static *per integration type* (e.g.
+/// `details/okta`), not per deployed instance, so every mutation here links
+/// to the general list page (`#/extensions/integrations`) rather than a
+/// specific deployed integration.
+async fn print_integrations_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::integrations_url(&base));
+        }
+    }
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching integrations...".dimmed());
     let include_profile = targets.len() > 1;
@@ -177,6 +192,7 @@ pub async fn run_create(
                 integration.id.as_deref(),
                 &profile,
             );
+            print_integrations_console_link(targets, &profile).await;
             all_results.push(rg_to_json(&integration, include_profile, &profile));
         }
     }
@@ -219,6 +235,7 @@ pub async fn run_update(
             "{}",
             format!("Updated integration {id} in profile '{profile}'.").green()
         );
+        print_integrations_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -251,6 +268,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Integration {id} deleted in profile '{profile}'.").green()
         );
+        print_integrations_console_link(targets, &profile).await;
     }
     Ok(())
 }

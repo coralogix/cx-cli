@@ -48,6 +48,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Enrichments page, if a
+/// console base URL can be resolved for `profile`.
+///
+/// Custom enrichments are managed from the same single static page
+/// (`#/enrichments`) as `cx enrichments` - there's no per-entity route -
+/// so every mutation links to that same page.
+async fn print_enrichments_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::enrichments_url(&base));
+        }
+    }
+}
+
 fn validate_file_field(body: &serde_json::Map<String, Value>, context: &str) -> Result<()> {
     match body.get("file") {
         Some(Value::Object(_)) => Ok(()),
@@ -219,6 +233,7 @@ pub async fn run_create(
                 )
                 .green()
             );
+            print_enrichments_console_link(targets, &profile).await;
             all_results.push(ce_to_json(&ce, include_profile, &profile));
         }
     }
@@ -256,6 +271,7 @@ pub async fn run_update(
             "{}",
             format!("Updated custom enrichment in profile '{profile}'.").green()
         );
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     match output {
@@ -287,6 +303,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Custom enrichment {id} deleted in profile '{profile}'.").green()
         );
+        print_enrichments_console_link(targets, &profile).await;
     }
     Ok(())
 }

@@ -199,11 +199,17 @@ A fully qualified HTTPS URL can be used as a region value for non-standard envir
 
 ## Console links
 
-After a successful mutation on any of the entities below (`cx dashboards create`/`replace`, `cx alerts create`, `cx views create`/`update`, a `cx cases` lifecycle mutation (`update`, `assign`, `resolve`, `close`, `set-priority`, etc.), `cx e2m create`/`update`, `cx slos create`/`update`, `cx parsing-rules create`/`update`, `cx alerts suppression-rules create`/`update`, `cx notifications connectors create`/`update`, `cx notifications routers create`/`update`, `cx iam roles create`/`update`, `cx iam scopes create`/`update`, or `cx iam groups create`/`update`), `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
+After a successful mutation on any of the entities below, `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity (or, for the "static page" groups further down, the relevant settings/list page) in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
+
+> The rule for what gets a link is simply *"does a real console page exist for this?"* - not *"did this command create or update a specific entity."* A command can have no notion of a created/updated entity at all (e.g. `cx usage`, which is 100% read-only reporting, or `cx olly ask`, which starts a chat) and still earn a link, as long as a routed page for it exists in `coralogix/cx-web-workspace`. Conversely, some mutating commands (e.g. `cx actions`, `cx ai-center coverage`/`model-pricing`) do **not** get a link because no routed page could be confirmed for them - see the PR description of the change that introduced this table for the full per-subcommand research record.
 
 The web console is a single-page app that routes client-side off a `#/` hash fragment, so every link below includes that prefix (e.g. `.../#/dashboards/<id>`, not `.../dashboards/<id>`) - a link missing it would just load the console's default screen instead of the intended entity:
 
-Every link shape below was cross-checked against the console frontend's own routing source (`coralogix/cx-web-workspace`), not just public docs, so none of them are guesses. See the PR description of the change that introduced this table for the full per-subcommand research record (including the many entities that were researched and found to have **no** derivable per-instance URL).
+Every link shape below was cross-checked against the console frontend's own routing source (`coralogix/cx-web-workspace`), not just public docs, so none of them are guesses.
+
+### Per-entity links (path segment or query param)
+
+These link directly to the specific entity that was just created/updated, either as a path segment or as a query parameter that makes the console auto-open/select that entity on load.
 
 | Command | Link shape | Source |
 |---|---|---|
@@ -220,6 +226,26 @@ Every link shape below was cross-checked against the console frontend's own rout
 | `iam roles create`/`update` | `{base}/#/settings/roles?selectedRoleId={id}` | Confirmed in frontend source: the roles settings page reads `selectedRoleId` from query params to auto-select/open that role |
 | `iam scopes create`/`update` | `{base}/#/settings/scopes?selectedScopeId={id}` | Confirmed in frontend source: the scopes settings page reads `selectedScopeId` from query params, mirroring the roles pattern |
 | `iam groups create`/`update` | `{base}/#/settings/account/groups?selectedGroupId={id}` | Confirmed in frontend source: the account groups settings page reads `selectedGroupId` from query params, mirroring the roles/scopes pattern |
+
+### Static, per-feature links (no per-entity ID)
+
+Some entities live on a settings/list page rather than a per-instance route - there's no `:id` or `?id=` to fill in, just one fixed page per feature. For these, `cx` links to that static page after any mutation in the group (or, where noted, after any subcommand at all - because the group has no mutation to gate on).
+
+| Command | Link shape | Source |
+|---|---|---|
+| `usage` (all subcommands - fully read-only, no mutation to gate on) | `{base}/#/settings/datausage` | Confirmed as a real routed settings page in frontend source |
+| `tco create`/`update`/`delete`/`reorder`/`settings update` | `{base}/#/tco-policies` | Confirmed as a real routed page in frontend source |
+| `archive metrics create`/`update`/`enable`/`disable`, `archive logs set` | `{base}/#/physical-locations` | Confirmed as a real routed page in frontend source; shared by both the metrics- and logs-archive subtrees, which configure the same underlying storage locations |
+| `recording-rules create`/`update`/`delete` | `{base}/#/recording-rules` | Confirmed as a real routed page in frontend source |
+| `enrichments add`/`remove`/`overwrite`, `enrichments custom create`/`update`/`delete` | `{base}/#/enrichments` | Confirmed as a real routed page in frontend source; shared by both enrichment rules and custom enrichment tables, which are tabs on the same page |
+| `integrations create`/`update`/`delete`, `integrations extensions deploy`/`update`/`undeploy`, `integrations contextual-data create`/`update`/`delete` | `{base}/#/extensions/integrations` | Confirmed as a real routed page in frontend source; shared across integrations, extensions, and contextual data, which are all facets of the same catalog |
+| `webhooks create`/`update`/`delete` | `{base}/#/extensions/outbound-webhooks` | Confirmed as a real routed page in frontend source |
+| `iam api-keys create`/`update`/`delete`/`admin-delete`/`admin-set-status` | `{base}/#/settings/api-keys` | Confirmed as a real routed page in frontend source |
+| `iam users create`/`update`/`set-status` | `{base}/#/settings/team/members` | Confirmed as a real routed page in frontend source; user create/update is a dialog on this flat list page with no per-user route |
+| `iam ip-access create`/`update`/`delete` | `{base}/#/settings/login-access-policies` | Confirmed as a real routed page in frontend source |
+| `ai-center applications list`/`get` (no create/update/delete in this CLI) | `{base}/#/ai-center/overview/application-catalog` | Confirmed as a real routed page in frontend source |
+| `ai-center evaluations create`/`update`/`delete`, `ai-center evaluations custom create`/`update`, `ai-center add-policy`/`remove-policy` | `{base}/#/ai-center/overview/eval-catalog` | Confirmed as a real routed page in frontend source |
+| `olly ask` | `{base}/#/olly` | Confirmed as a real routed page in frontend source |
 
 The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:
 

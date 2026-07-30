@@ -69,6 +69,53 @@
 //! All builders below include the `#/` prefix accordingly. Query parameters
 //! on a hash-routed page live *inside* the fragment (`#/path?query=...`),
 //! not after a bare path, matching the Explore examples above.
+//!
+//! ## Static, per-feature pages (no per-entity ID)
+//!
+//! A reviewer correctly pointed out that "an entity was created/updated" is
+//! not the actual bar for adding a console link - it was just the easiest
+//! example, not the rule. Several `cx` command groups map to a single,
+//! static settings/report page in the console (there is no per-instance
+//! route to deep-link to, but the *feature's page* is still real and worth
+//! linking to). These builders take only `base` - no ID:
+//! - Usage: `https://<team>.<domain>/#/settings/datausage` - confirmed in
+//!   source (`apps/web-app/src/app/settings/settings-routes.ts`, `path:
+//!   'datausage'`, `DataUsageComponent`)
+//! - TCO policies: `https://<team>.<domain>/#/tco-policies` - confirmed in
+//!   source (`libs/tco-v2/src/lib/tco-v2-routes.ts`, `path: 'tco-policies'`)
+//! - Archive (metrics + logs): `https://<team>.<domain>/#/physical-locations` -
+//!   confirmed in source (`libs/physical-locations/src/lib/physical-locations-routes.ts`,
+//!   `path: 'physical-locations'`, backing both the metrics- and
+//!   logs-archive handlers in the same lib)
+//! - Recording rules: `https://<team>.<domain>/#/recording-rules` - confirmed
+//!   in source (`libs/recording-rules/src/lib/recording-rules-routes.ts`,
+//!   `path: 'recording-rules'`)
+//! - Enrichments: `https://<team>.<domain>/#/enrichments` - confirmed in
+//!   source (`libs/enrichments/src/lib/enrichments-routes.ts`, `path:
+//!   'enrichments'`)
+//! - Integrations: `https://<team>.<domain>/#/extensions/integrations` -
+//!   confirmed in source (`app-routes.ts` mounts `extensions/integrations`,
+//!   whose child list page is `ExtensionsListComponent`)
+//! - Webhooks: `https://<team>.<domain>/#/extensions/outbound-webhooks` -
+//!   confirmed in source (`app-routes.ts` mounts
+//!   `extensions/outbound-webhooks`, list page from
+//!   `libs/outgoing-webhooks/src/lib/outgoing-webhooks.routes.ts`)
+//! - IAM API keys: `https://<team>.<domain>/#/settings/api-keys` - confirmed
+//!   in source (`settings-routes.ts`, `path: 'api-keys'`, `ApiKeysComponent`)
+//! - IAM users: `https://<team>.<domain>/#/settings/team/members` - confirmed
+//!   in source (`settings-routes.ts`, `path: 'team/members'`,
+//!   `TeamMembersPageComponent`)
+//! - IAM IP access: `https://<team>.<domain>/#/settings/login-access-policies` -
+//!   confirmed in source (`settings-routes.ts`, `path:
+//!   'login-access-policies'`, `IpAccessComponent`)
+//! - AI Center applications: `https://<team>.<domain>/#/ai-center/overview/application-catalog` -
+//!   confirmed in source (`apps/web-app/src/app/routes/ai-center-routes.ts`,
+//!   `path: 'application-catalog'`, `CxaiApplicationCatalogComponent`)
+//! - AI Center evaluations: `https://<team>.<domain>/#/ai-center/overview/eval-catalog` -
+//!   confirmed in source (same file, `path: 'eval-catalog'`,
+//!   `EvalCatalogMultiAppComponent`)
+//! - Olly: `https://<team>.<domain>/#/olly` - confirmed in source
+//!   (`libs/olly/src/lib/olly.routes.ts`, `path: 'olly'`)
 
 use serde_json::Value;
 use url::form_urlencoded;
@@ -204,6 +251,87 @@ pub fn iam_group_url(base: &str, id: &str) -> String {
         "{}/#/settings/account/groups?selectedGroupId={encoded}",
         trim_base(base)
     )
+}
+
+/// Build the console URL for the Usage page: `{base}/#/settings/datausage`.
+///
+/// Static, per-team page - no per-entity ID. `cx usage` is read-only
+/// reporting, but a real console page exists for it, so it still earns a
+/// link (per reviewer feedback: "an entity was created" was never the rule).
+pub fn usage_url(base: &str) -> String {
+    format!("{}/#/settings/datausage", trim_base(base))
+}
+
+/// Build the console URL for the TCO policies page: `{base}/#/tco-policies`.
+pub fn tco_url(base: &str) -> String {
+    format!("{}/#/tco-policies", trim_base(base))
+}
+
+/// Build the console URL for the Archive (metrics + logs) settings page:
+/// `{base}/#/physical-locations`.
+pub fn archive_url(base: &str) -> String {
+    format!("{}/#/physical-locations", trim_base(base))
+}
+
+/// Build the console URL for the Recording Rules page:
+/// `{base}/#/recording-rules`.
+pub fn recording_rules_url(base: &str) -> String {
+    format!("{}/#/recording-rules", trim_base(base))
+}
+
+/// Build the console URL for the Enrichments page: `{base}/#/enrichments`.
+pub fn enrichments_url(base: &str) -> String {
+    format!("{}/#/enrichments", trim_base(base))
+}
+
+/// Build the console URL for the Integrations list page:
+/// `{base}/#/extensions/integrations`.
+pub fn integrations_url(base: &str) -> String {
+    format!("{}/#/extensions/integrations", trim_base(base))
+}
+
+/// Build the console URL for the Outgoing Webhooks list page:
+/// `{base}/#/extensions/outbound-webhooks`.
+pub fn webhooks_url(base: &str) -> String {
+    format!("{}/#/extensions/outbound-webhooks", trim_base(base))
+}
+
+/// Build the console URL for the IAM API keys settings page:
+/// `{base}/#/settings/api-keys`.
+pub fn iam_api_keys_url(base: &str) -> String {
+    format!("{}/#/settings/api-keys", trim_base(base))
+}
+
+/// Build the console URL for the IAM users (team members) settings page:
+/// `{base}/#/settings/team/members`.
+pub fn iam_users_url(base: &str) -> String {
+    format!("{}/#/settings/team/members", trim_base(base))
+}
+
+/// Build the console URL for the IAM IP access settings page:
+/// `{base}/#/settings/login-access-policies`.
+pub fn iam_ip_access_url(base: &str) -> String {
+    format!("{}/#/settings/login-access-policies", trim_base(base))
+}
+
+/// Build the console URL for the AI Center application catalog page:
+/// `{base}/#/ai-center/overview/application-catalog`.
+pub fn ai_center_applications_url(base: &str) -> String {
+    format!(
+        "{}/#/ai-center/overview/application-catalog",
+        trim_base(base)
+    )
+}
+
+/// Build the console URL for the AI Center evaluation catalog page:
+/// `{base}/#/ai-center/overview/eval-catalog`.
+pub fn ai_center_evaluations_url(base: &str) -> String {
+    format!("{}/#/ai-center/overview/eval-catalog", trim_base(base))
+}
+
+/// Build the console URL for the Olly AI assistant page: `{base}/#/olly`.
+pub fn olly_url(base: &str) -> String {
+    format!("{}/#/olly", trim_base(base))
 }
 
 #[cfg(test)]
@@ -466,5 +594,129 @@ mod tests {
     fn id_from_json_returns_none_when_missing() {
         let val = serde_json::json!({"name": "no id here"});
         assert_eq!(id_from_json(&val), None);
+    }
+
+    #[test]
+    fn usage_url_is_static() {
+        assert_eq!(
+            usage_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/settings/datausage"
+        );
+    }
+
+    #[test]
+    fn usage_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            usage_url("https://acme.app.eu2.coralogix.com/"),
+            "https://acme.app.eu2.coralogix.com/#/settings/datausage"
+        );
+    }
+
+    #[test]
+    fn tco_url_is_static() {
+        assert_eq!(
+            tco_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/tco-policies"
+        );
+    }
+
+    #[test]
+    fn archive_url_is_static() {
+        assert_eq!(
+            archive_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/physical-locations"
+        );
+    }
+
+    #[test]
+    fn recording_rules_url_is_static() {
+        assert_eq!(
+            recording_rules_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/recording-rules"
+        );
+    }
+
+    #[test]
+    fn enrichments_url_is_static() {
+        assert_eq!(
+            enrichments_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/enrichments"
+        );
+    }
+
+    #[test]
+    fn integrations_url_is_static() {
+        assert_eq!(
+            integrations_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/extensions/integrations"
+        );
+    }
+
+    #[test]
+    fn webhooks_url_is_static() {
+        assert_eq!(
+            webhooks_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/extensions/outbound-webhooks"
+        );
+    }
+
+    #[test]
+    fn iam_api_keys_url_is_static() {
+        assert_eq!(
+            iam_api_keys_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/settings/api-keys"
+        );
+    }
+
+    #[test]
+    fn iam_users_url_is_static() {
+        assert_eq!(
+            iam_users_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/settings/team/members"
+        );
+    }
+
+    #[test]
+    fn iam_ip_access_url_is_static() {
+        assert_eq!(
+            iam_ip_access_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/settings/login-access-policies"
+        );
+    }
+
+    #[test]
+    fn ai_center_applications_url_is_static() {
+        assert_eq!(
+            ai_center_applications_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/ai-center/overview/application-catalog"
+        );
+    }
+
+    #[test]
+    fn ai_center_evaluations_url_is_static() {
+        assert_eq!(
+            ai_center_evaluations_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/ai-center/overview/eval-catalog"
+        );
+    }
+
+    #[test]
+    fn olly_url_is_static() {
+        assert_eq!(
+            olly_url("https://acme.app.eu2.coralogix.com"),
+            "https://acme.app.eu2.coralogix.com/#/olly"
+        );
+    }
+
+    #[test]
+    fn static_urls_trim_trailing_slash_on_base() {
+        assert_eq!(
+            tco_url("https://acme.app.eu2.coralogix.com/"),
+            "https://acme.app.eu2.coralogix.com/#/tco-policies"
+        );
+        assert_eq!(
+            olly_url("https://acme.app.eu2.coralogix.com/"),
+            "https://acme.app.eu2.coralogix.com/#/olly"
+        );
     }
 }

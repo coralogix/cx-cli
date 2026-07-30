@@ -83,6 +83,20 @@ fn validate_enrichments_body(body: &Value, allow_empty: bool) -> Result<()> {
     Ok(())
 }
 
+/// Print the "View in Coralogix" link for the Enrichments page, if a
+/// console base URL can be resolved for `profile`.
+///
+/// Enrichment rules are edited via an in-page dialog/sidebar on a single
+/// static page (`#/enrichments`) - there's no per-rule route - so every
+/// mutation links to that same page.
+async fn print_enrichments_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::enrichments_url(&base));
+        }
+    }
+}
+
 fn render_results(
     all_results: &[Value],
     output: OutputFormat,
@@ -152,6 +166,7 @@ pub async fn run_add(
             "{}",
             format!("Added enrichments in profile '{profile}'.").green()
         );
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -178,6 +193,7 @@ pub async fn run_remove(
             "{}",
             format!("Removed enrichments in profile '{profile}'.").green()
         );
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -205,6 +221,7 @@ pub async fn run_overwrite(
             "{}",
             format!("Overwrote enrichments in profile '{profile}'.").green()
         );
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)

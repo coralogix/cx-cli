@@ -45,6 +45,20 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Integrations/Extensions list
+/// page, if a console base URL can be resolved for `profile`.
+///
+/// `cx integrations extensions` shares the same `#/extensions/integrations`
+/// list page as `cx integrations` proper - extensions are deployed/managed
+/// from the same list, not a dedicated per-instance route.
+async fn print_extensions_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::integrations_url(&base));
+        }
+    }
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching extensions...".dimmed());
     let include_profile = targets.len() > 1;
@@ -221,6 +235,7 @@ pub async fn run_deploy(
             "{}",
             format!("Extension deployed in profile '{profile}'.").green()
         );
+        print_extensions_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -259,6 +274,7 @@ pub async fn run_update(
             "{}",
             format!("Extension updated in profile '{profile}'.").green()
         );
+        print_extensions_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -297,6 +313,7 @@ pub async fn run_undeploy(
             "{}",
             format!("Extension undeployed in profile '{profile}'.").green()
         );
+        print_extensions_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

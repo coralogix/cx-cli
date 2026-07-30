@@ -124,6 +124,29 @@ fn collect_objects(
     Ok(all)
 }
 
+/// Print the "View in Coralogix" link for the AI Center Application Catalog
+/// page, if a console base URL can be resolved for `profile`.
+async fn print_ai_center_applications_console_link(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::ai_center_applications_url(&base));
+        }
+    }
+}
+
+/// Print the "View in Coralogix" link for the AI Center Evaluation Catalog
+/// page, if a console base URL can be resolved for `profile`.
+async fn print_ai_center_evaluations_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::ai_center_evaluations_url(&base));
+        }
+    }
+}
+
 // ── Applications ────────────────────────────────────────────────────
 
 pub async fn run_applications_list(
@@ -159,6 +182,10 @@ pub async fn run_applications_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        // Applications have no create/update/delete in this CLI - list/get are
+        // the only entry points - so the Application Catalog link is attached
+        // here rather than gated behind a mutation (same reasoning as `usage`).
+        print_ai_center_applications_console_link(targets, &profile).await;
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -199,7 +226,14 @@ pub async fn run_applications_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_applications_console_link(targets, &profile).await;
+        all.push(val);
+    }
     emit_objects(&all, include_profile, output, "AI application not found.")
 }
 
@@ -323,7 +357,14 @@ pub async fn run_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     eprintln!("{}", "Created AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -349,7 +390,14 @@ pub async fn run_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     eprintln!("{}", "Updated AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -372,7 +420,14 @@ pub async fn run_evaluations_delete(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     eprintln!("{}", "Deleted AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -486,7 +541,14 @@ pub async fn run_custom_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     eprintln!("{}", "Created custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -512,7 +574,14 @@ pub async fn run_custom_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     eprintln!("{}", "Updated custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -543,7 +612,14 @@ pub async fn run_add_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     eprintln!("{}", "Attached policy to application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -574,7 +650,14 @@ pub async fn run_remove_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     eprintln!("{}", "Detached policy from application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }

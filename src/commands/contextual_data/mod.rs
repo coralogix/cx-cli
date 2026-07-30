@@ -48,6 +48,21 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Print the "View in Coralogix" link for the Integrations list page, if a
+/// console base URL can be resolved for `profile`.
+///
+/// Contextual data integrations are managed from the same
+/// `#/extensions/integrations` area as `cx integrations` - no dedicated
+/// per-instance route was found in frontend source, so mutations link to
+/// the general list page.
+async fn print_contextual_data_console_link(targets: &[Arc<ExecutionTarget>], profile: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::integrations_url(&base));
+        }
+    }
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching contextual data integrations...".dimmed());
     let include_profile = targets.len() > 1;
@@ -196,6 +211,7 @@ pub async fn run_create(
             resp.integration_id.as_deref(),
             &profile,
         );
+        print_contextual_data_console_link(targets, &profile).await;
         let mut v = json!({ "id": resp.integration_id });
         if include_profile {
             if let Value::Object(ref mut m) = v {
@@ -246,6 +262,7 @@ pub async fn run_update(
             "{}",
             format!("Updated contextual data integration {id} in profile '{profile}'.").green()
         );
+        print_contextual_data_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -281,6 +298,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Contextual data integration {id} deleted in profile '{profile}'.").green()
         );
+        print_contextual_data_console_link(targets, &profile).await;
     }
     Ok(())
 }

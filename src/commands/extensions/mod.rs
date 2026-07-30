@@ -72,6 +72,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Extension)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_extensions_console_link(targets, &profile).await;
         for ext in resp.extensions {
             all_json.push(extension_to_json(&ext, include_profile, &profile));
             all_items.push((profile.clone(), ext));
@@ -136,6 +137,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_extensions_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -171,6 +173,7 @@ pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Extension)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_extensions_console_link(targets, &profile).await;
         for ext in resp.deployed_extensions {
             all_json.push(extension_to_json(&ext, include_profile, &profile));
             all_items.push((profile.clone(), ext));

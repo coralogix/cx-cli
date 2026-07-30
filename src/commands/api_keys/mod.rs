@@ -73,6 +73,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, KeyInfo)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_api_keys_console_link(targets, &profile).await;
         for key in resp.keys {
             all_json.push(key_to_json(&key, include_profile, &profile));
             all_items.push((profile.clone(), key));
@@ -143,6 +144,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_api_keys_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -313,6 +315,7 @@ pub async fn run_send_data_keys(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_api_keys_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -366,6 +369,7 @@ pub async fn run_admin_list(targets: &[Arc<ExecutionTarget>], output: OutputForm
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_api_keys_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

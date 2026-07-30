@@ -76,6 +76,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Integration)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_integrations_console_link(targets, &profile).await;
         for entry in resp.integrations {
             let integration = entry.integration;
             all_json.push(rg_to_json(&integration, include_profile, &profile));
@@ -141,6 +142,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_integrations_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -299,6 +301,7 @@ pub async fn run_definition(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_integrations_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -347,6 +350,7 @@ pub async fn run_deployed(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_integrations_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -392,6 +396,7 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
+        print_integrations_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -426,6 +431,7 @@ pub async fn run_template(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_integrations_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

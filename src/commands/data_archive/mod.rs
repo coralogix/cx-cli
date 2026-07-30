@@ -57,6 +57,7 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_archive_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -224,6 +225,7 @@ pub async fn run_metrics_validate(
             "{}",
             format!("Validation complete in profile '{profile}'.").green()
         );
+        print_archive_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -260,6 +262,7 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_archive_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

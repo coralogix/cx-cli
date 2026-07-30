@@ -81,6 +81,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, RecordingRuleGroup)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_recording_rules_console_link(targets, &profile).await;
         for group in resp.groups {
             all_json.push(group_to_json(&group, include_profile, &profile));
             all_items.push((profile.clone(), group));
@@ -150,6 +151,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_recording_rules_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

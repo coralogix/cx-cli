@@ -123,6 +123,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, CustomEnrichment)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_enrichments_console_link(targets, &profile).await;
         for ce in resp.custom_enrichments {
             all_json.push(ce_to_json(&ce, include_profile, &profile));
             all_items.push((profile.clone(), ce));
@@ -184,6 +185,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     match output {
@@ -330,7 +332,8 @@ pub async fn run_search(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     match output {

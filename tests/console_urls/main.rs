@@ -2105,3 +2105,141 @@ async fn olly_ask_prints_console_link() {
         "stderr did not contain the console link: {stderr}"
     );
 }
+
+// ── Consistency pass: static-page groups also link on their read-only
+// subcommands, not just writes ─────────────────────────────────────────
+//
+// The `usage` group already established that a purely read-only command can
+// still print a link when a real page exists for it. These groups had that
+// same static page, but (inconsistently) only linked their mutation
+// subcommands. A handful of representative reads are covered here; the full
+// read+write wiring lives in each group's `mod.rs`.
+
+#[tokio::test]
+async fn tco_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dataplans/policies/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"policies": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "tco", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/tco-policies"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn archive_metrics_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/metrics/data-setup/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "archive", "metrics", "get"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/physical-locations"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn ip_access_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-sec-ip-access/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ipAccess": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "ip-access", "get"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/settings/login-access-policies"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn ai_center_evaluations_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/ai/evaluations/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"aiEvaluations": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "ai-center", "evaluations", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/ai-center/overview/eval-catalog"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}

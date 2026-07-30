@@ -80,6 +80,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TcoPolicy)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_tco_console_link(targets, &profile).await;
         for policy in resp.policies {
             all_json.push(policy_to_json(&policy, include_profile, &profile));
             all_items.push((profile.clone(), policy));
@@ -154,6 +155,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_tco_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -372,7 +374,8 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (_profile, val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        print_tco_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -409,6 +412,7 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_tco_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

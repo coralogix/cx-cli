@@ -139,6 +139,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)
@@ -240,6 +241,7 @@ pub async fn run_limit(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)
@@ -258,6 +260,7 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_enrichments_console_link(targets, &profile).await;
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)

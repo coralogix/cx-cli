@@ -199,9 +199,9 @@ A fully qualified HTTPS URL can be used as a region value for non-standard envir
 
 ## Console links
 
-After a successful mutation on any of the entities below, `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity (or, for the "static page" groups further down, the relevant settings/list page) in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
+After a successful command on any of the entities below, `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity (or, for the "static page" groups further down, the relevant settings/list page) in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
 
-> The rule for what gets a link is simply *"does a real console page exist for this?"* - not *"did this command create or update a specific entity."* A command can have no notion of a created/updated entity at all (e.g. `cx usage`, which is 100% read-only reporting, or `cx olly ask`, which starts a chat) and still earn a link, as long as a routed page for it exists in `coralogix/cx-web-workspace`. Conversely, some mutating commands (e.g. `cx actions`, `cx ai-center coverage`/`model-pricing`) do **not** get a link because no routed page could be confirmed for them - see the PR description of the change that introduced this table for the full per-subcommand research record.
+> The rule for what gets a link is simply *"does a real console page exist for this?"* - not *"did this command create or update a specific entity."* A command can have no notion of a created/updated entity at all (e.g. `cx usage`, which is 100% read-only reporting, or `cx olly ask`, which starts a chat) and still earn a link, as long as a routed page for it exists in `coralogix/cx-web-workspace`. This applies just as much to *reads* as to writes: if a group's console page is confirmed to exist, every subcommand that surfaces data from that page - `list`, `get`, `search`, `test`, `settings`, etc. - prints the link, not only `create`/`update`/`delete`. Conversely, some commands (e.g. `cx actions`, `cx ai-center coverage`/`model-pricing`) do **not** get a link because no routed page could be confirmed for them - see the PR description of the change that introduced this table for the full per-subcommand research record.
 
 The web console is a single-page app that routes client-side off a `#/` hash fragment, so every link below includes that prefix (e.g. `.../#/dashboards/<id>`, not `.../dashboards/<id>`) - a link missing it would just load the console's default screen instead of the intended entity:
 
@@ -229,22 +229,22 @@ These link directly to the specific entity that was just created/updated, either
 
 ### Static, per-feature links (no per-entity ID)
 
-Some entities live on a settings/list page rather than a per-instance route - there's no `:id` or `?id=` to fill in, just one fixed page per feature. For these, `cx` links to that static page after any mutation in the group (or, where noted, after any subcommand at all - because the group has no mutation to gate on).
+Some entities live on a settings/list page rather than a per-instance route - there's no `:id` or `?id=` to fill in, just one fixed page per feature. For these, `cx` links to that static page after **every** subcommand in the group that touches it, reads included - editors for this kind of page are in-page dialogs with no id reflected in the URL, so a `list`/`get` is just as "on that page" as a `create`/`update`.
 
 | Command | Link shape | Source |
 |---|---|---|
 | `usage` (all subcommands - fully read-only, no mutation to gate on) | `{base}/#/settings/datausage` | Confirmed as a real routed settings page in frontend source |
-| `tco create`/`update`/`delete`/`reorder`/`settings update` | `{base}/#/tco-policies` | Confirmed as a real routed page in frontend source |
-| `archive metrics create`/`update`/`enable`/`disable`, `archive logs set` | `{base}/#/physical-locations` | Confirmed as a real routed page in frontend source; shared by both the metrics- and logs-archive subtrees, which configure the same underlying storage locations |
-| `recording-rules create`/`update`/`delete` | `{base}/#/recording-rules` | Confirmed as a real routed page in frontend source |
-| `enrichments add`/`remove`/`overwrite`, `enrichments custom create`/`update`/`delete` | `{base}/#/enrichments` | Confirmed as a real routed page in frontend source; shared by both enrichment rules and custom enrichment tables, which are tabs on the same page |
-| `integrations create`/`update`/`delete`, `integrations extensions deploy`/`update`/`undeploy`, `integrations contextual-data create`/`update`/`delete` | `{base}/#/extensions/integrations` | Confirmed as a real routed page in frontend source; shared across integrations, extensions, and contextual data, which are all facets of the same catalog |
-| `webhooks create`/`update`/`delete` | `{base}/#/extensions/outbound-webhooks` | Confirmed as a real routed page in frontend source |
-| `iam api-keys create`/`update`/`delete`/`admin-delete`/`admin-set-status` | `{base}/#/settings/api-keys` | Confirmed as a real routed page in frontend source |
-| `iam users create`/`update`/`set-status` | `{base}/#/settings/team/members` | Confirmed as a real routed page in frontend source; user create/update is a dialog on this flat list page with no per-user route |
-| `iam ip-access create`/`update`/`delete` | `{base}/#/settings/login-access-policies` | Confirmed as a real routed page in frontend source |
+| `tco list`/`get`/`create`/`update`/`delete`/`reorder`/`test`/`settings get`/`settings update` | `{base}/#/tco-policies` | Confirmed as a real routed page in frontend source |
+| `archive metrics get`/`create`/`update`/`enable`/`disable`/`validate`, `archive logs get`/`set` | `{base}/#/physical-locations` | Confirmed as a real routed page in frontend source; shared by both the metrics- and logs-archive subtrees, which configure the same underlying storage locations |
+| `recording-rules list`/`get`/`create`/`update`/`delete` | `{base}/#/recording-rules` | Confirmed as a real routed page in frontend source |
+| `enrichments list`/`add`/`remove`/`overwrite`/`limit`/`settings`, `enrichments custom list`/`get`/`search`/`create`/`update`/`delete` | `{base}/#/enrichments` | Confirmed as a real routed page in frontend source; shared by both enrichment rules and custom enrichment tables, which are tabs on the same page |
+| `integrations list`/`get`/`definition`/`deployed`/`template`/`create`/`update`/`delete`/`test`, `integrations extensions list`/`get`/`deployed`/`deploy`/`update`/`undeploy`, `integrations contextual-data list`/`get`/`definition`/`test`/`create`/`update`/`delete` | `{base}/#/extensions/integrations` | Confirmed as a real routed page in frontend source; shared across integrations, extensions, and contextual data, which are all facets of the same catalog |
+| `webhooks list`/`get`/`types`/`create`/`update`/`delete`/`test` | `{base}/#/extensions/outbound-webhooks` | Confirmed as a real routed page in frontend source |
+| `iam api-keys list`/`get`/`send-data-keys`/`admin-list`/`create`/`update`/`delete`/`admin-delete`/`admin-set-status` | `{base}/#/settings/api-keys` | Confirmed as a real routed page in frontend source |
+| `iam users search`/`get`/`create`/`update`/`set-status` | `{base}/#/settings/team/members` | Confirmed as a real routed page in frontend source; user create/update is a dialog on this flat list page with no per-user route |
+| `iam ip-access get`/`create`/`update`/`delete` | `{base}/#/settings/login-access-policies` | Confirmed as a real routed page in frontend source |
 | `ai-center applications list`/`get` (no create/update/delete in this CLI) | `{base}/#/ai-center/overview/application-catalog` | Confirmed as a real routed page in frontend source |
-| `ai-center evaluations create`/`update`/`delete`, `ai-center evaluations custom create`/`update`, `ai-center add-policy`/`remove-policy` | `{base}/#/ai-center/overview/eval-catalog` | Confirmed as a real routed page in frontend source |
+| `ai-center evaluations list`/`get`/`create`/`update`/`delete`, `ai-center custom-evaluations list`/`list-for-application`/`create`/`update`/`add`/`remove` | `{base}/#/ai-center/overview/eval-catalog` | Confirmed as a real routed page in frontend source |
 | `olly ask` | `{base}/#/olly` | Confirmed as a real routed page in frontend source |
 
 The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:

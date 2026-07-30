@@ -109,6 +109,7 @@ pub async fn run_search(
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, User)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_users_console_link(targets, &profile).await;
         for user in resp.users {
             all_json.push(user_to_json(&user, include_profile, &profile));
             all_items.push((profile.clone(), user));
@@ -175,6 +176,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_users_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

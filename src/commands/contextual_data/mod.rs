@@ -76,6 +76,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ContextualDataIntegration)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_contextual_data_console_link(targets, &profile).await;
         for wrapper in resp.integrations {
             let item: ContextualDataIntegration = wrapper.into();
             all_json.push(item_to_json(&item, include_profile, &profile));
@@ -162,6 +163,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_contextual_data_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -329,6 +331,7 @@ pub async fn run_definition(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_contextual_data_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -377,6 +380,7 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
+        print_contextual_data_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

@@ -54,6 +54,7 @@ pub async fn run_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> 
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_ip_access_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

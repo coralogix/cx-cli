@@ -281,6 +281,7 @@ pub async fn run_evaluations_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        print_ai_center_evaluations_console_link(targets, &profile).await;
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -335,7 +336,14 @@ pub async fn run_evaluations_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        print_ai_center_evaluations_console_link(targets, &profile).await;
+        all.push(val);
+    }
     emit_objects(&all, include_profile, output, "AI evaluation not found.")
 }
 
@@ -496,6 +504,7 @@ async fn run_custom_evaluations_table(
     // Items are raw API objects: the text table reads a few columns, but
     // JSON/agents output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        print_ai_center_evaluations_console_link(targets, &profile).await;
         for item in items {
             let app_count = item
                 .get("applicationIds")

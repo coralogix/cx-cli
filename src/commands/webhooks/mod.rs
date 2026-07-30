@@ -72,6 +72,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Webhook)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        print_webhooks_console_link(targets, &profile).await;
         for webhook in resp.deployed {
             all_json.push(webhook_to_json(&webhook, include_profile, &profile));
             all_items.push((profile.clone(), webhook));
@@ -136,6 +137,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_webhooks_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -291,6 +293,7 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
+        print_webhooks_console_link(targets, &profile).await;
         all_results.push(val);
     }
 
@@ -325,6 +328,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_webhooks_console_link(targets, &profile).await;
         all_results.push(val);
     }
 

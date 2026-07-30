@@ -167,6 +167,15 @@ pub async fn run_create(
                 )
                 .green()
             );
+            if let Some(id) = rg.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::parsing_rule_group_url(
+                            &base, id,
+                        ));
+                    }
+                }
+            }
             all_results.push(rg_to_json(&rg, include_profile, &profile));
         }
     }
@@ -206,6 +215,11 @@ pub async fn run_update(
             "{}",
             format!("Updated rule group in profile '{profile}'.").green()
         );
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::parsing_rule_group_url(&base, &id));
+            }
+        }
         all_results.push(val);
     }
     match output {

@@ -199,11 +199,11 @@ A fully qualified HTTPS URL can be used as a region value for non-standard envir
 
 ## Console links
 
-After a successful `cx dashboards create`/`replace`, `cx alerts create`, `cx views create`/`update`, or a `cx cases` lifecycle mutation (`update`, `assign`, `resolve`, `close`, `set-priority`, etc.), `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
+After a successful mutation on any of the entities below (`cx dashboards create`/`replace`, `cx alerts create`, `cx views create`/`update`, a `cx cases` lifecycle mutation (`update`, `assign`, `resolve`, `close`, `set-priority`, etc.), `cx e2m create`/`update`, `cx slos create`/`update`, `cx parsing-rules create`/`update`, `cx alerts suppression-rules create`/`update`, `cx notifications connectors create`/`update`, `cx notifications routers create`/`update`, `cx iam roles create`/`update`, `cx iam scopes create`/`update`, or `cx iam groups create`/`update`), `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity in the web console. This is purely informational: it never appears in `-o json` / `-o agents` stdout, and a failure to resolve a link never fails the command.
 
 The web console is a single-page app that routes client-side off a `#/` hash fragment, so every link below includes that prefix (e.g. `.../#/dashboards/<id>`, not `.../dashboards/<id>`) - a link missing it would just load the console's default screen instead of the intended entity:
 
-All four link shapes below were cross-checked against the console frontend's own routing source (`coralogix/cx-web-workspace`), not just public docs, so none of them are guesses:
+Every link shape below was cross-checked against the console frontend's own routing source (`coralogix/cx-web-workspace`), not just public docs, so none of them are guesses. See the PR description of the change that introduced this table for the full per-subcommand research record (including the many entities that were researched and found to have **no** derivable per-instance URL).
 
 | Command | Link shape | Source |
 |---|---|---|
@@ -211,6 +211,15 @@ All four link shapes below were cross-checked against the console frontend's own
 | `alerts create` | `{base}/#/alerts/{id}` | Documented alert deep-link pattern (runbooks/webhooks reference `#/alerts/<id>`); confirmed in frontend source (`apps/web-app/src/app/alerts/alerts-routes.ts`, `:id` child route under `alerts`) |
 | `views create`/`update` | `{base}/#/explore?viewId={id}` | `cx views` manages the same "saved view" entity as Explore's documented `viewId` deep-link parameter (both live under the `data-exploration/views` API) - see [Deep links and URL parameters](https://coralogix.com/docs/user-guides/data_exploration/deep-links/); confirmed in frontend source (`libs/explore/v2/src/lib/services/share-url.service.ts`'s `viewIdParam()`) |
 | `cases` lifecycle mutations | `{base}/#/cases?id={id}` | No public doc names the exact query parameter, but it's confirmed directly in frontend source: `libs/cases/.../cases-query-params.constants.ts` defines `SELECTED_CASE_QUERY_PARAM = 'id'`, used by `insights-incidents-link.service.ts` to build case deep links as `/cases?id=<caseId>` |
+| `e2m create`/`update` | `{base}/#/tco/metrics/{id}` | Confirmed as a real per-entity path-segment route in frontend source (Events2Metrics editor route takes `:metricId` under `tco/metrics`) |
+| `slos create`/`update` | `{base}/#/slo/{id}/overview` | Confirmed as a real per-entity path-segment route in frontend source (SLO overview route takes `:sloId` under root `slo`) |
+| `parsing-rules create`/`update` | `{base}/#/rules/group/{id}` | Confirmed as a real per-entity path-segment route in frontend source (rule group editor route takes `:themeId` under `rules/group`) |
+| `alerts suppression-rules create`/`update` | `{base}/#/suppression-rules?edit={id}` | Confirmed in frontend source: suppression rules are a **top-level** route (not nested under `/alerts`); the editor component reads the rule id to open from an `edit` query param on load |
+| `notifications connectors create`/`update` | `{base}/#/notification-center/connectors?id={id}` | Confirmed in frontend source: the connectors list component reads `route.snapshot.queryParams['id']` to auto-open that connector's editor on load |
+| `notifications routers create`/`update` | `{base}/#/notification-center/routers?id={id}` | Confirmed in frontend source: the routers list component reads `route.snapshot.queryParams['id']` to auto-open that router's editor on load, mirroring the connectors pattern |
+| `iam roles create`/`update` | `{base}/#/settings/roles?selectedRoleId={id}` | Confirmed in frontend source: the roles settings page reads `selectedRoleId` from query params to auto-select/open that role |
+| `iam scopes create`/`update` | `{base}/#/settings/scopes?selectedScopeId={id}` | Confirmed in frontend source: the scopes settings page reads `selectedScopeId` from query params, mirroring the roles pattern |
+| `iam groups create`/`update` | `{base}/#/settings/account/groups?selectedGroupId={id}` | Confirmed in frontend source: the account groups settings page reads `selectedGroupId` from query params, mirroring the roles/scopes pattern |
 
 The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:
 

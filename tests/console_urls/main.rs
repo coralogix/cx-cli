@@ -519,3 +519,911 @@ async fn json_output_is_unaffected_by_console_link() {
         "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
     ));
 }
+
+// ── e2m create/update ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn e2m_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/events2metrics/events2metrics/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "e2m": {"id": "e2m-new", "name": "New E2M"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("e2m_create");
+    fs::write(&file_path, r#"{"name": "New E2M"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "e2m",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/tco/metrics/e2m-new"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn e2m_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/events2metrics/events2metrics/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "e2m": {"id": "e2m-1", "name": "Updated E2M"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("e2m_update");
+    fs::write(&file_path, r#"{"id": "e2m-1", "name": "Updated E2M"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "e2m",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/tco/metrics/e2m-1"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── slos create/update ───────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn slo_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "slo": {"id": "slo-new", "name": "New SLO"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("slo_create");
+    fs::write(&file_path, r#"{"name": "New SLO"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "slos",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/slo/slo-new/overview"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn slo_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "slo": {"id": "slo-1", "name": "Updated SLO"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("slo_update");
+    fs::write(&file_path, r#"{"id": "slo-1", "name": "Updated SLO"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "slos",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/slo/slo-1/overview"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── parsing-rules create/update ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn parsing_rule_group_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/parsing-rules/rule-groups/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ruleGroup": {"id": "rg-new", "name": "New Rule Group"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("rule_group_create");
+    fs::write(&file_path, r#"{"name": "New Rule Group"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "parsing-rules",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/rules/group/rg-new"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn parsing_rule_group_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/parsing-rules/rule-groups/v1/rg-1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"id": "rg-1", "name": "Updated"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("rule_group_update");
+    fs::write(&file_path, r#"{"name": "Updated"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "parsing-rules",
+            "update",
+            "rg-1",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/rules/group/rg-1"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── alerts suppression-rules create/update ───────────────────────────────────
+
+#[tokio::test]
+async fn suppression_rule_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertSchedulerRule": {"id": "rule-new", "name": "New Rule"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("suppression_rule_create");
+    fs::write(&file_path, r#"{"name": "New Rule"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/suppression-rules?edit=rule-new"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn suppression_rule_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertSchedulerRule": {"id": "rule-1", "name": "Updated Rule"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("suppression_rule_update");
+    fs::write(&file_path, r#"{"id": "rule-1", "name": "Updated Rule"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/suppression-rules?edit=rule-1"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── notifications connectors create/update ───────────────────────────────────
+
+#[tokio::test]
+async fn connector_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/connectors",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "connector": {"id": "conn-new", "name": "New Connector"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("connector_create");
+    fs::write(&file_path, r#"{"name": "New Connector"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "notifications",
+            "connectors",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/notification-center/connectors?id=conn-new"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn connector_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/connectors",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "connector": {"id": "conn-1", "name": "Updated Connector"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("connector_update");
+    fs::write(
+        &file_path,
+        r#"{"id": "conn-1", "name": "Updated Connector"}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "notifications",
+            "connectors",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/notification-center/connectors?id=conn-1"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── notifications routers create/update ──────────────────────────────────────
+
+#[tokio::test]
+async fn router_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/routers",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "router": {"id": "router-new", "name": "New Router"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("router_create");
+    fs::write(&file_path, r#"{"name": "New Router"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "notifications",
+            "routers",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/notification-center/routers?id=router-new"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn router_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/routers",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "router": {"id": "router-1", "name": "Updated Router"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("router_update");
+    fs::write(
+        &file_path,
+        r#"{"id": "router-1", "name": "Updated Router"}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "notifications",
+            "routers",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/notification-center/routers?id=router-1"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── iam roles create/update ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn iam_role_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/aaa/custom-roles/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "role-new"})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("iam_role_create");
+    fs::write(&file_path, r#"{"name": "New Role"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "iam",
+            "roles",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/settings/roles?selectedRoleId=role-new"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_role_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/aaa/custom-roles/v1/role-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "role-1"})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("iam_role_update");
+    fs::write(&file_path, r#"{"name": "Updated Role"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "iam",
+            "roles",
+            "update",
+            "role-1",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/settings/roles?selectedRoleId=role-1"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── iam scopes create/update ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn iam_scope_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/aaa/team-scopes/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "scope": {"id": "scope-new", "displayName": "New Scope"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("iam_scope_create");
+    fs::write(&file_path, r#"{"displayName": "New Scope"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "iam",
+            "scopes",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/settings/scopes?selectedScopeId=scope-new"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_scope_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/aaa/team-scopes/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "scope-1", "displayName": "Updated Scope"
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("iam_scope_update");
+    fs::write(
+        &file_path,
+        r#"{"id": "scope-1", "displayName": "Updated Scope"}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "iam",
+            "scopes",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/settings/scopes?selectedScopeId=scope-1"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── iam groups create/update ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn iam_group_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/aaa/team-groups/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "group": {"groupId": "group-new", "name": "New Group"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("iam_group_create");
+    fs::write(&file_path, r#"{"name": "New Group"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "iam",
+            "groups",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/settings/account/groups?selectedGroupId=group-new"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_group_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/aaa/team-groups/v2/group-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "group": {"groupId": "group-1", "name": "Updated Group"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("iam_group_update");
+    fs::write(&file_path, r#"{"name": "Updated Group"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "iam",
+            "groups",
+            "update",
+            "group-1",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/settings/account/groups?selectedGroupId=group-1"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}

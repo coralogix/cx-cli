@@ -186,6 +186,13 @@ pub async fn run_create(
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         render::print_created("Created", "custom role", None, resp.id.as_deref(), &profile);
+        if let Some(id) = resp.id.as_deref() {
+            if let Some(target) = crate::execution::find_target(targets, &profile) {
+                if let Some(base) = target.console_base().await {
+                    render::print_console_link(&crate::console_url::iam_role_url(&base, id));
+                }
+            }
+        }
         let mut v = json!({ "id": resp.id });
         if targets.len() > 1 {
             if let Value::Object(ref mut m) = v {
@@ -233,6 +240,11 @@ pub async fn run_update(
             "{}",
             format!("Updated custom role in profile '{profile}'.").green()
         );
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::iam_role_url(&base, &id));
+            }
+        }
         all_results.push(val);
     }
 

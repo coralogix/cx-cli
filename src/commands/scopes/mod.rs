@@ -195,6 +195,13 @@ pub async fn run_create(
                 scope.id.as_deref(),
                 &profile,
             );
+            if let Some(id) = scope.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::iam_scope_url(&base, id));
+                    }
+                }
+            }
             all_results.push(scope_to_json(&scope, targets.len() > 1, &profile));
         }
     }
@@ -234,6 +241,13 @@ pub async fn run_update(
             "{}",
             format!("Updated scope in profile '{profile}'.").green()
         );
+        if let Some(id) = crate::console_url::id_from_json(&val) {
+            if let Some(target) = crate::execution::find_target(targets, &profile) {
+                if let Some(base) = target.console_base().await {
+                    render::print_console_link(&crate::console_url::iam_scope_url(&base, &id));
+                }
+            }
+        }
         all_results.push(val);
     }
 

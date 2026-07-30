@@ -201,6 +201,13 @@ pub async fn run_create(
         if let Some(def) = resp.e2m {
             let name = def.display_name().to_string();
             render::print_created("Created", "E2M", Some(&name), def.id.as_deref(), &profile);
+            if let Some(id) = def.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::e2m_url(&base, id));
+                    }
+                }
+            }
             all_results.push(e2m_to_json(&def, include_profile, &profile));
         }
     }
@@ -243,6 +250,13 @@ pub async fn run_update(
         if let Some(def) = resp.e2m {
             let name = def.display_name().to_string();
             render::print_created("Updated", "E2M", Some(&name), def.id.as_deref(), &profile);
+            if let Some(id) = def.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::e2m_url(&base, id));
+                    }
+                }
+            }
             all_results.push(e2m_to_json(&def, include_profile, &profile));
         }
     }

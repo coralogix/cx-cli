@@ -173,6 +173,15 @@ pub async fn run_create(
                 conn.id.as_deref(),
                 &profile,
             );
+            if let Some(id) = conn.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(
+                            &crate::console_url::notification_connector_url(&base, id),
+                        );
+                    }
+                }
+            }
             all_results.push(connector_to_json(&conn, include_profile, &profile));
         }
     }
@@ -212,6 +221,19 @@ pub async fn run_update(
             "{}",
             format!("Updated connector in profile '{profile}'.").green()
         );
+        let extracted_id = val
+            .get("connector")
+            .and_then(crate::console_url::id_from_json)
+            .or_else(|| crate::console_url::id_from_json(&val));
+        if let Some(id) = extracted_id {
+            if let Some(target) = crate::execution::find_target(targets, &profile) {
+                if let Some(base) = target.console_base().await {
+                    render::print_console_link(&crate::console_url::notification_connector_url(
+                        &base, &id,
+                    ));
+                }
+            }
+        }
         all_results.push(val);
     }
 

@@ -179,6 +179,15 @@ pub async fn run_create(
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
             render::print_created("Created", "rule", Some(name), rule.id.as_deref(), &profile);
+            if let Some(id) = rule.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::suppression_rule_url(
+                            &base, id,
+                        ));
+                    }
+                }
+            }
             all_results.push(rule_to_json(&rule, include_profile, &profile));
         }
     }
@@ -224,6 +233,15 @@ pub async fn run_update(
                 "{}",
                 format!("Updated rule '{name}' in profile '{profile}'.").green()
             );
+            if let Some(id) = rule.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::suppression_rule_url(
+                            &base, id,
+                        ));
+                    }
+                }
+            }
             all_results.push(rule_to_json(&rule, include_profile, &profile));
         }
     }

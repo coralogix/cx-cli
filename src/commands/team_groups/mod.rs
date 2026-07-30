@@ -302,6 +302,13 @@ pub async fn run_create(
                 group.group_id.as_deref(),
                 &profile,
             );
+            if let Some(id) = group.group_id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::iam_group_url(&base, id));
+                    }
+                }
+            }
             all_results.push(group_to_json(&group, include_profile, &profile));
         }
     }
@@ -345,6 +352,13 @@ pub async fn run_update(
                 "{}",
                 format!("Updated team group in profile '{profile}'.").green()
             );
+            if let Some(target) = crate::execution::find_target(targets, &profile) {
+                if let Some(base) = target.console_base().await {
+                    render::print_console_link(&crate::console_url::iam_group_url(
+                        &base, &group_id,
+                    ));
+                }
+            }
             all_results.push(group_to_json(&group, targets.len() > 1, &profile));
         }
     }

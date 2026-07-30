@@ -199,6 +199,13 @@ pub async fn run_create(
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
             render::print_created("Created", "SLO", Some(&name), slo.id.as_deref(), &profile);
+            if let Some(id) = slo.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::slo_url(&base, id));
+                    }
+                }
+            }
             all_results.push(slo_to_json(&slo, include_profile, &profile));
         } else {
             eprintln!(
@@ -246,6 +253,13 @@ pub async fn run_update(
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
             render::print_created("Updated", "SLO", Some(&name), slo.id.as_deref(), &profile);
+            if let Some(id) = slo.id.as_deref() {
+                if let Some(target) = crate::execution::find_target(targets, &profile) {
+                    if let Some(base) = target.console_base().await {
+                        render::print_console_link(&crate::console_url::slo_url(&base, id));
+                    }
+                }
+            }
             all_results.push(slo_to_json(&slo, include_profile, &profile));
         } else {
             eprintln!(

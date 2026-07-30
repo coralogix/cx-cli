@@ -1,0 +1,26 @@
+{
+  "name": "console-url-check (safe to delete)",
+  "description": "Created by verify_console_urls.py to check the 'View in Coralogix' link - deleted automatically at the end of the run.",
+  "permutationsLimit": 1,
+  "type": "E2M_TYPE_LOGS2METRICS",
+  "logsQuery": {
+    "lucene": "coralogix.metadata.applicationName:__console-url-check-nonexistent-app__",
+    "applicationnameFilters": [],
+    "subsystemnameFilters": [],
+    "severityFilters": []
+  },
+  "metricLabels": [],
+  "metricFields": [
+    {
+      "targetBaseMetricName": "console_url_check_count",
+      "sourceField": "log_obj.count",
+      "aggregations": [
+        {
+          "enabled": true,
+          "aggType": "AGG_TYPE_COUNT",
+          "targetMetricName": "console_url_check_count"
+        }
+      ]
+    }
+  ]
+}

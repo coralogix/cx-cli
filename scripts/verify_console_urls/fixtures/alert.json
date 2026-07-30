@@ -1,0 +1,28 @@
+{
+  "alertDefProperties": {
+    "name": "console-url-check (safe to delete)",
+    "description": "Created by verify_console_urls.py to check the 'View in Coralogix' link - deleted automatically at the end of the run.",
+    "priority": "ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED",
+    "type": "ALERT_DEF_TYPE_LOGS_THRESHOLD",
+    "enabled": false,
+    "logsThreshold": {
+      "logsFilter": {
+        "simpleFilter": {
+          "luceneQuery": "coralogix.metadata.applicationName:__console-url-check-nonexistent-app__",
+          "labelFilters": {}
+        }
+      },
+      "rules": [
+        {
+          "condition": {
+            "conditionType": "LOGS_THRESHOLD_CONDITION_TYPE_MORE_THAN_OR_UNSPECIFIED",
+            "threshold": 999999,
+            "timeWindow": {
+              "logsTimeWindowSpecificValue": "LOGS_TIME_WINDOW_VALUE_MINUTES_5_OR_UNSPECIFIED"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -68,12 +68,28 @@ impl ExecutionTarget {
                 if let Some(url) = &self.cfg.console_url {
                     return Some(url.clone());
                 }
-                let domain = self.cfg.console_domain.as_deref()?;
-                let subdomain = identity::resolve_team_subdomain(&self.client).await?;
-                Some(format!("https://{subdomain}.{domain}"))
+                let resolved = self.resolve_console_base_from_identity().await;
+                // Only reached once per target - `get_or_init` runs its
+                // closure at most once - so this can't spam stderr across
+                // repeated console-link lookups within one invocation.
+                if resolved.is_none() {
+                    crate::render::print_console_link_unavailable_hint();
+                }
+                resolved
             })
             .await
             .clone()
+    }
+
+    /// The non-explicit half of `console_base` resolution: a known console
+    /// domain for the profile's region, combined with the team subdomain
+    /// fetched from `GET /identity/whoami`. Split out purely so `console_base`
+    /// can print its one-time hint when this comes back empty, without
+    /// duplicating the hint check at every early-return inside this chain.
+    async fn resolve_console_base_from_identity(&self) -> Option<String> {
+        let domain = self.cfg.console_domain.as_deref()?;
+        let subdomain = identity::resolve_team_subdomain(&self.client).await?;
+        Some(format!("https://{subdomain}.{domain}"))
     }
 
     /// Resolve this target's console base URL, build a "View in Coralogix"

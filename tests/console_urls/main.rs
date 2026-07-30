@@ -449,13 +449,21 @@ async fn no_console_link_when_region_has_no_known_console_domain() {
     assert!(output.status.success(), "{:?}", output);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
+    // "View in Coralogix:" (with the colon) is the actual link line's prefix
+    // everywhere else in this file - checked instead of the bare phrase
+    // "View in Coralogix" since the no-link hint below legitimately names the
+    // feature without emitting a link.
     assert!(
-        !stderr.contains("View in Coralogix"),
+        !stderr.contains("View in Coralogix:"),
         "unexpected console link with no known console domain: {stderr}"
     );
     assert!(
         stderr.contains("Created dashboard 'Demo Dashboard' (ID: dash-abc123)"),
         "expected the usual success line, stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("no \"View in Coralogix\" link available"),
+        "expected the no-link hint explaining why, stderr: {stderr}"
     );
 }
 

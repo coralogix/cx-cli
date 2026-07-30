@@ -114,6 +114,34 @@ pub fn print_console_link(url: &str) {
     eprintln!("{}", format!("View in Coralogix: {url}").cyan());
 }
 
+/// Print a hint explaining why no "View in Coralogix" link is available for
+/// a profile.
+///
+/// Callers invoke this from inside `ExecutionTarget::console_base`'s
+/// `OnceCell::get_or_init`, so it prints at most once per target per
+/// process, not once per command that would have printed a link
+/// (`console_base` is cached, so repeated lookups within one invocation
+/// reuse the cached `None` rather than re-triggering this hint).
+///
+/// This is reached whenever console link resolution fails without an
+/// explicit `console_url` configured - in practice, almost always because
+/// `GET /identity/whoami` didn't return a `team_url` for this team.
+/// `team_url` is not present on every team's `/identity/whoami` response -
+/// there is currently no public API that reliably exposes a team's console
+/// URL slug for every team - and `cx` deliberately never falls back to
+/// guessing from `team_name`, since a wrong guess would be a confidently
+/// wrong link (see `src/identity.rs`). Setting `console_url` explicitly is
+/// the only way to guarantee links on such a team.
+pub fn print_console_link_unavailable_hint() {
+    eprintln!(
+        "{}",
+        "Note: no \"View in Coralogix\" link available for this profile (could not resolve a \
+         team subdomain, and no `console_url` is set). Set `console_url` in the profile's TOML \
+         to enable console links - see docs/configuration.md#console-links."
+            .dimmed()
+    );
+}
+
 /// Embed the "View in Coralogix" URL as a `consoleUrl` field directly in a
 /// JSON result object, so `-o json` / `-o agents` consumers get the link in
 /// the structured payload itself, not only as an informational stderr line.

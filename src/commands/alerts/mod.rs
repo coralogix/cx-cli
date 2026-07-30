@@ -175,6 +175,11 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::alert_url(&base, alert_id));
+            }
+        }
         all_results.push(val);
     }
 
@@ -386,6 +391,11 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
             "{}",
             format!("Alert {alert_id} enabled in profile '{profile}'.").green()
         );
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::alert_url(&base, alert_id));
+            }
+        }
     }
 
     Ok(())
@@ -413,6 +423,11 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
             "{}",
             format!("Alert {alert_id} disabled in profile '{profile}'.").green()
         );
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::alert_url(&base, alert_id));
+            }
+        }
     }
 
     Ok(())

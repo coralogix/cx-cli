@@ -487,6 +487,14 @@ pub async fn run_queries_by_field(
     Ok(())
 }
 
+async fn print_dashboard_console_link(targets: &[Arc<ExecutionTarget>], profile: &str, id: &str) {
+    if let Some(target) = crate::execution::find_target(targets, profile) {
+        if let Some(base) = target.console_base().await {
+            render::print_console_link(&crate::console_url::dashboard_url(&base, id));
+        }
+    }
+}
+
 pub async fn run_get(
     targets: &[Arc<ExecutionTarget>],
     dashboard_id: &str,
@@ -517,6 +525,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        print_dashboard_console_link(targets, &profile, dashboard_id).await;
         all_results.push(val);
     }
 
@@ -1042,6 +1051,9 @@ pub async fn run_check(
 
     let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(id) = dashboard_id {
+            print_dashboard_console_link(targets, &profile, id).await;
+        }
         all_issues.push((profile, resp.issues));
     }
 

@@ -2243,3 +2243,343 @@ async fn ai_center_evaluations_list_prints_console_link() {
         "stderr did not contain the console link: {stderr}"
     );
 }
+
+// ── get/enable/disable on known-id routes (FORGE-586 follow-up) ─────────────
+//
+// These cover the previously-unwired `get`/`enable`/`disable`/`check`
+// subcommands that share the exact same console route as their sibling
+// `create`/`update` commands (already covered above), since the entity id
+// is already known from the CLI argument.
+
+#[tokio::test]
+async fn dashboard_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/dash-abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "dash-abc123"})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "get", "dash-abc123"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboard_check_by_id_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/check/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"issues": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "check", "dash-abc123"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboard_check_from_file_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/check/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"issues": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("dash_check_file");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "check",
+            "--from-file",
+            file_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link when checking from a file: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn alert_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-xyz789"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertDef": {"id": "alert-xyz789", "name": "Demo Alert"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "alerts", "get", "alert-xyz789"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/alerts/alert-xyz789"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn alert_enable_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-xyz789"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertDef": {
+                "id": "alert-xyz789",
+                "alertDefProperties": {"name": "Demo Alert", "enabled": false}
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "enable",
+            "alert-xyz789",
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/alerts/alert-xyz789"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn alert_disable_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-xyz789"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertDef": {
+                "id": "alert-xyz789",
+                "alertDefProperties": {"name": "Demo Alert", "enabled": true}
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "disable",
+            "alert-xyz789",
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/alerts/alert-xyz789"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn case_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/case-777"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "case": {
+                "id": "case-777",
+                "readableId": "CASE-42",
+                "title": "Checkout errors",
+                "status": "CASE_STATUS_OPEN",
+                "priority": "CASE_PRIORITY_P2"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "cases", "get", "case-777"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr
+            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/cases?id=case-777"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn connector_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/connectors/conn-1",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "conn-1",
+            "name": "Demo Connector",
+            "type": "CONNECTOR_TYPE_SLACK"
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "notifications",
+            "connectors",
+            "get",
+            "conn-1",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/notification-center/connectors?id=conn-1"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}

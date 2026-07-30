@@ -122,6 +122,13 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        if let Some(target) = crate::execution::find_target(targets, &profile) {
+            if let Some(base) = target.console_base().await {
+                render::print_console_link(&crate::console_url::notification_connector_url(
+                    &base, &id,
+                ));
+            }
+        }
         all_results.push(val);
     }
 

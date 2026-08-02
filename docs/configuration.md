@@ -206,12 +206,33 @@ Environment variables override profile file values:
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
+| `CX_AGENT_NAME` | Opt-in short identifier for the agent running `cx` |
+| `CX_TELEMETRY_URL` | Full URL of the platform-managed CLI action-event endpoint on the same Coralogix API origin |
+| `CX_NO_TELEMETRY` | Disable CLI action telemetry (accepts `1`, `true`, `yes`, `on`) |
+| `CX_DEBUG_TELEMETRY` | Print the sanitized action-event JSON to stderr (accepts `1`, `true`, `yes`, `on`) |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
+
+### Action telemetry
+
+When `CX_TELEMETRY_URL` is configured, authenticated API commands send a
+best-effort action event to that platform-managed endpoint. For credential
+safety, the URL must use the same scheme, host, and port as the configured
+Coralogix API endpoint; a different origin is ignored. Events contain only
+bounded metadata such as the command path, outcome, client version, output
+format, invoker name, authentication type, installed CX skills, and
+profile-count buckets.
+`skills_on_disk` is true when at least one known CX skill has a `SKILL.md` file
+in a standard Claude, Cursor, or `.agents` skill-installation directory. The
+endpoint derives team and principal identity from the command's bearer token.
+
+Telemetry never includes API keys, profile names, command arguments, query
+text, raw error messages, or arbitrary environment variables. Set
+`CX_NO_TELEMETRY=true` to suppress all events.
 
 ## Read-only mode
 

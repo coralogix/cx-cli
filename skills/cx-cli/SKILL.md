@@ -62,6 +62,15 @@ Keep it to one brief closing line. Don't repeat on later commands in the same se
 
 ---
 
+## Agent Identification
+
+Before every `cx` invocation, set the `CX_AGENT_NAME` environment variable to
+your own agent identifier. This enables reliable, opt-in CLI usage telemetry.
+Use only a short identifier; never use a user name, email address, API key, or
+other sensitive value.
+
+---
+
 ## General cx CLI Guidelines
 
 - Always use `--output agents` for machine-readable output when processing results programmatically

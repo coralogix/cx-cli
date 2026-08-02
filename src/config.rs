@@ -20,6 +20,15 @@ pub enum AuthKind {
     OAuth,
 }
 
+impl AuthKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            AuthKind::ApiKey => "api_key",
+            AuthKind::OAuth => "oauth",
+        }
+    }
+}
+
 /// Where API keys are stored for a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -317,6 +326,8 @@ pub struct ResolvedConfig {
     /// The profile name this config was resolved from.
     pub profile_name: String,
     pub api_key: String,
+    /// Authentication mechanism that produced the bearer token.
+    pub auth_kind: AuthKind,
     pub endpoint: String,
     /// Default storage tier for DataPrime queries, resolved from the profile
     /// config. Falls back to `Archive` when the profile does not specify one.
@@ -447,6 +458,7 @@ async fn resolve_single(
                 profile_name: profile_name.to_string(),
                 endpoint: region.api_endpoint().to_string(),
                 api_key: key.to_string(),
+                auth_kind: AuthKind::ApiKey,
                 default_tier: crate::Tier::Archive,
             });
         }
@@ -459,53 +471,63 @@ async fn resolve_single(
     }
 
     // CLI-level api_key_override (already filtered by main.rs) wins over profile creds.
-    let bearer = if let Some(key) = api_key_override {
-        key.to_string()
+    let auth_kind = if api_key_override.is_some() {
+        AuthKind::ApiKey
     } else {
-        match profile.auth {
-            AuthKind::ApiKey => match profile.credential_storage {
-                CredentialStorage::OsStore => keyring_store::get_secret(profile_name, "api_key")?,
-                CredentialStorage::File => profile.api_key.clone(),
-            }
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No API key found for profile '{profile_name}'.\n\
-                         Run `cx profiles add {profile_name}` to set it up."
-                )
-            })?,
-            AuthKind::OAuth => {
-                let region_name = profile.region.to_string();
-                let base_url = profile
-                    .oauth_base_url
-                    .clone()
-                    .unwrap_or_else(|| profile.region.api_endpoint().to_string());
-                let client_id = profile
-                    .oauth_client_id
-                    .clone()
-                    .or_else(|| oauth::client_id_for_region(&region_name).map(str::to_string))
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "No OAuth client ID configured for profile '{profile_name}' \
-                             (region: {region_name}).\n\
-                             Run `cx profiles add {profile_name}` to reconfigure."
-                        )
-                    })?;
-                let storage = profile.credential_storage;
-                let (bearer, refreshed) = oauth::resolve_token(
-                    profile_name,
-                    &base_url,
-                    &client_id,
-                    storage,
-                    profile.oauth_tokens.as_ref(),
-                )
-                .await?;
-                if let Some(new_tokens) = refreshed {
-                    // File-storage profile: persist refreshed tokens back to disk.
-                    profile.oauth_tokens = Some(new_tokens);
-                    save_profile(profile_name, &profile)?;
+        profile.auth
+    };
+    let bearer = match auth_kind {
+        AuthKind::ApiKey => {
+            if let Some(key) = api_key_override {
+                key.to_string()
+            } else {
+                match profile.credential_storage {
+                    CredentialStorage::OsStore => {
+                        keyring_store::get_secret(profile_name, "api_key")?
+                    }
+                    CredentialStorage::File => profile.api_key.clone(),
                 }
-                bearer
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No API key found for profile '{profile_name}'.\n\
+                             Run `cx profiles add {profile_name}` to set it up."
+                    )
+                })?
             }
+        }
+        AuthKind::OAuth => {
+            debug_assert!(api_key_override.is_none());
+            let region_name = profile.region.to_string();
+            let base_url = profile
+                .oauth_base_url
+                .clone()
+                .unwrap_or_else(|| profile.region.api_endpoint().to_string());
+            let client_id = profile
+                .oauth_client_id
+                .clone()
+                .or_else(|| oauth::client_id_for_region(&region_name).map(str::to_string))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No OAuth client ID configured for profile '{profile_name}' \
+                         (region: {region_name}).\n\
+                         Run `cx profiles add {profile_name}` to reconfigure."
+                    )
+                })?;
+            let storage = profile.credential_storage;
+            let (bearer, refreshed) = oauth::resolve_token(
+                profile_name,
+                &base_url,
+                &client_id,
+                storage,
+                profile.oauth_tokens.as_ref(),
+            )
+            .await?;
+            if let Some(new_tokens) = refreshed {
+                // File-storage profile: persist refreshed tokens back to disk.
+                profile.oauth_tokens = Some(new_tokens);
+                save_profile(profile_name, &profile)?;
+            }
+            bearer
         }
     };
 
@@ -513,6 +535,7 @@ async fn resolve_single(
         profile_name: profile_name.to_string(),
         endpoint: profile.region.api_endpoint().to_string(),
         api_key: bearer,
+        auth_kind,
         default_tier: profile.default_tier.unwrap_or(crate::Tier::Archive),
     })
 }
@@ -704,6 +727,7 @@ default_profile = "my-profile"
         let cfg = ResolvedConfig {
             profile_name: "prod".to_string(),
             api_key: "k".to_string(),
+            auth_kind: AuthKind::ApiKey,
             endpoint: "https://api.eu2.coralogix.com".to_string(),
             default_tier: crate::Tier::Archive,
         };

@@ -68,26 +68,25 @@ pub fn enforce_read_only(verb: &str) -> Result<()> {
     Ok(())
 }
 
-const AGENT_ENV_VARS: &[&str] = &[
-    "AIDER",
-    "AMAZON_Q",
-    "AWS_Q_DEVELOPER",
-    "CLAUDECODE",
-    "CLAUDE_CODE",
-    "CLINE",
-    "CODEX",
-    "COPILOT_AGENT",
-    "CURSOR_AGENT",
-    "CX_AGENT_MODE",
-    "GEMINI_CODE_ASSIST",
-    "GITHUB_COPILOT",
-    "OPENAI_CODEX",
-    "SRC_CODY",
-    "WINDSURF_AGENT",
-];
-
 pub fn is_agent_mode() -> bool {
-    AGENT_ENV_VARS.iter().any(|var| std::env::var(var).is_ok())
+    std::env::var("CX_AGENT_NAME")
+        .ok()
+        .is_some_and(|name| !name.trim().is_empty())
+}
+
+/// Returns the configured agent name, `human` for a terminal, or `unknown`.
+pub fn invoker_name() -> String {
+    std::env::var("CX_AGENT_NAME")
+        .ok()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| {
+            if std::io::stdin().is_terminal() {
+                "human".to_string()
+            } else {
+                "unknown".to_string()
+            }
+        })
 }
 
 /// Interactively prompt the user for a required non-empty text value.
@@ -272,16 +271,5 @@ mod tests {
     fn test_prompt_optional_text_returns_none_in_agent_mode() {
         let r = prompt_optional_text("label", None, false, true).unwrap();
         assert!(r.is_none());
-    }
-
-    #[test]
-    fn test_agent_env_vars_sorted() {
-        let mut sorted = AGENT_ENV_VARS.to_vec();
-        sorted.sort();
-        assert_eq!(
-            AGENT_ENV_VARS,
-            &sorted[..],
-            "AGENT_ENV_VARS must be sorted alphabetically"
-        );
     }
 }

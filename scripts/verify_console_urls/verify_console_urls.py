@@ -151,9 +151,10 @@ def find_cx_bin(explicit: Optional[str]) -> str:
 @dataclass
 class CxRun:
     args: list
-    returncode: int
+    returncode: Optional[int]
     stdout: str
     stderr: str
+    timed_out: bool = False
 
     @property
     def console_link_line(self) -> Optional[str]:
@@ -167,17 +168,41 @@ class CxRun:
             return None
 
 
-def run_cx(cx_bin: str, profile: Optional[str], args: list, timeout: int = 60) -> CxRun:
+# Some real commands (e.g. `dashboards create`/`delete` against a live team -
+# server-side indexing isn't instant) routinely take 30s+, well within a
+# generous timeout but still slow. `run_cx`'s default below is set high
+# enough to comfortably cover that. But a *hung* command (network partition,
+# an API that never responds) is a different failure mode than "slow", and
+# must not be allowed to kill the whole script: previously an uncaught
+# `subprocess.TimeoutExpired` would propagate all the way out of `main()`,
+# aborting every check that hadn't run yet and never printing the summary -
+# so a single stuck command looked like the whole script had hung, and threw
+# away every PASS/FAIL already collected. `run_cx` now catches that and
+# returns a CxRun the same way it reports any other CLI failure (non-zero/
+# `None` returncode), so callers' existing `if run.returncode != 0` handling
+# reports it as one failed check and the script moves on to the rest.
+def run_cx(cx_bin: str, profile: Optional[str], args: list, timeout: int = 90) -> CxRun:
     full_args = [cx_bin]
     if profile:
         full_args += ["-p", profile]
     full_args += args
-    proc = subprocess.run(
-        full_args,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(
+            full_args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        stdout = e.stdout or "" if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
+        stderr = e.stderr or "" if isinstance(e.stderr, str) else (e.stderr or b"").decode(errors="replace")
+        stderr += (
+            f"\n[verify_console_urls] `cx {' '.join(args)}` timed out after {timeout}s - treating this "
+            "as a failed check rather than aborting the whole run. If this was a `create` command, the "
+            "entity may still have been created server-side even though the CLI didn't respond in time - "
+            "check for and manually clean up a stray/duplicate object before re-running."
+        )
+        return CxRun(args=full_args, returncode=None, stdout=stdout, stderr=stderr.strip(), timed_out=True)
     return CxRun(args=full_args, returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 
 

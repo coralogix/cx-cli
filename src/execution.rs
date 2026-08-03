@@ -158,6 +158,32 @@ pub async fn console_link_for_profile(
     find_target(targets, profile)?.console_link(build).await
 }
 
+/// Resolve `profile`'s console link via [`console_link_for_profile`] and, if
+/// one was found, embed it into `val` via `render::tag_console_url`.
+///
+/// Collapses the `console_link_for_profile` + `render::tag_console_url`
+/// idiom that used to be repeated inline at every call site across command
+/// modules that print a "View in Coralogix" link and *only* tag a single
+/// result value with it - which is the overwhelming majority of those call
+/// sites (~100 of them at the time this was extracted). A handful of call
+/// sites still use `console_link_for_profile` directly instead of this
+/// helper, because they need the URL for more than just tagging one value
+/// (e.g. also embedding it in text-mode output) - those are intentionally
+/// left alone.
+///
+/// No-op (silently - a console link is always best-effort) if `profile` has
+/// no matching target, or if no console base URL could be resolved for it.
+pub async fn tag_console_link_for_profile(
+    targets: &[Arc<ExecutionTarget>],
+    profile: &str,
+    val: &mut serde_json::Value,
+    build: impl FnOnce(&str) -> String,
+) {
+    if let Some(url) = console_link_for_profile(targets, profile, build).await {
+        crate::render::tag_console_url(val, &url);
+    }
+}
+
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.
 pub fn build_targets(configs: Vec<ResolvedConfig>) -> Result<Vec<Arc<ExecutionTarget>>> {
     configs

@@ -144,13 +144,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -257,13 +254,10 @@ pub async fn run_update(
             "{}",
             format!("Updated API key in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -336,13 +330,10 @@ pub async fn run_send_data_keys(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -396,13 +387,10 @@ pub async fn run_admin_list(targets: &[Arc<ExecutionTarget>], output: OutputForm
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 

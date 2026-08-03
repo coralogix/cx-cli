@@ -222,13 +222,10 @@ pub async fn run_update(
             "{}",
             format!("Updated view in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::view_url(b, &id)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
     match output {

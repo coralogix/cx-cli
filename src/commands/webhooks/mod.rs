@@ -137,13 +137,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::webhooks_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -196,13 +193,13 @@ pub async fn run_create(
                 &profile,
             );
             let mut webhook_json = webhook_to_json(&webhook, include_profile, &profile);
-            if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::webhooks_url(b)
-            })
-            .await
-            {
-                render::tag_console_url(&mut webhook_json, &url);
-            }
+            crate::execution::tag_console_link_for_profile(
+                targets,
+                &profile,
+                &mut webhook_json,
+                crate::console_url::webhooks_url,
+            )
+            .await;
             all_results.push(webhook_json);
         }
     }
@@ -245,13 +242,10 @@ pub async fn run_update(
             "{}",
             format!("Updated webhook {id} in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::webhooks_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -315,13 +309,10 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::webhooks_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -356,13 +347,10 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::webhooks_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 

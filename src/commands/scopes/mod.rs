@@ -246,13 +246,10 @@ pub async fn run_update(
             format!("Updated scope in profile '{profile}'.").green()
         );
         if let Some(id) = crate::console_url::id_from_json(&val) {
-            if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
                 crate::console_url::iam_scope_url(b, &id)
             })
-            .await
-            {
-                render::tag_console_url(&mut val, &url);
-            }
+            .await;
         }
         all_results.push(val);
     }

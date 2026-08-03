@@ -125,13 +125,10 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::enrichments_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)
@@ -159,13 +156,10 @@ pub async fn run_add(
             "{}",
             format!("Added enrichments in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::enrichments_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -192,13 +186,10 @@ pub async fn run_remove(
             "{}",
             format!("Removed enrichments in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::enrichments_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -226,13 +217,10 @@ pub async fn run_overwrite(
             "{}",
             format!("Overwrote enrichments in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::enrichments_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
     render_results(&all_results, output, targets.len() > 1)
@@ -251,13 +239,10 @@ pub async fn run_limit(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::enrichments_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)
@@ -276,13 +261,10 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::enrichments_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
     render_results(&all_results, output, include_profile)

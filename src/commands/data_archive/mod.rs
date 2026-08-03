@@ -43,13 +43,10 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::archive_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -95,13 +92,10 @@ pub async fn run_metrics_create(
             "{}",
             format!("Created metrics archive config in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::archive_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -140,13 +134,10 @@ pub async fn run_metrics_update(
             "{}",
             format!("Updated metrics archive config in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::archive_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -235,13 +226,10 @@ pub async fn run_metrics_validate(
             "{}",
             format!("Validation complete in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::archive_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -278,13 +266,10 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::archive_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -330,13 +315,10 @@ pub async fn run_logs_set(
             "{}",
             format!("Logs archive target set in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::archive_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 

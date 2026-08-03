@@ -4,8 +4,9 @@
 Why this script exists
 -----------------------
 `cx` (this repo) prints a `View in Coralogix: <url>` line on stderr - and, for
-`-o json`/`-o agents`, embeds the same URL as a `consoleUrl` field - after
-most mutation/read commands (see `docs/configuration.md#console-links` and
+`-o json`/`-o agents`, embeds the same URL as a `consoleUrl` field (nested one
+level down inside a wrapper object for some responses) - after most
+mutation/read commands (see `docs/configuration.md#console-links` and
 `src/console_url.rs`). All of that logic is unit- and wiremock-tested, but
 none of those tests can catch a *systematically* wrong host/path, a route
 that has moved in the real web console, or a real team whose automatically

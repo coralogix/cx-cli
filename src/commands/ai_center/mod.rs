@@ -222,13 +222,10 @@ pub async fn run_applications_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_applications_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     emit_objects(&all, include_profile, output, "AI application not found.")
@@ -352,13 +349,10 @@ pub async fn run_evaluations_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     emit_objects(&all, include_profile, output, "AI evaluation not found.")
@@ -387,13 +381,10 @@ pub async fn run_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     eprintln!("{}", "Created AI evaluation.".green());
@@ -426,13 +417,10 @@ pub async fn run_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     eprintln!("{}", "Updated AI evaluation.".green());
@@ -462,13 +450,10 @@ pub async fn run_evaluations_delete(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     eprintln!("{}", "Deleted AI evaluation.".green());
@@ -604,13 +589,10 @@ pub async fn run_custom_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     eprintln!("{}", "Created custom evaluation.".green());
@@ -643,13 +625,10 @@ pub async fn run_custom_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     eprintln!("{}", "Updated custom evaluation.".green());
@@ -687,13 +666,10 @@ pub async fn run_add_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     eprintln!("{}", "Attached policy to application.".green());
@@ -731,13 +707,10 @@ pub async fn run_remove_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all.push(val);
     }
     eprintln!("{}", "Detached policy from application.".green());

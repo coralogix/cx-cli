@@ -306,13 +306,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::case_url(b, case_id)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push((val, directory));
     }
 
@@ -992,13 +989,10 @@ async fn finish_lifecycle(
             "{}",
             format!("{success_label} in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut v, |b| {
             crate::console_url::case_url(b, case_id)
         })
-        .await
-        {
-            render::tag_console_url(&mut v, &url);
-        }
+        .await;
         all_results.push(v);
     }
 

@@ -155,13 +155,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::tco_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -231,13 +228,13 @@ pub async fn run_create(
                 &profile,
             );
             let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::tco_url(b)
-            })
-            .await
-            {
-                render::tag_console_url(&mut policy_json, &url);
-            }
+            crate::execution::tag_console_link_for_profile(
+                targets,
+                &profile,
+                &mut policy_json,
+                crate::console_url::tco_url,
+            )
+            .await;
             all_results.push(policy_json);
         }
     }
@@ -286,13 +283,13 @@ pub async fn run_update(
                 &profile,
             );
             let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::tco_url(b)
-            })
-            .await
-            {
-                render::tag_console_url(&mut policy_json, &url);
-            }
+            crate::execution::tag_console_link_for_profile(
+                targets,
+                &profile,
+                &mut policy_json,
+                crate::console_url::tco_url,
+            )
+            .await;
             all_results.push(policy_json);
         }
     }
@@ -362,13 +359,10 @@ pub async fn run_reorder(
             "{}",
             format!("Reordered TCO policies in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::tco_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -404,13 +398,10 @@ pub async fn run_test(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::tco_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -447,13 +438,10 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::tco_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 
@@ -501,13 +489,10 @@ pub async fn run_settings_update(
             "{}",
             format!("Updated TCO settings in profile '{profile}'.").green()
         );
-        if let Some(url) = crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::tco_url(b)
         })
-        .await
-        {
-            render::tag_console_url(&mut val, &url);
-        }
+        .await;
         all_results.push(val);
     }
 

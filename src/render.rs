@@ -140,21 +140,46 @@ pub fn print_console_link_unavailable_hint() {
     );
 }
 
-/// Embed the "View in Coralogix" URL as a `consoleUrl` field directly in a
-/// JSON result object, so `-o json` / `-o agents` consumers get the link in
-/// the structured payload itself, not only as an informational stderr line.
+/// Embed the "View in Coralogix" URL as a `consoleUrl` field in a JSON
+/// result object, so `-o json` / `-o agents` consumers get the link in the
+/// structured payload itself, not only as an informational stderr line.
 ///
-/// Uses a plain (non-underscore-prefixed) key, since - unlike `_profile`,
-/// which is purely a rendering aid for multi-profile text mode -
-/// `consoleUrl` is meant to be consumed by callers of `-o json`/`-o agents`
-/// as real, documented output data (see `docs/configuration.md`'s
-/// "Console links" section). No-op if `val` isn't a JSON object (e.g. a
-/// bare scalar/array result), so it's always safe to call unconditionally
-/// alongside `print_console_link`.
+/// Many `cx` command responses wrap their single "real" entity in an object
+/// with exactly one key, mirroring the underlying API's response shape -
+/// e.g. `{"alertDef": {...}}`, `{"case": {...}}`, `{"webhook": {...}}`.
+/// Inserting `consoleUrl` at the root of a response shaped like that would
+/// make it an odd sibling of the wrapper key instead of living alongside
+/// the entity's own fields (`{"alertDef": {...}, "consoleUrl": ...}` reads
+/// oddly - a consumer expecting `alertDef` to be the complete alert object
+/// has to know to look one level up for its console link). So: when `val`
+/// is a JSON object with **exactly one** key whose value is *itself* a JSON
+/// object, `consoleUrl` is inserted into that nested object instead of the
+/// root. This was checked against every response shape exercised by
+/// `tests/console_urls/main.rs` (spanning all 28 command groups that print
+/// console links) and correctly nests every single-entity-wrapper shape
+/// while leaving every other shape at the root:
+/// - Already-flat entities with multiple top-level fields (e.g. a `connectors get`
+///   response with `id`/`name`/`type` at the root) - nothing to descend into.
+/// - Single-key responses whose value isn't an object - a bare id/count/bool
+///   (`{"id": "..."}`, `{"enabled": true}`) or a list (`{"policies": [...]}`,
+///   `{"enrichments": [...]}`) - again nothing to nest a single console link
+///   into.
+///
+/// No-op if `val` isn't a JSON object at all (e.g. a bare scalar/array
+/// result), so it's always safe to call unconditionally alongside
+/// `print_console_link`.
 pub fn tag_console_url(val: &mut Value, url: &str) {
-    if let Value::Object(ref mut m) = val {
-        m.insert("consoleUrl".to_string(), Value::String(url.to_string()));
+    let Value::Object(root) = val else { return };
+
+    let should_nest = root.len() == 1 && matches!(root.values().next(), Some(Value::Object(_)));
+    if should_nest {
+        if let Some(Value::Object(nested)) = root.values_mut().next() {
+            nested.insert("consoleUrl".to_string(), Value::String(url.to_string()));
+            return;
+        }
     }
+
+    root.insert("consoleUrl".to_string(), Value::String(url.to_string()));
 }
 
 // ── Text tables ──────────────────────────────────────────────────────────────
@@ -246,6 +271,57 @@ pub fn render_get_text(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn tag_console_url_nests_inside_single_object_wrapper() {
+        let mut val = json!({"alertDef": {"id": "a1", "name": "Demo"}});
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/alerts/a1");
+        assert_eq!(val["consoleUrl"], Value::Null, "must not tag the root");
+        assert_eq!(
+            val["alertDef"]["consoleUrl"],
+            "https://acme.app.eu2.coralogix.com/#/alerts/a1"
+        );
+    }
+
+    #[test]
+    fn tag_console_url_stays_at_root_for_already_flat_multi_field_object() {
+        let mut val = json!({"id": "conn-1", "name": "Demo Connector", "type": "SLACK"});
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        assert_eq!(val["consoleUrl"], "https://acme.app.eu2.coralogix.com/#/x");
+    }
+
+    #[test]
+    fn tag_console_url_stays_at_root_for_single_key_string_value() {
+        let mut val = json!({"dashboardId": "dash-1"});
+        tag_console_url(
+            &mut val,
+            "https://acme.app.eu2.coralogix.com/#/dashboards/dash-1",
+        );
+        assert_eq!(
+            val["consoleUrl"],
+            "https://acme.app.eu2.coralogix.com/#/dashboards/dash-1"
+        );
+    }
+
+    #[test]
+    fn tag_console_url_stays_at_root_for_single_key_array_value() {
+        let mut val = json!({"policies": []});
+        tag_console_url(
+            &mut val,
+            "https://acme.app.eu2.coralogix.com/#/tco-policies",
+        );
+        assert_eq!(
+            val["consoleUrl"],
+            "https://acme.app.eu2.coralogix.com/#/tco-policies"
+        );
+    }
+
+    #[test]
+    fn tag_console_url_no_op_on_non_object_value() {
+        let mut val = json!([1, 2, 3]);
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        assert_eq!(val, json!([1, 2, 3]));
+    }
 
     #[test]
     fn bool_display_some_true() {

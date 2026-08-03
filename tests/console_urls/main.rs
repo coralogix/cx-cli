@@ -2566,8 +2566,9 @@ async fn alert_get_prints_console_link() {
 }
 
 /// `-o json` on `alerts get` must embed the same URL as a `consoleUrl` field
-/// on the returned alert object (see `render::tag_console_url`), not only
-/// print it to stderr.
+/// nested inside the `alertDef` wrapper object (see
+/// `render::tag_console_url`'s single-object-wrapper nesting), not at the
+/// JSON root, and not only printed to stderr.
 #[tokio::test]
 async fn alert_get_json_output_includes_console_url() {
     let server = MockServer::start().await;
@@ -2606,9 +2607,17 @@ async fn alert_get_json_output_includes_console_url() {
     let parsed: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
     assert_eq!(
-        parsed.get("consoleUrl").and_then(|v| v.as_str()),
+        parsed.get("consoleUrl"),
+        None,
+        "consoleUrl must not sit at the root alongside alertDef: {parsed}"
+    );
+    assert_eq!(
+        parsed
+            .get("alertDef")
+            .and_then(|v| v.get("consoleUrl"))
+            .and_then(|v| v.as_str()),
         Some("https://acme.app.eu2.coralogix.com/#/alerts/alert-xyz789"),
-        "expected consoleUrl field in JSON output: {parsed}"
+        "expected consoleUrl field nested inside alertDef: {parsed}"
     );
 }
 

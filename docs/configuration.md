@@ -262,7 +262,7 @@ In practice, `team_url` is not returned by `/identity/whoami` for every team - t
 | `us1` | `app.coralogix.us` |
 | `us2` | `app.cx498.coralogix.com` |
 | `us3` | `app.us3.coralogix.com` |
-| `eu1` | `coralogix.com` |
+| `eu1` | `app.coralogix.com` |
 | `eu2` | `app.eu2.coralogix.com` |
 | `ap1` | `app.coralogix.in` |
 | `ap2` | `app.coralogixsg.com` |

@@ -116,7 +116,7 @@ impl Region {
             Region::Us1 => Some("app.coralogix.us"),
             Region::Us2 => Some("app.cx498.coralogix.com"),
             Region::Us3 => Some("app.us3.coralogix.com"),
-            Region::Eu1 => Some("coralogix.com"),
+            Region::Eu1 => Some("app.coralogix.com"),
             Region::Eu2 => Some("app.eu2.coralogix.com"),
             Region::Ap1 => Some("app.coralogix.in"),
             Region::Ap2 => Some("app.coralogixsg.com"),
@@ -818,7 +818,7 @@ default_profile = "my-profile"
             Some("app.cx498.coralogix.com")
         );
         assert_eq!(Region::Us3.console_domain(), Some("app.us3.coralogix.com"));
-        assert_eq!(Region::Eu1.console_domain(), Some("coralogix.com"));
+        assert_eq!(Region::Eu1.console_domain(), Some("app.coralogix.com"));
         assert_eq!(Region::Eu2.console_domain(), Some("app.eu2.coralogix.com"));
         assert_eq!(Region::Ap1.console_domain(), Some("app.coralogix.in"));
         assert_eq!(Region::Ap2.console_domain(), Some("app.coralogixsg.com"));

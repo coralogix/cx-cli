@@ -271,8 +271,6 @@ A failed or unusable `/identity/whoami` response in step 3 never fails the comma
 
 Set `console_url` explicitly in the profile TOML to override this table or to enable console links for regions with no known domain (e.g. `stg1`, or a `Custom` region running a self-hosted console).
 
-To verify these link shapes against a real, live Coralogix team (not just the unit/wiremock tests), see [`scripts/verify_console_urls/`](../scripts/verify_console_urls/README.md) - a standalone dev script that drives the real `cx` binary through every command family above and checks the URL it prints.
-
 ## Environment variables
 
 Environment variables override profile file values:

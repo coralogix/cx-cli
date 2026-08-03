@@ -1,6 +1,6 @@
 [package]
 name = "coralogix-cli"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 description = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 repository = "https://github.com/coralogix/cx-cli"

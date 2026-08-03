@@ -8,9 +8,10 @@ Why this script exists
 most mutation/read commands (see `docs/configuration.md#console-links` and
 `src/console_url.rs`). All of that logic is unit- and wiremock-tested, but
 none of those tests can catch a *systematically* wrong host/path, a route
-that has moved in the real web console, or a `console_team_name` that
-doesn't actually match the real team's console subdomain (it's a
-user-supplied config value, not something `cx` looks up or verifies - see
+that has moved in the real web console, or a real team whose automatically
+resolved team subdomain (via `GET /identity/whoami` by default, or an
+explicit `console_team_name` override) doesn't actually match its real
+console subdomain (see `src/identity.rs`,
 `docs/configuration.md#console-links`). Those things can only be caught by
 actually running `cx` against a live team and inspecting the URLs it
 produces.

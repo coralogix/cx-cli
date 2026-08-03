@@ -479,8 +479,16 @@ async fn no_console_link_when_region_has_no_known_console_domain() {
 /// point a *known* region's API base at a wiremock server (see
 /// `src/config.rs`'s `Region::api_endpoint`/`console_domain`).
 ///
-/// There is no `/identity/whoami` mock in this test at all - unlike the old
-/// fallback-based feature, resolving a console link never makes an API call.
+/// There is no `/identity/whoami` mock in this test at all: with no known
+/// console domain, `console_base` returns `None` before ever considering
+/// `console_team_name` or falling back to `/identity/whoami`, so no API call
+/// is attempted here regardless of the field being set. (When a console
+/// domain *is* known, an explicit `console_team_name` still skips
+/// `/identity/whoami` - see
+/// `execution::tests::console_base_explicit_team_name_takes_precedence_over_whoami`
+/// - but by default, with neither `console_url` nor `console_team_name` set,
+/// resolving a console link does make that API call now; see
+/// `execution::tests::console_base_combines_domain_and_team_subdomain_from_whoami`.)
 #[tokio::test]
 async fn console_team_name_does_not_produce_link_without_known_console_domain() {
     let server = MockServer::start().await;

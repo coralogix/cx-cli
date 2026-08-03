@@ -348,21 +348,24 @@ pub struct Profile {
     /// team name is not always derivable automatically.
     ///
     /// When unset, the CLI derives a base from `region.console_domain()` plus
-    /// `console_team_name` (see below). When neither `console_url` nor
-    /// `console_team_name` is set, or the region has no known console domain
-    /// (e.g. `Region::Custom`), no console link is printed. There is no API
-    /// call involved in resolving a console link - both fields are purely
-    /// user-supplied.
+    /// either an explicit `console_team_name` (see below) or, by default, a
+    /// team subdomain resolved automatically via `GET /identity/whoami`. When
+    /// the region has no known console domain (e.g. `Region::Custom`), or no
+    /// subdomain can be resolved either way, no console link is printed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_url: Option<String>,
     /// Literal team subdomain label used to build console links when
     /// `console_url` is not set, e.g. `"acme"` to build
     /// `https://acme.app.eu2.coralogix.com`.
     ///
-    /// This is a user-supplied value, not something `cx` looks up or
-    /// guesses - it is used verbatim (only combined with the region's known
-    /// console domain), so it must exactly match the team's real subdomain.
-    /// Set `console_url` instead if you want to override the full base URL.
+    /// This is optional: by default, `cx` resolves the team subdomain
+    /// automatically via `GET /identity/whoami` (see
+    /// `identity::resolve_team_subdomain`), which is a good-enough guess for
+    /// most teams. Set this field to override that automatic guess - it is a
+    /// user-supplied value, not something `cx` looks up or double-checks, so
+    /// it is used verbatim (only combined with the region's known console
+    /// domain). Set `console_url` instead if you want to override the full
+    /// base URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_team_name: Option<String>,
 }
@@ -384,7 +387,9 @@ pub struct ResolvedConfig {
     /// `Region::Custom` and any other region with no known web console.
     pub console_domain: Option<String>,
     /// Resolved copy of `Profile::console_team_name` - see its doc comment.
-    /// Always `None` in env-only mode (no profile file to read it from).
+    /// Always `None` in env-only mode (no profile file to read it from), in
+    /// which case console-link resolution falls back to the automatic
+    /// `GET /identity/whoami`-based guess like any other unset override.
     pub console_team_name: Option<String>,
 }
 

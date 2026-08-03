@@ -123,18 +123,19 @@ pub fn print_console_link(url: &str) {
 /// (`console_base` is cached, so repeated lookups within one invocation
 /// reuse the cached `None` rather than re-triggering this hint).
 ///
-/// This is reached whenever neither `console_url` nor `console_team_name`
-/// (combined with a known `console_domain` for the profile's region) is
-/// configured. `cx` never calls any API or guesses a team's console
-/// subdomain - both fields are purely user-supplied (see `src/config.rs`'s
-/// `Profile` struct), so the only fix is to set one of them explicitly.
+/// This is reached whenever there is no `console_url` override, no known
+/// `console_domain` for the profile's region (e.g. `Region::Custom`), or a
+/// known domain but no way to resolve a team subdomain for it - neither an
+/// explicit `console_team_name` override nor a usable guess from
+/// `GET /identity/whoami` (see `identity::resolve_team_subdomain`).
 pub fn print_console_link_unavailable_hint() {
     eprintln!(
         "{}",
-        "Note: no \"View in Coralogix\" link available for this profile (no `console_url` or \
-         `console_team_name` configured, or the region has no known console domain). Set \
-         `console_url` in the profile's TOML for a full override, or `console_team_name` to \
-         build one from the region's console domain - see docs/configuration.md#console-links."
+        "Note: no \"View in Coralogix\" link available for this profile (could not resolve a \
+         team subdomain automatically, and no `console_url` or `console_team_name` override is \
+         set, or the region has no known console domain). Set `console_team_name` in the \
+         profile's TOML if the automatic guess is wrong, or `console_url` for a full override - \
+         see docs/configuration.md#console-links."
             .dimmed()
     );
 }

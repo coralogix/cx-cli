@@ -18,9 +18,10 @@ They can't catch:
 
 - A route that has moved or been renamed in the real web console.
 - A systematically wrong host or region-to-domain mapping.
-- A `console_team_name` that doesn't actually match the real team's console
-  subdomain (it's a user-supplied value, not something `cx` looks up or
-  verifies - see `docs/configuration.md#console-links`).
+- A team subdomain guess - resolved automatically via `GET /identity/whoami`
+  by default, or pinned explicitly via `console_team_name` - that doesn't
+  actually match the real team's console subdomain (see
+  `docs/configuration.md#console-links`).
 - Any other case where the *intended* URL and the *correct* URL have quietly
   diverged.
 

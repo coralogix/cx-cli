@@ -15,6 +15,7 @@ use tokio::sync::OnceCell;
 
 use crate::api_client::CxClient;
 use crate::config::ResolvedConfig;
+use crate::identity;
 
 // ── Execution target ──────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ pub struct ExecutionTarget {
     pub client: CxClient,
     /// Lazily-resolved console base URL (e.g.
     /// `https://acme.app.eu2.coralogix.com`), cached so repeated console-link
-    /// lookups within one command invocation only build the string once.
+    /// lookups within one command invocation don't re-hit `/identity/whoami`.
     console_base: OnceCell<Option<String>>,
 }
 
@@ -53,21 +54,29 @@ impl ExecutionTarget {
     ///    as-is (trailing slash already trimmed by `config::resolve_single`).
     /// 2. A known `console_domain` for the profile's region, combined with
     ///    an explicit `console_team_name` configured on the profile, e.g.
-    ///    `https://<console_team_name>.<console_domain>`.
-    /// 3. `None` - the region has no known console domain (e.g.
-    ///    `Region::Custom`), or `console_team_name` was not set.
+    ///    `https://<console_team_name>.<console_domain>` - skips step 3
+    ///    entirely.
+    /// 3. A known `console_domain`, combined with the team subdomain
+    ///    resolved automatically via `GET /identity/whoami` (see
+    ///    `identity::resolve_team_subdomain`). This is the default: most
+    ///    teams don't need to configure anything at all to get console
+    ///    links.
+    /// 4. `None` - the region has no known console domain (e.g.
+    ///    `Region::Custom`), or no subdomain could be resolved by either of
+    ///    the above.
     ///
-    /// There is no API call involved: both `console_url` and
-    /// `console_team_name` are purely user-supplied config values, so
-    /// resolution is synchronous and infallible. A console link is a "nice
-    /// to have" that must never fail an otherwise-successful command, so
-    /// step 3 falls back to `None` rather than an error. Cached per target
-    /// (via `OnceCell`) purely to print the "unavailable" hint at most once
-    /// per invocation - the underlying computation is cheap either way.
+    /// Best-effort and infallible: any lookup failure results in `None`
+    /// rather than an error, since a console link is a "nice to have" that
+    /// must never fail an otherwise-successful command. Cached per target so
+    /// multiple links printed within one invocation only hit
+    /// `/identity/whoami` once.
     pub async fn console_base(&self) -> Option<String> {
         self.console_base
             .get_or_init(|| async {
-                let resolved = self.resolve_console_base_from_config();
+                if let Some(url) = &self.cfg.console_url {
+                    return Some(url.clone());
+                }
+                let resolved = self.resolve_console_base_from_domain().await;
                 // Only reached once per target - `get_or_init` runs its
                 // closure at most once - so this can't spam stderr across
                 // repeated console-link lookups within one invocation.
@@ -80,18 +89,20 @@ impl ExecutionTarget {
             .clone()
     }
 
-    /// Synchronous resolution of `console_base` from config alone - see its
-    /// doc comment for the resolution order. Split out purely so
+    /// The non-explicit-`console_url` half of `console_base` resolution: a
+    /// known console domain for the profile's region, combined with either
+    /// an explicit `console_team_name` override or, failing that, the team
+    /// subdomain fetched from `GET /identity/whoami`. Split out purely so
     /// `console_base` can print its one-time hint when this comes back
     /// empty, without duplicating the hint check at every early-return
     /// inside this chain.
-    fn resolve_console_base_from_config(&self) -> Option<String> {
-        if let Some(url) = &self.cfg.console_url {
-            return Some(url.clone());
-        }
+    async fn resolve_console_base_from_domain(&self) -> Option<String> {
         let domain = self.cfg.console_domain.as_deref()?;
-        let team = self.cfg.console_team_name.as_deref()?;
-        Some(format!("https://{team}.{domain}"))
+        if let Some(team) = self.cfg.console_team_name.as_deref() {
+            return Some(format!("https://{team}.{domain}"));
+        }
+        let subdomain = identity::resolve_team_subdomain(&self.client).await?;
+        Some(format!("https://{subdomain}.{domain}"))
     }
 
     /// Resolve this target's console base URL, build a "View in Coralogix"
@@ -239,6 +250,8 @@ pub fn report_errors_and_collect_successes<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn test_cfg(
         endpoint: &str,
@@ -283,13 +296,12 @@ mod tests {
     #[tokio::test]
     async fn console_base_prefers_explicit_console_url() {
         install_rustls_provider();
-        // console_domain/console_team_name are also set here to confirm
-        // console_url wins even when both would otherwise produce a link.
-        let target = ExecutionTarget::new(test_cfg_with_team_name(
+        // No console_domain set, so a whoami call would panic this test if
+        // attempted - the explicit console_url must short-circuit before that.
+        let target = ExecutionTarget::new(test_cfg(
             "http://127.0.0.1:1",
             Some("https://acme.example.com/"),
-            Some("app.eu2.coralogix.com"),
-            Some("other-team"),
+            None,
         ))
         .unwrap();
         assert_eq!(
@@ -310,6 +322,9 @@ mod tests {
     #[tokio::test]
     async fn console_base_combines_domain_and_explicit_team_name() {
         install_rustls_provider();
+        // An explicit console_team_name must skip /identity/whoami entirely -
+        // no mock server is even started for this test, so any attempted
+        // call would fail the test outright (connection refused).
         let target = ExecutionTarget::new(test_cfg_with_team_name(
             "http://127.0.0.1:1",
             None,
@@ -324,25 +339,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn console_base_none_when_team_name_missing() {
-        install_rustls_provider();
-        // A known console domain alone isn't enough - without an explicit
-        // console_team_name, there's no team to build a link for, and `cx`
-        // must not guess or look one up via any API call.
-        let target = ExecutionTarget::new(test_cfg(
-            "http://127.0.0.1:1",
-            None,
-            Some("app.eu2.coralogix.com"),
-        ))
-        .unwrap();
-        assert_eq!(target.console_base().await, None);
-    }
-
-    #[tokio::test]
     async fn console_base_none_when_domain_missing() {
         install_rustls_provider();
         // An explicit console_team_name alone isn't enough without a known
-        // console_domain for the region (e.g. Region::Custom).
+        // console_domain for the region (e.g. Region::Custom) - and with no
+        // domain, whoami is never attempted either.
         let target = ExecutionTarget::new(test_cfg_with_team_name(
             "http://127.0.0.1:1",
             None,
@@ -351,18 +352,147 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(target.console_base().await, None);
+    }
+
+    #[tokio::test]
+    async fn console_base_combines_domain_and_team_subdomain_from_whoami() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 1,
+                "team_name": "Acme Corp",
+                "team_url": "acme"
+            })))
+            .mount(&server)
+            .await;
+
+        // No explicit console_team_name - must resolve via /identity/whoami
+        // by default.
+        let target =
+            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
+                .unwrap();
+        assert_eq!(
+            target.console_base().await,
+            Some("https://acme.app.eu2.coralogix.com".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn console_base_falls_back_to_team_name_when_whoami_omits_team_url() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        // Confirmed against a live team during FORGE-586 review: team_url is
+        // genuinely absent from some real teams' /identity/whoami responses,
+        // even though team_name is present and perfectly usable - so this
+        // must resolve via the sanitized team_name guess by default, not
+        // fail through to None.
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 1,
+                "team_name": "Acme Corp"
+            })))
+            .mount(&server)
+            .await;
+
+        let target =
+            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
+                .unwrap();
+        assert_eq!(
+            target.console_base().await,
+            Some("https://acme-corp.app.eu2.coralogix.com".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn console_base_none_when_whoami_omits_both_team_url_and_team_name() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "team_id": 1 })),
+            )
+            .mount(&server)
+            .await;
+
+        let target =
+            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
+                .unwrap();
+        assert_eq!(target.console_base().await, None);
+    }
+
+    #[tokio::test]
+    async fn console_base_none_when_whoami_fails() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let target =
+            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
+                .unwrap();
+        // Best-effort: a failing /identity/whoami must not error the caller,
+        // just result in no console link.
+        assert_eq!(target.console_base().await, None);
+    }
+
+    #[tokio::test]
+    async fn console_base_explicit_team_name_takes_precedence_over_whoami() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 1,
+                "team_name": "Totally Different Name",
+                "team_url": "totally-different"
+            })))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        // An explicit console_team_name must win outright - whoami must not
+        // even be called (wiremock's `.expect(0)` above enforces this at
+        // drop time).
+        let target = ExecutionTarget::new(test_cfg_with_team_name(
+            &server.uri(),
+            None,
+            Some("app.eu2.coralogix.com"),
+            Some("acme"),
+        ))
+        .unwrap();
+        assert_eq!(
+            target.console_base().await,
+            Some("https://acme.app.eu2.coralogix.com".to_string())
+        );
     }
 
     #[tokio::test]
     async fn console_base_is_cached_after_first_resolution() {
         install_rustls_provider();
-        let target = ExecutionTarget::new(test_cfg_with_team_name(
-            "http://127.0.0.1:1",
-            None,
-            Some("app.eu2.coralogix.com"),
-            Some("acme"),
-        ))
-        .unwrap();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 1,
+                "team_name": "Acme Corp",
+                "team_url": "acme"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let target =
+            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
+                .unwrap();
+        // Two calls must only hit /identity/whoami once (wiremock's `.expect(1)`
+        // above would fail the mock verification otherwise).
         let first = target.console_base().await;
         let second = target.console_base().await;
         assert_eq!(first, second);

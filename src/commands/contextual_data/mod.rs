@@ -63,11 +63,20 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         // One static extensions/integrations page link per profile, not per
         // integration - tag only the first row of each profile's chunk so
-        // `-o agents` doesn't repeat the identical URL once per item.
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::integrations_url(b)
-        })
-        .await;
+        // `-o agents` doesn't repeat the identical URL once per item. Skip
+        // resolving (and printing to stderr) entirely when the profile's
+        // result is empty - otherwise there'd be no row left to tag in
+        // `-o json`/`-o agents`, and stderr would print a link that JSON
+        // output can't carry, breaking the "stderr and consoleUrl never
+        // disagree" invariant.
+        let console_url = if resp.integrations.is_empty() {
+            None
+        } else {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::integrations_url(b)
+            })
+            .await
+        };
         let mut first = true;
         for wrapper in resp.integrations {
             let item: ContextualDataIntegration = wrapper.into();

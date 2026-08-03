@@ -97,11 +97,19 @@ pub async fn run_search(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         // One static team-members page link per profile, not per user - tag
         // only the first row of each profile's chunk so `-o agents` doesn't
-        // repeat the identical URL once per item.
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::iam_users_url(b)
-        })
-        .await;
+        // repeat the identical URL once per item. Skip resolving (and
+        // printing to stderr) entirely when the profile's result is empty -
+        // otherwise there'd be no row left to tag in `-o json`/`-o agents`,
+        // and stderr would print a link that JSON output can't carry,
+        // breaking the "stderr and consoleUrl never disagree" invariant.
+        let console_url = if resp.users.is_empty() {
+            None
+        } else {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_users_url(b)
+            })
+            .await
+        };
         let mut first = true;
         for user in resp.users {
             let mut user_json = user_to_json(&user, include_profile, &profile);

@@ -61,11 +61,20 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         // One static API keys settings page link per profile, not per key -
         // tag only the first row of each profile's chunk so `-o agents`
-        // doesn't repeat the identical URL once per key.
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::iam_api_keys_url(b)
-        })
-        .await;
+        // doesn't repeat the identical URL once per key. Skip resolving
+        // (and printing to stderr) entirely when the profile's result is
+        // empty - otherwise there'd be no row left to tag in `-o json`/
+        // `-o agents`, and stderr would print a link that JSON output can't
+        // carry, breaking the "stderr and consoleUrl never disagree"
+        // invariant.
+        let console_url = if resp.keys.is_empty() {
+            None
+        } else {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_api_keys_url(b)
+            })
+            .await
+        };
         let mut first = true;
         for key in resp.keys {
             let mut key_json = key_to_json(&key, include_profile, &profile);

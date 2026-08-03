@@ -2223,7 +2223,9 @@ async fn tco_list_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/dataplans/policies/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"policies": []})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "policies": [{"id": "policy-1", "name": "Demo Policy"}]
+        })))
         .mount(&server)
         .await;
 
@@ -2246,6 +2248,42 @@ async fn tco_list_prints_console_link() {
     assert!(
         stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/#/tco-policies"),
         "stderr did not contain the console link: {stderr}"
+    );
+}
+
+/// Regression test for a real-world bug: when a team has zero TCO policies,
+/// the list command used to print the console link to stderr unconditionally
+/// while `-o json`/`-o agents` had no row left to tag it onto - violating the
+/// "stderr and consoleUrl never disagree" invariant. Resolving (and
+/// printing) the link must be skipped entirely when the list is empty.
+#[tokio::test]
+async fn tco_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dataplans/policies/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"policies": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "tco", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty policy list: {stderr}"
     );
 }
 
@@ -2319,7 +2357,9 @@ async fn ai_center_evaluations_list_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/ai/evaluations/v3"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"aiEvaluations": []})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "aiEvaluations": [{"id": "eval-1", "application": "app1", "subsystem": "sub1"}]
+        })))
         .mount(&server)
         .await;
 
@@ -2344,6 +2384,43 @@ async fn ai_center_evaluations_list_prints_console_link() {
             "View in Coralogix: https://acme.app.eu2.coralogix.com/#/ai-center/overview/eval-catalog"
         ),
         "stderr did not contain the console link: {stderr}"
+    );
+}
+
+/// Regression test for a real-world bug: when a team has zero AI Center
+/// evaluations, the list command used to print the console link to stderr
+/// unconditionally while `-o json`/`-o agents` had no row left to tag it
+/// onto - violating the "stderr and consoleUrl never disagree" invariant.
+/// Resolving (and printing) the link must be skipped entirely when the list
+/// is empty.
+#[tokio::test]
+async fn ai_center_evaluations_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/ai/evaluations/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"aiEvaluations": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "ai-center", "evaluations", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty evaluations list: {stderr}"
     );
 }
 

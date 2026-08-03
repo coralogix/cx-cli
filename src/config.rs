@@ -10,7 +10,7 @@ use crate::keyring_store;
 use crate::oauth;
 
 /// Authentication method used by a profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthKind {
     /// Static Coralogix API key.  Default for legacy profiles that pre-date OAuth.

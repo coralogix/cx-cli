@@ -10,12 +10,12 @@ use clap_complete::env::CompleteEnv;
 use clap_complete::CompletionCandidate;
 use config::OutputFormat;
 
-use coralogix_cli::action_telemetry::ActionSession;
 use coralogix_cli::banner;
 use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
 use coralogix_cli::execution::build_targets;
+use coralogix_cli::request_metadata::RequestMetadata;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
 use coralogix_cli::update_check;
@@ -2655,7 +2655,6 @@ async fn main() -> Result<()> {
     if std::env::args().nth(1).as_deref() == Some("profiles") {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
-        let mut telemetry = ActionSession::from_matches(&profile_matches, false);
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
@@ -2665,8 +2664,6 @@ async fn main() -> Result<()> {
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
-        telemetry.set_output_format(OutputFormat::Text);
-        telemetry.finish(&result).await;
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
     }
@@ -2682,8 +2679,7 @@ async fn main() -> Result<()> {
 
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
-    let mut telemetry = ActionSession::from_matches(&matches, cli.yes);
-
+    let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();
 
@@ -2734,8 +2730,6 @@ async fn main() -> Result<()> {
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
-        telemetry.set_output_format(OutputFormat::Text);
-        telemetry.finish(&result).await;
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
     }
@@ -2750,8 +2744,6 @@ async fn main() -> Result<()> {
             }
             DocsCmd::Fetch { suffix } => commands::docs::run_fetch(suffix, output).await,
         };
-        telemetry.set_output_format(output);
-        telemetry.finish(&result).await;
         update_check::maybe_print_notice(output);
         return result;
     }
@@ -2759,8 +2751,6 @@ async fn main() -> Result<()> {
     // Cleanup command doesn't need API credentials.
     if let Commands::Cleanup = cli.command {
         let result = commands::cleanup::run();
-        telemetry.set_output_format(OutputFormat::Text);
-        telemetry.finish(&result).await;
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
     }
@@ -2771,8 +2761,6 @@ async fn main() -> Result<()> {
     if let Commands::Schema = cli.command {
         let result = commands::schema::run(Cli::command());
         let output = cli.output.unwrap_or(OutputFormat::Text);
-        telemetry.set_output_format(output);
-        telemetry.finish(&result).await;
         update_check::maybe_print_notice(output);
         return result;
     }
@@ -2788,8 +2776,6 @@ async fn main() -> Result<()> {
             }
             CompletionsCmd::Refresh => commands::completions::run_refresh(Cli::command),
         };
-        telemetry.set_output_format(OutputFormat::Text);
-        telemetry.finish(&result).await;
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
     }
@@ -2807,8 +2793,6 @@ async fn main() -> Result<()> {
                 // Query needs credentials - handled in the main match below.
                 DataprimeCmd::Query { .. } => unreachable!(),
             };
-            telemetry.set_output_format(output);
-            telemetry.finish(&result).await;
             update_check::maybe_print_notice(output);
             return result;
         }
@@ -2848,22 +2832,23 @@ async fn main() -> Result<()> {
         .output
         .or_else(|| config::first_profile_output_format(&cli.profile))
         .unwrap_or(global_config.default_output_format);
-    telemetry.set_output_format(output);
     let max_direct = global_config.max_dataprime_direct_output_size;
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = config::resolve_all(&cli.profile, effective_api_key, effective_region)
-        .await
-        .map_err(|e| {
-            eprintln!("Configuration error: {e}");
+    let configs = match config::resolve_all(&cli.profile, effective_api_key, effective_region).await
+    {
+        Ok(configs) => configs,
+        Err(error) => {
+            eprintln!("Configuration error: {error}");
             eprintln!("Run `cx profiles add` to set up credentials.");
-            e
-        })?;
+            let result = Err(error);
+            return result;
+        }
+    };
 
-    let targets = build_targets(configs)?;
-    telemetry.set_targets(&targets);
-    let yes = cli.yes;
+    let request_metadata = RequestMetadata::from_invocation(&matches, output, &configs, yes);
+    let targets = build_targets(configs, request_metadata)?;
     let agent_mode = safety::is_agent_mode();
 
     // Wrap the dispatch in an async block so we can capture its Result and
@@ -4320,8 +4305,6 @@ async fn main() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     }
     .await;
-
-    telemetry.finish(&cmd_result).await;
 
     // Print update notice after command output so it doesn't scroll off.
     // Using a separate result variable (rather than ?) ensures the notice

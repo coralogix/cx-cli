@@ -207,9 +207,7 @@ Environment variables override profile file values:
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_AGENT_NAME` | Opt-in short identifier for the agent running `cx` |
-| `CX_TELEMETRY_URL` | Full URL of the platform-managed CLI action-event endpoint on the same Coralogix API origin |
-| `CX_NO_TELEMETRY` | Disable CLI action telemetry (accepts `1`, `true`, `yes`, `on`) |
-| `CX_DEBUG_TELEMETRY` | Print the sanitized action-event JSON to stderr (accepts `1`, `true`, `yes`, `on`) |
+| `CX_TELEMETRY` | Set to `false`, `no`, `off`, or `0` to disable CLI request metadata |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
@@ -217,24 +215,22 @@ Environment variables override profile file values:
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
 
-### Action telemetry
+### Request metadata
 
-When `CX_TELEMETRY_URL` is configured, authenticated API commands send a
-best-effort action event to that platform-managed endpoint. For credential
-safety, the URL must use the same scheme, host, and port as the configured
-Coralogix API endpoint; a different origin is ignored. Events contain only
-bounded metadata such as the command path, outcome, client version, output
-format, invoker name, authentication type, installed CX skills, and
-profile-count buckets. Each installation also has a randomly generated
-`installation_id`, stored in `~/.cx/state.json`; it identifies a CLI
-installation, not a person or API key.
-`skills_on_disk` is true when at least one known CX skill has a `SKILL.md` file
-in a standard Claude, Cursor, or `.agents` skill-installation directory. The
-endpoint derives team and principal identity from the command's bearer token.
+Each authenticated Coralogix API request includes bounded `X-Cx-Cli-*` headers
+for the current invocation: command path and family, output format, invoker
+name, authentication type, installed CX skills, selected and configured
+profile-count buckets, write-operation and `--yes` flags, and a random
+invocation ID. `X-Cx-Cli-Metadata` also contains the same values as compact
+JSON.
 
-Telemetry never includes API keys, profile names, command arguments, query
-text, raw error messages, or arbitrary environment variables. Set
-`CX_NO_TELEMETRY=true` to suppress all events.
+The installation identifier is a random UUID stored in `~/.cx/state.json`; it
+identifies a CLI installation, not a person or API key. Request metadata never
+includes API keys, profile names, command arguments, query text, raw error
+messages, arbitrary environment variables, outcome, error details, HTTP
+status, or duration.
+
+Set `CX_TELEMETRY=false` to opt out of these headers entirely.
 
 ## Read-only mode
 

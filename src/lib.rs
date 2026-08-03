@@ -1,4 +1,3 @@
-pub mod action_telemetry;
 pub mod api_client;
 pub mod banner;
 pub mod cases_query_rules;
@@ -11,6 +10,7 @@ pub mod install_method;
 pub mod keyring_store;
 pub mod oauth;
 pub mod render;
+pub mod request_metadata;
 pub mod safety;
 pub mod serde_helpers;
 pub mod spill;

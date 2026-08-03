@@ -14,6 +14,7 @@ use futures::future::join_all;
 
 use crate::api_client::CxClient;
 use crate::config::ResolvedConfig;
+use crate::request_metadata::RequestMetadata;
 
 // ── Execution target ──────────────────────────────────────────────────────────
 
@@ -25,26 +26,31 @@ pub struct ExecutionTarget {
     pub profile_name: String,
     pub cfg: ResolvedConfig,
     pub client: CxClient,
+    pub request_metadata: RequestMetadata,
 }
 
 impl ExecutionTarget {
     /// Build an `ExecutionTarget` from an already-resolved config.
-    pub fn new(cfg: ResolvedConfig) -> Result<Self> {
-        let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
+    pub fn new(cfg: ResolvedConfig, request_metadata: RequestMetadata) -> Result<Self> {
+        let client = CxClient::new_with_metadata(&cfg.endpoint, &cfg.api_key, &request_metadata)?;
         let profile_name = cfg.profile_name.clone();
         Ok(Self {
             profile_name,
             cfg,
             client,
+            request_metadata,
         })
     }
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.
-pub fn build_targets(configs: Vec<ResolvedConfig>) -> Result<Vec<Arc<ExecutionTarget>>> {
+pub fn build_targets(
+    configs: Vec<ResolvedConfig>,
+    request_metadata: RequestMetadata,
+) -> Result<Vec<Arc<ExecutionTarget>>> {
     configs
         .into_iter()
-        .map(|cfg| ExecutionTarget::new(cfg).map(Arc::new))
+        .map(|cfg| ExecutionTarget::new(cfg, request_metadata.clone()).map(Arc::new))
         .collect()
 }
 

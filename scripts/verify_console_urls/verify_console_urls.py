@@ -8,10 +8,12 @@ Why this script exists
 most mutation/read commands (see `docs/configuration.md#console-links` and
 `src/console_url.rs`). All of that logic is unit- and wiremock-tested, but
 none of those tests can catch a *systematically* wrong host/path, a route
-that has moved in the real web console, or a real team whose
-`/identity/whoami` response doesn't have the shape the code expects (see
-`src/identity.rs`). Those things can only be caught by actually running `cx`
-against a live team and inspecting the URLs it produces.
+that has moved in the real web console, or a `console_team_name` that
+doesn't actually match the real team's console subdomain (it's a
+user-supplied config value, not something `cx` looks up or verifies - see
+`docs/configuration.md#console-links`). Those things can only be caught by
+actually running `cx` against a live team and inspecting the URLs it
+produces.
 
 This script drives the real `cx` binary against a real Coralogix team,
 captures the URL from both stderr and `-o json` output for every `cx`

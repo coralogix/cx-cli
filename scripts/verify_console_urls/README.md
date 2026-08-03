@@ -18,8 +18,9 @@ They can't catch:
 
 - A route that has moved or been renamed in the real web console.
 - A systematically wrong host or region-to-domain mapping.
-- A real team whose `/identity/whoami` response doesn't have the shape
-  `src/identity.rs` expects (e.g. missing `team_url`).
+- A `console_team_name` that doesn't actually match the real team's console
+  subdomain (it's a user-supplied value, not something `cx` looks up or
+  verifies - see `docs/configuration.md#console-links`).
 - Any other case where the *intended* URL and the *correct* URL have quietly
   diverged.
 

@@ -4,10 +4,10 @@
 //! team subdomain + console domain, e.g. `https://acme.app.eu2.coralogix.com`)
 //! and an entity ID, and return the full console URL for that entity.
 //!
-//! No I/O happens here - resolving the base URL (via `/identity/whoami` and
-//! region metadata) is handled by `ExecutionTarget::console_base` in
-//! `crate::execution`. Keeping these as pure string builders makes them
-//! trivial to unit test.
+//! No I/O happens here - resolving the base URL (from explicit `console_url`
+//! / `console_team_name` config plus region metadata) is handled by
+//! `ExecutionTarget::console_base` in `crate::execution`. Keeping these as
+//! pure string builders makes them trivial to unit test.
 //!
 //! ## Hash routing
 //!

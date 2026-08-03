@@ -123,24 +123,18 @@ pub fn print_console_link(url: &str) {
 /// (`console_base` is cached, so repeated lookups within one invocation
 /// reuse the cached `None` rather than re-triggering this hint).
 ///
-/// This is reached whenever console link resolution fails without an
-/// explicit `console_url` configured - in practice, almost always because
-/// `GET /identity/whoami` didn't return a `team_url` for this team.
-/// `team_url` is not present on every team's `/identity/whoami` response -
-/// there is currently no public API that reliably exposes a team's console
-/// URL slug for every team - and `cx` never falls back to guessing from
-/// `team_name` *unless* the profile has explicitly opted in via
-/// `console_team_name_fallback`, since an un-opted-in guess would risk a
-/// confidently wrong link (see `src/identity.rs`). Setting `console_url`
-/// explicitly is the only way to guarantee links on such a team;
-/// `console_team_name_fallback` is a lower-confidence opt-in alternative.
+/// This is reached whenever neither `console_url` nor `console_team_name`
+/// (combined with a known `console_domain` for the profile's region) is
+/// configured. `cx` never calls any API or guesses a team's console
+/// subdomain - both fields are purely user-supplied (see `src/config.rs`'s
+/// `Profile` struct), so the only fix is to set one of them explicitly.
 pub fn print_console_link_unavailable_hint() {
     eprintln!(
         "{}",
-        "Note: no \"View in Coralogix\" link available for this profile (could not resolve a \
-         team subdomain, and no `console_url` is set). Set `console_url` in the profile's TOML \
-         to enable console links, or opt into a best-effort guess via \
-         `console_team_name_fallback` - see docs/configuration.md#console-links."
+        "Note: no \"View in Coralogix\" link available for this profile (no `console_url` or \
+         `console_team_name` configured, or the region has no known console domain). Set \
+         `console_url` in the profile's TOML for a full override, or `console_team_name` to \
+         build one from the region's console domain - see docs/configuration.md#console-links."
             .dimmed()
     );
 }

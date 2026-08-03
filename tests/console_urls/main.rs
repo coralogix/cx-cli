@@ -467,6 +467,85 @@ async fn no_console_link_when_region_has_no_known_console_domain() {
     );
 }
 
+/// `console_team_name_fallback = true` is parsed and threaded through, but a
+/// `Region::Custom` profile (a bare mock URL, same as the test above) still
+/// has no *known console domain* to combine a subdomain with - so enabling
+/// the flag alone must not produce a link here. This guards against the flag
+/// accidentally short-circuiting the "no known domain" branch of
+/// `console_base` resolution; the full "known domain + team_name fallback"
+/// combination is covered at the unit level in
+/// `execution::tests::console_base_falls_back_to_team_name_when_enabled_and_team_url_absent`,
+/// since the region enum used by these binary-level tests has no way to
+/// redirect a *known* region's HTTP calls to a wiremock server (see
+/// `src/config.rs`'s `Region::api_endpoint`/`console_domain`).
+#[tokio::test]
+async fn console_team_name_fallback_does_not_produce_link_without_known_console_domain() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(
+        profiles_dir.join("mock.toml"),
+        format!(
+            r#"auth = "api_key"
+credential_storage = "file"
+api_key = "test-key"
+region = "{}"
+console_team_name_fallback = true
+"#,
+            server.uri()
+        ),
+    )
+    .unwrap();
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("dash_team_name_fallback_no_domain");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    // whoami must not even be called - console_base bails out on the
+    // missing console_domain before ever reaching the team_name fallback.
+    assert!(server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .all(|r| r.url.path() != "/identity/whoami"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "unexpected console link with no known console domain: {stderr}"
+    );
+}
+
 // ── stdout carries the console link as a `consoleUrl` field ──────────────────
 
 /// `-o json` output must embed the same URL that's echoed to stderr as a

@@ -30,6 +30,7 @@ pub fn test_target_with_token(
         default_tier: coralogix_cli::Tier::Archive,
         console_url: None,
         console_domain: None,
+        console_team_name_fallback: false,
     };
     Arc::new(ExecutionTarget::new(cfg).expect("test_target: failed to build ExecutionTarget"))
 }

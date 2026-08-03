@@ -53,9 +53,14 @@ impl ExecutionTarget {
     /// 1. An explicit `console_url` configured on the profile/env - used
     ///    as-is (trailing slash already trimmed by `config::resolve_single`).
     /// 2. A known `console_domain` for the profile's region, combined with
-    ///    the team subdomain from `GET /identity/whoami`.
-    /// 3. `None` - the region has no known console domain (e.g.
-    ///    `Region::Custom`), or the team subdomain could not be resolved.
+    ///    the team subdomain from `GET /identity/whoami`'s `team_url` field.
+    /// 3. If `console_team_name_fallback` is enabled on the profile and step
+    ///    2's `team_url` is unusable, a sanitized guess derived from
+    ///    `team_name` instead (see `identity::sanitize_team_name_label`).
+    ///    Off by default - opt-in only.
+    /// 4. `None` - the region has no known console domain (e.g.
+    ///    `Region::Custom`), or no subdomain could be resolved by either of
+    ///    the above.
     ///
     /// Best-effort and infallible: any lookup failure results in `None`
     /// rather than an error, since a console link is a "nice to have" that
@@ -88,7 +93,9 @@ impl ExecutionTarget {
     /// duplicating the hint check at every early-return inside this chain.
     async fn resolve_console_base_from_identity(&self) -> Option<String> {
         let domain = self.cfg.console_domain.as_deref()?;
-        let subdomain = identity::resolve_team_subdomain(&self.client).await?;
+        let subdomain =
+            identity::resolve_team_subdomain(&self.client, self.cfg.console_team_name_fallback)
+                .await?;
         Some(format!("https://{subdomain}.{domain}"))
     }
 
@@ -245,6 +252,15 @@ mod tests {
         console_url: Option<&str>,
         console_domain: Option<&str>,
     ) -> ResolvedConfig {
+        test_cfg_with_team_name_fallback(endpoint, console_url, console_domain, false)
+    }
+
+    fn test_cfg_with_team_name_fallback(
+        endpoint: &str,
+        console_url: Option<&str>,
+        console_domain: Option<&str>,
+        console_team_name_fallback: bool,
+    ) -> ResolvedConfig {
         ResolvedConfig {
             profile_name: "test-profile".to_string(),
             api_key: "test-key".to_string(),
@@ -252,6 +268,7 @@ mod tests {
             default_tier: crate::Tier::Archive,
             console_url: console_url.map(str::to_string),
             console_domain: console_domain.map(str::to_string),
+            console_team_name_fallback,
         }
     }
 
@@ -383,6 +400,84 @@ mod tests {
         let first = target.console_base().await;
         let second = target.console_base().await;
         assert_eq!(first, second);
+    }
+
+    #[tokio::test]
+    async fn console_base_falls_back_to_team_name_when_enabled_and_team_url_absent() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 1,
+                "team_name": "Acme Corp"
+            })))
+            .mount(&server)
+            .await;
+
+        let target = ExecutionTarget::new(test_cfg_with_team_name_fallback(
+            &server.uri(),
+            None,
+            Some("app.eu2.coralogix.com"),
+            true,
+        ))
+        .unwrap();
+        assert_eq!(
+            target.console_base().await,
+            Some("https://acme-corp.app.eu2.coralogix.com".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn console_base_team_name_fallback_still_none_when_team_name_also_absent() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "team_id": 1 })),
+            )
+            .mount(&server)
+            .await;
+
+        let target = ExecutionTarget::new(test_cfg_with_team_name_fallback(
+            &server.uri(),
+            None,
+            Some("app.eu2.coralogix.com"),
+            true,
+        ))
+        .unwrap();
+        assert_eq!(target.console_base().await, None);
+    }
+
+    #[tokio::test]
+    async fn console_base_team_name_fallback_prefers_team_url_when_present() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 1,
+                "team_name": "Totally Different Name",
+                "team_url": "acme"
+            })))
+            .mount(&server)
+            .await;
+
+        // Even with the fallback enabled, a usable team_url must still win -
+        // it's the authoritative field, the fallback is only for when it's
+        // absent/unusable.
+        let target = ExecutionTarget::new(test_cfg_with_team_name_fallback(
+            &server.uri(),
+            None,
+            Some("app.eu2.coralogix.com"),
+            true,
+        ))
+        .unwrap();
+        assert_eq!(
+            target.console_base().await,
+            Some("https://acme.app.eu2.coralogix.com".to_string())
+        );
     }
 
     #[test]

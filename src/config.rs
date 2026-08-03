@@ -352,6 +352,31 @@ pub struct Profile {
     /// available (e.g. `Region::Custom`), no console link is printed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_url: Option<String>,
+    /// Opt-in fallback for console link resolution: when `true` and
+    /// `GET /identity/whoami` doesn't return a usable `team_url`, build the
+    /// console subdomain by sanitizing `team_name` instead (lowercased,
+    /// with runs of non-alphanumeric characters collapsed to a single
+    /// hyphen - see `identity::sanitize_team_name_label`) rather than
+    /// skipping the link entirely.
+    ///
+    /// This is a best-effort *guess*, not a guarantee: a team's real
+    /// subdomain doesn't always match a sanitized form of its display name
+    /// (e.g. a team named "acmeprod" could have the real subdomain
+    /// "acme-prod"). Off by default so existing profiles keep the
+    /// conservative "no link rather than a possibly-wrong one" behavior;
+    /// only enable this once you've confirmed the guess is correct for your
+    /// team, or set `console_url` directly instead for a guaranteed-correct
+    /// link regardless of what `/identity/whoami` returns.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub console_team_name_fallback: bool,
+}
+
+/// `serde(skip_serializing_if)` helper for plain `bool` fields that default
+/// to `false` - keeps profile TOML files free of a `field = false` line for
+/// every profile that never opted in, matching the `Option::is_none` idiom
+/// used for the `Option<T>` fields above.
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -370,6 +395,10 @@ pub struct ResolvedConfig {
     /// Console domain derived from `region.console_domain()`. `None` for
     /// `Region::Custom` and any other region with no known web console.
     pub console_domain: Option<String>,
+    /// Resolved copy of `Profile::console_team_name_fallback` - see its doc
+    /// comment. Always `false` in env-only mode (no profile file to read it
+    /// from).
+    pub console_team_name_fallback: bool,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -499,6 +528,7 @@ async fn resolve_single(
                 default_tier: crate::Tier::Archive,
                 console_url: None,
                 console_domain: region.console_domain().map(str::to_string),
+                console_team_name_fallback: false,
             });
         }
     }
@@ -570,6 +600,7 @@ async fn resolve_single(
             .as_deref()
             .map(|s| s.trim_end_matches('/').to_string()),
         console_domain: profile.region.console_domain().map(str::to_string),
+        console_team_name_fallback: profile.console_team_name_fallback,
     })
 }
 
@@ -764,6 +795,7 @@ default_profile = "my-profile"
             default_tier: crate::Tier::Archive,
             console_url: None,
             console_domain: None,
+            console_team_name_fallback: false,
         };
         assert_eq!(cfg.profile_name, "prod");
     }
@@ -851,6 +883,7 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            console_team_name_fallback: false,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -860,6 +893,61 @@ api_key = "mykey"
         // oauth_client_id / oauth_base_url are skip_serializing_if = None, so absent
         assert!(restored.oauth_client_id.is_none());
         assert!(restored.oauth_tokens.is_none());
+    }
+
+    /// `console_team_name_fallback` defaults to `false` and is omitted from
+    /// serialized TOML in that case, so existing profiles on disk (which
+    /// predate this field) don't need migration and newly-written profiles
+    /// that never opt in stay free of a redundant `= false` line.
+    #[test]
+    fn console_team_name_fallback_false_is_omitted_from_toml() {
+        let profile = Profile {
+            auth: AuthKind::ApiKey,
+            credential_storage: CredentialStorage::File,
+            api_key: Some("k".to_string()),
+            region: Region::Eu2,
+            label: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
+            oauth_tokens: None,
+            default_output_format: None,
+            default_tier: None,
+            console_url: None,
+            console_team_name_fallback: false,
+        };
+        let toml = toml::to_string_pretty(&profile).unwrap();
+        assert!(
+            !toml.contains("console_team_name_fallback"),
+            "false should be omitted from serialized TOML, got: {toml}"
+        );
+
+        // A profile written before this field existed (or that just never
+        // set it) must still parse, defaulting to false.
+        let restored: Profile = toml::from_str(&toml).unwrap();
+        assert!(!restored.console_team_name_fallback);
+    }
+
+    /// `console_team_name_fallback = true` round-trips through TOML.
+    #[test]
+    fn console_team_name_fallback_true_round_trips() {
+        let profile = Profile {
+            auth: AuthKind::ApiKey,
+            credential_storage: CredentialStorage::File,
+            api_key: Some("k".to_string()),
+            region: Region::Eu2,
+            label: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
+            oauth_tokens: None,
+            default_output_format: None,
+            default_tier: None,
+            console_url: None,
+            console_team_name_fallback: true,
+        };
+        let toml = toml::to_string_pretty(&profile).unwrap();
+        assert!(toml.contains("console_team_name_fallback = true"));
+        let restored: Profile = toml::from_str(&toml).unwrap();
+        assert!(restored.console_team_name_fallback);
     }
 
     /// OAuth profile with file-stored tokens round-trips through TOML.
@@ -882,6 +970,7 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            console_team_name_fallback: false,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -908,6 +997,7 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            console_team_name_fallback: false,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -998,6 +1088,7 @@ api_key = "mykey"
                 default_output_format: None,
                 default_tier: None,
                 console_url: None,
+                console_team_name_fallback: false,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -1036,6 +1127,7 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            console_team_name_fallback: false,
         };
         save_profile("default", &profile).unwrap();
 
@@ -1060,6 +1152,7 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            console_team_name_fallback: false,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1085,6 +1178,7 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            console_team_name_fallback: false,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1110,6 +1204,7 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            console_team_name_fallback: false,
         };
         save_profile(name, &profile).unwrap();
 

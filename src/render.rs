@@ -128,16 +128,19 @@ pub fn print_console_link(url: &str) {
 /// `GET /identity/whoami` didn't return a `team_url` for this team.
 /// `team_url` is not present on every team's `/identity/whoami` response -
 /// there is currently no public API that reliably exposes a team's console
-/// URL slug for every team - and `cx` deliberately never falls back to
-/// guessing from `team_name`, since a wrong guess would be a confidently
-/// wrong link (see `src/identity.rs`). Setting `console_url` explicitly is
-/// the only way to guarantee links on such a team.
+/// URL slug for every team - and `cx` never falls back to guessing from
+/// `team_name` *unless* the profile has explicitly opted in via
+/// `console_team_name_fallback`, since an un-opted-in guess would risk a
+/// confidently wrong link (see `src/identity.rs`). Setting `console_url`
+/// explicitly is the only way to guarantee links on such a team;
+/// `console_team_name_fallback` is a lower-confidence opt-in alternative.
 pub fn print_console_link_unavailable_hint() {
     eprintln!(
         "{}",
         "Note: no \"View in Coralogix\" link available for this profile (could not resolve a \
          team subdomain, and no `console_url` is set). Set `console_url` in the profile's TOML \
-         to enable console links - see docs/configuration.md#console-links."
+         to enable console links, or opt into a best-effort guess via \
+         `console_team_name_fallback` - see docs/configuration.md#console-links."
             .dimmed()
     );
 }

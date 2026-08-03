@@ -225,7 +225,9 @@ safety, the URL must use the same scheme, host, and port as the configured
 Coralogix API endpoint; a different origin is ignored. Events contain only
 bounded metadata such as the command path, outcome, client version, output
 format, invoker name, authentication type, installed CX skills, and
-profile-count buckets.
+profile-count buckets. Each installation also has a randomly generated
+`installation_id`, stored in `~/.cx/state.json`; it identifies a CLI
+installation, not a person or API key.
 `skills_on_disk` is true when at least one known CX skill has a `SKILL.md` file
 in a standard Claude, Cursor, or `.agents` skill-installation directory. The
 endpoint derives team and principal identity from the command's bearer token.

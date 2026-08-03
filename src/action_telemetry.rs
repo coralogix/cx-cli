@@ -53,6 +53,7 @@ pub enum ActionOutcome {
 #[derive(Debug, Clone, Serialize)]
 pub struct ActionEvent {
     pub schema_version: u8,
+    pub installation_id: String,
     pub command_path: String,
     pub command_family: String,
     pub outcome: ActionOutcome,
@@ -122,6 +123,7 @@ impl TelemetryClient {
 /// names, API keys, query text, request IDs, or raw error messages.
 pub struct ActionSession {
     started: Instant,
+    installation_id: String,
     command_path: String,
     command_family: String,
     output_format: Option<OutputFormat>,
@@ -143,6 +145,7 @@ impl ActionSession {
 
         Self {
             started: Instant::now(),
+            installation_id: crate::version_cache::installation_id(),
             command_path,
             command_family,
             output_format: None,
@@ -187,6 +190,7 @@ impl ActionSession {
 
         ActionEvent {
             schema_version: 1,
+            installation_id: self.installation_id.clone(),
             command_path: self.command_path.clone(),
             command_family: self.command_family.clone(),
             outcome,
@@ -402,6 +406,7 @@ mod tests {
     fn event_json_excludes_sensitive_fields() {
         let event = ActionEvent {
             schema_version: 1,
+            installation_id: "09a2b101-693f-47d2-8d7a-00e9a021855c".into(),
             command_path: "logs".into(),
             command_family: "logs".into(),
             outcome: ActionOutcome::Success,
@@ -419,6 +424,10 @@ mod tests {
             duration_ms: 1,
         };
         let body = serde_json::to_value(event).unwrap();
+        assert_eq!(
+            body["installation_id"],
+            "09a2b101-693f-47d2-8d7a-00e9a021855c"
+        );
         for sensitive_key in ["api_key", "query", "profile_name", "error_message"] {
             assert!(body.get(sensitive_key).is_none());
         }
@@ -473,6 +482,7 @@ mod tests {
         };
         let event = ActionEvent {
             schema_version: 1,
+            installation_id: "09a2b101-693f-47d2-8d7a-00e9a021855c".into(),
             command_path: "dashboards.search".into(),
             command_family: "dashboards".into(),
             outcome: ActionOutcome::Success,
@@ -500,6 +510,10 @@ mod tests {
         );
         let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(body["command_path"], "dashboards.search");
+        assert_eq!(
+            body["installation_id"],
+            "09a2b101-693f-47d2-8d7a-00e9a021855c"
+        );
         assert!(body.get("api_key").is_none());
         assert!(body.get("query").is_none());
         assert!(body.get("profile_name").is_none());

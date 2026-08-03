@@ -2653,7 +2653,9 @@ async fn main() -> Result<()> {
     // Check if this is a profiles command - use separate parser without global API flags.
     // Only works when `profiles` is the first arg (no global flags before it).
     if std::env::args().nth(1).as_deref() == Some("profiles") {
-        let profiles_cli = ProfilesCli::parse();
+        let profile_matches = ProfilesCli::command().get_matches();
+        let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
+        let mut telemetry = ActionSession::from_matches(&profile_matches, false);
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
@@ -2663,6 +2665,8 @@ async fn main() -> Result<()> {
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
+        telemetry.set_output_format(OutputFormat::Text);
+        telemetry.finish(&result).await;
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
     }

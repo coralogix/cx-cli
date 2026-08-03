@@ -75,6 +75,7 @@ futures = "0.3.32"
 
 # Gzip decompression for artifact downloads
 flate2 = "1"
+uuid = { version = "1.24.0", features = ["v4"] }
 
 # ── Platform-specific keyring backends ─────────────────────────────────────────
 # macOS: Keychain

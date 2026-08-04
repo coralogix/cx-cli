@@ -754,7 +754,10 @@ pub async fn run_replace(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
-        let replaced_id = dashboard_id_from_response(&resp);
+        // The request already carried the dashboard's id (`dash_id`, required above), so
+        // fall back to it when the replace response comes back without one — some
+        // deployments return an empty body on a successful replace.
+        let replaced_id = dashboard_id_from_response(&resp).or_else(|| Some(dash_id.to_string()));
         render::print_created(
             "Replaced",
             "dashboard",

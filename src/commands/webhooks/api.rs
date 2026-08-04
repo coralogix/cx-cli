@@ -42,12 +42,6 @@ pub struct ListWebhooksResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateWebhookResponse {
-    pub webhook: Option<Webhook>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct DeleteWebhookResponse {}
 
 // --- API ---
@@ -73,7 +67,7 @@ impl<'a> WebhooksApi<'a> {
         self.client.get(&path, &[]).await
     }
 
-    pub async fn create(&self, body: &Value) -> Result<CreateWebhookResponse> {
+    pub async fn create(&self, body: &Value) -> Result<Value> {
         self.client.post(WEBHOOKS_BASE, body).await
     }
 
@@ -122,13 +116,6 @@ mod tests {
         let json = json!({ "deployed": [] });
         let resp: ListWebhooksResponse = serde_json::from_value(json).unwrap();
         assert!(resp.deployed.is_empty());
-    }
-
-    #[test]
-    fn deserialize_create_response() {
-        let json = json!({ "webhook": { "id": "wh-001", "name": "Slack Notify" } });
-        let resp: CreateWebhookResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.webhook.unwrap().id.as_deref(), Some("wh-001"));
     }
 
     #[test]

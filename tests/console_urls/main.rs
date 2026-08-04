@@ -190,6 +190,63 @@ async fn dashboard_replace_prints_console_link() {
     );
 }
 
+#[tokio::test]
+async fn dashboard_replace_falls_back_to_request_id_when_response_has_no_id() {
+    // Some deployments return an empty body on a successful replace. The CLI
+    // already knows the dashboard's id from the request itself, so it should
+    // still be able to print the console link rather than silently skipping it.
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("dash_replace_empty_resp");
+    fs::write(
+        &file_path,
+        r#"{"id": "dash-abc123", "name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "replace",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/dashboards/dash-abc123"
+        ),
+        "stderr did not contain the console link (fallback to request id failed): {stderr}"
+    );
+    assert!(
+        !stderr.contains("did not include an ID"),
+        "should not warn about a missing ID once it fell back to the request's own id: {stderr}"
+    );
+}
+
 // ── alerts create ────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -299,6 +356,70 @@ async fn view_create_prints_console_link() {
             "View in Coralogix: https://acme.app.eu2.coralogix.com/#/explore?viewId=view-123"
         ),
         "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn view_create_prints_console_link_with_bare_response() {
+    // Some deployments return the created view directly (no `{"view": ...}` envelope).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"id": "view-456", "name": "Demo View"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("view_create_bare");
+    fs::write(&file_path, r#"{"name": "Demo View"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "views",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/explore?viewId=view-456"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON ({e}): {:?}", output.stdout));
+    // A single result unwraps to a bare object rather than a one-element array.
+    assert_eq!(
+        stdout["id"], "view-456",
+        "created view should be present, not dropped: {stdout}"
+    );
+    assert_eq!(
+        stdout["consoleUrl"],
+        "https://acme.app.eu2.coralogix.com/#/explore?viewId=view-456"
     );
 }
 
@@ -1905,6 +2026,68 @@ async fn webhooks_create_prints_console_link() {
             "View in Coralogix: https://acme.app.eu2.coralogix.com/#/extensions/outbound-webhooks"
         ),
         "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn webhooks_create_prints_console_link_with_bare_response() {
+    // Some deployments return the created webhook directly (no `{"webhook": ...}` envelope).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/integrations/webhooks/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"id": "wh-2", "name": "New Webhook"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("webhooks_create_bare");
+    fs::write(&file_path, r#"{"name": "New Webhook"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "webhooks",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://acme.app.eu2.coralogix.com/#/extensions/outbound-webhooks"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON ({e}): {:?}", output.stdout));
+    assert_eq!(
+        stdout["id"], "wh-2",
+        "created webhook should be present, not dropped: {stdout}"
+    );
+    assert_eq!(
+        stdout["consoleUrl"],
+        "https://acme.app.eu2.coralogix.com/#/extensions/outbound-webhooks"
     );
 }
 

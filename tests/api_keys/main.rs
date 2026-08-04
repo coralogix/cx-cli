@@ -12,14 +12,37 @@ use coralogix_cli::config::OutputFormat;
 async fn list_api_keys_from_mock() {
     let server = MockServer::start().await;
 
+    // The bare collection endpoint - there is no "list" route on the real
+    // backend (see ApiKeysApi::list's doc comment) - returns every team
+    // member's keys, matching what the Coralogix console's API Keys page
+    // shows.
     let body = json!({
         "keys": [
-            { "keyInfo": { "keyId": "key-001", "name": "My Key", "owner": { "userId": "u1" }, "active": true, "hashedKey": "abc..." } }
+            {
+                "apiKey": {
+                    "id": "key-001",
+                    "keyName": "My Key",
+                    "owner": { "user": { "userId": "u1", "userEmail": "me@example.com" } },
+                    "isActive": true
+                },
+                "permissions": [],
+                "presets": []
+            },
+            {
+                "apiKey": {
+                    "id": "key-002",
+                    "keyName": "Someone Else's Key",
+                    "owner": { "user": { "userId": "u2", "userEmail": "other@example.com" } },
+                    "isActive": true
+                },
+                "permissions": [],
+                "presets": []
+            }
         ]
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

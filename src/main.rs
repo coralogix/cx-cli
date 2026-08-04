@@ -2143,7 +2143,7 @@ Examples:
   cx iam api-keys get <id>
   cx iam api-keys create --from-file key.json
   cx iam api-keys send-data-keys
-  cx iam api-keys admin list")]
+  cx iam api-keys admin delete --ids <id1> <id2>")]
     ApiKeys {
         #[command(subcommand)]
         cmd: ApiKeysCmd,
@@ -2246,8 +2246,6 @@ enum ApiKeysCmd {
 
 #[derive(Subcommand)]
 enum ApiKeysAdminCmd {
-    /// List all team members' API keys.
-    List,
     /// Bulk delete API keys by IDs [requires --yes].
     Delete {
         /// API key IDs to delete.
@@ -3968,9 +3966,6 @@ async fn main() -> Result<()> {
                         commands::api_keys::run_send_data_keys(&targets, output).await?;
                     }
                     ApiKeysCmd::Admin { cmd } => match cmd {
-                        ApiKeysAdminCmd::List => {
-                            commands::api_keys::run_admin_list(&targets, output).await?;
-                        }
                         ApiKeysAdminCmd::Delete { ids } => {
                             confirm_destructive("Bulk delete API keys?", yes, agent_mode)?;
                             commands::api_keys::run_admin_delete(&targets, &ids).await?;

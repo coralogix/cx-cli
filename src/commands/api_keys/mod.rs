@@ -365,63 +365,6 @@ pub async fn run_send_data_keys(
     Ok(())
 }
 
-pub async fn run_admin_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
-    eprintln!("{}", "Fetching all team members' API keys...".dimmed());
-    let include_profile = targets.len() > 1;
-
-    let per_profile = fan_out(targets, |t| async move {
-        let api = ApiKeysApi::new(&t.client);
-        let resp = api.get_team_members_keys().await?;
-        let keys_json: Vec<Value> = resp
-            .keys
-            .iter()
-            .map(|k| {
-                json!({
-                    "api_key": k.api_key.as_ref().map(|ak| json!({
-                        "id": ak.id,
-                        "key_name": ak.display_name(),
-                        "is_active": ak.display_active(),
-                    })),
-                    "permissions": k.permissions,
-                    "presets": k.presets,
-                })
-            })
-            .collect();
-        Ok(Value::Array(keys_json))
-    })
-    .await;
-
-    let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        if include_profile {
-            render::tag_get_result(&mut val, &profile);
-        }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
-            crate::console_url::iam_api_keys_url(b)
-        })
-        .await;
-        all_results.push(val);
-    }
-
-    match output {
-        OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
-            let toon = toon_encode(&all_results)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
-        OutputFormat::Text => {
-            render::render_get_text(
-                &all_results,
-                include_profile,
-                "No team API keys found.",
-                None::<&dyn Fn(&Value)>,
-            )?;
-        }
-    }
-    Ok(())
-}
-
 pub async fn run_admin_delete(targets: &[Arc<ExecutionTarget>], ids: &[String]) -> Result<()> {
     eprintln!(
         "{}",

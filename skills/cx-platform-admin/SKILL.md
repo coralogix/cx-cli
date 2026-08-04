@@ -52,7 +52,6 @@ When running inside an AI agent (Claude Code, Cursor, Codex, etc.), cx automatic
 | `cx iam api-keys update --from-file <id>` | Update an API key |
 | `cx iam api-keys delete <id>` | Delete an API key |
 | `cx iam api-keys send-data-keys` | List send-data API keys |
-| `cx iam api-keys admin list` | List all team members' keys |
 | `cx iam api-keys admin delete --ids <id1> <id2>` | Bulk delete keys |
 | `cx iam api-keys admin set-status --ids <id1> --active true/false` | Activate/deactivate keys |
 
@@ -139,7 +138,6 @@ cx iam groups users <group-id> -o json
 
 ```bash
 cx iam api-keys list -o json
-cx iam api-keys admin list -o json
 cx iam api-keys send-data-keys -o json
 ```
 

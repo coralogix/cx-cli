@@ -16,7 +16,7 @@ const HEADER_INSTALLATION_ID: &str = "x-cx-cli-installation-id";
 const HEADER_COMMAND_PATH: &str = "x-cx-cli-command-path";
 const HEADER_COMMAND_FAMILY: &str = "x-cx-cli-command-family";
 const HEADER_OUTPUT_FORMAT: &str = "x-cx-cli-output-format";
-const HEADER_ENVIRONMENT_INVOKER_NAME: &str = "x-cx-cli-environment-invoker-name";
+const HEADER_INVOKER_TYPE: &str = "x-cx-cli-invoker-type";
 const HEADER_AUTH_TYPE: &str = "x-cx-cli-auth-type";
 const HEADER_SKILLS_ON_DISK: &str = "x-cx-cli-skills-on-disk";
 const HEADER_SELECTED_TARGET_COUNT: &str = "x-cx-cli-selected-target-count";
@@ -76,8 +76,12 @@ impl RequestMetadata {
             (HEADER_COMMAND_FAMILY, command_family),
             (HEADER_OUTPUT_FORMAT, output_format.as_str().to_string()),
             (
-                HEADER_ENVIRONMENT_INVOKER_NAME,
-                safety::environment_invoker_name().to_string(),
+                HEADER_INVOKER_TYPE,
+                if safety::is_agent_mode() {
+                    "agent".to_string()
+                } else {
+                    "human".to_string()
+                },
             ),
             (HEADER_AUTH_TYPE, auth_type.to_string()),
             (
@@ -272,7 +276,7 @@ mod tests {
         assert_eq!(headers[HEADER_AUTH_TYPE], "none");
         assert_eq!(headers[HEADER_SELECTED_TARGET_COUNT], "0");
         assert_eq!(headers[HEADER_AUTO_APPROVED], "false");
-        assert!(headers.get(HEADER_ENVIRONMENT_INVOKER_NAME).is_some());
+        assert!(headers.get(HEADER_INVOKER_TYPE).is_some());
         assert!(!headers[HEADER_INSTALLATION_ID].is_empty());
 
         let combined: serde_json::Value =
@@ -286,13 +290,8 @@ mod tests {
     #[test]
     fn header_values_strip_control_characters() {
         let mut headers = HeaderMap::new();
-        insert_with_limit(
-            &mut headers,
-            HEADER_ENVIRONMENT_INVOKER_NAME,
-            "agent\r\ninjected",
-            128,
-        );
-        assert_eq!(headers[HEADER_ENVIRONMENT_INVOKER_NAME], "agentinjected");
+        insert_with_limit(&mut headers, HEADER_INVOKER_TYPE, "agent\r\ninjected", 128);
+        assert_eq!(headers[HEADER_INVOKER_TYPE], "agentinjected");
     }
 
     #[test]

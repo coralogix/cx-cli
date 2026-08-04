@@ -58,83 +58,23 @@ pub fn env_is_truthy(var: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Agent identity inferred from known environment variables.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnvironmentInvoker {
-    Aider,
-    AmazonQ,
-    AwsQDeveloper,
-    ClaudeCode,
-    Cline,
-    Codex,
-    Copilot,
-    Cursor,
-    CxAgentMode,
-    GeminiCodeAssist,
-    GithubCopilot,
-    OpenAiCodex,
-    SrcCody,
-    Windsurf,
-    Human,
-    Unknown,
-}
-
-impl EnvironmentInvoker {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Aider => "aider",
-            Self::AmazonQ => "amazon_q",
-            Self::AwsQDeveloper => "aws_q_developer",
-            Self::ClaudeCode => "claude_code",
-            Self::Cline => "cline",
-            Self::Codex => "codex",
-            Self::Copilot => "copilot",
-            Self::Cursor => "cursor",
-            Self::CxAgentMode => "cx_agent_mode",
-            Self::GeminiCodeAssist => "gemini_code_assist",
-            Self::GithubCopilot => "github_copilot",
-            Self::OpenAiCodex => "openai_codex",
-            Self::SrcCody => "src_cody",
-            Self::Windsurf => "windsurf",
-            Self::Human => "human",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-const AGENT_ENV_VARS: &[(&str, EnvironmentInvoker)] = &[
-    ("AIDER", EnvironmentInvoker::Aider),
-    ("AMAZON_Q", EnvironmentInvoker::AmazonQ),
-    ("AWS_Q_DEVELOPER", EnvironmentInvoker::AwsQDeveloper),
-    ("CLAUDECODE", EnvironmentInvoker::ClaudeCode),
-    ("CLAUDE_CODE", EnvironmentInvoker::ClaudeCode),
-    ("CLINE", EnvironmentInvoker::Cline),
-    ("CODEX", EnvironmentInvoker::Codex),
-    ("COPILOT_AGENT", EnvironmentInvoker::Copilot),
-    ("CURSOR_AGENT", EnvironmentInvoker::Cursor),
-    ("CX_AGENT_MODE", EnvironmentInvoker::CxAgentMode),
-    ("GEMINI_CODE_ASSIST", EnvironmentInvoker::GeminiCodeAssist),
-    ("GITHUB_COPILOT", EnvironmentInvoker::GithubCopilot),
-    ("OPENAI_CODEX", EnvironmentInvoker::OpenAiCodex),
-    ("SRC_CODY", EnvironmentInvoker::SrcCody),
-    ("WINDSURF_AGENT", EnvironmentInvoker::Windsurf),
+const AGENT_ENV_VARS: &[&str] = &[
+    "AIDER",
+    "AMAZON_Q",
+    "AWS_Q_DEVELOPER",
+    "CLAUDECODE",
+    "CLAUDE_CODE",
+    "CLINE",
+    "CODEX",
+    "COPILOT_AGENT",
+    "CURSOR_AGENT",
+    "CX_AGENT_MODE",
+    "GEMINI_CODE_ASSIST",
+    "GITHUB_COPILOT",
+    "OPENAI_CODEX",
+    "SRC_CODY",
+    "WINDSURF_AGENT",
 ];
-
-/// Returns the agent name inferred from the same environment variables used in
-/// master, or `human` / `unknown` when no known agent environment is present.
-pub fn environment_invoker_name() -> &'static str {
-    AGENT_ENV_VARS
-        .iter()
-        .find(|(variable, _)| std::env::var(variable).is_ok())
-        .map(|(_, invoker)| invoker.as_str())
-        .unwrap_or_else(|| {
-            if std::io::stdin().is_terminal() {
-                EnvironmentInvoker::Human.as_str()
-            } else {
-                EnvironmentInvoker::Unknown.as_str()
-            }
-        })
-}
 
 pub fn enforce_read_only(verb: &str) -> Result<()> {
     if is_write_verb(verb) {
@@ -147,11 +87,9 @@ pub fn enforce_read_only(verb: &str) -> Result<()> {
 }
 
 pub fn is_agent_mode() -> bool {
-    has_agent_environment(|variable| std::env::var(variable).is_ok())
-}
-
-fn has_agent_environment(is_set: impl Fn(&str) -> bool) -> bool {
-    AGENT_ENV_VARS.iter().any(|(variable, _)| is_set(variable))
+    AGENT_ENV_VARS
+        .iter()
+        .any(|variable| std::env::var(variable).is_ok())
 }
 
 /// Interactively prompt the user for a required non-empty text value.
@@ -339,9 +277,13 @@ mod tests {
     }
 
     #[test]
-    fn master_agent_environment_enables_agent_mode() {
-        assert!(has_agent_environment(|variable| variable == "CURSOR_AGENT"));
-        assert!(has_agent_environment(|variable| variable == "CLAUDE_CODE"));
-        assert!(!has_agent_environment(|_| false));
+    fn test_agent_env_vars_sorted() {
+        let mut sorted = AGENT_ENV_VARS.to_vec();
+        sorted.sort();
+        assert_eq!(
+            AGENT_ENV_VARS,
+            &sorted[..],
+            "AGENT_ENV_VARS must be sorted alphabetically"
+        );
     }
 }

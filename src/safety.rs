@@ -58,6 +58,84 @@ pub fn env_is_truthy(var: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Agent identity inferred from known environment variables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvironmentInvoker {
+    Aider,
+    AmazonQ,
+    AwsQDeveloper,
+    ClaudeCode,
+    Cline,
+    Codex,
+    Copilot,
+    Cursor,
+    CxAgentMode,
+    GeminiCodeAssist,
+    GithubCopilot,
+    OpenAiCodex,
+    SrcCody,
+    Windsurf,
+    Human,
+    Unknown,
+}
+
+impl EnvironmentInvoker {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Aider => "aider",
+            Self::AmazonQ => "amazon_q",
+            Self::AwsQDeveloper => "aws_q_developer",
+            Self::ClaudeCode => "claude_code",
+            Self::Cline => "cline",
+            Self::Codex => "codex",
+            Self::Copilot => "copilot",
+            Self::Cursor => "cursor",
+            Self::CxAgentMode => "cx_agent_mode",
+            Self::GeminiCodeAssist => "gemini_code_assist",
+            Self::GithubCopilot => "github_copilot",
+            Self::OpenAiCodex => "openai_codex",
+            Self::SrcCody => "src_cody",
+            Self::Windsurf => "windsurf",
+            Self::Human => "human",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+const AGENT_ENV_VARS: &[(&str, EnvironmentInvoker)] = &[
+    ("AIDER", EnvironmentInvoker::Aider),
+    ("AMAZON_Q", EnvironmentInvoker::AmazonQ),
+    ("AWS_Q_DEVELOPER", EnvironmentInvoker::AwsQDeveloper),
+    ("CLAUDECODE", EnvironmentInvoker::ClaudeCode),
+    ("CLAUDE_CODE", EnvironmentInvoker::ClaudeCode),
+    ("CLINE", EnvironmentInvoker::Cline),
+    ("CODEX", EnvironmentInvoker::Codex),
+    ("COPILOT_AGENT", EnvironmentInvoker::Copilot),
+    ("CURSOR_AGENT", EnvironmentInvoker::Cursor),
+    ("CX_AGENT_MODE", EnvironmentInvoker::CxAgentMode),
+    ("GEMINI_CODE_ASSIST", EnvironmentInvoker::GeminiCodeAssist),
+    ("GITHUB_COPILOT", EnvironmentInvoker::GithubCopilot),
+    ("OPENAI_CODEX", EnvironmentInvoker::OpenAiCodex),
+    ("SRC_CODY", EnvironmentInvoker::SrcCody),
+    ("WINDSURF_AGENT", EnvironmentInvoker::Windsurf),
+];
+
+/// Returns the agent name inferred from the same environment variables used in
+/// master, or `human` / `unknown` when no known agent environment is present.
+pub fn environment_invoker_name() -> &'static str {
+    AGENT_ENV_VARS
+        .iter()
+        .find(|(variable, _)| std::env::var(variable).is_ok())
+        .map(|(_, invoker)| invoker.as_str())
+        .unwrap_or_else(|| {
+            if std::io::stdin().is_terminal() {
+                EnvironmentInvoker::Human.as_str()
+            } else {
+                EnvironmentInvoker::Unknown.as_str()
+            }
+        })
+}
+
 pub fn enforce_read_only(verb: &str) -> Result<()> {
     if is_write_verb(verb) {
         bail!(

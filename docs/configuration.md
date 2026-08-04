@@ -222,7 +222,9 @@ for the current invocation: command path and family, output format, invoker
 name, authentication type, installed CX skills, selected and configured
 profile-count buckets, write-operation and `--yes` flags, and a random
 invocation ID. `X-Cx-Cli-Metadata` also contains the same values as compact
-JSON.
+JSON. `X-Cx-Cli-Invoker-Name` is the explicit `CX_AGENT_NAME` value (or
+`human` / `unknown`); `X-Cx-Cli-Environment-Invoker-Name` separately reports
+the recognized agent environment, such as `cursor` or `claude_code`.
 
 The installation identifier is a random UUID stored in `~/.cx/state.json`; it
 identifies a CLI installation, not a person or API key. Request metadata never

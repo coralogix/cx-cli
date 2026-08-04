@@ -58,6 +58,16 @@ pub fn env_is_truthy(var: &str) -> bool {
         .unwrap_or(false)
 }
 
+pub fn enforce_read_only(verb: &str) -> Result<()> {
+    if is_write_verb(verb) {
+        bail!(
+            "Write operation '{verb}' is blocked in read-only mode \
+             (--read-only flag, CX_READ_ONLY env var, or read_only = true in ~/.cx/config.toml)."
+        );
+    }
+    Ok(())
+}
+
 const AGENT_ENV_VARS: &[&str] = &[
     "AIDER",
     "AMAZON_Q",
@@ -76,20 +86,8 @@ const AGENT_ENV_VARS: &[&str] = &[
     "WINDSURF_AGENT",
 ];
 
-pub fn enforce_read_only(verb: &str) -> Result<()> {
-    if is_write_verb(verb) {
-        bail!(
-            "Write operation '{verb}' is blocked in read-only mode \
-             (--read-only flag, CX_READ_ONLY env var, or read_only = true in ~/.cx/config.toml)."
-        );
-    }
-    Ok(())
-}
-
 pub fn is_agent_mode() -> bool {
-    AGENT_ENV_VARS
-        .iter()
-        .any(|variable| std::env::var(variable).is_ok())
+    AGENT_ENV_VARS.iter().any(|var| std::env::var(var).is_ok())
 }
 
 /// Interactively prompt the user for a required non-empty text value.

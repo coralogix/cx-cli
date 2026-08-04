@@ -591,6 +591,71 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     Ok(())
 }
 
+// ── Refresh ───────────────────────────────────────────────────────────────────
+
+/// OAuth secrets written by `oauth::store_tokens_keyring`. Listed here so a
+/// refresh can clear the previous set without touching the API keys that share
+/// the same keyring entry.
+const OAUTH_KEYRING_KEYS: &[&str] = &[
+    "oauth_access_token",
+    "oauth_refresh_token",
+    "oauth_id_token",
+    "oauth_token_expiry",
+];
+
+/// Re-run the OAuth browser login for an existing profile.
+///
+/// Only the stored token set is replaced - region, label, credential storage,
+/// output format, and default tier are read from the existing profile and
+/// written back untouched. Nothing is prompted for.
+pub async fn run_refresh(profile_name: String) -> Result<()> {
+    if !profile_file(&profile_name)?.exists() {
+        anyhow::bail!("Profile '{profile_name}' not found.");
+    }
+
+    let mut profile = load_profile(&profile_name)?;
+
+    if profile.auth != AuthKind::OAuth {
+        anyhow::bail!(
+            "Profile '{profile_name}' uses API key authentication, which does not expire.\n\
+             Run `cx profiles add {profile_name}` to change its credentials."
+        );
+    }
+
+    let (base_url, client_id) = profile.oauth_endpoint(&profile_name)?;
+
+    println!(
+        "Re-authenticating profile '{profile_name}' (region: {})\n",
+        profile.region
+    );
+    let tokens = oauth::browser_login(&base_url, &client_id).await?;
+    println!("Login successful!");
+
+    let storage_desc = match profile.credential_storage {
+        CredentialStorage::OsStore => {
+            // `store_tokens_keyring` only writes the fields the IdP returned, so
+            // clear the old set first to avoid leaving a stale refresh or id
+            // token behind. Per-key deletion: the entry also holds API keys.
+            for key in OAUTH_KEYRING_KEYS {
+                keyring_store::delete_secret(&profile_name, key);
+            }
+            oauth::store_tokens_keyring(&profile_name, &tokens)?;
+            // Drop any inline tokens left over from a previous `file` setup.
+            profile.oauth_tokens = None;
+            "OS credential store"
+        }
+        CredentialStorage::File => {
+            profile.oauth_tokens = Some(oauth::tokens_to_stored(&tokens));
+            "profile file"
+        }
+    };
+
+    save_profile(&profile_name, &profile)?;
+
+    println!("OAuth tokens for '{profile_name}' refreshed in {storage_desc}.");
+    Ok(())
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 pub fn run_delete(profile_name: String, force: bool) -> Result<()> {

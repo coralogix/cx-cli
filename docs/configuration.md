@@ -143,8 +143,28 @@ OAuth uses the standard browser-based Authorization Code + PKCE flow.
 - If the refresh token is also expired, `cx` exits with an actionable message:
 
   ```
-  Run cx profiles add <name> to re-authenticate.
+  Run cx profiles refresh <name> to re-authenticate.
   ```
+
+#### Re-authenticating an expired session
+
+`cx profiles refresh <name>` re-runs the browser login for an existing profile
+and replaces only its stored OAuth tokens:
+
+```sh
+cx profiles refresh prod
+```
+
+Region, label, credential storage, output format, and default tier are read from
+the profile and written back unchanged, and nothing is prompted for - the command
+takes only the profile name. It always performs a full browser login, because the
+silent refresh-token path has already run (and failed) by the time you need it.
+
+Tokens are written to whichever backend the profile already uses, so an
+`os_store` profile stays in the keyring and a `file` profile stays in its TOML.
+The command fails without touching the profile if it names an API key profile
+(those don't expire - use `cx profiles add <name>` to change the key) or an OAuth
+profile whose custom environment has no `oauth_client_id`.
 
 #### Custom or non-standard environments (BYOC / private-link)
 

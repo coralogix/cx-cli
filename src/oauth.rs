@@ -619,7 +619,7 @@ pub async fn resolve_token(
             let t = file_tokens.ok_or_else(|| {
                 anyhow::anyhow!(
                     "OAuth tokens missing for profile '{profile_name}'.\n\
-                     Run `cx profiles add {profile_name}` to re-authenticate."
+                     Run `cx profiles refresh {profile_name}` to re-authenticate."
                 )
             })?;
             (
@@ -639,7 +639,7 @@ pub async fn resolve_token(
     let refresh_token = cached_refresh.ok_or_else(|| {
         anyhow::anyhow!(
             "OAuth session expired for profile '{profile_name}'.\n\
-             Run `cx profiles add {profile_name}` to re-authenticate."
+             Run `cx profiles refresh {profile_name}` to re-authenticate."
         )
     })?;
 
@@ -654,7 +654,7 @@ pub async fn resolve_token(
         .with_context(|| {
             format!(
                 "OAuth token refresh failed for profile '{profile_name}'.\n\
-                 Run `cx profiles add {profile_name}` to re-authenticate."
+                 Run `cx profiles refresh {profile_name}` to re-authenticate."
             )
         })?;
 

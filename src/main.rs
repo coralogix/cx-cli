@@ -124,7 +124,7 @@ pub enum SearchByValueDataset {
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
-  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, refresh, delete, set-default)
   \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
@@ -193,7 +193,7 @@ struct ProfilesCli {
 
 #[derive(Subcommand)]
 enum ProfilesTopLevel {
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, refresh, delete, set-default).
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -331,7 +331,7 @@ Examples:
         install_completions: Option<Shell>,
     },
 
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, refresh, delete, set-default).
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -801,6 +801,16 @@ Examples:
         /// written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
+    },
+    /// Re-run the OAuth browser login for an existing profile.
+    ///
+    /// Replaces only the stored OAuth tokens. Region, label, credential
+    /// storage, and output format are left exactly as they are, and nothing
+    /// is prompted for. Use this when a session has expired.
+    Refresh {
+        /// Profile name to re-authenticate.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -2981,6 +2991,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3076,6 +3087,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };

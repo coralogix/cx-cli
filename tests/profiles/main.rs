@@ -148,6 +148,120 @@ fn set_default_already_default_is_noop() {
     );
 }
 
+// ── profiles refresh ─────────────────────────────────────────────────────────
+// The browser handshake itself can't be driven from a test, but every
+// pre-flight branch fails before `browser_login` is reached, so all of them
+// are checked here without opening a browser.
+
+fn seed_oauth_profile(home: &std::path::Path, name: &str, extra: &str) {
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let profile_toml = format!(
+        "auth = \"o_auth\"\n\
+         credential_storage = \"file\"\n\
+         {extra}"
+    );
+    fs::write(profiles_dir.join(format!("{name}.toml")), profile_toml).unwrap();
+}
+
+#[test]
+fn refresh_nonexistent_profile_fails() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "ghost"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not found"),
+        "should report profile not found, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_api_key_profile_is_rejected() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "static");
+
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "static"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("API key authentication"),
+        "should explain that API keys don't expire, stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("cx profiles add static"),
+        "should point at `profiles add` to change credentials, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_custom_region_without_client_id_fails() {
+    let tmp = temp_home();
+    seed_oauth_profile(
+        &tmp,
+        "custom",
+        "region = \"https://api.myenv.coralogix.com\"\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "custom"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No OAuth client ID configured"),
+        "should report the missing client ID, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_leaves_profile_untouched_on_failure() {
+    let tmp = temp_home();
+    let original = "auth = \"o_auth\"\n\
+                    credential_storage = \"file\"\n\
+                    region = \"stg1\"\n\
+                    label = \"staging\"\n\
+                    default_tier = \"frequent\"\n";
+    let profiles_dir = tmp.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(profiles_dir.join("staging.toml"), original).unwrap();
+
+    // stg1 has no built-in OAuth client ID, so this fails pre-flight.
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "staging"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+
+    let after = fs::read_to_string(profiles_dir.join("staging.toml")).unwrap();
+    assert_eq!(
+        after, original,
+        "a failed refresh must not rewrite the profile"
+    );
+}
+
+#[test]
+fn refresh_appears_in_profiles_help() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "--help"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("refresh"),
+        "refresh should be listed as a profiles subcommand, got: {stdout}"
+    );
+}
+
 // ── profiles list ────────────────────────────────────────────────────────────
 
 #[test]

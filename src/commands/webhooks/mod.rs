@@ -75,30 +75,20 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_items: Vec<(String, Webhook)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         // One static outbound-webhooks page link per profile, not per
-        // webhook - tag only the first row of each profile's chunk so
-        // `-o agents` doesn't repeat the identical URL once per item. Skip
-        // resolving (and printing to stderr) entirely when the profile's
-        // result is empty - otherwise there'd be no row left to tag in
-        // `-o json`/`-o agents`, and stderr would print a link that JSON
-        // output can't carry, breaking the "stderr and consoleUrl never
-        // disagree" invariant.
-        let console_url = if resp.deployed.is_empty() {
-            None
-        } else {
+        // webhook - it isn't scoped to any single row, so it doesn't
+        // belong embedded in one row's JSON. Resolving it here is only for
+        // the "View in Coralogix" stderr echo (see
+        // `ExecutionTarget::console_link`). Skip entirely when the
+        // profile's result is empty so nothing prints a link to an empty
+        // list.
+        if !resp.deployed.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::webhooks_url(b)
             })
-            .await
-        };
-        let mut first = true;
+            .await;
+        }
         for webhook in resp.deployed {
-            let mut webhook_json = webhook_to_json(&webhook, include_profile, &profile);
-            if first {
-                if let Some(url) = &console_url {
-                    render::tag_console_url(&mut webhook_json, url);
-                }
-                first = false;
-            }
+            let webhook_json = webhook_to_json(&webhook, include_profile, &profile);
             all_json.push(webhook_json);
             all_items.push((profile.clone(), webhook));
         }

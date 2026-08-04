@@ -163,22 +163,18 @@ pub async fn run_applications_list(
         // the only entry points - so the Application Catalog link is attached
         // here rather than gated behind a mutation (same reasoning as `usage`).
         // One static "Application Catalog" page link per profile, not per
-        // application - tag only the first row of each profile's chunk so
-        // `-o agents` doesn't repeat the identical URL once per item. Skip
-        // resolving (and printing to stderr) entirely when the profile's
-        // result is empty - otherwise there'd be no row left to tag in
-        // `-o json`/`-o agents`, and stderr would print a link that JSON
-        // output can't carry, breaking the "stderr and consoleUrl never
-        // disagree" invariant.
-        let console_url = if items.is_empty() {
-            None
-        } else {
+        // application - it isn't scoped to any single row, so it doesn't
+        // belong embedded in one row's JSON. Resolving it here is only for
+        // the "View in Coralogix" stderr echo (see
+        // `ExecutionTarget::console_link`). Skip entirely when the
+        // profile's result is empty so nothing prints a link to an empty
+        // list.
+        if !items.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_applications_url(b)
             })
-            .await
-        };
-        let mut first = true;
+            .await;
+        }
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -187,13 +183,7 @@ pub async fn run_applications_list(
                 col(&item, "subsystem").to_string(),
                 render::bool_display(item.get("guardrailsIntegrated").and_then(Value::as_bool)),
             ]);
-            let mut item = tag_item(item, include_profile, &profile);
-            if first {
-                if let Some(url) = &console_url {
-                    render::tag_console_url(&mut item, url);
-                }
-                first = false;
-            }
+            let item = tag_item(item, include_profile, &profile);
             all_json.push(item);
         }
     }
@@ -285,22 +275,18 @@ pub async fn run_evaluations_list(
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
         // One static "Eval Catalog" page link per profile, not per
-        // evaluation - tag only the first row of each profile's chunk so
-        // `-o agents` doesn't repeat the identical URL once per item. Skip
-        // resolving (and printing to stderr) entirely when the profile's
-        // result is empty - otherwise there'd be no row left to tag in
-        // `-o json`/`-o agents`, and stderr would print a link that JSON
-        // output can't carry, breaking the "stderr and consoleUrl never
-        // disagree" invariant.
-        let console_url = if items.is_empty() {
-            None
-        } else {
+        // evaluation - it isn't scoped to any single row, so it doesn't
+        // belong embedded in one row's JSON. Resolving it here is only for
+        // the "View in Coralogix" stderr echo (see
+        // `ExecutionTarget::console_link`). Skip entirely when the
+        // profile's result is empty so nothing prints a link to an empty
+        // list.
+        if !items.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)
             })
-            .await
-        };
-        let mut first = true;
+            .await;
+        }
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -315,13 +301,7 @@ pub async fn run_evaluations_list(
                     .map(|t| t.to_string())
                     .unwrap_or_default(),
             ]);
-            let mut item = tag_item(item, include_profile, &profile);
-            if first {
-                if let Some(url) = &console_url {
-                    render::tag_console_url(&mut item, url);
-                }
-                first = false;
-            }
+            let item = tag_item(item, include_profile, &profile);
             all_json.push(item);
         }
     }
@@ -543,22 +523,18 @@ async fn run_custom_evaluations_table(
     // JSON/agents output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
         // One static "Eval Catalog" page link per profile, not per custom
-        // evaluation - tag only the first row of each profile's chunk so
-        // `-o agents` doesn't repeat the identical URL once per item. Skip
-        // resolving (and printing to stderr) entirely when the profile's
-        // result is empty - otherwise there'd be no row left to tag in
-        // `-o json`/`-o agents`, and stderr would print a link that JSON
-        // output can't carry, breaking the "stderr and consoleUrl never
-        // disagree" invariant.
-        let console_url = if items.is_empty() {
-            None
-        } else {
+        // evaluation - it isn't scoped to any single row, so it doesn't
+        // belong embedded in one row's JSON. Resolving it here is only for
+        // the "View in Coralogix" stderr echo (see
+        // `ExecutionTarget::console_link`). Skip entirely when the
+        // profile's result is empty so nothing prints a link to an empty
+        // list.
+        if !items.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)
             })
-            .await
-        };
-        let mut first = true;
+            .await;
+        }
         for item in items {
             let app_count = item
                 .get("applicationIds")
@@ -572,13 +548,7 @@ async fn run_custom_evaluations_table(
                 app_count.to_string(),
                 col(&item, "description").chars().take(60).collect(),
             ]);
-            let mut item = tag_item(item, include_profile, &profile);
-            if first {
-                if let Some(url) = &console_url {
-                    render::tag_console_url(&mut item, url);
-                }
-                first = false;
-            }
+            let item = tag_item(item, include_profile, &profile);
             all_json.push(item);
         }
     }

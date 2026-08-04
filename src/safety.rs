@@ -147,23 +147,11 @@ pub fn enforce_read_only(verb: &str) -> Result<()> {
 }
 
 pub fn is_agent_mode() -> bool {
-    std::env::var("CX_SKILL_AGENT_NAME")
-        .ok()
-        .is_some_and(|name| !name.trim().is_empty())
-        || has_agent_environment(|variable| std::env::var(variable).is_ok())
+    has_agent_environment(|variable| std::env::var(variable).is_ok())
 }
 
 fn has_agent_environment(is_set: impl Fn(&str) -> bool) -> bool {
     AGENT_ENV_VARS.iter().any(|(variable, _)| is_set(variable))
-}
-
-/// Returns the free-text skill-provided agent name, or an empty string.
-pub fn invoker_name() -> String {
-    std::env::var("CX_SKILL_AGENT_NAME")
-        .ok()
-        .map(|name| name.trim().to_string())
-        .filter(|name| !name.is_empty())
-        .unwrap_or_default()
 }
 
 /// Interactively prompt the user for a required non-empty text value.

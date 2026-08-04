@@ -5,10 +5,14 @@
 
 use clap::ArgMatches;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{AuthKind, OutputFormat, ResolvedConfig};
 use crate::safety;
+
+mod bundled_skills {
+    include!(concat!(env!("OUT_DIR"), "/bundled_skills.rs"));
+}
 
 const HEADER_SCHEMA_VERSION: &str = "x-cx-cli-metadata-version";
 const HEADER_METADATA: &str = "x-cx-cli-metadata";
@@ -16,29 +20,14 @@ const HEADER_INSTALLATION_ID: &str = "x-cx-cli-installation-id";
 const HEADER_COMMAND_PATH: &str = "x-cx-cli-command-path";
 const HEADER_COMMAND_FAMILY: &str = "x-cx-cli-command-family";
 const HEADER_OUTPUT_FORMAT: &str = "x-cx-cli-output-format";
-const HEADER_INVOKER_TYPE: &str = "x-cx-cli-invoker-type";
+const HEADER_IS_AGENT: &str = "x-cx-cli-is-agent";
 const HEADER_AUTH_TYPE: &str = "x-cx-cli-auth-type";
-const HEADER_SKILLS_ON_DISK: &str = "x-cx-cli-skills-on-disk";
+const HEADER_INSTALLED_SKILLS: &str = "x-cx-cli-installed-skills";
 const HEADER_SELECTED_TARGET_COUNT: &str = "x-cx-cli-selected-target-count";
 const HEADER_CONFIGURED_PROFILE_COUNT: &str = "x-cx-cli-configured-profile-count";
 const HEADER_WRITE_OPERATION: &str = "x-cx-cli-write-operation";
 const HEADER_AUTO_APPROVED: &str = "x-cx-cli-auto-approved";
 const TELEMETRY_ENABLED_ENV: &str = "CX_TELEMETRY";
-
-const CX_SKILL_NAMES: &[&str] = &[
-    "coralogix-docs",
-    "cx-alerts",
-    "cx-cases",
-    "cx-cost-optimization",
-    "cx-dashboards",
-    "cx-data-pipeline",
-    "cx-infra",
-    "cx-observability-setup",
-    "cx-olly",
-    "cx-platform-admin",
-    "cx-slos",
-    "cx-telemetry-querying",
-];
 
 /// Metadata attached to every API request for a CLI invocation.
 #[derive(Clone, Debug, Default)]
@@ -61,10 +50,11 @@ impl RequestMetadata {
         let write_operation = safety::get_leaf_subcommand_name(matches)
             .is_some_and(|leaf| safety::is_write_verb(&leaf));
         let auth_type = auth_type(targets);
+        let installed_skills = installed_coralogix_skills();
         let configured_profile_count = crate::config::list_profile_names()
             .ok()
-            .map(|profiles| count_bucket(profiles.len()))
-            .unwrap_or("unknown");
+            .map(|profiles| profiles.len().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
 
         let values = [
             (HEADER_SCHEMA_VERSION, "1".to_string()),
@@ -76,30 +66,20 @@ impl RequestMetadata {
             (HEADER_COMMAND_FAMILY, command_family),
             (HEADER_OUTPUT_FORMAT, output_format.as_str().to_string()),
             (
-                HEADER_INVOKER_TYPE,
+                HEADER_IS_AGENT,
                 if safety::is_agent_mode() {
-                    "agent".to_string()
-                } else {
-                    "human".to_string()
-                },
-            ),
-            (HEADER_AUTH_TYPE, auth_type.to_string()),
-            (
-                HEADER_SKILLS_ON_DISK,
-                if skills_on_disk() {
                     "true".to_string()
                 } else {
                     "false".to_string()
                 },
             ),
+            (HEADER_AUTH_TYPE, auth_type.to_string()),
             (
-                HEADER_SELECTED_TARGET_COUNT,
-                count_bucket(targets.len()).to_string(),
+                HEADER_INSTALLED_SKILLS,
+                serde_json::to_string(&installed_skills).unwrap_or_else(|_| "[]".to_string()),
             ),
-            (
-                HEADER_CONFIGURED_PROFILE_COUNT,
-                configured_profile_count.to_string(),
-            ),
+            (HEADER_SELECTED_TARGET_COUNT, targets.len().to_string()),
+            (HEADER_CONFIGURED_PROFILE_COUNT, configured_profile_count),
             (
                 HEADER_WRITE_OPERATION,
                 if write_operation {
@@ -124,7 +104,12 @@ impl RequestMetadata {
             .collect::<BTreeMap<_, _>>();
         let mut headers = HeaderMap::new();
         for (name, value) in &values {
-            insert_with_limit(&mut headers, name, value, 128);
+            let limit = if *name == HEADER_INSTALLED_SKILLS {
+                2_048
+            } else {
+                128
+            };
+            insert_with_limit(&mut headers, name, value, limit);
         }
         if let Ok(metadata) = serde_json::to_string(&metadata) {
             insert_with_limit(&mut headers, HEADER_METADATA, &metadata, 2_048);
@@ -173,15 +158,6 @@ fn sanitize(value: &str) -> String {
         .collect()
 }
 
-fn count_bucket(count: usize) -> &'static str {
-    match count {
-        0 => "0",
-        1 => "1",
-        2 => "2",
-        _ => "3_plus",
-    }
-}
-
 fn auth_type(targets: &[ResolvedConfig]) -> &'static str {
     let mut auth_types = targets
         .iter()
@@ -210,12 +186,41 @@ fn command_path_from_matches(matches: &ArgMatches) -> (String, String) {
     }
 }
 
-fn skills_on_disk() -> bool {
-    skill_roots().iter().any(|root| {
-        CX_SKILL_NAMES
-            .iter()
-            .any(|name| root.join(name).join("SKILL.md").is_file())
-    })
+fn installed_coralogix_skills() -> Vec<String> {
+    installed_coralogix_skills_in(
+        &skill_roots(),
+        bundled_skills::BUNDLED_CORALOGIX_SKILL_NAMES,
+    )
+}
+
+fn installed_coralogix_skills_in(
+    roots: &[std::path::PathBuf],
+    bundled_skill_names: &[&str],
+) -> Vec<String> {
+    let mut skills = BTreeSet::new();
+    for root in roots {
+        for skill_name in bundled_skill_names {
+            if root.join(skill_name).join("SKILL.md").is_file() {
+                skills.insert((*skill_name).to_string());
+            }
+        }
+        let Ok(entries) = std::fs::read_dir(root) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let Some(skill_name) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            if is_coralogix_skill_name(&skill_name) && entry.path().join("SKILL.md").is_file() {
+                skills.insert(skill_name);
+            }
+        }
+    }
+    skills.into_iter().collect()
+}
+
+fn is_coralogix_skill_name(skill_name: &str) -> bool {
+    skill_name.starts_with("cx-") || skill_name.starts_with("coralogix-")
 }
 
 fn skill_roots() -> Vec<std::path::PathBuf> {
@@ -276,8 +281,10 @@ mod tests {
         assert_eq!(headers[HEADER_AUTH_TYPE], "none");
         assert_eq!(headers[HEADER_SELECTED_TARGET_COUNT], "0");
         assert_eq!(headers[HEADER_AUTO_APPROVED], "false");
-        assert!(headers.get(HEADER_INVOKER_TYPE).is_some());
+        assert!(headers.get(HEADER_IS_AGENT).is_some());
         assert!(!headers[HEADER_INSTALLATION_ID].is_empty());
+        let _: Vec<String> =
+            serde_json::from_str(headers[HEADER_INSTALLED_SKILLS].to_str().unwrap()).unwrap();
 
         let combined: serde_json::Value =
             serde_json::from_str(headers[HEADER_METADATA].to_str().unwrap()).unwrap();
@@ -290,8 +297,8 @@ mod tests {
     #[test]
     fn header_values_strip_control_characters() {
         let mut headers = HeaderMap::new();
-        insert_with_limit(&mut headers, HEADER_INVOKER_TYPE, "agent\r\ninjected", 128);
-        assert_eq!(headers[HEADER_INVOKER_TYPE], "agentinjected");
+        insert_with_limit(&mut headers, HEADER_IS_AGENT, "true\r\ninjected", 128);
+        assert_eq!(headers[HEADER_IS_AGENT], "trueinjected");
     }
 
     #[test]
@@ -300,5 +307,32 @@ mod tests {
             assert!(is_false_value(value), "{value} should disable metadata");
         }
         assert!(!is_false_value("true"));
+    }
+
+    #[test]
+    fn detects_bundled_and_prefixed_coralogix_skills() {
+        let root = std::env::temp_dir().join(format!("cx-skill-test-{}", uuid::Uuid::new_v4()));
+        let bundled_skill = bundled_skills::BUNDLED_CORALOGIX_SKILL_NAMES[0];
+        let installed_skill = root.join(bundled_skill);
+        let prefixed_skill = root.join("cx-unrelated-skill");
+        let unrelated_skill = root.join("other-skill");
+        std::fs::create_dir_all(&installed_skill).unwrap();
+        std::fs::create_dir_all(&prefixed_skill).unwrap();
+        std::fs::create_dir_all(&unrelated_skill).unwrap();
+        std::fs::write(installed_skill.join("SKILL.md"), "# Coralogix skill").unwrap();
+        std::fs::write(prefixed_skill.join("SKILL.md"), "# Coralogix skill").unwrap();
+        std::fs::write(unrelated_skill.join("SKILL.md"), "# Unrelated skill").unwrap();
+
+        let mut expected = vec![bundled_skill.to_string(), "cx-unrelated-skill".to_string()];
+        expected.sort();
+        assert_eq!(
+            installed_coralogix_skills_in(
+                std::slice::from_ref(&root),
+                bundled_skills::BUNDLED_CORALOGIX_SKILL_NAMES,
+            ),
+            expected
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

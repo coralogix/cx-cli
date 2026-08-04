@@ -219,10 +219,14 @@ Environment variables override profile file values:
 Each authenticated Coralogix API request includes bounded `X-Cx-Cli-*` headers
 for the current invocation: command path and family, output format,
 authentication type, installed CX skills, selected and configured
-profile-count buckets, and write-operation and `--yes` flags.
+profile counts, and write-operation and `--yes` flags.
 `X-Cx-Cli-Metadata` also contains the same values as compact JSON.
-`X-Cx-Cli-Invoker-Type` is `agent` when the master agent-environment detector
-matches, and `human` otherwise.
+`X-Cx-Cli-Installed-Skills` is a sorted JSON list of installed skill directory
+names, without filesystem paths. It includes skills bundled with this `cx`
+version and any installed skill whose directory name starts with `cx-` or
+`coralogix-`.
+`X-Cx-Cli-Is-Agent` is `true` when the master agent-environment detector
+matches, and `false` otherwise.
 
 The installation identifier is a random UUID stored in `~/.cx/state.json`; it
 identifies a CLI installation, not a person or API key. Request metadata never

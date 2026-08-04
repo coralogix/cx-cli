@@ -2595,6 +2595,71 @@ async fn ai_center_evaluations_list_empty_prints_no_console_link() {
     );
 }
 
+/// Regression test: unlike other list commands (whose console link is one
+/// static per-profile "page" URL, not any individual row's own link),
+/// `alerts list` has a distinct console URL per alert, so every row must be
+/// tagged with its own `consoleUrl` - not just the first.
+#[tokio::test]
+async fn alerts_list_tags_every_row_with_its_own_console_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertDefs": [
+                {"id": "alert-1", "name": "First Alert"},
+                {"id": "alert-2", "name": "Second Alert"},
+                {"id": "alert-3", "name": "Third Alert"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "alerts", "list", "-o", "json"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let items = stdout.as_array().expect("expected a json array");
+    assert_eq!(items.len(), 3);
+    for (i, id) in ["alert-1", "alert-2", "alert-3"].iter().enumerate() {
+        assert_eq!(
+            items[i]["consoleUrl"],
+            format!("https://acme.app.eu2.coralogix.com/alerts/{id}"),
+            "row {i} did not carry its own alert's consoleUrl: {items:#?}"
+        );
+    }
+
+    // Text mode doesn't repeat every alert's own link in the table (that
+    // would bloat it) - instead it gets a single "View in Coralogix" line
+    // to stderr pointing at the alerts list page itself.
+    let text_output = cx(&home)
+        .args(["--profile", "mock", "alerts", "list", "-o", "text"])
+        .output()
+        .expect("failed to run cx");
+    assert!(text_output.status.success(), "{:?}", text_output);
+    let stdout = String::from_utf8_lossy(&text_output.stdout);
+    assert!(
+        !stdout.contains("Console URL"),
+        "text table should not have a per-row Console URL column: {stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&text_output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/alerts"),
+        "stderr did not contain the alerts list page link: {stderr}"
+    );
+}
+
 // ── get/enable/disable on known-id routes (FORGE-586 follow-up) ─────────────
 //
 // These cover the previously-unwired `get`/`enable`/`disable`/`check`

@@ -163,6 +163,11 @@ pub fn alert_url(base: &str, id: &str) -> String {
     format!("{}/alerts/{id}", trim_base(base))
 }
 
+/// Build the console URL for the alerts list page: `{base}/alerts`.
+pub fn alerts_url(base: &str) -> String {
+    format!("{}/alerts", trim_base(base))
+}
+
 /// Build the console URL for a case: `{base}/cases?id={urlencoded id}`.
 ///
 /// No public doc names the exact query parameter, but this is confirmed

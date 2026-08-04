@@ -93,6 +93,25 @@ pub async fn run_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertDef)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Unlike the static per-profile "page" links on other list commands,
+        // each alert has its own console URL - so every row gets its own
+        // consoleUrl, not just the first. `console_base` is cached per
+        // target and doesn't print, so resolving it here (once per profile)
+        // is cheap.
+        let console_base = match crate::execution::find_target(targets, &profile) {
+            Some(target) => target.console_base().await,
+            None => None,
+        };
+        // Also print the alerts list page link to stderr once per profile -
+        // per-row consoleUrl above is per-alert, but this gives a human a
+        // link to the alerts overview itself. Skip when the profile's
+        // result is empty, since there's nothing to view.
+        if !resp.alert_defs.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::alerts_url(b)
+            })
+            .await;
+        }
         for alert in resp.alert_defs {
             if let Some(filter) = name_filter {
                 let name = alert.display_name().to_lowercase();
@@ -100,7 +119,11 @@ pub async fn run_list(
                     continue;
                 }
             }
-            all_json.push(alert_to_json(&alert, include_profile, &profile));
+            let mut json = alert_to_json(&alert, include_profile, &profile);
+            if let (Some(base), Some(id)) = (&console_base, alert.id.as_deref()) {
+                render::tag_console_url(&mut json, &crate::console_url::alert_url(base, id));
+            }
+            all_json.push(json);
             all_items.push((profile.clone(), alert));
         }
     }

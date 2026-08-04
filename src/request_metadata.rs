@@ -6,14 +6,12 @@
 use clap::ArgMatches;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::BTreeMap;
-use uuid::Uuid;
 
 use crate::config::{AuthKind, OutputFormat, ResolvedConfig};
 use crate::safety;
 
 const HEADER_SCHEMA_VERSION: &str = "x-cx-cli-metadata-version";
 const HEADER_METADATA: &str = "x-cx-cli-metadata";
-const HEADER_INVOCATION_ID: &str = "x-cx-cli-invocation-id";
 const HEADER_INSTALLATION_ID: &str = "x-cx-cli-installation-id";
 const HEADER_COMMAND_PATH: &str = "x-cx-cli-command-path";
 const HEADER_COMMAND_FAMILY: &str = "x-cx-cli-command-family";
@@ -68,10 +66,8 @@ impl RequestMetadata {
             .map(|profiles| count_bucket(profiles.len()))
             .unwrap_or("unknown");
 
-        let invocation_id = Uuid::new_v4().to_string();
         let values = [
             (HEADER_SCHEMA_VERSION, "1".to_string()),
-            (HEADER_INVOCATION_ID, invocation_id.clone()),
             (
                 HEADER_INSTALLATION_ID,
                 crate::version_cache::installation_id(),
@@ -282,8 +278,8 @@ mod tests {
         let combined: serde_json::Value =
             serde_json::from_str(headers[HEADER_METADATA].to_str().unwrap()).unwrap();
         assert_eq!(
-            combined[HEADER_INVOCATION_ID],
-            headers[HEADER_INVOCATION_ID].to_str().unwrap()
+            combined[HEADER_COMMAND_PATH],
+            headers[HEADER_COMMAND_PATH].to_str().unwrap()
         );
     }
 

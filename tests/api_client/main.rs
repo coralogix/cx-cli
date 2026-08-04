@@ -48,7 +48,10 @@ async fn attaches_cli_request_metadata_headers() {
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].headers.get("x-cx-cli-invocation-id").is_some());
+    assert!(requests[0]
+        .headers
+        .get("x-cx-cli-installation-id")
+        .is_some());
     assert!(requests[0].headers.get("x-cx-cli-metadata").is_some());
 }
 

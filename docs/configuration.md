@@ -219,9 +219,9 @@ Environment variables override profile file values:
 Each authenticated Coralogix API request includes bounded `X-Cx-Cli-*` headers
 for the current invocation: command path and family, output format,
 authentication type, installed CX skills, selected and configured
-profile-count buckets, write-operation and `--yes` flags, and a random
-invocation ID. `X-Cx-Cli-Metadata` also contains the same values as compact
-JSON. `X-Cx-Cli-Environment-Invoker-Name` reports the recognized master agent
+profile-count buckets, and write-operation and `--yes` flags.
+`X-Cx-Cli-Metadata` also contains the same values as compact JSON.
+`X-Cx-Cli-Environment-Invoker-Name` reports the recognized master agent
 environment, such as `cursor` or `claude_code`.
 
 The installation identifier is a random UUID stored in `~/.cx/state.json`; it

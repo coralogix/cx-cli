@@ -206,12 +206,35 @@ Environment variables override profile file values:
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
+| `CX_TELEMETRY` | Set to `false`, `no`, `off`, or `0` to disable CLI request metadata |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
+
+### Request metadata
+
+Each authenticated Coralogix API request includes bounded `X-Cx-Cli-*` headers
+for the current invocation: command path and family, output format,
+authentication type, installed CX skills, selected and configured
+profile counts, and write-operation and `--yes` flags.
+`X-Cx-Cli-Metadata` also contains the same values as compact JSON.
+`X-Cx-Cli-Installed-Skills` is a sorted JSON list of installed skill directory
+names, without filesystem paths. It includes skills bundled with this `cx`
+version and any installed skill whose directory name starts with `cx-` or
+`coralogix-`.
+`X-Cx-Cli-Is-Agent` is `true` when the master agent-environment detector
+matches, and `false` otherwise.
+
+The installation identifier is a random UUID stored in `~/.cx/state.json`; it
+identifies a CLI installation, not a person or API key. Request metadata never
+includes API keys, profile names, command arguments, query text, raw error
+messages, arbitrary environment variables, outcome, error details, HTTP
+status, or duration.
+
+Set `CX_TELEMETRY=false` to opt out of these headers entirely.
 
 ## Read-only mode
 

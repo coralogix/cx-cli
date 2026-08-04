@@ -3,6 +3,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::{CxError, Result};
+use crate::request_metadata::RequestMetadata;
 
 /// Thin wrapper around reqwest::Client pre-configured with Coralogix auth.
 #[derive(Clone)]
@@ -13,6 +14,14 @@ pub struct CxClient {
 
 impl CxClient {
     pub fn new(endpoint: impl Into<String>, api_key: &str) -> Result<Self> {
+        Self::new_with_metadata(endpoint, api_key, &RequestMetadata::default())
+    }
+
+    pub fn new_with_metadata(
+        endpoint: impl Into<String>,
+        api_key: &str,
+        metadata: &RequestMetadata,
+    ) -> Result<Self> {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             header::AUTHORIZATION,
@@ -27,6 +36,7 @@ impl CxClient {
             header::HeaderName::from_static("x-cx-sdk-version"),
             header::HeaderValue::from_static(concat!("cx-cli-", env!("CARGO_PKG_VERSION"))),
         );
+        headers.extend(metadata.headers().clone());
 
         let inner = Client::builder()
             .default_headers(headers)

@@ -16,14 +16,14 @@ fn temp_home() -> std::path::PathBuf {
 fn cx() -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", temp_home());
-    cmd.env_remove("CX_AGENT_NAME");
+    cmd.env_remove("CX_SKILL_AGENT_NAME");
     cmd
 }
 
 #[test]
 fn agent_mode_blocks_without_yes() {
     let output = cx()
-        .env("CX_AGENT_NAME", "test-agent")
+        .env("CX_SKILL_AGENT_NAME", "test-agent")
         .args([
             "iam",
             "api-keys",
@@ -48,7 +48,7 @@ fn agent_mode_blocks_without_yes() {
 #[test]
 fn agent_mode_proceeds_with_yes() {
     let output = cx()
-        .env("CX_AGENT_NAME", "test-agent")
+        .env("CX_SKILL_AGENT_NAME", "test-agent")
         .args([
             "iam",
             "api-keys",
@@ -76,7 +76,7 @@ fn agent_mode_proceeds_with_yes() {
 #[test]
 fn agent_mode_read_only_takes_precedence() {
     let output = cx()
-        .env("CX_AGENT_NAME", "test-agent")
+        .env("CX_SKILL_AGENT_NAME", "test-agent")
         .args([
             "--read-only",
             "iam",
@@ -102,7 +102,7 @@ fn agent_mode_read_only_takes_precedence() {
 #[test]
 fn agent_mode_read_commands_unaffected() {
     let output = cx()
-        .env("CX_AGENT_NAME", "test-agent")
+        .env("CX_SKILL_AGENT_NAME", "test-agent")
         .args([
             "iam",
             "api-keys",

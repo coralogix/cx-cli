@@ -206,7 +206,7 @@ Environment variables override profile file values:
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
-| `CX_AGENT_NAME` | Opt-in short identifier for the agent running `cx` |
+| `CX_SKILL_AGENT_NAME` | Opt-in short identifier set by an agent skill running `cx` |
 | `CX_TELEMETRY` | Set to `false`, `no`, `off`, or `0` to disable CLI request metadata |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
@@ -222,9 +222,10 @@ for the current invocation: command path and family, output format, invoker
 name, authentication type, installed CX skills, selected and configured
 profile-count buckets, write-operation and `--yes` flags, and a random
 invocation ID. `X-Cx-Cli-Metadata` also contains the same values as compact
-JSON. `X-Cx-Cli-Invoker-Name` is the explicit `CX_AGENT_NAME` value (or
-`human` / `unknown`); `X-Cx-Cli-Environment-Invoker-Name` separately reports
-the recognized agent environment, such as `cursor` or `claude_code`.
+JSON. `X-Cx-Cli-Invoker-Name` is the free-text `CX_SKILL_AGENT_NAME` value
+and is empty when the variable is unset. `X-Cx-Cli-Environment-Invoker-Name`
+separately reports the recognized agent environment, such as `cursor` or
+`claude_code`.
 
 The installation identifier is a random UUID stored in `~/.cx/state.json`; it
 identifies a CLI installation, not a person or API key. Request metadata never

@@ -147,24 +147,23 @@ pub fn enforce_read_only(verb: &str) -> Result<()> {
 }
 
 pub fn is_agent_mode() -> bool {
-    std::env::var("CX_AGENT_NAME")
+    std::env::var("CX_SKILL_AGENT_NAME")
         .ok()
         .is_some_and(|name| !name.trim().is_empty())
+        || has_agent_environment(|variable| std::env::var(variable).is_ok())
 }
 
-/// Returns the configured agent name, `human` for a terminal, or `unknown`.
+fn has_agent_environment(is_set: impl Fn(&str) -> bool) -> bool {
+    AGENT_ENV_VARS.iter().any(|(variable, _)| is_set(variable))
+}
+
+/// Returns the free-text skill-provided agent name, or an empty string.
 pub fn invoker_name() -> String {
-    std::env::var("CX_AGENT_NAME")
+    std::env::var("CX_SKILL_AGENT_NAME")
         .ok()
         .map(|name| name.trim().to_string())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| {
-            if std::io::stdin().is_terminal() {
-                "human".to_string()
-            } else {
-                "unknown".to_string()
-            }
-        })
+        .unwrap_or_default()
 }
 
 /// Interactively prompt the user for a required non-empty text value.
@@ -349,5 +348,12 @@ mod tests {
     fn test_prompt_optional_text_returns_none_in_agent_mode() {
         let r = prompt_optional_text("label", None, false, true).unwrap();
         assert!(r.is_none());
+    }
+
+    #[test]
+    fn master_agent_environment_enables_agent_mode() {
+        assert!(has_agent_environment(|variable| variable == "CURSOR_AGENT"));
+        assert!(has_agent_environment(|variable| variable == "CLAUDE_CODE"));
+        assert!(!has_agent_environment(|_| false));
     }
 }

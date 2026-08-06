@@ -87,12 +87,41 @@ from the original run) so you can tell "still the same known issue" from
 
 ## Regenerating the Claude Artifact report
 
-The HTML report this suite produces (`report.html`) is the same content
-that was published as a Claude-hosted Artifact for human review during the
-original PR176 verification. Regenerating and re-publishing that Artifact
-still requires an agent turn (publishing to claude.ai isn't something a
-plain script can do) -- but the expensive part (actually running the 700+
-mechanical checks) no longer does.
+The original PR176 verification was published as a Claude-hosted Artifact
+for human review:
+
+**https://claude.ai/code/artifact/2fe1fc76-5696-4081-9387-0353928e99dd**
+
+That link is recorded here -- in a committed file, not just chat history --
+specifically so any Claude Code session (this one, later, or a fresh chat
+with no memory of building this suite) can find and update it just by
+reading this repo.
+
+`merge_report.py` writes two files, both gitignored (generated, not
+source):
+
+- `report.html` -- a full standalone document (`<!doctype html>` and all).
+  Open it directly in a browser for local viewing.
+- `artifact_content.html` -- the same content with the `<!doctype>`/
+  `<html>`/`<head>`/`<body>` wrapper stripped, because Claude's `Artifact`
+  tool wraps whatever file it's given in its own skeleton -- feeding it a
+  file that already has its own `<html>`/`<body>` would nest two documents
+  inside each other.
+
+To refresh the published Artifact from a Claude Code session:
+
+1. Run the suite (`run_all_automated.py`, plus whatever's needed from
+   `MANUAL_TESTS.md`) to regenerate `results/*.jsonl`.
+2. Run `python3 merge_report.py` to regenerate both HTML files above.
+3. Call the `Artifact` tool with `file_path` pointing at
+   `artifact_content.html`, `url` set to the link above (so it updates in
+   place instead of minting a new one), and `title` set to
+   `"cx CLI — PR #176 command coverage test"` (the content has no `<title>`
+   tag of its own on purpose, to avoid the same nesting problem).
+
+Publishing itself still needs an agent turn -- that part of claude.ai isn't
+reachable from a plain script -- but everything upstream of it (steps 1-2)
+is now free.
 
 ## Layout
 

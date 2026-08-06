@@ -1,7 +1,7 @@
 """
 Combine all results/<group>.jsonl files into a single master HTML report.
 Run this any time (safe to re-run repeatedly) to refresh the aggregate view.
-Output: report.html in this directory.
+Output: report.html (full standalone document) and artifact_content.html (content-only -- no <!doctype>/<html>/<head>/<body> wrapper -- ready to pass straight to Claude's Artifact tool, which wraps its own skeleton around whatever file it's given) in this directory.
 
 The "Full results by command group" section is filtered down to only the subcommands
 PR #176's own coverage table marks as expected to print a "View in Coralogix" console
@@ -23,6 +23,7 @@ import sys
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 OUT_PATH = os.path.join(BASE_DIR, "report.html")
+ARTIFACT_OUT_PATH = os.path.join(BASE_DIR, "artifact_content.html")
 
 GROUP_ORDER = [
     "profiles", "completions", "cleanup", "schema", "dataprime", "docs", "search-fields",
@@ -498,10 +499,7 @@ def main():
     grand_total = sum(total.values())
     pass_pct = round(100 * total.get("PASS", 0) / grand_total) if grand_total else 0
 
-    out = f"""<!doctype html><html><head><meta charset="utf-8">
-<title>cx CLI &mdash; PR #176 command coverage test</title>
-<style>
-:root {{
+    CSS = """:root {
   --bg: #f5f7fb;
   --surface: #ffffff;
   --surface-2: #eef1f7;
@@ -517,9 +515,9 @@ def main():
   --skip: #9a6700;
   --skip-bg: #faf0d6;
   color-scheme: light dark;
-}}
-@media (prefers-color-scheme: dark) {{
-  :root {{
+}
+@media (prefers-color-scheme: dark) {
+  :root {
     --bg: #0b0f16;
     --surface: #121826;
     --surface-2: #17203133;
@@ -534,85 +532,85 @@ def main():
     --fail-bg: #3a1414;
     --skip: #e8b649;
     --skip-bg: #3a2c0c;
-  }}
-}}
-:root[data-theme="dark"] {{
+  }
+}
+:root[data-theme="dark"] {
   --bg: #0b0f16; --surface: #121826; --surface-2: #17203133; --border: #26304a;
   --text: #dbe2f0; --text-dim: #8996b3; --accent: #5fd4c4; --accent-bg: #16342f;
   --pass: #4ce06b; --pass-bg: #123a1d; --fail: #ff6b64; --fail-bg: #3a1414;
   --skip: #e8b649; --skip-bg: #3a2c0c;
-}}
-:root[data-theme="light"] {{
+}
+:root[data-theme="light"] {
   --bg: #f5f7fb; --surface: #ffffff; --surface-2: #eef1f7; --border: #d8dee9;
   --text: #1b2233; --text-dim: #5b6478; --accent: #0f8a7a; --accent-bg: #e3f5f1;
   --pass: #1a7f37; --pass-bg: #dcf5e2; --fail: #cf222e; --fail-bg: #fce4e4;
   --skip: #9a6700; --skip-bg: #faf0d6;
-}}
+}
 
-* {{ box-sizing: border-box; }}
-html, body {{ overflow-x: hidden; }}
-body {{
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 15px;
   line-height: 1.55;
-}}
-.mono {{ font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }}
-.num {{ font-variant-numeric: tabular-nums; }}
-.dim {{ color: var(--text-dim); }}
+}
+.mono { font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }
+.num { font-variant-numeric: tabular-nums; }
+.dim { color: var(--text-dim); }
 
-header {{
+header {
   position: sticky;
   top: 0;
   z-index: 5;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   padding: 20px clamp(16px, 4vw, 40px) 14px;
-}}
-.title-row {{
+}
+.title-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 24px;
-}}
-h1 {{
+}
+h1 {
   font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   font-size: 20px;
   font-weight: 600;
   margin: 0;
   letter-spacing: -0.01em;
   text-wrap: balance;
-}}
-h1 .dim-part {{ color: var(--text-dim); font-weight: 500; }}
-.subtitle {{
+}
+h1 .dim-part { color: var(--text-dim); font-weight: 500; }
+.subtitle {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--text-dim);
-}}
-.stat-row {{
+}
+.stat-row {
   display: flex;
   gap: 18px;
   align-items: baseline;
   font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
-}}
-.stat {{ display: flex; flex-direction: column; align-items: flex-end; }}
-.stat .n {{ font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }}
-.stat .l {{ font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }}
-.stat.pass .n {{ color: var(--pass); }}
-.stat.fail .n {{ color: var(--fail); }}
-.stat.skip .n {{ color: var(--skip); }}
+}
+.stat { display: flex; flex-direction: column; align-items: flex-end; }
+.stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+.stat.pass .n { color: var(--pass); }
+.stat.fail .n { color: var(--fail); }
+.stat.skip .n { color: var(--skip); }
 
-.chiprow {{
+.chiprow {
   margin-top: 14px;
   display: flex;
   gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
-}}
-.chip {{
+}
+.chip {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -627,30 +625,30 @@ h1 .dim-part {{ color: var(--text-dim); font-weight: 500; }}
   font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   font-size: 11px;
   white-space: nowrap;
-}}
-.chip.pass {{ border-left-color: var(--pass); }}
-.chip.fail {{ border-left-color: var(--fail); }}
-.chip.skip {{ border-left-color: var(--skip); }}
-.chip-label {{ font-weight: 600; }}
-.chip-counts {{ color: var(--text-dim); font-variant-numeric: tabular-nums; }}
+}
+.chip.pass { border-left-color: var(--pass); }
+.chip.fail { border-left-color: var(--fail); }
+.chip.skip { border-left-color: var(--skip); }
+.chip-label { font-weight: 600; }
+.chip-counts { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
-main {{ padding: 24px clamp(16px, 4vw, 40px) 80px; max-width: 1400px; margin: 0 auto; }}
+main { padding: 24px clamp(16px, 4vw, 40px) 80px; max-width: 1400px; margin: 0 auto; }
 
-.findings {{
+.findings {
   margin: 0 0 40px;
   padding: 0;
   list-style: none;
   display: grid;
   gap: 10px;
-}}
-.finding {{
+}
+.finding {
   background: var(--surface);
   border: 1px solid var(--border);
   border-left: 3px solid var(--tag-color, var(--border));
   border-radius: 3px;
   padding: 14px 16px;
-}}
-.finding-tag {{
+}
+.finding-tag {
   display: inline-block;
   font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   font-size: 10px;
@@ -661,11 +659,11 @@ main {{ padding: 24px clamp(16px, 4vw, 40px) 80px; max-width: 1400px; margin: 0 
   border-radius: 2px;
   padding: 1px 6px;
   margin-bottom: 8px;
-}}
-.finding h3 {{ margin: 0 0 6px; font-size: 15px; font-weight: 650; text-wrap: balance; }}
-.finding p {{ margin: 0; color: var(--text-dim); max-width: 78ch; font-size: 13.5px; }}
+}
+.finding h3 { margin: 0 0 6px; font-size: 15px; font-weight: 650; text-wrap: balance; }
+.finding p { margin: 0; color: var(--text-dim); max-width: 78ch; font-size: 13.5px; }
 
-h2.section-label {{
+h2.section-label {
   font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   font-size: 12px;
   text-transform: uppercase;
@@ -674,17 +672,17 @@ h2.section-label {{
   margin: 0 0 14px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
-}}
+}
 
-.panel {{
+.panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 4px;
   margin-bottom: 20px;
   scroll-margin-top: 190px;
   overflow: hidden;
-}}
-.panel-head {{
+}
+.panel-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -693,23 +691,23 @@ h2.section-label {{
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
-}}
-.panel-head h2 {{
+}
+.panel-head h2 {
   font-family: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   font-size: 14px;
   font-weight: 700;
   margin: 0;
-}}
-.panel-counts {{ display: flex; gap: 12px; font-size: 11px; font-family: ui-monospace, monospace; }}
-.count {{ font-variant-numeric: tabular-nums; }}
-.count.pass {{ color: var(--pass); }}
-.count.fail {{ color: var(--fail); }}
-.count.skip {{ color: var(--skip); }}
-.count.total {{ color: var(--text-dim); }}
+}
+.panel-counts { display: flex; gap: 12px; font-size: 11px; font-family: ui-monospace, monospace; }
+.count { font-variant-numeric: tabular-nums; }
+.count.pass { color: var(--pass); }
+.count.fail { color: var(--fail); }
+.count.skip { color: var(--skip); }
+.count.total { color: var(--text-dim); }
 
-.table-scroll {{ overflow-x: auto; }}
-table {{ border-collapse: collapse; width: 100%; font-size: 12.5px; }}
-thead th {{
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+thead th {
   position: sticky; top: 0;
   background: var(--surface-2);
   text-align: left;
@@ -717,16 +715,16 @@ thead th {{
   padding: 7px 10px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
-}}
-tbody td {{
+}
+tbody td {
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
-}}
-tbody tr:last-child td {{ border-bottom: none; }}
-tbody tr:hover {{ background: var(--surface-2); }}
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--surface-2); }
 
-.badge {{
+.badge {
   display: inline-block;
   padding: 1px 7px;
   border-radius: 2px;
@@ -734,22 +732,22 @@ tbody tr:hover {{ background: var(--surface-2); }}
   font-weight: 700;
   font-family: ui-monospace, monospace;
   letter-spacing: 0.02em;
-}}
-.badge.pass {{ color: var(--pass); background: var(--pass-bg); }}
-.badge.fail {{ color: var(--fail); background: var(--fail-bg); }}
-.badge.skip {{ color: var(--skip); background: var(--skip-bg); }}
+}
+.badge.pass { color: var(--pass); background: var(--pass-bg); }
+.badge.fail { color: var(--fail); background: var(--fail-bg); }
+.badge.skip { color: var(--skip); background: var(--skip-bg); }
 
-details summary {{
+details summary {
   cursor: pointer;
   color: var(--accent);
   font-family: ui-monospace, monospace;
   font-size: 11px;
   list-style: none;
-}}
-details summary::-webkit-details-marker {{ display: none; }}
-details summary:before {{ content: "\\25b8\\a0"; }}
-details[open] summary:before {{ content: "\\25be\\a0"; }}
-details pre {{
+}
+details summary::-webkit-details-marker { display: none; }
+details summary:before { content: "\\25b8\\a0"; }
+details[open] summary:before { content: "\\25be\\a0"; }
+details pre {
   margin: 6px 0 0;
   padding: 8px 10px;
   background: var(--bg);
@@ -761,12 +759,18 @@ details pre {{
   font-size: 11px;
   font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   color: var(--text-dim);
-}}
-.notes {{ color: var(--text-dim); font-size: 12px; max-width: 260px; }}
+}
+.notes { color: var(--text-dim); font-size: 12px; max-width: 260px; }
 
-a {{ color: var(--accent); }}
-::selection {{ background: var(--accent-bg); }}
-</style></head><body>
+a { color: var(--accent); }
+::selection { background: var(--accent-bg); }
+"""
+
+    TITLE = "cx CLI &mdash; PR #176 command coverage test"
+
+    page_body = f"""<style>
+{CSS}
+</style>
 <header>
   <div class="title-row">
     <div>
@@ -789,11 +793,20 @@ a {{ color: var(--accent); }}
   <h2 class="section-label">Full results by command group</h2>
   {''.join(sections)}
 </main>
+"""
+
+    full_doc = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>{TITLE}</title>
+</head><body>
+{page_body}
 </body></html>"""
 
     with open(OUT_PATH, "w") as f:
-        f.write(out)
-    print(f"Wrote {OUT_PATH} ({grand_total} results across {len(all_groups) - len(dropped_groups)} groups; "
+        f.write(full_doc)
+    with open(ARTIFACT_OUT_PATH, "w") as f:
+        f.write(page_body)
+    print(f"Wrote {OUT_PATH} and {ARTIFACT_OUT_PATH} "
+          f"({grand_total} results across {len(all_groups) - len(dropped_groups)} groups; "
           f"{len(dropped_groups)} groups fully dropped: {', '.join(dropped_groups)})")
 
 

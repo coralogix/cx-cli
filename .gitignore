@@ -35,5 +35,6 @@ graphify-out/
 # Generated output from the PR176 console-link verification suite
 verification/forge-586-console-links/results/
 verification/forge-586-console-links/report.html
+verification/forge-586-console-links/artifact_content.html
 verification/forge-586-console-links/payloads/_rendered_*
 verification/**/__pycache__/

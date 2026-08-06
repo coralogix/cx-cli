@@ -16,6 +16,9 @@ pub const DOCS_LLMS_INDEX_URL: &str = "https://coralogix.com/docs/llms.txt";
 const DOCS_HOST: &str = "coralogix.com";
 const DOCS_BASE_URL: &str = "https://coralogix.com/docs";
 const INDEX_TTL: Duration = Duration::from_secs(3600);
+// The docs CDN rejects reqwest's default user agent. Keep the cx identity as
+// a product token while using a curl-compatible leading token.
+const DOCS_USER_AGENT: &str = concat!("curl/8.0 cx-cli/", env!("CARGO_PKG_VERSION"));
 /// Minimum best-hit score (same threshold as ws-ai-mcp `search_docs`).
 const MIN_FUZZY_SCORE: f64 = 0.2;
 
@@ -23,7 +26,7 @@ static INDEX_CACHE: LazyLock<Mutex<Option<CachedIndex>>> = LazyLock::new(|| Mute
 
 struct CachedIndex {
     loaded_at: Instant,
-    entries: Vec<(String, String)>,
+    entries: Vec<(String, String, String)>,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,9 +58,9 @@ pub fn page_url(url: &str) -> String {
     }
 }
 
-/// Path under `/docs/` (e.g. `user-guides/data_exploration/spans`).
+/// Path under `/docs/`, preserving the suffix supplied by the docs index.
 pub fn docs_suffix(url: &str) -> String {
-    let path = Url::parse(&page_url(url))
+    let path = Url::parse(url.trim())
         .ok()
         .map(|u| u.path().trim_end_matches('/').to_string())
         .unwrap_or_default();
@@ -82,14 +85,9 @@ pub fn page_url_from_suffix(suffix: &str) -> Result<String> {
     Ok(format!("{DOCS_BASE_URL}/{}", normalize_suffix(suffix)?))
 }
 
-/// Map a page URL to the markdown fetch URL (`.../index.md`).
+/// Return the page URL unchanged for fetching.
 pub fn md_url(url: &str) -> String {
-    let page = page_url(url);
-    if page.ends_with(".md") {
-        page
-    } else {
-        format!("{page}/index.md")
-    }
+    url.trim().to_string()
 }
 
 fn is_coralogix_docs_url(url: &str) -> bool {
@@ -99,16 +97,15 @@ fn is_coralogix_docs_url(url: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Parse `- [Title](https://...)` lines from llms.txt; index stores `(title, suffix)`.
-pub fn parse_index(text: &str) -> Result<Vec<(String, String)>> {
+/// Parse docs index links, keeping the legacy text used for fuzzy ranking.
+pub fn parse_index(text: &str) -> Result<Vec<(String, String, String)>> {
     let mut entries = Vec::new();
     for line in text.lines() {
-        let Some((title, raw_url)) = parse_link_line(line) else {
+        let Some((title, raw_url, ranking_url)) = parse_link_line(line) else {
             continue;
         };
-        let page = page_url(&raw_url);
-        if is_coralogix_docs_url(&page) {
-            entries.push((title, docs_suffix(&page)));
+        if is_coralogix_docs_url(&raw_url) {
+            entries.push((title, docs_suffix(&raw_url), docs_suffix(&ranking_url)));
         }
     }
     if entries.is_empty() {
@@ -117,15 +114,19 @@ pub fn parse_index(text: &str) -> Result<Vec<(String, String)>> {
     Ok(entries)
 }
 
-fn parse_link_line(line: &str) -> Option<(String, String)> {
+fn parse_link_line(line: &str) -> Option<(String, String, String)> {
     let line = line.trim();
     let rest = line.strip_prefix("- [")?;
     let (title, rest) = rest.split_once("](")?;
-    let url = rest.strip_suffix(')')?;
+    let (url, _) = rest.split_once(')')?;
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return None;
     }
-    Some((title.to_string(), url.to_string()))
+    Some((
+        title.to_string(),
+        url.to_string(),
+        rest.strip_suffix(')').unwrap_or(rest).to_string(),
+    ))
 }
 
 /// Fuzzy score for a query against title and path suffix (same approach as ws-ai-mcp).
@@ -140,7 +141,10 @@ pub fn fuzzy_score(query: &str, title: &str, suffix: &str) -> f64 {
 }
 
 async fn fetch_text(url: &str) -> Result<String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent(DOCS_USER_AGENT)
+        .build()
+        .context("failed to build documentation HTTP client")?;
     let response = client
         .get(url)
         .send()
@@ -156,7 +160,7 @@ async fn fetch_text(url: &str) -> Result<String> {
         .with_context(|| format!("failed to read body from {url}"))
 }
 
-async fn load_index() -> Result<Vec<(String, String)>> {
+async fn load_index() -> Result<Vec<(String, String, String)>> {
     {
         let guard = INDEX_CACHE.lock().await;
         if let Some(cache) = guard.as_ref() {
@@ -187,8 +191,8 @@ pub async fn run_search(query: &str, limit: u32, output: OutputFormat) -> Result
     let index = load_index().await?;
     let mut ranked: Vec<(String, String, f64)> = index
         .into_iter()
-        .map(|(title, suffix)| {
-            let score = fuzzy_score(query, &title, &suffix);
+        .map(|(title, suffix, ranking_suffix)| {
+            let score = fuzzy_score(query, &title, &ranking_suffix);
             (title, suffix, score)
         })
         .collect();
@@ -278,13 +282,24 @@ mod tests {
 - [API keys](https://coralogix.com/docs/user-guides/account-management/api-keys/)
 - [Other host](https://example.com/docs/page/)
 "#;
+    const INDEX_WITH_DESCRIPTION: &str = r#"
+- [Search](https://coralogix.com/docs/search.md): Find product docs.
+"#;
 
     #[test]
     fn parse_index_extracts_coralogix_suffixes() {
         let entries = parse_index(SAMPLE_INDEX).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].1, "user-guides/data_exploration/spans");
+        assert_eq!(entries[0].2, "user-guides/data_exploration/spans");
         assert!(entries[0].1.contains("user-guides"));
+    }
+
+    #[test]
+    fn parse_index_keeps_legacy_ranking_text() {
+        let entries = parse_index(INDEX_WITH_DESCRIPTION).unwrap();
+        assert_eq!(entries[0].1, "search.md");
+        assert!(entries[0].2.contains("Find%20product%20docs"));
     }
 
     #[test]
@@ -317,10 +332,10 @@ mod tests {
     }
 
     #[test]
-    fn md_url_appends_index_md() {
+    fn md_url_preserves_page_url() {
         assert_eq!(
             md_url("https://coralogix.com/docs/foo/"),
-            "https://coralogix.com/docs/foo/index.md"
+            "https://coralogix.com/docs/foo/"
         );
     }
 

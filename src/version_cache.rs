@@ -6,6 +6,7 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VersionCheckCache {
@@ -15,6 +16,12 @@ pub struct VersionCheckCache {
     /// Latest `cx` binary version tag fetched from the GitHub releases API
     /// (leading `v` stripped, e.g. `"1.3.0"`).
     pub latest_binary: Option<String>,
+
+    /// Random identifier for this local CLI installation.
+    ///
+    /// Optional so existing state files continue to deserialize. A UUID is
+    /// generated and persisted on the next command invocation when absent.
+    pub installation_id: Option<String>,
 }
 
 impl VersionCheckCache {
@@ -55,6 +62,26 @@ impl VersionCheckCache {
             Some(t) => Utc::now() - t > Duration::hours(24),
         }
     }
+
+    fn ensure_installation_id(&mut self) -> String {
+        self.installation_id
+            .get_or_insert_with(|| Uuid::new_v4().to_string())
+            .clone()
+    }
+}
+
+/// Returns the stable random identifier for this local CLI installation.
+///
+/// The value is generated only when missing and persisted best-effort in the
+/// existing `~/.cx/state.json` cache file.
+pub fn installation_id() -> String {
+    let mut state = VersionCheckCache::load();
+    let was_missing = state.installation_id.is_none();
+    let installation_id = state.ensure_installation_id();
+    if was_missing {
+        let _ = state.save();
+    }
+    installation_id
 }
 
 #[cfg(test)]
@@ -83,5 +110,24 @@ mod tests {
             ..Default::default()
         };
         assert!(s.check_is_stale());
+    }
+
+    #[test]
+    fn installation_id_is_stable_once_generated() {
+        let mut state = VersionCheckCache::default();
+        let first = state.ensure_installation_id();
+        let persisted = serde_json::to_string(&state).unwrap();
+        let mut reloaded: VersionCheckCache = serde_json::from_str(&persisted).unwrap();
+        let second = reloaded.ensure_installation_id();
+
+        assert_eq!(first, second);
+        assert!(Uuid::parse_str(&first).is_ok());
+    }
+
+    #[test]
+    fn existing_state_without_installation_id_deserializes() {
+        let state: VersionCheckCache =
+            serde_json::from_str(r#"{"last_checked_at":null,"latest_binary":null}"#).unwrap();
+        assert!(state.installation_id.is_none());
     }
 }

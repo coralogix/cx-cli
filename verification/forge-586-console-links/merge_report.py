@@ -287,8 +287,12 @@ def load(group):
 
 
 def badge(status):
-    cls = {"PASS": "pass", "FAIL": "fail", "SKIPPED": "skip"}.get(status, "skip")
-    return f'<span class="badge {cls}">{status}</span>'
+    cls = {
+        "PASS": "pass", "FAIL": "fail", "SKIPPED": "skip",
+        "CLI_BUG": "cli-bug", "BACKEND_BUG": "backend-bug",
+    }.get(status, "skip")
+    label = {"CLI_BUG": "CLI BUG", "BACKEND_BUG": "BACKEND BUG"}.get(status, status)
+    return f'<span class="badge {cls}">{label}</span>'
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +300,17 @@ def badge(status):
 # tag: bug (PR176-relevant regression) | api (pre-existing backend/API limitation,
 # unrelated to this PR) | residual (live-team state left changed) | handled (an issue
 # that came up mid-run and was already resolved/reverted before this report was built)
+#
+# This is prose narrative, one entry per *issue* (can span many rows). The per-row
+# CLI_BUG / BACKEND_BUG statuses below (see badge()) are the row-level counterpart --
+# every individual results/*.jsonl row whose exit code alone would read as a plain,
+# uninterpretable FAIL (or worse, a misleading PASS -- e.g. recording-rules create
+# returns exit 0 but the group never actually persists) gets tagged with which side
+# of the fence the confirmed defect sits on, so a reader doesn't have to cross-reference
+# this FINDINGS block to know "not a cx bug" vs "still needs a real fix in this repo."
+# Use CLI_BUG only once the defect is confirmed fixable in cx's own code (a source read,
+# not just re-running); use BACKEND_BUG once cx is confirmed to be sending/handling
+# things correctly and the Coralogix API/backend is the side that's wrong.
 # ---------------------------------------------------------------------------
 FINDINGS = [
     {
@@ -459,10 +474,18 @@ def main():
             </tr>""")
 
         anchor = g.replace(" ", "-")
-        dominant = "fail" if counts.get("FAIL", 0) else ("skip" if counts.get("SKIPPED", 0) else "pass")
+        if counts.get("FAIL", 0) or counts.get("CLI_BUG", 0):
+            dominant = "fail"
+        elif counts.get("SKIPPED", 0) or counts.get("BACKEND_BUG", 0):
+            dominant = "skip"
+        else:
+            dominant = "pass"
+        bug_counts = "".join(
+            f"&middot;{counts[k]}" for k in ("CLI_BUG", "BACKEND_BUG") if counts.get(k, 0)
+        )
         nav.append(f"""<a class="chip {dominant}" href="#{anchor}">
             <span class="chip-label">{html.escape(g)}</span>
-            <span class="chip-counts">{counts.get('PASS',0)}&middot;{counts.get('FAIL',0)}&middot;{counts.get('SKIPPED',0)}</span>
+            <span class="chip-counts">{counts.get('PASS',0)}&middot;{counts.get('FAIL',0)}&middot;{counts.get('SKIPPED',0)}{bug_counts}</span>
         </a>""")
 
         sections.append(f"""
@@ -514,6 +537,8 @@ def main():
   --fail-bg: #fce4e4;
   --skip: #9a6700;
   --skip-bg: #faf0d6;
+  --cli-bug: #8250df;
+  --cli-bug-bg: #ede4fb;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -532,19 +557,21 @@ def main():
     --fail-bg: #3a1414;
     --skip: #e8b649;
     --skip-bg: #3a2c0c;
+    --cli-bug: #c297ff;
+    --cli-bug-bg: #2c1e42;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0b0f16; --surface: #121826; --surface-2: #17203133; --border: #26304a;
   --text: #dbe2f0; --text-dim: #8996b3; --accent: #5fd4c4; --accent-bg: #16342f;
   --pass: #4ce06b; --pass-bg: #123a1d; --fail: #ff6b64; --fail-bg: #3a1414;
-  --skip: #e8b649; --skip-bg: #3a2c0c;
+  --skip: #e8b649; --skip-bg: #3a2c0c; --cli-bug: #c297ff; --cli-bug-bg: #2c1e42;
 }
 :root[data-theme="light"] {
   --bg: #f5f7fb; --surface: #ffffff; --surface-2: #eef1f7; --border: #d8dee9;
   --text: #1b2233; --text-dim: #5b6478; --accent: #0f8a7a; --accent-bg: #e3f5f1;
   --pass: #1a7f37; --pass-bg: #dcf5e2; --fail: #cf222e; --fail-bg: #fce4e4;
-  --skip: #9a6700; --skip-bg: #faf0d6;
+  --skip: #9a6700; --skip-bg: #faf0d6; --cli-bug: #8250df; --cli-bug-bg: #ede4fb;
 }
 
 * { box-sizing: border-box; }
@@ -602,6 +629,8 @@ h1 .dim-part { color: var(--text-dim); font-weight: 500; }
 .stat.pass .n { color: var(--pass); }
 .stat.fail .n { color: var(--fail); }
 .stat.skip .n { color: var(--skip); }
+.stat.cli-bug .n { color: var(--cli-bug); }
+.stat.backend-bug .n { color: var(--skip); }
 
 .chiprow {
   margin-top: 14px;
@@ -736,6 +765,8 @@ tbody tr:hover { background: var(--surface-2); }
 .badge.pass { color: var(--pass); background: var(--pass-bg); }
 .badge.fail { color: var(--fail); background: var(--fail-bg); }
 .badge.skip { color: var(--skip); background: var(--skip-bg); }
+.badge.cli-bug { color: var(--cli-bug); background: var(--cli-bug-bg); }
+.badge.backend-bug { color: var(--skip); background: var(--skip-bg); }
 
 details summary {
   cursor: pointer;
@@ -781,6 +812,8 @@ a { color: var(--accent); }
       <div class="stat pass"><span class="n num">{total.get('PASS',0)}</span><span class="l">pass</span></div>
       <div class="stat fail"><span class="n num">{total.get('FAIL',0)}</span><span class="l">fail</span></div>
       <div class="stat skip"><span class="n num">{total.get('SKIPPED',0)}</span><span class="l">skip</span></div>
+      <div class="stat cli-bug"><span class="n num">{total.get('CLI_BUG',0)}</span><span class="l">cli bug</span></div>
+      <div class="stat backend-bug"><span class="n num">{total.get('BACKEND_BUG',0)}</span><span class="l">backend bug</span></div>
       <div class="stat"><span class="n num">{grand_total}</span><span class="l">total &middot; {pass_pct}%</span></div>
     </div>
   </div>

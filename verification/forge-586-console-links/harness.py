@@ -77,7 +77,19 @@ def record(group, subcommand, output_format, result, status=None, notes=""):
     output_format: "text" | "json" | "agents" | "n/a" (n/a for setup/cleanup calls that
                    aren't part of the output-format matrix)
     result: dict returned by run_cx()
-    status: "PASS" | "FAIL" | "SKIPPED" ; if None, inferred from exit_code (0 -> PASS, else FAIL)
+    status: "PASS" | "FAIL" | "SKIPPED" | "CLI_BUG" | "BACKEND_BUG"
+            if None, inferred from exit_code (0 -> PASS, else FAIL).
+            Use CLI_BUG when a follow-up check (or source read) confirms the defect is in
+            cx's own request-building/response-handling code and is fixable in this repo
+            (e.g. a required param the CLI never exposes as a flag). Use BACKEND_BUG when
+            cx sends a well-formed request and the Coralogix backend is confirmed (or
+            strongly indicated) to be the side that's wrong -- a silent no-op delete, a
+            field-name mismatch on an undocumented endpoint, a route that 404s server-side.
+            Both are distinct from a plain FAIL/exit-nonzero: a raw exit code alone can't
+            tell you which side is at fault, or that a "successful" (exit 0) call didn't
+            actually do what it claimed -- CLI_BUG/BACKEND_BUG exist for exactly that gap,
+            and always deserve a `notes` explaining how it was confirmed (source line, or
+            a follow-up list/get proving the mutation didn't take).
     notes: free text, e.g. "sent real invite email to test-user@...", "no case existed to test against"
     """
     if status is None:
@@ -129,7 +141,13 @@ def _load_group_entries(group):
 
 
 def _status_badge(status):
-    color = {"PASS": "#1a7f37", "FAIL": "#cf222e", "SKIPPED": "#9a6700"}.get(status, "#57606a")
+    color = {
+        "PASS": "#1a7f37",
+        "FAIL": "#cf222e",
+        "SKIPPED": "#9a6700",
+        "CLI_BUG": "#8250df",
+        "BACKEND_BUG": "#9a6700",
+    }.get(status, "#57606a")
     return f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;color:#fff;background:{color}">{status}</span>'
 
 
@@ -170,7 +188,7 @@ pre{{white-space:pre-wrap;word-break:break-all;max-width:600px;font-size:11px}}
 code{{font-size:12px}}
 </style></head><body>
 <h2>{html.escape(group)}</h2>
-<p>PASS: {counts.get('PASS',0)} &nbsp; FAIL: {counts.get('FAIL',0)} &nbsp; SKIPPED: {counts.get('SKIPPED',0)} &nbsp; Total: {len(entries)}</p>
+<p>PASS: {counts.get('PASS',0)} &nbsp; FAIL: {counts.get('FAIL',0)} &nbsp; SKIPPED: {counts.get('SKIPPED',0)} &nbsp; CLI_BUG: {counts.get('CLI_BUG',0)} &nbsp; BACKEND_BUG: {counts.get('BACKEND_BUG',0)} &nbsp; Total: {len(entries)}</p>
 <table>
 <tr><th>Subcommand</th><th>Format</th><th>Status</th><th>Exit</th><th>Command</th><th>Stdout</th><th>Stderr</th><th>Notes</th></tr>
 {''.join(rows)}

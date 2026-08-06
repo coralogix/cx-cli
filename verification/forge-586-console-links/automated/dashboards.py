@@ -112,14 +112,17 @@ def run():
             record(GROUP, "catalog", fmt, r)
 
         # --- dashboards search (3 formats, read-only, generic query) ---
+        # <DESCRIPTION> is a single positional argument -- passing multi-word
+        # phrases as separate argv tokens (a prior version of this script did)
+        # is a clap usage error (exit 2), not an API call at all.
         for fmt in FORMATS:
-            r = run_cx(["dashboards", "search", "smoke", "test", "dashboard"], output_format=fmt)
+            r = run_cx(["dashboards", "search", "smoke test dashboard"], output_format=fmt)
             record(GROUP, "search", fmt, r)
 
         # --- dashboards query-search --description (3 formats) ---
         for fmt in FORMATS:
             r = run_cx(
-                ["dashboards", "query-search", "--description", "error", "rate"],
+                ["dashboards", "query-search", "--description", "error rate"],
                 output_format=fmt,
             )
             record(GROUP, "query-search --description", fmt, r)

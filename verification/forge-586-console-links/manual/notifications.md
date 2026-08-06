@@ -30,26 +30,20 @@ identifier yields a generic 'not a valid identifier' 400); no source/docs
 reference was consulted per task constraints (no reading src/). Skipped
 rather than continuing to guess."
 
-## 2. `notifications test routing-condition`
+## Resolved: `notifications test routing-condition` (now automated)
 
-**Command shape:** unknown -- same situation as `test preset`.
-
-**Why it needs judgment:** `entityType`/`entityLabels` were accepted, but
-every guess for the condition expression itself (`condition`, `expression`,
-`matcher`, `routingCondition`, `entityMatcher`, `conditionExpression`) was
-rejected as an unknown field. Same reasoning as above: needs either a schema
-reference or further live probing.
-
-**Decision criteria:** same as `test preset` above -- find the field name
-(spec or live probing), verify it renders a routing condition, then promote
-into the automated script.
-
-**Baseline (2026-08-03):** `SKIPPED`. Notes: "Could not determine required
-JSON field name for the condition expression: entityType/entityLabels were
-accepted, but condition/expression/matcher/routingCondition/entityMatcher/
-conditionExpression were all rejected as unknown fields by the proto
-validator. No source/docs reference consulted per task constraints. Skipped
-rather than continuing to guess."
+Used to be item 2 here, same situation as `test preset` above -- 6 field-name
+guesses (`condition`, `expression`, `matcher`, `routingCondition`,
+`entityMatcher`, `conditionExpression`) were all rejected as unknown fields.
+A 2026-08-06 manual re-verification pass cracked it: the required field is
+`template` (the same field name `test template-render` uses, despite being a
+distinct subcommand) -- found via the error message on a bare
+`{"entityType": "ALERTS"}` body ("template must not be empty"), never tried
+during the original 6-guess session. Working payload:
+`{"entityType": "ALERTS", "template": "true"}`, confirmed PASS across all 3
+output formats. Promoted into `automated/notifications.py`
+(`payloads/notifications_test_routing_condition.json`); no longer a manual
+item.
 
 ## Not a manual item, but worth knowing
 

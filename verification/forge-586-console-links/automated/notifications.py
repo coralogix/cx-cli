@@ -17,8 +17,10 @@ is safe (read-only, no side effects) and doubles as a regression check: if
 they ever start returning 200, that's a signal the underlying bug got fixed.
 
 NOT covered here (see manual/notifications.md):
-  - `test preset` / `test routing-condition`: no known-working request body
-    was ever found (schema discovery abandoned after multiple 400s).
+  - `test preset`: no known-working request body was ever found (schema
+    discovery abandoned after multiple 400s). `test routing-condition` used
+    to be in this bucket too, but its schema was cracked (see below) and it's
+    now part of the automated replay above.
   - the supplemental `webhooks test` against a pre-existing production Slack
     connector -- not applicable to this group, see webhooks.
 
@@ -322,6 +324,23 @@ def run():
                 output_format=fmt,
             )
             record(GROUP, "test template-render", fmt, r)
+
+        # test routing-condition: the required field is `template` (same name as
+        # test template-render's own body, despite being a distinct subcommand).
+        # The original session's 6 guesses (condition/expression/matcher/
+        # routingCondition/entityMatcher/conditionExpression) were all wrong;
+        # `template` was never tried until a 2026-08-06 manual re-verification
+        # pass found it via the bare-entityType error message ("template must
+        # not be empty"). Promoted here from manual/notifications.md.
+        test_routing_path = os.path.join(
+            PAYLOADS_DIR, "notifications_test_routing_condition.json"
+        )
+        for fmt in FORMATS:
+            r = run_cx(
+                ["notifications", "test", "routing-condition", "--from-file", test_routing_path],
+                output_format=fmt,
+            )
+            record(GROUP, "test routing-condition", fmt, r)
 
     finally:
         # --- cleanup: router, preset, connector, tolerating "already gone" ---

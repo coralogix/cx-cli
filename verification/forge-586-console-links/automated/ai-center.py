@@ -14,8 +14,13 @@ AUTOMATED here:
     0eb7fcf0-6b68-48a0-9bfa-73636074c463).
   - evaluations create -> get -> list -> update -> delete: full lifecycle
     with a known-working payload shape (eval_body.json / eval_patch.json)
-    and a working delete route. Uses a fresh subsystem name each run so
-    reruns never collide, and cleans up via `evaluations delete`.
+    and a working delete route. `create` enables an evaluation on the
+    existing "otel-demo"/"guardrails-demo" application (APP2_ID) -- the
+    application/subsystem fields must reference a real registered AI
+    application, not a fresh per-run string (an earlier version of this
+    script mangled the subsystem for "uniqueness" and got a 404). Each
+    create still returns its own evaluation id, which `evaluations delete`
+    cleans up at the end, so reruns don't collide or accumulate.
   - model-pricing set -> restore: known-working payload, and this is a
     reversible team-wide setting (not an object needing its own delete
     route) -- the script captures whatever pricing existed *before* it
@@ -66,9 +71,16 @@ def _extract(stdout, envelope_key=None):
 
 
 def _make_eval_payload(suffix):
+    # `evaluations create` enables an evaluation ON an existing registered AI
+    # application -- application/subsystem must match a real pair from
+    # `ai-center applications list` (e.g. APP2_ID's "otel-demo"/"guardrails-demo"),
+    # not a fresh/unique string. Do NOT mangle these fields for per-run uniqueness
+    # (a prior version of this script did, and got 404 "AI application not found"
+    # on every run). The created evaluation itself gets its own id (via `create`'s
+    # response) that this script's own delete cleans up, so no run-over-run
+    # collision risk exists here in the first place.
     with open(EVAL_BODY_TEMPLATE) as f:
         body = json.load(f)
-    body["subsystem"] = f"guardrails-demo-pr176-{suffix}"
     tmp_path = os.path.join(PAYLOADS_DIR, f"_run_ai-center_eval_{suffix}.json")
     with open(tmp_path, "w") as f:
         json.dump(body, f)

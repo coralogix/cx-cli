@@ -290,8 +290,12 @@ def badge(status):
     cls = {
         "PASS": "pass", "FAIL": "fail", "SKIPPED": "skip",
         "CLI_BUG": "cli-bug", "BACKEND_BUG": "backend-bug",
+        "HARD_TO_REPRODUCE": "hard-to-reproduce",
     }.get(status, "skip")
-    label = {"CLI_BUG": "CLI BUG", "BACKEND_BUG": "BACKEND BUG"}.get(status, status)
+    label = {
+        "CLI_BUG": "CLI BUG", "BACKEND_BUG": "BACKEND BUG",
+        "HARD_TO_REPRODUCE": "HARD TO REPRODUCE",
+    }.get(status, status)
     return f'<span class="badge {cls}">{label}</span>'
 
 
@@ -310,7 +314,13 @@ def badge(status):
 # this FINDINGS block to know "not a cx bug" vs "still needs a real fix in this repo."
 # Use CLI_BUG only once the defect is confirmed fixable in cx's own code (a source read,
 # not just re-running); use BACKEND_BUG once cx is confirmed to be sending/handling
-# things correctly and the Coralogix API/backend is the side that's wrong.
+# things correctly and the Coralogix API/backend is the side that's wrong. Use
+# HARD_TO_REPRODUCE when cx and the backend are BOTH correct -- the call is legitimately
+# rejected by a state-precondition guard -- but the specific real-world fixture (a fixed
+# case/id with no create/list/reopen route) has drifted into a terminal state with no way
+# back through this CLI, so the exact same command can never pass again as scripted (e.g.
+# cases acknowledge/set-priority against a case that's already closed, with no `cases
+# list` and no reopen subcommand to find or revive a fresh target).
 # ---------------------------------------------------------------------------
 FINDINGS = [
     {
@@ -476,12 +486,12 @@ def main():
         anchor = g.replace(" ", "-")
         if counts.get("FAIL", 0) or counts.get("CLI_BUG", 0):
             dominant = "fail"
-        elif counts.get("SKIPPED", 0) or counts.get("BACKEND_BUG", 0):
+        elif counts.get("SKIPPED", 0) or counts.get("BACKEND_BUG", 0) or counts.get("HARD_TO_REPRODUCE", 0):
             dominant = "skip"
         else:
             dominant = "pass"
         bug_counts = "".join(
-            f"&middot;{counts[k]}" for k in ("CLI_BUG", "BACKEND_BUG") if counts.get(k, 0)
+            f"&middot;{counts[k]}" for k in ("CLI_BUG", "BACKEND_BUG", "HARD_TO_REPRODUCE") if counts.get(k, 0)
         )
         nav.append(f"""<a class="chip {dominant}" href="#{anchor}">
             <span class="chip-label">{html.escape(g)}</span>
@@ -539,6 +549,8 @@ def main():
   --skip-bg: #faf0d6;
   --cli-bug: #8250df;
   --cli-bug-bg: #ede4fb;
+  --hard-repro: #0969da;
+  --hard-repro-bg: #ddf4ff;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -559,6 +571,8 @@ def main():
     --skip-bg: #3a2c0c;
     --cli-bug: #c297ff;
     --cli-bug-bg: #2c1e42;
+    --hard-repro: #79c0ff;
+    --hard-repro-bg: #10243e;
   }
 }
 :root[data-theme="dark"] {
@@ -566,12 +580,14 @@ def main():
   --text: #dbe2f0; --text-dim: #8996b3; --accent: #5fd4c4; --accent-bg: #16342f;
   --pass: #4ce06b; --pass-bg: #123a1d; --fail: #ff6b64; --fail-bg: #3a1414;
   --skip: #e8b649; --skip-bg: #3a2c0c; --cli-bug: #c297ff; --cli-bug-bg: #2c1e42;
+  --hard-repro: #79c0ff; --hard-repro-bg: #10243e;
 }
 :root[data-theme="light"] {
   --bg: #f5f7fb; --surface: #ffffff; --surface-2: #eef1f7; --border: #d8dee9;
   --text: #1b2233; --text-dim: #5b6478; --accent: #0f8a7a; --accent-bg: #e3f5f1;
   --pass: #1a7f37; --pass-bg: #dcf5e2; --fail: #cf222e; --fail-bg: #fce4e4;
   --skip: #9a6700; --skip-bg: #faf0d6; --cli-bug: #8250df; --cli-bug-bg: #ede4fb;
+  --hard-repro: #0969da; --hard-repro-bg: #ddf4ff;
 }
 
 * { box-sizing: border-box; }
@@ -631,6 +647,7 @@ h1 .dim-part { color: var(--text-dim); font-weight: 500; }
 .stat.skip .n { color: var(--skip); }
 .stat.cli-bug .n { color: var(--cli-bug); }
 .stat.backend-bug .n { color: var(--skip); }
+.stat.hard-to-reproduce .n { color: var(--hard-repro); }
 
 .chiprow {
   margin-top: 14px;
@@ -767,6 +784,7 @@ tbody tr:hover { background: var(--surface-2); }
 .badge.skip { color: var(--skip); background: var(--skip-bg); }
 .badge.cli-bug { color: var(--cli-bug); background: var(--cli-bug-bg); }
 .badge.backend-bug { color: var(--skip); background: var(--skip-bg); }
+.badge.hard-to-reproduce { color: var(--hard-repro); background: var(--hard-repro-bg); }
 
 details summary {
   cursor: pointer;
@@ -814,6 +832,7 @@ a { color: var(--accent); }
       <div class="stat skip"><span class="n num">{total.get('SKIPPED',0)}</span><span class="l">skip</span></div>
       <div class="stat cli-bug"><span class="n num">{total.get('CLI_BUG',0)}</span><span class="l">cli bug</span></div>
       <div class="stat backend-bug"><span class="n num">{total.get('BACKEND_BUG',0)}</span><span class="l">backend bug</span></div>
+      <div class="stat hard-to-reproduce"><span class="n num">{total.get('HARD_TO_REPRODUCE',0)}</span><span class="l">hard to repro</span></div>
       <div class="stat"><span class="n num">{grand_total}</span><span class="l">total &middot; {pass_pct}%</span></div>
     </div>
   </div>

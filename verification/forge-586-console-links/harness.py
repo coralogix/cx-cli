@@ -77,7 +77,7 @@ def record(group, subcommand, output_format, result, status=None, notes=""):
     output_format: "text" | "json" | "agents" | "n/a" (n/a for setup/cleanup calls that
                    aren't part of the output-format matrix)
     result: dict returned by run_cx()
-    status: "PASS" | "FAIL" | "SKIPPED" | "CLI_BUG" | "BACKEND_BUG"
+    status: "PASS" | "FAIL" | "SKIPPED" | "CLI_BUG" | "BACKEND_BUG" | "HARD_TO_REPRODUCE"
             if None, inferred from exit_code (0 -> PASS, else FAIL).
             Use CLI_BUG when a follow-up check (or source read) confirms the defect is in
             cx's own request-building/response-handling code and is fixable in this repo
@@ -90,6 +90,13 @@ def record(group, subcommand, output_format, result, status=None, notes=""):
             actually do what it claimed -- CLI_BUG/BACKEND_BUG exist for exactly that gap,
             and always deserve a `notes` explaining how it was confirmed (source line, or
             a follow-up list/get proving the mutation didn't take).
+            Use HARD_TO_REPRODUCE when cx and the backend are BOTH behaving correctly --
+            the call is legitimately rejected because a required state precondition isn't
+            met -- but the specific real-world fixture this test targets (a fixed case/id
+            with no create/list/reopen route of its own) has drifted into a terminal state
+            with no way back through this CLI, so the exact same command can never pass
+            again as scripted. Not a bug on either side; just note in `notes` what state
+            the fixture is actually in and why it can't be reset.
     notes: free text, e.g. "sent real invite email to test-user@...", "no case existed to test against"
     """
     if status is None:
@@ -147,6 +154,7 @@ def _status_badge(status):
         "SKIPPED": "#9a6700",
         "CLI_BUG": "#8250df",
         "BACKEND_BUG": "#9a6700",
+        "HARD_TO_REPRODUCE": "#0969da",
     }.get(status, "#57606a")
     return f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;color:#fff;background:{color}">{status}</span>'
 
@@ -188,7 +196,7 @@ pre{{white-space:pre-wrap;word-break:break-all;max-width:600px;font-size:11px}}
 code{{font-size:12px}}
 </style></head><body>
 <h2>{html.escape(group)}</h2>
-<p>PASS: {counts.get('PASS',0)} &nbsp; FAIL: {counts.get('FAIL',0)} &nbsp; SKIPPED: {counts.get('SKIPPED',0)} &nbsp; CLI_BUG: {counts.get('CLI_BUG',0)} &nbsp; BACKEND_BUG: {counts.get('BACKEND_BUG',0)} &nbsp; Total: {len(entries)}</p>
+<p>PASS: {counts.get('PASS',0)} &nbsp; FAIL: {counts.get('FAIL',0)} &nbsp; SKIPPED: {counts.get('SKIPPED',0)} &nbsp; CLI_BUG: {counts.get('CLI_BUG',0)} &nbsp; BACKEND_BUG: {counts.get('BACKEND_BUG',0)} &nbsp; HARD_TO_REPRODUCE: {counts.get('HARD_TO_REPRODUCE',0)} &nbsp; Total: {len(entries)}</p>
 <table>
 <tr><th>Subcommand</th><th>Format</th><th>Status</th><th>Exit</th><th>Command</th><th>Stdout</th><th>Stderr</th><th>Notes</th></tr>
 {''.join(rows)}

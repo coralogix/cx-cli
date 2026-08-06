@@ -1,0 +1,24 @@
+{
+  "preset": {
+    "id": "314a3e4b-0802-4ec9-861c-a7e33b3c43c0",
+    "connectorType": "SLACK",
+    "entityType": "ALERTS",
+    "name": "pr176-smoketest-preset",
+    "parentId": "preset_system_slack_alerts_basic",
+    "description": "PR176 manual verification smoke test preset (updated)",
+    "attachmentConfig": {},
+    "configOverrides": [
+      {
+        "conditionType": { "matchEntityType": {} },
+        "payloadType": "slack_structured",
+        "messageConfig": {
+          "fields": [
+            { "fieldName": "title", "template": "PR176 smoketest updated: {{alertDef.name}}" },
+            { "fieldName": "description", "template": "smoketest updated" },
+            { "fieldName": "footer", "template": "" }
+          ]
+        }
+      }
+    ]
+  }
+}

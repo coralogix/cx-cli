@@ -1,0 +1,12 @@
+{
+  "id": "slack-central",
+  "version": "0.1.0",
+  "parameters": [
+    { "key": "IntegrationName", "stringValue": "cx-cli-pr176-test" },
+    { "key": "Authorized", "booleanValue": false },
+    { "key": "SendNotifications", "booleanValue": false },
+    { "key": "CollectAccessLogs", "booleanValue": false },
+    { "key": "CollectMessages", "booleanValue": false },
+    { "key": "CollectMessagesSlackChannels", "stringList": { "values": [] } }
+  ]
+}

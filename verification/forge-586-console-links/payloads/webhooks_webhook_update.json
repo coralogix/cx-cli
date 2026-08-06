@@ -1,0 +1,10 @@
+{
+  "data": {
+    "id": "4c368ea1-65be-45db-b82b-1c5f5e2d64e1",
+    "type": "EMAIL_GROUP",
+    "name": "pr176-smoketest-webhook-updated",
+    "emailGroup": {
+      "emailAddresses": ["smoketest@example.com"]
+    }
+  }
+}

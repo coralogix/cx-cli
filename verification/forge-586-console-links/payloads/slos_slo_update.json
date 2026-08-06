@@ -1,0 +1,12 @@
+{
+  "id": "34673a78-c08d-4f71-9bb8-c8346cde3eff",
+  "name": "PR176 Test SLO",
+  "description": "Temporary SLO created for PR176 console-link manual verification; safe to delete. (updated)",
+  "targetThresholdPercentage": 99.5,
+  "sloType": "SLO_TYPE_REQUEST",
+  "sloTimeFrame": "SLO_TIME_FRAME_7_DAYS",
+  "requestBasedMetricSli": {
+    "goodEvents": {"query": "sum(rate(http_requests_total{status=~\"2..\"}[1m]))"},
+    "totalEvents": {"query": "sum(rate(http_requests_total[1m]))"}
+  }
+}

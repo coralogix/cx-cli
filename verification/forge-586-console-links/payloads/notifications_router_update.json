@@ -1,0 +1,28 @@
+{
+  "router": {
+    "id": "f3901bb6-036f-4f01-8f82-9504b6bb8950",
+    "name": "pr176-smoketest-router",
+    "description": "PR176 manual verification smoke test router (updated)",
+    "rules": [
+      {
+        "condition": "true",
+        "targets": [
+          {
+            "connectorId": "8e579138-116f-4e0e-9077-485e0a53b250",
+            "customDetails": {}
+          }
+        ],
+        "customDetails": {},
+        "name": "smoketest-rule",
+        "entityType": "ALERTS"
+      }
+    ],
+    "fallback": [],
+    "entityLabels": {},
+    "routingLabels": {
+      "team": "pr176-smoketest"
+    },
+    "fallbackTargets": [],
+    "disabled": true
+  }
+}

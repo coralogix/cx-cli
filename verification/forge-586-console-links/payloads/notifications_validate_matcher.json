@@ -1,0 +1,10 @@
+{
+  "condition": "alertDef.name == \"test\"",
+  "entityType": "ALERTS",
+  "entityLabels": {
+    "team": "pr176-smoketest"
+  },
+  "routingLabels": {
+    "team": "pr176-smoketest"
+  }
+}

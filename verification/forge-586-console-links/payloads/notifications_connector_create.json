@@ -1,0 +1,14 @@
+{
+  "connector": {
+    "type": "SLACK",
+    "name": "pr176-smoketest-connector",
+    "description": "PR176 manual verification smoke test connector",
+    "configOverrides": [],
+    "connectorConfig": {
+      "fields": [
+        { "fieldName": "channel", "value": "knowledge-base-otel-demo" },
+        { "fieldName": "integrationId", "value": "c38524a5-1667-4999-b021-b966fc915aea" }
+      ]
+    }
+  }
+}

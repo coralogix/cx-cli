@@ -1,0 +1,9 @@
+{
+  "data": {
+    "type": "EMAIL_GROUP",
+    "name": "pr176-smoketest-webhook",
+    "emailGroup": {
+      "emailAddresses": ["smoketest@example.com"]
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "template": "Hello {{alertDef.name}}",
+  "entityType": "ALERTS"
+}

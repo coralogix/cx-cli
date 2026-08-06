@@ -1,0 +1,21 @@
+{
+  "alertSchedulerRule": {
+    "name": "pr176-smoke-test",
+    "description": "temp test rule for automated PR176 console-link verification",
+    "enabled": true,
+    "filter": {
+      "whatExpression": "source logs | filter true",
+      "alertUniqueIds": { "value": [] }
+    },
+    "schedule": {
+      "scheduleOperation": "SCHEDULE_OPERATION_MUTE",
+      "oneTime": {
+        "timeframe": {
+          "startTime": "2026-08-03T19:30:00",
+          "endTime": "2026-08-03T20:30:00",
+          "timezone": "UTC"
+        }
+      }
+    }
+  }
+}

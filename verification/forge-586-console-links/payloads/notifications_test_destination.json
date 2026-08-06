@@ -1,0 +1,6 @@
+{
+  "connectorId": "8e579138-116f-4e0e-9077-485e0a53b250",
+  "presetId": "preset_system_slack_alerts_basic",
+  "entityType": "ALERTS",
+  "payloadType": "slack_structured"
+}

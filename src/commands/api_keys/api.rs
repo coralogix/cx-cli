@@ -127,9 +127,12 @@ impl<'a> ApiKeysApi<'a> {
         Self { client }
     }
 
-    /// List the current user's API keys.
+    /// List the authenticated team's API keys (`ApiKeysService_GetApiKeys`).
+    ///
+    /// Must be `/list/all`: `/list` collides with the `GET {base}/{key_id}`
+    /// route and the server rejects it with `key_id invalid character`.
     pub async fn list(&self) -> Result<ListApiKeysResponse> {
-        let path = format!("{API_KEYS_BASE}/list");
+        let path = format!("{API_KEYS_BASE}/list/all");
         self.client.get(&path, &[]).await
     }
 

@@ -9,11 +9,14 @@ metadata:
 
 Use this skill to interact with Coralogix's Observability Agent (Olly) via the `cx olly` CLI commands. Olly can analyze your observability data, answer questions about alerts, metrics, logs, and generate artifacts like charts and reports.
 
+`cx olly ask` defaults `--agent-to-agent-mode` to true. Olly acts as a **sub-agent** to you (the calling agent): it runs shorter, asks clarifying questions instead of guessing when context is missing, relies on your broader context, and skips charts/tables (returns previews, citations, and text instead).
+Pass `--agent-to-agent-mode=false` if you don't have context to share (like quick access to source files) or if the created chat is only for human usage.
+
 ## CLI Commands
 
 | Command | Purpose | Key flags |
 |---|---|---|
-| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout` |
+| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
@@ -55,9 +58,17 @@ For complex queries that may take longer, increase the timeout (default: 900 sec
 cx olly ask "Deep analysis of last week's incidents" --timeout 1800
 ```
 
+### Agent-to-agent mode
+
+`--agent-to-agent-mode` defaults to `true`, since `cx` is itself an agent/automation-facing entry point. Set it to `false` for chats meant for human consumption (e.g. text output a person will read directly), where charts, tables, and more exploratory replies are useful.
+
+```bash
+cx olly ask "Explain this error for a human" --agent-to-agent-mode=false
+```
+
 ## Artifacts
 
-Olly can generate artifacts like charts, tables, and reports. Artifact IDs appear as links in the agent's response text.
+Olly can generate artifacts like query results, previews, and citations. Artifact IDs appear as links in the agent's response text.
 
 ### List all artifacts
 
@@ -90,7 +101,7 @@ Output behavior:
 
 ```bash
 # Start investigation
-cx olly ask "Why is the checkout service showing high latency?"
+cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics"
 
 # Follow up with the chat ID from the response
 cx olly ask "What changed in the last hour?" --chat-id abc-123-def
@@ -125,6 +136,8 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 - **Artifact IDs are in response text** - look for markdown links like `[Chart](https://...artifact_view/<id>)`
 - **Single-profile only** - `cx olly` does not support multi-profile queries
 - **Large artifacts auto-spill** - JSON content over the configured limit is saved to temp files
+- **Check source code before asking** - give Olly concrete context from the source code if available, such as which metric to start investigating from, before calling it
+- **Limit investigation scope** - guide Olly to the correct limited scope, for example limit to just logs or to specific time ranges
 
 ## Related Skills
 

@@ -57,6 +57,7 @@ async fn ask_creates_chat_and_sends_message() {
         None,
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -96,6 +97,7 @@ async fn ask_continues_existing_chat() {
         Some("existing-chat"),
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -146,6 +148,7 @@ async fn ask_with_different_models() {
         None,
         "advanced",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -188,6 +191,7 @@ async fn ask_handles_cancelled_response() {
         None,
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -200,7 +204,16 @@ async fn ask_rejects_multi_profile() {
     let target2 = common::test_target("profile2", "http://localhost:2");
     let targets = vec![target1, target2];
 
-    let result = run_ask(&targets, "Hello", None, "gpt-5.2", 900, OutputFormat::Json).await;
+    let result = run_ask(
+        &targets,
+        "Hello",
+        None,
+        "gpt-5.2",
+        900,
+        true,
+        OutputFormat::Json,
+    )
+    .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -250,10 +263,111 @@ async fn ask_sends_skill_interaction_mode() {
         None,
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
     .expect("run_ask should send skill interaction_mode");
+}
+
+#[tokio::test]
+async fn ask_sends_agent_to_agent_mode_by_default() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-a2a",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-a2a/interactions/"))
+        .and(header("interaction-source", "cli"))
+        .and(body_partial_json(json!({"agent_to_agent_mode": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-a2a",
+            "chat_id": "chat-a2a",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-a2a",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Concise sub-agent response"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_ask(
+        &targets,
+        "Test message",
+        None,
+        "gpt-5.2",
+        900,
+        true,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_ask should send agent_to_agent_mode: true");
+}
+
+#[tokio::test]
+async fn ask_can_disable_agent_to_agent_mode() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-human",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-human/interactions/"))
+        .and(header("interaction-source", "cli"))
+        .and(body_partial_json(json!({"agent_to_agent_mode": false})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-human",
+            "chat_id": "chat-human",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-human",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Full human-facing response"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_ask(
+        &targets,
+        "Test message",
+        None,
+        "gpt-5.2",
+        900,
+        false,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_ask should send agent_to_agent_mode: false");
 }
 
 #[tokio::test]

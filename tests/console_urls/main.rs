@@ -685,21 +685,16 @@ async fn no_console_link_when_region_has_no_known_console_domain() {
     assert!(output.status.success(), "{:?}", output);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // "View in Coralogix:" (with the colon) is the actual link line's prefix
-    // everywhere else in this file - checked instead of the bare phrase
-    // "View in Coralogix" since the no-link hint below legitimately names the
-    // feature without emitting a link.
+    // A profile with no resolvable console link fails quietly: no
+    // "View in Coralogix:" link line, and no explanatory hint either - the
+    // command just succeeds as usual.
     assert!(
-        !stderr.contains("View in Coralogix:"),
-        "unexpected console link with no known console domain: {stderr}"
+        !stderr.contains("View in Coralogix"),
+        "unexpected console link/hint with no known console domain: {stderr}"
     );
     assert!(
         stderr.contains("Created dashboard 'Demo Dashboard' (ID: dash-abc123)"),
         "expected the usual success line, stderr: {stderr}"
-    );
-    assert!(
-        stderr.contains("no \"View in Coralogix\" link available"),
-        "expected the no-link hint explaining why, stderr: {stderr}"
     );
 }
 
@@ -778,9 +773,11 @@ console_team_name = "acme"
     assert!(output.status.success(), "{:?}", output);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
+    // No resolvable console link means we fail quietly: neither a link line
+    // nor any explanatory hint about `console_url`/`console_team_name`.
     assert!(
-        !stderr.contains("View in Coralogix:"),
-        "unexpected console link with no known console domain: {stderr}"
+        !stderr.contains("View in Coralogix"),
+        "unexpected console link/hint with no known console domain: {stderr}"
     );
 }
 
@@ -856,6 +853,78 @@ async fn json_output_includes_console_url_field() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr
         .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"));
+}
+
+/// Regression test for the single- vs. multi-profile path invariant: on a
+/// wrapper-shaped `get` (`{"alertDef": {...}}`), the console link must nest
+/// inside the wrapper (`.alertDef.consoleUrl`) in *both* modes. In
+/// multi-profile mode `_profile` is added at the root first, and an earlier
+/// version of `tag_console_url` treated that as a second top-level field and
+/// pushed the link to `.consoleUrl` instead - silently moving it for scripts
+/// as soon as a second profile was added.
+#[tokio::test]
+async fn multi_profile_get_nests_console_link_inside_wrapper() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertDef": {"id": "alert-1", "name": "My Alert"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "prod",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_profile(
+        &home,
+        "staging",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "prod");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "prod",
+            "--profile",
+            "staging",
+            "alerts",
+            "get",
+            "alert-1",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
+
+    let results = parsed.as_array().expect("multi-profile output is an array");
+    assert_eq!(results.len(), 2, "expected one result per profile");
+    for result in results {
+        assert_eq!(
+            result["alertDef"]["consoleUrl"], "https://acme.app.eu2.coralogix.com/alerts/alert-1",
+            "link must nest inside the wrapper, same path as single-profile: {result}"
+        );
+        assert_eq!(
+            result["consoleUrl"],
+            serde_json::Value::Null,
+            "link must not leak to the root when `_profile` is present: {result}"
+        );
+        assert!(
+            result["_profile"].is_string(),
+            "profile tag preserved: {result}"
+        );
+    }
 }
 
 // ── e2m create/update ────────────────────────────────────────────────────────

@@ -114,32 +114,6 @@ pub fn print_console_link(url: &str) {
     eprintln!("{}", format!("View in Coralogix: {url}").cyan());
 }
 
-/// Print a hint explaining why no "View in Coralogix" link is available for
-/// a profile.
-///
-/// Callers invoke this from inside `ExecutionTarget::console_base`'s
-/// `OnceCell::get_or_init`, so it prints at most once per target per
-/// process, not once per command that would have printed a link
-/// (`console_base` is cached, so repeated lookups within one invocation
-/// reuse the cached `None` rather than re-triggering this hint).
-///
-/// This is reached whenever there is no `console_url` override, no known
-/// `console_domain` for the profile's region (e.g. `Region::Custom`), or a
-/// known domain but no way to resolve a team subdomain for it - neither an
-/// explicit `console_team_name` override nor a usable guess from
-/// `GET /identity/whoami` (see `identity::resolve_team_subdomain`).
-pub fn print_console_link_unavailable_hint() {
-    eprintln!(
-        "{}",
-        "Note: no \"View in Coralogix\" link available for this profile (could not resolve a \
-         team subdomain automatically, and no `console_url` or `console_team_name` override is \
-         set, or the region has no known console domain). Set `console_team_name` in the \
-         profile's TOML if the automatic guess is wrong, or `console_url` for a full override - \
-         see docs/configuration.md#console-links."
-            .dimmed()
-    );
-}
-
 /// Embed the "View in Coralogix" URL as a `consoleUrl` field in a JSON
 /// result object, so `-o json` / `-o agents` consumers get the link in the
 /// structured payload itself, not only as an informational stderr line.
@@ -153,8 +127,9 @@ pub fn print_console_link_unavailable_hint() {
 /// oddly - a consumer expecting `alertDef` to be the complete alert object
 /// has to know to look one level up for its console link). So: when `val`
 /// is a JSON object with **exactly one** key whose value is *itself* a JSON
-/// object, `consoleUrl` is inserted into that nested object instead of the
-/// root. This was checked against every response shape exercised by
+/// object (ignoring any `_profile` tag), `consoleUrl` is inserted into that
+/// nested object instead of the root. This was checked against every response
+/// shape exercised by
 /// `tests/console_urls/main.rs` (spanning all 28 command groups that print
 /// console links) and correctly nests every single-entity-wrapper shape
 /// while leaving every other shape at the root:
@@ -171,9 +146,22 @@ pub fn print_console_link_unavailable_hint() {
 pub fn tag_console_url(val: &mut Value, url: &str) {
     let Value::Object(root) = val else { return };
 
-    let should_nest = root.len() == 1 && matches!(root.values().next(), Some(Value::Object(_)));
-    if should_nest {
-        if let Some(Value::Object(nested)) = root.values_mut().next() {
+    // In multi-profile mode `tag_get_result` may have already inserted a
+    // `_profile` tag at the root. That's presentation metadata, not part of the
+    // entity, so ignore it when deciding whether this is a single-object
+    // wrapper to nest into. Otherwise the wrapper would look like a flat
+    // multi-field object and the link would land at a *different* JSON path in
+    // multi-profile vs. single-profile output, breaking scripts parsing it.
+    let nest_key = {
+        let mut data_keys = root.iter().filter(|(k, _)| k.as_str() != "_profile");
+        match (data_keys.next(), data_keys.next()) {
+            (Some((k, Value::Object(_))), None) => Some(k.clone()),
+            _ => None,
+        }
+    };
+
+    if let Some(key) = nest_key {
+        if let Some(Value::Object(nested)) = root.get_mut(&key) {
             nested.insert("consoleUrl".to_string(), Value::String(url.to_string()));
             return;
         }
@@ -281,6 +269,30 @@ mod tests {
             val["alertDef"]["consoleUrl"],
             "https://acme.app.eu2.coralogix.com/#/alerts/a1"
         );
+    }
+
+    #[test]
+    fn tag_console_url_nests_inside_wrapper_even_with_profile_tag() {
+        // Multi-profile mode: `tag_get_result` adds `_profile` at the root
+        // first. The link must still nest inside the wrapper so it lands at the
+        // same path (`.alertDef.consoleUrl`) as single-profile output.
+        let mut val = json!({"alertDef": {"id": "a1", "name": "Demo"}, "_profile": "prod"});
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/alerts/a1");
+        assert_eq!(val["consoleUrl"], Value::Null, "must not tag the root");
+        assert_eq!(
+            val["alertDef"]["consoleUrl"],
+            "https://acme.app.eu2.coralogix.com/#/alerts/a1"
+        );
+        assert_eq!(val["_profile"], "prod", "profile tag must be preserved");
+    }
+
+    #[test]
+    fn tag_console_url_stays_at_root_for_flat_entity_with_profile_tag() {
+        // Already-flat entity + `_profile`: still no single object wrapper to
+        // descend into, so the link stays at the root.
+        let mut val = json!({"id": "conn-1", "name": "Demo", "type": "SLACK", "_profile": "prod"});
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        assert_eq!(val["consoleUrl"], "https://acme.app.eu2.coralogix.com/#/x");
     }
 
     #[test]

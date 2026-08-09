@@ -1,169 +1,339 @@
-# FORGE-587 — Console URLs in `olly` MCP write-tool responses
+# FORGE-587 — `consoleUrl` in MCP write-tool responses
 
-## 0. Environment: how to run / check (verified in this worktree)
+Add a `consoleUrl` field to the JSON responses of the mutating dashboard / view / case `olly` MCP tools, built by **extending the existing `resolve_frontend_team_url` / `CORALOGIX_APP_ENV_TO_DOMAIN` machinery** (`apps/api/src/api/utils/urls.py:16-42`) so it is usable from `apps/ws-ai-mcp`, mirroring cx-cli PR #176.
 
-`just` and `protoc` are **not installed** here, and `libs/common/src/common/generated` ships empty — tests fail to collect until protos are compiled. Sequence that works (run once, before anything else):
+---
+
+## 0. Environment: how to run and check this project
+
+`just` is **not installed** in this worktree, neither is `protoc`, and `libs/common` cannot be imported at all until protobufs are generated. Verified bootstrap:
+
+### 0.1 One-time bootstrap (required before any test run)
 
 ```bash
 cd libs/common
-sh ./scripts/fix-audit-log-conflict.sh
-sh ./scripts/generate-proto.sh
-# `just _proto-fix` needs a `protoc` binary; shim it onto grpc_tools:
-mkdir -p /tmp/shim && printf '#!/bin/sh\nexec python -m grpc_tools.protoc "$@"\n' > /tmp/shim/protoc && chmod +x /tmp/shim/protoc
-PATH=/tmp/shim:$PATH uv run protol --in-place --python-out=src/common/generated protoc --proto-path=proto $(find proto -name '*.proto')
-```
-(`proto/` and `src/common/generated/` are gitignored — `git status` stays clean.)
+sh ./scripts/fix-audit-log-conflict.sh     # resolves duplicate audit-log proto symbols
+sh ./scripts/generate-proto.sh             # protofetch + grpc_tools.protoc -> src/common/generated/
 
-Checks:
+# `protol` (the _proto-fix step) shells out to a `protoc` binary that is absent. Shim it:
+mkdir -p /tmp/shim
+printf '#!/bin/sh\nexec python -m grpc_tools.protoc "$@"\n' > /tmp/shim/protoc
+chmod +x /tmp/shim/protoc
+PATH=/tmp/shim:$PATH uv run protol --create-package --in-place \
+  --python-out src/common/generated protoc --proto-path=proto <proto set from the justfile _proto-fix recipe>
+```
+
+`proto/` and `src/common/generated/` are gitignored — this leaves `git status` clean (verified).
+
+### 0.2 Checks — `libs/common` (most of the change)
 
 ```bash
-# libs/common  (equivalent of `just common::test` / `just common::lint`)
-cd libs/common && uv run pytest -q
-cd libs/common && uv run ruff check . && uv run ruff format --check . && uv run ty check
-
-# apps/ws-ai-mcp  (separate uv project + lockfile; settings need env)
-cd apps/ws-ai-mcp && env CORALOGIX_SCHEMA_STORE_ADDRESS=localhost:9090 CX_ID=stg1 \
-  OAUTH_CLIENT_ID=x OAUTH_CLIENT_SECRET=y JWT_SIGNING_KEY=abc \
-  BASE_URL=https://example.com/mcp_oauth REDIS_HOST=localhost REDIS_PORT=6380 \
-  REDIS_OAUTH_DB=0 MCP_PORT=8081 IS_LOCAL_DEVELOPMENT=true uv run pytest -q
-cd apps/ws-ai-mcp && uv run ruff check . && uv run ruff format --check . && uv run ty check src/mcp_server
+cd libs/common
+uv run pytest tests/ -q          # baseline: 42 passed
+uv run ruff check . && uv run ruff format --check . && uv run ty check .
 ```
 
-CI: `.github/workflows/mcp_ci.yaml` runs `just test` + `just smoke` for ws-ai-mcp; `ci.yaml` `common-ut` runs `just test-common`; `ci.yaml` `lint` job lints ws-ai-mcp.
+### 0.3 Checks — `apps/ws-ai-mcp`
 
-**Baseline (before-state) observed and captured** to `.saga/artifacts/mcp-write-tools-before.json` by driving the real impls with stub clients:
-- `manage_dashboards(create)` → `{"dashboardId": "dash-123"}`
-- `manage_cases(acknowledge)` → `{"case": {"id": "case-abc", "status": "ACK"}}`
-- `manage_views(create)` → `{"view": {"id": "view-9", "name": "My view"}}`
+`.env.example` **cannot be sourced** (`BASE_URL=https://<your-ngrok-host>/mcp_oauth` — the shell parses `<` as a redirect). Pass env inline:
 
-No `consoleUrl` anywhere. Baseline test runs: `libs/common` targeted suites 42 passed; `apps/ws-ai-mcp/tests/tools/{dashboards_kb,cases,views}` 13 passed.
+```bash
+cd apps/ws-ai-mcp
+CX_ID=stg1 CORALOGIX_SCHEMA_STORE_ADDRESS=localhost:9090 OAUTH_CLIENT_ID=x \
+OAUTH_CLIENT_SECRET=x BASE_URL=http://localhost:8080/mcp_oauth MCP_PORT=8080 \
+REDIS_HOST=localhost REDIS_PORT=6379 REDIS_OAUTH_DB=0 JWT_SIGNING_KEY=test \
+uv run pytest tests/ -q          # baseline: 13 passed
+uv run ruff check . && uv run ty check .
+```
 
-## 1. Key findings that shape the design (read `src/console_url.rs`, `src/identity.rs`, `src/execution.rs`, `src/commands/{dashboards,cases,views}/mod.rs` from `coralogix/cx-cli@saga/forge-586-cli`, plus PR #176 body)
+### 0.4 Checks — `apps/api` (touched only by the step-1b refactor)
 
-1. **Base-URL resolution is `GET {api_base}/identity/whoami` → `team_url`, used verbatim** (trailing slash trimmed). cx-cli does *not* build the console host from a region→domain map. `whoami` returns e.g. `{"team_id": 53623, "team_name": "c4c", "team_url": "https://c4c.app.eu2.coralogix.com"}`.
-   → **Do not** use `CORALOGIX_APP_ENV_TO_DOMAIN` / `resolve_frontend_team_url` (`apps/api/src/api/utils/urls.py:16`). That path requires `CoralogixHeaderAuth` + an in-cluster identity gRPC channel (`common/clients/identity_grpc.py`, `grpc.aio.insecure_channel(IDENTITY_SERVICE_URL)`); the MCP has neither (`CoralogixApiKeyAuth`, no `IDENTITY_SERVICE_URL` in `mcp_server/settings.py`). whoami also removes the need for a region map entirely, which covers `factset`/`proofpoint`/custom regions for free.
-2. **No `#/` hash prefix.** `console_url.rs`'s module docs state the console dropped hash routing (only `/grafana`, `/opendashboards`, `/login*` still use the fragment) and every builder is a plain path. So **do not** reuse `api/utils/urls.py::create_frontend_link` (it force-inserts `#/`). Routes to use:
-   - dashboard → `{base}/dashboards/{id}`
-   - case → `{base}/cases?id={urlencoded id}`
-   - saved view → `{base}/explore?viewId={urlencoded id}`
-   - AI Center evaluations → `{base}/ai-center/overview/eval-catalog`
-3. **Folders get no link** — cx-cli deliberately omits dashboard-folder and view-folder links (`folderId` never appears in a console URL). This is a **deviation from the ticket's success-criteria bullet for `manage_dashboard_folders create`**; carry it, and call it out in the PR description per the parent ticket's skip-and-report rule.
-4. **Tagging shape**: cx-cli's `render::tag_console_url` inserts `consoleUrl` **inside** the wrapper when the payload is an object with exactly one key whose value is itself a non-empty object (`{"case": {...}}` → `{"case": {..., "consoleUrl": ...}}`); otherwise at the root; no-op for non-objects, empty objects, and empty wrappers. Mirror this exactly — MCP case/view responses are wrapper-shaped, dashboard create returns flat `{"dashboardId": "..."}`.
-5. **The `*_impl` functions in `libs/common/src/common/tools/` are consumed only by the MCP** (verified: `apps/api` does not import them). Signature changes are MCP-only, but keep the new parameter optional so existing tests/callers are unaffected.
-6. Auth is compatible: `CoralogixApiKeyAuth.get_http_auth_headers()` emits `Authorization: Bearer <token>` + `cgx-team-id`, the same scheme cx-cli uses against `/identity/whoami`.
+```bash
+cd apps/api && uv run pytest tests/ut/test_urls.py tests/routes/test_slack.py -q && uv run ruff check . && uv run ty check .
+```
+
+### 0.5 CI
+
+`.github/workflows/mcp_ci.yaml` (`just test` / `just smoke` for ws-ai-mcp); `.github/workflows/ci.yaml` (`common-ut`, `api-ut`, `lint` paths-filters). No new service directory ⇒ no CI registration needed per `.claude/rules/new-service-checklist.md`.
+
+### 0.6 Before-state
+
+`.saga/artifacts/mcp-write-tools-before.json` was produced by a **synthetic harness** driving the three impls with `AsyncMock` clients returning placeholder payloads — the payload *values* in it are illustrative only, not evidence of real API shapes. The load-bearing, code-verified observation is structural:
+
+> `manage_dashboard_impl`, `manage_views_impl`, `manage_view_folders_impl`, `manage_dashboard_folders_impl` and `manage_cases_impl` all end with `return json.dumps(response, indent=2)`, where `response` is the **verbatim** `response.json()` from `CoralogixClient` (`create_dashboard:898`, `create_view`, `acknowledge_case`, … all `return response.json()` with no post-processing).
+
+So no console link exists today and the response body is entirely upstream-controlled. Regenerate the after-artifact using the repo's own fixture shapes (`test_dashboards_kb_tools.py:22` → `{"id": "dashboard-1"}`, `test_cases_tools.py:52` → `{"ok": True}`), not invented ones.
+
+---
+
+## 1. Key findings that shape the design
+
+### a) `resolve_frontend_team_url` is the right base, and the missing piece already exists in-repo
+
+Today it hard-rejects non-header auth:
+
+```python
+if not isinstance(auth, CoralogixHeaderAuth):
+    raise ValueError("auth_header is required to resolve the frontend team URL")
+team_slug = await get_frontend_team_slug(auth.auth_header, settings.IDENTITY_SERVICE_URL)
+return f"https://{team_slug}.app.{CORALOGIX_APP_ENV_TO_DOMAIN[settings.CORALOGIX_REGION]}"
+```
+
+The MCP builds `CoralogixApiKeyAuth` (`middleware/coralogix_clients_middleware.py:24`) — but `CoralogixApiKeyAuth.get_gateway_auth_header()` (`libs/common/src/common/auth/coralogix_auth.py`) **already** exchanges the bearer token at `GET {api_url}/api/v1/authctx/header` and returns an `x-coralogix-auth` value, which is exactly what `get_frontend_team_slug` consumes. The extension is: replace the `raise` with an api-key branch that mints the header and continues down the existing identity-gRPC path. No new endpoint, no new mechanism, no duplicated region map.
+
+### b) The MCP frequently already has the raw header
+
+`middleware/user_info_recorder.py:82` reads `headers.get("x-coralogix-auth")`, and the full header dict is in context state (`set_state("headers", ...)`). When present, build `CoralogixHeaderAuth` directly and skip the exchange.
+
+### c) URL format: **plain paths, no `#/` prefix** — settled from cx-cli's git history
+
+This was the defect in the previous attempt, and the ticket description's quoted strings (`.../#/dashboards/<id>`) are **stale**. Evidence, from the authoritative source rather than analogy:
+
+1. **cx-cli PR #176's own commit history contains both the addition and the reversal.** An intermediate commit — `fix(console-url): add missing #/ hash-route prefix, add views console link` — added `#/` on the theory that the console is a hash-routed SPA. A later commit reverses it:
+
+   > `fix(console-url): switch console links from hash routing to path routing`
+   > "cx-web-workspace removed hash-based routing app-wide (the hash-routing-removal work) in favor of a custom HostedAppLocationStrategy that defaults to plain path routing. The only remaining hash carve-outs are hosted-app routes (/grafana, /opendashboards) and login routes reached via a legacy hash URL — none of which any cx console link builds toward. **Every generated console URL was still prefixing routes with `#/`, producing dead links.**"
+
+   The ticket description quotes the *intermediate, since-reverted* state.
+2. **The branch tip confirms it.** Verified live at `saga/forge-586-cli` head `daf6051`: every builder in `src/console_url.rs` is `format!("{}/dashboards/{id}", trim_base(base))`, `format!("{}/cases?id={encoded}", …)`, `format!("{}/explore?viewId={encoded}", …)`. The only three `#/` occurrences in the whole file are in the module doc explaining why the prefix is absent ("None of the builders below add a `#/` prefix"). Unit tests assert the exact plain-path output (`dashboard_url_joins_base_and_id`, `case_url_uses_query_param_shape`).
+3. **Each route was cross-checked against the console frontend's routing source** (`coralogix/cx-web-workspace`), per a further commit *"cross-checked … directly against the console frontend's own routing source, not just public docs"*: `dashboardsEditUrl()` / `:id` route in `libs/dashboards/_ui/src/lib/routing-utils.ts`; `viewIdParam()` in `libs/explore/v2/src/lib/services/share-url.service.ts`; `SELECTED_CASE_QUERY_PARAM = 'id'` in `libs/cases/.../cases-query-params.constants.ts`. Also corroborated by public docs ("Share Dashboard URLs", "Deep links and URL parameters").
+4. A separate commit notes the cx-dashboards skill's old hand-built `"https://<region>.app.coralogix.com/#/dashboards/<id>"` guidance was **"incorrect for several regions"** and was removed — the same lineage the ticket text inherits.
+5. In-repo corroboration: `apps/api/src/api/utils/urls.py`'s `get_alert_base_url` and `get_skill_base_url` already bypass `create_frontend_link` for exactly this reason (docstring: *"the alert drilldown route is served outside the legacy `#/` hash-router"*).
+
+**Decision:** build plain paths. To make this cheap to reverse if it is ever wrong, all three builders go through one `create_console_link` helper — a single-line change flips the whole feature. Confirm once in a browser before merge (§4.5b).
+
+### d) Routes (cx-cli `src/console_url.rs` @ `daf6051`)
+
+| Entity | Path |
+|---|---|
+| Dashboard | `{base}/dashboards/{id}` |
+| Case | `{base}/cases?id={urlencoded id}` |
+| View | `{base}/explore?viewId={urlencoded id}` |
+
+### e) Upstream response shapes are not knowable from this repo — prefer request-side ids
+
+Every client write method is `return response.json()` on a raw upstream call; the unit tests use arbitrary placeholders. So:
+
+- **Cases:** id is always an input — `case_id = case_ids[0]` (`cases_tools.py:78`). cx-cli does the same (`cases.rs` passes `case_id` straight into `case_url`). **Zero response parsing.**
+- **View update/delete:** the `view_id` argument.
+- **Dashboard create/replace:** body contract is `{"requestId": "...", "dashboard": {...}}` (`tools_description_v2.py:207`), so `body["dashboard"]["id"]` is available request-side.
+- **View create** is the only path that genuinely must parse the response.
+
+Where parsing is needed, reuse cx-cli's empirically-validated probe chains (they run against the same backends and were verified live against a real team):
+`dashboard_id_from_response` = `/dashboardId` → `/id` → `/dashboard/id` (`dashboards.rs:39`); `view_id_from_response` = `/view/id` → `/id` with numeric coercion (`views.rs:48`). cx-cli's own tests document that **both** view shapes occur in the wild (`view_id_from_response_reads_wrapped_shape`, `…_reads_bare_shape`: *"Some deployments return the created view directly, with no `view` envelope"*). Missing id ⇒ no field, never an error.
+
+### f) Folders get no link
+
+cx-cli has no folder URL builder, and its wiring commit states: *"cx dashboards folders create is intentionally left untouched — out of scope for this ticket."* `manage_dashboard_folders` create is in this ticket's success criteria but must be **skipped and reported in the PR** (the parent ticket's explicit skip-and-report escape hatch).
+
+### g) The `*_impl` functions have exactly one consumer — the MCP wrappers
+
+Grepped: no `apps/api` call sites. Adding an optional keyword-only parameter is safe and non-breaking.
+
+---
 
 ## 2. Changes, in dependency order
 
-### Step 1 — `libs/common/src/common/utils/console_url.py` (new, pure, no I/O)
+### Step 1a — new `libs/common/src/common/utils/urls.py` (move + extend)
+
+Move the two app-agnostic primitives out of `apps/api/src/api/utils/urls.py`, parameterised instead of reaching into `api.config.settings`:
 
 ```python
+async def resolve_frontend_team_url(
+    auth: CoralogixAuth,
+    *,
+    region: CoralogixRegion,
+    identity_service_url: str,
+    api_url: str,
+    local_dev_url: str | None = None,
+    call_timeout: float = 10.0,
+) -> str:
+    if local_dev_url is not None:
+        return local_dev_url
+    if isinstance(auth, CoralogixHeaderAuth):
+        auth_header = auth.auth_header
+    else:
+        # NEW: api-key callers (MCP, Slack/Teams bots) exchange their bearer token
+        # for a real x-coralogix-auth header via the existing gateway endpoint.
+        headers = await auth.get_gateway_auth_header(api_url=api_url, request_timeout=call_timeout)
+        auth_header = headers[X_CORALOGIX_AUTH_HEADER]
+    team_slug = await get_frontend_team_slug(auth_header, identity_service_url, call_timeout)
+    return f"https://{team_slug}.app.{CORALOGIX_APP_ENV_TO_DOMAIN[region]}"
+```
+
+`create_frontend_link` moves verbatim (still `#/`, still used by all existing `apps/api` callers). Add a sibling:
+
+```python
+def create_console_link(frontend_team_url: str, path: str) -> str:
+    """Non-hash-routed console link (see §1c). Single choke point for the
+    path-vs-hash decision — all entity builders go through here."""
+    return f"{frontend_team_url.rstrip('/')}/{path.lstrip('/')}"
+```
+
+Reject a `#/`-prefixed `path` the way `create_frontend_link` rejects a doubled prefix.
+
+### Step 1b — `apps/api/src/api/utils/urls.py` becomes a settings-bound adapter
+
+Keep the module's public API identical so **no existing call site changes** (`slack_route`, `github_route`, `teams_route`, `scheduled_tasks_service`, `base_chat_bot_message_handler`, `scheduled_tasks_tools`, `servicenow_demo`, `thread_service`) and the patch targets in `apps/api/tests/routes/test_slack.py` keep working:
+
+```python
+async def resolve_frontend_team_url(auth: CoralogixAuth) -> str:
+    return await common_resolve_frontend_team_url(
+        auth,
+        region=settings.CORALOGIX_REGION,
+        identity_service_url=settings.IDENTITY_SERVICE_URL,
+        api_url=get_coralogix_api_url(settings.CORALOGIX_REGION),
+        local_dev_url=settings.FRONTEND_URL if (settings.IS_LOCAL_DEV or is_auth_test_mode()) else None,
+    )
+```
+
+Everything else in that module (`ChatBaseUrls`, `get_chat_url`, `get_artifact_base_url`, `get_view_base_url`, `get_skill_base_url`, `get_alert_base_url`, `get_scheduled_task_*`, `resolve_chat_base_urls`) stays — chat/artifact-specific, no MCP consumer.
+
+### Step 2 — new `libs/common/src/common/utils/console_url.py`
+
+Pure, no I/O, no settings. Ports cx-cli's `console_url.rs` + `render.rs::tag_console_url`:
+
+```python
+def dashboard_url(base: str, dashboard_id: str) -> str:   # create_console_link(base, f"dashboards/{id}")
+def case_url(base: str, case_id: str) -> str:             # create_console_link(base, f"cases?id={quote(id)}")
+def view_url(base: str, view_id: str) -> str:             # create_console_link(base, f"explore?viewId={quote(id)}")
+
+CONSOLE_URL_KEY = "consoleUrl"
+
+def id_at(payload: object, *path: str) -> str | None:
+    """Value at a key path, accepting str or int (ints stringified), else None.
+    Ports cx-cli's json_str_at / view_id_from_response numeric coercion."""
+
+def first_id(*candidates: str | None) -> str | None: ...
+
+def tag_console_url(payload: object, url: str) -> object:
+    """Port of cx-cli render.rs::tag_console_url. Decides at RUNTIME from the
+    actual object — no assumption about upstream shape:
+      - non-dict, or empty dict            -> unchanged
+      - exactly one key whose value is a
+        non-empty dict                     -> insert inside that nested dict
+      - otherwise                          -> insert at the root
+    (cx-cli's `_profile` carve-out is dropped — the MCP has no such key.)"""
+
 ConsoleBaseResolver = Callable[[], Awaitable[str | None]]
 
-def trim_base(base: str) -> str                      # strip trailing "/"
-def dashboard_url(base: str, dashboard_id: str) -> str
-def case_url(base: str, case_id: str) -> str          # urllib.parse.quote(..., safe="")
-def view_url(base: str, view_id: str) -> str
-def ai_center_evaluations_url(base: str) -> str
-def id_from_payload(payload: object, pointers: Sequence[str]) -> str | None
-def tag_console_url(payload: object, url: str) -> None   # in-place, mirrors cx-cli nesting rules
-async def resolve_and_tag(payload, resolver, build) -> None  # best-effort; swallows all exceptions
+async def resolve_and_tag(payload, resolver, build: Callable[[str], str | None]):
+    """Best-effort: returns payload unchanged on ANY failure (no resolver,
+    resolver returns None, no id, exception). Logs at debug. A console link
+    must never fail a write."""
 ```
 
-- `id_from_payload` accepts JSON-pointer-ish dotted paths and coerces `str`/`int` ids to `str` (cx-cli accepts numeric ids).
-- `resolve_and_tag` is the single choke point: `if resolver is None or entity_id is None: return`; `try: base = await resolver() except Exception: log.debug + return`; `if not base: return`; then `tag_console_url(payload, build(base))`. **A console link must never fail or slow a successful write.**
+Adopting cx-cli's nesting rule verbatim keeps MCP and CLI payload shapes identical ("the same behavior needs to be copied"), and is safe because the rule inspects the object at runtime rather than assuming a shape.
 
-### Step 2 — `libs/common/src/common/clients/coralogix_client.py`: add `whoami()`
+### Step 3 — MCP settings
+
+`apps/ws-ai-mcp/src/mcp_server/settings.py`:
 
 ```python
-WHOAMI_PATH = "/identity/whoami"
-
-async def whoami(self, timeout: float = 5.0) -> dict:
-    """Identify the team behind the current credentials (team_id/team_name/team_url)."""
+identity_service_url: str = Field(default="identity-service.aaa.svc.cluster.local.:9090", ...)
+frontend_url: str | None = Field(default=None, description="Console base URL override (local dev / self-hosted)")
 ```
-Use the existing `_make_get_request`-style header construction but with an explicit short timeout (the class default is 60s and must not gate a write response). Add `timeout` plumbing rather than reusing `self.timeout`.
 
-### Step 3 — `apps/ws-ai-mcp/src/mcp_server/console_url.py` (new)
+Default matches `apps/api/src/api/config.py:74`. Use `get_coralogix_api_url(coralogix_region_from_cx_id(settings.cx_id))` for the authctx-exchange `api_url`.
+
+### Step 4 — `apps/ws-ai-mcp/src/mcp_server/console_url.py`
 
 ```python
-async def resolve_console_base(ctx: Context) -> str | None
+async def resolve_console_base(ctx: Context) -> str | None:
+    """Team console base URL for the current request. Never raises."""
 ```
-- Short-circuit on an optional `settings.console_url` override (new optional `Settings` field, env `CONSOLE_URL`, default `None`) — mirrors cx-cli's profile override and makes local/e2e testing trivial.
-- Otherwise: `company_id = (await ctx.get_state("user_info") or {}).get("company_id")`; consult a module-level `cachetools.TTLCache` keyed on `company_id` (positive TTL ~1h, negative/`None` TTL ~60s so failures aren't retried per call); on miss call `(await get_coralogix_client(ctx)).whoami()` and take `team_url`, `rstrip("/")`, empty → `None`.
-- Never raises; logs at debug/warning via `mcp_server.middleware.mcp_logger`.
-- Precedent for async caching already in-repo: `mcp_server/tools/coralogix_docs/coralogix_docs.py` uses `from cache import AsyncTTL`; `cachetools` + `cachetools-async` are already declared deps. Either is fine — prefer an explicit `TTLCache` keyed on `company_id` so the client object isn't part of the cache key.
 
-### Step 4 — thread the resolver through the shared impls
+1. `settings.frontend_url` set ⇒ return it.
+2. Prefer `CoralogixHeaderAuth(auth_header=headers["x-coralogix-auth"], team_id=str(company_id))` from `await ctx.get_state("headers")`; else fall back to the request's existing `CoralogixApiKeyAuth` (`(await get_coralogix_client(ctx)).auth`), which triggers the exchange inside the shared resolver.
+3. Call the shared `resolve_frontend_team_url(..., region=coralogix_region_from_cx_id(settings.cx_id), identity_service_url=settings.identity_service_url, call_timeout=5.0)`.
+4. `cachetools.TTLCache` keyed on `company_id` (`cachetools`, `cachetools-async`, `async-cache` already dependencies). Positive TTL ~1 h; negative TTL ~60 s. Mirrors cx-cli's per-invocation `OnceCell` caching of `console_base()`.
+5. Wrap in `try/except Exception` ⇒ log warning, return `None`.
 
-Add `console_base_resolver: ConsoleBaseResolver | None = None` (keyword-only, default `None`) to:
+### Step 5 — thread the resolver through the `*_impl` functions
 
-| Function | File | Tag when |
-|---|---|---|
-| `manage_dashboard_impl` | `libs/common/src/common/tools/dashboards_kb_tools.py:150` | action `CREATE` / `REPLACE` only. id from `dashboardId` → `id` → `dashboard.id`; for `REPLACE` fall back to `body["dashboard"]["id"]` (cx-cli does this — some deployments return an empty body). **Not** `CHECK` (no persisted id in the MCP surface — the MCP's `check` takes a body, never an id) and **not** `DELETE`. |
-| `manage_views_impl` | `libs/common/src/common/tools/views_tools.py:132` | action `CREATE` (id from `view.id` → `id`) and `UPDATE` (use the `view_id` argument). Not `DELETE`. |
-| `manage_cases_impl` | `libs/common/src/common/tools/cases_tools.py:35` | every action that resolves a single `case_id` — `UPDATE`, `COMMENT`, `ASSIGN`, `UNASSIGN`, `ACKNOWLEDGE`, `UNACKNOWLEDGE`, `RESOLVE`, `CLOSE`, `SET_PRIORITY`, `CLEAR_PRIORITY`, and `EVENTS`. Use `case_ids[0]` (the id is always known from the request, never parsed from the response). Not `GET_EVENT`, not `NOTIFICATIONS` (multi-case). Note `COMMENT` and `EVENTS` go beyond the ticket's list but match cx-cli. |
-| `manage_dashboard_folders_impl` | `libs/common/src/common/tools/dashboards_kb_tools.py:190` | **no change** (see §1.3) |
-| `manage_view_folders_impl` | `libs/common/src/common/tools/views_tools.py:85` | **no change** |
+Add keyword-only `console_base_resolver: ConsoleBaseResolver | None = None` (default `None` ⇒ today's behaviour) and apply `await resolve_and_tag(...)` immediately before the existing `return json.dumps(response, indent=2)`.
 
-Refactor each to build the response `dict`, call `await resolve_and_tag(...)`, then `json.dumps(..., indent=2)`. Keep every existing validation/error path byte-identical.
+**`manage_cases_impl`** (`cases_tools.py:35`) — id is `case_ids[0]`, already computed at line 78; no response parsing. Tag the mutating single-case actions from the success criteria: `UPDATE`, `ASSIGN`, `UNASSIGN`, `ACKNOWLEDGE`, `UNACKNOWLEDGE`, `RESOLVE`, `CLOSE`, `SET_PRIORITY`, `CLEAR_PRIORITY`, plus `COMMENT` (cx-cli tags it too). Not `EVENTS` / `GET_EVENT` / `NOTIFICATIONS` (read-only; the latter two return before `case_id` exists).
 
-### Step 5 — MCP tool wrappers pass the resolver
+**`manage_dashboard_impl`** (`dashboards_kb_tools.py:150`) — `CREATE` and `REPLACE` only. Id via
+`first_id(id_at(body, "dashboard", "id"), id_at(response, "dashboardId"), id_at(response, "id"), id_at(response, "dashboard", "id"))`
+— request-side first, then cx-cli's probe chain. Not `CHECK` (validation only) or `DELETE`.
 
-- `apps/ws-ai-mcp/src/mcp_server/tools/dashboards/dashboards_kb_tools.py:58` (`manage_dashboards_tool`)
-- `apps/ws-ai-mcp/src/mcp_server/tools/views/views_tools.py:130` (`manage_views_tool`)
-- `apps/ws-ai-mcp/src/mcp_server/tools/cases/cases_tools.py:35` (`manage_cases_tool`)
+**`manage_views_impl`** (`views_tools.py:132`) — `UPDATE`: use the `view_id` argument. `CREATE`: `first_id(id_at(response, "view", "id"), id_at(response, "id"))`, matching cx-cli's order and numeric coercion. Not `DELETE`.
 
-each adds `console_base_resolver=lambda: resolve_console_base(ctx)`. Resolution stays lazy — nothing is called unless a write succeeded with a known id.
+**`manage_dashboard_folders_impl` / `manage_view_folders_impl`** — unchanged (§1f).
 
-### Step 6 — AI Center (in scope: MCP *does* expose write tools here)
+### Step 6 — MCP tool wrappers
 
-In `apps/ws-ai-mcp/src/mcp_server/tools/ai_center/ai_center_tools.py`, tag `manage_ai_evaluation` (`create`/`update`, not `delete`) and `manage_ai_custom_evaluation` (`create`/`update`/`add_policy`/`remove_policy`) with `ai_center_evaluations_url(base)`. **Skip `manage_ai_model_pricing`** — cx-cli confirmed model pricing is dialog-only with no route. These tools bypass the `libs/common` impls, so tag inside the local `_run` helper (add an optional post-processing hook rather than duplicating the JSON round-trip in each branch).
+`apps/ws-ai-mcp/src/mcp_server/tools/{dashboards/dashboards_kb_tools.py, views/views_tools.py, cases/cases_tools.py}` — pass `console_base_resolver=lambda: resolve_console_base(ctx)`. The lambda keeps resolution lazy so read-only actions never pay for it.
 
 ### Step 7 — tool descriptions
 
-Add one sentence to `MANAGE_DASHBOARDS_TOOL_DESCRIPTION_V2`, `MANAGE_VIEWS_*`, `MANAGE_CASES_*` in `apps/ws-ai-mcp/src/mcp_server/tools_description_v2.py`: the response may include a `consoleUrl` field linking to the entity in the Coralogix console, which the agent should surface to the user. Without this the model has no reason to relay the link.
+Update the affected entries in `apps/ws-ai-mcp/src/mcp_server/tools_description_v2.py` to state that successful mutations return a `consoleUrl` the model should surface, and that it may be absent.
+
+*(AI-Center evaluation tools are deliberately excluded — not in the ticket's success criteria.)*
+
+---
 
 ## 3. Tests
 
-New — `libs/common/tests/test_console_url.py`:
-- each builder's exact output, including trailing-slash trimming and URL-encoding of ids containing `/`, `?`, `&`, spaces;
-- `tag_console_url`: flat multi-key object → root; single-key wrapper whose value is a non-empty object → nested; single-key scalar (`{"dashboardId": "x"}`) → root; single-key list → root; empty root → no-op; empty wrapper → no-op; non-dict → no-op;
-- `id_from_payload`: first-pointer-wins, numeric-id coercion, missing → `None`;
-- `resolve_and_tag`: resolver `None` / returns `None` / returns `""` / raises → payload untouched, no exception.
+**`libs/common/tests/test_urls.py` (new)** — the auth extension is the risky part:
+- header-auth path ⇒ `https://{slug}.app.{domain}`, incl. `FACTSET` / `PROOFPOINT` (patch `get_frontend_team_slug`);
+- **api-key path** ⇒ assert `get_gateway_auth_header` is called *and* that the minted `x-coralogix-auth` value is what reaches `get_frontend_team_slug`;
+- `local_dev_url` short-circuits with zero network calls;
+- `create_frontend_link` still emits `#/`; `create_console_link` does not and rejects a `#/` path.
 
-Extend `libs/common/tests/test_dashboards_kb_tools.py`, `test_cases_tools.py`, `test_views_tools.py` (all existing tests must stay green unchanged — the new kwarg defaults to `None`):
-- create/replace/update with a resolver → `consoleUrl` present at the expected JSON path with the expected URL;
-- delete + folder actions + `check` + `get_event` + `notifications` → no `consoleUrl`;
-- resolver raising → response identical to today and no exception propagated;
-- response missing an id → no `consoleUrl` (and for dashboard `replace`, the `body`-id fallback still produces one).
+**`libs/common/tests/test_console_url.py` (new)** — port the relevant cases from cx-cli's `console_url.rs` / `render.rs` test modules:
+- builders produce the exact plain-path strings (`.../dashboards/dash-abc123`, `.../cases?id=case-777`, `.../explore?viewId=…`), **explicitly asserting no `#/`**; base trailing-slash trimmed; ids containing `/`, spaces, `#` are URL-encoded;
+- `id_at` / `first_id`: precedence, int coercion, all-missing ⇒ `None`;
+- `tag_console_url`: nests inside a single non-empty object wrapper; stays at root for a flat multi-field object; stays at root for a single-key **string** value (`{"dashboardId": "dash-1"}`); stays at root for a single-key **array** value; no-op on non-dict, on `{}`, and on `{"wrapper": {}}`;
+- `resolve_and_tag` returns the payload untouched when the resolver is `None`, returns `None`, or raises.
 
-New/extended in `apps/ws-ai-mcp/tests/`:
-- `tests/test_console_url.py`: override short-circuits whoami; whoami success → trimmed `team_url`; whoami failure/missing `team_url` → `None`; positive and negative results are cached (client called once for two calls); missing `company_id` → `None`.
-- extend `tests/tools/test_{dashboards_kb,cases,views}_tools.py` (they already monkeypatch the impls) to assert `console_base_resolver` is passed through and is not invoked eagerly.
+**Extend existing suites** — `test_dashboards_kb_tools.py`, `test_cases_tools.py`, `test_views_tools.py`, reusing each file's **existing** mock payload shapes:
+- cases: every tagged action gets a `consoleUrl` derived from `case_ids[0]`, proven while keeping the existing `{"ok": True}` mock — i.e. the link works with a response carrying no id at all;
+- dashboards: `REPLACE` with the existing `{"id": "dashboard-1"}` mock plus a body containing `dashboard.id` ⇒ request-side id wins; a create response with only `{"dashboardId": …}` ⇒ probe path; no id anywhere ⇒ **no** `consoleUrl` and response otherwise byte-identical;
+- views: `UPDATE` uses the `view_id` argument even when the response is `{"ok": True}`; `CREATE` covers `{"view": {"id": …}}`, bare `{"id": …}`, numeric id, and the no-id case;
+- folder and read-only actions unchanged;
+- a resolver that raises leaves every response byte-identical to the current baseline.
 
-Add a `libs/common` test for `CoralogixClient.whoami()` (URL built as `{api_url}/identity/whoami`, auth headers present, JSON returned) alongside the existing client tests.
+**`apps/ws-ai-mcp/tests/test_console_url.py` (new)** — header-present path uses `CoralogixHeaderAuth` and performs no token exchange; header-absent path falls back to `CoralogixApiKeyAuth`; `settings.frontend_url` override wins; TTL cache keyed on `company_id` (two teams ⇒ two resolutions, same team twice ⇒ one); every failure mode returns `None`.
 
-## 4. Verification (after-state)
+Mapping to `.claude/rules/verification.md`: exists (module/builders), substantive (real URLs), wired (field present end-to-end through the impls), functional (encoding, missing id, resolver failure, cache).
 
-1. Both check suites in §0 green.
-2. Regenerate the before/after artifact: re-run the same stub-client script with a resolver returning `https://c4c.app.eu2.coralogix.com`, write to `.saga/artifacts/mcp-write-tools-after.json`, and confirm the diff versus `mcp-write-tools-before.json` is exactly the added `consoleUrl` fields:
-   - `{"dashboardId": "dash-123", "consoleUrl": "https://c4c.app.eu2.coralogix.com/dashboards/dash-123"}`
-   - `{"case": {"id": "case-abc", "status": "ACK", "consoleUrl": ".../cases?id=case-abc"}}`
-   - `{"view": {"id": "view-9", "name": "My view", "consoleUrl": ".../explore?viewId=view-9"}}`
-3. **Live check (needs credentials this environment does not have):** with a real key, `curl -H "Authorization: Bearer $KEY" https://api.<region>.coralogix.com/identity/whoami` must return a `team_url`. If that fails for the MCP's OAuth-derived tokens (as opposed to raw API keys), the whole feature degrades to "no link" silently — acceptable, but it must be checked before merge, e.g. via `just smoke` (`MCP_SMOKE_API_KEY`) extended with a `manage_*` dry check, or by hand against staging.
+---
 
-## 5. Risks / edge cases
+## 4. Verification
 
-- **Hash prefix.** cx-cli's builders emit plain paths (`/dashboards/{id}`); PR #176's coverage table text still shows `#/dashboards/{id}` (stale), and olly's own `create_frontend_link` forces `#/` while `get_alert_base_url`/`get_skill_base_url` do not. Follow cx-cli's *source* (no `#/`) — its module docs cite the console's `HostedAppLocationStrategy` carve-out list — but confirm one URL by hand in a browser before merge. Cheap to flip if wrong.
-- **Extra HTTP call per successful write.** Mitigated by lazy resolution + TTL cache + 5s timeout + swallow-all. Never resolve on validation errors, deletes, reads, or id-less responses.
-- **Wrong-team link.** Cache is keyed on `company_id` from the request's auth context, so a shared process cannot leak one team's `team_url` to another. Do not key on anything token-derived-but-not-team-scoped.
-- **Response-shape drift.** Tagging is defensive: any non-dict / empty payload is a no-op, so an unexpected backend shape yields no link rather than a malformed one.
-- **Contract change for MCP clients.** Adding a field to a JSON string response is additive; existing agent prompts/tests that assert exact JSON equality on these three tools would break — the extended tests above cover the ones in this repo.
+1. `libs/common`: `uv run pytest tests/ -q` (42 + new), ruff, `ty check`.
+2. `apps/ws-ai-mcp`: `uv run pytest tests/ -q` with §0.3 env (13 + new), ruff, `ty check`.
+3. `apps/api`: `uv run pytest tests/ut/test_urls.py tests/routes/test_slack.py -q` — proves step 1b kept the public API intact.
+4. Regenerate `.saga/artifacts/mcp-write-tools-after.json` from the same harness using the repo's fixture shapes and a stub resolver returning `https://c4c.app.eu2.coralogix.com`; diff against the before file. Expected: `consoleUrl` added (at root or nested per §2 step 2) on each mutating response; folder / read / check / delete responses unchanged.
+5. **Requires credentials / cluster access not available here** (do during implementation):
+   a. confirm the ws-ai-mcp pod reaches `identity-service.aaa.svc.cluster.local:9090` (it already reaches `olly-kb-api.olly.svc.cluster.local:8080`, so same-cluster egress is expected — confirm before merge);
+   b. open one produced URL of each kind in a real console to confirm the plain-path form loads the entity (§1c); if wrong, flip `create_console_link`;
+   c. capture one real `create_view` response and check it against the probe order in step 5; add the captured shape as a fixture.
 
-## 6. PR description must call out (parent ticket's skip-and-report rule)
+---
 
-- Dashboard folders and view folders: **no** console link — `folderId` never appears in a console route (confirmed in cx-cli's frontend-source audit).
-- `manage_dashboards` action `check`: no link, because the MCP's `check` only validates a body and has no persisted entity id (cx-cli links `check <id>` only in its by-id form).
-- `manage_ai_model_pricing`: no link — dialog-only, no route.
-- Alerts: read-only in the MCP today, so nothing to link (as the ticket states).
-- Read tools (`search_dashboard --id`, `get_view`, `get_view_folder`): deliberately not linked in this round; cx-cli links `dashboards get`/`alerts get` but leaves `views get` as backlog. Follow-up if wanted.
-- Any team whose `/identity/whoami` returns no `team_url` (self-hosted/custom deployments): silently no link.
+## 5. Risks & mitigations
+
+| Risk | Mitigation |
+|---|---|
+| **Hash vs. path routing** — the ticket text says `#/`. | Resolved against the authoritative source (§1c): cx-cli added `#/`, then reverted it as *"producing dead links"*; branch tip `daf6051` has no `#/` in any builder; routes cross-checked against `cx-web-workspace` routing source. Single choke point (`create_console_link`) makes a reversal one line. Browser-confirmed pre-merge (§4.5b). |
+| **Upstream response shape unknown** for the view-create probe. | Request-side ids used wherever they exist (cases, view update, dashboard create/replace); probe chains ported from cx-cli's live-verified implementation; a missed id degrades to "no `consoleUrl`", never an error; §4.5c captures the real shape. |
+| **Identity service unreachable from the MCP's network** (insecure in-cluster gRPC; the MCP otherwise prefers public endpoints like `ng-api-grpc.{domain}:443`). | Verify first (§4.5a). If unreachable, the documented contingency — and only then — is to swap the slug lookup for `GET {api_url}/identity/whoami` → `team_url` (the public, key-readable endpoint cx-cli settled on), behind the same `resolve_frontend_team_url` signature so nothing downstream changes. Flag in the PR if used. |
+| Extra network hop per write (identity gRPC, plus token exchange when the header is absent). | Lazy (mutating actions only), TTL-cached per team, 5 s timeout, all exceptions swallowed. |
+| Wrong-team link from a shared cache. | Cache key is `company_id` from the request's own `user_info` state. |
+| Step-1b refactor breaks an `apps/api` caller. | Public API of `api.utils.urls` unchanged; verified by `tests/ut/test_urls.py`, `tests/routes/test_slack.py`, `ty check`. |
+| Additive contract change for MCP clients. | `consoleUrl` is purely additive; no existing field renamed or removed. |
+
+---
+
+## 6. Must be called out in the PR description (skipped / deviations)
+
+- **Dashboard folders and view folders** — no per-entity console route exists; cx-cli explicitly left folder create untouched. `manage_dashboard_folders` create therefore ships **without** a link, a conscious deviation from this ticket's success criteria.
+- `manage_dashboards` `check`, all `delete` actions, and the read-only case actions (`events`, `get_event`, `notifications`) — no single mutated entity to link to.
+- Alerts and all read-only tools — out of scope per the ticket.
+- **The ticket's `#/` URL format is stale** — link to the cx-cli reversal commit so reviewers don't re-raise it.
+- Teams whose identity record has no frontend slug — resolution returns `None`, field simply absent.
+- Whether the `/identity/whoami` contingency (§5) was needed, and any id-probe adjustments from §4.5c.

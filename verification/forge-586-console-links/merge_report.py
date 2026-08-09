@@ -63,7 +63,13 @@ CANONICAL = {
     },
     "alerts": {
         "get": True, "create": True, "enable": True, "disable": True,
-        "list": False, "delete": False, "events": False, "event-stats": False,
+        # `list` prints "View in Coralogix: <alerts overview url>" to stderr
+        # unconditionally (all 3 formats) whenever results are non-empty, plus a
+        # per-row consoleUrl field in json/agents (text drops that column). The
+        # PR #176 description's coverage table missed this; verified against
+        # src/commands/alerts/mod.rs::run_list.
+        "list": True,
+        "delete": False, "events": False, "event-stats": False,
     },
     "suppression-rules": {
         "create": True, "update": True,
@@ -73,7 +79,13 @@ CANONICAL = {
         "get": True, "update": True, "comment": True, "assign": True, "unassign": True,
         "acknowledge": True, "unacknowledge": True, "resolve": True, "close": True,
         "set-priority": True, "clear-priority": True,
-        "events/list": False, "events/get": False, "notifications": False,
+        # `notifications` prints "View in Coralogix: <cases url>" to stderr
+        # unconditionally (all 3 formats) whenever any deliveries come back;
+        # the PR #176 description's coverage table missed this, same as
+        # `alerts list`. Verified against src/commands/cases/mod.rs:892-906,
+        # whose own comment says "prints in every output mode."
+        "notifications": True,
+        "events/list": False, "events/get": False,
     },
     "notifications": {
         "connectors/create": True, "connectors/update": True, "connectors/get": True,

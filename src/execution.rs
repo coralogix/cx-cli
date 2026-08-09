@@ -16,6 +16,7 @@ use tokio::sync::OnceCell;
 use crate::api_client::CxClient;
 use crate::config::ResolvedConfig;
 use crate::identity;
+use crate::request_metadata::RequestMetadata;
 
 // ── Execution target ──────────────────────────────────────────────────────────
 
@@ -31,18 +32,20 @@ pub struct ExecutionTarget {
     /// `https://acme.app.eu2.coralogix.com`), cached so repeated console-link
     /// lookups within one command invocation don't re-hit `/identity/whoami`.
     console_base: OnceCell<Option<String>>,
+    pub request_metadata: RequestMetadata,
 }
 
 impl ExecutionTarget {
     /// Build an `ExecutionTarget` from an already-resolved config.
-    pub fn new(cfg: ResolvedConfig) -> Result<Self> {
-        let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
+    pub fn new(cfg: ResolvedConfig, request_metadata: RequestMetadata) -> Result<Self> {
+        let client = CxClient::new_with_metadata(&cfg.endpoint, &cfg.api_key, &request_metadata)?;
         let profile_name = cfg.profile_name.clone();
         Ok(Self {
             profile_name,
             cfg,
             client,
             console_base: OnceCell::new(),
+            request_metadata,
         })
     }
 
@@ -167,10 +170,13 @@ pub async fn tag_console_link_for_profile(
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.
-pub fn build_targets(configs: Vec<ResolvedConfig>) -> Result<Vec<Arc<ExecutionTarget>>> {
+pub fn build_targets(
+    configs: Vec<ResolvedConfig>,
+    request_metadata: RequestMetadata,
+) -> Result<Vec<Arc<ExecutionTarget>>> {
     configs
         .into_iter()
-        .map(|cfg| ExecutionTarget::new(cfg).map(Arc::new))
+        .map(|cfg| ExecutionTarget::new(cfg, request_metadata.clone()).map(Arc::new))
         .collect()
 }
 
@@ -278,6 +284,7 @@ mod tests {
         ResolvedConfig {
             profile_name: "test-profile".to_string(),
             api_key: "test-key".to_string(),
+            auth_kind: crate::config::AuthKind::ApiKey,
             endpoint: endpoint.to_string(),
             default_tier: crate::Tier::Archive,
             console_url: console_url.map(str::to_string),
@@ -295,7 +302,13 @@ mod tests {
     #[test]
     fn find_target_locates_by_profile_name() {
         install_rustls_provider();
-        let a = Arc::new(ExecutionTarget::new(test_cfg("http://127.0.0.1:1", None, None)).unwrap());
+        let a = Arc::new(
+            ExecutionTarget::new(
+                test_cfg("http://127.0.0.1:1", None, None),
+                RequestMetadata::default(),
+            )
+            .unwrap(),
+        );
         let targets = vec![a.clone()];
         assert!(find_target(&targets, "test-profile").is_some());
         assert!(find_target(&targets, "missing-profile").is_none());
@@ -306,11 +319,14 @@ mod tests {
         install_rustls_provider();
         // No console_domain set, so a whoami call would panic this test if
         // attempted - the explicit console_url must short-circuit before that.
-        let target = ExecutionTarget::new(test_cfg(
-            "http://127.0.0.1:1",
-            Some("https://acme.example.com/"),
-            None,
-        ))
+        let target = ExecutionTarget::new(
+            test_cfg(
+                "http://127.0.0.1:1",
+                Some("https://acme.example.com/"),
+                None,
+            ),
+            RequestMetadata::default(),
+        )
         .unwrap();
         assert_eq!(
             target.console_base().await,
@@ -323,7 +339,11 @@ mod tests {
         install_rustls_provider();
         // Mirrors Region::Custom: no known console domain, no override -
         // must resolve to None without attempting any HTTP call.
-        let target = ExecutionTarget::new(test_cfg("http://127.0.0.1:1", None, None)).unwrap();
+        let target = ExecutionTarget::new(
+            test_cfg("http://127.0.0.1:1", None, None),
+            RequestMetadata::default(),
+        )
+        .unwrap();
         assert_eq!(target.console_base().await, None);
     }
 
@@ -333,12 +353,15 @@ mod tests {
         // An explicit console_team_name must skip /identity/whoami entirely -
         // no mock server is even started for this test, so any attempted
         // call would fail the test outright (connection refused).
-        let target = ExecutionTarget::new(test_cfg_with_team_name(
-            "http://127.0.0.1:1",
-            None,
-            Some("app.eu2.coralogix.com"),
-            Some("acme"),
-        ))
+        let target = ExecutionTarget::new(
+            test_cfg_with_team_name(
+                "http://127.0.0.1:1",
+                None,
+                Some("app.eu2.coralogix.com"),
+                Some("acme"),
+            ),
+            RequestMetadata::default(),
+        )
         .unwrap();
         assert_eq!(
             target.console_base().await,
@@ -352,12 +375,10 @@ mod tests {
         // An explicit console_team_name alone isn't enough without a known
         // console_domain for the region (e.g. Region::Custom) - and with no
         // domain, whoami is never attempted either.
-        let target = ExecutionTarget::new(test_cfg_with_team_name(
-            "http://127.0.0.1:1",
-            None,
-            None,
-            Some("acme"),
-        ))
+        let target = ExecutionTarget::new(
+            test_cfg_with_team_name("http://127.0.0.1:1", None, None, Some("acme")),
+            RequestMetadata::default(),
+        )
         .unwrap();
         assert_eq!(target.console_base().await, None);
     }
@@ -378,9 +399,11 @@ mod tests {
 
         // No explicit console_team_name - must resolve via /identity/whoami
         // by default.
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
-                .unwrap();
+        let target = ExecutionTarget::new(
+            test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")),
+            RequestMetadata::default(),
+        )
+        .unwrap();
         assert_eq!(
             target.console_base().await,
             Some("https://acme.app.eu2.coralogix.com".to_string())
@@ -405,9 +428,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
-                .unwrap();
+        let target = ExecutionTarget::new(
+            test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")),
+            RequestMetadata::default(),
+        )
+        .unwrap();
         assert_eq!(
             target.console_base().await,
             Some("https://acme-corp.app.eu2.coralogix.com".to_string())
@@ -426,9 +451,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
-                .unwrap();
+        let target = ExecutionTarget::new(
+            test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")),
+            RequestMetadata::default(),
+        )
+        .unwrap();
         assert_eq!(target.console_base().await, None);
     }
 
@@ -442,9 +469,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
-                .unwrap();
+        let target = ExecutionTarget::new(
+            test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")),
+            RequestMetadata::default(),
+        )
+        .unwrap();
         // Best-effort: a failing /identity/whoami must not error the caller,
         // just result in no console link.
         assert_eq!(target.console_base().await, None);
@@ -468,12 +497,15 @@ mod tests {
         // An explicit console_team_name must win outright - whoami must not
         // even be called (wiremock's `.expect(0)` above enforces this at
         // drop time).
-        let target = ExecutionTarget::new(test_cfg_with_team_name(
-            &server.uri(),
-            None,
-            Some("app.eu2.coralogix.com"),
-            Some("acme"),
-        ))
+        let target = ExecutionTarget::new(
+            test_cfg_with_team_name(
+                &server.uri(),
+                None,
+                Some("app.eu2.coralogix.com"),
+                Some("acme"),
+            ),
+            RequestMetadata::default(),
+        )
         .unwrap();
         assert_eq!(
             target.console_base().await,
@@ -496,9 +528,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")))
-                .unwrap();
+        let target = ExecutionTarget::new(
+            test_cfg(&server.uri(), None, Some("app.eu2.coralogix.com")),
+            RequestMetadata::default(),
+        )
+        .unwrap();
         // Two calls must only hit /identity/whoami once (wiremock's `.expect(1)`
         // above would fail the mock verification otherwise).
         let first = target.console_base().await;

@@ -61,6 +61,9 @@ pub async fn fetch_if_stale() {
     // unreachable).  This prevents hammering the API on every command during
     // an outage — we accept missing one 24 h window rather than spamming.
     state.last_checked_at = Some(Utc::now());
+    state.installation_id = VersionCheckCache::load()
+        .installation_id
+        .or(state.installation_id);
     let _ = state.save();
 }
 

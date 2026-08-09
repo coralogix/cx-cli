@@ -37,7 +37,11 @@ pub async fn run_ask(
     }
 
     let target = &targets[0];
-    let api = OllyApi::new(&target.cfg.endpoint, &target.cfg.api_key)?;
+    let api = OllyApi::new(
+        &target.cfg.endpoint,
+        &target.cfg.api_key,
+        &target.request_metadata,
+    )?;
 
     // Create a new chat if no chat_id provided
     let chat_id = match chat_id {
@@ -106,7 +110,11 @@ pub async fn run_artifacts_get(
     }
 
     let target = &targets[0];
-    let api = OllyApi::new(&target.cfg.endpoint, &target.cfg.api_key)?;
+    let api = OllyApi::new(
+        &target.cfg.endpoint,
+        &target.cfg.api_key,
+        &target.request_metadata,
+    )?;
 
     eprintln!("{}", "Fetching artifact...".dimmed());
     let artifact = api.get_artifact(artifact_id).await?;
@@ -320,7 +328,11 @@ pub async fn run_artifacts_list(
     }
 
     let target = &targets[0];
-    let api = OllyApi::new(&target.cfg.endpoint, &target.cfg.api_key)?;
+    let api = OllyApi::new(
+        &target.cfg.endpoint,
+        &target.cfg.api_key,
+        &target.request_metadata,
+    )?;
 
     eprintln!("{}", "Fetching artifacts...".dimmed());
     let artifacts = api.list_artifacts().await?;

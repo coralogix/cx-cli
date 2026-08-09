@@ -266,19 +266,19 @@ pub async fn run_update(
             )
             .green()
         );
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::iam_users_url(b)
-        })
-        .await;
         let mut v = json!({ "user_account_ids": resp.user_account_ids });
         if targets.len() > 1 {
             if let Value::Object(ref mut m) = v {
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut v, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut v,
+            crate::console_url::iam_users_url,
+        )
+        .await;
         all_results.push(v);
     }
 

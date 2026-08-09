@@ -227,14 +227,14 @@ pub async fn run_create(
                 group.id.as_deref(),
                 &profile,
             );
-            let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::recording_rules_url(b)
-            })
-            .await;
             let mut group_json = group_to_json(&group, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut group_json, url);
-            }
+            crate::execution::tag_console_link_for_profile(
+                targets,
+                &profile,
+                &mut group_json,
+                crate::console_url::recording_rules_url,
+            )
+            .await;
             all_results.push(group_json);
         }
     }
@@ -287,14 +287,14 @@ pub async fn run_update(
                 format!("Updated recording rule group '{name}' (ID: {id}) in profile '{profile}'.")
                     .green()
             );
-            let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::recording_rules_url(b)
-            })
-            .await;
             let mut group_json = group_to_json(&group, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut group_json, url);
-            }
+            crate::execution::tag_console_link_for_profile(
+                targets,
+                &profile,
+                &mut group_json,
+                crate::console_url::recording_rules_url,
+            )
+            .await;
             all_results.push(group_json);
         }
     }

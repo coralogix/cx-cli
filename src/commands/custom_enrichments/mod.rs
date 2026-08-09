@@ -236,14 +236,14 @@ pub async fn run_create(
                 )
                 .green()
             );
-            let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::enrichments_url(b)
-            })
-            .await;
             let mut ce_json = ce_to_json(&ce, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut ce_json, url);
-            }
+            crate::execution::tag_console_link_for_profile(
+                targets,
+                &profile,
+                &mut ce_json,
+                crate::console_url::enrichments_url,
+            )
+            .await;
             all_results.push(ce_json);
         }
     }

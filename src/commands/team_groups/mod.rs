@@ -356,14 +356,14 @@ pub async fn run_update(
                 "{}",
                 format!("Updated team group in profile '{profile}'.").green()
             );
-            let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::iam_group_url(b, &group_id)
-            })
-            .await;
             let mut group_json = group_to_json(&group, targets.len() > 1, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut group_json, url);
-            }
+            crate::execution::tag_console_link_for_profile(
+                targets,
+                &profile,
+                &mut group_json,
+                |b| crate::console_url::iam_group_url(b, &group_id),
+            )
+            .await;
             all_results.push(group_json);
         }
     }

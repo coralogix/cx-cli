@@ -194,10 +194,6 @@ pub async fn run_create(
             resp.key_id.as_deref(),
             &profile,
         );
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::iam_api_keys_url(b)
-        })
-        .await;
         let mut v = json!({
             "key_id": resp.key_id,
             "name": resp.name,
@@ -208,9 +204,13 @@ pub async fn run_create(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut v, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut v,
+            crate::console_url::iam_api_keys_url,
+        )
+        .await;
         all_results.push(v);
     }
 

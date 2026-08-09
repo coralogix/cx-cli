@@ -134,16 +134,16 @@ pub async fn run_summary(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::usage_url(b)
-        })
-        .await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut val, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut val,
+            crate::console_url::usage_url,
+        )
+        .await;
         all_results.push(val);
     }
 
@@ -212,16 +212,16 @@ pub async fn run_daily(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::usage_url(b)
-        })
-        .await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut val, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut val,
+            crate::console_url::usage_url,
+        )
+        .await;
         all_results.push(val);
     }
 
@@ -270,16 +270,16 @@ pub async fn run_logs_count(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::usage_url(b)
-        })
-        .await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut val, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut val,
+            crate::console_url::usage_url,
+        )
+        .await;
         all_results.push(val);
     }
 
@@ -324,16 +324,16 @@ pub async fn run_spans_count(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::usage_url(b)
-        })
-        .await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut val, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut val,
+            crate::console_url::usage_url,
+        )
+        .await;
         all_results.push(val);
     }
 
@@ -370,16 +370,16 @@ pub async fn run_export_status(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::usage_url(b)
-        })
-        .await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut val, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut val,
+            crate::console_url::usage_url,
+        )
+        .await;
         all_results.push(val);
     }
 
@@ -416,16 +416,16 @@ pub async fn run_capabilities(
 
     let mut all_results = Vec::new();
     for (profile, mut value) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::usage_url(b)
-        })
-        .await;
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut value, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut value,
+            crate::console_url::usage_url,
+        )
+        .await;
         all_results.push(value);
     }
 
@@ -472,16 +472,16 @@ pub async fn run_query(
 
     let mut all_results = Vec::new();
     for (profile, mut value) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::usage_url(b)
-        })
-        .await;
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut value, url);
-        }
+        crate::execution::tag_console_link_for_profile(
+            targets,
+            &profile,
+            &mut value,
+            crate::console_url::usage_url,
+        )
+        .await;
         all_results.push(value);
     }
 

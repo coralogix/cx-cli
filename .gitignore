@@ -36,5 +36,7 @@ graphify-out/
 verification/forge-586-console-links/results/
 verification/forge-586-console-links/report.html
 verification/forge-586-console-links/artifact_content.html
+verification/forge-586-console-links/terminal_report.html
+verification/forge-586-console-links/terminal_report_content.html
 verification/forge-586-console-links/payloads/_rendered_*
 verification/**/__pycache__/

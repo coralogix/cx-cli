@@ -143,6 +143,13 @@ pub fn print_console_link(url: &str) {
 /// No-op if `val` isn't a JSON object at all (e.g. a bare scalar/array
 /// result), so it's always safe to call unconditionally alongside
 /// `print_console_link`.
+///
+/// Also a no-op if there's no real data to attach the link to in the first
+/// place - an empty root (ignoring `_profile`) or an empty nested wrapper,
+/// which some backends return on an otherwise-successful write. Tagging
+/// either would produce a JSON object whose *only* content is the URL that
+/// `print_console_link` already echoed to stderr moments earlier, which
+/// duplicates rather than adds information.
 pub fn tag_console_url(val: &mut Value, url: &str) {
     let Value::Object(root) = val else { return };
 
@@ -162,9 +169,16 @@ pub fn tag_console_url(val: &mut Value, url: &str) {
 
     if let Some(key) = nest_key {
         if let Some(Value::Object(nested)) = root.get_mut(&key) {
+            if nested.is_empty() {
+                return;
+            }
             nested.insert("consoleUrl".to_string(), Value::String(url.to_string()));
             return;
         }
+    }
+
+    if root.iter().all(|(k, _)| k == "_profile") {
+        return;
     }
 
     root.insert("consoleUrl".to_string(), Value::String(url.to_string()));
@@ -333,6 +347,30 @@ mod tests {
         let mut val = json!([1, 2, 3]);
         tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
         assert_eq!(val, json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn tag_console_url_no_op_on_completely_empty_object() {
+        // Some backends echo an empty `{}` on an otherwise-successful write.
+        // Tagging it would make stdout's only content a duplicate of the
+        // link `print_console_link` already printed to stderr.
+        let mut val = json!({});
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        assert_eq!(val, json!({}));
+    }
+
+    #[test]
+    fn tag_console_url_no_op_on_profile_tag_only_object() {
+        let mut val = json!({"_profile": "prod"});
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        assert_eq!(val, json!({"_profile": "prod"}));
+    }
+
+    #[test]
+    fn tag_console_url_no_op_on_empty_nested_wrapper() {
+        let mut val = json!({"alertDef": {}});
+        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        assert_eq!(val, json!({"alertDef": {}}));
     }
 
     #[test]

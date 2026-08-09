@@ -227,6 +227,8 @@ async fn dashboard_replace_falls_back_to_request_id_when_response_has_no_id() {
             "--from-file",
             file_path.to_str().unwrap(),
             "--yes",
+            "-o",
+            "json",
         ])
         .output()
         .expect("failed to run cx");
@@ -244,6 +246,15 @@ async fn dashboard_replace_falls_back_to_request_id_when_response_has_no_id() {
     assert!(
         !stderr.contains("did not include an ID"),
         "should not warn about a missing ID once it fell back to the request's own id: {stderr}"
+    );
+
+    // The API echoed back an empty `{}`, so -o json has nothing to attach the
+    // link to - it should stay empty rather than becoming a redundant
+    // `{"consoleUrl": ...}` that just repeats the stderr line above.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("consoleUrl"),
+        "stdout should not carry a consoleUrl-only payload when the response was empty: {stdout}"
     );
 }
 

@@ -196,7 +196,6 @@ struct DeliveryRow {
     connector: String,
     connector_type: String,
     status: String,
-    evidence_url: String,
     timestamp: String,
 }
 
@@ -220,7 +219,6 @@ fn delivery_rows(delivery: &Value) -> Vec<DeliveryRow> {
             connector: "-".to_string(),
             connector_type: "-".to_string(),
             status: format_delivery_status(delivery),
-            evidence_url: "-".to_string(),
             timestamp,
         }];
     };
@@ -240,16 +238,12 @@ fn delivery_rows(delivery: &Value) -> Vec<DeliveryRow> {
                 .map(|t| t.strip_prefix("CONNECTOR_TYPE_").unwrap_or(t).to_string())
                 .unwrap_or_else(|| "-".to_string());
             // outcome is a oneof: success | failure (+ maybe more). Its variant
-            // key is the status; evidenceUrl (when present) lives inside it.
+            // key is the status. (evidenceUrl also lives inside it, but it's no
+            // longer surfaced in the text table - it stays in -o json/agents.)
             let outcome = attempt.get("outcome").and_then(|v| v.as_object());
             let status = outcome
                 .and_then(|o| o.keys().next())
                 .map(|k| humanize_camel_case(k))
-                .unwrap_or_else(|| "-".to_string());
-            let evidence_url = outcome
-                .and_then(|o| o.values().next())
-                .map(|v| str_field(v, "evidenceUrl"))
-                .filter(|s| s != "-")
                 .unwrap_or_else(|| "-".to_string());
             DeliveryRow {
                 profile: profile.clone(),
@@ -257,7 +251,6 @@ fn delivery_rows(delivery: &Value) -> Vec<DeliveryRow> {
                 connector,
                 connector_type,
                 status,
-                evidence_url,
                 timestamp: timestamp.clone(),
             }
         })
@@ -897,6 +890,20 @@ pub async fn run_notifications(
     for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         let map = val.get("deliveriesByCase").and_then(|v| v.as_object());
         if let Some(map) = map {
+            // A single "View in Coralogix" link to the Cases page per profile
+            // (not one per case). The evidence URLs are no longer shown in the
+            // text table (they blow up the ascii table width), so this stderr
+            // link is how a user still reaches Cases in the console. Printed
+            // once per profile that returned any deliveries, matching the
+            // `webhooks list` pattern; prints in every output mode.
+            if !map.is_empty() {
+                crate::execution::console_link_for_profile(
+                    targets,
+                    &profile,
+                    crate::console_url::cases_url,
+                )
+                .await;
+            }
             for (case_id, payload) in map {
                 let deliveries = payload
                     .get("notificationDeliveries")
@@ -935,7 +942,7 @@ pub async fn run_notifications(
                 .iter()
                 .flat_map(delivery_rows)
                 .map(|r| {
-                    let mut row = Vec::with_capacity(6);
+                    let mut row = Vec::with_capacity(5);
                     row.push(r.profile);
                     if include_case_id {
                         row.push(r.case_id);
@@ -943,22 +950,14 @@ pub async fn run_notifications(
                     row.push(r.connector);
                     row.push(r.connector_type);
                     row.push(r.status);
-                    row.push(r.evidence_url);
                     row.push(r.timestamp);
                     row
                 })
                 .collect();
             let headers: &[&str] = if include_case_id {
-                &[
-                    "Case ID",
-                    "Connector",
-                    "Type",
-                    "Status",
-                    "Evidence URL",
-                    "Timestamp",
-                ]
+                &["Case ID", "Connector", "Type", "Status", "Timestamp"]
             } else {
-                &["Connector", "Type", "Status", "Evidence URL", "Timestamp"]
+                &["Connector", "Type", "Status", "Timestamp"]
             };
             render::render_table(headers, rows, include_profile);
         }

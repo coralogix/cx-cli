@@ -525,6 +525,123 @@ async fn case_resolve_prints_console_link() {
     );
 }
 
+/// `cases notifications` no longer shows an "Evidence URL" column in the text
+/// table (the presigned URLs blow up the ascii table width), but it must still
+/// (a) print a single `View in Coralogix` link to the Cases page - one per
+/// profile, NOT one per case, even when several cases are queried - and
+/// (b) keep the evidence URL in `-o json`.
+#[tokio::test]
+async fn case_notifications_drops_url_column_but_keeps_link_and_json() {
+    let server = MockServer::start().await;
+    // Two cases in one response - the stderr link must still print exactly once.
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/cases/notifications/v1/deliveries"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "deliveriesByCase": {
+                "case-777": {
+                    "notificationDeliveries": [{
+                        "timestamp": "2026-06-08T20:15:07Z",
+                        "attempted": {
+                            "router": { "routerName": "yansa" },
+                            "attempts": [{
+                                "connector": {
+                                    "connectorType": "CONNECTOR_TYPE_SLACK",
+                                    "connectorName": "Olly Slack"
+                                },
+                                "outcome": {
+                                    "success": {
+                                        "evidenceUrl": "https://slack.example.com/evidence/xyz"
+                                    }
+                                }
+                            }]
+                        }
+                    }]
+                },
+                "case-888": {
+                    "notificationDeliveries": [{
+                        "timestamp": "2026-06-08T20:13:50Z",
+                        "noRouterMatched": {}
+                    }]
+                }
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://acme.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    // Text mode: no "Evidence URL" column / value in stdout, but the stderr
+    // link is present.
+    let text = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "cases",
+            "notifications",
+            "case-777",
+            "case-888",
+            "-o",
+            "text",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(text.status.success(), "{:?}", text);
+
+    let text_stdout = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        !text_stdout.contains("Evidence URL"),
+        "text table should no longer have an Evidence URL column: {text_stdout}"
+    );
+    assert!(
+        !text_stdout.contains("https://slack.example.com/evidence/xyz"),
+        "text table should not print the evidence URL: {text_stdout}"
+    );
+    let text_stderr = String::from_utf8_lossy(&text.stderr);
+    // Exactly one link, to the bare Cases page - not one per case, and not a
+    // per-case `?id=` deep link.
+    assert_eq!(
+        text_stderr.matches("View in Coralogix:").count(),
+        1,
+        "expected exactly one console link across two cases: {text_stderr}"
+    );
+    assert!(
+        text_stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/cases"),
+        "stderr did not contain the Cases page link: {text_stderr}"
+    );
+    assert!(
+        !text_stderr.contains("cases?id="),
+        "link should be the bare /cases page, not a per-case deep link: {text_stderr}"
+    );
+
+    // JSON mode: the evidence URL is still carried in the payload.
+    let json = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "cases",
+            "notifications",
+            "case-777",
+            "case-888",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(json.status.success(), "{:?}", json);
+    let json_stdout = String::from_utf8_lossy(&json.stdout);
+    assert!(
+        json_stdout.contains("https://slack.example.com/evidence/xyz"),
+        "-o json must keep the evidence URL: {json_stdout}"
+    );
+}
+
 // ── No console domain / no override -> no link, command still succeeds ──────
 
 #[tokio::test]

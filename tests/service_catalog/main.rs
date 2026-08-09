@@ -417,9 +417,73 @@ async fn data_errors_on_malformed_column_result() {
     )
     .await
     .expect_err("a malformed column result must surface as an error, not silent data loss");
-    assert!(err
-        .to_string()
-        .contains("expected exactly one of 'value' or 'error'"));
+    let chain = format!("{err:#}");
+    assert!(chain.contains("expected exactly one of 'value' or 'error'"));
+}
+
+/// A malformed payload from one profile must not discard another profile's
+/// good rows - formatting failures follow the same partial-failure semantics
+/// as HTTP failures (report to stderr, render the survivors).
+#[tokio::test]
+async fn data_preserves_good_profile_when_another_profile_is_malformed() {
+    let server_ok = MockServer::start().await;
+    let server_malformed = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/ENTITY_TYPE_SERVICE/data")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "table": {
+                "rows": [
+                    {
+                        "identity": { "name": "checkout" },
+                        "values": { "latency_p99": { "value": { "metric": 42.5 } } }
+                    }
+                ],
+                "columns": [{ "id": "latency_p99" }]
+            }
+        })))
+        .expect(1)
+        .mount(&server_ok)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/ENTITY_TYPE_SERVICE/data")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "table": {
+                "rows": [
+                    {
+                        "identity": { "name": "checkout" },
+                        "values": { "latency_p99": {} }
+                    }
+                ],
+                "columns": []
+            }
+        })))
+        .expect(1)
+        .mount(&server_malformed)
+        .await;
+
+    let targets = vec![
+        common::test_target("profile-ok", &server_ok.uri()),
+        common::test_target("profile-malformed", &server_malformed.uri()),
+    ];
+
+    run_data(
+        &targets,
+        "service",
+        "now-1h",
+        "now",
+        &["latency_p99".to_string()],
+        &[],
+        &[],
+        "table",
+        None,
+        None,
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("one profile's malformed payload must not discard another profile's good rows");
 }
 
 #[tokio::test]

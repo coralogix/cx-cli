@@ -557,15 +557,23 @@ fn format_entities_data_response(result: EntitiesDataResult) -> Result<Value> {
 /// same convention as `resource_to_json`); timeseries responses merge series.
 /// Columns are taken from the first successful profile - callers request the
 /// same `--column` set per profile, so they are expected to match.
+///
+/// Formatting (not just the HTTP call) can fail per profile - a malformed
+/// `ColumnResult` in just one profile's payload must not discard another
+/// profile's perfectly good rows, so formatting failures are routed through
+/// the same `report_errors_and_collect_successes` semantics as the HTTP
+/// fan-out: total failure bails, partial failure prints the bad profile and
+/// renders the survivors.
 fn render_entities_data_results(
     results: Vec<(String, EntitiesDataResult)>,
     include_profile: bool,
     output: OutputFormat,
 ) -> Result<()> {
-    let mut formatted: Vec<(String, Value)> = Vec::new();
-    for (profile, result) in results {
-        formatted.push((profile, format_entities_data_response(result)?));
-    }
+    let per_profile_formatted: Vec<(String, Result<Value>)> = results
+        .into_iter()
+        .map(|(profile, result)| (profile, format_entities_data_response(result)))
+        .collect();
+    let formatted = report_errors_and_collect_successes(per_profile_formatted)?;
 
     let is_timeseries = formatted
         .first()

@@ -456,16 +456,24 @@ pub async fn run_query(
 #[cfg(test)]
 mod tests {
     use super::{parse_query, read_query_from_file};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// A raw nanosecond timestamp alone can collide between tests running in
+    /// parallel on platforms with coarser clock resolution (observed on
+    /// Windows CI), letting one test's write clobber another's file before
+    /// it's read back. The atomic counter guarantees uniqueness within this
+    /// process regardless of clock granularity.
+    static UNIQUE_SUFFIX: AtomicU64 = AtomicU64::new(0);
+
     fn write_query(contents: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "cx-data-usage-query-unit-{}.json",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after Unix epoch")
-                .as_nanos()
-        ));
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock is after Unix epoch")
+            .as_nanos();
+        let counter = UNIQUE_SUFFIX.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("cx-data-usage-query-unit-{nanos}-{counter}.json"));
         std::fs::write(&path, contents).unwrap();
         path
     }

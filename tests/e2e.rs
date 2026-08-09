@@ -76,6 +76,8 @@ mod routers;
 mod scopes;
 #[path = "e2e/search_fields/mod.rs"]
 mod search_fields;
+#[path = "e2e/service_catalog.rs"]
+mod service_catalog;
 #[path = "e2e/slos.rs"]
 mod slos;
 #[path = "e2e/spans/mod.rs"]

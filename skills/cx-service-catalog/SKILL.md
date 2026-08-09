@@ -77,39 +77,50 @@ Four steps, and only because each one supplies an input the next one requires:
    cx service-catalog entities service -o json
    ```
 
-4. **Query data** — aggregated across all entities, or scoped to one:
+4. **Query data** — aggregated across all entities, or scoped to one. Column
+   ids, filter/group-by labels, and entity ids below are placeholders — always
+   substitute values returned by `schema`/`entities` for the entity type in
+   question, they vary by account and entity type:
 
    ```bash
-   cx service-catalog data service --start now-1h --end now \
-     --column latency_p99 --column error_rate -o json
+   cx service-catalog data <entity-type> --start now-1h --end now \
+     --column <column-id> --column <column-id> -o json
 
-   cx service-catalog entity-data service checkout --start now-1h --end now \
-     --column latency_p99 -o json
+   cx service-catalog entity-data <entity-type> <entity-id> --start now-1h --end now \
+     --column <column-id> -o json
    ```
 
 ## Examples
 
-### Top 5 services by p99 latency in the last hour
+The commands below use `service` and `k8s-pod` for concreteness, but every
+`<column-id>`, `<filterable-label>`, `<groupable-label>`, and `<entity-id>`
+must come from that entity type's own `schema`/`entities` output — never
+assume a column or label from one entity type exists on another.
+
+### Top 5 entities by a metric in the last hour
 
 ```bash
+cx service-catalog schema service -o json  # discover column ids first
 cx service-catalog data service --start now-1h --end now \
-  --column latency_p99 --aggregation table \
-  --sort-column latency_p99 --sort-order desc --limit 5 -o json
+  --column <column-id> --aggregation table \
+  --sort-column <column-id> --sort-order desc --limit 5 -o json
 ```
 
-### Filter to one environment
+### Filter to one label value
 
 ```bash
+cx service-catalog schema service -o json  # discover filterable_labels first
 cx service-catalog data service --start now-1h --end now \
-  --column latency_p99 --column error_rate \
-  --filter environment=prod -o json
+  --column <column-id> --column <column-id> \
+  --filter <filterable-label>=<value> -o json
 ```
 
-### Group by environment
+### Group by a label
 
 ```bash
+cx service-catalog schema service -o json  # discover groupable_labels first
 cx service-catalog data service --start now-1h --end now \
-  --column latency_p99 --group-by environment -o json
+  --column <column-id> --group-by <groupable-label> -o json
 ```
 
 ### Kubernetes pod resource saturation
@@ -117,14 +128,15 @@ cx service-catalog data service --start now-1h --end now \
 ```bash
 cx service-catalog schema k8s-pod -o json  # discover column ids first
 cx service-catalog data k8s-pod --start now-1h --end now \
-  --column cpu_usage --column memory_usage --column oom_killed -o json
+  --column <column-id> --column <column-id> --column <column-id> -o json
 ```
 
-### Latency over time for one service
+### Latency over time for one entity
 
 ```bash
-cx service-catalog entity-data service checkout --start now-24h --end now \
-  --column latency_p99 --aggregation timeseries -o json
+cx service-catalog entities service -o json  # discover entity ids first
+cx service-catalog entity-data service <entity-id> --start now-24h --end now \
+  --column <column-id> --aggregation timeseries -o json
 ```
 
 ### Just the rows
@@ -132,7 +144,7 @@ cx service-catalog entity-data service checkout --start now-24h --end now \
 ```bash
 # Table responses live under .rows; timeseries under .series
 cx service-catalog data service --start now-1h --end now \
-  --column error_rate -o json | jq '.rows'
+  --column <column-id> -o json | jq '.rows'
 ```
 
 ## Key Principles

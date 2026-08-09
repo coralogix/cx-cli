@@ -101,39 +101,6 @@ impl Region {
             Region::Custom(url) => url.as_str(),
         }
     }
-
-    /// Base domain (no scheme, no team subdomain) of the Coralogix web
-    /// console for this region.
-    ///
-    /// Console URLs have the shape `https://<team>.<console_domain>/...` -
-    /// the team is a required subdomain (see `Profile::console_team_name`),
-    /// this only supplies the domain that comes after it.
-    ///
-    /// Values match the documented per-region app hostnames in the
-    /// Coralogix endpoints reference
-    /// (<https://coralogix.com/docs/integrations/coralogix-endpoints/#how-to-find-the-correct-endpoints>).
-    /// `stg1` is an internal/staging environment not listed there and is
-    /// left unmapped (`None`) rather than guessed.
-    ///
-    /// Returns `None` when no console host can be derived, notably for
-    /// `Region::Custom` (an arbitrary user-supplied API endpoint has no
-    /// implied web console) - callers should skip printing a link in that
-    /// case rather than fabricate one. A profile can still provide a console
-    /// base explicitly via `Profile::console_url`.
-    pub fn console_domain(&self) -> Option<&'static str> {
-        match self {
-            Region::Us1 => Some("app.coralogix.us"),
-            Region::Us2 => Some("app.cx498.coralogix.com"),
-            Region::Us3 => Some("app.us3.coralogix.com"),
-            Region::Eu1 => Some("app.coralogix.com"),
-            Region::Eu2 => Some("app.eu2.coralogix.com"),
-            Region::Ap1 => Some("app.coralogix.in"),
-            Region::Ap2 => Some("app.coralogixsg.com"),
-            Region::Ap3 => Some("app.ap3.coralogix.com"),
-            Region::Stg1 => None,
-            Region::Custom(_) => None,
-        }
-    }
 }
 
 impl std::fmt::Display for Region {
@@ -352,31 +319,15 @@ pub struct Profile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_tier: Option<crate::Tier>,
     /// Explicit override for the Coralogix web console base URL used to build
-    /// "View in Coralogix" links (e.g. `https://acme.app.eu2.coralogix.com`).
-    /// Include the team subdomain - console links resolve to a team, and the
-    /// team name is not always derivable automatically.
+    /// "View in Coralogix" links. Include the team subdomain - console links
+    /// resolve to a team, and the team name is not always derivable
+    /// automatically.
     ///
-    /// When unset, the CLI derives a base from `region.console_domain()` plus
-    /// either an explicit `console_team_name` (see below) or, by default, a
-    /// team subdomain resolved automatically via `GET /identity/whoami`. When
-    /// the region has no known console domain (e.g. `Region::Custom`), or no
-    /// subdomain can be resolved either way, no console link is printed.
+    /// When unset, the CLI resolves this automatically via
+    /// `GET /identity/whoami` (see `identity::resolve_team_url`). If that
+    /// lookup fails or returns no usable URL, no console link is printed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_url: Option<String>,
-    /// Literal team subdomain label used to build console links when
-    /// `console_url` is not set, e.g. `"acme"` to build
-    /// `https://acme.app.eu2.coralogix.com`.
-    ///
-    /// This is optional: by default, `cx` resolves the team subdomain
-    /// automatically via `GET /identity/whoami` (see
-    /// `identity::resolve_team_subdomain`), which is a good-enough guess for
-    /// most teams. Set this field to override that automatic guess - it is a
-    /// user-supplied value, not something `cx` looks up or double-checks, so
-    /// it is used verbatim (only combined with the region's known console
-    /// domain). Set `console_url` instead if you want to override the full
-    /// base URL.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub console_team_name: Option<String>,
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -392,16 +343,9 @@ pub struct ResolvedConfig {
     /// config. Falls back to `Archive` when the profile does not specify one.
     pub default_tier: crate::Tier,
     /// Explicit console base URL override from `Profile::console_url`, with
-    /// any trailing slash trimmed. Takes precedence over `console_domain`.
+    /// any trailing slash trimmed. Takes precedence over the automatic
+    /// `GET /identity/whoami`-based resolution.
     pub console_url: Option<String>,
-    /// Console domain derived from `region.console_domain()`. `None` for
-    /// `Region::Custom` and any other region with no known web console.
-    pub console_domain: Option<String>,
-    /// Resolved copy of `Profile::console_team_name` - see its doc comment.
-    /// Always `None` in env-only mode (no profile file to read it from), in
-    /// which case console-link resolution falls back to the automatic
-    /// `GET /identity/whoami`-based guess like any other unset override.
-    pub console_team_name: Option<String>,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -531,8 +475,6 @@ async fn resolve_single(
                 auth_kind: AuthKind::ApiKey,
                 default_tier: crate::Tier::Archive,
                 console_url: None,
-                console_domain: region.console_domain().map(str::to_string),
-                console_team_name: None,
             });
         }
     }
@@ -614,8 +556,6 @@ async fn resolve_single(
             .console_url
             .as_deref()
             .map(|s| s.trim_end_matches('/').to_string()),
-        console_domain: profile.region.console_domain().map(str::to_string),
-        console_team_name: profile.console_team_name.clone(),
     })
 }
 
@@ -810,8 +750,6 @@ default_profile = "my-profile"
             endpoint: "https://api.eu2.coralogix.com".to_string(),
             default_tier: crate::Tier::Archive,
             console_url: None,
-            console_domain: None,
-            console_team_name: None,
         };
         assert_eq!(cfg.profile_name, "prod");
     }
@@ -824,37 +762,6 @@ default_profile = "my-profile"
     #[test]
     fn region_api_endpoint_us1() {
         assert_eq!(Region::Us1.api_endpoint(), "https://api.us1.coralogix.com");
-    }
-
-    #[test]
-    fn region_console_domain_known_regions() {
-        assert_eq!(Region::Us1.console_domain(), Some("app.coralogix.us"));
-        assert_eq!(
-            Region::Us2.console_domain(),
-            Some("app.cx498.coralogix.com")
-        );
-        assert_eq!(Region::Us3.console_domain(), Some("app.us3.coralogix.com"));
-        assert_eq!(Region::Eu1.console_domain(), Some("app.coralogix.com"));
-        assert_eq!(Region::Eu2.console_domain(), Some("app.eu2.coralogix.com"));
-        assert_eq!(Region::Ap1.console_domain(), Some("app.coralogix.in"));
-        assert_eq!(Region::Ap2.console_domain(), Some("app.coralogixsg.com"));
-        assert_eq!(Region::Ap3.console_domain(), Some("app.ap3.coralogix.com"));
-    }
-
-    #[test]
-    fn region_console_domain_stg1_is_none() {
-        // stg1 is an internal/staging environment not listed in the
-        // documented endpoints table (see Region::console_domain doc
-        // comment). Deliberately None rather than guessed.
-        assert_eq!(Region::Stg1.console_domain(), None);
-    }
-
-    #[test]
-    fn region_console_domain_custom_is_none() {
-        assert_eq!(
-            Region::Custom("https://api.myenv.example.com".to_string()).console_domain(),
-            None
-        );
     }
 
     #[test]
@@ -899,7 +806,6 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
-            console_team_name: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -909,61 +815,6 @@ api_key = "mykey"
         // oauth_client_id / oauth_base_url are skip_serializing_if = None, so absent
         assert!(restored.oauth_client_id.is_none());
         assert!(restored.oauth_tokens.is_none());
-    }
-
-    /// `console_team_name` is unset by default and omitted from serialized
-    /// TOML in that case, so existing profiles on disk (which predate this
-    /// field) don't need migration and newly-written profiles that never set
-    /// it stay free of a redundant empty line.
-    #[test]
-    fn console_team_name_none_is_omitted_from_toml() {
-        let profile = Profile {
-            auth: AuthKind::ApiKey,
-            credential_storage: CredentialStorage::File,
-            api_key: Some("k".to_string()),
-            region: Region::Eu2,
-            label: None,
-            oauth_client_id: None,
-            oauth_base_url: None,
-            oauth_tokens: None,
-            default_output_format: None,
-            default_tier: None,
-            console_url: None,
-            console_team_name: None,
-        };
-        let toml = toml::to_string_pretty(&profile).unwrap();
-        assert!(
-            !toml.contains("console_team_name"),
-            "None should be omitted from serialized TOML, got: {toml}"
-        );
-
-        // A profile written before this field existed (or that just never
-        // set it) must still parse, defaulting to None.
-        let restored: Profile = toml::from_str(&toml).unwrap();
-        assert!(restored.console_team_name.is_none());
-    }
-
-    /// An explicit `console_team_name` round-trips through TOML.
-    #[test]
-    fn console_team_name_round_trips() {
-        let profile = Profile {
-            auth: AuthKind::ApiKey,
-            credential_storage: CredentialStorage::File,
-            api_key: Some("k".to_string()),
-            region: Region::Eu2,
-            label: None,
-            oauth_client_id: None,
-            oauth_base_url: None,
-            oauth_tokens: None,
-            default_output_format: None,
-            default_tier: None,
-            console_url: None,
-            console_team_name: Some("acme".to_string()),
-        };
-        let toml = toml::to_string_pretty(&profile).unwrap();
-        assert!(toml.contains(r#"console_team_name = "acme""#));
-        let restored: Profile = toml::from_str(&toml).unwrap();
-        assert_eq!(restored.console_team_name.as_deref(), Some("acme"));
     }
 
     /// OAuth profile with file-stored tokens round-trips through TOML.
@@ -986,7 +837,6 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
-            console_team_name: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -1013,7 +863,6 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
-            console_team_name: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -1104,7 +953,6 @@ api_key = "mykey"
                 default_output_format: None,
                 default_tier: None,
                 console_url: None,
-                console_team_name: None,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -1143,7 +991,6 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
-            console_team_name: None,
         };
         save_profile("default", &profile).unwrap();
 
@@ -1168,7 +1015,6 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
-            console_team_name: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1194,7 +1040,6 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
-            console_team_name: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1220,7 +1065,6 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
-            console_team_name: None,
         };
         save_profile(name, &profile).unwrap();
 

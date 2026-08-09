@@ -1,13 +1,13 @@
 //! Pure builders for "View in Coralogix" web console links.
 //!
 //! These functions take an already-resolved console base URL (scheme +
-//! team subdomain + console domain, e.g. `https://acme.app.eu2.coralogix.com`)
-//! and an entity ID, and return the full console URL for that entity.
+//! team subdomain + console domain) and an entity ID, and return the full
+//! console URL for that entity.
 //!
-//! No I/O happens here - resolving the base URL (from explicit `console_url`
-//! / `console_team_name` config plus region metadata) is handled by
-//! `ExecutionTarget::console_base` in `crate::execution`. Keeping these as
-//! pure string builders makes them trivial to unit test.
+//! No I/O happens here - resolving the base URL (from an explicit
+//! `console_url` override, or otherwise `GET /identity/whoami`) is handled
+//! by `ExecutionTarget::console_base` in `crate::execution`. Keeping these
+//! as pure string builders makes them trivial to unit test.
 //!
 //! ## Path routing
 //!
@@ -352,6 +352,11 @@ pub fn olly_url(base: &str) -> String {
     format!("{}/olly", trim_base(base))
 }
 
+/// Build the console URL for a specific Olly chat: `{base}/olly/chat/{chat_id}`.
+pub fn olly_chat_url(base: &str, chat_id: &str) -> String {
+    format!("{}/olly/chat/{}", trim_base(base), chat_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,40 +364,40 @@ mod tests {
     #[test]
     fn dashboard_url_joins_base_and_id() {
         assert_eq!(
-            dashboard_url("https://acme.app.eu2.coralogix.com", "dash-abc123"),
-            "https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            dashboard_url("https://c4c.app.eu2.coralogix.com", "dash-abc123"),
+            "https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
         );
     }
 
     #[test]
     fn dashboard_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            dashboard_url("https://acme.app.eu2.coralogix.com/", "dash-abc123"),
-            "https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            dashboard_url("https://c4c.app.eu2.coralogix.com/", "dash-abc123"),
+            "https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
         );
     }
 
     #[test]
     fn alert_url_joins_base_and_id() {
         assert_eq!(
-            alert_url("https://acme.app.eu2.coralogix.com", "alert-xyz789"),
-            "https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"
+            alert_url("https://c4c.app.eu2.coralogix.com", "alert-xyz789"),
+            "https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"
         );
     }
 
     #[test]
     fn alert_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            alert_url("https://acme.app.eu2.coralogix.com/", "alert-xyz789"),
-            "https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"
+            alert_url("https://c4c.app.eu2.coralogix.com/", "alert-xyz789"),
+            "https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"
         );
     }
 
     #[test]
     fn case_url_uses_query_param_shape() {
         assert_eq!(
-            case_url("https://acme.app.eu2.coralogix.com", "case-777"),
-            "https://acme.app.eu2.coralogix.com/cases?id=case-777"
+            case_url("https://c4c.app.eu2.coralogix.com", "case-777"),
+            "https://c4c.app.eu2.coralogix.com/cases?id=case-777"
         );
     }
 
@@ -401,214 +406,214 @@ mod tests {
         // Case readable IDs / raw IDs could contain characters that need
         // encoding in a query string (e.g. spaces, '&', '#').
         assert_eq!(
-            case_url("https://acme.app.eu2.coralogix.com", "case #1 & 2"),
-            "https://acme.app.eu2.coralogix.com/cases?id=case+%231+%26+2"
+            case_url("https://c4c.app.eu2.coralogix.com", "case #1 & 2"),
+            "https://c4c.app.eu2.coralogix.com/cases?id=case+%231+%26+2"
         );
     }
 
     #[test]
     fn case_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            case_url("https://acme.app.eu2.coralogix.com/", "case-777"),
-            "https://acme.app.eu2.coralogix.com/cases?id=case-777"
+            case_url("https://c4c.app.eu2.coralogix.com/", "case-777"),
+            "https://c4c.app.eu2.coralogix.com/cases?id=case-777"
         );
     }
 
     #[test]
     fn cases_url_is_the_bare_list_page() {
         assert_eq!(
-            cases_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/cases"
+            cases_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/cases"
         );
     }
 
     #[test]
     fn cases_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            cases_url("https://acme.app.eu2.coralogix.com/"),
-            "https://acme.app.eu2.coralogix.com/cases"
+            cases_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/cases"
         );
     }
 
     #[test]
     fn view_url_joins_base_and_id() {
         assert_eq!(
-            view_url("https://acme.app.eu2.coralogix.com", "view-123"),
-            "https://acme.app.eu2.coralogix.com/explore?viewId=view-123"
+            view_url("https://c4c.app.eu2.coralogix.com", "view-123"),
+            "https://c4c.app.eu2.coralogix.com/explore?viewId=view-123"
         );
     }
 
     #[test]
     fn view_url_percent_encodes_id() {
         assert_eq!(
-            view_url("https://acme.app.eu2.coralogix.com", "view #1"),
-            "https://acme.app.eu2.coralogix.com/explore?viewId=view+%231"
+            view_url("https://c4c.app.eu2.coralogix.com", "view #1"),
+            "https://c4c.app.eu2.coralogix.com/explore?viewId=view+%231"
         );
     }
 
     #[test]
     fn view_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            view_url("https://acme.app.eu2.coralogix.com/", "view-123"),
-            "https://acme.app.eu2.coralogix.com/explore?viewId=view-123"
+            view_url("https://c4c.app.eu2.coralogix.com/", "view-123"),
+            "https://c4c.app.eu2.coralogix.com/explore?viewId=view-123"
         );
     }
 
     #[test]
     fn no_double_slash_when_base_has_trailing_slash() {
-        let url = dashboard_url("https://acme.app.eu2.coralogix.com/", "abc");
+        let url = dashboard_url("https://c4c.app.eu2.coralogix.com/", "abc");
         assert!(!url.contains("//dashboards"));
     }
 
     #[test]
     fn e2m_url_joins_base_and_id() {
         assert_eq!(
-            e2m_url("https://acme.app.eu2.coralogix.com", "e2m-123"),
-            "https://acme.app.eu2.coralogix.com/tco/metrics/e2m-123"
+            e2m_url("https://c4c.app.eu2.coralogix.com", "e2m-123"),
+            "https://c4c.app.eu2.coralogix.com/tco/metrics/e2m-123"
         );
     }
 
     #[test]
     fn e2m_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            e2m_url("https://acme.app.eu2.coralogix.com/", "e2m-123"),
-            "https://acme.app.eu2.coralogix.com/tco/metrics/e2m-123"
+            e2m_url("https://c4c.app.eu2.coralogix.com/", "e2m-123"),
+            "https://c4c.app.eu2.coralogix.com/tco/metrics/e2m-123"
         );
     }
 
     #[test]
     fn slo_url_joins_base_and_id() {
         assert_eq!(
-            slo_url("https://acme.app.eu2.coralogix.com", "slo-abc"),
-            "https://acme.app.eu2.coralogix.com/slo/slo-abc/overview"
+            slo_url("https://c4c.app.eu2.coralogix.com", "slo-abc"),
+            "https://c4c.app.eu2.coralogix.com/slo/slo-abc/overview"
         );
     }
 
     #[test]
     fn slo_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            slo_url("https://acme.app.eu2.coralogix.com/", "slo-abc"),
-            "https://acme.app.eu2.coralogix.com/slo/slo-abc/overview"
+            slo_url("https://c4c.app.eu2.coralogix.com/", "slo-abc"),
+            "https://c4c.app.eu2.coralogix.com/slo/slo-abc/overview"
         );
     }
 
     #[test]
     fn parsing_rule_group_url_joins_base_and_id() {
         assert_eq!(
-            parsing_rule_group_url("https://acme.app.eu2.coralogix.com", "group-1"),
-            "https://acme.app.eu2.coralogix.com/rules/group/group-1"
+            parsing_rule_group_url("https://c4c.app.eu2.coralogix.com", "group-1"),
+            "https://c4c.app.eu2.coralogix.com/rules/group/group-1"
         );
     }
 
     #[test]
     fn parsing_rule_group_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            parsing_rule_group_url("https://acme.app.eu2.coralogix.com/", "group-1"),
-            "https://acme.app.eu2.coralogix.com/rules/group/group-1"
+            parsing_rule_group_url("https://c4c.app.eu2.coralogix.com/", "group-1"),
+            "https://c4c.app.eu2.coralogix.com/rules/group/group-1"
         );
     }
 
     #[test]
     fn suppression_rule_url_uses_query_param_shape() {
         assert_eq!(
-            suppression_rule_url("https://acme.app.eu2.coralogix.com", "rule-1"),
-            "https://acme.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
+            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule-1"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
         );
     }
 
     #[test]
     fn suppression_rule_url_percent_encodes_id() {
         assert_eq!(
-            suppression_rule_url("https://acme.app.eu2.coralogix.com", "rule #1"),
-            "https://acme.app.eu2.coralogix.com/suppression-rules?edit=rule+%231"
+            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule #1"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule+%231"
         );
     }
 
     #[test]
     fn suppression_rule_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            suppression_rule_url("https://acme.app.eu2.coralogix.com/", "rule-1"),
-            "https://acme.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
+            suppression_rule_url("https://c4c.app.eu2.coralogix.com/", "rule-1"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
         );
     }
 
     #[test]
     fn notification_connector_url_uses_query_param_shape() {
         assert_eq!(
-            notification_connector_url("https://acme.app.eu2.coralogix.com", "conn-1"),
-            "https://acme.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
+            notification_connector_url("https://c4c.app.eu2.coralogix.com", "conn-1"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
         );
     }
 
     #[test]
     fn notification_connector_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            notification_connector_url("https://acme.app.eu2.coralogix.com/", "conn-1"),
-            "https://acme.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
+            notification_connector_url("https://c4c.app.eu2.coralogix.com/", "conn-1"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
         );
     }
 
     #[test]
     fn notification_router_url_uses_query_param_shape() {
         assert_eq!(
-            notification_router_url("https://acme.app.eu2.coralogix.com", "router-1"),
-            "https://acme.app.eu2.coralogix.com/notification-center/routers?id=router-1"
+            notification_router_url("https://c4c.app.eu2.coralogix.com", "router-1"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/routers?id=router-1"
         );
     }
 
     #[test]
     fn notification_router_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            notification_router_url("https://acme.app.eu2.coralogix.com/", "router-1"),
-            "https://acme.app.eu2.coralogix.com/notification-center/routers?id=router-1"
+            notification_router_url("https://c4c.app.eu2.coralogix.com/", "router-1"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/routers?id=router-1"
         );
     }
 
     #[test]
     fn iam_role_url_uses_query_param_shape() {
         assert_eq!(
-            iam_role_url("https://acme.app.eu2.coralogix.com", "42"),
-            "https://acme.app.eu2.coralogix.com/settings/roles?selectedRoleId=42"
+            iam_role_url("https://c4c.app.eu2.coralogix.com", "42"),
+            "https://c4c.app.eu2.coralogix.com/settings/roles?selectedRoleId=42"
         );
     }
 
     #[test]
     fn iam_role_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            iam_role_url("https://acme.app.eu2.coralogix.com/", "42"),
-            "https://acme.app.eu2.coralogix.com/settings/roles?selectedRoleId=42"
+            iam_role_url("https://c4c.app.eu2.coralogix.com/", "42"),
+            "https://c4c.app.eu2.coralogix.com/settings/roles?selectedRoleId=42"
         );
     }
 
     #[test]
     fn iam_scope_url_uses_query_param_shape() {
         assert_eq!(
-            iam_scope_url("https://acme.app.eu2.coralogix.com", "scope-1"),
-            "https://acme.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-1"
+            iam_scope_url("https://c4c.app.eu2.coralogix.com", "scope-1"),
+            "https://c4c.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-1"
         );
     }
 
     #[test]
     fn iam_scope_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            iam_scope_url("https://acme.app.eu2.coralogix.com/", "scope-1"),
-            "https://acme.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-1"
+            iam_scope_url("https://c4c.app.eu2.coralogix.com/", "scope-1"),
+            "https://c4c.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-1"
         );
     }
 
     #[test]
     fn iam_group_url_uses_query_param_shape() {
         assert_eq!(
-            iam_group_url("https://acme.app.eu2.coralogix.com", "7"),
-            "https://acme.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=7"
+            iam_group_url("https://c4c.app.eu2.coralogix.com", "7"),
+            "https://c4c.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=7"
         );
     }
 
     #[test]
     fn iam_group_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            iam_group_url("https://acme.app.eu2.coralogix.com/", "7"),
-            "https://acme.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=7"
+            iam_group_url("https://c4c.app.eu2.coralogix.com/", "7"),
+            "https://c4c.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=7"
         );
     }
 
@@ -633,124 +638,135 @@ mod tests {
     #[test]
     fn usage_url_is_static() {
         assert_eq!(
-            usage_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/settings/datausage"
+            usage_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/datausage"
         );
     }
 
     #[test]
     fn usage_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            usage_url("https://acme.app.eu2.coralogix.com/"),
-            "https://acme.app.eu2.coralogix.com/settings/datausage"
+            usage_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/settings/datausage"
         );
     }
 
     #[test]
     fn tco_url_is_static() {
         assert_eq!(
-            tco_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/tco-policies"
+            tco_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/tco-policies"
         );
     }
 
     #[test]
     fn archive_url_is_static() {
         assert_eq!(
-            archive_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/physical-locations"
+            archive_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/physical-locations"
         );
     }
 
     #[test]
     fn recording_rules_url_is_static() {
         assert_eq!(
-            recording_rules_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/recording-rules"
+            recording_rules_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/recording-rules"
         );
     }
 
     #[test]
     fn enrichments_url_is_static() {
         assert_eq!(
-            enrichments_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/enrichments"
+            enrichments_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/enrichments"
         );
     }
 
     #[test]
     fn integrations_url_is_static() {
         assert_eq!(
-            integrations_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/extensions/integrations"
+            integrations_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/extensions/integrations"
         );
     }
 
     #[test]
     fn webhooks_url_is_static() {
         assert_eq!(
-            webhooks_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/extensions/outbound-webhooks"
+            webhooks_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
         );
     }
 
     #[test]
     fn iam_api_keys_url_is_static() {
         assert_eq!(
-            iam_api_keys_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/settings/api-keys"
+            iam_api_keys_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/api-keys"
         );
     }
 
     #[test]
     fn iam_users_url_is_static() {
         assert_eq!(
-            iam_users_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/settings/team/members"
+            iam_users_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/team/members"
         );
     }
 
     #[test]
     fn iam_ip_access_url_is_static() {
         assert_eq!(
-            iam_ip_access_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/settings/login-access-policies"
+            iam_ip_access_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/login-access-policies"
         );
     }
 
     #[test]
     fn ai_center_applications_url_is_static() {
         assert_eq!(
-            ai_center_applications_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/ai-center/overview/application-catalog"
+            ai_center_applications_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/ai-center/overview/application-catalog"
         );
     }
 
     #[test]
     fn ai_center_evaluations_url_is_static() {
         assert_eq!(
-            ai_center_evaluations_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
+            ai_center_evaluations_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
         );
     }
 
     #[test]
     fn olly_url_is_static() {
         assert_eq!(
-            olly_url("https://acme.app.eu2.coralogix.com"),
-            "https://acme.app.eu2.coralogix.com/olly"
+            olly_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/olly"
+        );
+    }
+
+    #[test]
+    fn olly_chat_url_includes_chat_id() {
+        assert_eq!(
+            olly_chat_url(
+                "https://c4c.app.eu2.coralogix.com",
+                "1a58088c-aff2-46aa-b5b5-f6e109d7bc3f"
+            ),
+            "https://c4c.app.eu2.coralogix.com/olly/chat/1a58088c-aff2-46aa-b5b5-f6e109d7bc3f"
         );
     }
 
     #[test]
     fn static_urls_trim_trailing_slash_on_base() {
         assert_eq!(
-            tco_url("https://acme.app.eu2.coralogix.com/"),
-            "https://acme.app.eu2.coralogix.com/tco-policies"
+            tco_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/tco-policies"
         );
         assert_eq!(
-            olly_url("https://acme.app.eu2.coralogix.com/"),
-            "https://acme.app.eu2.coralogix.com/olly"
+            olly_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/olly"
         );
     }
 }

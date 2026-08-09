@@ -62,12 +62,12 @@ Don't stop at "dashboard created". The very last action is to give the user a cl
 
 Don't hand-build the URL. `cx dashboards create` / `cx dashboards replace` already print a `View in Coralogix: <url>` line to stderr on success once it can resolve a console link for the active profile - capture that line and reuse the URL verbatim.
 
-If no `View in Coralogix:` line was printed (the profile's region has no known console domain and no `console_url` override is configured - see `docs/configuration.md` § "Console links"), **omit the link entirely** — do not invent a URL. Use the second (no-link) template in `SKILL.md` § "Output format for the user", which drops the markdown link from the `Deployed` line *and* drops the standalone `Open it:` line so the user is never shown a broken URL.
+If no `View in Coralogix:` line was printed (no console link could be resolved for the profile and no `console_url` override is configured - see `docs/configuration.md` § "Console links"), **omit the link entirely** — do not invent a URL. Use the second (no-link) template in `SKILL.md` § "Output format for the user", which drops the markdown link from the `Deployed` line *and* drops the standalone `Open it:` line so the user is never shown a broken URL.
 
-Render the link as a markdown link using the dashboard **name** as the link text, e.g.:
+Render the link as a markdown link using the dashboard **name** as the link text:
 
 ```
-Dashboard: **[Order Service - Health](https://acme.app.eu2.coralogix.com/#/dashboards/abc123def456)**
+Dashboard: **[<Name>](<url from the View in Coralogix line>)**
 ```
 
 Then emit the summary defined in the main `SKILL.md` § "Output format for the user".

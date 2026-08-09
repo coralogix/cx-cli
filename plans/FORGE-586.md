@@ -88,8 +88,8 @@ Resolution of the base, cached per target:
 - **Unit** (`src/config.rs`): `console_domain()` per region + `Custom` → `None`.
 - **Unit** (`src/console_url.rs`): builders — no double slash, trailing-slash trim, id percent-encoding, `/cases?id=` shape.
 - **Unit** (`src/identity.rs`): `Whoami` deserializes with and without `team_url`; subdomain helper prefers `team_url`, falls back to `team_name`, rejects invalid labels.
-- **Integration, binary-level** — new `tests/console_urls/main.rs` (auto-discovered; follow the `assert_cmd` + `wiremock` + `CX_HOME` pattern in `tests/profile_override/main.rs`). Profile: `region = "<mock uri>"` (⇒ `Custom`) **plus** `console_url = "https://acme.app.eu2.coralogix.com"` — this is exactly why the override exists and is the only way to exercise link printing against a mock, since `Profile` has no endpoint override. Cases:
-  1. `dashboards create` → stderr contains `https://acme.app.eu2.coralogix.com/dashboards/dash-abc123`; with `-o json`, stdout contains no `url`/link key.
+- **Integration, binary-level** — new `tests/console_urls/main.rs` (auto-discovered; follow the `assert_cmd` + `wiremock` + `CX_HOME` pattern in `tests/profile_override/main.rs`). Profile: `region = "<mock uri>"` (⇒ `Custom`) **plus** `console_url = "https://c4c.app.eu2.coralogix.com"` — this is exactly why the override exists and is the only way to exercise link printing against a mock, since `Profile` has no endpoint override. Cases:
+  1. `dashboards create` → stderr contains `https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123`; with `-o json`, stdout contains no `url`/link key.
   2. `dashboards replace`, `alerts create`, one `cases` lifecycle action (e.g. `resolve`) → correct link each.
   3. `console_url` set ⇒ **no** `GET /identity/whoami` request (`Mock…expect(0)`).
   4. No `console_url` and a `Custom` region ⇒ command succeeds, stderr has no `View in Coralogix` line.
@@ -112,7 +112,7 @@ Resolution of the base, cached per target:
 1. `cargo fmt --check && cargo clippy --locked -- -D warnings && cargo test --locked` (in an env with `libdbus-1-dev` + `pkg-config`).
 2. Manual before/after with the mock recipe in `.saga/artifacts/cli-before-state-and-blocker.txt`:
    - before: `Created dashboard 'Demo Dashboard' (ID: dash-abc123) in profile 'mock'.`
-   - after: same line **plus** `View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123`
+   - after: same line **plus** `View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123`
    - `-o json` stdout diff (stdout only, stderr discarded) must be empty before vs after.
 3. Against a real team (region `eu2`, no `console_url`): create a dashboard, an alert, and mutate a case; open each printed link and confirm it lands on the entity. Capture the terminal output as the after-state artifact.
 4. PR description must list what was skipped and why: `Region::Custom` (no derivable host), any unverified region domain (ap1/stg1), and cases if the `/cases?id=` link can't be confirmed.

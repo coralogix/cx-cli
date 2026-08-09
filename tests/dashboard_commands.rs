@@ -286,9 +286,12 @@ async fn dashboard_create_from_stdin_succeeds() {
         .received_requests()
         .await
         .expect("server should record requests");
-    assert_eq!(reqs.len(), 1);
+    let create_req = reqs
+        .iter()
+        .find(|r| r.url.path() == "/mgmt/openapi/5/dashboards/dashboards/v1")
+        .expect("dashboard create request should have been sent");
     let body: serde_json::Value =
-        serde_json::from_slice(&reqs[0].body).expect("request body must be valid JSON");
+        serde_json::from_slice(&create_req.body).expect("request body must be valid JSON");
     assert!(
         body.get("requestId").is_some(),
         "requestId must be injected by run_create"

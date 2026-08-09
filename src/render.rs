@@ -277,11 +277,11 @@ mod tests {
     #[test]
     fn tag_console_url_nests_inside_single_object_wrapper() {
         let mut val = json!({"alertDef": {"id": "a1", "name": "Demo"}});
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/alerts/a1");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/alerts/a1");
         assert_eq!(val["consoleUrl"], Value::Null, "must not tag the root");
         assert_eq!(
             val["alertDef"]["consoleUrl"],
-            "https://acme.app.eu2.coralogix.com/#/alerts/a1"
+            "https://c4c.app.eu2.coralogix.com/#/alerts/a1"
         );
     }
 
@@ -291,11 +291,11 @@ mod tests {
         // first. The link must still nest inside the wrapper so it lands at the
         // same path (`.alertDef.consoleUrl`) as single-profile output.
         let mut val = json!({"alertDef": {"id": "a1", "name": "Demo"}, "_profile": "prod"});
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/alerts/a1");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/alerts/a1");
         assert_eq!(val["consoleUrl"], Value::Null, "must not tag the root");
         assert_eq!(
             val["alertDef"]["consoleUrl"],
-            "https://acme.app.eu2.coralogix.com/#/alerts/a1"
+            "https://c4c.app.eu2.coralogix.com/#/alerts/a1"
         );
         assert_eq!(val["_profile"], "prod", "profile tag must be preserved");
     }
@@ -305,15 +305,15 @@ mod tests {
         // Already-flat entity + `_profile`: still no single object wrapper to
         // descend into, so the link stays at the root.
         let mut val = json!({"id": "conn-1", "name": "Demo", "type": "SLACK", "_profile": "prod"});
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
-        assert_eq!(val["consoleUrl"], "https://acme.app.eu2.coralogix.com/#/x");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
+        assert_eq!(val["consoleUrl"], "https://c4c.app.eu2.coralogix.com/#/x");
     }
 
     #[test]
     fn tag_console_url_stays_at_root_for_already_flat_multi_field_object() {
         let mut val = json!({"id": "conn-1", "name": "Demo Connector", "type": "SLACK"});
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
-        assert_eq!(val["consoleUrl"], "https://acme.app.eu2.coralogix.com/#/x");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
+        assert_eq!(val["consoleUrl"], "https://c4c.app.eu2.coralogix.com/#/x");
     }
 
     #[test]
@@ -321,31 +321,28 @@ mod tests {
         let mut val = json!({"dashboardId": "dash-1"});
         tag_console_url(
             &mut val,
-            "https://acme.app.eu2.coralogix.com/#/dashboards/dash-1",
+            "https://c4c.app.eu2.coralogix.com/#/dashboards/dash-1",
         );
         assert_eq!(
             val["consoleUrl"],
-            "https://acme.app.eu2.coralogix.com/#/dashboards/dash-1"
+            "https://c4c.app.eu2.coralogix.com/#/dashboards/dash-1"
         );
     }
 
     #[test]
     fn tag_console_url_stays_at_root_for_single_key_array_value() {
         let mut val = json!({"policies": []});
-        tag_console_url(
-            &mut val,
-            "https://acme.app.eu2.coralogix.com/#/tco-policies",
-        );
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/tco-policies");
         assert_eq!(
             val["consoleUrl"],
-            "https://acme.app.eu2.coralogix.com/#/tco-policies"
+            "https://c4c.app.eu2.coralogix.com/#/tco-policies"
         );
     }
 
     #[test]
     fn tag_console_url_no_op_on_non_object_value() {
         let mut val = json!([1, 2, 3]);
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
         assert_eq!(val, json!([1, 2, 3]));
     }
 
@@ -355,21 +352,21 @@ mod tests {
         // Tagging it would make stdout's only content a duplicate of the
         // link `print_console_link` already printed to stderr.
         let mut val = json!({});
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
         assert_eq!(val, json!({}));
     }
 
     #[test]
     fn tag_console_url_no_op_on_profile_tag_only_object() {
         let mut val = json!({"_profile": "prod"});
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
         assert_eq!(val, json!({"_profile": "prod"}));
     }
 
     #[test]
     fn tag_console_url_no_op_on_empty_nested_wrapper() {
         let mut val = json!({"alertDef": {}});
-        tag_console_url(&mut val, "https://acme.app.eu2.coralogix.com/#/x");
+        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
         assert_eq!(val, json!({"alertDef": {}}));
     }
 

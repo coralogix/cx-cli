@@ -94,7 +94,7 @@ async fn dashboard_create_prints_console_link_when_console_url_configured() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -132,7 +132,7 @@ async fn dashboard_create_prints_console_link_when_console_url_configured() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -154,7 +154,7 @@ async fn dashboard_replace_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -184,7 +184,7 @@ async fn dashboard_replace_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -207,7 +207,7 @@ async fn dashboard_replace_falls_back_to_request_id_when_response_has_no_id() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -239,7 +239,7 @@ async fn dashboard_replace_falls_back_to_request_id_when_response_has_no_id() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
         ),
         "stderr did not contain the console link (fallback to request id failed): {stderr}"
     );
@@ -284,7 +284,7 @@ async fn alert_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -313,8 +313,7 @@ async fn alert_create_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -337,7 +336,7 @@ async fn view_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -363,7 +362,7 @@ async fn view_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/explore?viewId=view-123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/explore?viewId=view-123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -387,7 +386,7 @@ async fn view_create_prints_console_link_with_bare_response() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -415,7 +414,7 @@ async fn view_create_prints_console_link_with_bare_response() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/explore?viewId=view-456"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/explore?viewId=view-456"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -429,7 +428,7 @@ async fn view_create_prints_console_link_with_bare_response() {
     );
     assert_eq!(
         stdout["consoleUrl"],
-        "https://acme.app.eu2.coralogix.com/explore?viewId=view-456"
+        "https://c4c.app.eu2.coralogix.com/explore?viewId=view-456"
     );
 }
 
@@ -452,7 +451,7 @@ async fn view_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -479,7 +478,7 @@ async fn view_update_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/explore?viewId=view-123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/explore?viewId=view-123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -509,7 +508,7 @@ async fn case_resolve_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -531,7 +530,7 @@ async fn case_resolve_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/cases?id=case-777"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/cases?id=case-777"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -584,7 +583,7 @@ async fn case_notifications_drops_url_column_but_keeps_link_and_json() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -623,7 +622,7 @@ async fn case_notifications_drops_url_column_but_keeps_link_and_json() {
         "expected exactly one console link across two cases: {text_stderr}"
     );
     assert!(
-        text_stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/cases"),
+        text_stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/cases"),
         "stderr did not contain the Cases page link: {text_stderr}"
     );
     assert!(
@@ -653,11 +652,22 @@ async fn case_notifications_drops_url_column_but_keeps_link_and_json() {
     );
 }
 
-// ── No console domain / no override -> no link, command still succeeds ──────
+// ── No console_url override -> resolved via /identity/whoami ────────────────
 
+/// With no explicit `console_url`, the console link is resolved by calling
+/// `/identity/whoami` and using its `team_url` verbatim - no region/domain
+/// table or team-name guessing involved.
 #[tokio::test]
-async fn no_console_link_when_region_has_no_known_console_domain() {
+async fn dashboard_create_prints_console_link_from_whoami_team_url() {
     let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 1,
+            "team_url": "https://c4c.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
         .respond_with(
@@ -667,8 +677,61 @@ async fn no_console_link_when_region_has_no_known_console_domain() {
         .await;
 
     let home = temp_home();
-    // No console_url override; `region` is a bare custom URL (Region::Custom),
-    // which has no known console domain - console_base must resolve to None.
+    write_profile(&home, "mock", &server.uri(), None);
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("dash_whoami_link");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+/// When `/identity/whoami` returns no usable `team_url` (and no
+/// `console_url` override is set), `cx` fails quietly: no link, no
+/// explanatory hint, command still succeeds.
+#[tokio::test]
+async fn no_console_link_when_whoami_has_no_team_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"team_id": 1})))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
     write_profile(&home, "mock", &server.uri(), None);
     write_config(&home, "mock");
 
@@ -696,99 +759,13 @@ async fn no_console_link_when_region_has_no_known_console_domain() {
     assert!(output.status.success(), "{:?}", output);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // A profile with no resolvable console link fails quietly: no
-    // "View in Coralogix:" link line, and no explanatory hint either - the
-    // command just succeeds as usual.
     assert!(
         !stderr.contains("View in Coralogix"),
-        "unexpected console link/hint with no known console domain: {stderr}"
+        "unexpected console link/hint with no usable team_url: {stderr}"
     );
     assert!(
         stderr.contains("Created dashboard 'Demo Dashboard' (ID: dash-abc123)"),
         "expected the usual success line, stderr: {stderr}"
-    );
-}
-
-/// An explicit `console_team_name` is parsed and threaded through, but a
-/// `Region::Custom` profile (a bare mock URL, same as the test above) still
-/// has no *known console domain* to combine it with - so setting the field
-/// alone must not produce a link here. This guards against `console_base`
-/// resolution accidentally short-circuiting the "no known domain" branch.
-/// The full "known domain + explicit console_team_name" combination is
-/// covered at the unit level in
-/// `execution::tests::console_base_combines_domain_and_explicit_team_name`,
-/// since the region enum used by these binary-level tests has no way to
-/// point a *known* region's API base at a wiremock server (see
-/// `src/config.rs`'s `Region::api_endpoint`/`console_domain`).
-///
-/// There is no `/identity/whoami` mock in this test at all: with no known
-/// console domain, `console_base` returns `None` before ever considering
-/// `console_team_name` or falling back to `/identity/whoami`, so no API call
-/// is attempted here regardless of the field being set. (When a console
-/// domain *is* known, an explicit `console_team_name` still skips
-/// `/identity/whoami` - see
-/// `execution::tests::console_base_explicit_team_name_takes_precedence_over_whoami`
-/// - but by default, with neither `console_url` nor `console_team_name` set,
-/// resolving a console link does make that API call now; see
-/// `execution::tests::console_base_combines_domain_and_team_subdomain_from_whoami`.)
-#[tokio::test]
-async fn console_team_name_does_not_produce_link_without_known_console_domain() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
-        )
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    let profiles_dir = home.join(".cx").join("profiles");
-    fs::create_dir_all(&profiles_dir).unwrap();
-    fs::write(
-        profiles_dir.join("mock.toml"),
-        format!(
-            r#"auth = "api_key"
-credential_storage = "file"
-api_key = "test-key"
-region = "{}"
-console_team_name = "acme"
-"#,
-            server.uri()
-        ),
-    )
-    .unwrap();
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("dash_team_name_no_domain");
-    fs::write(
-        &file_path,
-        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
-    )
-    .unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "dashboards",
-            "create",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // No resolvable console link means we fail quietly: neither a link line
-    // nor any explanatory hint about `console_url`/`console_team_name`.
-    assert!(
-        !stderr.contains("View in Coralogix"),
-        "unexpected console link/hint with no known console domain: {stderr}"
     );
 }
 
@@ -817,7 +794,7 @@ async fn json_output_includes_console_url_field() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -855,7 +832,7 @@ async fn json_output_includes_console_url_field() {
         parsed,
         json!({
             "dashboardId": "dash-abc123",
-            "consoleUrl": "https://acme.app.eu2.coralogix.com/dashboards/dash-abc123",
+            "consoleUrl": "https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123",
         })
     );
     assert!(!stdout.contains("View in Coralogix"));
@@ -863,7 +840,7 @@ async fn json_output_includes_console_url_field() {
     // The human-readable line still goes to stderr too, with the same URL.
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr
-        .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"));
+        .contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"));
 }
 
 /// Regression test for the single- vs. multi-profile path invariant: on a
@@ -889,13 +866,13 @@ async fn multi_profile_get_nests_console_link_inside_wrapper() {
         &home,
         "prod",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_profile(
         &home,
         "staging",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "prod");
 
@@ -923,7 +900,7 @@ async fn multi_profile_get_nests_console_link_inside_wrapper() {
     assert_eq!(results.len(), 2, "expected one result per profile");
     for result in results {
         assert_eq!(
-            result["alertDef"]["consoleUrl"], "https://acme.app.eu2.coralogix.com/alerts/alert-1",
+            result["alertDef"]["consoleUrl"], "https://c4c.app.eu2.coralogix.com/alerts/alert-1",
             "link must nest inside the wrapper, same path as single-profile: {result}"
         );
         assert_eq!(
@@ -956,7 +933,7 @@ async fn e2m_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -981,8 +958,7 @@ async fn e2m_create_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/tco/metrics/e2m-new"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco/metrics/e2m-new"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1003,7 +979,7 @@ async fn e2m_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1028,7 +1004,7 @@ async fn e2m_update_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/tco/metrics/e2m-1"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco/metrics/e2m-1"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1051,7 +1027,7 @@ async fn slo_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1077,7 +1053,7 @@ async fn slo_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr
-            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/slo/slo-new/overview"),
+            .contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/slo/slo-new/overview"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1098,7 +1074,7 @@ async fn slo_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1123,7 +1099,7 @@ async fn slo_update_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/slo/slo-1/overview"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/slo/slo-1/overview"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1146,7 +1122,7 @@ async fn parsing_rule_group_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1171,7 +1147,7 @@ async fn parsing_rule_group_create_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/rules/group/rg-new"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/rules/group/rg-new"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1192,7 +1168,7 @@ async fn parsing_rule_group_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1218,7 +1194,7 @@ async fn parsing_rule_group_update_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/rules/group/rg-1"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/rules/group/rg-1"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1241,7 +1217,7 @@ async fn suppression_rule_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1268,7 +1244,7 @@ async fn suppression_rule_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/suppression-rules?edit=rule-new"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-new"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1290,7 +1266,7 @@ async fn suppression_rule_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1317,7 +1293,7 @@ async fn suppression_rule_update_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1343,7 +1319,7 @@ async fn connector_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1370,7 +1346,7 @@ async fn connector_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/notification-center/connectors?id=conn-new"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/connectors?id=conn-new"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1394,7 +1370,7 @@ async fn connector_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1425,7 +1401,7 @@ async fn connector_update_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1451,7 +1427,7 @@ async fn router_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1478,7 +1454,7 @@ async fn router_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/notification-center/routers?id=router-new"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/routers?id=router-new"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1502,7 +1478,7 @@ async fn router_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1533,7 +1509,7 @@ async fn router_update_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/notification-center/routers?id=router-1"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/routers?id=router-1"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1555,7 +1531,7 @@ async fn iam_role_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1582,7 +1558,7 @@ async fn iam_role_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/roles?selectedRoleId=role-new"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/roles?selectedRoleId=role-new"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1602,7 +1578,7 @@ async fn iam_role_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1630,7 +1606,7 @@ async fn iam_role_update_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/roles?selectedRoleId=role-1"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/roles?selectedRoleId=role-1"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1654,7 +1630,7 @@ async fn iam_scope_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1681,7 +1657,7 @@ async fn iam_scope_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-new"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-new"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1703,7 +1679,7 @@ async fn iam_scope_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1734,7 +1710,7 @@ async fn iam_scope_update_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-1"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/scopes?selectedScopeId=scope-1"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1758,7 +1734,7 @@ async fn iam_group_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1785,7 +1761,7 @@ async fn iam_group_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=group-new"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=group-new"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1807,7 +1783,7 @@ async fn iam_group_update_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1835,7 +1811,7 @@ async fn iam_group_update_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=group-1"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=group-1"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -1863,7 +1839,7 @@ async fn usage_summary_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1875,7 +1851,7 @@ async fn usage_summary_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/settings/datausage"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/datausage"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1896,7 +1872,7 @@ async fn tco_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1920,7 +1896,7 @@ async fn tco_create_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/tco-policies"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco-policies"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1939,7 +1915,7 @@ async fn archive_metrics_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -1964,7 +1940,7 @@ async fn archive_metrics_create_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/physical-locations"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/physical-locations"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -1985,7 +1961,7 @@ async fn recording_rules_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2009,7 +1985,7 @@ async fn recording_rules_create_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/recording-rules"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/recording-rules"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2028,7 +2004,7 @@ async fn enrichments_add_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2056,7 +2032,7 @@ async fn enrichments_add_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/enrichments"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/enrichments"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2079,7 +2055,7 @@ async fn enrichments_custom_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2117,7 +2093,7 @@ async fn enrichments_custom_create_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/enrichments"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/enrichments"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2138,7 +2114,7 @@ async fn integrations_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2163,7 +2139,7 @@ async fn integrations_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/extensions/integrations"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/extensions/integrations"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2185,7 +2161,7 @@ async fn webhooks_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2210,7 +2186,7 @@ async fn webhooks_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/extensions/outbound-webhooks"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2233,7 +2209,7 @@ async fn webhooks_create_prints_console_link_with_bare_response() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2261,7 +2237,7 @@ async fn webhooks_create_prints_console_link_with_bare_response() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/extensions/outbound-webhooks"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2274,7 +2250,7 @@ async fn webhooks_create_prints_console_link_with_bare_response() {
     );
     assert_eq!(
         stdout["consoleUrl"],
-        "https://acme.app.eu2.coralogix.com/extensions/outbound-webhooks"
+        "https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
     );
 }
 
@@ -2294,7 +2270,7 @@ async fn iam_api_keys_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2319,7 +2295,7 @@ async fn iam_api_keys_create_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/settings/api-keys"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2340,7 +2316,7 @@ async fn iam_ip_access_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2366,7 +2342,7 @@ async fn iam_ip_access_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/login-access-policies"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/login-access-policies"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2391,14 +2367,14 @@ async fn iam_users_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
     let file_path = temp_json_path("iam_users_create");
     fs::write(
         &file_path,
-        r#"{"users": [{"userName": "new.user@acme.com"}]}"#,
+        r#"{"users": [{"userName": "new.user@c4c.com"}]}"#,
     )
     .unwrap();
 
@@ -2431,9 +2407,8 @@ async fn iam_users_create_prints_console_link() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/team/members"
-        ),
+        stderr
+            .contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/team/members"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2454,7 +2429,7 @@ async fn ai_center_applications_get_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2474,7 +2449,7 @@ async fn ai_center_applications_get_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/ai-center/overview/application-catalog"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/overview/application-catalog"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2496,7 +2471,7 @@ async fn ai_center_evaluations_create_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2522,7 +2497,7 @@ async fn ai_center_evaluations_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2553,7 +2528,7 @@ async fn olly_ask_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2573,7 +2548,7 @@ async fn olly_ask_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/olly"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/olly"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2603,7 +2578,7 @@ async fn tco_list_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2615,7 +2590,7 @@ async fn tco_list_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/tco-policies"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco-policies"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2639,7 +2614,7 @@ async fn tco_list_empty_prints_no_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2670,7 +2645,7 @@ async fn archive_metrics_get_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2682,7 +2657,7 @@ async fn archive_metrics_get_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/physical-locations"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/physical-locations"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2701,7 +2676,7 @@ async fn ip_access_get_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2714,7 +2689,7 @@ async fn ip_access_get_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/settings/login-access-policies"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/login-access-policies"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2736,7 +2711,7 @@ async fn ai_center_evaluations_list_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2749,7 +2724,7 @@ async fn ai_center_evaluations_list_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2775,7 +2750,7 @@ async fn ai_center_evaluations_list_empty_prints_no_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2816,7 +2791,7 @@ async fn alerts_list_tags_every_row_with_its_own_console_url() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2832,7 +2807,7 @@ async fn alerts_list_tags_every_row_with_its_own_console_url() {
     for (i, id) in ["alert-1", "alert-2", "alert-3"].iter().enumerate() {
         assert_eq!(
             items[i]["consoleUrl"],
-            format!("https://acme.app.eu2.coralogix.com/alerts/{id}"),
+            format!("https://c4c.app.eu2.coralogix.com/alerts/{id}"),
             "row {i} did not carry its own alert's consoleUrl: {items:#?}"
         );
     }
@@ -2852,7 +2827,7 @@ async fn alerts_list_tags_every_row_with_its_own_console_url() {
     );
     let stderr = String::from_utf8_lossy(&text_output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/alerts"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts"),
         "stderr did not contain the alerts list page link: {stderr}"
     );
 }
@@ -2878,7 +2853,7 @@ async fn dashboard_get_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2891,7 +2866,7 @@ async fn dashboard_get_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2911,7 +2886,7 @@ async fn dashboard_check_by_id_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2924,7 +2899,7 @@ async fn dashboard_check_by_id_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2953,7 +2928,7 @@ async fn dashboard_check_by_id_json_output_includes_console_url_on_first_issue_o
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -2982,7 +2957,7 @@ async fn dashboard_check_by_id_json_output_includes_console_url_on_first_issue_o
     // the identical URL once per issue.
     assert_eq!(
         rows[0].get("consoleUrl").and_then(|v| v.as_str()),
-        Some("https://acme.app.eu2.coralogix.com/dashboards/dash-abc123"),
+        Some("https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"),
         "expected consoleUrl on the first issue row: {}",
         rows[0]
     );
@@ -3008,7 +2983,7 @@ async fn dashboard_check_from_file_prints_no_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -3056,7 +3031,7 @@ async fn alert_get_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -3068,8 +3043,7 @@ async fn alert_get_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -3094,7 +3068,7 @@ async fn alert_get_json_output_includes_console_url() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -3125,7 +3099,7 @@ async fn alert_get_json_output_includes_console_url() {
             .get("alertDef")
             .and_then(|v| v.get("consoleUrl"))
             .and_then(|v| v.as_str()),
-        Some("https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"),
+        Some("https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
         "expected consoleUrl field nested inside alertDef: {parsed}"
     );
 }
@@ -3154,7 +3128,7 @@ async fn alert_enable_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -3173,8 +3147,7 @@ async fn alert_enable_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -3203,7 +3176,7 @@ async fn alert_disable_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -3222,8 +3195,7 @@ async fn alert_disable_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr
-            .contains("View in Coralogix: https://acme.app.eu2.coralogix.com/alerts/alert-xyz789"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -3250,7 +3222,7 @@ async fn case_get_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -3262,7 +3234,7 @@ async fn case_get_prints_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("View in Coralogix: https://acme.app.eu2.coralogix.com/cases?id=case-777"),
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/cases?id=case-777"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -3287,7 +3259,7 @@ async fn connector_get_prints_console_link() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://acme.app.eu2.coralogix.com"),
+        Some("https://c4c.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
@@ -3307,7 +3279,7 @@ async fn connector_get_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://acme.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
         ),
         "stderr did not contain the console link: {stderr}"
     );

@@ -114,8 +114,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
 | `label` | No | Free-form label, for example `"production"` |
-| `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links (e.g. `https://acme.app.eu2.coralogix.com`). If unset, `cx` derives it from the region's console domain plus `console_team_name`, or - by default - a team subdomain resolved automatically via `GET /identity/whoami` - see [Console links](#console-links). |
-| `console_team_name` | No | Literal team subdomain label (e.g. `"acme"`), combined with the region's known console domain to build console links when `console_url` is not set. Optional: overrides `cx`'s default automatic `/identity/whoami`-based guess - set this when that guess doesn't match your team's real subdomain - see [Console links](#console-links). |
+| `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links. If unset, `cx` resolves it automatically via `GET /identity/whoami` - see [Console links](#console-links). |
 
 ### OAuth-specific fields
 
@@ -248,28 +247,15 @@ Some entities live on a settings/list page rather than a per-instance route - th
 | `ai-center evaluations list`/`get`/`create`/`update`/`delete`, `ai-center custom-evaluations list`/`list-for-application`/`create`/`update`/`add`/`remove` | `{base}/#/ai-center/overview/eval-catalog` | Confirmed as a real routed page in frontend source |
 | `olly ask` | `{base}/#/olly` | Confirmed as a real routed page in frontend source |
 
-The console base URL (e.g. `https://acme.app.eu2.coralogix.com`) is resolved in this order:
+The console base URL is resolved in this order:
 
 1. **`console_url`** in the profile TOML, if set - used as-is (see the field table above). No API call is made when this is set.
-2. A known **console domain** for the profile's region (table below), combined with an explicit **`console_team_name`** (see the field table above), e.g. `https://<console_team_name>.<console domain>`. No API call is made when this is set either.
-3. A known **console domain**, combined with a team subdomain resolved automatically via `GET /identity/whoami`. This is the default - most teams don't need to configure anything to get console links. The response's `team_url` field is preferred when present and hostname-safe; otherwise `cx` falls back to a sanitized guess derived from `team_name` (lowercased, non-alphanumeric runs collapsed to a single hyphen) - `team_url` is absent on some real teams' `/identity/whoami` responses even though `team_name` is present and usable, so this fallback runs unconditionally rather than requiring opt-in. This is a best-effort guess, not a lookup: a team's real subdomain doesn't always match a naive transliteration of its display name. Set `console_team_name` explicitly to override it.
-4. **No link is printed** if the region has no known console domain (`Region::Custom`, and any other region without an entry in the table below), or if no subdomain could be resolved by either step 2 or step 3.
+2. Otherwise, `cx` calls `GET /identity/whoami` and uses its `team_url` field verbatim. This is the default - most teams don't need to configure anything to get console links.
+3. **No link is printed** if `/identity/whoami` fails, or returns no usable `team_url`.
 
-A failed or unusable `/identity/whoami` response in step 3 never fails the command - it just means no console link, exactly like step 4. When no link can be resolved, `cx` stays silent: no `View in Coralogix` line on stderr and no `consoleUrl` field in `-o json`/`-o agents` output, and the command otherwise succeeds normally.
+A failed or unusable `/identity/whoami` response in step 2 never fails the command - it just means no console link, exactly like step 3. When no link can be resolved, `cx` stays silent: no `View in Coralogix` line on stderr and no `consoleUrl` field in `-o json`/`-o agents` output, and the command otherwise succeeds normally.
 
-| Region | Console domain |
-|---|---|
-| `us1` | `app.coralogix.us` |
-| `us2` | `app.cx498.coralogix.com` |
-| `us3` | `app.us3.coralogix.com` |
-| `eu1` | `app.coralogix.com` |
-| `eu2` | `app.eu2.coralogix.com` |
-| `ap1` | `app.coralogix.in` |
-| `ap2` | `app.coralogixsg.com` |
-| `ap3` | `app.ap3.coralogix.com` |
-| `stg1` | *(unknown - no link printed)* |
-
-Set `console_url` explicitly in the profile TOML to override this table or to enable console links for regions with no known domain (e.g. `stg1`, or a `Custom` region running a self-hosted console).
+Set `console_url` explicitly in the profile TOML to override this, e.g. for a `Custom` region running a self-hosted console where `/identity/whoami` isn't reachable.
 
 ## Environment variables
 

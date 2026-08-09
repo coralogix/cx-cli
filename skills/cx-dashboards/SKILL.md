@@ -312,7 +312,7 @@ Open it: [<Name>](<url from the View in Coralogix line>)
 Adjust filter values (e.g. `account_id`) after opening it.
 ````
 
-When `cx dashboards create` did **not** print a `View in Coralogix:` line (no known console domain for the region and no `console_url` override configured), omit the link entirely — do not invent a URL. Use this template instead:
+When `cx dashboards create` did **not** print a `View in Coralogix:` line (no console link could be resolved for the profile and no `console_url` override configured), omit the link entirely — do not invent a URL. Use this template instead:
 
 ````
 ## Plan

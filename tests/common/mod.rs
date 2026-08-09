@@ -31,8 +31,6 @@ pub fn test_target_with_token(
         endpoint: base_url.to_string(),
         default_tier: coralogix_cli::Tier::Archive,
         console_url: None,
-        console_domain: None,
-        console_team_name: None,
     };
     Arc::new(
         ExecutionTarget::new(cfg, RequestMetadata::default())

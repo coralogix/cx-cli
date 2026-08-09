@@ -197,57 +197,9 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 
 A fully qualified HTTPS URL can be used as a region value for non-standard environments.
 
-## Console links
+## Console link resolution
 
-After a successful command on any of the entities below, `cx` prints a `View in Coralogix: <url>` line to stderr linking directly to the affected entity (or, for the "static page" groups further down, the relevant settings/list page) in the web console. The same URL is also embedded as a `consoleUrl` field in `-o json` / `-o agents` output, so agent/script consumers reading stdout get the link without having to parse stderr - the stderr line and the `consoleUrl` field are always emitted together and never disagree. Many API responses wrap their single "real" entity in an object with exactly one key (e.g. `{"alertDef": {...}}`, `{"case": {...}}`) mirroring the underlying API's shape; when that's the case, `consoleUrl` is embedded *inside* that wrapper object, alongside the entity's own fields, rather than as a sibling of the wrapper key - e.g. `{"alertDef": {"id": "...", "consoleUrl": "..."}}`, not `{"alertDef": {...}, "consoleUrl": "..."}`. Already-flat responses (no such single-key wrapper) get `consoleUrl` at the top level instead, since there's nothing to nest into. On commands whose result is a list of rows rather than a single object (e.g. `dashboards check`'s validation issues, or any `list`/`search`), the link is the same static page for every row in that profile's chunk, so it's only attached to the first row rather than repeated on every one - a 200-item list shouldn't repeat an identical `consoleUrl` string 200 times in `-o agents` output. A failure to resolve a link never fails the command; it just means no `View in Coralogix` line is printed and no `consoleUrl` field is added.
-
-> The rule for what gets a link is simply *"does a real console page exist for this?"* - not *"did this command create or update a specific entity."* A command can have no notion of a created/updated entity at all (e.g. `cx usage`, which is 100% read-only reporting, or `cx olly ask`, which starts a chat) and still earn a link, as long as a routed page for it exists in `coralogix/cx-web-workspace`. This applies just as much to *reads* as to writes: if a group's console page is confirmed to exist, every subcommand that surfaces data from that page - `list`, `get`, `search`, `test`, `settings`, etc. - prints the link, not only `create`/`update`/`delete`. Conversely, some commands (e.g. `cx actions`, `cx ai-center coverage`/`model-pricing`) do **not** get a link because no routed page could be confirmed for them - see the PR description of the change that introduced this table for the full per-subcommand research record.
-
-The web console is a single-page app that routes client-side off a `#/` hash fragment, so every link below includes that prefix (e.g. `.../#/dashboards/<id>`, not `.../dashboards/<id>`) - a link missing it would just load the console's default screen instead of the intended entity:
-
-Every link shape below was cross-checked against the console frontend's own routing source (`coralogix/cx-web-workspace`), not just public docs, so none of them are guesses.
-
-### Per-entity links (path segment or query param)
-
-These link directly to the specific entity that was just created/updated, either as a path segment or as a query parameter that makes the console auto-open/select that entity on load.
-
-| Command | Link shape | Source |
-|---|---|---|
-| `dashboards create`/`replace`/`get`/`check <id>` | `{base}/#/dashboards/{id}` | Documented with an example at [Share Dashboard URLs](https://coralogix.com/docs/user-guides/custom-dashboards/tutorials/share-dashboard-content/); confirmed in frontend source (`libs/dashboards/_ui/src/lib/routing-utils.ts`'s `dashboardsEditUrl()` and the `:id` route under root `dashboards`). `check` only links when validating a stored dashboard by id (`cx dashboards check <id>`), not when checking `--from-file`, since there's no persisted entity to link to in that case |
-| `alerts create`/`get`/`enable`/`disable` | `{base}/#/alerts/{id}` | Documented alert deep-link pattern (runbooks/webhooks reference `#/alerts/<id>`); confirmed in frontend source (`apps/web-app/src/app/alerts/alerts-routes.ts`, `:id` child route under `alerts`) |
-| `views create`/`update` | `{base}/#/explore?viewId={id}` | `cx views` manages the same "saved view" entity as Explore's documented `viewId` deep-link parameter (both live under the `data-exploration/views` API) - see [Deep links and URL parameters](https://coralogix.com/docs/user-guides/data_exploration/deep-links/); confirmed in frontend source (`libs/explore/v2/src/lib/services/share-url.service.ts`'s `viewIdParam()`) |
-| `cases get`, `cases` lifecycle mutations | `{base}/#/cases?id={id}` | No public doc names the exact query parameter, but it's confirmed directly in frontend source: `libs/cases/.../cases-query-params.constants.ts` defines `SELECTED_CASE_QUERY_PARAM = 'id'`, used by `insights-incidents-link.service.ts` to build case deep links as `/cases?id=<caseId>` |
-| `e2m create`/`update` | `{base}/#/tco/metrics/{id}` | Confirmed as a real per-entity path-segment route in frontend source (Events2Metrics editor route takes `:metricId` under `tco/metrics`) |
-| `slos create`/`update` | `{base}/#/slo/{id}/overview` | Confirmed as a real per-entity path-segment route in frontend source (SLO overview route takes `:sloId` under root `slo`) |
-| `parsing-rules create`/`update` | `{base}/#/rules/group/{id}` | Confirmed as a real per-entity path-segment route in frontend source (rule group editor route takes `:themeId` under `rules/group`) |
-| `alerts suppression-rules create`/`update` | `{base}/#/suppression-rules?edit={id}` | Confirmed in frontend source: suppression rules are a **top-level** route (not nested under `/alerts`); the editor component reads the rule id to open from an `edit` query param on load |
-| `notifications connectors create`/`update`/`get` | `{base}/#/notification-center/connectors?id={id}` | Confirmed in frontend source: the connectors list component reads `route.snapshot.queryParams['id']` to auto-open that connector's editor on load |
-| `notifications routers create`/`update` | `{base}/#/notification-center/routers?id={id}` | Confirmed in frontend source: the routers list component reads `route.snapshot.queryParams['id']` to auto-open that router's editor on load, mirroring the connectors pattern |
-| `iam roles create`/`update` | `{base}/#/settings/roles?selectedRoleId={id}` | Confirmed in frontend source: the roles settings page reads `selectedRoleId` from query params to auto-select/open that role |
-| `iam scopes create`/`update` | `{base}/#/settings/scopes?selectedScopeId={id}` | Confirmed in frontend source: the scopes settings page reads `selectedScopeId` from query params, mirroring the roles pattern |
-| `iam groups create`/`update` | `{base}/#/settings/account/groups?selectedGroupId={id}` | Confirmed in frontend source: the account groups settings page reads `selectedGroupId` from query params, mirroring the roles/scopes pattern |
-
-### Static, per-feature links (no per-entity ID)
-
-Some entities live on a settings/list page rather than a per-instance route - there's no `:id` or `?id=` to fill in, just one fixed page per feature. For these, `cx` links to that static page after **every** subcommand in the group that touches it, reads included - editors for this kind of page are in-page dialogs with no id reflected in the URL, so a `list`/`get` is just as "on that page" as a `create`/`update`.
-
-| Command | Link shape | Source |
-|---|---|---|
-| `usage` (all subcommands - fully read-only, no mutation to gate on) | `{base}/#/settings/datausage` | Confirmed as a real routed settings page in frontend source |
-| `tco list`/`get`/`create`/`update`/`delete`/`reorder`/`test`/`settings get`/`settings update` | `{base}/#/tco-policies` | Confirmed as a real routed page in frontend source |
-| `archive metrics get`/`create`/`update`/`enable`/`disable`/`validate`, `archive logs get`/`set` | `{base}/#/physical-locations` | Confirmed as a real routed page in frontend source; shared by both the metrics- and logs-archive subtrees, which configure the same underlying storage locations |
-| `recording-rules list`/`get`/`create`/`update`/`delete` | `{base}/#/recording-rules` | Confirmed as a real routed page in frontend source |
-| `enrichments list`/`add`/`remove`/`overwrite`/`limit`/`settings`, `enrichments custom list`/`get`/`search`/`create`/`update`/`delete` | `{base}/#/enrichments` | Confirmed as a real routed page in frontend source; shared by both enrichment rules and custom enrichment tables, which are tabs on the same page |
-| `integrations list`/`get`/`definition`/`deployed`/`template`/`create`/`update`/`delete`/`test`, `integrations extensions list`/`get`/`deployed`/`deploy`/`update`/`undeploy`, `integrations contextual-data list`/`get`/`definition`/`test`/`create`/`update`/`delete` | `{base}/#/extensions/integrations` | Confirmed as a real routed page in frontend source; shared across integrations, extensions, and contextual data, which are all facets of the same catalog |
-| `webhooks list`/`get`/`types`/`create`/`update`/`delete`/`test` | `{base}/#/extensions/outbound-webhooks` | Confirmed as a real routed page in frontend source |
-| `iam api-keys list`/`get`/`send-data-keys`/`admin-list`/`create`/`update`/`delete`/`admin-delete`/`admin-set-status` | `{base}/#/settings/api-keys` | Confirmed as a real routed page in frontend source |
-| `iam users search`/`get`/`create`/`update`/`set-status` | `{base}/#/settings/team/members` | Confirmed as a real routed page in frontend source; user create/update is a dialog on this flat list page with no per-user route |
-| `iam ip-access get`/`create`/`update`/`delete` | `{base}/#/settings/login-access-policies` | Confirmed as a real routed page in frontend source |
-| `ai-center applications list`/`get` (no create/update/delete in this CLI) | `{base}/#/ai-center/overview/application-catalog` | Confirmed as a real routed page in frontend source |
-| `ai-center evaluations list`/`get`/`create`/`update`/`delete`, `ai-center custom-evaluations list`/`list-for-application`/`create`/`update`/`add`/`remove` | `{base}/#/ai-center/overview/eval-catalog` | Confirmed as a real routed page in frontend source |
-| `olly ask` | `{base}/#/olly` | Confirmed as a real routed page in frontend source |
-
-The console base URL is resolved in this order:
+After a successful command on entities with a corresponding web console page, `cx` prints a `View in Coralogix: <url>` line to stderr and may embed the same URL as a `consoleUrl` field in `-o json` / `-o agents` output. The console base URL used to build these links is resolved in this order:
 
 1. **`console_url`** in the profile TOML, if set - used as-is (see the field table above). No API call is made when this is set.
 2. Otherwise, `cx` calls `GET /identity/whoami` and uses its `team_url` field verbatim. This is the default - most teams don't need to configure anything to get console links.
@@ -256,6 +208,10 @@ The console base URL is resolved in this order:
 A failed or unusable `/identity/whoami` response in step 2 never fails the command - it just means no console link, exactly like step 3. When no link can be resolved, `cx` stays silent: no `View in Coralogix` line on stderr and no `consoleUrl` field in `-o json`/`-o agents` output, and the command otherwise succeeds normally.
 
 Set `console_url` explicitly in the profile TOML to override this, e.g. for a `Custom` region running a self-hosted console where `/identity/whoami` isn't reachable.
+
+### `consoleUrl` field location in `-o json`/`-o agents`
+
+The `consoleUrl` field may be nested inside the entity wrapper when the response root has exactly one object-valued key (e.g. `.alertDef.consoleUrl`), and sits at the root otherwise (e.g. `.consoleUrl`). There is no single fixed path - callers parsing this programmatically should instead extract the `View in Coralogix: <url>` line from stderr, which stays at a fixed, predictable location regardless of response shape.
 
 ## Environment variables
 

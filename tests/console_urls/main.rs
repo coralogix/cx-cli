@@ -535,15 +535,14 @@ async fn case_resolve_prints_console_link() {
     );
 }
 
-/// `cases notifications` no longer shows an "Evidence URL" column in the text
-/// table (the presigned URLs blow up the ascii table width), but it must still
-/// (a) print a single `View in Coralogix` link to the Cases page - one per
-/// profile, NOT one per case, even when several cases are queried - and
-/// (b) keep the evidence URL in `-o json`.
+/// `cases notifications` keeps its "Evidence URL" column in the text table
+/// (the presigned per-attempt URL is the only pointer to that specific
+/// delivery's evidence - a generic link to the Cases page isn't a substitute)
+/// and does not print a `View in Coralogix` link, since no per-list console
+/// page for notification deliveries is confirmed.
 #[tokio::test]
-async fn case_notifications_drops_url_column_but_keeps_link_and_json() {
+async fn case_notifications_keeps_evidence_url_column_and_prints_no_link() {
     let server = MockServer::start().await;
-    // Two cases in one response - the stderr link must still print exactly once.
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/cases/notifications/v1/deliveries"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -587,8 +586,8 @@ async fn case_notifications_drops_url_column_but_keeps_link_and_json() {
     );
     write_config(&home, "mock");
 
-    // Text mode: no "Evidence URL" column / value in stdout, but the stderr
-    // link is present.
+    // Text mode: the "Evidence URL" column and its value are present, and no
+    // console link is printed to stderr.
     let text = cx(&home)
         .args([
             "--profile",
@@ -606,28 +605,17 @@ async fn case_notifications_drops_url_column_but_keeps_link_and_json() {
 
     let text_stdout = String::from_utf8_lossy(&text.stdout);
     assert!(
-        !text_stdout.contains("Evidence URL"),
-        "text table should no longer have an Evidence URL column: {text_stdout}"
+        text_stdout.contains("Evidence URL"),
+        "text table should have an Evidence URL column: {text_stdout}"
     );
     assert!(
-        !text_stdout.contains("https://slack.example.com/evidence/xyz"),
-        "text table should not print the evidence URL: {text_stdout}"
+        text_stdout.contains("https://slack.example.com/evidence/xyz"),
+        "text table should print the evidence URL: {text_stdout}"
     );
     let text_stderr = String::from_utf8_lossy(&text.stderr);
-    // Exactly one link, to the bare Cases page - not one per case, and not a
-    // per-case `?id=` deep link.
-    assert_eq!(
-        text_stderr.matches("View in Coralogix:").count(),
-        1,
-        "expected exactly one console link across two cases: {text_stderr}"
-    );
     assert!(
-        text_stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/cases"),
-        "stderr did not contain the Cases page link: {text_stderr}"
-    );
-    assert!(
-        !text_stderr.contains("cases?id="),
-        "link should be the bare /cases page, not a per-case deep link: {text_stderr}"
+        !text_stderr.contains("View in Coralogix:"),
+        "no console link should be printed for cases notifications: {text_stderr}"
     );
 
     // JSON mode: the evidence URL is still carried in the payload.

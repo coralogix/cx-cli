@@ -114,11 +114,16 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                         webhook.id.clone().unwrap_or_default(),
                         webhook.name.clone().unwrap_or_default(),
                         webhook.display_type().to_string(),
+                        webhook.url.clone().unwrap_or_default(),
                         webhook.created_at.clone().unwrap_or_default(),
                     ]
                 })
                 .collect();
-            render::render_table(&["ID", "Name", "Type", "Created At"], rows, include_profile);
+            render::render_table(
+                &["ID", "Name", "Type", "URL", "Created At"],
+                rows,
+                include_profile,
+            );
         }
     }
     Ok(())
@@ -180,7 +185,8 @@ pub async fn run_create(
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
     let name = body
-        .get("name")
+        .pointer("/data/name")
+        .or_else(|| body.get("name"))
         .and_then(|v| v.as_str())
         .unwrap_or("<unnamed>")
         .to_string();

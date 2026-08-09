@@ -180,16 +180,6 @@ pub fn case_url(base: &str, id: &str) -> String {
     format!("{}/cases?id={encoded}", trim_base(base))
 }
 
-/// Build the console URL for the Cases list page: `{base}/cases`.
-///
-/// The per-entity `case_url` deep-links to one case via `?id=`; this is the
-/// bare list-page route (same `/cases` root, feature-flagged `apollo-cases`)
-/// used when a command isn't scoped to a single case - e.g.
-/// `cases notifications`, which can span several cases at once.
-pub fn cases_url(base: &str) -> String {
-    format!("{}/cases", trim_base(base))
-}
-
 /// Build the console URL for a saved Explore view: `{base}/explore?viewId={id}`.
 ///
 /// `cx views` manages the same "saved view" entity referenced by Explore's
@@ -416,22 +406,6 @@ mod tests {
         assert_eq!(
             case_url("https://c4c.app.eu2.coralogix.com/", "case-777"),
             "https://c4c.app.eu2.coralogix.com/cases?id=case-777"
-        );
-    }
-
-    #[test]
-    fn cases_url_is_the_bare_list_page() {
-        assert_eq!(
-            cases_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/cases"
-        );
-    }
-
-    #[test]
-    fn cases_url_trims_trailing_slash_on_base() {
-        assert_eq!(
-            cases_url("https://c4c.app.eu2.coralogix.com/"),
-            "https://c4c.app.eu2.coralogix.com/cases"
         );
     }
 

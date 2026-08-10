@@ -102,9 +102,9 @@
 //! - Integrations: `https://<team>.<domain>/extensions/integrations` -
 //!   confirmed in source (`app-routes.ts` mounts `extensions/integrations`,
 //!   whose child list page is `ExtensionsListComponent`)
-//! - Webhooks: `https://<team>.<domain>/extensions/outbound-webhooks` -
+//! - Webhooks: `https://<team>.<domain>/extensions/all-outbound-webhooks` -
 //!   confirmed in source (`app-routes.ts` mounts
-//!   `extensions/outbound-webhooks`, list page from
+//!   `extensions/all-outbound-webhooks`, list page from
 //!   `libs/outgoing-webhooks/src/lib/outgoing-webhooks.routes.ts`)
 //! - IAM API keys: `https://<team>.<domain>/settings/api-keys` - confirmed
 //!   in source (`settings-routes.ts`, `path: 'api-keys'`, `ApiKeysComponent`)
@@ -302,9 +302,9 @@ pub fn integrations_url(base: &str) -> String {
 }
 
 /// Build the console URL for the Outgoing Webhooks list page:
-/// `{base}/extensions/outbound-webhooks`.
+/// `{base}/extensions/all-outbound-webhooks`.
 pub fn webhooks_url(base: &str) -> String {
-    format!("{}/extensions/outbound-webhooks", trim_base(base))
+    format!("{}/extensions/all-outbound-webhooks", trim_base(base))
 }
 
 /// Build the console URL for the IAM API keys settings page:
@@ -669,7 +669,7 @@ mod tests {
     fn webhooks_url_is_static() {
         assert_eq!(
             webhooks_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
+            "https://c4c.app.eu2.coralogix.com/extensions/all-outbound-webhooks"
         );
     }
 

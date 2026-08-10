@@ -7,12 +7,12 @@ under `data`, see payloads/webhooks_webhook_create.json) -- that failed
 attempt is not replayed, only the final working shape is used.
 
 Known bug replayed on purpose (safe, read-only-equivalent, pinned cause):
-`webhooks create` itself returns `[]`/empty stdout instead of the created
+`webhooks create` itself returned `[]`/empty stdout instead of the created
 object (confirmed via a follow-up `list`), so this script -- like the
 original session -- falls back to `webhooks list` + name-match to discover
-the id of what it just created. This is a pre-existing master bug, not a
-PR #176 regression; the fix lives in the FORGE-696 follow-up PR, and this
-fallback can be dropped once that lands.
+the id of what it just created. That bug is fixed on this branch (FORGE-696);
+the fallback is kept because it also covers the case where the create
+response carries no id at all, and it costs one extra read.
 
 Known 501s replayed on purpose (deterministic, no actual mutation/send ever
 happens because the backend rejects the call before doing anything):

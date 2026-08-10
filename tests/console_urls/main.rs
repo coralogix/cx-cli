@@ -2133,9 +2133,116 @@ async fn integrations_create_prints_console_link() {
     );
 }
 
-// NOTE: `webhooks create` console-link coverage lives in the FORGE-696 follow-up
-// PR, which fixes the underlying bug that makes the link reachable at all. See
-// the "webhooks create" entry in verification/forge-586-console-links/.
+#[tokio::test]
+async fn webhooks_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/integrations/webhooks/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "webhook": {"id": "wh-1", "name": "New Webhook"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("webhooks_create");
+    fs::write(&file_path, r#"{"name": "New Webhook"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "webhooks",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn webhooks_create_prints_console_link_with_bare_response() {
+    // What the live API actually returns: the created webhook directly, with
+    // no `{"webhook": ...}` envelope. The old code gated on that envelope and
+    // so dropped the row and the link entirely (FORGE-696).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/integrations/webhooks/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"id": "wh-2", "name": "New Webhook"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("webhooks_create_bare");
+    fs::write(&file_path, r#"{"name": "New Webhook"}"#).unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "webhooks",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON ({e}): {:?}", output.stdout));
+    assert_eq!(
+        stdout["id"], "wh-2",
+        "created webhook should be present, not dropped: {stdout}"
+    );
+    assert_eq!(
+        stdout["consoleUrl"],
+        "https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
+    );
+}
 
 #[tokio::test]
 async fn iam_api_keys_create_prints_console_link() {

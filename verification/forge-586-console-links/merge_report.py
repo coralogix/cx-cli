@@ -100,11 +100,7 @@ CANONICAL = {
         "test/routing-condition": False, "test/template-render": False,
     },
     "webhooks": {
-        # `create` is the one exception in this group: its console link depends on
-        # the create-response fix that was pulled out of PR #176 into the FORGE-696
-        # follow-up PR, so as of this PR it prints no link (same as master).
-        "create": False,
-        "list": True, "get": True, "update": True, "delete": True,
+        "list": True, "get": True, "create": True, "update": True, "delete": True,
         "test": True, "types": True,
         "actions/list": False, "actions/get": False, "actions/create": False,
         "actions/update": False, "actions/delete": False, "actions/batch": False,
@@ -367,18 +363,22 @@ FINDINGS = [
                 "clean.",
     },
     {
-        "tag": "deferred",
-        "title": "webhooks create printed [] and no console link — fix moved to FORGE-696",
+        "tag": "fixed",
+        "title": "webhooks create printed [] and no console link (fixed in the FORGE-696 PR)",
         "body": "Same shape as the views issue above and same root cause: the webhook was genuinely "
                 "created (confirmed via list), but WebhooksApi::create required the response wrapped as "
                 "{\"webhook\": {...}} and silently dropped the whole row when the live API didn't return "
                 "that envelope, while list/get/update/delete on the same webhook all worked correctly. "
-                "The fix originally landed here, but it is a pre-existing master bug rather than a "
-                "console-link change, so it was pulled out into the FORGE-696 follow-up PR (branch "
-                "binyaminl/FORGE-696-webhooks-create-bug, stacked on this one) which fixes the response "
-                "handling and adds the create console link together. As of this PR, "
-                "webhooks create still prints no created object and no “View in Coralogix” line — "
-                "unchanged from master, not a regression introduced here.",
+                "Because this is a pre-existing master bug rather than a console-link change, the fix "
+                "ships in its own stacked PR (branch binyaminl/FORGE-696-webhooks-create-bug) instead of "
+                "in #176. Fixed identically to views create — raw response + defensive "
+                "webhook_id_from_response() helper — plus webhook_name_from_request(), since the create "
+                "response carries only an id and the display name has to come from the request, where "
+                "outgoing-webhook payloads nest it under `data` (src/commands/webhooks/api.rs, "
+                "src/commands/webhooks/mod.rs). Covered by 8 new unit tests, a new create test in "
+                "tests/webhooks/main.rs, and a bare-response regression test in "
+                "tests/console_urls/main.rs; full suite, cargo fmt, and cargo clippy -D warnings all "
+                "clean.",
     },
     {
         "tag": "corrected",
@@ -445,7 +445,6 @@ TAG_META = {
     "bug": ("PR176 bug", "var(--fail)"),
     "fixed": ("Fixed", "var(--pass)"),
     "corrected": ("Not a bug — verified", "var(--accent)"),
-    "deferred": ("Deferred to a follow-up PR", "var(--skip)"),
     "api": ("Backend/API limitation", "var(--skip)"),
     "residual": ("Residual live-team state", "var(--skip)"),
     "handled": ("Handled during this run", "var(--accent)"),

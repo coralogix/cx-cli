@@ -45,7 +45,7 @@ pub async fn fetch_if_stale() {
 
     let Ok(client) = reqwest::Client::builder()
         .user_agent(concat!("cx-cli/", env!("CARGO_PKG_VERSION")))
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(3))
         .build()
     else {
         return;

@@ -101,7 +101,9 @@
 //!   'enrichments'`)
 //! - Integrations: `https://<team>.<domain>/extensions/integrations` -
 //!   confirmed in source (`app-routes.ts` mounts `extensions/integrations`,
-//!   whose child list page is `ExtensionsListComponent`)
+//!   whose empty-path child renders `IntegrationsComponent`,
+//!   `data: { title: 'Integrations' }`, from
+//!   `libs/integrations/.../integration-routes.ts`)
 //! - Webhooks: `https://<team>.<domain>/extensions/all-outbound-webhooks` -
 //!   confirmed in source (`app-routes.ts` mounts
 //!   `extensions/all-outbound-webhooks`, list page from

@@ -131,8 +131,8 @@ CANONICAL = {
     },
     "recording-rules": {"list": True, "get": True, "create": True, "update": True, "delete": True},
     "parsing-rules": {
-        "create": True, "update": True,
-        "list": False, "get": False, "delete": False, "bulk-delete": False, "usage-limits": False,
+        "list": False, "get": False, "create": False, "update": False, "delete": False,
+        "bulk-delete": False, "usage-limits": False,
     },
     "enrichments": {
         "list": True, "add": True, "remove": True, "overwrite": True, "limit": True, "settings": True,
@@ -192,13 +192,11 @@ CANONICAL = {
 }
 
 # (group, canonical_path) pairs kept despite being ✖: necessary create/delete lifecycle
-# plumbing for a ✅ subcommand tested in the same (non-zero-✅) group. See plan doc for
-# the reasoning on why `parsing-rules bulk-delete` is deliberately NOT here.
+# plumbing for a ✅ subcommand tested in the same (non-zero-✅) group.
 EXCEPTIONS = {
     ("alerts", "delete"),
     ("dashboards", "delete"),
     ("e2m", "delete"),
-    ("parsing-rules", "delete"),
     ("suppression-rules", "delete"),
     ("views", "delete"),
     ("iam", "roles/delete"),

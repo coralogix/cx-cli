@@ -202,11 +202,6 @@ pub fn slo_url(base: &str, id: &str) -> String {
     format!("{}/slo/{id}/overview", trim_base(base))
 }
 
-/// Build the console URL for a parsing rule group: `{base}/rules/group/{id}`.
-pub fn parsing_rule_group_url(base: &str, id: &str) -> String {
-    format!("{}/rules/group/{id}", trim_base(base))
-}
-
 /// Build the console URL for an alert suppression rule:
 /// `{base}/suppression-rules?edit={urlencoded id}`.
 pub fn suppression_rule_url(base: &str, id: &str) -> String {
@@ -474,22 +469,6 @@ mod tests {
         assert_eq!(
             slo_url("https://c4c.app.eu2.coralogix.com/", "slo-abc"),
             "https://c4c.app.eu2.coralogix.com/slo/slo-abc/overview"
-        );
-    }
-
-    #[test]
-    fn parsing_rule_group_url_joins_base_and_id() {
-        assert_eq!(
-            parsing_rule_group_url("https://c4c.app.eu2.coralogix.com", "group-1"),
-            "https://c4c.app.eu2.coralogix.com/rules/group/group-1"
-        );
-    }
-
-    #[test]
-    fn parsing_rule_group_url_trims_trailing_slash_on_base() {
-        assert_eq!(
-            parsing_rule_group_url("https://c4c.app.eu2.coralogix.com/", "group-1"),
-            "https://c4c.app.eu2.coralogix.com/rules/group/group-1"
         );
     }
 

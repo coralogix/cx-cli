@@ -28,22 +28,6 @@ fn webhook_to_json(webhook: &Webhook, include_profile: bool, profile: &str) -> V
     v
 }
 
-/// Extract a webhook ID from a create response, trying the shapes the API
-/// has been observed to return: nested `webhook.id`, or a bare top-level
-/// `id`. IDs may come back as a JSON string or number. Returns `None` when
-/// the response carried no ID so callers can flag that rather than
-/// fabricate one.
-fn webhook_id_from_response(resp: &Value) -> Option<String> {
-    fn at(v: &Value, pointer: &str) -> Option<String> {
-        match v.pointer(pointer)? {
-            Value::String(s) => Some(s.clone()),
-            Value::Number(n) => Some(n.to_string()),
-            _ => None,
-        }
-    }
-    at(resp, "/webhook/id").or_else(|| at(resp, "/id"))
-}
-
 fn read_from_file(path: &str) -> Result<Value> {
     let raw = if path == "-" {
         eprintln!("{}", "Reading webhook definition from stdin...".dimmed());
@@ -184,12 +168,6 @@ pub async fn run_create(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
-    let name = body
-        .pointer("/data/name")
-        .or_else(|| body.get("name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("<unnamed>")
-        .to_string();
     eprintln!("{}", "Creating webhook...".dimmed());
     let include_profile = targets.len() > 1;
 
@@ -203,26 +181,18 @@ pub async fn run_create(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
-        let created_id = webhook_id_from_response(&resp);
-        render::print_created(
-            "Created",
-            "webhook",
-            Some(&name),
-            created_id.as_deref(),
-            &profile,
-        );
-        if include_profile {
-            render::tag_get_result(&mut resp, &profile);
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(webhook) = resp.webhook {
+            let name = webhook.name.clone().unwrap_or_default();
+            render::print_created(
+                "Created",
+                "webhook",
+                Some(&name),
+                webhook.id.as_deref(),
+                &profile,
+            );
+            all_results.push(webhook_to_json(&webhook, include_profile, &profile));
         }
-        crate::execution::tag_console_link_for_profile(
-            targets,
-            &profile,
-            &mut resp,
-            crate::console_url::webhooks_url,
-        )
-        .await;
-        all_results.push(resp);
     }
 
     match output {
@@ -389,34 +359,4 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn webhook_id_from_response_reads_wrapped_shape() {
-        let resp = json!({ "webhook": { "id": "wh-001", "name": "Slack Notify" } });
-        assert_eq!(webhook_id_from_response(&resp).as_deref(), Some("wh-001"));
-    }
-
-    #[test]
-    fn webhook_id_from_response_reads_bare_shape() {
-        // Some deployments return the created webhook directly, with no `webhook` envelope.
-        let resp = json!({ "id": "wh-002", "name": "Slack Notify" });
-        assert_eq!(webhook_id_from_response(&resp).as_deref(), Some("wh-002"));
-    }
-
-    #[test]
-    fn webhook_id_from_response_reads_numeric_id() {
-        let resp = json!({ "webhook": { "id": 7 } });
-        assert_eq!(webhook_id_from_response(&resp).as_deref(), Some("7"));
-    }
-
-    #[test]
-    fn webhook_id_from_response_none_when_id_absent() {
-        let resp = json!({});
-        assert_eq!(webhook_id_from_response(&resp), None);
-    }
 }

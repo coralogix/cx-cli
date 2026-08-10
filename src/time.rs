@@ -13,6 +13,17 @@ use chrono::{DateTime, Utc};
 /// Duration tokens are powered by [`humantime`] and support `s`, `m`, `h`,
 /// `d`, `w` and compound forms like `1h30m`.
 pub fn parse_timestamp(input: &str) -> Result<String> {
+    Ok(format_api_timestamp(parse_datetime(input)?))
+}
+
+/// Parse the same time expressions as [`parse_timestamp`], returning a Unix
+/// epoch in seconds. For APIs (like service-catalog v2) that take an
+/// `int64` seconds timestamp rather than an RFC3339 string.
+pub fn parse_timestamp_epoch_seconds(input: &str) -> Result<i64> {
+    Ok(parse_datetime(input)?.timestamp())
+}
+
+fn parse_datetime(input: &str) -> Result<DateTime<Utc>> {
     let trimmed = input.trim();
 
     let dt: DateTime<Utc> = if trimmed.eq_ignore_ascii_case("now") {
@@ -48,7 +59,7 @@ pub fn parse_timestamp(input: &str) -> Result<String> {
         })?
     };
 
-    Ok(format_api_timestamp(dt))
+    Ok(dt)
 }
 
 /// Format a UTC instant as the API's exact timestamp string.
@@ -96,5 +107,28 @@ mod tests {
     fn invalid_expression_errors() {
         assert!(parse_timestamp("yesterday").is_err());
         assert!(parse_timestamp("now+1h").is_err());
+    }
+
+    // ── parse_timestamp_epoch_seconds ────────────────────────────────────────
+
+    #[test]
+    fn epoch_seconds_iso8601_is_exact() {
+        assert_eq!(
+            parse_timestamp_epoch_seconds("2024-01-01T00:00:00Z").unwrap(),
+            1_704_067_200
+        );
+    }
+
+    #[test]
+    fn epoch_seconds_relative_is_in_the_past() {
+        let now = Utc::now().timestamp();
+        let one_hour_ago = parse_timestamp_epoch_seconds("now-1h").unwrap();
+        assert!(one_hour_ago < now);
+        assert!(now - one_hour_ago >= 3600 - 2, "should be ~1h in the past");
+    }
+
+    #[test]
+    fn epoch_seconds_invalid_expression_errors() {
+        assert!(parse_timestamp_epoch_seconds("yesterday").is_err());
     }
 }

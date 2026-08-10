@@ -31,18 +31,6 @@ impl ApiKey {
             None => "-",
         }
     }
-
-    fn into_key_info(self) -> KeyInfo {
-        KeyInfo {
-            id: self.id,
-            name: self.key_name,
-            owner: self.owner,
-            active: self.is_active,
-            hashed: self.hashed,
-            value: self.value,
-            key_permissions: None,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,26 +127,10 @@ impl<'a> ApiKeysApi<'a> {
         Self { client }
     }
 
-    /// List all API keys - every team member's, not just the caller's own.
-    /// The Coralogix console's API Keys settings page shows the same
-    /// unfiltered list (confirmed against a live team), so this matches it.
-    ///
-    /// The route this used to call (`{API_KEYS_BASE}/list`) doesn't exist on
-    /// the real backend: the literal string "list" falls through to the
-    /// `{key_id}` wildcard route below and fails ID validation (confirmed
-    /// live against a real Coralogix team - the wildcard route itself works
-    /// fine, since a real key ID belonging to another user gets a proper
-    /// permission-denied response there instead). This calls the bare
-    /// collection route instead, which is the one that actually works.
+    /// List the current user's API keys.
     pub async fn list(&self) -> Result<ListApiKeysResponse> {
-        let resp: GetTeamMembersApiKeysResponse = self.client.get(API_KEYS_BASE, &[]).await?;
-        let keys = resp
-            .keys
-            .into_iter()
-            .filter_map(|s| s.api_key)
-            .map(ApiKey::into_key_info)
-            .collect();
-        Ok(ListApiKeysResponse { keys })
+        let path = format!("{API_KEYS_BASE}/list");
+        self.client.get(&path, &[]).await
     }
 
     /// Get a single API key by ID.
@@ -187,6 +159,11 @@ impl<'a> ApiKeysApi<'a> {
     /// Get send-data API keys.
     pub async fn get_send_data_keys(&self) -> Result<GetSendDataApiKeysResponse> {
         self.client.get(SEND_DATA_KEYS_BASE, &[]).await
+    }
+
+    /// Admin: get all team members' API keys.
+    pub async fn get_team_members_keys(&self) -> Result<GetTeamMembersApiKeysResponse> {
+        self.client.get(API_KEYS_BASE, &[]).await
     }
 
     /// Admin: bulk delete API keys.

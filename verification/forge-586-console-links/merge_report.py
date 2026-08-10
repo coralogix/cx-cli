@@ -89,7 +89,13 @@ CANONICAL = {
     },
     "notifications": {
         "connectors/create": True, "connectors/update": True, "connectors/get": True,
-        "connectors/list": False, "connectors/delete": False, "connectors/types": False,
+        # `connectors/list` prints "View in Coralogix: <connectors list url>" to
+        # stderr unconditionally whenever results are non-empty, plus a per-row
+        # consoleUrl field in json/agents (text drops that column) - same pattern
+        # as `alerts list`. Fixed as a FORGE-586 follow-up; verified against
+        # src/commands/connectors/mod.rs::run_list.
+        "connectors/list": True,
+        "connectors/delete": False, "connectors/types": False,
         "connectors/entity-types": False, "connectors/entity-subtypes": False,
         "routers/create": True, "routers/update": True,
         "routers/list": False, "routers/get": False, "routers/delete": False,

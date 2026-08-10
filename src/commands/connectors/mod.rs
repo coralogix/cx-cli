@@ -58,8 +58,25 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Connector)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        let console_base = match crate::execution::find_target(targets, &profile) {
+            Some(target) => target.console_base().await,
+            None => None,
+        };
+        if !resp.connectors.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::notification_connectors_url(b)
+            })
+            .await;
+        }
         for conn in resp.connectors {
-            all_json.push(connector_to_json(&conn, include_profile, &profile));
+            let mut json = connector_to_json(&conn, include_profile, &profile);
+            if let (Some(base), Some(id)) = (&console_base, conn.id.as_deref()) {
+                render::tag_console_url(
+                    &mut json,
+                    &crate::console_url::notification_connector_url(base, id),
+                );
+            }
+            all_json.push(json);
             all_items.push((profile.clone(), conn));
         }
     }

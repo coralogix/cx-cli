@@ -214,6 +214,12 @@ pub fn suppression_rule_url(base: &str, id: &str) -> String {
     format!("{}/suppression-rules?edit={encoded}", trim_base(base))
 }
 
+/// Build the console URL for the notification connectors list page:
+/// `{base}/notification-center/connectors`.
+pub fn notification_connectors_url(base: &str) -> String {
+    format!("{}/notification-center/connectors", trim_base(base))
+}
+
 /// Build the console URL for a notification connector:
 /// `{base}/notification-center/connectors?id={urlencoded id}`.
 pub fn notification_connector_url(base: &str, id: &str) -> String {
@@ -508,6 +514,22 @@ mod tests {
         assert_eq!(
             suppression_rule_url("https://c4c.app.eu2.coralogix.com/", "rule-1"),
             "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
+        );
+    }
+
+    #[test]
+    fn notification_connectors_url_is_static() {
+        assert_eq!(
+            notification_connectors_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/connectors"
+        );
+    }
+
+    #[test]
+    fn notification_connectors_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            notification_connectors_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/connectors"
         );
     }
 

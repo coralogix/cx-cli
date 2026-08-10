@@ -1467,6 +1467,90 @@ async fn connector_update_prints_console_link() {
     );
 }
 
+/// `notifications connectors list` has a distinct console URL per connector
+/// (same as `alerts list`), so every row must be tagged with its own
+/// `consoleUrl` - not just the first.
+#[tokio::test]
+async fn connectors_list_tags_every_row_with_its_own_console_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/connectors",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "connectors": [
+                {"id": "conn-1", "name": "First Connector"},
+                {"id": "conn-2", "name": "Second Connector"},
+                {"id": "conn-3", "name": "Third Connector"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "notifications",
+            "connectors",
+            "list",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let items = stdout.as_array().expect("expected a json array");
+    assert_eq!(items.len(), 3);
+    for (i, id) in ["conn-1", "conn-2", "conn-3"].iter().enumerate() {
+        assert_eq!(
+            items[i]["consoleUrl"],
+            format!("https://c4c.app.eu2.coralogix.com/notification-center/connectors?id={id}"),
+            "row {i} did not carry its own connector's consoleUrl: {items:#?}"
+        );
+    }
+
+    // Text mode doesn't repeat every connector's own link in the table (that
+    // would bloat it) - instead it gets a single "View in Coralogix" line
+    // to stderr pointing at the connectors list page itself.
+    let text_output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "notifications",
+            "connectors",
+            "list",
+            "-o",
+            "text",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(text_output.status.success(), "{:?}", text_output);
+    let stdout = String::from_utf8_lossy(&text_output.stdout);
+    assert!(
+        !stdout.contains("Console URL"),
+        "text table should not have a per-row Console URL column: {stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&text_output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/connectors"
+        ),
+        "stderr did not contain the connectors list page link: {stderr}"
+    );
+}
+
 // ── notifications routers create/update ──────────────────────────────────────
 
 #[tokio::test]

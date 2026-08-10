@@ -2363,8 +2363,10 @@ async fn ai_center_applications_get_prints_console_link() {
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/ai/applications/v3/app-1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "app-1", "name": "My Application",
-            "application": "checkout", "subsystem": "payments"
+            "aiApplication": {
+                "id": "app-1", "name": "My Application",
+                "application": "checkout", "subsystem": "payments"
+            }
         })))
         .mount(&server)
         .await;
@@ -2395,6 +2397,48 @@ async fn ai_center_applications_get_prints_console_link() {
     assert!(
         stderr.contains(
             "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=checkout&subsystem=payments"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn ai_center_applications_get_falls_back_to_catalog_without_application_field() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/ai/applications/v3/app-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "aiApplication": { "id": "app-1", "name": "My Application" }
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "ai-center",
+            "applications",
+            "get",
+            "app-1",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/application-catalog"
         ),
         "stderr did not contain the console link: {stderr}"
     );

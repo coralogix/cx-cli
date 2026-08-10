@@ -224,13 +224,16 @@ pub async fn run_applications_get(
         // A single application deep-links to its drilldown page, keyed by the
         // `application` + `subsystem` query params (there is no path-param
         // route for one application in the console). Fall back to the catalog
-        // page if the response omits `application`.
-        let application = val
-            .get("application")
+        // page if the response omits `application`. The API wraps the payload
+        // as `{"aiApplication": {...}}`, so the fields live one level below
+        // the top of `val`, not at its root.
+        let app_obj = val.get("aiApplication");
+        let application = app_obj
+            .and_then(|v| v.get("application"))
             .and_then(Value::as_str)
             .map(str::to_string);
-        let subsystem = val
-            .get("subsystem")
+        let subsystem = app_obj
+            .and_then(|v| v.get("subsystem"))
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();

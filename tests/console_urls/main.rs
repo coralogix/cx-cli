@@ -1164,6 +1164,462 @@ async fn slo_update_prints_console_link() {
     );
 }
 
+// ── alerts suppression-rules ────────────────────────────────────────────────
+//
+// Rules carry two IDs: `uniqueIdentifier` (stable, addressable) and `id` (the
+// rule version id). The console's `?edit=` lookup only matches
+// `uniqueIdentifier`, so every mock below returns both and every assertion
+// pins the link to the former and explicitly rejects the latter - that swap
+// is the bug these tests exist to catch.
+
+const SUPPRESSION_UNIQUE_ID: &str = "38c4a964-a237-41ea-9b02-87af3d734571";
+const SUPPRESSION_VERSION_ID: &str = "04b68179-b051-4c2c-a684-ef3a4fb0f80f";
+
+fn suppression_link(id: &str) -> String {
+    format!("https://c4c.app.eu2.coralogix.com/suppression-rules?edit={id}&meta=edit")
+}
+
+#[tokio::test]
+async fn suppression_rule_create_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertSchedulerRule": {
+                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
+                "id": SUPPRESSION_VERSION_ID,
+                "name": "New Rule"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("suppression_rule_create");
+    fs::write(
+        &file_path,
+        r#"{"alertSchedulerRule": {"name": "New Rule"}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "View in Coralogix: {}",
+            suppression_link(SUPPRESSION_UNIQUE_ID)
+        )),
+        "stderr did not link the rule's uniqueIdentifier: {stderr}"
+    );
+    assert!(
+        !stderr.contains(SUPPRESSION_VERSION_ID),
+        "stderr leaked the rule version id, which the console can't resolve: {stderr}"
+    );
+
+    // The created-rule line should report the addressable id too, since that's
+    // what the user feeds into get/update/delete next.
+    assert!(
+        stderr.contains(&format!("(ID: {SUPPRESSION_UNIQUE_ID})")),
+        "stderr did not report the uniqueIdentifier as the rule's ID: {stderr}"
+    );
+
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        stdout["consoleUrl"],
+        suppression_link(SUPPRESSION_UNIQUE_ID)
+    );
+    // Both IDs are surfaced under the API's own names.
+    assert_eq!(stdout["unique_identifier"], SUPPRESSION_UNIQUE_ID);
+    assert_eq!(stdout["id"], SUPPRESSION_VERSION_ID);
+}
+
+#[tokio::test]
+async fn suppression_rule_update_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertSchedulerRule": {
+                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
+                // An update mints a fresh version id; the link must not follow it.
+                "id": "808f396d-4e85-4872-b18f-9b1a39f466a5",
+                "name": "Updated Rule"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("suppression_rule_update");
+    fs::write(
+        &file_path,
+        format!(
+            r#"{{"alertSchedulerRule": {{"uniqueIdentifier": "{SUPPRESSION_UNIQUE_ID}", "name": "Updated Rule"}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "View in Coralogix: {}",
+            suppression_link(SUPPRESSION_UNIQUE_ID)
+        )),
+        "stderr did not link the rule's uniqueIdentifier: {stderr}"
+    );
+    assert!(
+        !stderr.contains("808f396d-4e85-4872-b18f-9b1a39f466a5"),
+        "the link followed the new version id instead of the stable one: {stderr}"
+    );
+    // A body that already carries uniqueIdentifier must not trip the warning.
+    assert!(
+        !stderr.contains("Warning:"),
+        "a correctly-keyed update body should not warn: {stderr}"
+    );
+}
+
+/// A body identifying the rule by `id` alone is what the backend rejects with a
+/// field-less "Invalid UUID format"; warn before the request goes out.
+#[tokio::test]
+async fn suppression_rule_update_warns_when_body_uses_the_version_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertSchedulerRule": {
+                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
+                "id": SUPPRESSION_VERSION_ID,
+                "name": "Updated Rule"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("suppression_rule_update_bad_id");
+    fs::write(
+        &file_path,
+        format!(
+            r#"{{"alertSchedulerRule": {{"id": "{SUPPRESSION_VERSION_ID}", "name": "Updated Rule"}}}}"#
+        ),
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "update",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("sets 'id' but not 'uniqueIdentifier'"),
+        "stderr did not warn about the version-id-keyed body: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn suppression_rule_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/mgmt/openapi/5/alerts/suppression-rules/v1/{SUPPRESSION_UNIQUE_ID}"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertSchedulerRule": {
+                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
+                "id": SUPPRESSION_VERSION_ID,
+                "name": "Maintenance Window"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "get",
+            SUPPRESSION_UNIQUE_ID,
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "View in Coralogix: {}",
+            suppression_link(SUPPRESSION_UNIQUE_ID)
+        )),
+        "stderr did not contain the console link: {stderr}"
+    );
+
+    // The response is a single-key wrapper, so the tag nests inside it.
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        stdout["alertSchedulerRule"]["consoleUrl"],
+        suppression_link(SUPPRESSION_UNIQUE_ID)
+    );
+}
+
+/// An unknown id - the version id being the easy mistake - answers 200 `{}`
+/// rather than 404, so there's nothing to link and nothing to print.
+#[tokio::test]
+async fn suppression_rule_get_miss_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/mgmt/openapi/5/alerts/suppression-rules/v1/{SUPPRESSION_VERSION_ID}"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "get",
+            SUPPRESSION_VERSION_ID,
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "a miss should not produce a console link: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Rule not found."),
+        "a miss should say so instead of printing an empty object: {stdout}"
+    );
+}
+
+#[tokio::test]
+async fn suppression_rule_list_tags_every_row_with_its_own_console_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertSchedulerRules": [
+                {
+                    "alertSchedulerRule": {
+                        "uniqueIdentifier": "unique-1",
+                        "id": "version-1",
+                        "name": "First Rule",
+                        "enabled": true
+                    },
+                    "nextActiveTimeframes": []
+                },
+                {
+                    "alertSchedulerRule": {
+                        "uniqueIdentifier": "unique-2",
+                        "id": "version-2",
+                        "name": "Second Rule",
+                        "enabled": false
+                    },
+                    "nextActiveTimeframes": []
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "list",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let items = stdout.as_array().expect("expected a json array");
+    assert_eq!(items.len(), 2);
+
+    for (i, (unique, name)) in [("unique-1", "First Rule"), ("unique-2", "Second Rule")]
+        .iter()
+        .enumerate()
+    {
+        // Unwrapping the list envelope is what keeps these from being null.
+        assert_eq!(items[i]["name"], *name, "row {i}: {items:#?}");
+        assert_eq!(items[i]["unique_identifier"], *unique);
+        assert_eq!(
+            items[i]["consoleUrl"],
+            suppression_link(unique),
+            "row {i} did not carry its own rule's consoleUrl: {items:#?}"
+        );
+    }
+
+    // Text mode shows the addressable id in the ID column, not the version id,
+    // and echoes the suppression-rules page once on stderr.
+    let text_output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "alerts",
+            "suppression-rules",
+            "list",
+            "-o",
+            "text",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(text_output.status.success(), "{:?}", text_output);
+    let stdout = String::from_utf8_lossy(&text_output.stdout);
+    assert!(
+        stdout.contains("unique-1") && !stdout.contains("version-1"),
+        "text table should show the uniqueIdentifier, not the version id: {stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&text_output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/suppression-rules"),
+        "stderr did not contain the suppression-rules page link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn suppression_rule_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"alertSchedulerRules": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "alerts", "suppression-rules", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "an empty list has nothing to view: {stderr}"
+    );
+}
+
 // ── notifications connectors create/update ───────────────────────────────────
 
 #[tokio::test]

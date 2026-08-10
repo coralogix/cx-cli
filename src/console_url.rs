@@ -56,7 +56,14 @@
 //!   in `parsing-theme-list-container.component.ts`)
 //! - Alert suppression rules: `https://<team>.<domain>/suppression-rules?edit=<id>` -
 //!   confirmed in source (`apps/web-app/src/app/features/suppression-rules/...`
-//!   uses query field `edit` to reopen a specific rule's editor)
+//!   uses query field `edit` to reopen a specific rule's editor). `<id>` must
+//!   be the rule's `uniqueIdentifier`: `suppression-rules.component.ts` resolves
+//!   the param via `state.rules.find(rule => rule?.uniqueIdentifier === id)`, so
+//!   the API's separate `id` field (the rule *version* id) never matches and the
+//!   page quietly drops the param and renders the plain list instead. The
+//!   companion `&meta=edit` puts the editor in edit mode - the console always
+//!   writes the two together (`updateEditorWithRoute`), and without it the
+//!   editor opens titled "New Suppression Rule" with a "Create Rule" button.
 //! - Notification connectors: `https://<team>.<domain>/notification-center/connectors?id=<id>` -
 //!   confirmed in source (`libs/notification-center/src/lib/features/nc-connectors/...`
 //!   reads `queryParams['id']` to auto-open that connector)
@@ -211,6 +218,33 @@ pub fn e2m_url(base: &str, id: &str) -> String {
 /// Build the console URL for an SLO: `{base}/slo/{id}/overview`.
 pub fn slo_url(base: &str, id: &str) -> String {
     format!("{}/slo/{id}/overview", trim_base(base))
+}
+
+/// Build the console URL for an alert suppression rule:
+/// `{base}/suppression-rules?edit={urlencoded id}&meta=edit`.
+///
+/// `id` must be the rule's `uniqueIdentifier`, not the API's `id` field - the
+/// latter is the rule *version* id, which the console's `?edit=` lookup
+/// (`rules.find(rule => rule?.uniqueIdentifier === id)`) never matches, leaving
+/// the user on the bare list page.
+///
+/// `meta=edit` is what puts the editor in edit mode. The console always emits
+/// the pair (`updateEditorWithRoute` writes both query params), and the editor
+/// header keys off it - `isEditMode()` is `operation() === 'edit'`. Omitting it
+/// still opens the right rule, but titled "New Suppression Rule" with a "Create
+/// Rule" button, so saving would duplicate the rule instead of updating it.
+pub fn suppression_rule_url(base: &str, id: &str) -> String {
+    let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
+    format!(
+        "{}/suppression-rules?edit={encoded}&meta=edit",
+        trim_base(base)
+    )
+}
+
+/// Build the console URL for the suppression rules list page:
+/// `{base}/suppression-rules`.
+pub fn suppression_rules_url(base: &str) -> String {
+    format!("{}/suppression-rules", trim_base(base))
 }
 
 /// Build the console URL for the notification connectors list page:
@@ -489,6 +523,46 @@ mod tests {
         assert_eq!(
             slo_url("https://c4c.app.eu2.coralogix.com/", "slo-abc"),
             "https://c4c.app.eu2.coralogix.com/slo/slo-abc/overview"
+        );
+    }
+
+    #[test]
+    fn suppression_rule_url_uses_query_param_shape() {
+        assert_eq!(
+            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule-1"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1&meta=edit"
+        );
+    }
+
+    #[test]
+    fn suppression_rule_url_percent_encodes_id() {
+        assert_eq!(
+            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule #1"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule+%231&meta=edit"
+        );
+    }
+
+    #[test]
+    fn suppression_rule_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            suppression_rule_url("https://c4c.app.eu2.coralogix.com/", "rule-1"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1&meta=edit"
+        );
+    }
+
+    #[test]
+    fn suppression_rules_url_is_static() {
+        assert_eq!(
+            suppression_rules_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules"
+        );
+    }
+
+    #[test]
+    fn suppression_rules_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            suppression_rules_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/suppression-rules"
         );
     }
 

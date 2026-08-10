@@ -10,12 +10,16 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use api::{AlertSchedulerRule, AlertSchedulersApi};
+use api::{rule_found, AlertSchedulerRule, AlertSchedulersApi};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Both IDs are surfaced under the API's own names. `unique_identifier` is the
+/// addressable one (get/update/delete/console link); `id` is the version id and
+/// is included only because the API reports it. See `api::AlertSchedulerRule`.
 fn rule_to_json(rule: &AlertSchedulerRule, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
+        "unique_identifier": rule.unique_identifier,
         "id": rule.id,
         "name": rule.name,
         "description": rule.description,
@@ -56,6 +60,29 @@ fn read_json_body(from_file: &str, entity_name: &str) -> Result<Value> {
     Ok(body)
 }
 
+/// Warn when an update body identifies the rule by `id` alone.
+///
+/// The backend keys updates off `uniqueIdentifier`; a body carrying only `id`
+/// (the version id) is rejected with a bare `400 Bad Request: Invalid UUID
+/// format` that names no field, which is near-impossible to diagnose from the
+/// error alone. Advisory only - the request still goes out, since the check is
+/// a heuristic over a body we otherwise pass through untouched.
+fn warn_if_body_keyed_by_version_id(body: &Value) {
+    let rule = body.get("alertSchedulerRule").unwrap_or(body);
+    let has_unique = rule.get("uniqueIdentifier").is_some_and(|v| !v.is_null());
+    let has_id = rule.get("id").is_some_and(|v| !v.is_null());
+    if has_id && !has_unique {
+        eprintln!(
+            "{}",
+            "Warning: the update body sets 'id' but not 'uniqueIdentifier'. 'id' is the rule \
+             version id and is not addressable - the API rejects such bodies with a field-less \
+             \"Invalid UUID format\" error. Use the rule's uniqueIdentifier (see \
+             `cx alerts suppression-rules list`)."
+                .yellow()
+        );
+    }
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
@@ -72,8 +99,38 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertSchedulerRule)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        for rule in resp.alert_scheduler_rules {
-            all_json.push(rule_to_json(&rule, include_profile, &profile));
+        // Each suppression rule has its own console route, so every row gets
+        // its own consoleUrl rather than one shared page link. `console_base`
+        // is cached per target and doesn't print, so resolving it once per
+        // profile here is cheap.
+        let console_base = match crate::execution::find_target(targets, &profile) {
+            Some(target) => target.console_base().await,
+            None => None,
+        };
+        // Also echo the suppression-rules page itself once per profile, the
+        // way `alerts list` echoes the alerts page. Skipped when the profile
+        // returned nothing, since there'd be nothing to look at.
+        if !resp.alert_scheduler_rules.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::suppression_rules_url(b)
+            })
+            .await;
+        }
+        // List items are wrapped: {"alertSchedulerRule": {...},
+        // "nextActiveTimeframes": [...]}. Unwrap to the rule itself.
+        for rule in resp
+            .alert_scheduler_rules
+            .into_iter()
+            .filter_map(|entry| entry.alert_scheduler_rule)
+        {
+            let mut json = rule_to_json(&rule, include_profile, &profile);
+            if let (Some(base), Some(id)) = (&console_base, rule.unique_identifier.as_deref()) {
+                render::tag_console_url(
+                    &mut json,
+                    &crate::console_url::suppression_rule_url(base, id),
+                );
+            }
+            all_json.push(json);
             all_items.push((profile.clone(), rule));
         }
     }
@@ -95,7 +152,9 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                 .map(|(profile, rule)| {
                     vec![
                         profile.clone(),
-                        rule.id.clone().unwrap_or_default(),
+                        // The addressable id - the version id has no use to a
+                        // human reading a table, so it's left to json/agents.
+                        rule.unique_identifier.clone().unwrap_or_default(),
                         rule.name.clone().unwrap_or_default(),
                         render::bool_display(rule.enabled),
                         rule.created_at.clone().unwrap_or_default(),
@@ -133,9 +192,20 @@ pub async fn run_get(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        // An unknown id answers 200 `{}` instead of 404, so drop misses here
+        // and let the "Rule not found." path handle them.
+        if !rule_found(&val) {
+            continue;
+        }
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        // `rule_id` is the rule's unique_identifier - the fetch only succeeded
+        // because it was - so it's what the console link needs.
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+            crate::console_url::suppression_rule_url(b, rule_id)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -178,8 +248,21 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
-            render::print_created("Created", "rule", Some(name), rule.id.as_deref(), &profile);
-            all_results.push(rule_to_json(&rule, include_profile, &profile));
+            // Report the addressable id, not the version id - this is the
+            // value the user feeds back into get/update/delete.
+            let id = rule.unique_identifier.as_deref();
+            render::print_created("Created", "rule", Some(name), id, &profile);
+            let mut rule_json = rule_to_json(&rule, include_profile, &profile);
+            if let Some(id) = id {
+                crate::execution::tag_console_link_for_profile(
+                    targets,
+                    &profile,
+                    &mut rule_json,
+                    |b| crate::console_url::suppression_rule_url(b, id),
+                )
+                .await;
+            }
+            all_results.push(rule_json);
         }
     }
 
@@ -202,6 +285,7 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_json_body(from_file, "alert scheduler rule")?;
+    warn_if_body_keyed_by_version_id(&body);
 
     eprintln!("{}", "Updating alert scheduler rule...".dimmed());
 
@@ -220,11 +304,19 @@ pub async fn run_update(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
-            eprintln!(
-                "{}",
-                format!("Updated rule '{name}' in profile '{profile}'.").green()
-            );
-            all_results.push(rule_to_json(&rule, include_profile, &profile));
+            let id = rule.unique_identifier.as_deref();
+            render::print_created("Updated", "rule", Some(name), id, &profile);
+            let mut rule_json = rule_to_json(&rule, include_profile, &profile);
+            if let Some(id) = id {
+                crate::execution::tag_console_link_for_profile(
+                    targets,
+                    &profile,
+                    &mut rule_json,
+                    |b| crate::console_url::suppression_rule_url(b, id),
+                )
+                .await;
+            }
+            all_results.push(rule_json);
         }
     }
 
@@ -253,6 +345,17 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], rule_id: &str) -> Resu
         let id = id.clone();
         async move {
             let api = AlertSchedulersApi::new(&t.client);
+            // DELETE answers 200 for an unknown id without deleting anything,
+            // so without this check deleting by the wrong id (the rule's
+            // version id is the easy mistake) reports success while the rule
+            // stays put. Confirm it resolves before claiming we removed it.
+            if !rule_found(&api.get(&id).await?) {
+                bail!(
+                    "No suppression rule found with ID '{id}'. This must be the rule's \
+                     uniqueIdentifier, not its version id - run \
+                     `cx alerts suppression-rules list` to find it."
+                );
+            }
             api.delete(&id).await?;
             Ok(())
         }

@@ -193,14 +193,52 @@ Manage alert suppression rules that mute alerts during maintenance windows or kn
 | `cx alerts suppression-rules update --from-file` | Update a suppression rule |
 | `cx alerts suppression-rules delete <id>` | Delete a suppression rule |
 
+### Which ID to use
+
+Suppression rules carry **two** IDs, and only one of them works:
+
+| Field | What it is | Use it? |
+|---|---|---|
+| `unique_identifier` | The rule's own, stable ID | **Yes** - `get`/`update`/`delete` and console links all take this |
+| `id` | The rule *version* ID; changes on every update | No - not addressable |
+
+Passing `id` where `unique_identifier` is expected fails quietly rather than
+loudly: `get` returns nothing, and the raw `DELETE` endpoint answers 200 without
+deleting (`cx` guards against that and errors instead). Always take the ID from
+the `ID` column of `list`, or the `unique_identifier` field of `-o json`.
+
+### Request body shape
+
+`create` and `update` take the rule wrapped in an `alertSchedulerRule` object.
+`update` must identify the rule by `uniqueIdentifier` - a body keyed by `id` is
+rejected with a field-less `400 Invalid UUID format`.
+
+```json
+{
+  "alertSchedulerRule": {
+    "uniqueIdentifier": "<rule-id>",
+    "name": "maintenance-window",
+    "filter": { "whatExpression": "source logs | filter true", "alertUniqueIds": { "value": [] } },
+    "schedule": {
+      "scheduleOperation": "SCHEDULE_OPERATION_MUTE",
+      "oneTime": { "timeframe": { "startTime": "2026-08-10T19:30:00", "endTime": "2026-08-10T20:30:00", "timezone": "UTC" } }
+    }
+  }
+}
+```
+
 ```bash
-# List suppression rules
+# List suppression rules - the ID column is the unique_identifier
 cx alerts suppression-rules list -o json
 
-# Create from template
-cx alerts suppression-rules get <existing-id> -o json > suppression-rule.json
-# Edit suppression-rule.json
+# Inspect one rule
+cx alerts suppression-rules get <unique-identifier> -o json
+
+# Create from a definition file (must use the alertSchedulerRule wrapper)
 cx alerts suppression-rules create --from-file suppression-rule.json
+
+# Delete
+cx alerts suppression-rules delete <unique-identifier> --yes
 ```
 
 ## Key Principles

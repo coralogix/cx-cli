@@ -59,29 +59,11 @@ cx olly ask "Deep analysis of last week's incidents" --timeout 1800
 
 ### Run in background (preferred for long queries)
 
-There is no `--background` flag and no CLI subcommand to poll an in-flight interaction - `cx olly ask` always sends `should_block: true` to the backend and blocks until it returns. For any query that might take more than a few seconds, **background the process yourself** instead of waiting on it synchronously.
+`cx olly ask` always blocks (`should_block: true` is hardcoded; there's no `--background` flag or polling subcommand). For queries that may run long, run the command in the background and poll it for completion instead of blocking your turn - progress lines go to stderr, the result goes to stdout.
 
-**Preferred - use your own background-execution capability** (e.g. a coding agent's background task tool) to run `cx olly ask` and poll its output, so your turn/session isn't blocked. Do not sit in a long blocking `sleep` waiting for it.
+**Parsing the result:** `-o json` prints a single-element array (`.[0].chat_id`, `.[0].interaction_id`, `.[0].status`, `.[0].response`); `-o agents` prints TOON, not JSON - use `-o json` when parsing a backgrounded result.
 
-**Plain shell fallback**, redirecting stdout/stderr so progress messages (written to stderr) don't corrupt the JSON result (written to stdout):
-
-```bash
-cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
-  --timeout 1800 -o json > /tmp/olly_rca.json 2> /tmp/olly_rca.log &
-OLLY_PID=$!
-
-# Poll every ~15-30s; do other work between checks instead of tight-looping
-kill -0 "$OLLY_PID" 2>/dev/null && echo "still running"
-
-# Once the process has exited, read the result
-jq -r '.[0].status, .[0].chat_id, .[0].response' /tmp/olly_rca.json
-```
-
-Use `nohup ... & disown` if the shell/session might close before the command finishes.
-
-**Parsing the result:** `-o json` prints a single-element array (`.[0].chat_id`, `.[0].interaction_id`, `.[0].status`, `.[0].response`); `-o agents` prints TOON, not JSON - use `-o json` for scripted polling.
-
-**Caveat:** because the request blocks, `chat_id` is only available once the command finishes - you can't send a follow-up mid-flight. Wait for the backgrounded job to finish before using `--chat-id`.
+**Caveat:** because the request blocks, `chat_id` is only available once the command finishes - you can't send a follow-up mid-flight.
 
 ### Interaction status
 
@@ -147,16 +129,13 @@ cx olly ask "List top 5 error messages" -o json | jq -r '.[0].response'
 cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
 ```
 
-### Detailed analysis with specific model (backgrounded)
+### Detailed analysis with specific model
 
 ```bash
+# Long-running - run this in the background and poll (see "Run in background")
 cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
   --model claude-sonnet-4-5 \
-  --timeout 1800 -o json > /tmp/olly_rca.json 2> /tmp/olly_rca.log &
-OLLY_PID=$!
-
-# ... poll $OLLY_PID / do other work, then:
-jq -r '.[0].response' /tmp/olly_rca.json
+  --timeout 1800
 ```
 
 ## Key Principles

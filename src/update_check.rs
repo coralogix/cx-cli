@@ -12,10 +12,8 @@
 //!   - Returns a `_meta.update` JSON block for the agents output path (see
 //!     [`build_meta_block`]).
 //! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications (including the fetch).
-//! * `fetch_if_stale` is spawned via `tokio::spawn` and intentionally races
-//!   with the command.  For fast local commands (e.g. `cx profiles list`) the
-//!   task may be cancelled before it finishes writing; the state is populated
-//!   on the next API command.  This accepted race matches `gh`'s behaviour.
+//! * `fetch_if_stale` completes before command handling starts, ensuring even
+//!   fast local commands persist a stale check result.
 
 use std::io::IsTerminal;
 
@@ -30,10 +28,10 @@ use crate::version_cache::VersionCheckCache;
 
 const BINARY_REPO: &str = "coralogix/cx-cli";
 
-// ── Background fetcher ────────────────────────────────────────────────────────
+// ── Version fetcher ───────────────────────────────────────────────────────────
 
 /// Fetch the latest binary version if the cached data is older than
-/// 24 h, then persist the result.  Designed to be run via `tokio::spawn`.
+/// 24 h, then persist the result.
 /// All errors are silently swallowed — this must never affect the CLI output.
 pub async fn fetch_if_stale() {
     if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {

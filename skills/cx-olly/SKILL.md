@@ -41,8 +41,6 @@ cx olly ask "Tell me more about the error rates" --chat-id <chat-id>
 
 Use `--chat-id` to continue a conversation and maintain context from previous messages.
 
-**`--agent-to-agent-mode` is per-call, not per-chat.** It is not remembered on the `--chat-id` conversation - if you're an LLM/agent continuing a chat, you must re-pass `--agent-to-agent-mode` on every follow-up turn, or the mode silently flips back to human-facing (charts/tables, no clarifying questions) mid-conversation.
-
 ### Model selection
 
 Available models include `gpt-5.2` (default), `claude-sonnet-4-5`, `sonnet-4.6`, `gpt-5.4`, `claude-haiku-4-5`.
@@ -66,6 +64,8 @@ cx olly ask "Deep analysis of last week's incidents" --timeout 1800
 ```bash
 cx olly ask "Analyze this for me" --agent-to-agent-mode
 ```
+
+**It's per-call, not per-chat.** `--chat-id` does not remember it - re-pass `--agent-to-agent-mode` on every follow-up turn, or the mode silently flips back to human-facing mid-conversation.
 
 ## Artifacts
 

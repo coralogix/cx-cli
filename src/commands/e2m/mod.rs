@@ -131,6 +131,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+            crate::console_url::e2m_url(b, &id)
+        })
+        .await;
         all_results.push(val);
     }
 

@@ -433,6 +433,43 @@ async fn view_create_prints_console_link_with_bare_response() {
 }
 
 #[tokio::test]
+async fn view_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/data-exploration/views/v1/views/view-123",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "view": {"id": "view-123", "name": "Demo View"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "views", "get", "view-123"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/explore?viewId=view-123"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
 async fn view_update_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
@@ -947,6 +984,41 @@ async fn e2m_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco/metrics/e2m-new"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn e2m_get_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/events2metrics/events2metrics/v2/e2m-123",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "e2m": {"id": "e2m-123", "name": "Demo E2M"}
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "e2m", "get", "e2m-123"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco/metrics/e2m-123"),
         "stderr did not contain the console link: {stderr}"
     );
 }

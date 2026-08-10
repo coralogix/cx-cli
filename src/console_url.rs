@@ -213,13 +213,6 @@ pub fn slo_url(base: &str, id: &str) -> String {
     format!("{}/slo/{id}/overview", trim_base(base))
 }
 
-/// Build the console URL for an alert suppression rule:
-/// `{base}/suppression-rules?edit={urlencoded id}`.
-pub fn suppression_rule_url(base: &str, id: &str) -> String {
-    let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
-    format!("{}/suppression-rules?edit={encoded}", trim_base(base))
-}
-
 /// Build the console URL for the notification connectors list page:
 /// `{base}/notification-center/connectors`.
 pub fn notification_connectors_url(base: &str) -> String {
@@ -496,30 +489,6 @@ mod tests {
         assert_eq!(
             slo_url("https://c4c.app.eu2.coralogix.com/", "slo-abc"),
             "https://c4c.app.eu2.coralogix.com/slo/slo-abc/overview"
-        );
-    }
-
-    #[test]
-    fn suppression_rule_url_uses_query_param_shape() {
-        assert_eq!(
-            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule-1"),
-            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
-        );
-    }
-
-    #[test]
-    fn suppression_rule_url_percent_encodes_id() {
-        assert_eq!(
-            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule #1"),
-            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule+%231"
-        );
-    }
-
-    #[test]
-    fn suppression_rule_url_trims_trailing_slash_on_base() {
-        assert_eq!(
-            suppression_rule_url("https://c4c.app.eu2.coralogix.com/", "rule-1"),
-            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
         );
     }
 

@@ -9,8 +9,7 @@ metadata:
 
 Use this skill to interact with Coralogix's Observability Agent (Olly) via the `cx olly` CLI commands. Olly can analyze your observability data, answer questions about alerts, metrics, logs, and generate artifacts like charts and reports.
 
-`cx olly ask` defaults `--agent-to-agent-mode` to true. Olly acts as a **sub-agent** to you (the calling agent): it runs shorter, asks clarifying questions instead of guessing when context is missing, relies on your broader context, and skips charts/tables (returns previews, citations, and text instead).
-Pass `--agent-to-agent-mode=false` if you don't have context to share (like quick access to source files) or if the created chat is only for human usage.
+`cx olly ask` defaults `--agent-to-agent-mode` to **false**, since `cx` is used directly by humans as well as by agents. **If you're an LLM/agent calling this command, pass `--agent-to-agent-mode`** (a bare flag - it takes no value) to have Olly act as a **sub-agent** to you: it runs shorter, asks clarifying questions instead of guessing when context is missing, relies on your broader context, and skips charts/tables (returns previews, citations, and text instead).
 
 ## CLI Commands
 
@@ -60,10 +59,10 @@ cx olly ask "Deep analysis of last week's incidents" --timeout 1800
 
 ### Agent-to-agent mode
 
-`--agent-to-agent-mode` defaults to `true`, since `cx` is itself an agent/automation-facing entry point. Set it to `false` for chats meant for human consumption (e.g. text output a person will read directly), where charts, tables, and more exploratory replies are useful.
+`--agent-to-agent-mode` defaults to `false`, since `cx olly ask` is used directly by humans as well as by agents. **If you're an LLM/agent, pass `--agent-to-agent-mode`** to opt into shorter, sub-agent-style responses: no charts/tables, clarifying questions instead of guessing, and reliance on your broader context.
 
 ```bash
-cx olly ask "Explain this error for a human" --agent-to-agent-mode=false
+cx olly ask "Analyze this for me" --agent-to-agent-mode
 ```
 
 ## Artifacts
@@ -100,11 +99,11 @@ Output behavior:
 ### Investigate an issue
 
 ```bash
-# Start investigation
-cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics"
+# Start investigation (if you're an LLM/agent, add --agent-to-agent-mode for shorter, sub-agent-style replies)
+cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics" --agent-to-agent-mode
 
 # Follow up with the chat ID from the response
-cx olly ask "What changed in the last hour?" --chat-id abc-123-def
+cx olly ask "What changed in the last hour?" --chat-id abc-123-def --agent-to-agent-mode
 
 # Get any generated charts
 cx olly artifacts list -o json | jq '.[0].id'
@@ -138,6 +137,7 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 - **Large artifacts auto-spill** - JSON content over the configured limit is saved to temp files
 - **Check source code before asking** - give Olly concrete context from the source code if available, such as which metric to start investigating from, before calling it
 - **Limit investigation scope** - guide Olly to the correct limited scope, for example limit to just logs or to specific time ranges
+- **Pass `--agent-to-agent-mode` when calling as an LLM/agent** - it defaults to `false` (human-facing); agents should opt in for shorter, sub-agent-style responses
 
 ## Related Skills
 

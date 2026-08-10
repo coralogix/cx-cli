@@ -205,9 +205,9 @@ impl OllyApi {
     /// `agent_to_agent_mode` signals that the caller is an AI agent (not a
     /// human): when `true`, Olly acts as a sub-agent - shorter responses, no
     /// charts/tables, asks clarifying questions instead of guessing, and
-    /// relies on the parent agent's broader context. Defaults to `true` in
-    /// the CLI since `cx` is itself an agent/automation-facing entry point;
-    /// pass `false` for chats intended for human consumption.
+    /// relies on the parent agent's broader context. Defaults to `false` in
+    /// the CLI since `cx olly ask` is used directly by humans as well as by
+    /// agents; LLM/agent callers should pass `--agent-to-agent-mode` to opt in.
     pub async fn send_message(
         &self,
         chat_id: &str,

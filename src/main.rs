@@ -747,7 +747,7 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <uuid>
   cx olly ask \"Analyze this\" --model claude-sonnet-4-5
-  cx olly ask \"Explain this for a human\" --agent-to-agent-mode=false")]
+  cx olly ask \"Analyze this for me\" --agent-to-agent-mode")]
     Ask {
         /// The message to send to the assistant.
         message: String,
@@ -766,15 +766,9 @@ Examples:
 
         /// Ask Olly as a sub-agent (agent-to-agent mode): shorter responses, no
         /// charts/tables, asks clarifying questions instead of guessing.
-        /// Pass --agent-to-agent-mode=false for human-facing chats.
-        #[arg(
-            long,
-            num_args = 0..=1,
-            require_equals = true,
-            default_value_t = true,
-            default_missing_value = "true",
-            action = clap::ArgAction::Set
-        )]
+        /// Defaults to false (human-facing); pass this flag if you're an
+        /// LLM/agent calling `cx` to opt into shorter, sub-agent-style responses.
+        #[arg(long)]
         agent_to_agent_mode: bool,
     },
 

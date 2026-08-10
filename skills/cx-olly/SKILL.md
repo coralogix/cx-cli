@@ -51,13 +51,11 @@ cx olly ask "Explain this error" --model claude-sonnet-4-5
 
 ### Timeout
 
-`--timeout` (default: 900 seconds) is the server-side cap on how long the backend will keep working before it gives up. Raise it for complex queries:
+For complex queries that may take longer, increase the timeout (default: 900 seconds):
 
 ```bash
 cx olly ask "Deep analysis of last week's incidents" --timeout 1800
 ```
-
-Raising `--timeout` is complementary to - not a substitute for - backgrounding the call. It bounds how long the underlying request runs; it does not stop `cx olly ask` from blocking your terminal/turn while it runs. See "Run in background" below.
 
 ### Run in background (preferred for long queries)
 

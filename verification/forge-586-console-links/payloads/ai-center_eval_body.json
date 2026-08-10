@@ -1,7 +1,0 @@
-{
-  "application": "otel-demo",
-  "subsystem": "guardrails-demo",
-  "target": "PROMPT",
-  "config": { "toxicity": {} },
-  "isEnabled": true
-}

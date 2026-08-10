@@ -9,7 +9,7 @@ metadata:
 
 Use this skill to interact with Coralogix's Observability Agent (Olly) via the `cx olly` CLI commands. Olly can analyze your observability data, answer questions about alerts, metrics, logs, and generate artifacts like charts and reports.
 
-`cx olly ask` defaults `--agent-to-agent-mode` to **false**, since `cx` is used directly by humans as well as by agents. **If you're an LLM/agent calling this command, pass `--agent-to-agent-mode`** (a bare flag - it takes no value) to have Olly act as a **sub-agent** to you: it runs shorter, asks clarifying questions instead of guessing when context is missing, relies on your broader context, and skips charts/tables (returns previews, citations, and text instead).
+`cx olly ask` defaults `--agent-to-agent-mode` to **false**. **If you're an LLM/agent, pass `--agent-to-agent-mode`** - see "Agent-to-agent mode" below.
 
 ## CLI Commands
 

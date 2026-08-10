@@ -72,6 +72,7 @@ pub enum SearchByValueDataset {
   \x1b[1mviews\x1b[0m              Manage saved views and view folders
   \x1b[1mslos\x1b[0m               Manage SLO definitions
   \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
+  \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities and their RED/health/saturation data
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -537,6 +538,20 @@ Examples:
     Infra {
         #[command(subcommand)]
         cmd: InfraCmd,
+    },
+
+    /// Query service-catalog v2 entities: RED metrics, health, resource
+    /// saturation (k8s-pod/jvm), and dependency columns.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog entity-types
+  cx service-catalog schema service
+  cx service-catalog entities service
+  cx service-catalog data service --start now-1h --end now --column latency_p99
+  cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99")]
+    ServiceCatalog {
+        #[command(subcommand)]
+        cmd: ServiceCatalogCmd,
     },
 
     /// Search log/span fields by description or by value content.
@@ -2632,6 +2647,119 @@ Examples:
     },
 }
 
+#[derive(Subcommand)]
+enum ServiceCatalogCmd {
+    /// List the entity types this account has service-catalog data for.
+    EntityTypes,
+    /// Show the columns/labels schema for one entity type.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog schema service
+  cx service-catalog schema k8s-pod")]
+    Schema {
+        /// Entity type: service, database, operation, database-operation, jvm,
+        /// jvm-gc, k8s-pod, or transaction (also accepts the full
+        /// ENTITY_TYPE_* proto name).
+        entity_type: String,
+    },
+    /// List the known entities (e.g. service names) of one entity type.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog entities service")]
+    Entities {
+        /// Entity type (see `schema` for accepted values).
+        entity_type: String,
+    },
+    /// Get column data (RED metrics, health, resource saturation, dependencies)
+    /// across every entity of one type.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog data service --start now-1h --end now --column latency_p99 --column error_rate
+  cx service-catalog data k8s-pod --start now-1h --end now --column cpu_usage --column oom_killed
+  cx service-catalog data service --start now-1h --end now --column latency_p99 \\
+    --filter environment=prod --aggregation table --sort-column latency_p99 --sort-order desc --limit 10
+  cx service-catalog data service --start now-1h --end now --column latency_p99 --aggregation timeseries")]
+    Data {
+        /// Entity type (see `schema` for accepted values).
+        entity_type: String,
+
+        /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+        #[arg(long)]
+        start: String,
+
+        /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+        #[arg(long)]
+        end: String,
+
+        /// Column id to fetch. Repeatable; at least one required. Discover
+        /// valid ids with `cx service-catalog schema <entity-type>`.
+        #[arg(long = "column", required = true)]
+        columns: Vec<String>,
+
+        /// Label to group rows by, on top of the entity identity. Repeatable.
+        #[arg(long = "group-by")]
+        group_by: Vec<String>,
+
+        /// Filter as label=value1,value2; repeatable across different labels,
+        /// at most once per label. Multiple labels combine with AND.
+        #[arg(long = "filter")]
+        filters: Vec<String>,
+
+        /// Response shape: `table` (default) or `timeseries`.
+        #[arg(long, default_value = "table")]
+        aggregation: String,
+
+        /// Max rows to return. `table` aggregation only.
+        #[arg(long)]
+        limit: Option<i32>,
+
+        /// Column id to sort by. `table` aggregation only.
+        #[arg(long)]
+        sort_column: Option<String>,
+
+        /// Sort direction: `asc` or `desc`. `table` aggregation only.
+        #[arg(long)]
+        sort_order: Option<String>,
+    },
+    /// Get column data for exactly one named entity (drilldown).
+    #[command(after_help = "\
+Examples:
+  cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99")]
+    EntityData {
+        /// Entity type (see `schema` for accepted values).
+        entity_type: String,
+
+        /// Entity id, exactly as returned by `cx service-catalog entities`.
+        entity_id: String,
+
+        /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+        #[arg(long)]
+        start: String,
+
+        /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+        #[arg(long)]
+        end: String,
+
+        /// Column id to fetch. Repeatable; at least one required. Discover
+        /// valid ids with `cx service-catalog schema <entity-type>`.
+        #[arg(long = "column", required = true)]
+        columns: Vec<String>,
+
+        /// Label to group rows by, on top of the entity identity. Repeatable.
+        #[arg(long = "group-by")]
+        group_by: Vec<String>,
+
+        /// Filter as label=value1,value2; repeatable across different labels,
+        /// at most once per label. Multiple labels combine with AND.
+        #[arg(long = "filter")]
+        filters: Vec<String>,
+
+        /// Response shape: `table` (default) or `timeseries`.
+        #[arg(long, default_value = "table")]
+        aggregation: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -4230,6 +4358,71 @@ async fn main() -> Result<()> {
                         commands::infra::run_raw_data(&targets, &resource_id, output).await?;
                     }
                 },
+            },
+
+            Commands::ServiceCatalog { cmd } => match cmd {
+                ServiceCatalogCmd::EntityTypes => {
+                    commands::service_catalog::run_entity_types(&targets, output).await?;
+                }
+                ServiceCatalogCmd::Schema { entity_type } => {
+                    commands::service_catalog::run_schema(&targets, &entity_type, output).await?;
+                }
+                ServiceCatalogCmd::Entities { entity_type } => {
+                    commands::service_catalog::run_entities(&targets, &entity_type, output)
+                        .await?;
+                }
+                ServiceCatalogCmd::Data {
+                    entity_type,
+                    start,
+                    end,
+                    columns,
+                    group_by,
+                    filters,
+                    aggregation,
+                    limit,
+                    sort_column,
+                    sort_order,
+                } => {
+                    commands::service_catalog::run_data(
+                        &targets,
+                        &entity_type,
+                        &start,
+                        &end,
+                        &columns,
+                        &group_by,
+                        &filters,
+                        &aggregation,
+                        limit,
+                        sort_column.as_deref(),
+                        sort_order.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::EntityData {
+                    entity_type,
+                    entity_id,
+                    start,
+                    end,
+                    columns,
+                    group_by,
+                    filters,
+                    aggregation,
+                } => {
+                    commands::service_catalog::run_entity_data(
+                        &targets,
+                        &entity_type,
+                        &entity_id,
+                        &start,
+                        &end,
+                        &columns,
+                        &group_by,
+                        &filters,
+                        &aggregation,
+                        output,
+                    )
+                    .await?;
+                }
             },
 
             Commands::SearchFields {

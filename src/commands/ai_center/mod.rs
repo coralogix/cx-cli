@@ -221,8 +221,24 @@ pub async fn run_applications_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        // A single application deep-links to its drilldown page, keyed by the
+        // `application` + `subsystem` query params (there is no path-param
+        // route for one application in the console). Fall back to the catalog
+        // page if the response omits `application`.
+        let application = val
+            .get("application")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let subsystem = val
+            .get("subsystem")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
         crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
-            crate::console_url::ai_center_applications_url(b)
+            match &application {
+                Some(app) => crate::console_url::ai_center_application_url(b, app, &subsystem),
+                None => crate::console_url::ai_center_applications_url(b),
+            }
         })
         .await;
         all.push(val);

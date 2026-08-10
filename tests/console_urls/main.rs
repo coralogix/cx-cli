@@ -2363,7 +2363,8 @@ async fn ai_center_applications_get_prints_console_link() {
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/ai/applications/v3/app-1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "app-1", "name": "My Application"
+            "id": "app-1", "name": "My Application",
+            "application": "checkout", "subsystem": "payments"
         })))
         .mount(&server)
         .await;
@@ -2393,7 +2394,7 @@ async fn ai_center_applications_get_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/overview/application-catalog"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=checkout&subsystem=payments"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2441,7 +2442,7 @@ async fn ai_center_evaluations_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/eval-catalog"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -2668,7 +2669,7 @@ async fn ai_center_evaluations_list_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/eval-catalog"
         ),
         "stderr did not contain the console link: {stderr}"
     );

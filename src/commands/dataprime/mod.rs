@@ -16,7 +16,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
-use crate::spill::{maybe_spill, transform_for_agents, SpillOutcome};
+use crate::spill::{maybe_spill, transform_for_toon, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;
 
@@ -139,7 +139,7 @@ pub fn run_list(
                 .collect();
             println!("{}", serde_json::to_string_pretty(&json_items)?);
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let agent_items: Vec<_> = items
                 .iter()
                 .map(|(name, kind, entry)| {
@@ -222,7 +222,7 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let json = serde_json::json!({
                 "name": name,
                 "type": kind,
@@ -320,7 +320,7 @@ pub fn merge_results(
 
 /// Render merged results to stdout.
 ///
-/// JSON and Agents modes are handled generically. For Text mode, if a
+/// JSON and Toon modes are handled generically. For Text mode, if a
 /// `text_renderer` is provided it is used for source-specific formatting
 /// (e.g. logs show timestamp/severity, spans show traceID/duration).
 /// Otherwise rows are printed as pretty-printed JSON.
@@ -339,13 +339,13 @@ pub fn render_results(
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&merged.rows)?);
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             if merged.is_aggregate {
                 let toon = toon_encode(&merged.rows)
                     .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
                 println!("{toon}");
             } else {
-                let agent_rows: Vec<_> = merged.rows.iter().map(transform_for_agents).collect();
+                let agent_rows: Vec<_> = merged.rows.iter().map(transform_for_toon).collect();
                 match maybe_spill(&agent_rows, max_direct, temp_dir)? {
                     SpillOutcome::Direct(json) => println!("{json}"),
                     SpillOutcome::Spilled { path, count } => {

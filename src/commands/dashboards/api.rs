@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn issue_severity_serializes_to_screaming_snake_case() {
         // Round-trip: the enum must serialize back to the proto JSON shape
-        // so it can be re-emitted in --json / --agents output.
+        // so it can be re-emitted in --json / --toon output.
         for (sev, expected) in [
             (IssueSeverity::SeverityUnspecified, "SEVERITY_UNSPECIFIED"),
             (IssueSeverity::SeverityError, "SEVERITY_ERROR"),

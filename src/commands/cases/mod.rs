@@ -314,7 +314,7 @@ pub async fn run_get(
     let values: Vec<Value> = all_results.iter().map(|(v, _)| v.clone()).collect();
     match output {
         OutputFormat::Json => render::render_json_auto(&values)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&values).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -730,7 +730,7 @@ pub async fn run_events_list(
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -815,7 +815,7 @@ pub async fn run_event_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -884,7 +884,7 @@ pub async fn run_notifications(
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -936,7 +936,7 @@ pub async fn run_notifications(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Collect per-profile lifecycle results, emit a success/error line per profile,
-/// and render JSON/agents output for the returned payloads.
+/// and render JSON/toon output for the returned payloads.
 fn finish_lifecycle(
     per_profile: Vec<(String, Result<Value>)>,
     include_profile: bool,
@@ -957,7 +957,7 @@ fn finish_lifecycle(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

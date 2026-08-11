@@ -142,7 +142,7 @@ struct Cli {
     )]
     region: Option<String>,
 
-    /// Output format: text, json, or agents. Overrides the default set in config.
+    /// Output format: text, json, or toon. Overrides the default set in config.
     #[arg(long, short = 'o', global = true, help_heading = "Global Options")]
     output: Option<OutputFormat>,
 
@@ -2884,8 +2884,8 @@ async fn main() -> Result<()> {
     }
 
     // Schema command doesn't need API credentials - outputs command tree as JSON.
-    // The _meta.update block is already embedded in the JSON output for agents;
-    // the stderr notice covers TTY human users (or plain text for agents mode).
+    // The _meta.update block is already embedded in the JSON output for toon mode;
+    // the stderr notice covers TTY human users (or plain text for toon mode).
     if let Commands::Schema = cli.command {
         let result = commands::schema::run(Cli::command());
         let output = cli.output.unwrap_or(OutputFormat::Text);
@@ -4502,8 +4502,8 @@ async fn main() -> Result<()> {
     // Print update notice after command output so it doesn't scroll off.
     // Using a separate result variable (rather than ?) ensures the notice
     // fires even when the command returns an error — same behaviour as `gh`.
-    if output == OutputFormat::Agents {
-        update_check::maybe_print_agents_meta();
+    if output == OutputFormat::Toon {
+        update_check::maybe_print_toon_meta();
     } else {
         update_check::maybe_print_notice(output);
     }

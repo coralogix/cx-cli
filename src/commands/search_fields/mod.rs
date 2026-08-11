@@ -43,7 +43,7 @@ pub async fn run(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let json_rows: Vec<Value> = all_results
                 .iter()
                 .map(|(profile, r)| {

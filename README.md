@@ -27,7 +27,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 - DataPrime and PromQL at the terminal-Coralogix's proprietary query languages work end-to-end without leaving the shell.
 - 29 commands across 10 domains-from querying signals to managing IAM, notifications, TCO, AI Center, and archiving-all in one binary.
 - Multi-profile fan-out with `-p prod-eu -p prod-us <command>`-run one command across multiple accounts or regions in a single invocation, with rows tagged by profile.
-- `agents` output format-token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
+- `toon` output format—token-efficient JSON that auto-spills to a temp file once the serialized payload exceeds 100 KiB, so AI agents get a path instead of a flooded context window.
 - `cx schema`-outputs the full command tree as structured JSON, purpose-built for agent discovery with no help-text parsing required.
 - Semantic field search-find the right log or span field by describing it in natural language.
 - Bundled skills for Claude Code, Cursor, Codex, OpenCode, and 40+ more agents, distributed via `npx skills add`.
@@ -205,7 +205,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
     --api-key <API_KEY>      Override the profile API key
     --region <REGION>        Override the profile region
--o, --output <FORMAT>        text | json | agents (default: text)
+-o, --output <FORMAT>        text | json | toon (default: text)
     --yes                    Skip confirmation prompts for destructive operations
 ```
 
@@ -236,9 +236,9 @@ Choose an output format with `-o` or by setting the profile default.
 
 - `text`-human-readable tables with color. Default.
 - `json`-raw, pretty-printed API responses for scripting.
-- `agents`-token-efficient format for AI agents. Large responses automatically spill to a temporary file and the path is returned.
+- `toon`—token-efficient format for AI agents. Large responses automatically spill to a temporary file and the path is returned.
 
-See [docs/agents-output.md](docs/agents-output.md) for the `agents` format specification.
+See [docs/toon-output.md](docs/toon-output.md) for the `toon` format specification.
 
 ## AI agent skills
 
@@ -426,7 +426,7 @@ PR review process, and step-by-step guides for adding commands and skills.
 ## Further reading
 
 - [Configuration](docs/configuration.md)
-- [Agents output format](docs/agents-output.md)
+- [TOON output format](docs/toon-output.md)
 - [Multi-profile fan-out](docs/multi-profile.md)
 - [Time syntax](docs/time-syntax.md)
 - [Architecture](docs/architecture.md)

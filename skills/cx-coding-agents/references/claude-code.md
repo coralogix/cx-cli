@@ -147,7 +147,7 @@ source ai_sessions_claude
 | orderby $d.ts_norm asc
 | choose $d.role as role, $d.prompt_norm as prompt, $d.parsed.content as content_blocks, $d.parsed.text as flat_text, $d.ts_norm as ts
 EOF
-)" --start now-7d --tier archive -p <profile> -o agents
+)" --start now-7d --tier archive -p <profile> -o toon
 ```
 
 ```text
@@ -181,5 +181,5 @@ source ai_sessions_claude
 | orderby $d.timeUnixNano asc
 | choose prompt
 EOF
-)" --start now-7d --tier archive -p <profile> -o agents
+)" --start now-7d --tier archive -p <profile> -o toon
 ```

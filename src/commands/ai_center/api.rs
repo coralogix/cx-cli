@@ -16,7 +16,7 @@ const AI_BASE: &str = "/mgmt/openapi/5/ai";
 
 // --- Response types ---
 //
-// All three list routes return their rows as raw `Value`s so JSON/agents output
+// All three list routes return their rows as raw `Value`s so JSON/toon output
 // preserves every field the API sends; the text renderers read the columns they
 // need off the raw object. Each wrapper just names the array key the route uses.
 
@@ -45,7 +45,7 @@ pub fn eval_config_type(item: &Value) -> String {
 }
 
 /// Wrapper for the two custom-evaluation list routes, which both return `{ "items": [...] }`.
-/// Items are kept as raw `Value` so JSON/agents output preserves every policy field
+/// Items are kept as raw `Value` so JSON/toon output preserves every policy field
 /// (config, instructions, examples, policyType, …); the text table reads what it needs.
 #[derive(Debug, Default, Deserialize)]
 struct CustomEvaluationItems {
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn application_items_preserve_full_object() {
-        // Raw items keep every field (incl. createdAt/companyId) for JSON/agents.
+        // Raw items keep every field (incl. createdAt/companyId) for JSON/toon.
         let body = json!({
             "aiApplications": [
                 { "id": "a-1", "application": "Production", "subsystem": "Advisor",
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn custom_evaluation_items_preserve_full_object() {
         // Items are raw Values, so every policy field (incl. config/instructions)
-        // survives for JSON/agents output, not just the columns the table reads.
+        // survives for JSON/toon output, not just the columns the table reads.
         let body = json!({
             "items": [
                 { "id": "c-1", "name": "No PII", "description": "block pii",

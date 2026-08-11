@@ -271,7 +271,7 @@ async fn search_fields_value_agents_output() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Agents)
+    search_by_value::run(&targets, "payment", "logs", 10, 0, OutputFormat::Toon)
         .await
         .expect("agents output should succeed");
 }

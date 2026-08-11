@@ -158,7 +158,7 @@ async fn dashboard_catalog_agents_output_succeeds() {
         .await;
 
     let target = common::test_target("test-profile", &server.uri());
-    dashboards::run_catalog(&[target], OutputFormat::Agents)
+    dashboards::run_catalog(&[target], OutputFormat::Toon)
         .await
         .expect("run_catalog with agents (TOON) should succeed");
 }

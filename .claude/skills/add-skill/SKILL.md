@@ -57,7 +57,7 @@ The `description` frontmatter field is the primary trigger mechanism - agents us
 Follow this order (see `contributing/adding-a-skill.md` § "Complete Template" for a starting point):
 
 1. **Title and intro** - one sentence explaining what the skill covers and which `cx` commands it uses
-2. **CLI Commands table** - `| Command | Purpose | Key flags |` for every subcommand. Include `-o json`/`-o agents` and `-p <profile>` notes.
+2. **CLI Commands table** - `| Command | Purpose | Key flags |` for every subcommand. Include `-o json`/`-o toon` and `-p <profile>` notes.
 3. **Workflow / Investigation steps** - numbered steps an agent should follow. Start with discovery, end with verification.
 4. **Key Principles** - 4-6 bullet points: use `-o json` with `jq`, multi-profile behavior, always verify, etc.
 5. **Additional Resources** - links to `references/` files and related skills

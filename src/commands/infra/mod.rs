@@ -42,7 +42,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let rows: Vec<Value> = merged
                 .iter()
                 .map(|(profile, m)| type_mapping_to_json(m, include_profile, profile))
@@ -135,7 +135,7 @@ pub async fn run_list(
     let total_count = aggregate_total(&counts);
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let rows: Vec<Value> = merged
                 .iter()
                 .map(|(profile, r)| resource_to_json(r, include_profile, profile))
@@ -195,7 +195,7 @@ pub async fn run_health_history(
     let history = resp.health_history;
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let rows: Vec<Value> = history.iter().map(health_entry_to_json).collect();
             render_machine_rows(output, &rows)?;
         }
@@ -256,7 +256,7 @@ pub async fn run_raw_data(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&results)?,
-        OutputFormat::Agents => render::render_agents(&results)?,
+        OutputFormat::Toon => render::render_toon(&results)?,
         OutputFormat::Text => {
             render::render_get_text(&results, false, "No raw data found.", None)?;
         }
@@ -274,9 +274,9 @@ pub async fn run_raw_data(
 fn render_machine_rows(output: OutputFormat, rows: &[Value]) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json(rows),
-        OutputFormat::Agents => render::render_agents(rows),
+        OutputFormat::Toon => render::render_toon(rows),
         OutputFormat::Text => {
-            unreachable!("callers render text themselves; only Json/Agents reach here")
+            unreachable!("callers render text themselves; only Json/Toon reach here")
         }
     }
 }
@@ -343,14 +343,14 @@ fn build_list_envelope(
 fn render_machine_envelope(output: OutputFormat, envelope: &Value) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json_auto(std::slice::from_ref(envelope)),
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let encoded =
                 toon_encode(envelope).map_err(|e| anyhow!("TOON encoding failed: {e}"))?;
             println!("{encoded}");
             Ok(())
         }
         OutputFormat::Text => {
-            unreachable!("callers render text themselves; only Json/Agents reach here")
+            unreachable!("callers render text themselves; only Json/Toon reach here")
         }
     }
 }
@@ -486,7 +486,7 @@ fn parse_scope_filters(scope: &[String]) -> Result<Vec<(String, String)>> {
     Ok(filters)
 }
 
-/// Builds one resource row as JSON for `json` / `agents` output after fan-out.
+/// Builds one resource row as JSON for `json` / `toon` output after fan-out.
 fn resource_to_json(item: &ResourceData, include_profile: bool, profile: &str) -> Value {
     let v = json!({
         "resource_id": item.resource_id,
@@ -511,7 +511,7 @@ fn tag_profile(mut v: Value, include_profile: bool, profile: &str) -> Value {
     v
 }
 
-/// Builds one health-history row as JSON for `json` / `agents` output.
+/// Builds one health-history row as JSON for `json` / `toon` output.
 ///
 /// No profile tagging: `health-history` runs against a single profile, so there
 /// is nothing to disambiguate.
@@ -522,7 +522,7 @@ fn health_entry_to_json(item: &HealthHistoryEntry) -> Value {
     })
 }
 
-/// Builds one resource-type row as JSON for `json` / `agents` output after fan-out.
+/// Builds one resource-type row as JSON for `json` / `toon` output after fan-out.
 fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profile: &str) -> Value {
     let v = json!({
         "category": item.category_type.as_ref().and_then(|c| c.category.clone()),

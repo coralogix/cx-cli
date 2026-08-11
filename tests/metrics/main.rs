@@ -217,7 +217,7 @@ async fn range_query_agents_output() {
         "2024-06-22T00:00:00Z",
         "2024-06-22T01:00:00Z",
         "60s",
-        OutputFormat::Agents,
+        OutputFormat::Toon,
     )
     .await
     .expect("run_query_range with agents output should succeed");

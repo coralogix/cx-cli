@@ -117,7 +117,7 @@ async fn entity_types_errors_when_all_profiles_fail() {
 
 #[tokio::test]
 async fn all_output_formats_render_entity_types() {
-    for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Agents] {
+    for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Toon] {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))

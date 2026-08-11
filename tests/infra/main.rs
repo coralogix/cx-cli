@@ -331,7 +331,7 @@ async fn api_error_body_surfaces_in_message() {
 
 #[tokio::test]
 async fn all_output_formats_render() {
-    for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Agents] {
+    for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Toon] {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))

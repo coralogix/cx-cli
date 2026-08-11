@@ -62,7 +62,7 @@ pub async fn run_ask(
             let response = interaction_to_json(&interaction, &chat_id);
             render::render_json(&[response])?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let response = interaction_to_json(&interaction, &chat_id);
             let toon = toon_encode(&[response])
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -147,7 +147,7 @@ pub async fn run_artifacts_get(
         OutputFormat::Json => {
             render_artifact_json(&artifact, &processed)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             render_artifact_agents(&artifact, &processed, max_direct, temp_dir)?;
         }
         OutputFormat::Text => {
@@ -332,7 +332,7 @@ pub async fn run_artifacts_list(
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             render::render_json(&response)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             let toon =
                 toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;

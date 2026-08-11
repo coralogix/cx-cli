@@ -144,7 +144,7 @@ async fn dashboard_catalog_all_profiles_fail_returns_error() {
 }
 
 #[tokio::test]
-async fn dashboard_catalog_agents_output_succeeds() {
+async fn dashboard_catalog_toon_output_succeeds() {
     let server = MockServer::start().await;
     let body = json!({ "items": [] });
 

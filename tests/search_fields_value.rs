@@ -258,7 +258,7 @@ async fn search_fields_value_empty_results_text_output() {
 }
 
 #[tokio::test]
-async fn search_fields_value_agents_output() {
+async fn search_fields_value_toon_output() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))

@@ -181,7 +181,7 @@ async fn search_by_description() {
 }
 
 #[tokio::test]
-async fn range_query_agents_output() {
+async fn range_query_toon_output() {
     let server = MockServer::start().await;
 
     let body = json!({

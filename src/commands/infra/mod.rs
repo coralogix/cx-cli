@@ -154,7 +154,7 @@ pub async fn run_list(
                     vec![
                         profile.clone(),
                         display_or_dash(r.resource_id.as_deref()),
-                        display_or_dash(r.name.as_deref()),
+                        display_or_dash(display_name(r)),
                     ]
                 })
                 .collect();
@@ -536,6 +536,19 @@ fn display_or_dash(value: Option<&str>) -> String {
     value.filter(|s| !s.is_empty()).unwrap_or("-").to_string()
 }
 
+/// The name the API matches `--name-filter` against.
+///
+/// The `name` field is an internal identifier, while the `Name` column holds the display name
+/// that `nameFilter` actually searches. Falls back to `name` when the column is absent.
+fn display_name(item: &ResourceData) -> Option<&str> {
+    item.columns
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("name"))
+        .map(|(_, value)| value.as_str())
+        .filter(|s| !s.is_empty())
+        .or(item.name.as_deref())
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -841,6 +854,47 @@ mod tests {
         assert_eq!(display_or_dash(Some("value")), "value");
         assert_eq!(display_or_dash(Some("")), "-");
         assert_eq!(display_or_dash(None), "-");
+    }
+
+    fn resource(name: Option<&str>, columns: &[(&str, &str)]) -> ResourceData {
+        ResourceData {
+            resource_id: Some("4013226:host_id=i-077a1626590913a16".to_string()),
+            name: name.map(String::from),
+            columns: columns
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn display_name_prefers_the_name_column() {
+        let r = resource(
+            Some("i-077a1626590913a16"),
+            &[("Name", "ip-10-109-46-236.eu-west-1.compute.internal")],
+        );
+        assert_eq!(
+            display_name(&r),
+            Some("ip-10-109-46-236.eu-west-1.compute.internal")
+        );
+    }
+
+    #[test]
+    fn display_name_matches_the_column_key_case_insensitively() {
+        let r = resource(Some("i-abc123"), &[("name", "web-server-1")]);
+        assert_eq!(display_name(&r), Some("web-server-1"));
+    }
+
+    #[test]
+    fn display_name_falls_back_to_the_name_field() {
+        let missing = resource(Some("i-abc123"), &[("region", "eu-west-1")]);
+        assert_eq!(display_name(&missing), Some("i-abc123"));
+
+        let empty = resource(Some("i-abc123"), &[("Name", "")]);
+        assert_eq!(display_name(&empty), Some("i-abc123"));
+
+        let neither = resource(None, &[]);
+        assert_eq!(display_name(&neither), None);
     }
 
     fn counts(entries: &[(&str, i64, usize)]) -> Vec<ProfileCounts> {

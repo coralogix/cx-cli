@@ -289,12 +289,6 @@ pub fn archive_url(base: &str) -> String {
     format!("{}/physical-locations", trim_base(base))
 }
 
-/// Build the console URL for the Recording Rules page:
-/// `{base}/recording-rules`.
-pub fn recording_rules_url(base: &str) -> String {
-    format!("{}/recording-rules", trim_base(base))
-}
-
 /// Build the console URL for the Enrichments page: `{base}/enrichments`.
 pub fn enrichments_url(base: &str) -> String {
     format!("{}/enrichments", trim_base(base))
@@ -635,14 +629,6 @@ mod tests {
         assert_eq!(
             archive_url("https://c4c.app.eu2.coralogix.com"),
             "https://c4c.app.eu2.coralogix.com/physical-locations"
-        );
-    }
-
-    #[test]
-    fn recording_rules_url_is_static() {
-        assert_eq!(
-            recording_rules_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/recording-rules"
         );
     }
 

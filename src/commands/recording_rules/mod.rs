@@ -67,22 +67,8 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, RecordingRuleGroup)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // One static recording-rules page link per profile, not per rule
-        // group - it isn't scoped to any single row, so it doesn't belong
-        // embedded in one row's JSON. Resolving it here is only for the
-        // "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
-        if !resp.groups.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::recording_rules_url(b)
-            })
-            .await;
-        }
         for group in resp.groups {
-            let group_json = group_to_json(&group, include_profile, &profile);
-            all_json.push(group_json);
+            all_json.push(group_to_json(&group, include_profile, &profile));
             all_items.push((profile.clone(), group));
         }
     }
@@ -150,10 +136,6 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
-            crate::console_url::recording_rules_url(b)
-        })
-        .await;
         all_results.push(val);
     }
 
@@ -227,15 +209,7 @@ pub async fn run_create(
                 group.id.as_deref(),
                 &profile,
             );
-            let mut group_json = group_to_json(&group, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
-                targets,
-                &profile,
-                &mut group_json,
-                crate::console_url::recording_rules_url,
-            )
-            .await;
-            all_results.push(group_json);
+            all_results.push(group_to_json(&group, include_profile, &profile));
         }
     }
 
@@ -287,15 +261,7 @@ pub async fn run_update(
                 format!("Updated recording rule group '{name}' (ID: {id}) in profile '{profile}'.")
                     .green()
             );
-            let mut group_json = group_to_json(&group, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
-                targets,
-                &profile,
-                &mut group_json,
-                crate::console_url::recording_rules_url,
-            )
-            .await;
-            all_results.push(group_json);
+            all_results.push(group_to_json(&group, include_profile, &profile));
         }
     }
 
@@ -335,10 +301,6 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Recording rule group {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::recording_rules_url(b)
-        })
-        .await;
     }
 
     Ok(())

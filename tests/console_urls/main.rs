@@ -1895,51 +1895,6 @@ async fn archive_metrics_create_prints_console_link() {
 }
 
 #[tokio::test]
-async fn recording_rules_create_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/recording-rules/recording-rules/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "group": {"id": "rr-1", "name": "New Group"}
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("recording_rules_create");
-    fs::write(&file_path, r#"{"name": "New Group"}"#).unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "recording-rules",
-            "create",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/recording-rules"),
-        "stderr did not contain the console link: {stderr}"
-    );
-}
-
-#[tokio::test]
 async fn enrichments_add_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

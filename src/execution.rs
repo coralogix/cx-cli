@@ -28,8 +28,11 @@ pub struct ExecutionTarget {
     pub profile_name: String,
     pub cfg: ResolvedConfig,
     pub client: CxClient,
-    /// Lazily-resolved console base URL, cached so repeated console-link
-    /// lookups within one command invocation don't re-hit `/identity/whoami`.
+    /// Lazily-resolved console base URL, cached in-process so repeated
+    /// console-link lookups within one command invocation don't re-hit
+    /// `/identity/whoami`. Backed by a longer-lived on-disk cache in the
+    /// profile file (see `config::load_cached_console_url`) so that most
+    /// invocations skip the network lookup entirely.
     console_base: OnceCell<Option<String>>,
     pub request_metadata: RequestMetadata,
 }
@@ -54,24 +57,40 @@ impl ExecutionTarget {
     /// Resolution order:
     /// 1. An explicit `console_url` configured on the profile/env - used
     ///    as-is (trailing slash already trimmed by `config::resolve_single`).
-    /// 2. Otherwise, the team's console URL resolved automatically via
-    ///    `GET /identity/whoami` (see `identity::resolve_team_url`). This is
-    ///    the default: most teams don't need to configure anything at all
-    ///    to get console links.
-    /// 3. `None` if `/identity/whoami` fails or returns no usable URL.
+    /// 2. A fresh on-disk cache of the team's console URL in the profile file
+    ///    (see `config::load_cached_console_url`), written by a previous
+    ///    invocation. This is what spares the overwhelming majority of
+    ///    invocations - and, crucially, agents making many sequential calls -
+    ///    the extra `/identity/whoami` round-trip.
+    /// 3. Otherwise, the team's console URL resolved automatically via
+    ///    `GET /identity/whoami` (see `identity::resolve_team_url`), then
+    ///    persisted to the profile cache for next time. This is the default on
+    ///    a cold cache: most teams don't need to configure anything at all to
+    ///    get console links.
+    /// 4. `None` if `/identity/whoami` fails or returns no usable URL.
     ///
-    /// Best-effort and infallible: any lookup failure results in `None`
-    /// rather than an error, since a console link is a "nice to have" that
-    /// must never fail an otherwise-successful command. Cached per target so
-    /// multiple links printed within one invocation only hit
-    /// `/identity/whoami` once.
+    /// Best-effort and infallible: any lookup (or cache write) failure results
+    /// in `None` rather than an error, since a console link is a "nice to
+    /// have" that must never fail an otherwise-successful command. Cached per
+    /// target so multiple links printed within one invocation only resolve
+    /// once.
     pub async fn console_base(&self) -> Option<String> {
         self.console_base
             .get_or_init(|| async {
+                // 1. Explicit override always wins.
                 if let Some(url) = &self.cfg.console_url {
                     return Some(url.clone());
                 }
-                identity::resolve_team_url(&self.client).await
+                // 2. Fresh on-disk cache - no network.
+                if let Some(url) = crate::config::load_cached_console_url(&self.profile_name) {
+                    return Some(url);
+                }
+                // 3. Cold cache: resolve live, then persist for next time.
+                let resolved = identity::resolve_team_url(&self.client).await;
+                if let Some(url) = &resolved {
+                    crate::config::cache_console_url(&self.profile_name, url);
+                }
+                resolved
             })
             .await
             .clone()

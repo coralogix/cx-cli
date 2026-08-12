@@ -4,10 +4,18 @@ use std::path::PathBuf;
 use std::os::unix::fs::PermissionsExt;
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::keyring_store;
 use crate::oauth;
+
+/// How long (in days) a cached team console base URL (see
+/// [`Profile::cached_console_url`]) stays fresh before it is re-resolved via
+/// `GET /identity/whoami`. The team URL is effectively immutable, so the TTL
+/// only exists to recover from a bad cache and to pick up the rare region
+/// migration.
+const CONSOLE_URL_CACHE_TTL_DAYS: i64 = 7;
 
 /// Authentication method used by a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
@@ -328,6 +336,18 @@ pub struct Profile {
     /// lookup fails or returns no usable URL, no console link is printed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_url: Option<String>,
+    /// Machine-managed cache of the team console base URL resolved via
+    /// `GET /identity/whoami`, persisted here (best-effort) so that repeated
+    /// invocations don't re-hit the identity endpoint just to print a "View in
+    /// Coralogix" link. Like `oauth_tokens`, this is written by `cx`, not the
+    /// user, and is ignored whenever an explicit `console_url` override is set.
+    /// Expired after [`CONSOLE_URL_CACHE_TTL_DAYS`]; see
+    /// [`load_cached_console_url`] / [`cache_console_url`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_console_url: Option<String>,
+    /// When `cached_console_url` was last resolved. Used to expire the cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_console_url_at: Option<DateTime<Utc>>,
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -610,6 +630,39 @@ pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
     Ok(())
 }
 
+/// Return the profile's cached team console base URL, but only if it is still
+/// fresh (resolved within [`CONSOLE_URL_CACHE_TTL_DAYS`]).
+///
+/// Best-effort and silent: returns `None` for a missing/unreadable profile
+/// (e.g. env-only mode, where there is no profile file to cache against), an
+/// absent cache, or a stale entry - all of which simply fall back to a live
+/// `GET /identity/whoami` lookup.
+pub fn load_cached_console_url(profile_name: &str) -> Option<String> {
+    let profile = load_profile(profile_name).ok()?;
+    let cached_at = profile.cached_console_url_at?;
+    if Utc::now() - cached_at < Duration::days(CONSOLE_URL_CACHE_TTL_DAYS) {
+        profile.cached_console_url
+    } else {
+        None
+    }
+}
+
+/// Persist a freshly-resolved team console base URL into the profile file so
+/// future invocations can skip the `GET /identity/whoami` round-trip.
+///
+/// Best-effort and silent, mirroring the OAuth-token write-back in
+/// `resolve_single`: any failure (no profile file - e.g. env-only mode - or an
+/// unwritable config dir) is ignored, since a console link is a "nice to have"
+/// that must never fail an otherwise-successful command.
+pub fn cache_console_url(profile_name: &str, url: &str) {
+    let Ok(mut profile) = load_profile(profile_name) else {
+        return;
+    };
+    profile.cached_console_url = Some(url.to_string());
+    profile.cached_console_url_at = Some(Utc::now());
+    let _ = save_profile(profile_name, &profile);
+}
+
 // ── Managed completion helpers ────────────────────────────────────────────────
 
 /// Returns `true` when at least one completion file is tracked in the config.
@@ -806,6 +859,8 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -837,6 +892,8 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -863,6 +920,8 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -953,6 +1012,8 @@ api_key = "mykey"
                 default_output_format: None,
                 default_tier: None,
                 console_url: None,
+                cached_console_url: None,
+                cached_console_url_at: None,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -991,6 +1052,8 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
         };
         save_profile("default", &profile).unwrap();
 
@@ -1015,6 +1078,8 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1040,6 +1105,8 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1065,11 +1132,89 @@ api_key = "mykey"
             default_output_format: None,
             default_tier: None,
             console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
         };
         save_profile(name, &profile).unwrap();
 
         let result = resolve_single(name, None, None).await;
         assert!(result.is_err());
+
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    // ── Console URL cache ──────────────────────────────────────────────────────
+
+    /// A profile that doesn't exist on disk (e.g. env-only mode) has no cache
+    /// to read - this must be a silent `None`, not an error, so the caller
+    /// falls back to a live `/identity/whoami` lookup. Read-only, so it needs
+    /// no filesystem write access.
+    #[test]
+    fn load_cached_console_url_none_for_missing_profile() {
+        assert_eq!(
+            load_cached_console_url("cx_unittest_definitely_missing_profile_xyz"),
+            None
+        );
+    }
+
+    fn profile_with_cache(cached_at: Option<DateTime<Utc>>) -> Profile {
+        Profile {
+            auth: AuthKind::ApiKey,
+            credential_storage: CredentialStorage::File,
+            api_key: Some("k".to_string()),
+            region: Region::Eu1,
+            label: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
+            oauth_tokens: None,
+            default_output_format: None,
+            default_tier: None,
+            console_url: None,
+            cached_console_url: Some("https://cached.app.eu2.coralogix.com".to_string()),
+            cached_console_url_at: cached_at,
+        }
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
+    fn cache_console_url_round_trips() {
+        let name = "cx_inttest_console_cache_roundtrip";
+        // Seed a profile so cache_console_url has a file to write into.
+        save_profile(name, &profile_with_cache(None)).unwrap();
+
+        cache_console_url(name, "https://fresh.app.eu2.coralogix.com");
+        assert_eq!(
+            load_cached_console_url(name),
+            Some("https://fresh.app.eu2.coralogix.com".to_string())
+        );
+
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
+    fn load_cached_console_url_ignores_stale_entry() {
+        let name = "cx_inttest_console_cache_stale";
+        let stale = Utc::now() - Duration::days(CONSOLE_URL_CACHE_TTL_DAYS + 1);
+        save_profile(name, &profile_with_cache(Some(stale))).unwrap();
+
+        // Present on disk, but older than the TTL -> treated as absent.
+        assert_eq!(load_cached_console_url(name), None);
+
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
+    fn load_cached_console_url_returns_fresh_entry() {
+        let name = "cx_inttest_console_cache_fresh";
+        let fresh = Utc::now() - Duration::days(CONSOLE_URL_CACHE_TTL_DAYS - 1);
+        save_profile(name, &profile_with_cache(Some(fresh))).unwrap();
+
+        assert_eq!(
+            load_cached_console_url(name),
+            Some("https://cached.app.eu2.coralogix.com".to_string())
+        );
 
         let _ = std::fs::remove_file(profile_file(name).unwrap());
     }

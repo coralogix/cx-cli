@@ -202,10 +202,11 @@ A fully qualified HTTPS URL can be used as a region value for non-standard envir
 After a successful command on entities with a corresponding web console page, `cx` prints a `View in Coralogix: <url>` line to stderr and may embed the same URL as a `consoleUrl` field in `-o json` / `-o agents` output. The console base URL used to build these links is resolved in this order:
 
 1. **`console_url`** in the profile TOML, if set - used as-is (see the field table above). No API call is made when this is set.
-2. Otherwise, `cx` calls `GET /identity/whoami` and uses its `team_url` field verbatim. This is the default - most teams don't need to configure anything to get console links.
-3. **No link is printed** if `/identity/whoami` fails, or returns no usable `team_url`.
+2. Otherwise, a **fresh cached `team_url`** in the profile TOML. The first time `cx` resolves a team's console URL (step 3) it writes the result back to the profile file as a machine-managed `cached_console_url` (with a `cached_console_url_at` timestamp), the same way OAuth tokens are cached there. Subsequent invocations reuse it for 7 days, so agents making many sequential calls don't pay a `GET /identity/whoami` round-trip on every command. Env-only invocations (`CX_API_KEY` + `CX_REGION` with no profile file) have nowhere to cache and resolve live each process.
+3. Otherwise, `cx` calls `GET /identity/whoami` and uses its `team_url` field verbatim, then caches it per step 2. This is the default on a cold cache - most teams don't need to configure anything to get console links.
+4. **No link is printed** if `/identity/whoami` fails, or returns no usable `team_url`.
 
-A failed or unusable `/identity/whoami` response in step 2 never fails the command - it just means no console link, exactly like step 3. When no link can be resolved, `cx` stays silent: no `View in Coralogix` line on stderr and no `consoleUrl` field in `-o json`/`-o agents` output, and the command otherwise succeeds normally.
+A failed or unusable `/identity/whoami` response in step 3 never fails the command - it just means no console link, exactly like step 4. When no link can be resolved, `cx` stays silent: no `View in Coralogix` line on stderr and no `consoleUrl` field in `-o json`/`-o agents` output, and the command otherwise succeeds normally.
 
 Set `console_url` explicitly in the profile TOML to override this, e.g. for a `Custom` region running a self-hosted console where `/identity/whoami` isn't reachable.
 

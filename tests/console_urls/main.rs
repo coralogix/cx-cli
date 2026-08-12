@@ -2731,9 +2731,13 @@ async fn dashboard_check_by_id_json_output_includes_console_url_on_first_issue_o
         rows[0]
     );
     for row in &rows[1..] {
-        assert!(
-            row.get("consoleUrl").is_none(),
-            "expected no consoleUrl on subsequent issue rows: {row}"
+        // The key stays present-but-null (rather than absent) so that `-o
+        // agents` TOON-encodes the array in its compact tabular form, which
+        // requires every row to share the same key set.
+        assert_eq!(
+            row.get("consoleUrl"),
+            Some(&serde_json::Value::Null),
+            "expected consoleUrl to be null (not absent) on subsequent issue rows: {row}"
         );
     }
 }

@@ -383,7 +383,7 @@ async fn events_with_alert_version_ids_paginates_scoped_endpoint() {
         .expect("run_events should paginate scoped alert events endpoint");
 }
 
-// ── Regression: --name-filter and the alerts-page console link ──────────────
+// ── Regression: --name and the alerts-page console link ─────────────────────
 //
 // These spawn the real `cx` binary (rather than calling `run_list` directly)
 // because the "View in Coralogix" link is printed via a plain `eprintln!` in
@@ -464,7 +464,7 @@ async fn name_filter_matching_nothing_suppresses_alerts_page_link() {
     write_config(&home, "default");
 
     let output = cx(&home)
-        .args(["alerts", "list", "--name-filter", "no-such-alert"])
+        .args(["alerts", "list", "--name", "no-such-alert"])
         .output()
         .expect("cx should run");
 
@@ -485,7 +485,7 @@ async fn name_filter_matching_something_still_prints_alerts_page_link() {
     write_config(&home, "default");
 
     let output = cx(&home)
-        .args(["alerts", "list", "--name-filter", "cpu"])
+        .args(["alerts", "list", "--name", "cpu"])
         .output()
         .expect("cx should run");
 

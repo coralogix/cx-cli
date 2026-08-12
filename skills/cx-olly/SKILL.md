@@ -32,7 +32,7 @@ Only run `cx olly ask` inline (foreground, blocking) for a short question you ex
 ### Start a new conversation
 
 ```bash
-cx olly ask "Why is the checkout service showing high latency?"
+cx olly ask "What alerts fired today?"
 ```
 
 This creates a new chat and returns a response along with a **Chat ID** that you can use for follow-up questions.

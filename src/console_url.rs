@@ -89,10 +89,6 @@
 //!   'datausage'`, `DataUsageComponent`)
 //! - TCO policies: `https://<team>.<domain>/tco-policies` - confirmed in
 //!   source (`libs/tco-v2/src/lib/tco-v2-routes.ts`, `path: 'tco-policies'`)
-//! - Archive (metrics + logs): `https://<team>.<domain>/physical-locations` -
-//!   confirmed in source (`libs/physical-locations/src/lib/physical-locations-routes.ts`,
-//!   `path: 'physical-locations'`, backing both the metrics- and
-//!   logs-archive handlers in the same lib)
 //! - Recording rules: `https://<team>.<domain>/recording-rules` - confirmed
 //!   in source (`libs/recording-rules/src/lib/recording-rules-routes.ts`,
 //!   `path: 'recording-rules'`)
@@ -281,12 +277,6 @@ pub fn usage_url(base: &str) -> String {
 /// Build the console URL for the TCO policies page: `{base}/tco-policies`.
 pub fn tco_url(base: &str) -> String {
     format!("{}/tco-policies", trim_base(base))
-}
-
-/// Build the console URL for the Archive (metrics + logs) settings page:
-/// `{base}/physical-locations`.
-pub fn archive_url(base: &str) -> String {
-    format!("{}/physical-locations", trim_base(base))
 }
 
 /// Build the console URL for the Enrichments page: `{base}/enrichments`.
@@ -621,14 +611,6 @@ mod tests {
         assert_eq!(
             tco_url("https://c4c.app.eu2.coralogix.com"),
             "https://c4c.app.eu2.coralogix.com/tco-policies"
-        );
-    }
-
-    #[test]
-    fn archive_url_is_static() {
-        assert_eq!(
-            archive_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/physical-locations"
         );
     }
 

@@ -1851,50 +1851,6 @@ async fn tco_create_prints_console_link() {
 }
 
 #[tokio::test]
-async fn archive_metrics_create_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/metrics/data-setup/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("archive_metrics_create");
-    fs::write(&file_path, r#"{"enabled": true}"#).unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "archive",
-            "metrics",
-            "create",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/physical-locations"),
-        "stderr did not contain the console link: {stderr}"
-    );
-}
-
-#[tokio::test]
 async fn enrichments_add_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -2472,37 +2428,6 @@ async fn tco_list_empty_prints_no_console_link() {
     assert!(
         !stderr.contains("View in Coralogix:"),
         "stderr unexpectedly contained a console link for an empty policy list: {stderr}"
-    );
-}
-
-#[tokio::test]
-async fn archive_metrics_get_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/metrics/data-setup/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args(["--profile", "mock", "archive", "metrics", "get"])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/physical-locations"),
-        "stderr did not contain the console link: {stderr}"
     );
 }
 

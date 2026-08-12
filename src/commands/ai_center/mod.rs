@@ -398,13 +398,16 @@ pub async fn run_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        eprintln!(
+            "{}",
+            format!("Created AI evaluation in profile '{profile}'.").green()
+        );
         crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
         all.push(val);
     }
-    eprintln!("{}", "Created AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
 
@@ -434,13 +437,16 @@ pub async fn run_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        eprintln!(
+            "{}",
+            format!("Updated AI evaluation in profile '{profile}'.").green()
+        );
         crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
         all.push(val);
     }
-    eprintln!("{}", "Updated AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
 

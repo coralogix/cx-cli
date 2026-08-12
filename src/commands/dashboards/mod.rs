@@ -1007,8 +1007,15 @@ fn issue_json_row(
             );
         }
     }
+    // Always insert `consoleUrl` - as `null` when this row has no link -
+    // rather than only inserting it when present. `-o agents` TOON-encodes
+    // rows into a compact tabular form only when every row has the same key
+    // set; a key that's merely absent on some rows (vs. present-but-null)
+    // silently degrades the whole array to TOON's verbose expanded form.
     if let Some(url) = console_url {
         render::tag_console_url(&mut row, url);
+    } else if let Value::Object(ref mut m) = row {
+        m.insert("consoleUrl".to_string(), Value::Null);
     }
     row
 }
@@ -1198,6 +1205,78 @@ mod tests {
         assert!(
             rendered.contains("Query uses deprecated function 'timeShift'"),
             "message column missing in single-profile output: {rendered}"
+        );
+    }
+
+    /// Regression guard for the "only tag the first row" console-link
+    /// optimization in `run_check`'s `-o agents` branch.
+    ///
+    /// Tagging only the first issue's row with `consoleUrl` (to avoid
+    /// repeating an identical URL on every issue) makes that row's key set
+    /// diverge from the rest. TOON only uses its compact tabular encoding
+    /// (`[N]{k1,k2,...}:` header + one CSV-like line per row) when every
+    /// row shares the same keys; a single divergent row forces the whole
+    /// array into TOON's verbose expanded form (`[N]:` + a full
+    /// `- key: value` block per row), which is far more expensive than the
+    /// repeated URL it was trying to avoid. `issue_json_row` must therefore
+    /// insert `consoleUrl: null` on rows with no link rather than omitting
+    /// the key.
+    #[test]
+    fn check_agents_output_stays_tabular_when_only_first_issue_has_console_url() {
+        let issues = [
+            (
+                IssueSeverity::SeverityError,
+                Some("m1".to_string()),
+                Some("/a".to_string()),
+            ),
+            (
+                IssueSeverity::SeverityWarning,
+                Some("m2".to_string()),
+                Some("/b".to_string()),
+            ),
+            (
+                IssueSeverity::SeverityWarning,
+                Some("m3".to_string()),
+                Some("/c".to_string()),
+            ),
+        ];
+
+        // Mirrors the row construction in `run_check`'s Json/Agents branch:
+        // only `i == 0` gets the console URL.
+        let rows: Vec<Value> = issues
+            .iter()
+            .enumerate()
+            .map(|(i, (severity, message, location))| {
+                let issue = api::DashboardCheckIssue {
+                    severity: *severity,
+                    message: message.clone(),
+                    location: location.clone(),
+                };
+                let console_url = if i == 0 {
+                    Some("https://mock.coralogix.com/#/dashboards/d1")
+                } else {
+                    None
+                };
+                issue_json_row(&issue, "mock-profile", false, console_url)
+            })
+            .collect();
+
+        let encoded = toon_encode(&Value::Array(rows)).expect("TOON encoding failed");
+
+        // Compact tabular form opens with a `[N]{key1,key2,...}:` header;
+        // the degraded expanded form instead opens with a bare `[N]:` and
+        // repeats `- key: value` per row.
+        let header = encoded.lines().next().unwrap_or_default();
+        assert!(
+            header.contains('{'),
+            "expected TOON's compact tabular header (e.g. `[3]{{...}}:`), \
+             got expanded form instead - heterogeneous row keys broke \
+             tabular encoding: {encoded}"
+        );
+        assert!(
+            !encoded.contains("\n  - "),
+            "TOON fell back to per-row expanded form, which repeats every \
+             key name on every row: {encoded}"
         );
     }
 }

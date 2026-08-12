@@ -34,6 +34,13 @@ pub struct ExecutionTarget {
     /// profile file (see `config::load_cached_console_url`) so that most
     /// invocations skip the network lookup entirely.
     console_base: OnceCell<Option<String>>,
+    /// When true, [`console_base`](Self::console_base) always returns `None`,
+    /// suppressing every "View in Coralogix" link (stderr line and
+    /// `consoleUrl` field) for this target. Set from the `--no-console-link`
+    /// flag / `CX_NO_CONSOLE_LINK` env var / `no_console_link` config key via
+    /// [`build_targets`]. Defaults to `false` here so direct `new()` callers
+    /// (tests) are unaffected.
+    no_console_link: bool,
     pub request_metadata: RequestMetadata,
 }
 
@@ -47,6 +54,7 @@ impl ExecutionTarget {
             cfg,
             client,
             console_base: OnceCell::new(),
+            no_console_link: false,
             request_metadata,
         })
     }
@@ -55,8 +63,11 @@ impl ExecutionTarget {
     /// against.
     ///
     /// Resolution order:
-    /// 1. An explicit `console_url` configured on the profile/env - used
+    /// 1. An explicit `console_url` configured on the profile TOML - used
     ///    as-is (trailing slash already trimmed by `config::resolve_single`).
+    ///    Not available to env-only invocations (`CX_API_KEY` + `CX_REGION`
+    ///    with no profile file) - there is no `CX_CONSOLE_URL` equivalent, so
+    ///    those callers always fall through to steps 2-4.
     /// 2. A fresh on-disk cache of the team's console URL in the profile file
     ///    (see `config::load_cached_console_url`), written by a previous
     ///    invocation. This is what spares the overwhelming majority of
@@ -74,7 +85,15 @@ impl ExecutionTarget {
     /// have" that must never fail an otherwise-successful command. Cached per
     /// target so multiple links printed within one invocation only resolve
     /// once.
+    ///
+    /// Short-circuits to `None` unconditionally when `no_console_link` is
+    /// set, before any of the steps above - so `--no-console-link` /
+    /// `CX_NO_CONSOLE_LINK` / `no_console_link` in config also skip the
+    /// `/identity/whoami` round-trip on a cold cache, not just the printing.
     pub async fn console_base(&self) -> Option<String> {
+        if self.no_console_link {
+            return None;
+        }
         self.console_base
             .get_or_init(|| async {
                 // 1. Explicit override always wins.
@@ -176,13 +195,22 @@ pub async fn tag_console_link_for_profile(
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.
+///
+/// `no_console_link` is applied to every target so all "View in Coralogix"
+/// links (see [`ExecutionTarget::console_base`]) are suppressed uniformly
+/// across a fan-out.
 pub fn build_targets(
     configs: Vec<ResolvedConfig>,
     request_metadata: RequestMetadata,
+    no_console_link: bool,
 ) -> Result<Vec<Arc<ExecutionTarget>>> {
     configs
         .into_iter()
-        .map(|cfg| ExecutionTarget::new(cfg, request_metadata.clone()).map(Arc::new))
+        .map(|cfg| {
+            let mut target = ExecutionTarget::new(cfg, request_metadata.clone())?;
+            target.no_console_link = no_console_link;
+            Ok(Arc::new(target))
+        })
         .collect()
 }
 
@@ -437,6 +465,36 @@ mod tests {
         let second = target.console_base().await;
         assert_eq!(first, second);
         assert_eq!(first, Some("https://c4c.app.eu2.coralogix.com".to_string()));
+    }
+
+    #[tokio::test]
+    async fn console_base_none_when_no_console_link_set_even_with_explicit_console_url() {
+        install_rustls_provider();
+        // No mock server is started for this test either - if `no_console_link`
+        // didn't short-circuit before the explicit `console_url` check, this
+        // test would still pass (explicit URL wins), so the real assertion is
+        // that suppression overrides *everything*, not just the whoami path.
+        let mut target = ExecutionTarget::new(
+            test_cfg("http://127.0.0.1:1", Some("https://c4c.example.com/")),
+            RequestMetadata::default(),
+        )
+        .unwrap();
+        target.no_console_link = true;
+        assert_eq!(target.console_base().await, None);
+    }
+
+    #[test]
+    fn build_targets_propagates_no_console_link_to_every_target() {
+        install_rustls_provider();
+        let configs = vec![
+            test_cfg("http://127.0.0.1:1", Some("https://c4c.example.com/")),
+            test_cfg("http://127.0.0.1:2", Some("https://other.example.com/")),
+        ];
+        let targets = build_targets(configs, RequestMetadata::default(), true).unwrap();
+        assert_eq!(targets.len(), 2);
+        for target in &targets {
+            assert!(target.no_console_link);
+        }
     }
 
     #[test]

@@ -198,6 +198,12 @@ pub struct Config {
     #[serde(default)]
     pub read_only: bool,
 
+    /// When true, "View in Coralogix" console links (the stderr line and
+    /// the `consoleUrl` field in `-o json`/`-o agents` output) are suppressed
+    /// for ALL invocations. Equivalent to always passing --no-console-link.
+    #[serde(default)]
+    pub no_console_link: bool,
+
     /// Shell completion scripts installed and tracked by `cx completions install`.
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -230,6 +236,7 @@ impl Default for Config {
             allow_risky_commands: true,
             olly_enabled: true,
             read_only: false,
+            no_console_link: false,
             managed_completions: vec![],
         }
     }

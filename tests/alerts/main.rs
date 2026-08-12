@@ -1,6 +1,11 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use assert_cmd::Command as AssertCommand;
 use serde_json::json;
 use wiremock::matchers::{body_json, method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -376,4 +381,117 @@ async fn events_with_alert_version_ids_paginates_scoped_endpoint() {
     run_events(&targets, &ids, None, None, OutputFormat::Json)
         .await
         .expect("run_events should paginate scoped alert events endpoint");
+}
+
+// ── Regression: --name-filter and the alerts-page console link ──────────────
+//
+// These spawn the real `cx` binary (rather than calling `run_list` directly)
+// because the "View in Coralogix" link is printed via a plain `eprintln!` in
+// `render::print_console_link` - the only way to observe it is to capture a
+// subprocess's real stderr, same as `tests/profile_override/main.rs`.
+
+static ALERTS_LINK_TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+fn temp_home() -> PathBuf {
+    let id = ALERTS_LINK_TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("cx_alerts_link_test_{pid}_{id}"));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn write_profile(home: &std::path::Path, name: &str, region: &str) {
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let content = format!(
+        r#"auth = "api_key"
+credential_storage = "file"
+api_key = "test-api-key"
+region = "{region}"
+"#
+    );
+    fs::write(profiles_dir.join(format!("{name}.toml")), content).unwrap();
+}
+
+fn write_config(home: &std::path::Path, default_profile: &str) {
+    let cx_dir = home.join(".cx");
+    fs::create_dir_all(&cx_dir).unwrap();
+    fs::write(
+        cx_dir.join("config.toml"),
+        format!("default_profile = \"{default_profile}\"\n"),
+    )
+    .unwrap();
+}
+
+fn cx(home: &std::path::Path) -> AssertCommand {
+    let mut cmd = AssertCommand::cargo_bin("cx").expect("cx binary should build");
+    cmd.env("CX_HOME", home);
+    cmd.env_remove("CX_API_KEY");
+    cmd.env_remove("CX_REGION");
+    cmd.env_remove("CX_PROFILE");
+    cmd
+}
+
+async fn mount_whoami_and_alerts(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_url": "https://test-team.example.com"
+        })))
+        .mount(server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alertDefs": [
+                { "id": "alert-001", "name": "High Error Rate" },
+                { "id": "alert-002", "name": "CPU Spike" }
+            ]
+        })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn name_filter_matching_nothing_suppresses_alerts_page_link() {
+    let server = MockServer::start().await;
+    mount_whoami_and_alerts(&server).await;
+
+    let home = temp_home();
+    write_profile(&home, "default", &server.uri());
+    write_config(&home, "default");
+
+    let output = cx(&home)
+        .args(["alerts", "list", "--name-filter", "no-such-alert"])
+        .output()
+        .expect("cx should run");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "a filter matching zero alerts should not print the alerts-page link, stderr: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn name_filter_matching_something_still_prints_alerts_page_link() {
+    let server = MockServer::start().await;
+    mount_whoami_and_alerts(&server).await;
+
+    let home = temp_home();
+    write_profile(&home, "default", &server.uri());
+    write_config(&home, "default");
+
+    let output = cx(&home)
+        .args(["alerts", "list", "--name-filter", "cpu"])
+        .output()
+        .expect("cx should run");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix"),
+        "a filter matching at least one alert should still print the alerts-page link, stderr: {stderr}"
+    );
 }

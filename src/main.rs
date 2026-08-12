@@ -747,7 +747,7 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <uuid>
   cx olly ask \"Analyze this\" --model claude-sonnet-4-5
-  cx olly ask \"Analyze this for me\" --agent-to-agent-mode")]
+  cx olly ask \"Find error logs that start with 'Cart Not Found' in the last 6 hours\" --agent-to-agent-mode")]
     Ask {
         /// The message to send to the assistant.
         message: String,

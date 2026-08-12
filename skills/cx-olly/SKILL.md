@@ -28,15 +28,16 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 ### Start a new conversation
 
 ```bash
-cx olly ask "What alerts fired today?"
+cx olly ask "What alerts fired today?" --agent-to-agent-mode
 ```
 
 This creates a new chat and returns a response along with a **Chat ID** that you can use for follow-up questions.
+Remove `--agent-to-agent-mode` if you don't have context to share (like quick access to source files) or if the created chat is only for human usage.
 
 ### Continue an existing chat
 
 ```bash
-cx olly ask "Tell me more about the error rates" --chat-id <chat-id>
+cx olly ask "Tell me more about the error rates" --chat-id <chat-id> --agent-to-agent-mode
 ```
 
 Use `--chat-id` to continue a conversation and maintain context from previous messages.
@@ -46,7 +47,7 @@ Use `--chat-id` to continue a conversation and maintain context from previous me
 Available models include `gpt-5.2` (default), `claude-sonnet-4-5`, `sonnet-4.6`, `gpt-5.4`, `claude-haiku-4-5`.
 
 ```bash
-cx olly ask "Explain this error" --model claude-sonnet-4-5
+cx olly ask "Explain this error" --model claude-sonnet-4-5 --agent-to-agent-mode
 ```
 
 ### Timeout
@@ -54,7 +55,7 @@ cx olly ask "Explain this error" --model claude-sonnet-4-5
 For complex queries that may take longer, increase the timeout (default: 900 seconds):
 
 ```bash
-cx olly ask "Deep analysis of last week's incidents" --timeout 1800
+cx olly ask "Deep analysis of last week's incidents" --timeout 1800 --agent-to-agent-mode
 ```
 
 ### Agent-to-agent mode
@@ -116,7 +117,7 @@ cx olly artifacts get <artifact-id>
 
 ```bash
 # Get response as JSON
-cx olly ask "List top 5 error messages" -o json | jq '.response'
+cx olly ask "List top 5 error messages" -o json --agent-to-agent-mode | jq '.response'
 
 # Parse artifacts
 cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
@@ -127,7 +128,8 @@ cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
 ```bash
 cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
   --model claude-sonnet-4-5 \
-  --timeout 1800
+  --timeout 1800 \
+  --agent-to-agent-mode
 ```
 
 ## Key Principles

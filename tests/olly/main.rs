@@ -315,7 +315,7 @@ async fn ask_sends_skill_interaction_mode() {
 }
 
 #[tokio::test]
-async fn ask_sends_agent_to_agent_mode_by_default() {
+async fn ask_sends_agent_to_agent_mode_when_enabled() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))

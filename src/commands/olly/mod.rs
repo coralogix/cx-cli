@@ -60,6 +60,12 @@ pub async fn run_ask(
         .send_message(&chat_id, message, model, timeout, agent_to_agent_mode)
         .await?;
 
+    // Olly is single-profile only, so unlike other command groups this uses
+    // the resolved target directly rather than looking one up by profile name.
+    target
+        .emit_console_link(|base| crate::console_url::olly_chat_url(base, &chat_id))
+        .await;
+
     // Render based on output format
     match output {
         OutputFormat::Json => {

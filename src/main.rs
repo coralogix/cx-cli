@@ -154,6 +154,10 @@ struct Cli {
     #[arg(long, global = true, help_heading = "Global Options")]
     read_only: bool,
 
+    /// Suppress "View in Coralogix" console links (stderr line).
+    #[arg(long, global = true, help_heading = "Global Options")]
+    no_console_link: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -2821,6 +2825,9 @@ async fn main() -> Result<()> {
 
     let read_only =
         cli.read_only || safety::env_is_truthy("CX_READ_ONLY") || global_cfg_early.read_only;
+    let no_console_link = cli.no_console_link
+        || safety::env_is_truthy("CX_NO_CONSOLE_LINK")
+        || global_cfg_early.no_console_link;
     if read_only {
         let top = safety::get_top_level_subcommand_name(&matches);
         let is_local = matches!(
@@ -2984,7 +2991,7 @@ async fn main() -> Result<()> {
     };
 
     let request_metadata = RequestMetadata::from_invocation(&matches, output, &configs, yes);
-    let targets = build_targets(configs, request_metadata)?;
+    let targets = build_targets(configs, request_metadata, no_console_link)?;
     let agent_mode = safety::is_agent_mode();
 
     // Wrap the dispatch in an async block so we can capture its Result and

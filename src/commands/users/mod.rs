@@ -95,8 +95,21 @@ pub async fn run_search(
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, User)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // One static team-members page link per profile - printed to stderr
+        // only. Not embedded in -o json/-o agents: unlike other list
+        // commands, this link isn't any individual user's own link, so
+        // tagging one arbitrary row with it is misleading rather than
+        // helpful. Skip printing entirely when the profile's result is
+        // empty, since there's nothing to view.
+        if !resp.users.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_users_url(b)
+            })
+            .await;
+        }
         for user in resp.users {
-            all_json.push(user_to_json(&user, include_profile, &profile));
+            let user_json = user_to_json(&user, include_profile, &profile);
+            all_json.push(user_json);
             all_items.push((profile.clone(), user));
         }
     }
@@ -161,6 +174,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -208,6 +225,10 @@ pub async fn run_create(
             "{}",
             format!("Created user(s) in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await;
     }
 
     match output {
@@ -251,6 +272,12 @@ pub async fn run_update(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
+        crate::execution::emit_console_link_for_profile(
+            targets,
+            &profile,
+            crate::console_url::iam_users_url,
+        )
+        .await;
         all_results.push(v);
     }
 
@@ -298,6 +325,10 @@ pub async fn run_set_status(
             "{}",
             format!("Updated user status in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_users_url(b)
+        })
+        .await;
     }
     Ok(())
 }

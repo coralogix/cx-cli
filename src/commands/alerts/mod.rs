@@ -93,14 +93,28 @@ pub async fn run_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertDef)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        for alert in resp.alert_defs {
-            if let Some(filter) = name_filter {
-                let name = alert.display_name().to_lowercase();
-                if !name.contains(&filter.to_lowercase()) {
-                    continue;
-                }
-            }
-            all_json.push(alert_to_json(&alert, include_profile, &profile));
+        let matching: Vec<AlertDef> = resp
+            .alert_defs
+            .into_iter()
+            .filter(|alert| match name_filter {
+                Some(filter) => alert
+                    .display_name()
+                    .to_lowercase()
+                    .contains(&filter.to_lowercase()),
+                None => true,
+            })
+            .collect();
+        // Print the alerts list page link to stderr once per profile. Skip
+        // when nothing matched (post-filter), since there's nothing to view.
+        if !matching.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::alerts_url(b)
+            })
+            .await;
+        }
+        for alert in matching {
+            let json = alert_to_json(&alert, include_profile, &profile);
+            all_json.push(json);
             all_items.push((profile.clone(), alert));
         }
     }
@@ -175,6 +189,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::alert_url(b, alert_id)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -279,6 +297,12 @@ pub async fn run_create(
                 alert.id.as_deref(),
                 &profile,
             );
+            if let Some(id) = alert.id.as_deref() {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::alert_url(b, id)
+                })
+                .await;
+            }
             let json = alert_to_json(&alert, include_profile, &profile);
             all_results.push(json);
         } else {
@@ -379,6 +403,10 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
             "{}",
             format!("Alert {alert_id} enabled in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::alert_url(b, alert_id)
+        })
+        .await;
     }
 
     Ok(())
@@ -406,6 +434,10 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
             "{}",
             format!("Alert {alert_id} disabled in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::alert_url(b, alert_id)
+        })
+        .await;
     }
 
     Ok(())

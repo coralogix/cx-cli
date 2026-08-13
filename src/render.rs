@@ -102,6 +102,15 @@ pub fn print_created(verb: &str, kind: &str, name: Option<&str>, id: Option<&str
     }
 }
 
+/// Print a "View in Coralogix" console link to stderr.
+///
+/// Callers only invoke this when a console base URL was successfully
+/// resolved (see `ExecutionTarget::console_base`) and an entity ID was
+/// extracted from the API response.
+pub fn print_console_link(url: &str) {
+    eprintln!("{}", format!("View in Coralogix: {url}").cyan());
+}
+
 // ── Text tables ──────────────────────────────────────────────────────────────
 
 /// Build a text table string with an optional "Profile" column.

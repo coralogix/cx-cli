@@ -61,9 +61,19 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ContextualDataIntegration)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the extensions/integrations page link to stderr once per
+        // profile. Skip when there are no integrations, since there's
+        // nothing to view.
+        if !resp.integrations.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::integrations_url(b)
+            })
+            .await;
+        }
         for wrapper in resp.integrations {
             let item: ContextualDataIntegration = wrapper.into();
-            all_json.push(item_to_json(&item, include_profile, &profile));
+            let item_json = item_to_json(&item, include_profile, &profile);
+            all_json.push(item_json);
             all_items.push((profile.clone(), item));
         }
     }
@@ -147,6 +157,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::integrations_url(b)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -202,6 +216,12 @@ pub async fn run_create(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
+        crate::execution::emit_console_link_for_profile(
+            targets,
+            &profile,
+            crate::console_url::integrations_url,
+        )
+        .await;
         all_results.push(v);
     }
 
@@ -246,6 +266,10 @@ pub async fn run_update(
             "{}",
             format!("Updated contextual data integration {id} in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::integrations_url(b)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -281,6 +305,10 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Contextual data integration {id} deleted in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::integrations_url(b)
+        })
+        .await;
     }
     Ok(())
 }
@@ -311,6 +339,10 @@ pub async fn run_definition(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::integrations_url(b)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -359,6 +391,10 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::integrations_url(b)
+        })
+        .await;
         all_results.push(val);
     }
 

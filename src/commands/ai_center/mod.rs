@@ -159,6 +159,17 @@ pub async fn run_applications_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        // Applications have no create/update/delete in this CLI - list/get are
+        // the only entry points - so the Application Catalog link is attached
+        // here rather than gated behind a mutation (same reasoning as `usage`).
+        // Print it to stderr once per profile; skip when there are no
+        // applications, since there's nothing to view.
+        if !items.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::ai_center_applications_url(b)
+            })
+            .await;
+        }
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -167,7 +178,8 @@ pub async fn run_applications_list(
                 col(&item, "subsystem").to_string(),
                 render::bool_display(item.get("guardrailsIntegrated").and_then(Value::as_bool)),
             ]);
-            all_json.push(tag_item(item, include_profile, &profile));
+            let item = tag_item(item, include_profile, &profile);
+            all_json.push(item);
         }
     }
 
@@ -199,7 +211,38 @@ pub async fn run_applications_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        // A single application deep-links to its drilldown page, keyed by the
+        // `application` + `subsystem` query params (there is no path-param
+        // route for one application in the console). Fall back to the catalog
+        // page if the response omits `application`. The API wraps the payload
+        // as `{"aiApplication": {...}}`, so the fields live one level below
+        // the top of `val`, not at its root.
+        let app_obj = val.get("aiApplication");
+        let application = app_obj
+            .and_then(|v| v.get("application"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let subsystem = app_obj
+            .and_then(|v| v.get("subsystem"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        crate::execution::emit_console_link_for_profile(
+            targets,
+            &profile,
+            |b| match &application {
+                Some(app) => crate::console_url::ai_center_application_url(b, app, &subsystem),
+                None => crate::console_url::ai_center_applications_url(b),
+            },
+        )
+        .await;
+        all.push(val);
+    }
     emit_objects(&all, include_profile, output, "AI application not found.")
 }
 
@@ -247,6 +290,14 @@ pub async fn run_evaluations_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        // Print the Eval Catalog page link to stderr once per profile.
+        // Skip when there are no evaluations, since there's nothing to view.
+        if !items.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::ai_center_evaluations_url(b)
+            })
+            .await;
+        }
         for item in items {
             rows.push(vec![
                 profile.clone(),
@@ -261,7 +312,8 @@ pub async fn run_evaluations_list(
                     .map(|t| t.to_string())
                     .unwrap_or_default(),
             ]);
-            all_json.push(tag_item(item, include_profile, &profile));
+            let item = tag_item(item, include_profile, &profile);
+            all_json.push(item);
         }
     }
 
@@ -301,7 +353,17 @@ pub async fn run_evaluations_get(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     emit_objects(&all, include_profile, output, "AI evaluation not found.")
 }
 
@@ -323,8 +385,21 @@ pub async fn run_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
-    eprintln!("{}", "Created AI evaluation.".green());
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        eprintln!(
+            "{}",
+            format!("Created AI evaluation in profile '{profile}'.").green()
+        );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     emit_objects(&all, include_profile, output, "No result.")
 }
 
@@ -349,8 +424,21 @@ pub async fn run_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
-    eprintln!("{}", "Updated AI evaluation.".green());
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        eprintln!(
+            "{}",
+            format!("Updated AI evaluation in profile '{profile}'.").green()
+        );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     emit_objects(&all, include_profile, output, "No result.")
 }
 
@@ -372,7 +460,17 @@ pub async fn run_evaluations_delete(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     eprintln!("{}", "Deleted AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -441,6 +539,15 @@ async fn run_custom_evaluations_table(
     // Items are raw API objects: the text table reads a few columns, but
     // JSON/toon output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
+        // Print the Eval Catalog page link to stderr once per profile.
+        // Skip when there are no custom evaluations, since there's nothing
+        // to view.
+        if !items.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::ai_center_evaluations_url(b)
+            })
+            .await;
+        }
         for item in items {
             let app_count = item
                 .get("applicationIds")
@@ -454,7 +561,8 @@ async fn run_custom_evaluations_table(
                 app_count.to_string(),
                 col(&item, "description").chars().take(60).collect(),
             ]);
-            all_json.push(tag_item(item, include_profile, &profile));
+            let item = tag_item(item, include_profile, &profile);
+            all_json.push(item);
         }
     }
 
@@ -486,7 +594,17 @@ pub async fn run_custom_evaluations_create(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     eprintln!("{}", "Created custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -512,7 +630,17 @@ pub async fn run_custom_evaluations_update(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     eprintln!("{}", "Updated custom evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -543,7 +671,17 @@ pub async fn run_add_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     eprintln!("{}", "Attached policy to application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
@@ -574,7 +712,17 @@ pub async fn run_remove_policy(
     })
     .await;
 
-    let all = collect_objects(per_profile, include_profile)?;
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
     eprintln!("{}", "Detached policy from application.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }

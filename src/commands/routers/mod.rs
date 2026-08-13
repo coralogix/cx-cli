@@ -58,6 +58,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Router)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the routers list page link to stderr once per profile.
+        // Skip when there are no routers, since there's nothing to view.
+        if !resp.routers.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::notification_routers_url(b)
+            })
+            .await;
+        }
         for router in resp.routers {
             all_json.push(router_to_json(&router, include_profile, &profile));
             all_items.push((profile.clone(), router));
@@ -172,7 +180,14 @@ pub async fn run_create(
                 )
                 .green()
             );
-            all_results.push(router_to_json(&router, include_profile, &profile));
+            if let Some(id) = router.id.as_deref() {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::notification_router_url(b, id)
+                })
+                .await;
+            }
+            let router_json = router_to_json(&router, include_profile, &profile);
+            all_results.push(router_json);
         }
     }
     match output {
@@ -208,6 +223,16 @@ pub async fn run_update(
             "{}",
             format!("Updated router in profile '{profile}'.").green()
         );
+        let extracted_id = val
+            .get("router")
+            .and_then(crate::console_url::id_from_json)
+            .or_else(|| crate::console_url::id_from_json(&val));
+        if let Some(id) = extracted_id {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::notification_router_url(b, &id)
+            })
+            .await;
+        }
         all_results.push(val);
     }
     match output {

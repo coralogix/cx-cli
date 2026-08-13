@@ -103,6 +103,10 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 - **Always supply a resolution reason** unless `--no-reason` truly applies.
 - **`P1`-style shorthand** is accepted anywhere a priority/status/category is expected.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) for cross-environment triage.
+- **Link to a specific case** — build `<base>/cases?id=<case_id>`, where
+  `<base>` is the console URL already seen in a `View in Coralogix:
+  <base>/...` line printed by any `cx cases` command this session — never
+  fabricate `<base>` yourself.
 
 ## References
 

@@ -375,6 +375,15 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, api::DashboardCatalogItem)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the dashboards catalog page link to stderr once per
+        // profile. Skip when there are no dashboards, since there's
+        // nothing to view.
+        if !resp.items.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboards_url(b)
+            })
+            .await;
+        }
         for item in resp.items {
             all_rows.push(catalog_item_to_json(&item, include_profile, &profile));
             all_items.push((profile.clone(), item));
@@ -517,6 +526,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::dashboard_url(b, dashboard_id)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -665,6 +678,12 @@ pub async fn run_create(
             created_id.as_deref(),
             &profile,
         );
+        if let Some(id) = &created_id {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboard_url(b, id)
+            })
+            .await;
+        }
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
         }
@@ -738,7 +757,10 @@ pub async fn run_replace(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
-        let replaced_id = dashboard_id_from_response(&resp);
+        // The request already carried the dashboard's id (`dash_id`, required above), so
+        // fall back to it when the replace response comes back without one — some
+        // deployments return an empty body on a successful replace.
+        let replaced_id = dashboard_id_from_response(&resp).or_else(|| Some(dash_id.to_string()));
         render::print_created(
             "Replaced",
             "dashboard",
@@ -746,6 +768,12 @@ pub async fn run_replace(
             replaced_id.as_deref(),
             &profile,
         );
+        if let Some(id) = &replaced_id {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboard_url(b, id)
+            })
+            .await;
+        }
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
         }
@@ -808,6 +836,14 @@ pub async fn run_folders_list(
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, DashboardFolderItem)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Folders live in the same catalog UI as the dashboards themselves,
+        // so link to the same page. Skip when there are no folders.
+        if !resp.folders.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboards_url(b)
+            })
+            .await;
+        }
         for item in resp.folders {
             all_rows.push(folder_item_to_json(&item, include_profile, &profile));
             all_items.push((profile.clone(), item));
@@ -1028,6 +1064,12 @@ pub async fn run_check(
 
     let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(id) = dashboard_id {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboard_url(b, id)
+            })
+            .await;
+        }
         all_issues.push((profile, resp.issues));
     }
 
@@ -1039,7 +1081,6 @@ pub async fn run_check(
         .count();
     let total_issues = all_issues.iter().map(|(_, i)| i.len()).sum::<usize>();
 
-    // Render.
     match output {
         OutputFormat::Json => {
             let mut rows: Vec<Value> = Vec::new();

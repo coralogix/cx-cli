@@ -60,28 +60,14 @@ On success: continue to step 4 below — the workflow is **not finished** until 
 
 Don't stop at "dashboard created". The very last action is to give the user a clickable link to the dashboard.
 
-Build the URL from the active profile's region and the dashboard `id` returned by `cx dashboards create`:
+Don't hand-build the URL. `cx dashboards create` / `cx dashboards replace` already print a `View in Coralogix: <url>` line to stderr on success once it can resolve a console link for the active profile - capture that line and reuse the URL verbatim.
+
+If no `View in Coralogix:` line was printed (no console link could be resolved for the profile and no `console_url` override is configured - see `docs/configuration.md` § "Console links"), **omit the link entirely** — do not invent a URL. Use the second (no-link) template in `SKILL.md` § "Output format for the user", which drops the markdown link from the `Deployed` line *and* drops the standalone `Open it:` line so the user is never shown a broken URL.
+
+Render the link as a markdown link using the dashboard **name** as the link text:
 
 ```
-https://<region>.app.coralogix.com/#/dashboards/<id>
-```
-
-Region → webapp host mapping:
-
-| Region | Webapp host |
-|---|---|
-| `us1` / `us2` / `us3` | `us1.app.coralogix.com` / `us2.app.coralogix.com` / `us3.app.coralogix.com` |
-| `eu1` / `eu2` | `eu1.app.coralogix.com` / `eu2.app.coralogix.com` |
-| `ap1` / `ap2` / `ap3` | `ap1.app.coralogix.com` / `ap2.app.coralogix.com` / `ap3.app.coralogix.com` |
-| `stg1` | `stg1.app.coralogix.net` |
-| Custom (`https://api.<host>`) | Strip the leading `api.` and use `<host>` (e.g. `api.myenv.coralogix.com` → `myenv.app.coralogix.com`). |
-
-If the custom endpoint doesn't follow the `api.` prefix convention, **omit the link entirely** — do not invent a URL. Use the second ("webapp host cannot be derived") template in `SKILL.md` § "Output format for the user", which drops the markdown link from the `Deployed` line *and* drops the standalone `Open it:` line so the user is never shown a broken URL.
-
-Render the link as a markdown link using the dashboard **name** as the link text, e.g.:
-
-```
-Dashboard: **[Order Service - Health](https://eu2.app.coralogix.com/#/dashboards/abc123def456)**
+Dashboard: **[<Name>](<url from the View in Coralogix line>)**
 ```
 
 Then emit the summary defined in the main `SKILL.md` § "Output format for the user".

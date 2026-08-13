@@ -30,6 +30,8 @@ pub fn test_target_with_token(
         auth_kind: AuthKind::ApiKey,
         endpoint: base_url.to_string(),
         default_tier: coralogix_cli::Tier::Archive,
+        console_url: None,
+        credentials_overridden: false,
     };
     Arc::new(
         ExecutionTarget::new(cfg, RequestMetadata::default())

@@ -2465,8 +2465,7 @@ async fn integrations_create_prints_console_link() {
 }
 
 // NOTE: `webhooks create` console-link coverage lives in the FORGE-696 follow-up
-// PR, which fixes the underlying bug that makes the link reachable at all. See
-// the "webhooks create" entry in verification/forge-586-console-links/.
+// PR, which fixes the underlying bug that makes the link reachable at all.
 
 #[tokio::test]
 async fn iam_api_keys_create_prints_console_link() {

@@ -68,6 +68,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Slo)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the SLOs list page link to stderr once per profile. Skip
+        // when there are no SLOs, since there's nothing to view.
+        if !resp.slos.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::slos_url(b)
+            })
+            .await;
+        }
         for slo in resp.slos {
             all_json.push(slo_to_json(&slo, include_profile, &profile));
             all_items.push((profile.clone(), slo));

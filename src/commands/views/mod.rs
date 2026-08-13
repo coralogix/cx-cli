@@ -83,6 +83,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, View)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the Explore page link to stderr once per profile. Skip
+        // when there are no views, since there's nothing to view.
+        if !resp.views.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::views_url(b)
+            })
+            .await;
+        }
         for view in resp.views {
             all_json.push(view_to_json(&view, include_profile, &profile));
             all_items.push((profile.clone(), view));

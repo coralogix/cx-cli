@@ -48,6 +48,15 @@ pub fn dashboard_url(base: &str, id: &str) -> String {
     format!("{}/dashboards/{id}", trim_base(base))
 }
 
+/// Build the console URL for the dashboards page: `{base}/dashboards`.
+///
+/// Not a literal catalog view - the bare route redirects client-side to the
+/// team's default/first dashboard (or `/dashboards/new` if none exist).
+/// Still the right link to hand out with no dashboard id known.
+pub fn dashboards_url(base: &str) -> String {
+    format!("{}/dashboards", trim_base(base))
+}
+
 /// Build the console URL for an alert: `{base}/alerts/{id}`.
 pub fn alert_url(base: &str, id: &str) -> String {
     format!("{}/alerts/{id}", trim_base(base))
@@ -81,15 +90,35 @@ pub fn view_url(base: &str, id: &str) -> String {
     format!("{}/explore?viewId={encoded}", trim_base(base))
 }
 
+/// Build the console URL for the Explore page: `{base}/explore`.
+///
+/// Not a dedicated "browse saved views" screen - saved views are picked from
+/// an in-page list, not a distinct URL - but this is the correct link for
+/// the views domain with no view id known.
+pub fn views_url(base: &str) -> String {
+    format!("{}/explore", trim_base(base))
+}
+
 /// Build the console URL for an E2M (Events2Metrics) definition:
 /// `{base}/tco/metrics/{id}`.
 pub fn e2m_url(base: &str, id: &str) -> String {
     format!("{}/tco/metrics/{id}", trim_base(base))
 }
 
+/// Build the console URL for the E2M definitions list page:
+/// `{base}/tco/metrics`.
+pub fn e2m_definitions_url(base: &str) -> String {
+    format!("{}/tco/metrics", trim_base(base))
+}
+
 /// Build the console URL for an SLO: `{base}/slo/{id}/overview`.
 pub fn slo_url(base: &str, id: &str) -> String {
     format!("{}/slo/{id}/overview", trim_base(base))
+}
+
+/// Build the console URL for the SLOs list page: `{base}/slo`.
+pub fn slos_url(base: &str) -> String {
+    format!("{}/slo", trim_base(base))
 }
 
 /// Build the console URL for the notification connectors list page:
@@ -118,6 +147,12 @@ pub fn notification_router_url(base: &str, id: &str) -> String {
     )
 }
 
+/// Build the console URL for the notification routers list page:
+/// `{base}/notification-center/routers`.
+pub fn notification_routers_url(base: &str) -> String {
+    format!("{}/notification-center/routers", trim_base(base))
+}
+
 /// Build the console URL for an IAM role:
 /// `{base}/settings/roles?selectedRoleId={urlencoded id}`.
 pub fn iam_role_url(base: &str, id: &str) -> String {
@@ -138,6 +173,12 @@ pub fn iam_scope_url(base: &str, id: &str) -> String {
     )
 }
 
+/// Build the console URL for the IAM scopes list page:
+/// `{base}/settings/scopes`.
+pub fn iam_scopes_url(base: &str) -> String {
+    format!("{}/settings/scopes", trim_base(base))
+}
+
 /// Build the console URL for an IAM group:
 /// `{base}/settings/account/groups?selectedGroupId={urlencoded id}`.
 pub fn iam_group_url(base: &str, id: &str) -> String {
@@ -146,6 +187,12 @@ pub fn iam_group_url(base: &str, id: &str) -> String {
         "{}/settings/account/groups?selectedGroupId={encoded}",
         trim_base(base)
     )
+}
+
+/// Build the console URL for the IAM team groups list page:
+/// `{base}/settings/account/groups`.
+pub fn iam_groups_url(base: &str) -> String {
+    format!("{}/settings/account/groups", trim_base(base))
 }
 
 /// Build the console URL for the Usage page: `{base}/settings/datausage`.
@@ -256,6 +303,22 @@ mod tests {
     }
 
     #[test]
+    fn dashboards_url_is_static() {
+        assert_eq!(
+            dashboards_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/dashboards"
+        );
+    }
+
+    #[test]
+    fn dashboards_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            dashboards_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/dashboards"
+        );
+    }
+
+    #[test]
     fn alert_url_joins_base_and_id() {
         assert_eq!(
             alert_url("https://c4c.app.eu2.coralogix.com", "alert-xyz789"),
@@ -322,6 +385,22 @@ mod tests {
     }
 
     #[test]
+    fn views_url_is_static() {
+        assert_eq!(
+            views_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/explore"
+        );
+    }
+
+    #[test]
+    fn views_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            views_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/explore"
+        );
+    }
+
+    #[test]
     fn no_double_slash_when_base_has_trailing_slash() {
         let url = dashboard_url("https://c4c.app.eu2.coralogix.com/", "abc");
         assert!(!url.contains("//dashboards"));
@@ -344,6 +423,22 @@ mod tests {
     }
 
     #[test]
+    fn e2m_definitions_url_is_static() {
+        assert_eq!(
+            e2m_definitions_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/tco/metrics"
+        );
+    }
+
+    #[test]
+    fn e2m_definitions_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            e2m_definitions_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/tco/metrics"
+        );
+    }
+
+    #[test]
     fn slo_url_joins_base_and_id() {
         assert_eq!(
             slo_url("https://c4c.app.eu2.coralogix.com", "slo-abc"),
@@ -356,6 +451,22 @@ mod tests {
         assert_eq!(
             slo_url("https://c4c.app.eu2.coralogix.com/", "slo-abc"),
             "https://c4c.app.eu2.coralogix.com/slo/slo-abc/overview"
+        );
+    }
+
+    #[test]
+    fn slos_url_is_static() {
+        assert_eq!(
+            slos_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/slo"
+        );
+    }
+
+    #[test]
+    fn slos_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            slos_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/slo"
         );
     }
 
@@ -408,6 +519,22 @@ mod tests {
     }
 
     #[test]
+    fn notification_routers_url_is_static() {
+        assert_eq!(
+            notification_routers_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/routers"
+        );
+    }
+
+    #[test]
+    fn notification_routers_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            notification_routers_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/routers"
+        );
+    }
+
+    #[test]
     fn iam_role_url_uses_query_param_shape() {
         assert_eq!(
             iam_role_url("https://c4c.app.eu2.coralogix.com", "42"),
@@ -440,6 +567,22 @@ mod tests {
     }
 
     #[test]
+    fn iam_scopes_url_is_static() {
+        assert_eq!(
+            iam_scopes_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/scopes"
+        );
+    }
+
+    #[test]
+    fn iam_scopes_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            iam_scopes_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/settings/scopes"
+        );
+    }
+
+    #[test]
     fn iam_group_url_uses_query_param_shape() {
         assert_eq!(
             iam_group_url("https://c4c.app.eu2.coralogix.com", "7"),
@@ -452,6 +595,22 @@ mod tests {
         assert_eq!(
             iam_group_url("https://c4c.app.eu2.coralogix.com/", "7"),
             "https://c4c.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=7"
+        );
+    }
+
+    #[test]
+    fn iam_groups_url_is_static() {
+        assert_eq!(
+            iam_groups_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/account/groups"
+        );
+    }
+
+    #[test]
+    fn iam_groups_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            iam_groups_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/settings/account/groups"
         );
     }
 

@@ -59,6 +59,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TeamGroup)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the team groups list page link to stderr once per profile.
+        // Skip when there are no groups, since there's nothing to view.
+        if !resp.groups.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_groups_url(b)
+            })
+            .await;
+        }
         for group in resp.groups {
             all_json.push(group_to_json(&group, include_profile, &profile));
             all_items.push((profile.clone(), group));

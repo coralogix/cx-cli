@@ -65,6 +65,15 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, E2mDefinition)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the E2M definitions list page link to stderr once per
+        // profile. Skip when there are no definitions, since there's
+        // nothing to view.
+        if !resp.e2m.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::e2m_definitions_url(b)
+            })
+            .await;
+        }
         for def in resp.e2m {
             all_json.push(e2m_to_json(&def, include_profile, &profile));
             all_items.push((profile.clone(), def));

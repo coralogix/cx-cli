@@ -58,6 +58,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Scope)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the scopes list page link to stderr once per profile. Skip
+        // when there are no scopes, since there's nothing to view.
+        if !resp.scopes.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_scopes_url(b)
+            })
+            .await;
+        }
         for scope in resp.scopes {
             all_json.push(scope_to_json(&scope, include_profile, &profile));
             all_items.push((profile.clone(), scope));

@@ -2775,3 +2775,599 @@ async fn connector_get_prints_console_link() {
         "stderr did not contain the console link: {stderr}"
     );
 }
+
+// ── newly-wired list-page links ─────────────────────────────────────────────
+//
+// These commands previously printed no console link at all. Each pair below
+// mirrors the existing `tco_list_prints_console_link` /
+// `tco_list_empty_prints_no_console_link` pattern: one link per profile when
+// the list is non-empty, no link (and no `/identity/whoami` lookup wasted)
+// when it's empty.
+
+#[tokio::test]
+async fn api_keys_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "keys": [{ "keyInfo": { "keyId": "key-1", "name": "Demo Key" } }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn api_keys_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty key list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_catalog_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [{ "id": "dash-1", "name": "Demo Dashboard" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "catalog"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_catalog_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "catalog"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty catalog: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_folders_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dashboards/folders/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "folder": [{ "id": "folder-1", "name": "Ops" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "folders", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_folders_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dashboards/folders/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folder": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "folders", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty folder list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn routers_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/routers",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "routers": [{ "id": "router-1", "name": "Demo Router" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "notifications", "routers", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/routers"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn routers_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/routers",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"routers": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "notifications", "routers", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty router list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn e2m_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/events2metrics/events2metrics/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "e2m": [{ "id": "e2m-1", "name": "Demo E2M", "type": "E2M_TYPE_LOGS2METRICS" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "e2m", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco/metrics"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn e2m_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/events2metrics/events2metrics/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"e2m": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "e2m", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty E2M list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn slos_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "slos": [{ "id": "slo-1", "name": "Demo SLO" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "slos", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/slo"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn slos_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"slos": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "slos", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty SLO list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_scopes_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-scopes/v1/all/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "scopes": [{ "id": "scope-1", "displayName": "Production" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "scopes", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/scopes"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_scopes_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-scopes/v1/all/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"scopes": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "scopes", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty scope list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_groups_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-groups/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "groups": [{ "groupId": "grp-1", "name": "Engineering" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "groups", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/account/groups"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_groups_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-groups/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"groups": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "groups", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty group list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn views_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "views": [{ "id": "view-1", "name": "Demo View" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "views", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/explore"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn views_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"views": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "views", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty view list: {stderr}"
+    );
+}

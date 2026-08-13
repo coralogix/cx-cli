@@ -58,6 +58,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Router)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the routers list page link to stderr once per profile.
+        // Skip when there are no routers, since there's nothing to view.
+        if !resp.routers.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::notification_routers_url(b)
+            })
+            .await;
+        }
         for router in resp.routers {
             all_json.push(router_to_json(&router, include_profile, &profile));
             all_items.push((profile.clone(), router));

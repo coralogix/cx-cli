@@ -287,6 +287,8 @@ The workflow is **not done** until the user has a clickable link to the dashboar
 
 After Phase 8 succeeds, capture the `View in Coralogix: <url>` line that `cx dashboards create` prints to stderr (see [`references/deploy.md`](references/deploy.md) § "Share the link" for when it's omitted) and emit the output template below. Render the dashboard **name** as the link text — that's what the user clicks.
 
+Linking to a dashboard found via `cx dashboards catalog` (rather than one you just created) works differently: `catalog` prints only one link, to the catalog page, not a per-dashboard link. To link to one specific dashboard from that list, build `<base>/dashboards/<dashboard_id>`, where `<base>` is the console URL already seen in a `View in Coralogix: <base>/...` line printed by any `cx dashboards` command this session — never fabricate `<base>` yourself, and never invent it if no such line has been printed yet.
+
 ---
 
 ## Output format for the user

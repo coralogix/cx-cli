@@ -375,6 +375,15 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, api::DashboardCatalogItem)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the dashboards catalog page link to stderr once per
+        // profile. Skip when there are no dashboards, since there's
+        // nothing to view.
+        if !resp.items.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboards_url(b)
+            })
+            .await;
+        }
         for item in resp.items {
             all_rows.push(catalog_item_to_json(&item, include_profile, &profile));
             all_items.push((profile.clone(), item));
@@ -827,6 +836,14 @@ pub async fn run_folders_list(
     let mut all_rows: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, DashboardFolderItem)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Folders live in the same catalog UI as the dashboards themselves,
+        // so link to the same page. Skip when there are no folders.
+        if !resp.folders.is_empty() {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboards_url(b)
+            })
+            .await;
+        }
         for item in resp.folders {
             all_rows.push(folder_item_to_json(&item, include_profile, &profile));
             all_items.push((profile.clone(), item));

@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -435,26 +436,101 @@ fn list_profile_names_from(dir: &PathBuf) -> Result<Vec<String>> {
     Ok(names)
 }
 
+/// Open `path`, hold an OS-level exclusive lock for the duration of `f`, and
+/// write back whatever bytes `f` returns. Locking + read + write all happen
+/// under the same lock, so a read-modify-write is atomic across processes -
+/// closing the lost-update race where two concurrent `cx` invocations
+/// (e.g. an agent fanning out) load, mutate, and save the same profile or
+/// config file, and the second save silently clobbers the first (worst case:
+/// discarding a just-rotated OAuth refresh token).
+///
+/// `create=false` errors if the file doesn't exist, for read-modify-write
+/// helpers that must not conjure a file into existence (e.g. caching a
+/// console URL against a profile that was never set up). `create=true`
+/// creates it, for plain "save" helpers.
+///
+/// Deliberately does not combine this with the temp-file+rename pattern used
+/// elsewhere (see `write_atomically` in `src/commands/completions.rs`):
+/// `flock`-style locks are tied to a file's inode, not its path, so a rename
+/// onto a locked path would decouple the lock from the file a blocked reader
+/// ultimately observes. Writing in place under the lock avoids that.
+fn with_locked_file<T>(
+    path: &Path,
+    create: bool,
+    f: impl FnOnce(Vec<u8>) -> Result<(Vec<u8>, T)>,
+) -> Result<T> {
+    if create {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(create)
+        .open(path)
+        .with_context(|| format!("Failed to open {}", path.display()))?;
+    file.lock()
+        .with_context(|| format!("Failed to lock {}", path.display()))?;
+
+    let mut current = Vec::new();
+    file.read_to_end(&mut current)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+
+    let (new_content, ret) = f(current)?;
+
+    file.set_len(0)?;
+    file.seek(SeekFrom::Start(0))?; // set_len doesn't move the cursor
+    file.write_all(&new_content)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    file.sync_all()?;
+    #[cfg(unix)]
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+
+    Ok(ret) // lock releases when `file` drops
+}
+
 /// Load the global config (non-fatal if missing - returns default).
 pub fn load_config() -> Result<Config> {
     let path = config_file()?;
     if !path.exists() {
         return Ok(Config::default());
     }
-    let raw = std::fs::read_to_string(&path)
+    let mut file =
+        std::fs::File::open(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+    file.lock_shared()
+        .with_context(|| format!("Failed to lock {}", path.display()))?;
+    let mut raw = String::new();
+    file.read_to_string(&mut raw)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     toml::from_str(&raw).context("Failed to parse config.toml")
 }
 
 /// Write the global config to disk, creating directories as needed.
 pub fn save_config(config: &Config) -> Result<()> {
-    let dir = config_dir()?;
-    std::fs::create_dir_all(&dir)?;
     let path = config_file()?;
     let content = toml::to_string_pretty(config).context("Failed to serialize config")?;
-    std::fs::write(&path, content)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
-    Ok(())
+    with_locked_file(&path, true, |_current| Ok((content.into_bytes(), ())))
+}
+
+/// Read-modify-write the global config under a single lock, so `mutate` sees
+/// the freshest on-disk state rather than a snapshot that may have gone
+/// stale during an intervening operation. Every `Config` field has a serde
+/// default, so parsing an empty/missing file yields the same default that
+/// `load_config` returns for a missing `config.toml`.
+pub fn update_config(mutate: impl FnOnce(&mut Config)) -> Result<()> {
+    let path = config_file()?;
+    with_locked_file(&path, true, |current| {
+        let mut config: Config = if current.is_empty() {
+            Config::default()
+        } else {
+            let raw = String::from_utf8(current).context("config.toml is not valid UTF-8")?;
+            toml::from_str(&raw).context("Failed to parse config.toml")?
+        };
+        mutate(&mut config);
+        let content = toml::to_string_pretty(&config).context("Failed to serialize config")?;
+        Ok((content.into_bytes(), ()))
+    })
 }
 
 /// Load the output format preference from the first of the given profile names.
@@ -472,9 +548,14 @@ pub fn first_profile_output_format(profiles: &[String]) -> Option<OutputFormat> 
 /// Load a named profile.
 pub fn load_profile(name: &str) -> Result<Profile> {
     let path = profile_file(name)?;
-    let raw = std::fs::read_to_string(&path).with_context(|| {
+    let mut file = std::fs::File::open(&path).with_context(|| {
         format!("Profile '{name}' not found. Run `cx profiles add` to set it up.")
     })?;
+    file.lock_shared()
+        .with_context(|| format!("Failed to lock {}", path.display()))?;
+    let mut raw = String::new();
+    file.read_to_string(&mut raw)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 
@@ -578,8 +659,14 @@ async fn resolve_single(
             .await?;
             if let Some(new_tokens) = refreshed {
                 // File-storage profile: persist refreshed tokens back to disk.
-                profile.oauth_tokens = Some(new_tokens);
-                save_profile(profile_name, &profile)?;
+                // Re-reads the profile fresh under lock rather than reusing
+                // `profile` (captured before this refresh's network
+                // round-trip), so a concurrent `cx` process's write (e.g. a
+                // console-url cache update, or another rotated refresh
+                // token) isn't clobbered by a stale blind overwrite.
+                update_profile(profile_name, |p| {
+                    p.oauth_tokens = Some(new_tokens);
+                })?;
             }
             bearer
         }
@@ -638,16 +725,27 @@ pub async fn resolve_all(
 /// Write a profile to disk, creating directories as needed.
 /// Sets file permissions to 0600 on Unix to protect any inline secrets.
 pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
-    let dir = profiles_dir()?;
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{name}.toml"));
+    let path = profile_file(name)?;
     let content = toml::to_string_pretty(profile).context("Failed to serialize profile")?;
-    std::fs::write(&path, &content)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
-    #[cfg(unix)]
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
-    Ok(())
+    with_locked_file(&path, true, |_current| Ok((content.into_bytes(), ())))
+}
+
+/// Read-modify-write a named profile under a single lock, so `mutate` sees
+/// the freshest on-disk state rather than a snapshot that may have gone
+/// stale during an intervening operation (e.g. an OAuth token refresh's
+/// network round-trip). Errors if the profile doesn't exist rather than
+/// creating one - callers that treat a missing profile as a silent no-op
+/// (e.g. [`cache_console_url`]) rely on this.
+pub fn update_profile(name: &str, mutate: impl FnOnce(&mut Profile)) -> Result<()> {
+    let path = profile_file(name)?;
+    with_locked_file(&path, false, |current| {
+        let raw = String::from_utf8(current).context("Profile file is not valid UTF-8")?;
+        let mut profile: Profile =
+            toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))?;
+        mutate(&mut profile);
+        let content = toml::to_string_pretty(&profile).context("Failed to serialize profile")?;
+        Ok((content.into_bytes(), ()))
+    })
 }
 
 /// Return the profile's cached team console base URL, but only if it is still
@@ -675,12 +773,10 @@ pub fn load_cached_console_url(profile_name: &str) -> Option<String> {
 /// unwritable config dir) is ignored, since a console link is a "nice to have"
 /// that must never fail an otherwise-successful command.
 pub fn cache_console_url(profile_name: &str, url: &str) {
-    let Ok(mut profile) = load_profile(profile_name) else {
-        return;
-    };
-    profile.cached_console_url = Some(url.to_string());
-    profile.cached_console_url_at = Some(Utc::now());
-    let _ = save_profile(profile_name, &profile);
+    let _ = update_profile(profile_name, |profile| {
+        profile.cached_console_url = Some(url.to_string());
+        profile.cached_console_url_at = Some(Utc::now());
+    });
 }
 
 // ── Managed completion helpers ────────────────────────────────────────────────
@@ -703,20 +799,20 @@ pub fn managed_completions() -> Result<Vec<ManagedCompletion>> {
 /// If an entry for this shell already exists, its path is updated in place.
 /// The updated config is persisted to `~/.cx/config.toml`.
 pub fn upsert_managed_completion(shell: &str, path: PathBuf) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
-    if let Some(existing) = config
-        .managed_completions
-        .iter_mut()
-        .find(|c| c.shell == shell)
-    {
-        existing.path = path;
-    } else {
-        config.managed_completions.push(ManagedCompletion {
-            shell: shell.to_string(),
-            path,
-        });
-    }
-    save_config(&config)
+    update_config(|config| {
+        if let Some(existing) = config
+            .managed_completions
+            .iter_mut()
+            .find(|c| c.shell == shell)
+        {
+            existing.path = path;
+        } else {
+            config.managed_completions.push(ManagedCompletion {
+                shell: shell.to_string(),
+                path,
+            });
+        }
+    })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1062,6 +1158,47 @@ api_key = "mykey"
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    // ── with_locked_file ─────────────────────────────────────────────────────
+
+    #[test]
+    fn with_locked_file_errors_when_missing_and_create_false() {
+        let path = std::env::temp_dir().join(format!(
+            "cx_test_locked_missing_{}.toml",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let result = with_locked_file(&path, false, |_current| Ok((Vec::new(), ())));
+
+        assert!(result.is_err());
+        assert!(!path.exists(), "create=false must not conjure the file");
+    }
+
+    #[test]
+    fn with_locked_file_creates_and_round_trips_content() {
+        let path = std::env::temp_dir().join(format!(
+            "cx_test_locked_roundtrip_{}.toml",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        with_locked_file(&path, true, |current| {
+            assert!(current.is_empty(), "freshly created file starts empty");
+            Ok((b"hello".to_vec(), ()))
+        })
+        .unwrap();
+
+        let seen =
+            with_locked_file(&path, false, |current| Ok((current.clone(), current))).unwrap();
+        assert_eq!(seen, b"hello");
+
+        // A second write truncates rather than appending.
+        with_locked_file(&path, false, |_current| Ok((b"short".to_vec(), ()))).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"short");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
     // ── Integration tests (require ~/.cx access, run with --ignored) ──────────
 
     #[tokio::test]
@@ -1283,6 +1420,51 @@ api_key = "mykey"
         assert_eq!(
             load_cached_console_url(name),
             Some("https://cached.app.eu2.coralogix.com".to_string())
+        );
+
+        let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    #[test]
+    #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
+    fn update_profile_concurrent_writes_do_not_lose_updates() {
+        let name = "cx_inttest_update_profile_concurrency";
+        save_profile(name, &profile_with_cache(None)).unwrap();
+        update_profile(name, |p| p.cached_console_url = Some("0".to_string())).unwrap();
+
+        const ITERATIONS: u32 = 200;
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                std::thread::spawn(move || {
+                    for _ in 0..ITERATIONS {
+                        update_profile(name, |p| {
+                            let current: u32 = p
+                                .cached_console_url
+                                .as_deref()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(0);
+                            p.cached_console_url = Some((current + 1).to_string());
+                        })
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let final_count: u32 = load_profile(name)
+            .unwrap()
+            .cached_console_url
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        assert_eq!(
+            final_count,
+            2 * ITERATIONS,
+            "lost update detected under concurrent update_profile calls"
         );
 
         let _ = std::fs::remove_file(profile_file(name).unwrap());

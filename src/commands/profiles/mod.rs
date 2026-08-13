@@ -3,7 +3,7 @@ use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{
     has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
-    save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
+    save_profile, update_config, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
 };
 use crate::keyring_store;
 use crate::oauth;
@@ -230,9 +230,7 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
         println!("\n─── Global Safety Settings ───");
         println!("These apply to all profiles. Change later in ~/.cx/config.toml\n");
 
-        let mut global_config = load_config().unwrap_or_default();
-
-        global_config.allow_risky_commands =
+        let allow_risky_commands =
             Confirm::new("Allow risky commands? (iam, archive write operations)")
                 .with_default(true)
                 .with_help_message(
@@ -241,17 +239,19 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
                 )
                 .prompt()?;
 
-        global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
+        let olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
             .with_default(true)
             .with_help_message("When disabled, 'olly ask' is blocked.")
             .prompt()?;
 
-        global_config.default_profile = name.clone();
-        save_config(&global_config)?;
+        update_config(|c| {
+            c.allow_risky_commands = allow_risky_commands;
+            c.olly_enabled = olly_enabled;
+            c.default_profile = name.clone();
+        })?;
     }
 
     if !is_first_profile {
-        let mut global_config = load_config().unwrap_or_default();
         let should_set_default = if set_default {
             true
         } else {
@@ -260,8 +260,9 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
                 .prompt()?
         };
         if should_set_default {
-            global_config.default_profile = name.clone();
-            save_config(&global_config)?;
+            update_config(|c| {
+                c.default_profile = name.clone();
+            })?;
         }
     }
 
@@ -330,15 +331,16 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
         anyhow::bail!("Profile '{profile_name}' not found.");
     }
 
-    let mut global_config = load_config().unwrap_or_default();
+    let global_config = load_config().unwrap_or_default();
 
     if global_config.default_profile == profile_name {
         println!("Profile '{profile_name}' is already the default.");
         return Ok(());
     }
 
-    global_config.default_profile = profile_name.clone();
-    save_config(&global_config)?;
+    update_config(|c| {
+        c.default_profile = profile_name.clone();
+    })?;
 
     println!("Default profile set to '{profile_name}'.");
     Ok(())

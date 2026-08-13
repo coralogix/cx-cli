@@ -137,10 +137,9 @@ pub async fn run_summary(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -149,7 +148,7 @@ pub async fn run_summary(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -215,10 +214,9 @@ pub async fn run_daily(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -227,7 +225,7 @@ pub async fn run_daily(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -273,10 +271,9 @@ pub async fn run_logs_count(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -285,7 +282,7 @@ pub async fn run_logs_count(
 
     match options.output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -327,10 +324,9 @@ pub async fn run_spans_count(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -339,7 +335,7 @@ pub async fn run_spans_count(
 
     match options.output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -373,10 +369,9 @@ pub async fn run_export_status(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -385,7 +380,7 @@ pub async fn run_export_status(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -419,10 +414,9 @@ pub async fn run_capabilities(
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut value,
             crate::console_url::usage_url,
         )
         .await;
@@ -431,7 +425,7 @@ pub async fn run_capabilities(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -475,10 +469,9 @@ pub async fn run_query(
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut value,
             crate::console_url::usage_url,
         )
         .await;
@@ -487,7 +480,7 @@ pub async fn run_query(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -505,15 +498,15 @@ pub async fn run_query(
 #[cfg(test)]
 mod tests {
     use super::{parse_query, read_query_from_file};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
     fn write_query(contents: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "cx-data-usage-query-unit-{}.json",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after Unix epoch")
-                .as_nanos()
+            "cx-data-usage-query-unit-{}-{}.json",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::write(&path, contents).unwrap();
         path

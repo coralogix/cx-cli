@@ -9,119 +9,9 @@
 //! by `ExecutionTarget::console_base` in `crate::execution`. Keeping these
 //! as pure string builders makes them trivial to unit test.
 //!
-//! ## Path routing
-//!
 //! The Coralogix web console used to route entirely off a `#/` hash
-//! fragment, but that was removed (the codebase's own "hash-routing-removal
-//! work") in favor of plain path routing via a custom
-//! `HostedAppLocationStrategy`
-//! (`apps/web-app/src/app/hosted-app-location-strategy.ts` in
-//! `coralogix/cx-web-workspace`). Only two carve-outs still serialize onto
-//! the fragment: hosted-app routes (`/grafana`, `/opendashboards`, per
-//! `HOSTED_APP_HASH_PREFIXES`) and login routes when the session already
-//! arrived on a fragment URL (`/login`, `/login-v1`, `/login-v2`, per
-//! `AUTH_HASH_PREFIXES`). None of the routes below fall under either
-//! carve-out, so they're plain paths - no `#/` prefix. Every route below was
-//! cross-checked against the console frontend's own routing source, not just
-//! public docs:
-//! - Dashboards: `https://<team>.<domain>/dashboards/<dashboard_id>` - also
-//!   documented at "Share Dashboard URLs",
-//!   <https://coralogix.com/docs/user-guides/custom-dashboards/tutorials/share-dashboard-content/>;
-//!   confirmed in source (`libs/dashboards/_ui/src/lib/routing-utils.ts`'s
-//!   `dashboardsEditUrl()` and the `:id` route under root `dashboards`)
-//! - Explore (incl. saved views): `https://<team>.<domain>/explore?<params>`,
-//!   e.g. `?viewId=<saved_view_id>` - also documented at "Deep links and URL
-//!   parameters", <https://coralogix.com/docs/user-guides/data_exploration/deep-links/>;
-//!   confirmed in source (`libs/explore/v2/src/lib/services/share-url.service.ts`'s
-//!   `viewIdParam()`)
-//! - Alerts: `https://<team>.<domain>/alerts/<alert_id>` - also documented
-//!   pattern for alert deep links referenced from runbooks/webhooks;
-//!   confirmed in source (`apps/web-app/src/app/alerts/alerts-routes.ts`,
-//!   `:id` child route under `alerts`)
-//! - Cases: `https://<team>.<domain>/cases?id=<case_id>` - not published in
-//!   any public doc, but confirmed in source
-//!   (`libs/cases/.../cases-query-params.constants.ts` defines
-//!   `SELECTED_CASE_QUERY_PARAM = 'id'`, used by
-//!   `insights-incidents-link.service.ts` to build case deep links)
-//! - Events2Metrics (`e2m`): `https://<team>.<domain>/tco/metrics/<id>` -
-//!   confirmed in source (`libs/metrices-settings/src/lib/metrices-settings.component.ts`
-//!   calls `location.replaceState('/tco/metrics/' + id)` and reads it back via
-//!   `route.params.metricId` to reopen that metric's editor)
-//! - SLOs: `https://<team>.<domain>/slo/<id>/overview` - confirmed in source
-//!   (`libs/slo/src/lib/slo-routes.ts`'s `:sloId/overview` route, navigated to
-//!   via `router.navigate(['slo', sloId, 'overview'])` in `slo-page.component.ts`)
-//! - Parsing rule groups: `https://<team>.<domain>/rules/group/<id>` -
-//!   confirmed in source (`libs/rules/src/lib/rule.routes.ts`'s `group/:themeId`
-//!   route, navigated to via `router.navigateByUrl('/rules/group/' + group.id)`
-//!   in `parsing-theme-list-container.component.ts`)
-//! - Alert suppression rules: `https://<team>.<domain>/suppression-rules?edit=<id>` -
-//!   confirmed in source (`apps/web-app/src/app/features/suppression-rules/...`
-//!   uses query field `edit` to reopen a specific rule's editor)
-//! - Notification connectors: `https://<team>.<domain>/notification-center/connectors?id=<id>` -
-//!   confirmed in source (`libs/notification-center/src/lib/features/nc-connectors/...`
-//!   reads `queryParams['id']` to auto-open that connector)
-//! - Notification routers: `https://<team>.<domain>/notification-center/routers?id=<id>` -
-//!   confirmed in source (`libs/notification-center/src/lib/features/nc-routers/...`
-//!   reads `queryParams['id']` to auto-open that router)
-//! - IAM roles: `https://<team>.<domain>/settings/roles?selectedRoleId=<id>` -
-//!   confirmed in source (`libs/settings/core/.../roles.component.ts` reads
-//!   `queryParams['selectedRoleId']` to auto-open that role)
-//! - IAM scopes: `https://<team>.<domain>/settings/scopes?selectedScopeId=<id>` -
-//!   confirmed in source (`libs/settings/core/.../scopes-dashboard.component.ts`
-//!   reads `queryParams['selectedScopeId']` to auto-open that scope)
-//! - IAM groups: `https://<team>.<domain>/settings/account/groups?selectedGroupId=<id>` -
-//!   confirmed in source (`libs/settings/core/.../groups-dashboard.component.ts`
-//!   reads `queryParams['selectedGroupId']` to auto-open that group)
-//!
-//! None of the builders below add a `#/` prefix - query parameters are plain
-//! `?query=...` suffixes on the path, matching the Explore examples above.
-//!
-//! ## Static, per-feature pages (no per-entity ID)
-//!
-//! A reviewer correctly pointed out that "an entity was created/updated" is
-//! not the actual bar for adding a console link - it was just the easiest
-//! example, not the rule. Several `cx` command groups map to a single,
-//! static settings/report page in the console (there is no per-instance
-//! route to deep-link to, but the *feature's page* is still real and worth
-//! linking to). These builders take only `base` - no ID:
-//! - Usage: `https://<team>.<domain>/settings/datausage` - confirmed in
-//!   source (`apps/web-app/src/app/settings/settings-routes.ts`, `path:
-//!   'datausage'`, `DataUsageComponent`)
-//! - TCO policies: `https://<team>.<domain>/tco-policies` - confirmed in
-//!   source (`libs/tco-v2/src/lib/tco-v2-routes.ts`, `path: 'tco-policies'`)
-//! - Archive (metrics + logs): `https://<team>.<domain>/physical-locations` -
-//!   confirmed in source (`libs/physical-locations/src/lib/physical-locations-routes.ts`,
-//!   `path: 'physical-locations'`, backing both the metrics- and
-//!   logs-archive handlers in the same lib)
-//! - Recording rules: `https://<team>.<domain>/recording-rules` - confirmed
-//!   in source (`libs/recording-rules/src/lib/recording-rules-routes.ts`,
-//!   `path: 'recording-rules'`)
-//! - Enrichments: `https://<team>.<domain>/enrichments` - confirmed in
-//!   source (`libs/enrichments/src/lib/enrichments-routes.ts`, `path:
-//!   'enrichments'`)
-//! - Integrations: `https://<team>.<domain>/extensions/integrations` -
-//!   confirmed in source (`app-routes.ts` mounts `extensions/integrations`,
-//!   whose child list page is `ExtensionsListComponent`)
-//! - Webhooks: `https://<team>.<domain>/extensions/outbound-webhooks` -
-//!   confirmed in source (`app-routes.ts` mounts
-//!   `extensions/outbound-webhooks`, list page from
-//!   `libs/outgoing-webhooks/src/lib/outgoing-webhooks.routes.ts`)
-//! - IAM API keys: `https://<team>.<domain>/settings/api-keys` - confirmed
-//!   in source (`settings-routes.ts`, `path: 'api-keys'`, `ApiKeysComponent`)
-//! - IAM users: `https://<team>.<domain>/settings/team/members` - confirmed
-//!   in source (`settings-routes.ts`, `path: 'team/members'`,
-//!   `TeamMembersPageComponent`)
-//! - IAM IP access: `https://<team>.<domain>/settings/login-access-policies` -
-//!   confirmed in source (`settings-routes.ts`, `path:
-//!   'login-access-policies'`, `IpAccessComponent`)
-//! - AI Center applications: `https://<team>.<domain>/ai-center/overview/application-catalog` -
-//!   confirmed in source (`apps/web-app/src/app/routes/ai-center-routes.ts`,
-//!   `path: 'application-catalog'`, `CxaiApplicationCatalogComponent`)
-//! - AI Center evaluations: `https://<team>.<domain>/ai-center/overview/eval-catalog` -
-//!   confirmed in source (same file, `path: 'eval-catalog'`,
-//!   `EvalCatalogMultiAppComponent`)
-//! - Olly: `https://<team>.<domain>/olly` - confirmed in source
-//!   (`libs/olly/src/lib/olly.routes.ts`, `path: 'olly'`)
+//! fragment; it now uses plain path routing, so none of the builders below
+//! add a `#/` prefix and query parameters are plain `?query=...` suffixes.
 
 use serde_json::Value;
 use url::form_urlencoded;
@@ -158,6 +48,15 @@ pub fn dashboard_url(base: &str, id: &str) -> String {
     format!("{}/dashboards/{id}", trim_base(base))
 }
 
+/// Build the console URL for the dashboards page: `{base}/dashboards`.
+///
+/// Not a literal catalog view - the bare route redirects client-side to the
+/// team's default/first dashboard (or `/dashboards/new` if none exist).
+/// Still the right link to hand out with no dashboard id known.
+pub fn dashboards_url(base: &str) -> String {
+    format!("{}/dashboards", trim_base(base))
+}
+
 /// Build the console URL for an alert: `{base}/alerts/{id}`.
 pub fn alert_url(base: &str, id: &str) -> String {
     format!("{}/alerts/{id}", trim_base(base))
@@ -191,10 +90,25 @@ pub fn view_url(base: &str, id: &str) -> String {
     format!("{}/explore?viewId={encoded}", trim_base(base))
 }
 
+/// Build the console URL for the Explore page: `{base}/explore`.
+///
+/// Not a dedicated "browse saved views" screen - saved views are picked from
+/// an in-page list, not a distinct URL - but this is the correct link for
+/// the views domain with no view id known.
+pub fn views_url(base: &str) -> String {
+    format!("{}/explore", trim_base(base))
+}
+
 /// Build the console URL for an E2M (Events2Metrics) definition:
 /// `{base}/tco/metrics/{id}`.
 pub fn e2m_url(base: &str, id: &str) -> String {
     format!("{}/tco/metrics/{id}", trim_base(base))
+}
+
+/// Build the console URL for the E2M definitions list page:
+/// `{base}/tco/metrics`.
+pub fn e2m_definitions_url(base: &str) -> String {
+    format!("{}/tco/metrics", trim_base(base))
 }
 
 /// Build the console URL for an SLO: `{base}/slo/{id}/overview`.
@@ -202,16 +116,15 @@ pub fn slo_url(base: &str, id: &str) -> String {
     format!("{}/slo/{id}/overview", trim_base(base))
 }
 
-/// Build the console URL for a parsing rule group: `{base}/rules/group/{id}`.
-pub fn parsing_rule_group_url(base: &str, id: &str) -> String {
-    format!("{}/rules/group/{id}", trim_base(base))
+/// Build the console URL for the SLOs list page: `{base}/slo`.
+pub fn slos_url(base: &str) -> String {
+    format!("{}/slo", trim_base(base))
 }
 
-/// Build the console URL for an alert suppression rule:
-/// `{base}/suppression-rules?edit={urlencoded id}`.
-pub fn suppression_rule_url(base: &str, id: &str) -> String {
-    let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
-    format!("{}/suppression-rules?edit={encoded}", trim_base(base))
+/// Build the console URL for the notification connectors list page:
+/// `{base}/notification-center/connectors`.
+pub fn notification_connectors_url(base: &str) -> String {
+    format!("{}/notification-center/connectors", trim_base(base))
 }
 
 /// Build the console URL for a notification connector:
@@ -234,6 +147,12 @@ pub fn notification_router_url(base: &str, id: &str) -> String {
     )
 }
 
+/// Build the console URL for the notification routers list page:
+/// `{base}/notification-center/routers`.
+pub fn notification_routers_url(base: &str) -> String {
+    format!("{}/notification-center/routers", trim_base(base))
+}
+
 /// Build the console URL for an IAM role:
 /// `{base}/settings/roles?selectedRoleId={urlencoded id}`.
 pub fn iam_role_url(base: &str, id: &str) -> String {
@@ -254,6 +173,12 @@ pub fn iam_scope_url(base: &str, id: &str) -> String {
     )
 }
 
+/// Build the console URL for the IAM scopes list page:
+/// `{base}/settings/scopes`.
+pub fn iam_scopes_url(base: &str) -> String {
+    format!("{}/settings/scopes", trim_base(base))
+}
+
 /// Build the console URL for an IAM group:
 /// `{base}/settings/account/groups?selectedGroupId={urlencoded id}`.
 pub fn iam_group_url(base: &str, id: &str) -> String {
@@ -262,6 +187,12 @@ pub fn iam_group_url(base: &str, id: &str) -> String {
         "{}/settings/account/groups?selectedGroupId={encoded}",
         trim_base(base)
     )
+}
+
+/// Build the console URL for the IAM team groups list page:
+/// `{base}/settings/account/groups`.
+pub fn iam_groups_url(base: &str) -> String {
+    format!("{}/settings/account/groups", trim_base(base))
 }
 
 /// Build the console URL for the Usage page: `{base}/settings/datausage`.
@@ -278,18 +209,6 @@ pub fn tco_url(base: &str) -> String {
     format!("{}/tco-policies", trim_base(base))
 }
 
-/// Build the console URL for the Archive (metrics + logs) settings page:
-/// `{base}/physical-locations`.
-pub fn archive_url(base: &str) -> String {
-    format!("{}/physical-locations", trim_base(base))
-}
-
-/// Build the console URL for the Recording Rules page:
-/// `{base}/recording-rules`.
-pub fn recording_rules_url(base: &str) -> String {
-    format!("{}/recording-rules", trim_base(base))
-}
-
 /// Build the console URL for the Enrichments page: `{base}/enrichments`.
 pub fn enrichments_url(base: &str) -> String {
     format!("{}/enrichments", trim_base(base))
@@ -302,9 +221,9 @@ pub fn integrations_url(base: &str) -> String {
 }
 
 /// Build the console URL for the Outgoing Webhooks list page:
-/// `{base}/extensions/outbound-webhooks`.
+/// `{base}/extensions/all-outbound-webhooks`.
 pub fn webhooks_url(base: &str) -> String {
-    format!("{}/extensions/outbound-webhooks", trim_base(base))
+    format!("{}/extensions/all-outbound-webhooks", trim_base(base))
 }
 
 /// Build the console URL for the IAM API keys settings page:
@@ -326,15 +245,31 @@ pub fn iam_ip_access_url(base: &str) -> String {
 }
 
 /// Build the console URL for the AI Center application catalog page:
-/// `{base}/ai-center/overview/application-catalog`.
+/// `{base}/ai-center/application-catalog`.
 pub fn ai_center_applications_url(base: &str) -> String {
-    format!("{}/ai-center/overview/application-catalog", trim_base(base))
+    format!("{}/ai-center/application-catalog", trim_base(base))
 }
 
-/// Build the console URL for the AI Center evaluation catalog page:
-/// `{base}/ai-center/overview/eval-catalog`.
+/// Build the console URL for a single AI Center application:
+/// `{base}/ai-center/application/drilldown?application={app}&subsystem={sub}`.
+///
+/// The application is identified by the `application` and `subsystem` query
+/// params (there is no path-param route for a single application in the
+/// console) - see `CXAiApplicationQueryParams` in
+/// `libs/ai-center/root/src/lib/utils.ts`.
+pub fn ai_center_application_url(base: &str, application: &str, subsystem: &str) -> String {
+    let app: String = form_urlencoded::byte_serialize(application.as_bytes()).collect();
+    let sub: String = form_urlencoded::byte_serialize(subsystem.as_bytes()).collect();
+    format!(
+        "{}/ai-center/application/drilldown?application={app}&subsystem={sub}",
+        trim_base(base)
+    )
+}
+
+/// Build the console URL for the AI Center evaluation (policy) catalog page:
+/// `{base}/ai-center/eval-catalog`.
 pub fn ai_center_evaluations_url(base: &str) -> String {
-    format!("{}/ai-center/overview/eval-catalog", trim_base(base))
+    format!("{}/ai-center/eval-catalog", trim_base(base))
 }
 
 /// Build the console URL for the Olly AI assistant page: `{base}/olly`.
@@ -345,6 +280,30 @@ pub fn olly_url(base: &str) -> String {
 /// Build the console URL for a specific Olly chat: `{base}/olly/chat/{chat_id}`.
 pub fn olly_chat_url(base: &str, chat_id: &str) -> String {
     format!("{}/olly/chat/{}", trim_base(base), chat_id)
+}
+
+/// Build the console URL for a parsing rule group: `{base}/rules/group/{id}`.
+pub fn parsing_rule_group_url(base: &str, id: &str) -> String {
+    format!("{}/rules/group/{id}", trim_base(base))
+}
+
+/// Build the console URL for an alert suppression rule:
+/// `{base}/suppression-rules?edit={urlencoded id}`.
+pub fn suppression_rule_url(base: &str, id: &str) -> String {
+    let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
+    format!("{}/suppression-rules?edit={encoded}", trim_base(base))
+}
+
+/// Build the console URL for the Archive (metrics + logs) settings page:
+/// `{base}/physical-locations`.
+pub fn archive_url(base: &str) -> String {
+    format!("{}/physical-locations", trim_base(base))
+}
+
+/// Build the console URL for the Recording Rules page:
+/// `{base}/recording-rules`.
+pub fn recording_rules_url(base: &str) -> String {
+    format!("{}/recording-rules", trim_base(base))
 }
 
 #[cfg(test)]
@@ -364,6 +323,22 @@ mod tests {
         assert_eq!(
             dashboard_url("https://c4c.app.eu2.coralogix.com/", "dash-abc123"),
             "https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+        );
+    }
+
+    #[test]
+    fn dashboards_url_is_static() {
+        assert_eq!(
+            dashboards_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/dashboards"
+        );
+    }
+
+    #[test]
+    fn dashboards_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            dashboards_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/dashboards"
         );
     }
 
@@ -434,6 +409,22 @@ mod tests {
     }
 
     #[test]
+    fn views_url_is_static() {
+        assert_eq!(
+            views_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/explore"
+        );
+    }
+
+    #[test]
+    fn views_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            views_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/explore"
+        );
+    }
+
+    #[test]
     fn no_double_slash_when_base_has_trailing_slash() {
         let url = dashboard_url("https://c4c.app.eu2.coralogix.com/", "abc");
         assert!(!url.contains("//dashboards"));
@@ -456,6 +447,22 @@ mod tests {
     }
 
     #[test]
+    fn e2m_definitions_url_is_static() {
+        assert_eq!(
+            e2m_definitions_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/tco/metrics"
+        );
+    }
+
+    #[test]
+    fn e2m_definitions_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            e2m_definitions_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/tco/metrics"
+        );
+    }
+
+    #[test]
     fn slo_url_joins_base_and_id() {
         assert_eq!(
             slo_url("https://c4c.app.eu2.coralogix.com", "slo-abc"),
@@ -472,42 +479,34 @@ mod tests {
     }
 
     #[test]
-    fn parsing_rule_group_url_joins_base_and_id() {
+    fn slos_url_is_static() {
         assert_eq!(
-            parsing_rule_group_url("https://c4c.app.eu2.coralogix.com", "group-1"),
-            "https://c4c.app.eu2.coralogix.com/rules/group/group-1"
+            slos_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/slo"
         );
     }
 
     #[test]
-    fn parsing_rule_group_url_trims_trailing_slash_on_base() {
+    fn slos_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            parsing_rule_group_url("https://c4c.app.eu2.coralogix.com/", "group-1"),
-            "https://c4c.app.eu2.coralogix.com/rules/group/group-1"
+            slos_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/slo"
         );
     }
 
     #[test]
-    fn suppression_rule_url_uses_query_param_shape() {
+    fn notification_connectors_url_is_static() {
         assert_eq!(
-            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule-1"),
-            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
+            notification_connectors_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/connectors"
         );
     }
 
     #[test]
-    fn suppression_rule_url_percent_encodes_id() {
+    fn notification_connectors_url_trims_trailing_slash_on_base() {
         assert_eq!(
-            suppression_rule_url("https://c4c.app.eu2.coralogix.com", "rule #1"),
-            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule+%231"
-        );
-    }
-
-    #[test]
-    fn suppression_rule_url_trims_trailing_slash_on_base() {
-        assert_eq!(
-            suppression_rule_url("https://c4c.app.eu2.coralogix.com/", "rule-1"),
-            "https://c4c.app.eu2.coralogix.com/suppression-rules?edit=rule-1"
+            notification_connectors_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/connectors"
         );
     }
 
@@ -544,6 +543,22 @@ mod tests {
     }
 
     #[test]
+    fn notification_routers_url_is_static() {
+        assert_eq!(
+            notification_routers_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/routers"
+        );
+    }
+
+    #[test]
+    fn notification_routers_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            notification_routers_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/notification-center/routers"
+        );
+    }
+
+    #[test]
     fn iam_role_url_uses_query_param_shape() {
         assert_eq!(
             iam_role_url("https://c4c.app.eu2.coralogix.com", "42"),
@@ -576,6 +591,22 @@ mod tests {
     }
 
     #[test]
+    fn iam_scopes_url_is_static() {
+        assert_eq!(
+            iam_scopes_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/scopes"
+        );
+    }
+
+    #[test]
+    fn iam_scopes_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            iam_scopes_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/settings/scopes"
+        );
+    }
+
+    #[test]
     fn iam_group_url_uses_query_param_shape() {
         assert_eq!(
             iam_group_url("https://c4c.app.eu2.coralogix.com", "7"),
@@ -588,6 +619,22 @@ mod tests {
         assert_eq!(
             iam_group_url("https://c4c.app.eu2.coralogix.com/", "7"),
             "https://c4c.app.eu2.coralogix.com/settings/account/groups?selectedGroupId=7"
+        );
+    }
+
+    #[test]
+    fn iam_groups_url_is_static() {
+        assert_eq!(
+            iam_groups_url("https://c4c.app.eu2.coralogix.com"),
+            "https://c4c.app.eu2.coralogix.com/settings/account/groups"
+        );
+    }
+
+    #[test]
+    fn iam_groups_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            iam_groups_url("https://c4c.app.eu2.coralogix.com/"),
+            "https://c4c.app.eu2.coralogix.com/settings/account/groups"
         );
     }
 
@@ -634,22 +681,6 @@ mod tests {
     }
 
     #[test]
-    fn archive_url_is_static() {
-        assert_eq!(
-            archive_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/physical-locations"
-        );
-    }
-
-    #[test]
-    fn recording_rules_url_is_static() {
-        assert_eq!(
-            recording_rules_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/recording-rules"
-        );
-    }
-
-    #[test]
     fn enrichments_url_is_static() {
         assert_eq!(
             enrichments_url("https://c4c.app.eu2.coralogix.com"),
@@ -669,7 +700,7 @@ mod tests {
     fn webhooks_url_is_static() {
         assert_eq!(
             webhooks_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/extensions/outbound-webhooks"
+            "https://c4c.app.eu2.coralogix.com/extensions/all-outbound-webhooks"
         );
     }
 
@@ -701,7 +732,31 @@ mod tests {
     fn ai_center_applications_url_is_static() {
         assert_eq!(
             ai_center_applications_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/ai-center/overview/application-catalog"
+            "https://c4c.app.eu2.coralogix.com/ai-center/application-catalog"
+        );
+    }
+
+    #[test]
+    fn ai_center_application_url_uses_query_params() {
+        assert_eq!(
+            ai_center_application_url("https://c4c.app.eu2.coralogix.com", "checkout", "payments"),
+            "https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=checkout&subsystem=payments"
+        );
+    }
+
+    #[test]
+    fn ai_center_application_url_percent_encodes_params() {
+        assert_eq!(
+            ai_center_application_url("https://c4c.app.eu2.coralogix.com", "my app", "sub & sys"),
+            "https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=my+app&subsystem=sub+%26+sys"
+        );
+    }
+
+    #[test]
+    fn ai_center_application_url_trims_trailing_slash_on_base() {
+        assert_eq!(
+            ai_center_application_url("https://c4c.app.eu2.coralogix.com/", "checkout", "payments"),
+            "https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=checkout&subsystem=payments"
         );
     }
 
@@ -709,7 +764,7 @@ mod tests {
     fn ai_center_evaluations_url_is_static() {
         assert_eq!(
             ai_center_evaluations_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/ai-center/overview/eval-catalog"
+            "https://c4c.app.eu2.coralogix.com/ai-center/eval-catalog"
         );
     }
 

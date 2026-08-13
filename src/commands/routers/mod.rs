@@ -58,6 +58,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Router)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the routers list page link to stderr once per profile.
+        // Skip when there are no routers, since there's nothing to view.
+        if !resp.routers.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::notification_routers_url(b)
+            })
+            .await;
+        }
         for router in resp.routers {
             all_json.push(router_to_json(&router, include_profile, &profile));
             all_items.push((profile.clone(), router));
@@ -66,7 +74,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -126,7 +134,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -172,23 +180,19 @@ pub async fn run_create(
                 )
                 .green()
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = router.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::notification_router_url(b, id)
                 })
                 .await;
             }
-            let mut router_json = router_to_json(&router, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut router_json, url);
-            }
+            let router_json = router_to_json(&router, include_profile, &profile);
             all_results.push(router_json);
         }
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -214,7 +218,7 @@ pub async fn run_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated router in profile '{profile}'.").green()
@@ -224,7 +228,7 @@ pub async fn run_update(
             .and_then(crate::console_url::id_from_json)
             .or_else(|| crate::console_url::id_from_json(&val));
         if let Some(id) = extracted_id {
-            crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::notification_router_url(b, &id)
             })
             .await;
@@ -233,7 +237,7 @@ pub async fn run_update(
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -285,7 +289,7 @@ pub async fn run_validate_matcher(
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

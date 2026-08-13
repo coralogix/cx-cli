@@ -66,14 +66,10 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TcoPolicy)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // One static TCO policies page link per profile, not per policy -
-        // it isn't scoped to any single row, so it doesn't belong embedded
-        // in one row's JSON. Resolving it here is only for the "View in
-        // Coralogix" stderr echo (see `ExecutionTarget::console_link`).
-        // Skip entirely when the profile's result is empty so nothing
-        // prints a link to an empty list.
+        // Print the TCO policies page link to stderr once per profile.
+        // Skip when there are no policies, since there's nothing to view.
         if !resp.policies.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::tco_url(b)
             })
             .await;
@@ -87,7 +83,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -153,7 +149,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -162,7 +158,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -225,11 +221,10 @@ pub async fn run_create(
                 policy.id.as_deref(),
                 &profile,
             );
-            let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
+            let policy_json = policy_to_json(&policy, include_profile, &profile);
+            crate::execution::emit_console_link_for_profile(
                 targets,
                 &profile,
-                &mut policy_json,
                 crate::console_url::tco_url,
             )
             .await;
@@ -239,7 +234,7 @@ pub async fn run_create(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -280,11 +275,10 @@ pub async fn run_update(
                 policy.id.as_deref(),
                 &profile,
             );
-            let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
+            let policy_json = policy_to_json(&policy, include_profile, &profile);
+            crate::execution::emit_console_link_for_profile(
                 targets,
                 &profile,
-                &mut policy_json,
                 crate::console_url::tco_url,
             )
             .await;
@@ -294,7 +288,7 @@ pub async fn run_update(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -325,7 +319,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("TCO policy {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -352,12 +346,12 @@ pub async fn run_reorder(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Reordered TCO policies in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -366,7 +360,7 @@ pub async fn run_reorder(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -395,8 +389,8 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -405,7 +399,7 @@ pub async fn run_test(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -436,7 +430,7 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -445,7 +439,7 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -482,12 +476,12 @@ pub async fn run_settings_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated TCO settings in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -496,7 +490,7 @@ pub async fn run_settings_update(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

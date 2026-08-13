@@ -80,7 +80,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -141,7 +141,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -179,24 +179,20 @@ pub async fn run_create(
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
             render::print_created("Created", "rule", Some(name), rule.id.as_deref(), &profile);
-            let mut console_url: Option<String> = None;
             if let Some(id) = rule.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::suppression_rule_url(b, id)
                 })
                 .await;
             }
-            let mut rule_json = rule_to_json(&rule, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut rule_json, url);
-            }
+            let rule_json = rule_to_json(&rule, include_profile, &profile);
             all_results.push(rule_json);
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -235,24 +231,20 @@ pub async fn run_update(
                 "{}",
                 format!("Updated rule '{name}' in profile '{profile}'.").green()
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = rule.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::suppression_rule_url(b, id)
                 })
                 .await;
             }
-            let mut rule_json = rule_to_json(&rule, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut rule_json, url);
-            }
+            let rule_json = rule_to_json(&rule, include_profile, &profile);
             all_results.push(rule_json);
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

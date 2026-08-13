@@ -56,7 +56,7 @@ fn emit_table(
 ) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json(all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -81,7 +81,7 @@ fn emit_objects(
 ) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json_auto(all)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -162,15 +162,10 @@ pub async fn run_applications_list(
         // Applications have no create/update/delete in this CLI - list/get are
         // the only entry points - so the Application Catalog link is attached
         // here rather than gated behind a mutation (same reasoning as `usage`).
-        // One static "Application Catalog" page link per profile, not per
-        // application - it isn't scoped to any single row, so it doesn't
-        // belong embedded in one row's JSON. Resolving it here is only for
-        // the "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
+        // Print it to stderr once per profile; skip when there are no
+        // applications, since there's nothing to view.
         if !items.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_applications_url(b)
             })
             .await;
@@ -221,9 +216,30 @@ pub async fn run_applications_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
-            crate::console_url::ai_center_applications_url(b)
-        })
+        // A single application deep-links to its drilldown page, keyed by the
+        // `application` + `subsystem` query params (there is no path-param
+        // route for one application in the console). Fall back to the catalog
+        // page if the response omits `application`. The API wraps the payload
+        // as `{"aiApplication": {...}}`, so the fields live one level below
+        // the top of `val`, not at its root.
+        let app_obj = val.get("aiApplication");
+        let application = app_obj
+            .and_then(|v| v.get("application"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let subsystem = app_obj
+            .and_then(|v| v.get("subsystem"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        crate::execution::emit_console_link_for_profile(
+            targets,
+            &profile,
+            |b| match &application {
+                Some(app) => crate::console_url::ai_center_application_url(b, app, &subsystem),
+                None => crate::console_url::ai_center_applications_url(b),
+            },
+        )
         .await;
         all.push(val);
     }
@@ -274,15 +290,10 @@ pub async fn run_evaluations_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        // One static "Eval Catalog" page link per profile, not per
-        // evaluation - it isn't scoped to any single row, so it doesn't
-        // belong embedded in one row's JSON. Resolving it here is only for
-        // the "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
+        // Print the Eval Catalog page link to stderr once per profile.
+        // Skip when there are no evaluations, since there's nothing to view.
         if !items.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)
             })
             .await;
@@ -347,7 +358,7 @@ pub async fn run_evaluations_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -379,13 +390,16 @@ pub async fn run_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        eprintln!(
+            "{}",
+            format!("Created AI evaluation in profile '{profile}'.").green()
+        );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
         all.push(val);
     }
-    eprintln!("{}", "Created AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
 
@@ -415,13 +429,16 @@ pub async fn run_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        eprintln!(
+            "{}",
+            format!("Updated AI evaluation in profile '{profile}'.").green()
+        );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
         all.push(val);
     }
-    eprintln!("{}", "Updated AI evaluation.".green());
     emit_objects(&all, include_profile, output, "No result.")
 }
 
@@ -448,7 +465,7 @@ pub async fn run_evaluations_delete(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -520,17 +537,13 @@ async fn run_custom_evaluations_table(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     // Items are raw API objects: the text table reads a few columns, but
-    // JSON/agents output keeps the full policy (config, instructions, etc.).
+    // JSON/toon output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        // One static "Eval Catalog" page link per profile, not per custom
-        // evaluation - it isn't scoped to any single row, so it doesn't
-        // belong embedded in one row's JSON. Resolving it here is only for
-        // the "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
+        // Print the Eval Catalog page link to stderr once per profile.
+        // Skip when there are no custom evaluations, since there's nothing
+        // to view.
         if !items.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)
             })
             .await;
@@ -586,7 +599,7 @@ pub async fn run_custom_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -622,7 +635,7 @@ pub async fn run_custom_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -663,7 +676,7 @@ pub async fn run_add_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -704,7 +717,7 @@ pub async fn run_remove_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;

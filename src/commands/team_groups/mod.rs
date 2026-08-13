@@ -59,6 +59,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, TeamGroup)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the team groups list page link to stderr once per profile.
+        // Skip when there are no groups, since there's nothing to view.
+        if !resp.groups.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_groups_url(b)
+            })
+            .await;
+        }
         for group in resp.groups {
             all_json.push(group_to_json(&group, include_profile, &profile));
             all_items.push((profile.clone(), group));
@@ -67,7 +75,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -128,7 +136,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -192,7 +200,7 @@ pub async fn run_get_by_name(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -256,7 +264,7 @@ pub async fn run_users(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -302,24 +310,20 @@ pub async fn run_create(
                 group.group_id.as_deref(),
                 &profile,
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = group.group_id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::iam_group_url(b, id)
                 })
                 .await;
             }
-            let mut group_json = group_to_json(&group, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut group_json, url);
-            }
+            let group_json = group_to_json(&group, include_profile, &profile);
             all_results.push(group_json);
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -356,13 +360,10 @@ pub async fn run_update(
                 "{}",
                 format!("Updated team group in profile '{profile}'.").green()
             );
-            let mut group_json = group_to_json(&group, targets.len() > 1, &profile);
-            crate::execution::tag_console_link_for_profile(
-                targets,
-                &profile,
-                &mut group_json,
-                |b| crate::console_url::iam_group_url(b, &group_id),
-            )
+            let group_json = group_to_json(&group, targets.len() > 1, &profile);
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_group_url(b, &group_id)
+            })
             .await;
             all_results.push(group_json);
         }
@@ -370,7 +371,7 @@ pub async fn run_update(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

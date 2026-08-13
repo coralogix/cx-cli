@@ -75,7 +75,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // profile's result is empty so nothing prints a link to an empty
         // list.
         if !resp.groups.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::recording_rules_url(b)
             })
             .await;
@@ -89,7 +89,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -150,7 +150,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::recording_rules_url(b)
         })
         .await;
@@ -159,7 +159,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -227,11 +227,10 @@ pub async fn run_create(
                 group.id.as_deref(),
                 &profile,
             );
-            let mut group_json = group_to_json(&group, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
+            let group_json = group_to_json(&group, include_profile, &profile);
+            crate::execution::emit_console_link_for_profile(
                 targets,
                 &profile,
-                &mut group_json,
                 crate::console_url::recording_rules_url,
             )
             .await;
@@ -241,7 +240,7 @@ pub async fn run_create(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -287,11 +286,10 @@ pub async fn run_update(
                 format!("Updated recording rule group '{name}' (ID: {id}) in profile '{profile}'.")
                     .green()
             );
-            let mut group_json = group_to_json(&group, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
+            let group_json = group_to_json(&group, include_profile, &profile);
+            crate::execution::emit_console_link_for_profile(
                 targets,
                 &profile,
-                &mut group_json,
                 crate::console_url::recording_rules_url,
             )
             .await;
@@ -301,7 +299,7 @@ pub async fn run_update(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -335,7 +333,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Recording rule group {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::recording_rules_url(b)
         })
         .await;

@@ -83,10 +83,11 @@ The default install script and release binaries are built for musl on Linux, so 
 | Key | Default | Description |
 |---|---|---|
 | `default_profile` | `"default"` | Profile used when `-p` is not provided |
-| `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `agents`) |
-| `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `agents` mode before spilling to a temp file. Set to `-1` to disable |
+| `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `toon`; `agents` accepted as a deprecated alias) |
+| `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `toon` mode before spilling to a temp file. Set to `-1` to disable |
 | `temp_dir` | `"/tmp/"` | Directory for spilled result files |
 | `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
+| `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |
 | `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`) |
 | `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`) |
 
@@ -98,6 +99,7 @@ default_output_format = "text"
 max_dataprime_direct_output_size = 102400
 temp_dir = "/tmp/"
 read_only = false
+no_console_link = false
 allow_risky_commands = true
 olly_enabled = true
 ```
@@ -197,21 +199,30 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 
 A fully qualified HTTPS URL can be used as a region value for non-standard environments.
 
-## Console link resolution
+## Console links
 
-After a successful command on entities with a corresponding web console page, `cx` prints a `View in Coralogix: <url>` line to stderr and may embed the same URL as a `consoleUrl` field in `-o json` / `-o agents` output. The console base URL used to build these links is resolved in this order:
+After a successful command on entities with a corresponding web console page, `cx` prints a `View in Coralogix: <url>` line to stderr. The console base URL used to build these links is resolved in this order:
 
 1. **`console_url`** in the profile TOML, if set - used as-is (see the field table above). No API call is made when this is set.
-2. Otherwise, `cx` calls `GET /identity/whoami` and uses its `team_url` field verbatim. This is the default - most teams don't need to configure anything to get console links.
-3. **No link is printed** if `/identity/whoami` fails, or returns no usable `team_url`.
+2. Otherwise, a **fresh cached `team_url`** in the profile TOML. The first time `cx` resolves a team's console URL (step 3) it writes the result back to the profile file as a machine-managed `cached_console_url` (with a `cached_console_url_at` timestamp), the same way OAuth tokens are cached there. Subsequent invocations reuse it for 7 days, so agents making many sequential calls don't pay a `GET /identity/whoami` round-trip on every command. Env-only invocations (`CX_API_KEY` + `CX_REGION` with no profile file) have nowhere to cache and resolve live each process.
+3. Otherwise, `cx` calls `GET /identity/whoami` and uses its `team_url` field verbatim, then caches it per step 2. This is the default on a cold cache - most teams don't need to configure anything to get console links.
+4. **No link is printed** if `/identity/whoami` fails, or returns no usable `team_url`.
 
-A failed or unusable `/identity/whoami` response in step 2 never fails the command - it just means no console link, exactly like step 3. When no link can be resolved, `cx` stays silent: no `View in Coralogix` line on stderr and no `consoleUrl` field in `-o json`/`-o agents` output, and the command otherwise succeeds normally.
+A failed or unusable `/identity/whoami` response in step 3 never fails the command - it just means no console link, exactly like step 4. When no link can be resolved, `cx` stays silent: no `View in Coralogix` line on stderr, and the command otherwise succeeds normally.
 
 Set `console_url` explicitly in the profile TOML to override this, e.g. for a `Custom` region running a self-hosted console where `/identity/whoami` isn't reachable.
 
-### `consoleUrl` field location in `-o json`/`-o agents`
+### Disabling console links
 
-The `consoleUrl` field may be nested inside the entity wrapper when the response root has exactly one object-valued key (e.g. `.alertDef.consoleUrl`), and sits at the root otherwise (e.g. `.consoleUrl`). There is no single fixed path - callers parsing this programmatically should instead extract the `View in Coralogix: <url>` line from stderr, which stays at a fixed, predictable location regardless of response shape.
+The stderr `View in Coralogix` line can be suppressed entirely. This also skips the `/identity/whoami` lookup on a cold cache.
+
+There are three ways to enable it, listed from narrowest to broadest scope:
+
+| Method | Scope | Example |
+|---|---|---|
+| `--no-console-link` flag | Single invocation | `cx --no-console-link alerts list` |
+| `CX_NO_CONSOLE_LINK` env var | Shell session / CI job | `export CX_NO_CONSOLE_LINK=true` |
+| `no_console_link = true` in `~/.cx/config.toml` | All invocations | See global config table above |
 
 ## Environment variables
 
@@ -223,6 +234,7 @@ Environment variables override profile file values:
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
+| `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_TELEMETRY` | Set to `false`, `no`, `off`, or `0` to disable CLI request metadata |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.

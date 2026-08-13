@@ -58,15 +58,22 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Connector)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if !resp.connectors.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::notification_connectors_url(b)
+            })
+            .await;
+        }
         for conn in resp.connectors {
-            all_json.push(connector_to_json(&conn, include_profile, &profile));
+            let json = connector_to_json(&conn, include_profile, &profile);
+            all_json.push(json);
             all_items.push((profile.clone(), conn));
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -122,7 +129,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::notification_connector_url(b, &id)
         })
         .await;
@@ -131,7 +138,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -177,24 +184,20 @@ pub async fn run_create(
                 conn.id.as_deref(),
                 &profile,
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = conn.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::notification_connector_url(b, id)
                 })
                 .await;
             }
-            let mut json = connector_to_json(&conn, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut json, url);
-            }
+            let json = connector_to_json(&conn, include_profile, &profile);
             all_results.push(json);
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -222,7 +225,7 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated connector in profile '{profile}'.").green()
@@ -232,7 +235,7 @@ pub async fn run_update(
             .and_then(crate::console_url::id_from_json)
             .or_else(|| crate::console_url::id_from_json(&val));
         if let Some(id) = extracted_id {
-            crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::notification_connector_url(b, &id)
             })
             .await;
@@ -242,7 +245,7 @@ pub async fn run_update(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -293,7 +296,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -330,7 +333,7 @@ pub async fn run_entity_types(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -378,7 +381,7 @@ pub async fn run_entity_subtypes(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

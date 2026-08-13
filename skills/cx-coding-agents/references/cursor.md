@@ -43,7 +43,7 @@ Key operations:
 cx spans 'filter $l.serviceName == "cursor-agent"
 | filter tags["cursor.conversation_id"] != null
 | aggregate distinct_count(tags["cursor.conversation_id"]) as totalSessions
-| choose totalSessions' --start now-7d -o agents
+| choose totalSessions' --start now-7d -o toon
 ```
 
 ```text
@@ -86,7 +86,7 @@ cx spans 'filter $l.serviceName == "cursor-agent"
 | create promptLength from tags["cursor.prompt_len"]:number
 | groupby roundTime($m.timestamp, <interval>ms) as Time aggregate sum(promptLength) as totalInput
 | sort by Time asc
-| choose Time, totalInput' --start now-7d -o agents
+| choose Time, totalInput' --start now-7d -o toon
 ```
 
 ```text

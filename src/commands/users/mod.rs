@@ -102,7 +102,7 @@ pub async fn run_search(
         // helpful. Skip printing entirely when the profile's result is
         // empty, since there's nothing to view.
         if !resp.users.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_users_url(b)
             })
             .await;
@@ -116,7 +116,7 @@ pub async fn run_search(
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -174,7 +174,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_users_url(b)
         })
         .await;
@@ -183,7 +183,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -225,14 +225,14 @@ pub async fn run_create(
             "{}",
             format!("Created user(s) in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_users_url(b)
         })
         .await;
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents | OutputFormat::Text => {}
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Text => {}
     }
     Ok(())
 }
@@ -272,10 +272,9 @@ pub async fn run_update(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
-            &mut v,
             crate::console_url::iam_users_url,
         )
         .await;
@@ -284,7 +283,7 @@ pub async fn run_update(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -326,7 +325,7 @@ pub async fn run_set_status(
             "{}",
             format!("Updated user status in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_users_url(b)
         })
         .await;

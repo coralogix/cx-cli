@@ -512,7 +512,11 @@ pub async fn run_search(
                         v
                     })
                     .collect();
-                render::render_json(&json_rows)?;
+                if output == OutputFormat::Toon {
+                    render::render_toon(&json_rows)?;
+                } else {
+                    render::render_json(&json_rows)?;
+                }
             }
             OutputFormat::Text => {
                 if all_results.is_empty() {
@@ -642,7 +646,11 @@ pub async fn run_get_labels(
                     .map(|(_, label)| json!({"label": label}))
                     .collect()
             };
-            render::render_json(&json_rows)?;
+            if output == OutputFormat::Toon {
+                render::render_toon(&json_rows)?;
+            } else {
+                render::render_json(&json_rows)?;
+            }
         }
         OutputFormat::Text => {
             if all_labels.is_empty() {

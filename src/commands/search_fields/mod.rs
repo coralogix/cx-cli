@@ -56,7 +56,11 @@ pub async fn run(
                     v
                 })
                 .collect();
-            render::render_json(&json_rows)?;
+            if output == OutputFormat::Toon {
+                render::render_toon(&json_rows)?;
+            } else {
+                render::render_json(&json_rows)?;
+            }
         }
         OutputFormat::Text => {
             if all_results.is_empty() {

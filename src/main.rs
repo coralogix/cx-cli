@@ -750,7 +750,8 @@ enum OllyCmd {
 Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <uuid>
-  cx olly ask \"Analyze this\" --model claude-sonnet-4-5")]
+  cx olly ask \"Analyze this\" --model claude-sonnet-4-5
+  cx olly ask \"Find error logs that start with 'Cart Not Found' in the last 6 hours\" --agent-to-agent-mode")]
     Ask {
         /// The message to send to the assistant.
         message: String,
@@ -766,6 +767,13 @@ Examples:
         /// Timeout in seconds for response.
         #[arg(long, default_value_t = 900)]
         timeout: u32,
+
+        /// Ask Olly as a sub-agent (agent-to-agent mode): shorter responses, no
+        /// charts/tables, asks clarifying questions instead of guessing.
+        /// Defaults to false (human-facing); pass this flag if you're an
+        /// LLM/agent calling `cx` to opt into shorter, sub-agent-style responses.
+        #[arg(long)]
+        agent_to_agent_mode: bool,
     },
 
     /// Manage artifacts from assistant responses.
@@ -4471,6 +4479,7 @@ async fn main() -> Result<()> {
                     chat_id,
                     model,
                     timeout,
+                    agent_to_agent_mode,
                 } => {
                     commands::olly::run_ask(
                         &targets,
@@ -4478,6 +4487,7 @@ async fn main() -> Result<()> {
                         chat_id.as_deref(),
                         &model,
                         timeout,
+                        agent_to_agent_mode,
                         output,
                     )
                     .await?;

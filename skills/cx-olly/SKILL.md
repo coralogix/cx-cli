@@ -9,11 +9,13 @@ metadata:
 
 Use this skill to interact with Coralogix's Observability Agent (Olly) via the `cx olly` CLI commands. Olly can analyze your observability data, answer questions about alerts, metrics, logs, and generate artifacts like charts and reports.
 
+`cx olly ask` defaults `--agent-to-agent-mode` to **false**. **If you're an LLM/agent, pass `--agent-to-agent-mode`** - see "Agent-to-agent mode" below.
+
 ## CLI Commands
 
 | Command | Purpose | Key flags |
 |---|---|---|
-| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout` |
+| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
@@ -21,30 +23,37 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 
 **Single-profile only:** `cx olly` commands do not support multi-profile fan-out. Use `-p <profile>` to specify a single profile.
 
+## Running Olly (async by default)
+
+**Run `cx olly ask` asynchronously by default:** launch it as a **background process and poll it for completion** rather than blocking on it. Olly investigations routinely take minutes, so this is the normal mode for `cx olly ask`.
+
+Only run `cx olly ask` inline (foreground, blocking) for a short question you expect Olly to answer quickly — a quick lookup or a one-line follow-up. When in doubt, run it in the background.
+
 ## Chat Commands
 
 ### Start a new conversation
 
 ```bash
-cx olly ask "What alerts fired today?"
+cx olly ask "What alerts fired today?" --agent-to-agent-mode
 ```
 
 This creates a new chat and returns a response along with a **Chat ID** that you can use for follow-up questions.
+Remove `--agent-to-agent-mode` if you don't have context to share (like quick access to source files) or if the created chat is only for human usage.
 
 ### Continue an existing chat
 
 ```bash
-cx olly ask "Tell me more about the error rates" --chat-id <chat-id>
+cx olly ask "Tell me more about the error rates" --chat-id <chat-id> --agent-to-agent-mode
 ```
 
-Use `--chat-id` to continue a conversation and maintain context from previous messages.
+Use `--chat-id` to continue a conversation and maintain context from previous messages. Background the follow-up too when it kicks off another investigation.
 
 ### Model selection
 
 Available models include `gpt-5.2` (default), `claude-sonnet-4-5`, `sonnet-4.6`, `gpt-5.4`, `claude-haiku-4-5`.
 
 ```bash
-cx olly ask "Explain this error" --model claude-sonnet-4-5
+cx olly ask "Explain this error" --model claude-sonnet-4-5 --agent-to-agent-mode
 ```
 
 ### Timeout
@@ -52,12 +61,22 @@ cx olly ask "Explain this error" --model claude-sonnet-4-5
 For complex queries that may take longer, increase the timeout (default: 900 seconds):
 
 ```bash
-cx olly ask "Deep analysis of last week's incidents" --timeout 1800
+cx olly ask "Deep analysis of last week's incidents" --timeout 1800 --agent-to-agent-mode
 ```
+
+### Agent-to-agent mode
+
+`--agent-to-agent-mode` defaults to `false`, since `cx olly ask` is used directly by humans as well as by agents. **If you're an LLM/agent, pass `--agent-to-agent-mode`** to opt into shorter, sub-agent-style responses: no charts/tables, clarifying questions instead of guessing, and reliance on your broader context.
+
+```bash
+cx olly ask "Analyze this for me" --agent-to-agent-mode
+```
+
+**It's per-call, not per-chat.** `--chat-id` does not remember it - re-pass `--agent-to-agent-mode` on every follow-up turn, or the mode silently flips back to human-facing mid-conversation.
 
 ## Artifacts
 
-Olly can generate artifacts like charts, tables, and reports. Artifact IDs appear as links in the agent's response text.
+Olly can generate artifacts like query results, previews, and citations. Artifact IDs appear as links in the agent's response text.
 
 ### List all artifacts
 
@@ -89,13 +108,13 @@ Output behavior:
 ### Investigate an issue
 
 ```bash
-# Start investigation
-cx olly ask "Why is the checkout service showing high latency?"
+# Start investigation — run in the background and poll for completion
+cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics" --agent-to-agent-mode
 
-# Follow up with the chat ID from the response
-cx olly ask "What changed in the last hour?" --chat-id abc-123-def
+# Follow up with the chat ID from the response — also background and poll
+cx olly ask "What changed in the last hour?" --chat-id abc-123-def --agent-to-agent-mode
 
-# Get any generated charts
+# Once the interaction has completed, get any generated charts
 cx olly artifacts list -o json | jq '.[0].id'
 cx olly artifacts get <artifact-id>
 ```
@@ -104,7 +123,7 @@ cx olly artifacts get <artifact-id>
 
 ```bash
 # Get response as JSON
-cx olly ask "List top 5 error messages" -o json | jq '.response'
+cx olly ask "List top 5 error messages" -o json --agent-to-agent-mode | jq '.response'
 
 # Parse artifacts
 cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
@@ -115,16 +134,21 @@ cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
 ```bash
 cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
   --model claude-sonnet-4-5 \
-  --timeout 1800
+  --timeout 1800 \
+  --agent-to-agent-mode
 ```
 
 ## Key Principles
 
+- **Async by default** - run `cx olly ask` as a background process and poll it for completion; only run inline (blocking) for short questions you expect Olly to answer quickly
 - **Chat IDs enable context** - save the Chat ID from responses to continue conversations
 - **Use `-o json` for scripting** - pipe to `jq` for filtering and extraction
 - **Artifact IDs are in response text** - look for markdown links like `[Chart](https://...artifact_view/<id>)`
 - **Single-profile only** - `cx olly` does not support multi-profile queries
 - **Large artifacts auto-spill** - JSON content over the configured limit is saved to temp files
+- **Check source code before asking** - give Olly concrete context from the source code if available, such as which metric to start investigating from, before calling it
+- **Limit investigation scope** - guide Olly to the correct limited scope, for example limit to just logs or to specific time ranges
+- **Pass `--agent-to-agent-mode` when calling as an LLM/agent** - it defaults to `false` (human-facing); agents should opt in for shorter, sub-agent-style responses
 
 ## Related Skills
 

@@ -1,12 +1,56 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use assert_cmd::Command as AssertCommand;
 use serde_json::json;
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::olly::{run_artifacts_get, run_ask};
 use coralogix_cli::config::OutputFormat;
+
+// ── CLI-level `--agent-to-agent-mode` flag tests ─────────────────────────────
+
+static CLI_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+fn cli_temp_home() -> PathBuf {
+    let id = CLI_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("cx_olly_cli_test_{}_{id}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn cli_write_profile(home: &std::path::Path, base_url: &str) {
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let content = format!(
+        r#"auth = "api_key"
+credential_storage = "file"
+api_key = "test-key"
+region = "{base_url}"
+"#
+    );
+    fs::write(profiles_dir.join("default.toml"), content).unwrap();
+    fs::write(
+        home.join(".cx").join("config.toml"),
+        "default_profile = \"default\"\n",
+    )
+    .unwrap();
+}
+
+fn cx_olly(home: &std::path::Path) -> AssertCommand {
+    let mut cmd = AssertCommand::cargo_bin("cx").expect("cx binary should build");
+    cmd.env("CX_HOME", home);
+    cmd.env_remove("CX_API_KEY");
+    cmd.env_remove("CX_REGION");
+    cmd.env_remove("CX_PROFILE");
+    cmd
+}
 
 #[tokio::test]
 async fn ask_creates_chat_and_sends_message() {
@@ -57,6 +101,7 @@ async fn ask_creates_chat_and_sends_message() {
         None,
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -96,6 +141,7 @@ async fn ask_continues_existing_chat() {
         Some("existing-chat"),
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -146,6 +192,7 @@ async fn ask_with_different_models() {
         None,
         "advanced",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -188,6 +235,7 @@ async fn ask_handles_cancelled_response() {
         None,
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
@@ -200,7 +248,16 @@ async fn ask_rejects_multi_profile() {
     let target2 = common::test_target("profile2", "http://localhost:2");
     let targets = vec![target1, target2];
 
-    let result = run_ask(&targets, "Hello", None, "gpt-5.2", 900, OutputFormat::Json).await;
+    let result = run_ask(
+        &targets,
+        "Hello",
+        None,
+        "gpt-5.2",
+        900,
+        true,
+        OutputFormat::Json,
+    )
+    .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -250,10 +307,111 @@ async fn ask_sends_skill_interaction_mode() {
         None,
         "gpt-5.2",
         900,
+        true,
         OutputFormat::Json,
     )
     .await
     .expect("run_ask should send skill interaction_mode");
+}
+
+#[tokio::test]
+async fn ask_sends_agent_to_agent_mode_when_enabled() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-a2a",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-a2a/interactions/"))
+        .and(header("interaction-source", "cli"))
+        .and(body_partial_json(json!({"agent_to_agent_mode": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-a2a",
+            "chat_id": "chat-a2a",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-a2a",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Concise sub-agent response"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_ask(
+        &targets,
+        "Test message",
+        None,
+        "gpt-5.2",
+        900,
+        true,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_ask should send agent_to_agent_mode: true");
+}
+
+#[tokio::test]
+async fn ask_can_disable_agent_to_agent_mode() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-human",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-human/interactions/"))
+        .and(header("interaction-source", "cli"))
+        .and(body_partial_json(json!({"agent_to_agent_mode": false})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-human",
+            "chat_id": "chat-human",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-human",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Full human-facing response"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_ask(
+        &targets,
+        "Test message",
+        None,
+        "gpt-5.2",
+        900,
+        false,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_ask should send agent_to_agent_mode: false");
 }
 
 #[tokio::test]
@@ -345,4 +503,110 @@ async fn artifacts_get_rejects_multi_profile() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("does not support multi-profile"));
+}
+
+#[tokio::test]
+async fn agent_to_agent_mode_defaults_to_false_in_cli() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-cli-default",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-cli-default/interactions/"))
+        .and(body_partial_json(json!({"agent_to_agent_mode": false})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-cli-default",
+            "chat_id": "chat-cli-default",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-cli-default",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Human-facing response"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    cx_olly(&home)
+        .args(["olly", "ask", "Hello there"])
+        .assert()
+        .success();
+}
+
+#[tokio::test]
+async fn agent_to_agent_mode_rejects_explicit_value() {
+    let home = cli_temp_home();
+    cli_write_profile(&home, "http://localhost:1");
+
+    // Bare boolean flag - clap must reject any explicit value before any
+    // network call is attempted (asserted by not mounting a mock server).
+    let output = cx_olly(&home)
+        .args(["olly", "ask", "Hello there", "--agent-to-agent-mode=true"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unexpected value"), "stderr: {stderr}");
+}
+
+#[tokio::test]
+async fn agent_to_agent_mode_does_not_swallow_positional_message() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chat-cli-order",
+            "title": ""
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-cli-order/interactions/"))
+        .and(body_partial_json(json!({
+            "agent_to_agent_mode": true,
+            "content": [{"type": "input_text", "text": "hello world"}]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-cli-order",
+            "chat_id": "chat-cli-order",
+            "status": "COMPLETED",
+            "responses": [
+                {
+                    "id": "msg-cli-order",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Concise response"}]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    // The flag comes *before* the positional message on the command line -
+    // since it's a no-value boolean flag, it must not consume "hello world".
+    cx_olly(&home)
+        .args(["olly", "ask", "--agent-to-agent-mode", "hello world"])
+        .assert()
+        .success();
 }

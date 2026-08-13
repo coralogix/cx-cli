@@ -2788,9 +2788,9 @@ async fn connector_get_prints_console_link() {
 async fn api_keys_list_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list/all"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "keys": [{ "keyInfo": { "keyId": "key-1", "name": "Demo Key" } }]
+            "keys": [{ "id": "key-1", "name": "Demo Key" }]
         })))
         .mount(&server)
         .await;
@@ -2821,7 +2821,7 @@ async fn api_keys_list_prints_console_link() {
 async fn api_keys_list_empty_prints_no_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list/all"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": []})))
         .mount(&server)
         .await;

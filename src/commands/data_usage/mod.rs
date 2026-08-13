@@ -498,15 +498,15 @@ pub async fn run_query(
 #[cfg(test)]
 mod tests {
     use super::{parse_query, read_query_from_file};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
     fn write_query(contents: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "cx-data-usage-query-unit-{}.json",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after Unix epoch")
-                .as_nanos()
+            "cx-data-usage-query-unit-{}-{}.json",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::write(&path, contents).unwrap();
         path

@@ -107,7 +107,7 @@ pub async fn run_list(
         // Print the alerts list page link to stderr once per profile. Skip
         // when nothing matched (post-filter), since there's nothing to view.
         if !matching.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::alerts_url(b)
             })
             .await;
@@ -189,7 +189,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::alert_url(b, alert_id)
         })
         .await;
@@ -298,7 +298,7 @@ pub async fn run_create(
                 &profile,
             );
             if let Some(id) = alert.id.as_deref() {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::alert_url(b, id)
                 })
                 .await;
@@ -403,7 +403,7 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
             "{}",
             format!("Alert {alert_id} enabled in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::alert_url(b, alert_id)
         })
         .await;
@@ -434,7 +434,7 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
             "{}",
             format!("Alert {alert_id} disabled in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::alert_url(b, alert_id)
         })
         .await;

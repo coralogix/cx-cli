@@ -61,7 +61,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // Print the routers list page link to stderr once per profile.
         // Skip when there are no routers, since there's nothing to view.
         if !resp.routers.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::notification_routers_url(b)
             })
             .await;
@@ -181,7 +181,7 @@ pub async fn run_create(
                 .green()
             );
             if let Some(id) = router.id.as_deref() {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::notification_router_url(b, id)
                 })
                 .await;
@@ -228,7 +228,7 @@ pub async fn run_update(
             .and_then(crate::console_url::id_from_json)
             .or_else(|| crate::console_url::id_from_json(&val));
         if let Some(id) = extracted_id {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::notification_router_url(b, &id)
             })
             .await;

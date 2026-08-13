@@ -62,7 +62,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // Print the API keys page link to stderr once per profile. Skip
         // when there are no keys, since there's nothing to view.
         if !resp.keys.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_api_keys_url(b)
             })
             .await;
@@ -137,7 +137,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
         .await;
@@ -199,7 +199,7 @@ pub async fn run_create(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-        crate::execution::console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
             crate::console_url::iam_api_keys_url,
@@ -246,7 +246,7 @@ pub async fn run_update(
             "{}",
             format!("Updated API key in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
         .await;
@@ -282,7 +282,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("API key {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
         .await;
@@ -322,7 +322,7 @@ pub async fn run_send_data_keys(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
         .await;
@@ -422,7 +422,7 @@ pub async fn run_admin_delete(targets: &[Arc<ExecutionTarget>], ids: &[String]) 
             "{}",
             format!("Bulk deleted API keys in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
         .await;
@@ -456,7 +456,7 @@ pub async fn run_admin_set_status(
             "{}",
             format!("Updated API key status in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_api_keys_url(b)
         })
         .await;

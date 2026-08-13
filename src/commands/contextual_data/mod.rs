@@ -65,7 +65,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // profile. Skip when there are no integrations, since there's
         // nothing to view.
         if !resp.integrations.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::integrations_url(b)
             })
             .await;
@@ -157,7 +157,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -216,7 +216,7 @@ pub async fn run_create(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-        crate::execution::console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
             crate::console_url::integrations_url,
@@ -266,7 +266,7 @@ pub async fn run_update(
             "{}",
             format!("Updated contextual data integration {id} in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -305,7 +305,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Contextual data integration {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -339,7 +339,7 @@ pub async fn run_definition(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -391,7 +391,7 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;

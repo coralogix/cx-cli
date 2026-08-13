@@ -61,7 +61,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // Print the outbound-webhooks page link to stderr once per profile.
         // Skip when there are no webhooks, since there's nothing to view.
         if !resp.deployed.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::webhooks_url(b)
             })
             .await;
@@ -131,7 +131,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::webhooks_url(b)
         })
         .await;
@@ -228,7 +228,7 @@ pub async fn run_update(
             "{}",
             format!("Updated webhook {id} in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::webhooks_url(b)
         })
         .await;
@@ -264,7 +264,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Webhook {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::webhooks_url(b)
         })
         .await;
@@ -295,7 +295,7 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::webhooks_url(b)
         })
         .await;
@@ -333,7 +333,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::webhooks_url(b)
         })
         .await;

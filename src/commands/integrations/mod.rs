@@ -65,7 +65,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // profile. Skip when there are no integrations, since there's
         // nothing to view.
         if !resp.integrations.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::integrations_url(b)
             })
             .await;
@@ -136,7 +136,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -192,7 +192,7 @@ pub async fn run_create(
                 &profile,
             );
             let val = rg_to_json(&integration, include_profile, &profile);
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::integrations_url(b)
             })
             .await;
@@ -238,7 +238,7 @@ pub async fn run_update(
             "{}",
             format!("Updated integration {id} in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -274,7 +274,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Integration {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -308,7 +308,7 @@ pub async fn run_definition(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -360,7 +360,7 @@ pub async fn run_deployed(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -409,7 +409,7 @@ pub async fn run_test(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -447,7 +447,7 @@ pub async fn run_template(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;

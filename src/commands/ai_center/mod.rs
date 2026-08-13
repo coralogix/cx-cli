@@ -165,7 +165,7 @@ pub async fn run_applications_list(
         // Print it to stderr once per profile; skip when there are no
         // applications, since there's nothing to view.
         if !items.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_applications_url(b)
             })
             .await;
@@ -232,7 +232,7 @@ pub async fn run_applications_get(
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        crate::execution::console_link_for_profile(targets, &profile, |b| match &application {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| match &application {
             Some(app) => crate::console_url::ai_center_application_url(b, app, &subsystem),
             None => crate::console_url::ai_center_applications_url(b),
         })
@@ -289,7 +289,7 @@ pub async fn run_evaluations_list(
         // Print the Eval Catalog page link to stderr once per profile.
         // Skip when there are no evaluations, since there's nothing to view.
         if !items.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)
             })
             .await;
@@ -354,7 +354,7 @@ pub async fn run_evaluations_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -390,7 +390,7 @@ pub async fn run_evaluations_create(
             "{}",
             format!("Created AI evaluation in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -429,7 +429,7 @@ pub async fn run_evaluations_update(
             "{}",
             format!("Updated AI evaluation in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -461,7 +461,7 @@ pub async fn run_evaluations_delete(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -539,7 +539,7 @@ async fn run_custom_evaluations_table(
         // Skip when there are no custom evaluations, since there's nothing
         // to view.
         if !items.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)
             })
             .await;
@@ -595,7 +595,7 @@ pub async fn run_custom_evaluations_create(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -631,7 +631,7 @@ pub async fn run_custom_evaluations_update(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -672,7 +672,7 @@ pub async fn run_add_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;
@@ -713,7 +713,7 @@ pub async fn run_remove_policy(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::ai_center_evaluations_url(b)
         })
         .await;

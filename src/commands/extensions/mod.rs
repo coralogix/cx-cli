@@ -62,7 +62,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // profile. Skip when there are no extensions, since there's
         // nothing to view.
         if !resp.extensions.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::integrations_url(b)
             })
             .await;
@@ -132,7 +132,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -175,7 +175,7 @@ pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         // profile. Skip when there are no extensions, since there's
         // nothing to view.
         if !resp.deployed_extensions.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::integrations_url(b)
             })
             .await;
@@ -245,7 +245,7 @@ pub async fn run_deploy(
             "{}",
             format!("Extension deployed in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -287,7 +287,7 @@ pub async fn run_update(
             "{}",
             format!("Extension updated in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -329,7 +329,7 @@ pub async fn run_undeploy(
             "{}",
             format!("Extension undeployed in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;

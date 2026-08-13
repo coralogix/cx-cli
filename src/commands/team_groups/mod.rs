@@ -62,7 +62,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // Print the team groups list page link to stderr once per profile.
         // Skip when there are no groups, since there's nothing to view.
         if !resp.groups.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_groups_url(b)
             })
             .await;
@@ -311,7 +311,7 @@ pub async fn run_create(
                 &profile,
             );
             if let Some(id) = group.group_id.as_deref() {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::iam_group_url(b, id)
                 })
                 .await;
@@ -361,7 +361,7 @@ pub async fn run_update(
                 format!("Updated team group in profile '{profile}'.").green()
             );
             let group_json = group_to_json(&group, targets.len() > 1, &profile);
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_group_url(b, &group_id)
             })
             .await;

@@ -379,7 +379,7 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
         // profile. Skip when there are no dashboards, since there's
         // nothing to view.
         if !resp.items.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::dashboards_url(b)
             })
             .await;
@@ -526,7 +526,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::dashboard_url(b, dashboard_id)
         })
         .await;
@@ -679,7 +679,7 @@ pub async fn run_create(
             &profile,
         );
         if let Some(id) = &created_id {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::dashboard_url(b, id)
             })
             .await;
@@ -769,7 +769,7 @@ pub async fn run_replace(
             &profile,
         );
         if let Some(id) = &replaced_id {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::dashboard_url(b, id)
             })
             .await;
@@ -839,7 +839,7 @@ pub async fn run_folders_list(
         // Folders live in the same catalog UI as the dashboards themselves,
         // so link to the same page. Skip when there are no folders.
         if !resp.folders.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::dashboards_url(b)
             })
             .await;
@@ -1065,7 +1065,7 @@ pub async fn run_check(
     let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(id) = dashboard_id {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::dashboard_url(b, id)
             })
             .await;

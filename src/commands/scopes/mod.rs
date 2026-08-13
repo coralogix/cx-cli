@@ -61,7 +61,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // Print the scopes list page link to stderr once per profile. Skip
         // when there are no scopes, since there's nothing to view.
         if !resp.scopes.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_scopes_url(b)
             })
             .await;
@@ -204,7 +204,7 @@ pub async fn run_create(
                 &profile,
             );
             if let Some(id) = scope.id.as_deref() {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::iam_scope_url(b, id)
                 })
                 .await;
@@ -250,7 +250,7 @@ pub async fn run_update(
             format!("Updated scope in profile '{profile}'.").green()
         );
         if let Some(id) = crate::console_url::id_from_json(&val) {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_scope_url(b, &id)
             })
             .await;

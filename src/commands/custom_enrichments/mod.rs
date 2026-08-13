@@ -112,7 +112,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // Print the enrichments page link to stderr once per profile.
         // Skip when there are no tables, since there's nothing to view.
         if !resp.custom_enrichments.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::enrichments_url(b)
             })
             .await;
@@ -179,7 +179,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;
@@ -233,7 +233,7 @@ pub async fn run_create(
                 .green()
             );
             let ce_json = ce_to_json(&ce, include_profile, &profile);
-            crate::execution::console_link_for_profile(
+            crate::execution::emit_console_link_for_profile(
                 targets,
                 &profile,
                 crate::console_url::enrichments_url,
@@ -276,7 +276,7 @@ pub async fn run_update(
             "{}",
             format!("Updated custom enrichment in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;
@@ -311,7 +311,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
             "{}",
             format!("Custom enrichment {id} deleted in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;
@@ -342,7 +342,7 @@ pub async fn run_search(
     .await;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, val) in report_errors_and_collect_successes(per_profile)? {
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;

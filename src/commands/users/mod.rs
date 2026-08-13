@@ -102,7 +102,7 @@ pub async fn run_search(
         // helpful. Skip printing entirely when the profile's result is
         // empty, since there's nothing to view.
         if !resp.users.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_users_url(b)
             })
             .await;
@@ -174,7 +174,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_users_url(b)
         })
         .await;
@@ -225,7 +225,7 @@ pub async fn run_create(
             "{}",
             format!("Created user(s) in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_users_url(b)
         })
         .await;
@@ -272,7 +272,7 @@ pub async fn run_update(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-        crate::execution::console_link_for_profile(
+        crate::execution::emit_console_link_for_profile(
             targets,
             &profile,
             crate::console_url::iam_users_url,
@@ -325,7 +325,7 @@ pub async fn run_set_status(
             "{}",
             format!("Updated user status in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_users_url(b)
         })
         .await;

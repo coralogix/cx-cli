@@ -69,7 +69,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
         // profile. Skip when there are no definitions, since there's
         // nothing to view.
         if !resp.e2m.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::e2m_definitions_url(b)
             })
             .await;
@@ -140,7 +140,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::e2m_url(b, &id)
         })
         .await;
@@ -215,7 +215,7 @@ pub async fn run_create(
             let name = def.display_name().to_string();
             render::print_created("Created", "E2M", Some(&name), def.id.as_deref(), &profile);
             if let Some(id) = def.id.as_deref() {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::e2m_url(b, id)
                 })
                 .await;
@@ -264,7 +264,7 @@ pub async fn run_update(
             let name = def.display_name().to_string();
             render::print_created("Updated", "E2M", Some(&name), def.id.as_deref(), &profile);
             if let Some(id) = def.id.as_deref() {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::e2m_url(b, id)
                 })
                 .await;

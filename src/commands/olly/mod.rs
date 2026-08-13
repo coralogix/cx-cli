@@ -63,7 +63,7 @@ pub async fn run_ask(
     // Olly is single-profile only, so unlike other command groups this uses
     // the resolved target directly rather than looking one up by profile name.
     target
-        .console_link(|base| crate::console_url::olly_chat_url(base, &chat_id))
+        .emit_console_link(|base| crate::console_url::olly_chat_url(base, &chat_id))
         .await;
 
     // Render based on output format

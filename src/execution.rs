@@ -138,7 +138,7 @@ impl ExecutionTarget {
     ///
     /// Returns `None` (silently - a console link is always best-effort) if no
     /// console base URL could be resolved for this target.
-    pub async fn console_link(&self, build: impl FnOnce(&str) -> String) -> Option<String> {
+    pub async fn emit_console_link(&self, build: impl FnOnce(&str) -> String) -> Option<String> {
         let base = self.console_base().await?;
         let url = build(&base);
         crate::render::print_console_link(&url);
@@ -147,7 +147,7 @@ impl ExecutionTarget {
 }
 
 /// Look up `profile`'s target in `targets`, then build+print+return its
-/// console link via [`ExecutionTarget::console_link`].
+/// console link via [`ExecutionTarget::emit_console_link`].
 ///
 /// Collapses the `find_target` -> `console_base` -> build URL -> print ->
 /// return idiom that used to be repeated inline (or reimplemented behind
@@ -165,12 +165,12 @@ impl ExecutionTarget {
 ///
 /// Returns `None` if `profile` has no matching target, or if no console base
 /// URL could be resolved for it.
-pub async fn console_link_for_profile(
+pub async fn emit_console_link_for_profile(
     targets: &[Arc<ExecutionTarget>],
     profile: &str,
     build: impl FnOnce(&str) -> String,
 ) -> Option<String> {
-    find_target(targets, profile)?.console_link(build).await
+    find_target(targets, profile)?.emit_console_link(build).await
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.

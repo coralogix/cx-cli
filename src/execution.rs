@@ -79,6 +79,14 @@ impl ExecutionTarget {
     ///    get console links.
     /// 4. `None` if `/identity/whoami` fails or returns no usable URL.
     ///
+    /// When `cfg.credentials_overridden` is set (the bearer token came from a
+    /// `--api-key`/`CX_API_KEY` override rather than this profile's own
+    /// credentials), steps 1-2 are skipped and step 3's cache write is
+    /// skipped: the profile's `console_url` and cached URL belong to a
+    /// different team than the one actually in use, and must never be read
+    /// or clobbered by this run. Resolution always falls through to a live
+    /// `/identity/whoami` call in that case.
+    ///
     /// Best-effort and infallible: any lookup (or cache write) failure results
     /// in `None` rather than an error, since a console link is a "nice to
     /// have" that must never fail an otherwise-successful command. Cached per
@@ -95,18 +103,22 @@ impl ExecutionTarget {
         }
         self.console_base
             .get_or_init(|| async {
-                // 1. Explicit override always wins.
-                if let Some(url) = &self.cfg.console_url {
-                    return Some(url.clone());
+                if !self.cfg.credentials_overridden {
+                    // 1. Explicit override always wins.
+                    if let Some(url) = &self.cfg.console_url {
+                        return Some(url.clone());
+                    }
+                    // 2. Fresh on-disk cache - no network.
+                    if let Some(url) = crate::config::load_cached_console_url(&self.profile_name) {
+                        return Some(url);
+                    }
                 }
-                // 2. Fresh on-disk cache - no network.
-                if let Some(url) = crate::config::load_cached_console_url(&self.profile_name) {
-                    return Some(url);
-                }
-                // 3. Cold cache: resolve live, then persist for next time.
+                // 3. Cold cache (or overridden credentials): resolve live.
                 let resolved = identity::resolve_team_url(&self.client).await;
-                if let Some(url) = &resolved {
-                    crate::config::cache_console_url(&self.profile_name, url);
+                if !self.cfg.credentials_overridden {
+                    if let Some(url) = &resolved {
+                        crate::config::cache_console_url(&self.profile_name, url);
+                    }
                 }
                 resolved
             })
@@ -276,6 +288,7 @@ mod tests {
             endpoint: endpoint.to_string(),
             default_tier: crate::Tier::Archive,
             console_url: console_url.map(str::to_string),
+            credentials_overridden: false,
         }
     }
 

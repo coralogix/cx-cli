@@ -109,12 +109,8 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, CustomEnrichment)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // One static enrichments page link per profile, not per table - it
-        // isn't scoped to any single row, so it doesn't belong embedded in
-        // one row's JSON. Resolving it here is only for the "View in
-        // Coralogix" stderr echo (see `ExecutionTarget::console_link`).
-        // Skip entirely when the profile's result is empty so nothing
-        // prints a link to an empty list.
+        // Print the enrichments page link to stderr once per profile.
+        // Skip when there are no tables, since there's nothing to view.
         if !resp.custom_enrichments.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::enrichments_url(b)

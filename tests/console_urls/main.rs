@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use assert_cmd::Command;
+use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -64,6 +65,43 @@ fn write_config(home: &std::path::Path, default_profile: &str) {
         format!("default_profile = \"{default_profile}\"\n"),
     )
     .unwrap();
+}
+
+/// Same as [`write_config`], but with `no_console_link = true` set globally.
+fn write_config_no_console_link(home: &std::path::Path, default_profile: &str) {
+    let cx_dir = home.join(".cx");
+    fs::create_dir_all(&cx_dir).unwrap();
+    fs::write(
+        cx_dir.join("config.toml"),
+        format!("default_profile = \"{default_profile}\"\nno_console_link = true\n"),
+    )
+    .unwrap();
+}
+
+/// Write a profile pointing at `base_url` with a pre-seeded on-disk console
+/// URL cache entry (`cached_console_url`/`cached_console_url_at`) - no
+/// explicit `console_url` override, so cache-read/expiry logic is actually
+/// exercised.
+fn write_profile_with_cached_console_url(
+    home: &std::path::Path,
+    name: &str,
+    base_url: &str,
+    cached_url: &str,
+    cached_at: DateTime<Utc>,
+) {
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let content = format!(
+        r#"auth = "api_key"
+credential_storage = "file"
+api_key = "test-key"
+region = "{base_url}"
+cached_console_url = "{cached_url}"
+cached_console_url_at = "{}"
+"#,
+        cached_at.to_rfc3339()
+    );
+    fs::write(profiles_dir.join(format!("{name}.toml")), content).unwrap();
 }
 
 fn cx(home: &std::path::Path) -> Command {
@@ -777,6 +815,583 @@ async fn no_console_link_when_whoami_has_no_team_url() {
     assert!(
         stderr.contains("Created dashboard 'Demo Dashboard' (ID: dash-abc123)"),
         "expected the usual success line, stderr: {stderr}"
+    );
+}
+
+// ── --api-key override bypasses/never poisons the profile's console cache ──
+
+/// A `--api-key` override targeting a different team than the named
+/// profile's own credentials must not surface that profile's stale
+/// `console_url` - it must resolve live via `/identity/whoami` instead.
+#[tokio::test]
+async fn api_key_override_ignores_stale_profile_console_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 2,
+            "team_url": "https://team-b.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    // Profile's own console_url points at team A - must be ignored once the
+    // API key is overridden to a different team.
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://team-a.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("dash_override_link");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "--api-key",
+            "team-b-key",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    // The override must force a live whoami call rather than trusting the
+    // profile's stale console_url.
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.url.path() == "/identity/whoami"),
+        "expected /identity/whoami to be called when credentials are overridden"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://team-b.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "stderr did not contain team B's console link: {stderr}"
+    );
+}
+
+/// An `--api-key` override must never write its resolved console URL back
+/// into the profile file - doing so would poison the profile's cache for
+/// subsequent, non-overridden invocations.
+#[tokio::test]
+async fn api_key_override_does_not_poison_profile_cache() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 2,
+            "team_url": "https://team-b.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), None);
+    write_config(&home, "mock");
+    let profile_path = home.join(".cx").join("profiles").join("mock.toml");
+    let profile_before = fs::read_to_string(&profile_path).unwrap();
+
+    let file_path = temp_json_path("dash_override_no_cache");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "--api-key",
+            "team-b-key",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    // The overridden run must not have written team B's URL into the
+    // profile's on-disk cache.
+    let profile_after = fs::read_to_string(&profile_path).unwrap();
+    assert_eq!(
+        profile_before, profile_after,
+        "profile file must be unchanged after an --api-key override run"
+    );
+    assert!(
+        !profile_after.contains("cached_console_url"),
+        "profile file must not have gained a cached_console_url: {profile_after}"
+    );
+}
+
+// ── --no-console-link flag / env / config suppress the link ────────────────
+
+/// `--no-console-link` suppresses the link even when an explicit
+/// `console_url` override is configured (isolating "was it suppressed" from
+/// "was a URL resolved").
+#[tokio::test]
+async fn no_console_link_flag_suppresses_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://team-a.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("no_link_flag");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "--no-console-link",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "--no-console-link must suppress the link: {stderr}"
+    );
+}
+
+/// `CX_NO_CONSOLE_LINK=1` suppresses the link, same as the flag.
+#[tokio::test]
+async fn no_console_link_env_var_suppresses_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://team-a.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("no_link_env");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .env("CX_NO_CONSOLE_LINK", "1")
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "CX_NO_CONSOLE_LINK=1 must suppress the link: {stderr}"
+    );
+}
+
+/// `no_console_link = true` in the global config.toml suppresses the link,
+/// same as the flag/env var.
+#[tokio::test]
+async fn no_console_link_config_suppresses_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://team-a.app.eu2.coralogix.com"),
+    );
+    write_config_no_console_link(&home, "mock");
+
+    let file_path = temp_json_path("no_link_config");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "no_console_link config key must suppress the link: {stderr}"
+    );
+}
+
+// ── on-disk console URL cache lifecycle ─────────────────────────────────────
+
+/// First invocation resolves via `/identity/whoami` and persists the result
+/// into the profile's on-disk cache; a second invocation against the same
+/// `CX_HOME`/profile reuses that cache and makes zero additional whoami
+/// calls.
+#[tokio::test]
+async fn console_url_cache_written_then_reused_across_invocations() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 1,
+            "team_url": "https://c4c.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), None);
+    write_config(&home, "mock");
+    let profile_path = home.join(".cx").join("profiles").join("mock.toml");
+
+    let whoami_call_count = |requests: &[wiremock::Request]| {
+        requests
+            .iter()
+            .filter(|r| r.url.path() == "/identity/whoami")
+            .count()
+    };
+
+    // Run 1: cold cache -> live whoami call, then persist to disk.
+    let file_path_1 = temp_json_path("cache_write_run1");
+    fs::write(
+        &file_path_1,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+    let output_1 = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path_1.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let _ = fs::remove_file(&file_path_1);
+    assert!(output_1.status.success(), "{:?}", output_1);
+
+    let stderr_1 = String::from_utf8_lossy(&output_1.stderr);
+    assert!(
+        stderr_1.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "run 1 stderr did not contain the console link: {stderr_1}"
+    );
+    assert_eq!(
+        whoami_call_count(&server.received_requests().await.unwrap()),
+        1,
+        "run 1 should call /identity/whoami exactly once"
+    );
+
+    let profile_after_run1 = fs::read_to_string(&profile_path).unwrap();
+    assert!(
+        profile_after_run1.contains("cached_console_url"),
+        "run 1 should persist cached_console_url to the profile file: {profile_after_run1}"
+    );
+
+    // Run 2: same CX_HOME/profile -> fresh on-disk cache, zero additional
+    // whoami calls.
+    let file_path_2 = temp_json_path("cache_write_run2");
+    fs::write(
+        &file_path_2,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+    let output_2 = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path_2.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let _ = fs::remove_file(&file_path_2);
+    assert!(output_2.status.success(), "{:?}", output_2);
+
+    let stderr_2 = String::from_utf8_lossy(&output_2.stderr);
+    assert!(
+        stderr_2.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "run 2 stderr did not contain the console link: {stderr_2}"
+    );
+    assert_eq!(
+        whoami_call_count(&server.received_requests().await.unwrap()),
+        1,
+        "run 2 must reuse the on-disk cache and make no additional whoami calls"
+    );
+}
+
+/// A fresh (well within the 7-day TTL) on-disk cache entry is used directly;
+/// `/identity/whoami` is never called.
+#[tokio::test]
+async fn console_url_cache_fresh_entry_used_without_whoami_call() {
+    let server = MockServer::start().await;
+    // If the cache were mistakenly bypassed, this whoami response would leak
+    // a different, detectable URL into stderr.
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 1,
+            "team_url": "https://should-not-be-called.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile_with_cached_console_url(
+        &home,
+        "mock",
+        &server.uri(),
+        "https://cached.app.eu2.coralogix.com",
+        Utc::now() - Duration::days(1),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("cache_fresh");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://cached.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "expected the cached console link, not a freshly resolved one: {stderr}"
+    );
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|r| r.url.path() != "/identity/whoami"),
+        "a fresh on-disk cache entry must not trigger a whoami call"
+    );
+}
+
+/// A stale (past the 7-day TTL) on-disk cache entry is discarded: `cx`
+/// resolves a fresh URL via `/identity/whoami` and rewrites the cache.
+#[tokio::test]
+async fn console_url_cache_stale_entry_triggers_refresh_and_rewrite() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 1,
+            "team_url": "https://fresh.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile_with_cached_console_url(
+        &home,
+        "mock",
+        &server.uri(),
+        "https://stale.app.eu2.coralogix.com",
+        Utc::now() - Duration::days(10),
+    );
+    write_config(&home, "mock");
+    let profile_path = home.join(".cx").join("profiles").join("mock.toml");
+
+    let file_path = temp_json_path("cache_stale");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://fresh.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "expected the freshly resolved console link, not the stale cached one: {stderr}"
+    );
+    assert_eq!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path() == "/identity/whoami")
+            .count(),
+        1,
+        "a stale cache entry must trigger exactly one whoami refresh call"
+    );
+
+    let profile_after = fs::read_to_string(&profile_path).unwrap();
+    assert!(
+        profile_after.contains("https://fresh.app.eu2.coralogix.com"),
+        "the stale cache entry should be rewritten with the fresh URL: {profile_after}"
     );
 }
 

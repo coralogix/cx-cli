@@ -61,13 +61,9 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, ContextualDataIntegration)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // One static extensions/integrations page link per profile, not per
-        // integration - it isn't scoped to any single row, so it doesn't
-        // belong embedded in one row's JSON. Resolving it here is only for
-        // the "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
+        // Print the extensions/integrations page link to stderr once per
+        // profile. Skip when there are no integrations, since there's
+        // nothing to view.
         if !resp.integrations.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::integrations_url(b)

@@ -378,6 +378,12 @@ pub struct ResolvedConfig {
     /// any trailing slash trimmed. Takes precedence over the automatic
     /// `GET /identity/whoami`-based resolution.
     pub console_url: Option<String>,
+    /// True when `api_key` came from a `--api-key`/`CX_API_KEY` override
+    /// rather than the profile file's own stored credentials. When set, the
+    /// profile's `console_url` and cached console URL must not be read or
+    /// written, since they were resolved against a different team's
+    /// credentials than the ones actually in use for this run.
+    pub credentials_overridden: bool,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -507,6 +513,7 @@ async fn resolve_single(
                 auth_kind: AuthKind::ApiKey,
                 default_tier: crate::Tier::Archive,
                 console_url: None,
+                credentials_overridden: true,
             });
         }
     }
@@ -588,6 +595,7 @@ async fn resolve_single(
             .console_url
             .as_deref()
             .map(|s| s.trim_end_matches('/').to_string()),
+        credentials_overridden: api_key_override.is_some(),
     })
 }
 
@@ -863,6 +871,7 @@ default_profile = "my-profile"
             endpoint: "https://api.eu2.coralogix.com".to_string(),
             default_tier: crate::Tier::Archive,
             console_url: None,
+            credentials_overridden: false,
         };
         assert_eq!(cfg.profile_name, "prod");
     }

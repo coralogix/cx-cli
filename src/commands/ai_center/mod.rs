@@ -162,13 +162,8 @@ pub async fn run_applications_list(
         // Applications have no create/update/delete in this CLI - list/get are
         // the only entry points - so the Application Catalog link is attached
         // here rather than gated behind a mutation (same reasoning as `usage`).
-        // One static "Application Catalog" page link per profile, not per
-        // application - it isn't scoped to any single row, so it doesn't
-        // belong embedded in one row's JSON. Resolving it here is only for
-        // the "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
+        // Print it to stderr once per profile; skip when there are no
+        // applications, since there's nothing to view.
         if !items.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_applications_url(b)
@@ -291,13 +286,8 @@ pub async fn run_evaluations_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        // One static "Eval Catalog" page link per profile, not per
-        // evaluation - it isn't scoped to any single row, so it doesn't
-        // belong embedded in one row's JSON. Resolving it here is only for
-        // the "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
+        // Print the Eval Catalog page link to stderr once per profile.
+        // Skip when there are no evaluations, since there's nothing to view.
         if !items.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)
@@ -545,13 +535,9 @@ async fn run_custom_evaluations_table(
     // Items are raw API objects: the text table reads a few columns, but
     // JSON/toon output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
-        // One static "Eval Catalog" page link per profile, not per custom
-        // evaluation - it isn't scoped to any single row, so it doesn't
-        // belong embedded in one row's JSON. Resolving it here is only for
-        // the "View in Coralogix" stderr echo (see
-        // `ExecutionTarget::console_link`). Skip entirely when the
-        // profile's result is empty so nothing prints a link to an empty
-        // list.
+        // Print the Eval Catalog page link to stderr once per profile.
+        // Skip when there are no custom evaluations, since there's nothing
+        // to view.
         if !items.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::ai_center_evaluations_url(b)

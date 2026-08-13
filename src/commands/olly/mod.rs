@@ -23,12 +23,14 @@ use crate::spill::{self, maybe_spill, SpillOutcome};
 ///
 /// Creates a new chat if `chat_id` is None, otherwise continues an existing chat.
 /// Uses blocking mode to wait for the response.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_ask(
     targets: &[Arc<ExecutionTarget>],
     message: &str,
     chat_id: Option<&str>,
     model: &str,
     timeout: u32,
+    agent_to_agent_mode: bool,
     output: OutputFormat,
 ) -> Result<()> {
     // Olly is single-profile only - chats belong to a specific user/team
@@ -54,7 +56,9 @@ pub async fn run_ask(
     };
 
     eprintln!("{}", "Sending message...".dimmed());
-    let interaction = api.send_message(&chat_id, message, model, timeout).await?;
+    let interaction = api
+        .send_message(&chat_id, message, model, timeout, agent_to_agent_mode)
+        .await?;
 
     // Render based on output format
     match output {

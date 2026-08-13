@@ -41,7 +41,7 @@ pub async fn run_entity_types(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let rows: Vec<Value> = merged
                 .iter()
                 .map(|(profile, item)| entity_type_info_to_json(item, include_profile, profile))
@@ -110,7 +110,7 @@ pub async fn run_schema(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&results)?,
-        OutputFormat::Agents => render::render_agents(&results)?,
+        OutputFormat::Toon => render::render_toon(&results)?,
         OutputFormat::Text => {
             render::render_get_text(
                 &results,
@@ -179,7 +179,7 @@ pub async fn run_entities(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let rows: Vec<Value> = merged
                 .iter()
                 .map(|(profile, item)| entity_item_to_json(item, include_profile, profile))
@@ -633,7 +633,7 @@ fn render_data_envelope(
 ) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json_auto(std::slice::from_ref(envelope)),
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let encoded =
                 toon_encode(envelope).map_err(|e| anyhow!("TOON encoding failed: {e}"))?;
             println!("{encoded}");
@@ -711,9 +711,9 @@ fn render_table_rows(rows: &[Value], include_profile: bool) {
 fn render_machine_rows(output: OutputFormat, rows: &[Value]) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json(rows),
-        OutputFormat::Agents => render::render_agents(rows),
+        OutputFormat::Toon => render::render_toon(rows),
         OutputFormat::Text => {
-            unreachable!("callers render text themselves; only Json/Agents reach here")
+            unreachable!("callers render text themselves; only Json/Toon reach here")
         }
     }
 }

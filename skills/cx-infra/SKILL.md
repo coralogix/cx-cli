@@ -27,7 +27,7 @@ is healthy, and what its raw data contains.
 | `cx infra resources health-history <resource-id>` | Daily health samples for one resource, oldest first | - |
 | `cx infra resources raw-data <resource-id>` | Raw resource document as JSON | - |
 
-- All commands are **read-only** and support `-o json` / `-o agents` for
+- All commands are **read-only** and support `-o json` / `-o toon` for
   structured output.
 - **Multi-profile fan-out applies to `types` and `list` only.** Repeat
   `-p <profile>` on those to compare fleets across accounts. `health-history` and
@@ -135,7 +135,7 @@ cx infra resources raw-data "1001234:host_id=i-abc123" -o json
   `No raw data found.` in text. Only the note `no raw data for this resource` goes
   to stderr. Parse the empty stdout result as a cleanly absent document, not a
   failure — and do not expect stdout to be blank.
-- **Use `-o json` with `jq`** for filtering; use `-o agents` for token-efficient
+- **Use `-o json` with `jq`** for filtering; use `-o toon` for token-efficient
   output in agent contexts.
 - **Multi-profile fan-out is for `types` and `list` only** — repeating
   `-p <profile>` tags each row with its profile so fleets can be compared across

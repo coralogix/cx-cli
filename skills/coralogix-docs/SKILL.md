@@ -27,7 +27,7 @@ No Coralogix API key is required.
 | Flag | Commands | Description |
 |------|----------|-------------|
 | `--limit` | `search` | Max results, 1–20 (default 5) |
-| `-o json` / `-o agents` | both | Machine-readable output |
+| `-o json` / `-o toon` | both | Machine-readable output |
 
 ### Examples
 

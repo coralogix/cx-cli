@@ -19,7 +19,7 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
-**Output format:** append `-o json` or `-o agents` for machine-readable output.
+**Output format:** append `-o json` or `-o toon` for machine-readable output.
 
 **Single-profile only:** `cx olly` commands do not support multi-profile fan-out. Use `-p <profile>` to specify a single profile.
 

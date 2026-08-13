@@ -48,7 +48,7 @@ If folder creation fails (most common cause: API key missing the `team-dashboard
    cx dashboards create --from-file /tmp/cx-dashboard-<slug>.json --folder <folder-id>
    ```
 
-The CLI generates the `requestId` envelope automatically and prints the created dashboard ID and name on success. Pipe into `-o json` or `-o agents` for structured output.
+The CLI generates the `requestId` envelope automatically and prints the created dashboard ID and name on success. Pipe into `-o json` or `-o toon` for structured output.
 
 On failure: show the CLI error verbatim, return to Phase 5 (most common cause: a query that parses locally but the live API rejects), fix, and redeploy.
 

@@ -232,10 +232,14 @@ pub async fn run_applications_get(
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| match &application {
-            Some(app) => crate::console_url::ai_center_application_url(b, app, &subsystem),
-            None => crate::console_url::ai_center_applications_url(b),
-        })
+        crate::execution::emit_console_link_for_profile(
+            targets,
+            &profile,
+            |b| match &application {
+                Some(app) => crate::console_url::ai_center_application_url(b, app, &subsystem),
+                None => crate::console_url::ai_center_applications_url(b),
+            },
+        )
         .await;
         all.push(val);
     }

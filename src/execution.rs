@@ -170,7 +170,9 @@ pub async fn emit_console_link_for_profile(
     profile: &str,
     build: impl FnOnce(&str) -> String,
 ) -> Option<String> {
-    find_target(targets, profile)?.emit_console_link(build).await
+    find_target(targets, profile)?
+        .emit_console_link(build)
+        .await
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.

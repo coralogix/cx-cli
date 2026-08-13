@@ -70,7 +70,7 @@ impl std::fmt::Display for OutputFormat {
 }
 
 /// Coralogix region, used to resolve the API endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Region {
     Us1,
@@ -453,7 +453,7 @@ async fn resolve_single(
 ) -> Result<ResolvedConfig> {
     if !profile_file(profile_name)?.exists() {
         if let (Some(key), Some(region)) = (api_key_override, region_override) {
-            let region: Region = region.parse()?;
+            let region = crate::region::parse_region_arg(region);
             return Ok(ResolvedConfig {
                 profile_name: profile_name.to_string(),
                 endpoint: region.api_endpoint().to_string(),
@@ -467,7 +467,7 @@ async fn resolve_single(
     let mut profile = load_profile(profile_name)?;
 
     if let Some(region) = region_override {
-        profile.region = region.parse()?;
+        profile.region = crate::region::parse_region_arg(region);
     }
 
     // CLI-level api_key_override (already filtered by main.rs) wins over profile creds.

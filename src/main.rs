@@ -133,7 +133,11 @@ struct Cli {
     )]
     api_key: Option<String>,
 
-    /// Coralogix region (overrides a single profile; incompatible with multiple --profile).
+    /// Coralogix region, short-name or URL (overrides a single profile; incompatible with multiple --profile).
+    ///
+    /// Accepts a region short-name (`eu2`), a custom API endpoint URL, or a
+    /// Coralogix app URL (`https://myteam.app.eu2.coralogix.com`) whose region
+    /// is derived automatically.
     #[arg(
         long,
         global = true,

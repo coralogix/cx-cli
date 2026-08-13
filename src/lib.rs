@@ -9,6 +9,7 @@ pub mod identity;
 pub mod install_method;
 pub mod keyring_store;
 pub mod oauth;
+pub mod region;
 pub mod render;
 pub mod request_metadata;
 pub mod safety;

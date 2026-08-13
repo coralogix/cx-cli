@@ -7,15 +7,21 @@ use crate::config::{
 };
 use crate::keyring_store;
 use crate::oauth;
+use crate::region::{region_from_url, RegionMatch};
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 
 const AUTH_METHODS: &[&str] = &["OAuth (browser login)", "API key (paste manually)"];
 
-const REGIONS: &[&str] = &["us1", "us2", "us3", "eu1", "eu2", "ap1", "ap2", "ap3"];
+/// Label for the "paste a URL and derive the region" option.
+const PASTE_URL_OPTION: &str = "Paste a Coralogix URL";
+/// Label for the manual custom-endpoint (BYOC / private-link) option.
+const CUSTOM_ENDPOINT_OPTION: &str = "Custom endpoint (BYOC / private link)";
 
-/// Region list for OAuth mode: same as REGIONS plus a custom option.
-const OAUTH_REGIONS: &[&str] = &[
+/// Unified, searchable region list shown for every auth method. The eight known
+/// regions come first (typing filters them), followed by the URL-paste and
+/// custom-endpoint escape hatches.
+const REGION_OPTIONS: &[&str] = &[
     "us1",
     "us2",
     "us3",
@@ -24,8 +30,21 @@ const OAUTH_REGIONS: &[&str] = &[
     "ap1",
     "ap2",
     "ap3",
-    "Custom (specify URL + client ID)",
+    PASTE_URL_OPTION,
+    CUSTOM_ENDPOINT_OPTION,
 ];
+
+/// Zero-based cursor position of `eu2` in [`REGION_OPTIONS`] (the default).
+const REGION_DEFAULT_CURSOR: usize = 4;
+
+/// Result of the interactive region prompt.
+enum RegionChoice {
+    /// A known region — either picked from the list or derived from a pasted URL.
+    Known(Region),
+    /// A manually entered custom endpoint (BYOC / private-link / unparseable URL).
+    /// `base_url` has any trailing slash stripped.
+    Custom { base_url: String },
+}
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
 
@@ -48,6 +67,52 @@ fn select_credential_storage(prompt: &str, help_message: &str) -> Result<Credent
         .find(|(label, _)| *label == chosen)
         .map(|(_, storage)| *storage)
         .expect("inquire returns one of the labels we passed in"))
+}
+
+/// Prompt for a region using the unified searchable select.
+///
+/// The list filters as the user types. Choosing [`PASTE_URL_OPTION`] asks for a
+/// Coralogix URL and derives the region from it; an unrecognised URL falls back
+/// to manual endpoint entry (same as [`CUSTOM_ENDPOINT_OPTION`]). This is the
+/// single region entry point shared by both the OAuth and API-key flows.
+fn select_region_interactive() -> Result<RegionChoice> {
+    let choice = Select::new("Region:", REGION_OPTIONS.to_vec())
+        .with_starting_cursor(REGION_DEFAULT_CURSOR)
+        .with_help_message(
+            "Type to filter. Don't know your region? Choose \"Paste a Coralogix URL\".",
+        )
+        .prompt()?;
+
+    if choice == PASTE_URL_OPTION {
+        let raw = Text::new("Coralogix URL (e.g. https://myteam.app.eu2.coralogix.com):")
+            .with_help_message("Paste the URL from your browser; we'll derive the region.")
+            .prompt()?;
+        match region_from_url(&raw) {
+            RegionMatch::Known(region) => {
+                println!("Detected region: {region}");
+                Ok(RegionChoice::Known(region))
+            }
+            RegionMatch::Unresolved => {
+                println!(
+                    "Couldn't map that URL to a known region - \
+                     enter your API endpoint manually."
+                );
+                prompt_custom_endpoint()
+            }
+        }
+    } else if choice == CUSTOM_ENDPOINT_OPTION {
+        prompt_custom_endpoint()
+    } else {
+        // A known region short-name from the list; infallible via FromStr.
+        Ok(RegionChoice::Known(choice.parse()?))
+    }
+}
+
+/// Prompt for a manual custom API endpoint (BYOC / private-link).
+fn prompt_custom_endpoint() -> Result<RegionChoice> {
+    let raw_url = Text::new("Base URL (e.g. https://api.myenv.coralogix.com):").prompt()?;
+    let base_url = raw_url.trim_end_matches('/').to_string();
+    Ok(RegionChoice::Custom { base_url })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -347,35 +412,35 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
 // ── OAuth configure path ──────────────────────────────────────────────────────
 
 async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
-    // Region / environment selection
-    let region_str = Select::new("Region:", OAUTH_REGIONS.to_vec())
-        .with_starting_cursor(3) // eu2
-        .prompt()?;
-
-    let is_custom = region_str.starts_with("Custom");
-
-    let (region, base_url, client_id, oauth_client_id_for_profile) = if is_custom {
-        let raw_url = Text::new("Base URL (e.g. https://api.myenv.coralogix.com):").prompt()?;
-        let base_url = raw_url.trim_end_matches('/').to_string();
-        let client_id = Text::new("OAuth client ID:").prompt()?;
-        let region = Region::Custom(base_url.clone());
-        // Store the client ID in the profile for custom environments.
-        let client_id_for_profile = Some(client_id.clone());
-        (region, base_url, client_id, client_id_for_profile)
-    } else {
-        let region: Region = region_str.parse()?;
-        let base_url = region.api_endpoint().to_string();
-        let client_id = oauth::client_id_for_region(region_str)
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No OAuth client ID found for region '{region_str}'.\n\
-                     Please select 'Custom' to provide your own base URL and client ID."
-                )
-            })?;
-        // Known regions: client ID is hard-coded, don't store in profile TOML.
-        (region, base_url, client_id, None)
-    };
+    // Region / environment selection (searchable list, URL derivation, or BYOC).
+    let is_custom;
+    let (region, base_url, client_id, oauth_client_id_for_profile) =
+        match select_region_interactive()? {
+            RegionChoice::Custom { base_url } => {
+                is_custom = true;
+                let client_id = Text::new("OAuth client ID:").prompt()?;
+                let region = Region::Custom(base_url.clone());
+                // Store the client ID in the profile for custom environments.
+                let client_id_for_profile = Some(client_id.clone());
+                (region, base_url, client_id, client_id_for_profile)
+            }
+            RegionChoice::Known(region) => {
+                is_custom = false;
+                let base_url = region.api_endpoint().to_string();
+                let region_name = region.to_string();
+                let client_id = oauth::client_id_for_region(&region_name)
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "No OAuth client ID found for region '{region_name}'.\n\
+                             Please choose \"{CUSTOM_ENDPOINT_OPTION}\" to provide your own \
+                             base URL and client ID."
+                        )
+                    })?;
+                // Known regions: client ID is hard-coded, don't store in profile TOML.
+                (region, base_url, client_id, None)
+            }
+        };
 
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
@@ -442,10 +507,10 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
         .without_confirmation()
         .prompt()?;
 
-    let region_str = Select::new("Region:", REGIONS.to_vec())
-        .with_starting_cursor(2) // eu1
-        .prompt()?;
-    let region: Region = region_str.parse()?;
+    let region = match select_region_interactive()? {
+        RegionChoice::Known(region) => region,
+        RegionChoice::Custom { base_url } => Region::Custom(base_url),
+    };
 
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());

@@ -59,14 +59,11 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, KeyInfo)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // Print the API keys page link to stderr once per profile. Skip
-        // when there are no keys, since there's nothing to view.
-        if !resp.keys.is_empty() {
-            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::iam_api_keys_url(b)
-            })
-            .await;
-        }
+        // Print the API keys page link to stderr once per profile.
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await;
         for key in resp.keys {
             all_json.push(key_to_json(&key, include_profile, &profile));
             all_items.push((profile.clone(), key));
@@ -376,6 +373,11 @@ pub async fn run_admin_list(targets: &[Arc<ExecutionTarget>], output: OutputForm
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        // Print the API keys page link to stderr once per profile.
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_api_keys_url(b)
+        })
+        .await;
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }

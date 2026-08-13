@@ -23,6 +23,12 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 
 **Single-profile only:** `cx olly` commands do not support multi-profile fan-out. Use `-p <profile>` to specify a single profile.
 
+## Running Olly (async by default)
+
+**Run `cx olly ask` asynchronously by default:** launch it as a **background process and poll it for completion** rather than blocking on it. Olly investigations routinely take minutes, so this is the normal mode for `cx olly ask`.
+
+Only run `cx olly ask` inline (foreground, blocking) for a short question you expect Olly to answer quickly — a quick lookup or a one-line follow-up. When in doubt, run it in the background.
+
 ## Chat Commands
 
 ### Start a new conversation
@@ -40,7 +46,7 @@ Remove `--agent-to-agent-mode` if you don't have context to share (like quick ac
 cx olly ask "Tell me more about the error rates" --chat-id <chat-id> --agent-to-agent-mode
 ```
 
-Use `--chat-id` to continue a conversation and maintain context from previous messages.
+Use `--chat-id` to continue a conversation and maintain context from previous messages. Background the follow-up too when it kicks off another investigation.
 
 ### Model selection
 
@@ -102,13 +108,13 @@ Output behavior:
 ### Investigate an issue
 
 ```bash
-# Start investigation (if you're an LLM/agent, add --agent-to-agent-mode for shorter, sub-agent-style replies)
+# Start investigation — run in the background and poll for completion
 cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics" --agent-to-agent-mode
 
-# Follow up with the chat ID from the response
+# Follow up with the chat ID from the response — also background and poll
 cx olly ask "What changed in the last hour?" --chat-id abc-123-def --agent-to-agent-mode
 
-# Get any generated charts
+# Once the interaction has completed, get any generated charts
 cx olly artifacts list -o json | jq '.[0].id'
 cx olly artifacts get <artifact-id>
 ```
@@ -134,6 +140,7 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 
 ## Key Principles
 
+- **Async by default** - run `cx olly ask` as a background process and poll it for completion; only run inline (blocking) for short questions you expect Olly to answer quickly
 - **Chat IDs enable context** - save the Chat ID from responses to continue conversations
 - **Use `-o json` for scripting** - pipe to `jq` for filtering and extraction
 - **Artifact IDs are in response text** - look for markdown links like `[Chart](https://...artifact_view/<id>)`

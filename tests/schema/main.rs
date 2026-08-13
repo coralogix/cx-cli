@@ -140,4 +140,21 @@ fn schema_outputs_valid_json_with_expected_commands() {
         id_arg.get("flag").is_none(),
         "positional args must not advertise a flag"
     );
+
+    // Regression: `--agent-to-agent-mode` must be a plain boolean flag (no
+    // value accepted) so schema-driven agent callers can't construct a
+    // `--agent-to-agent-mode false` invocation that clap rejects.
+    let olly = commands.iter().find(|c| c["name"] == "olly").unwrap();
+    let olly_subs = olly["subcommands"].as_array().unwrap();
+    let ask = olly_subs.iter().find(|s| s["name"] == "ask").unwrap();
+    let a2a_arg = ask["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["name"] == "agent_to_agent_mode")
+        .expect("olly ask should expose an 'agent_to_agent_mode' argument");
+    assert_eq!(
+        a2a_arg["type"], "boolean",
+        "agent_to_agent_mode must be reported as a boolean flag"
+    );
 }

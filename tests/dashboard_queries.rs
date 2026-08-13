@@ -239,7 +239,7 @@ async fn dashboard_search_with_agents_runs_toon_encode_path() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    dashboards::run_search(&targets, "anything", 10, OutputFormat::Agents)
+    dashboards::run_search(&targets, "anything", 10, OutputFormat::Toon)
         .await
         .expect("agents output (TOON) should succeed when HTTP mock returns 200");
 }
@@ -262,7 +262,7 @@ async fn dashboard_queries_by_field_with_agents_runs_toon_encode_path() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    dashboards::run_queries_by_field(&targets, "$d.http.status", 10, OutputFormat::Agents)
+    dashboards::run_queries_by_field(&targets, "$d.http.status", 10, OutputFormat::Toon)
         .await
         .expect("agents output (TOON) should succeed for queries-by-field");
 }
@@ -285,7 +285,7 @@ async fn dashboard_semantic_search_with_agents_runs_toon_encode_path() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    dashboards::run_semantic_search(&targets, "plain query", 10, OutputFormat::Agents)
+    dashboards::run_semantic_search(&targets, "plain query", 10, OutputFormat::Toon)
         .await
         .expect("agents output (TOON) should succeed for semantic search");
 }

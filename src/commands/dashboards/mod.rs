@@ -48,7 +48,7 @@ fn folder_id_from_response(resp: &Value) -> Option<String> {
     json_str_at(resp, "/folderId").or_else(|| json_str_at(resp, "/id"))
 }
 
-/// Builds one catalog row as JSON for `json` / `agents` output after fan-out.
+/// Builds one catalog row as JSON for `json` / `toon` output after fan-out.
 ///
 /// When `include_profile` is true (multiple `--profile`), injects the profile key so merged
 /// arrays stay attributable per account; text mode uses a separate table path.
@@ -84,7 +84,7 @@ fn catalog_item_to_json(
     v
 }
 
-/// Builds one dashboard-folder row as JSON for `json` / `agents` output after fan-out.
+/// Builds one dashboard-folder row as JSON for `json` / `toon` output after fan-out.
 ///
 /// Same contract as `catalog_item_to_json`: folder list responses are merged across
 /// profiles, so we normalize each item to a plain object (string ids via `id_str` /
@@ -106,7 +106,7 @@ fn folder_item_to_json(item: &DashboardFolderItem, include_profile: bool, profil
     v
 }
 
-/// One merged row for `json` / `agents`: `serde_json::to_value` (field names = JSON keys), then optional `profile`.
+/// One merged row for `json` / `toon`: `serde_json::to_value` (field names = JSON keys), then optional `profile`.
 pub fn profiled_api_row_to_json<T: Serialize>(
     profile: &str,
     row: &T,
@@ -351,9 +351,9 @@ pub async fn run_semantic_search(
             let json_rows = semantic_search_merged_json_rows(&all_results, include_profile)?;
             render::render_json(&json_rows)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let json_rows = semantic_search_merged_json_rows(&all_results, include_profile)?;
-            render::render_agents(&json_rows)?;
+            render::render_toon(&json_rows)?;
         }
         OutputFormat::Text => render_semantic_search_text_table(&all_results, include_profile),
     }
@@ -392,7 +392,7 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -452,9 +452,9 @@ pub async fn run_search(
             let json_rows = query_search_merged_json_rows(&all_results, include_profile)?;
             render::render_json(&json_rows)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let json_rows = query_search_merged_json_rows(&all_results, include_profile)?;
-            render::render_agents(&json_rows)?;
+            render::render_toon(&json_rows)?;
         }
         OutputFormat::Text => render_query_search_text_table(&all_results, include_profile),
     }
@@ -484,9 +484,9 @@ pub async fn run_queries_by_field(
             let json_rows = queries_by_field_merged_json_rows(&all_results, include_profile)?;
             render::render_json(&json_rows)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let json_rows = queries_by_field_merged_json_rows(&all_results, include_profile)?;
-            render::render_agents(&json_rows)?;
+            render::render_toon(&json_rows)?;
         }
         OutputFormat::Text => {
             render_queries_by_field_text_table(&all_results, field_path, include_profile);
@@ -535,7 +535,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -692,7 +692,7 @@ pub async fn run_create(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -782,7 +782,7 @@ pub async fn run_replace(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -852,7 +852,7 @@ pub async fn run_folders_list(
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -934,7 +934,7 @@ pub async fn run_folders_create(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -996,7 +996,7 @@ fn severity_colored(severity: IssueSeverity) -> String {
     }
 }
 
-/// Build one issue row as JSON for `json` / `agents` output.
+/// Build one issue row as JSON for `json` / `toon` output.
 fn issue_json_row(issue: &api::DashboardCheckIssue, profile: &str, include_profile: bool) -> Value {
     let mut row = serde_json::to_value(issue).unwrap_or_else(|_| json!({}));
     if include_profile {
@@ -1091,14 +1091,14 @@ pub async fn run_check(
             }
             render::render_json(&rows)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let mut rows: Vec<Value> = Vec::new();
             for (profile, issues) in &all_issues {
                 for issue in issues {
                     rows.push(issue_json_row(issue, profile, include_profile));
                 }
             }
-            render::render_agents(&rows)?;
+            render::render_toon(&rows)?;
         }
         OutputFormat::Text => {
             if total_issues == 0 {

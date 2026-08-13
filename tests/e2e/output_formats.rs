@@ -29,5 +29,5 @@ fn alerts_list_agents() {
     if harness::require_creds("alerts_list_agents").is_none() {
         return;
     }
-    harness::run_ok_nonempty(&["alerts", "list", "-o", "agents"]);
+    harness::run_ok_nonempty(&["alerts", "list", "-o", "toon"]);
 }

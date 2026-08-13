@@ -27,7 +27,7 @@ Use this skill to list, inspect, create, delete, enable, and disable Coralogix a
 | `cx alerts suppression-rules update` | Update a suppression rule | `--from-file <path>` |
 | `cx alerts suppression-rules delete <id>` | Delete a suppression rule | - |
 
-**Output format:** append `-o json` or `-o agents` to `list`, `get`, and `create` commands for machine-readable output.
+**Output format:** append `-o json` or `-o toon` to `list`, `get`, and `create` commands for machine-readable output.
 
 **Multi-profile:** use `-p <profile>` (repeatable) to target multiple profiles simultaneously.
 

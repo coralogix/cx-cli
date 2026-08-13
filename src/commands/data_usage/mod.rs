@@ -148,7 +148,7 @@ pub async fn run_summary(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -225,7 +225,7 @@ pub async fn run_daily(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -282,7 +282,7 @@ pub async fn run_logs_count(
 
     match options.output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -335,7 +335,7 @@ pub async fn run_spans_count(
 
     match options.output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -380,7 +380,7 @@ pub async fn run_export_status(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -425,7 +425,7 @@ pub async fn run_capabilities(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -480,7 +480,7 @@ pub async fn run_query(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

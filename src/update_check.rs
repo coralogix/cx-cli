@@ -7,9 +7,9 @@
 //!   (see [`crate::version_cache`]).
 //! * Every command reads that cached result and either:
 //!   - Prints update notices to **stderr** (see [`maybe_print_notice`]):
-//!     colored on TTY text mode; plain single-line `[cx update]` for agents
+//!     colored on TTY text mode; plain single-line `[cx update]` for toon
 //!     mode or non-TTY stderr (binary and skills separated by `|`).
-//!   - Returns a `_meta.update` JSON block for the agents output path (see
+//!   - Returns a `_meta.update` JSON block for the toon output path (see
 //!     [`build_meta_block`]).
 //! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications (including the fetch).
 //! * `fetch_if_stale` is spawned via `tokio::spawn` and intentionally races
@@ -80,7 +80,7 @@ async fn fetch_latest_binary(client: &reqwest::Client) -> Option<String> {
 /// Print a one-line update notice to stderr, if all conditions are met:
 /// - `CX_NO_UPDATE_NOTIFIER` is not set
 /// - A newer version is available in the cache
-/// - Agents mode or non-TTY stderr: plain `[cx update]` (agent/script friendly)
+/// - Toon mode or non-TTY stderr: plain `[cx update]` (agent/script friendly)
 /// - Text mode with TTY stderr: colored human notice
 pub fn maybe_print_notice(output: OutputFormat) {
     if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
@@ -94,7 +94,7 @@ pub fn maybe_print_notice(output: OutputFormat) {
         if is_newer(latest, current) {
             let upgrade = install_method::binary_upgrade_command(&install_method::detect());
 
-            if output == OutputFormat::Agents || !std::io::stderr().is_terminal() {
+            if output == OutputFormat::Toon || !std::io::stderr().is_terminal() {
                 print_plain_notice(latest, current, &upgrade);
                 return;
             }
@@ -125,9 +125,9 @@ pub fn maybe_print_notice(output: OutputFormat) {
     }
 }
 
-// ── Agents meta block (stdout) ────────────────────────────────────────────────
+// ── Toon meta block (stdout) ────────────────────────────────────────────────
 
-/// Build a `_meta` JSON object for injection into agents-mode output.
+/// Build a `_meta` JSON object for injection into toon-mode output.
 /// Returns `None` when suppressed or when no update is available.
 pub fn build_meta_block() -> Option<Value> {
     if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
@@ -159,9 +159,9 @@ pub fn build_meta_block() -> Option<Value> {
     })
 }
 
-/// Print the `_meta` block to stdout for agents to consume.
+/// Print the `_meta` block to stdout in toon mode.
 /// Printed as a standalone JSON object on its own line, after the main output.
-pub fn maybe_print_agents_meta() {
+pub fn maybe_print_toon_meta() {
     if let Some(meta) = build_meta_block() {
         if let Ok(s) = serde_json::to_string(&json!({ "_meta": meta })) {
             println!("{s}");
@@ -171,7 +171,7 @@ pub fn maybe_print_agents_meta() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Single-line notice for agents and non-TTY stderr.
+/// Single-line notice for toon mode and non-TTY stderr.
 /// Binary upgrade and skills refresh are separated by `|` so both stay together.
 fn print_plain_notice(latest: &str, current: &str, upgrade: &str) {
     let skills = install_method::skills_upgrade_command();

@@ -23,12 +23,14 @@ use crate::spill::{self, maybe_spill, SpillOutcome};
 ///
 /// Creates a new chat if `chat_id` is None, otherwise continues an existing chat.
 /// Uses blocking mode to wait for the response.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_ask(
     targets: &[Arc<ExecutionTarget>],
     message: &str,
     chat_id: Option<&str>,
     model: &str,
     timeout: u32,
+    agent_to_agent_mode: bool,
     output: OutputFormat,
 ) -> Result<()> {
     // Olly is single-profile only - chats belong to a specific user/team
@@ -54,7 +56,9 @@ pub async fn run_ask(
     };
 
     eprintln!("{}", "Sending message...".dimmed());
-    let interaction = api.send_message(&chat_id, message, model, timeout).await?;
+    let interaction = api
+        .send_message(&chat_id, message, model, timeout, agent_to_agent_mode)
+        .await?;
 
     // Olly is single-profile only, so unlike other command groups this uses
     // the resolved target directly rather than looking one up by profile name.
@@ -68,7 +72,7 @@ pub async fn run_ask(
             let response = interaction_to_json(&interaction, &chat_id);
             render::render_json(&[response])?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let response = interaction_to_json(&interaction, &chat_id);
             let toon = toon_encode(&[response])
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -153,7 +157,7 @@ pub async fn run_artifacts_get(
         OutputFormat::Json => {
             render_artifact_json(&artifact, &processed)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             render_artifact_agents(&artifact, &processed, max_direct, temp_dir)?;
         }
         OutputFormat::Text => {
@@ -338,7 +342,7 @@ pub async fn run_artifacts_list(
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             render::render_json(&response)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             let toon =
                 toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;

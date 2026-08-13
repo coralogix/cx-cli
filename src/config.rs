@@ -57,8 +57,13 @@ pub enum OutputFormat {
     Text,
     /// Raw JSON output.
     Json,
-    /// Token-aware, AI-agent-optimised JSON output.
-    Agents,
+    /// Token-aware, AI-agent-optimised TOON output.
+    ///
+    /// `agents` is accepted as a deprecated alias for backward compatibility
+    /// (both on the `-o/--output` flag and in config/profile files).
+    #[value(alias = "agents")]
+    #[serde(alias = "agents")]
+    Toon,
 }
 
 impl OutputFormat {
@@ -66,7 +71,7 @@ impl OutputFormat {
         match self {
             OutputFormat::Text => "text",
             OutputFormat::Json => "json",
-            OutputFormat::Agents => "agents",
+            OutputFormat::Toon => "toon",
         }
     }
 }
@@ -168,7 +173,7 @@ pub struct Config {
     pub default_output_format: OutputFormat,
 
     /// Maximum serialized byte size of a non-aggregated Dataprime response
-    /// that can be printed directly to stdout in `agents` mode. If the payload
+    /// that can be printed directly to stdout in `toon` mode. If the payload
     /// exceeds this limit the data is written to a temp file instead.
     /// Set to `-1` to disable the limit (always print directly).
     /// Default: 100 KiB (102400 bytes).
@@ -711,6 +716,54 @@ pub fn upsert_managed_completion(shell: &str, path: PathBuf) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── OutputFormat: toon canonical + agents backward-compat alias ─────────────
+
+    #[test]
+    fn output_format_as_str_is_toon() {
+        assert_eq!(OutputFormat::Toon.as_str(), "toon");
+        assert_eq!(OutputFormat::Toon.to_string(), "toon");
+    }
+
+    #[test]
+    fn output_format_serializes_as_toon() {
+        // New configs are written with the canonical `toon` spelling.
+        let json = serde_json::to_string(&OutputFormat::Toon).unwrap();
+        assert_eq!(json, "\"toon\"");
+    }
+
+    #[test]
+    fn output_format_deserializes_toon_and_agents_alias() {
+        // Canonical value.
+        let toon: OutputFormat = serde_json::from_str("\"toon\"").unwrap();
+        assert_eq!(toon, OutputFormat::Toon);
+        // Backward compat: existing profiles/config with `default_output_format = "agents"`
+        // must still deserialize rather than fail.
+        let agents: OutputFormat = serde_json::from_str("\"agents\"").unwrap();
+        assert_eq!(agents, OutputFormat::Toon);
+    }
+
+    #[test]
+    fn output_format_profile_toml_accepts_agents_alias() {
+        // Simulate an on-disk profile that predates the rename.
+        let profile: Profile =
+            toml::from_str("region = \"eu2\"\ndefault_output_format = \"agents\"\n").unwrap();
+        assert_eq!(profile.default_output_format, Some(OutputFormat::Toon));
+    }
+
+    #[test]
+    fn output_format_clap_parses_toon_and_agents_alias() {
+        use clap::ValueEnum;
+        assert_eq!(
+            OutputFormat::from_str("toon", true).unwrap(),
+            OutputFormat::Toon
+        );
+        // `-o agents` on the CLI still resolves to the Toon variant.
+        assert_eq!(
+            OutputFormat::from_str("agents", true).unwrap(),
+            OutputFormat::Toon
+        );
+    }
 
     // ── list_profile_names_from ────────────────────────────────────────────────
 

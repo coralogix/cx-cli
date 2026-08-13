@@ -56,7 +56,7 @@ fn emit_table(
 ) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json(all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -81,7 +81,7 @@ fn emit_objects(
 ) -> Result<()> {
     match output {
         OutputFormat::Json => render::render_json_auto(all)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -543,7 +543,7 @@ async fn run_custom_evaluations_table(
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
     // Items are raw API objects: the text table reads a few columns, but
-    // JSON/agents output keeps the full policy (config, instructions, etc.).
+    // JSON/toon output keeps the full policy (config, instructions, etc.).
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
         // One static "Eval Catalog" page link per profile, not per custom
         // evaluation - it isn't scoped to any single row, so it doesn't

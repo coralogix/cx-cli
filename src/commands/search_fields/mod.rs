@@ -43,7 +43,7 @@ pub async fn run(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let json_rows: Vec<Value> = all_results
                 .iter()
                 .map(|(profile, r)| {
@@ -56,7 +56,11 @@ pub async fn run(
                     v
                 })
                 .collect();
-            render::render_json(&json_rows)?;
+            if output == OutputFormat::Toon {
+                render::render_toon(&json_rows)?;
+            } else {
+                render::render_json(&json_rows)?;
+            }
         }
         OutputFormat::Text => {
             if all_results.is_empty() {

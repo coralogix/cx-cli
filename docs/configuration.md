@@ -83,8 +83,8 @@ The default install script and release binaries are built for musl on Linux, so 
 | Key | Default | Description |
 |---|---|---|
 | `default_profile` | `"default"` | Profile used when `-p` is not provided |
-| `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `agents`) |
-| `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `agents` mode before spilling to a temp file. Set to `-1` to disable |
+| `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `toon`; `agents` accepted as a deprecated alias) |
+| `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `toon` mode before spilling to a temp file. Set to `-1` to disable |
 | `temp_dir` | `"/tmp/"` | Directory for spilled result files |
 | `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
 | `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |

@@ -1,14 +1,16 @@
-# Agents output format
+# TOON output format
 
-The `agents` output mode (`-o agents`) produces token-optimized JSON designed for AI agent consumption. It reduces token usage through key renaming, metadata stripping, and large-result spilling.
+The `toon` output mode (`-o toon`) produces token-optimized output designed for AI agent consumption. It reduces token usage through key renaming, metadata stripping, and large-result spilling.
 
-All agents output is TOON-encoded via `toon_format::encode_default()` for compact serialization.
+> **Note:** `agents` is accepted as a deprecated alias for `toon` — `-o agents`, `CX_*` config values, and `default_output_format = "agents"` all still work and resolve to the same mode. Prefer `toon` in new usage.
+
+All `toon` output is TOON-encoded via `toon_format::encode_default()` for compact serialization.
 
 ## Key transformations
 
 For DataPrime results (logs and spans), the following keys are renamed:
 
-| Original key | Agents key | Description |
+| Original key | TOON key | Description |
 |---|---|---|
 | `metadata` | `$m` | Log metadata (severity, timestamp, etc.) |
 | `labels` | `$l` | Application labels (`applicationname`, `subsystemname`, `serviceName`, etc.) |
@@ -28,13 +30,13 @@ The following metadata fields are removed from `$m`:
 
 ## Metrics output
 
-For `cx metrics query` (instant), agents output includes only the metric definition (labels) and sample value — timestamps are omitted since instant queries return a single point in time.
+For `cx metrics query` (instant), toon output includes only the metric definition (labels) and sample value — timestamps are omitted since instant queries return a single point in time.
 
-For `cx metrics query-range`, agents output produces **one row per time-series**. Each row contains the metric labels as individual columns, followed by one column per data point whose header is the ISO-8601 timestamp (e.g. `2026-05-14T12:00:00Z`) and whose value is the sample value. This avoids repeating long label strings across every data point. When querying multiple profiles, a `profile` column is included between the label columns and the timestamp columns. Epoch timestamps from the API are automatically converted to ISO-8601.
+For `cx metrics query-range`, toon output produces **one row per time-series**. Each row contains the metric labels as individual columns, followed by one column per data point whose header is the ISO-8601 timestamp (e.g. `2026-05-14T12:00:00Z`) and whose value is the sample value. This avoids repeating long label strings across every data point. When querying multiple profiles, a `profile` column is included between the label columns and the timestamp columns. Epoch timestamps from the API are automatically converted to ISO-8601.
 
 ## Result spilling
 
-When a non-aggregated DataPrime result set in `agents` mode exceeds `max_dataprime_direct_output_size` (default `102400` bytes, or 100 KiB), the full results are written to a temp file instead of stdout.
+When a non-aggregated DataPrime result set in `toon` mode exceeds `max_dataprime_direct_output_size` (default `102400` bytes, or 100 KiB), the full results are written to a temp file instead of stdout.
 
 What gets printed to stdout:
 
@@ -83,7 +85,7 @@ The output is a JSON object describing the entire CLI hierarchy. This is useful 
 AI agents consuming `cx` output should:
 
 1. Run `cx schema` to discover available commands and their flags.
-2. Use `-o agents` for all queries.
+2. Use `-o toon` for all queries (`-o agents` is a deprecated alias).
 3. Check whether the output is a file-path reference (spilled result) and read the file if so.
 4. Use `cx cleanup` periodically to remove stale result files.
 5. Reference fields using `$d`, `$l`, and `$m` notation in follow-up DataPrime queries.

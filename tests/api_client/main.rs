@@ -33,7 +33,7 @@ async fn attaches_cli_request_metadata_headers() {
         .and(path("/test"))
         .and(header("x-cx-sdk-version", sdk_version))
         .and(header("x-cx-cli-command-path", "logs"))
-        .and(header("x-cx-cli-output-format", "agents"))
+        .and(header("x-cx-cli-output-format", "toon"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .mount(&server)
         .await;
@@ -41,7 +41,7 @@ async fn attaches_cli_request_metadata_headers() {
     let matches = TestCli::command()
         .try_get_matches_from(["cx", "logs"])
         .unwrap();
-    let metadata = RequestMetadata::from_invocation(&matches, OutputFormat::Agents, &[], false);
+    let metadata = RequestMetadata::from_invocation(&matches, OutputFormat::Toon, &[], false);
     let client = CxClient::new_with_metadata(server.uri(), "test-key", &metadata).unwrap();
 
     client.get::<Value>("/test", &[]).await.unwrap();

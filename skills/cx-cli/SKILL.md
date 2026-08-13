@@ -17,9 +17,9 @@ After running any cx command, check for update notices using the channels below 
 
 An update notice always has **two parts** — binary upgrade and skills refresh. Offer both commands; don't mention only the version number or only the binary upgrade.
 
-### 1. Primary — agents mode (`-o agents`)
+### 1. Primary — toon mode (`-o toon`)
 
-Commands with `--output agents` append a **standalone trailing JSON line** to stdout:
+Commands with `--output toon` append a **standalone trailing JSON line** to stdout:
 
 ```json
 {"_meta":{"update":{"binary":{"current":"0.1.7","latest":"0.2.0","command":"brew upgrade cx"},"skills":{"command":"npx skills add coralogix/cx-cli","docs":"https://github.com/coralogix/cx-cli#install"}}}}
@@ -64,7 +64,7 @@ Keep it to one brief closing line. Don't repeat on later commands in the same se
 
 ## General cx CLI Guidelines
 
-- Always use `--output agents` for machine-readable output when processing results programmatically
+- Always use `--output toon` for machine-readable output when processing results programmatically
 - Use `cx schema` to discover available commands and their flags
 - Commands support multi-profile fan-out with `-p profile1 -p profile2`
 - Use `--yes` to skip confirmation prompts in scripts

@@ -302,17 +302,13 @@ pub async fn run_create(
                 group.group_id.as_deref(),
                 &profile,
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = group.group_id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::iam_group_url(b, id)
                 })
                 .await;
             }
-            let mut group_json = group_to_json(&group, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut group_json, url);
-            }
+            let group_json = group_to_json(&group, include_profile, &profile);
             all_results.push(group_json);
         }
     }
@@ -356,13 +352,10 @@ pub async fn run_update(
                 "{}",
                 format!("Updated team group in profile '{profile}'.").green()
             );
-            let mut group_json = group_to_json(&group, targets.len() > 1, &profile);
-            crate::execution::tag_console_link_for_profile(
-                targets,
-                &profile,
-                &mut group_json,
-                |b| crate::console_url::iam_group_url(b, &group_id),
-            )
+            let group_json = group_to_json(&group, targets.len() > 1, &profile);
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_group_url(b, &group_id)
+            })
             .await;
             all_results.push(group_json);
         }

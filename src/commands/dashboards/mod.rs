@@ -517,7 +517,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::dashboard_url(b, dashboard_id)
         })
         .await;
@@ -669,20 +669,14 @@ pub async fn run_create(
             created_id.as_deref(),
             &profile,
         );
-        let console_url = match &created_id {
-            Some(id) => {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
-                    crate::console_url::dashboard_url(b, id)
-                })
-                .await
-            }
-            None => None,
-        };
+        if let Some(id) = &created_id {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboard_url(b, id)
+            })
+            .await;
+        }
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
-        }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut resp, url);
         }
         all_results.push(resp);
     }
@@ -765,20 +759,14 @@ pub async fn run_replace(
             replaced_id.as_deref(),
             &profile,
         );
-        let console_url = match &replaced_id {
-            Some(id) => {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
-                    crate::console_url::dashboard_url(b, id)
-                })
-                .await
-            }
-            None => None,
-        };
+        if let Some(id) = &replaced_id {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboard_url(b, id)
+            })
+            .await;
+        }
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
-        }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut resp, url);
         }
         all_results.push(resp);
     }
@@ -992,12 +980,7 @@ fn severity_colored(severity: IssueSeverity) -> String {
 }
 
 /// Build one issue row as JSON for `json` / `agents` output.
-fn issue_json_row(
-    issue: &api::DashboardCheckIssue,
-    profile: &str,
-    include_profile: bool,
-    console_url: Option<&str>,
-) -> Value {
+fn issue_json_row(issue: &api::DashboardCheckIssue, profile: &str, include_profile: bool) -> Value {
     let mut row = serde_json::to_value(issue).unwrap_or_else(|_| json!({}));
     if include_profile {
         if let Value::Object(ref mut m) = row {
@@ -1006,16 +989,6 @@ fn issue_json_row(
                 Value::String(profile.to_string()),
             );
         }
-    }
-    // Always insert `consoleUrl` - as `null` when this row has no link -
-    // rather than only inserting it when present. `-o agents` TOON-encodes
-    // rows into a compact tabular form only when every row has the same key
-    // set; a key that's merely absent on some rows (vs. present-but-null)
-    // silently degrades the whole array to TOON's verbose expanded form.
-    if let Some(url) = console_url {
-        render::tag_console_url(&mut row, url);
-    } else if let Value::Object(ref mut m) = row {
-        m.insert("consoleUrl".to_string(), Value::Null);
     }
     row
 }
@@ -1072,57 +1045,40 @@ pub async fn run_check(
     })
     .await;
 
-    let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>, Option<String>)> = Vec::new();
+    let mut all_issues: Vec<(String, Vec<api::DashboardCheckIssue>)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let console_url = match dashboard_id {
-            Some(id) => {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
-                    crate::console_url::dashboard_url(b, id)
-                })
-                .await
-            }
-            None => None,
-        };
-        all_issues.push((profile, resp.issues, console_url));
+        if let Some(id) = dashboard_id {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::dashboard_url(b, id)
+            })
+            .await;
+        }
+        all_issues.push((profile, resp.issues));
     }
 
     // CI-gate semantics: any error-severity issue (in any profile) fails.
     let total_errors = all_issues
         .iter()
-        .flat_map(|(_, issues, _)| issues.iter())
+        .flat_map(|(_, issues)| issues.iter())
         .filter(|i| i.severity.is_failure())
         .count();
-    let total_issues = all_issues.iter().map(|(_, i, _)| i.len()).sum::<usize>();
+    let total_issues = all_issues.iter().map(|(_, i)| i.len()).sum::<usize>();
 
-    // Render. `console_url` is the same one dashboard's link for every issue
-    // in its profile's chunk, so it's attached only to the first row of that
-    // chunk rather than repeated on every issue - a 50-issue dashboard
-    // shouldn't repeat an identical URL 50 times in `-o agents` output.
     match output {
         OutputFormat::Json => {
             let mut rows: Vec<Value> = Vec::new();
-            for (profile, issues, console_url) in &all_issues {
-                for (i, issue) in issues.iter().enumerate() {
-                    rows.push(issue_json_row(
-                        issue,
-                        profile,
-                        include_profile,
-                        if i == 0 { console_url.as_deref() } else { None },
-                    ));
+            for (profile, issues) in &all_issues {
+                for issue in issues {
+                    rows.push(issue_json_row(issue, profile, include_profile));
                 }
             }
             render::render_json(&rows)?;
         }
         OutputFormat::Agents => {
             let mut rows: Vec<Value> = Vec::new();
-            for (profile, issues, console_url) in &all_issues {
-                for (i, issue) in issues.iter().enumerate() {
-                    rows.push(issue_json_row(
-                        issue,
-                        profile,
-                        include_profile,
-                        if i == 0 { console_url.as_deref() } else { None },
-                    ));
+            for (profile, issues) in &all_issues {
+                for issue in issues {
+                    rows.push(issue_json_row(issue, profile, include_profile));
                 }
             }
             render::render_agents(&rows)?;
@@ -1132,7 +1088,7 @@ pub async fn run_check(
                 println!("{}", "Dashboard is valid (no issues)".green());
             } else {
                 let mut rows: Vec<Vec<String>> = Vec::new();
-                for (profile, issues, _) in &all_issues {
+                for (profile, issues) in &all_issues {
                     for issue in issues {
                         let row = vec![
                             profile.clone(),
@@ -1205,78 +1161,6 @@ mod tests {
         assert!(
             rendered.contains("Query uses deprecated function 'timeShift'"),
             "message column missing in single-profile output: {rendered}"
-        );
-    }
-
-    /// Regression guard for the "only tag the first row" console-link
-    /// optimization in `run_check`'s `-o agents` branch.
-    ///
-    /// Tagging only the first issue's row with `consoleUrl` (to avoid
-    /// repeating an identical URL on every issue) makes that row's key set
-    /// diverge from the rest. TOON only uses its compact tabular encoding
-    /// (`[N]{k1,k2,...}:` header + one CSV-like line per row) when every
-    /// row shares the same keys; a single divergent row forces the whole
-    /// array into TOON's verbose expanded form (`[N]:` + a full
-    /// `- key: value` block per row), which is far more expensive than the
-    /// repeated URL it was trying to avoid. `issue_json_row` must therefore
-    /// insert `consoleUrl: null` on rows with no link rather than omitting
-    /// the key.
-    #[test]
-    fn check_agents_output_stays_tabular_when_only_first_issue_has_console_url() {
-        let issues = [
-            (
-                IssueSeverity::SeverityError,
-                Some("m1".to_string()),
-                Some("/a".to_string()),
-            ),
-            (
-                IssueSeverity::SeverityWarning,
-                Some("m2".to_string()),
-                Some("/b".to_string()),
-            ),
-            (
-                IssueSeverity::SeverityWarning,
-                Some("m3".to_string()),
-                Some("/c".to_string()),
-            ),
-        ];
-
-        // Mirrors the row construction in `run_check`'s Json/Agents branch:
-        // only `i == 0` gets the console URL.
-        let rows: Vec<Value> = issues
-            .iter()
-            .enumerate()
-            .map(|(i, (severity, message, location))| {
-                let issue = api::DashboardCheckIssue {
-                    severity: *severity,
-                    message: message.clone(),
-                    location: location.clone(),
-                };
-                let console_url = if i == 0 {
-                    Some("https://mock.coralogix.com/#/dashboards/d1")
-                } else {
-                    None
-                };
-                issue_json_row(&issue, "mock-profile", false, console_url)
-            })
-            .collect();
-
-        let encoded = toon_encode(&Value::Array(rows)).expect("TOON encoding failed");
-
-        // Compact tabular form opens with a `[N]{key1,key2,...}:` header;
-        // the degraded expanded form instead opens with a bare `[N]:` and
-        // repeats `- key: value` per row.
-        let header = encoded.lines().next().unwrap_or_default();
-        assert!(
-            header.contains('{'),
-            "expected TOON's compact tabular header (e.g. `[3]{{...}}:`), \
-             got expanded form instead - heterogeneous row keys broke \
-             tabular encoding: {encoded}"
-        );
-        assert!(
-            !encoded.contains("\n  - "),
-            "TOON fell back to per-row expanded form, which repeats every \
-             key name on every row: {encoded}"
         );
     }
 }

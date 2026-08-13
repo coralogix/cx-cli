@@ -183,7 +183,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;
@@ -236,11 +236,10 @@ pub async fn run_create(
                 )
                 .green()
             );
-            let mut ce_json = ce_to_json(&ce, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
+            let ce_json = ce_to_json(&ce, include_profile, &profile);
+            crate::execution::console_link_for_profile(
                 targets,
                 &profile,
-                &mut ce_json,
                 crate::console_url::enrichments_url,
             )
             .await;
@@ -276,12 +275,12 @@ pub async fn run_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated custom enrichment in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;
@@ -346,8 +345,8 @@ pub async fn run_search(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;

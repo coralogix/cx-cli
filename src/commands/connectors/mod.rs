@@ -58,10 +58,6 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Connector)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        let console_base = match crate::execution::find_target(targets, &profile) {
-            Some(target) => target.console_base().await,
-            None => None,
-        };
         if !resp.connectors.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::notification_connectors_url(b)
@@ -69,22 +65,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
             .await;
         }
         for conn in resp.connectors {
-            let mut json = connector_to_json(&conn, include_profile, &profile);
-            // Always insert `consoleUrl` - as `null` when this connector has
-            // no link - rather than only inserting it when present, so
-            // every row keeps the same key set. Otherwise a single
-            // connector missing an id would make this row's keys diverge
-            // from the rest, silently degrading the whole array's
-            // `-o agents` TOON encoding from its compact tabular form to
-            // the verbose expanded one.
-            if let (Some(base), Some(id)) = (&console_base, conn.id.as_deref()) {
-                render::tag_console_url(
-                    &mut json,
-                    &crate::console_url::notification_connector_url(base, id),
-                );
-            } else if let Value::Object(ref mut m) = json {
-                m.insert("consoleUrl".to_string(), Value::Null);
-            }
+            let json = connector_to_json(&conn, include_profile, &profile);
             all_json.push(json);
             all_items.push((profile.clone(), conn));
         }
@@ -148,7 +129,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::notification_connector_url(b, &id)
         })
         .await;
@@ -203,17 +184,13 @@ pub async fn run_create(
                 conn.id.as_deref(),
                 &profile,
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = conn.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::notification_connector_url(b, id)
                 })
                 .await;
             }
-            let mut json = connector_to_json(&conn, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut json, url);
-            }
+            let json = connector_to_json(&conn, include_profile, &profile);
             all_results.push(json);
         }
     }
@@ -248,7 +225,7 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated connector in profile '{profile}'.").green()
@@ -258,7 +235,7 @@ pub async fn run_update(
             .and_then(crate::console_url::id_from_json)
             .or_else(|| crate::console_url::id_from_json(&val));
         if let Some(id) = extracted_id {
-            crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::notification_connector_url(b, &id)
             })
             .await;
@@ -419,71 +396,4 @@ pub async fn run_entity_subtypes(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn mock_connector(id: Option<&str>) -> Connector {
-        Connector {
-            id: id.map(ToString::to_string),
-            name: Some("Demo connector".to_string()),
-            connector_type: Some("SLACK".to_string()),
-            enabled: Some(true),
-            create_time: None,
-            update_time: None,
-        }
-    }
-
-    /// Regression guard for the per-connector `consoleUrl` tagging in
-    /// `run_list` - same pattern, and same risk, as
-    /// `alerts::tests::list_agents_output_stays_tabular_when_one_alert_lacks_id`.
-    /// A connector missing an `id` can't be linked; if that row simply
-    /// omits `consoleUrl` while every other row has it, the array's key
-    /// sets diverge and TOON's `-o agents` encoder falls back from its
-    /// compact tabular form to the verbose expanded one. `run_list` must
-    /// insert `consoleUrl: null` on the id-less row instead of omitting the
-    /// key.
-    #[test]
-    fn list_agents_output_stays_tabular_when_one_connector_lacks_id() {
-        let base = "https://mock.coralogix.com";
-        let connectors = [
-            mock_connector(Some("c1")),
-            mock_connector(None),
-            mock_connector(Some("c3")),
-        ];
-
-        // Mirrors the row construction in `run_list`'s per-connector loop.
-        let rows: Vec<Value> = connectors
-            .iter()
-            .map(|conn| {
-                let mut json = connector_to_json(conn, false, "mock-profile");
-                if let Some(id) = conn.id.as_deref() {
-                    render::tag_console_url(
-                        &mut json,
-                        &crate::console_url::notification_connector_url(base, id),
-                    );
-                } else if let Value::Object(ref mut m) = json {
-                    m.insert("consoleUrl".to_string(), Value::Null);
-                }
-                json
-            })
-            .collect();
-
-        let encoded = toon_encode(&Value::Array(rows)).expect("TOON encoding failed");
-
-        let header = encoded.lines().next().unwrap_or_default();
-        assert!(
-            header.contains('{'),
-            "expected TOON's compact tabular header (e.g. `[3]{{...}}:`), \
-             got expanded form instead - the id-less connector's missing \
-             key broke tabular encoding: {encoded}"
-        );
-        assert!(
-            !encoded.contains("\n  - "),
-            "TOON fell back to per-row expanded form, which repeats every \
-             key name on every row: {encoded}"
-        );
-    }
 }

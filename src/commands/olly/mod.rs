@@ -58,24 +58,18 @@ pub async fn run_ask(
 
     // Olly is single-profile only, so unlike other command groups this uses
     // the resolved target directly rather than looking one up by profile name.
-    let console_url = target
+    target
         .console_link(|base| crate::console_url::olly_chat_url(base, &chat_id))
         .await;
 
     // Render based on output format
     match output {
         OutputFormat::Json => {
-            let mut response = interaction_to_json(&interaction, &chat_id);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut response, url);
-            }
+            let response = interaction_to_json(&interaction, &chat_id);
             render::render_json(&[response])?;
         }
         OutputFormat::Agents => {
-            let mut response = interaction_to_json(&interaction, &chat_id);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut response, url);
-            }
+            let response = interaction_to_json(&interaction, &chat_id);
             let toon = toon_encode(&[response])
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

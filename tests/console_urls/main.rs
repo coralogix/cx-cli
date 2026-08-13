@@ -2,8 +2,7 @@
 //!
 //! After a successful `dashboards create`/`replace`, `alerts create`,
 //! `views create`/`update`, or `cases` lifecycle mutation, the CLI should print a
-//! `View in Coralogix: <url>` line to stderr - purely informational, never
-//! affecting `-o json` / `-o agents` stdout.
+//! `View in Coralogix: <url>` line to stderr.
 //!
 //! These tests spawn the real `cx` binary (via `assert_cmd`) against a
 //! `wiremock` server so stdout and stderr can be asserted independently,
@@ -247,15 +246,6 @@ async fn dashboard_replace_falls_back_to_request_id_when_response_has_no_id() {
         !stderr.contains("did not include an ID"),
         "should not warn about a missing ID once it fell back to the request's own id: {stderr}"
     );
-
-    // The API echoed back an empty `{}`, so -o json has nothing to attach the
-    // link to - it should stay empty rather than becoming a redundant
-    // `{"consoleUrl": ...}` that just repeats the stderr line above.
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !stdout.contains("consoleUrl"),
-        "stdout should not carry a consoleUrl-only payload when the response was empty: {stdout}"
-    );
 }
 
 // ── alerts create ────────────────────────────────────────────────────────────
@@ -425,10 +415,6 @@ async fn view_create_prints_console_link_with_bare_response() {
     assert_eq!(
         stdout["id"], "view-456",
         "created view should be present, not dropped: {stdout}"
-    );
-    assert_eq!(
-        stdout["consoleUrl"],
-        "https://c4c.app.eu2.coralogix.com/explore?viewId=view-456"
     );
 }
 
@@ -794,152 +780,6 @@ async fn no_console_link_when_whoami_has_no_team_url() {
     );
 }
 
-// ── stdout carries the console link as a `consoleUrl` field ──────────────────
-
-/// `-o json` output must embed the same URL that's echoed to stderr as a
-/// `consoleUrl` field on the result object - see `render::tag_console_url`.
-/// This intentionally supersedes an earlier version of this test
-/// (`json_output_is_unaffected_by_console_link`) which asserted the opposite:
-/// that stdout was untouched by the console-link feature. Per reviewer
-/// feedback, agent/script consumers of `-o json` / `-o agents` need the link
-/// in the structured payload too, not only as a human-readable stderr line.
-#[tokio::test]
-async fn json_output_includes_console_url_field() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
-        )
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("dash_json_output");
-    fs::write(
-        &file_path,
-        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
-    )
-    .unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "dashboards",
-            "create",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-
-    // stdout is the API response plus a `consoleUrl` field - no
-    // "View in Coralogix: " prefix text (that's stderr-only phrasing).
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-    assert_eq!(
-        parsed,
-        json!({
-            "dashboardId": "dash-abc123",
-            "consoleUrl": "https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123",
-        })
-    );
-    assert!(!stdout.contains("View in Coralogix"));
-
-    // The human-readable line still goes to stderr too, with the same URL.
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr
-        .contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"));
-}
-
-/// Regression test for the single- vs. multi-profile path invariant: on a
-/// wrapper-shaped `get` (`{"alertDef": {...}}`), the console link must nest
-/// inside the wrapper (`.alertDef.consoleUrl`) in *both* modes. In
-/// multi-profile mode `_profile` is added at the root first, and an earlier
-/// version of `tag_console_url` treated that as a second top-level field and
-/// pushed the link to `.consoleUrl` instead - silently moving it for scripts
-/// as soon as a second profile was added.
-#[tokio::test]
-async fn multi_profile_get_nests_console_link_inside_wrapper() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertDef": {"id": "alert-1", "name": "My Alert"}
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "prod",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_profile(
-        &home,
-        "staging",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "prod");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "prod",
-            "--profile",
-            "staging",
-            "alerts",
-            "get",
-            "alert-1",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-
-    let results = parsed.as_array().expect("multi-profile output is an array");
-    assert_eq!(results.len(), 2, "expected one result per profile");
-    for result in results {
-        assert_eq!(
-            result["alertDef"]["consoleUrl"], "https://c4c.app.eu2.coralogix.com/alerts/alert-1",
-            "link must nest inside the wrapper, same path as single-profile: {result}"
-        );
-        assert_eq!(
-            result["consoleUrl"],
-            serde_json::Value::Null,
-            "link must not leak to the root when `_profile` is present: {result}"
-        );
-        assert!(
-            result["_profile"].is_string(),
-            "profile tag preserved: {result}"
-        );
-    }
-}
-
 // ── e2m create/update ────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -1272,11 +1112,11 @@ async fn connector_update_prints_console_link() {
     );
 }
 
-/// `notifications connectors list` has a distinct console URL per connector
-/// (same as `alerts list`), so every row must be tagged with its own
-/// `consoleUrl` - not just the first.
+/// `notifications connectors list` prints a single "View in Coralogix" link
+/// to the connectors list page - never a per-row link in stdout, in any
+/// output mode.
 #[tokio::test]
-async fn connectors_list_tags_every_row_with_its_own_console_url() {
+async fn connectors_list_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(
@@ -1318,17 +1158,21 @@ async fn connectors_list_tags_every_row_with_its_own_console_url() {
     let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let items = stdout.as_array().expect("expected a json array");
     assert_eq!(items.len(), 3);
-    for (i, id) in ["conn-1", "conn-2", "conn-3"].iter().enumerate() {
-        assert_eq!(
-            items[i]["consoleUrl"],
-            format!("https://c4c.app.eu2.coralogix.com/notification-center/connectors?id={id}"),
-            "row {i} did not carry its own connector's consoleUrl: {items:#?}"
+    for item in items {
+        assert!(
+            item.get("consoleUrl").is_none(),
+            "stdout must never carry a consoleUrl field: {item:#?}"
         );
     }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/connectors"
+        ),
+        "stderr did not contain the connectors list page link: {stderr}"
+    );
 
-    // Text mode doesn't repeat every connector's own link in the table (that
-    // would bloat it) - instead it gets a single "View in Coralogix" line
-    // to stderr pointing at the connectors list page itself.
+    // Text mode doesn't carry a per-row Console URL column either.
     let text_output = cx(&home)
         .args([
             "--profile",
@@ -2397,9 +2241,8 @@ async fn tco_list_prints_console_link() {
 
 /// Regression test for a real-world bug: when a team has zero TCO policies,
 /// the list command used to print the console link to stderr unconditionally
-/// while `-o json`/`-o agents` had no row left to tag it onto - violating the
-/// "stderr and consoleUrl never disagree" invariant. Resolving (and
-/// printing) the link must be skipped entirely when the list is empty.
+/// even though there was nothing to view. Resolving (and printing) the link
+/// must be skipped entirely when the list is empty.
 #[tokio::test]
 async fn tco_list_empty_prints_no_console_link() {
     let server = MockServer::start().await;
@@ -2501,10 +2344,8 @@ async fn ai_center_evaluations_list_prints_console_link() {
 
 /// Regression test for a real-world bug: when a team has zero AI Center
 /// evaluations, the list command used to print the console link to stderr
-/// unconditionally while `-o json`/`-o agents` had no row left to tag it
-/// onto - violating the "stderr and consoleUrl never disagree" invariant.
-/// Resolving (and printing) the link must be skipped entirely when the list
-/// is empty.
+/// unconditionally even though there was nothing to view. Resolving (and
+/// printing) the link must be skipped entirely when the list is empty.
 #[tokio::test]
 async fn ai_center_evaluations_list_empty_prints_no_console_link() {
     let server = MockServer::start().await;
@@ -2536,12 +2377,11 @@ async fn ai_center_evaluations_list_empty_prints_no_console_link() {
     );
 }
 
-/// Regression test: unlike other list commands (whose console link is one
-/// static per-profile "page" URL, not any individual row's own link),
-/// `alerts list` has a distinct console URL per alert, so every row must be
-/// tagged with its own `consoleUrl` - not just the first.
+/// Regression test: `alerts list` prints a single "View in Coralogix" link
+/// to the alerts list page - never a per-row link in stdout, in any output
+/// mode.
 #[tokio::test]
-async fn alerts_list_tags_every_row_with_its_own_console_url() {
+async fn alerts_list_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
@@ -2573,17 +2413,19 @@ async fn alerts_list_tags_every_row_with_its_own_console_url() {
     let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let items = stdout.as_array().expect("expected a json array");
     assert_eq!(items.len(), 3);
-    for (i, id) in ["alert-1", "alert-2", "alert-3"].iter().enumerate() {
-        assert_eq!(
-            items[i]["consoleUrl"],
-            format!("https://c4c.app.eu2.coralogix.com/alerts/{id}"),
-            "row {i} did not carry its own alert's consoleUrl: {items:#?}"
+    for item in items {
+        assert!(
+            item.get("consoleUrl").is_none(),
+            "stdout must never carry a consoleUrl field: {item:#?}"
         );
     }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts"),
+        "stderr did not contain the alerts list page link: {stderr}"
+    );
 
-    // Text mode doesn't repeat every alert's own link in the table (that
-    // would bloat it) - instead it gets a single "View in Coralogix" line
-    // to stderr pointing at the alerts list page itself.
+    // Text mode doesn't carry a per-row Console URL column either.
     let text_output = cx(&home)
         .args(["--profile", "mock", "alerts", "list", "-o", "text"])
         .output()
@@ -2674,74 +2516,6 @@ async fn dashboard_check_by_id_prints_console_link() {
     );
 }
 
-/// `-o json` on `dashboards check <id>` must embed the same URL as a
-/// `consoleUrl` field on every issue row (there's no single "the dashboard"
-/// object here - `check` returns a list of validation issues - so the URL is
-/// repeated per row via `issue_json_row`'s `console_url` parameter).
-#[tokio::test]
-async fn dashboard_check_by_id_json_output_includes_console_url_on_first_issue_only() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/dashboards/check/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "issues": [
-                {"severity": "SEVERITY_WARNING", "message": "deprecated function", "location": "/a"},
-                {"severity": "SEVERITY_ERROR", "message": "bad query", "location": "/b"},
-            ]
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "dashboards",
-            "check",
-            "dash-abc123",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    // Exits non-zero because of the error-severity issue - CI-gate semantics -
-    // but stdout should still have rendered the JSON rows first.
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-    let rows = parsed.as_array().expect("expected a JSON array of issues");
-    assert_eq!(rows.len(), 2);
-    // It's one static dashboard-page link for the whole check, not per-issue -
-    // only the first row should carry it so `-o agents` output doesn't repeat
-    // the identical URL once per issue.
-    assert_eq!(
-        rows[0].get("consoleUrl").and_then(|v| v.as_str()),
-        Some("https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"),
-        "expected consoleUrl on the first issue row: {}",
-        rows[0]
-    );
-    for row in &rows[1..] {
-        // The key stays present-but-null (rather than absent) so that `-o
-        // agents` TOON-encodes the array in its compact tabular form, which
-        // requires every row to share the same key set.
-        assert_eq!(
-            row.get("consoleUrl"),
-            Some(&serde_json::Value::Null),
-            "expected consoleUrl to be null (not absent) on subsequent issue rows: {row}"
-        );
-    }
-}
-
 #[tokio::test]
 async fn dashboard_check_from_file_prints_no_console_link() {
     let server = MockServer::start().await;
@@ -2818,62 +2592,6 @@ async fn alert_get_prints_console_link() {
     assert!(
         stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
         "stderr did not contain the console link: {stderr}"
-    );
-}
-
-/// `-o json` on `alerts get` must embed the same URL as a `consoleUrl` field
-/// nested inside the `alertDef` wrapper object (see
-/// `render::tag_console_url`'s single-object-wrapper nesting), not at the
-/// JSON root, and not only printed to stderr.
-#[tokio::test]
-async fn alert_get_json_output_includes_console_url() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-xyz789"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertDef": {"id": "alert-xyz789", "name": "Demo Alert"}
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "get",
-            "alert-xyz789",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-    assert_eq!(
-        parsed.get("consoleUrl"),
-        None,
-        "consoleUrl must not sit at the root alongside alertDef: {parsed}"
-    );
-    assert_eq!(
-        parsed
-            .get("alertDef")
-            .and_then(|v| v.get("consoleUrl"))
-            .and_then(|v| v.as_str()),
-        Some("https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
-        "expected consoleUrl field nested inside alertDef: {parsed}"
     );
 }
 

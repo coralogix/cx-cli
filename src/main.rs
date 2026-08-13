@@ -153,7 +153,7 @@ struct Cli {
     #[arg(long, global = true, help_heading = "Global Options")]
     read_only: bool,
 
-    /// Suppress "View in Coralogix" console links (stderr line and consoleUrl field).
+    /// Suppress "View in Coralogix" console links (stderr line).
     #[arg(long, global = true, help_heading = "Global Options")]
     no_console_link: bool,
 

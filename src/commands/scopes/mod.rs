@@ -195,17 +195,13 @@ pub async fn run_create(
                 scope.id.as_deref(),
                 &profile,
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = scope.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::iam_scope_url(b, id)
                 })
                 .await;
             }
-            let mut json = scope_to_json(&scope, targets.len() > 1, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut json, url);
-            }
+            let json = scope_to_json(&scope, targets.len() > 1, &profile);
             all_results.push(json);
         }
     }
@@ -240,13 +236,13 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated scope in profile '{profile}'.").green()
         );
         if let Some(id) = crate::console_url::id_from_json(&val) {
-            crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_scope_url(b, &id)
             })
             .await;

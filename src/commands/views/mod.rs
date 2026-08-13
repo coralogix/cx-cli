@@ -139,7 +139,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::view_url(b, &id)
         })
         .await;
@@ -195,20 +195,14 @@ pub async fn run_create(
             created_id.as_deref(),
             &profile,
         );
-        let console_url = match &created_id {
-            Some(id) => {
-                crate::execution::console_link_for_profile(targets, &profile, |b| {
-                    crate::console_url::view_url(b, id)
-                })
-                .await
-            }
-            None => None,
-        };
+        if let Some(id) = &created_id {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::view_url(b, id)
+            })
+            .await;
+        }
         if include_profile {
             render::tag_get_result(&mut resp, &profile);
-        }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut resp, url);
         }
         all_results.push(resp);
     }
@@ -243,12 +237,12 @@ pub async fn run_update(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated view in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::view_url(b, &id)
         })
         .await;

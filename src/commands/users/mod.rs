@@ -174,7 +174,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_users_url(b)
         })
         .await;
@@ -272,10 +272,9 @@ pub async fn run_update(
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut v,
             crate::console_url::iam_users_url,
         )
         .await;

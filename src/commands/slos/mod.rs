@@ -199,17 +199,13 @@ pub async fn run_create(
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
             render::print_created("Created", "SLO", Some(&name), slo.id.as_deref(), &profile);
-            let mut console_url: Option<String> = None;
             if let Some(id) = slo.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::slo_url(b, id)
                 })
                 .await;
             }
-            let mut slo_json = slo_to_json(&slo, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut slo_json, url);
-            }
+            let slo_json = slo_to_json(&slo, include_profile, &profile);
             all_results.push(slo_json);
         } else {
             eprintln!(
@@ -257,17 +253,13 @@ pub async fn run_update(
         if let Some(slo) = resp.slo {
             let name = slo.display_name().to_string();
             render::print_created("Updated", "SLO", Some(&name), slo.id.as_deref(), &profile);
-            let mut console_url: Option<String> = None;
             if let Some(id) = slo.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::slo_url(b, id)
                 })
                 .await;
             }
-            let mut slo_json = slo_to_json(&slo, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut slo_json, url);
-            }
+            let slo_json = slo_to_json(&slo, include_profile, &profile);
             all_results.push(slo_json);
         } else {
             eprintln!(

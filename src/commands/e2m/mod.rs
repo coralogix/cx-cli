@@ -131,7 +131,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::e2m_url(b, &id)
         })
         .await;
@@ -205,17 +205,13 @@ pub async fn run_create(
         if let Some(def) = resp.e2m {
             let name = def.display_name().to_string();
             render::print_created("Created", "E2M", Some(&name), def.id.as_deref(), &profile);
-            let mut console_url: Option<String> = None;
             if let Some(id) = def.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::e2m_url(b, id)
                 })
                 .await;
             }
-            let mut val = e2m_to_json(&def, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut val, url);
-            }
+            let val = e2m_to_json(&def, include_profile, &profile);
             all_results.push(val);
         }
     }
@@ -258,17 +254,13 @@ pub async fn run_update(
         if let Some(def) = resp.e2m {
             let name = def.display_name().to_string();
             render::print_created("Updated", "E2M", Some(&name), def.id.as_deref(), &profile);
-            let mut console_url: Option<String> = None;
             if let Some(id) = def.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::e2m_url(b, id)
                 })
                 .await;
             }
-            let mut val = e2m_to_json(&def, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut val, url);
-            }
+            let val = e2m_to_json(&def, include_profile, &profile);
             all_results.push(val);
         }
     }

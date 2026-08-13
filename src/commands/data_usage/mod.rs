@@ -137,10 +137,9 @@ pub async fn run_summary(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -215,10 +214,9 @@ pub async fn run_daily(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -273,10 +271,9 @@ pub async fn run_logs_count(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -327,10 +324,9 @@ pub async fn run_spans_count(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -373,10 +369,9 @@ pub async fn run_export_status(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut val,
             crate::console_url::usage_url,
         )
         .await;
@@ -419,10 +414,9 @@ pub async fn run_capabilities(
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut value,
             crate::console_url::usage_url,
         )
         .await;
@@ -475,10 +469,9 @@ pub async fn run_query(
         if include_profile {
             render::tag_get_result(&mut value, &profile);
         }
-        crate::execution::tag_console_link_for_profile(
+        crate::execution::console_link_for_profile(
             targets,
             &profile,
-            &mut value,
             crate::console_url::usage_url,
         )
         .await;

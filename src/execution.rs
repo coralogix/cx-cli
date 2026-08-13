@@ -35,11 +35,10 @@ pub struct ExecutionTarget {
     /// invocations skip the network lookup entirely.
     console_base: OnceCell<Option<String>>,
     /// When true, [`console_base`](Self::console_base) always returns `None`,
-    /// suppressing every "View in Coralogix" link (stderr line and
-    /// `consoleUrl` field) for this target. Set from the `--no-console-link`
-    /// flag / `CX_NO_CONSOLE_LINK` env var / `no_console_link` config key via
-    /// [`build_targets`]. Defaults to `false` here so direct `new()` callers
-    /// (tests) are unaffected.
+    /// suppressing every "View in Coralogix" stderr link for this target. Set
+    /// from the `--no-console-link` flag / `CX_NO_CONSOLE_LINK` env var /
+    /// `no_console_link` config key via [`build_targets`]. Defaults to
+    /// `false` here so direct `new()` callers (tests) are unaffected.
     no_console_link: bool,
     pub request_metadata: RequestMetadata,
 }
@@ -116,17 +115,14 @@ impl ExecutionTarget {
     }
 
     /// Resolve this target's console base URL, build a "View in Coralogix"
-    /// link with `build`, print it to stderr, and return it - so callers can
-    /// also embed it in `-o json` / `-o agents` output via
-    /// `render::tag_console_url`.
+    /// link with `build`, print it to stderr, and return it.
     ///
     /// This is the single place that ties `console_base` resolution to
     /// printing: every command that prints a console link should go through
     /// this method (or [`console_link_for_profile`] when working from a
     /// `(profile_name, T)` pair rather than an `ExecutionTarget` directly)
-    /// instead of re-deriving the base/build/print/return sequence inline, so
-    /// there's exactly one place that can forget to print, or print without
-    /// returning a value to tag.
+    /// instead of re-deriving the base/build/print sequence inline, so
+    /// there's exactly one place that can forget to print.
     ///
     /// Returns `None` (silently - a console link is always best-effort) if no
     /// console base URL could be resolved for this target.
@@ -149,13 +145,10 @@ impl ExecutionTarget {
 /// `console_url::*` builder for their entity:
 ///
 /// ```ignore
-/// if let Some(url) = execution::console_link_for_profile(targets, &profile, |b| {
+/// execution::console_link_for_profile(targets, &profile, |b| {
 ///     console_url::alert_url(b, &id)
 /// })
-/// .await
-/// {
-///     render::tag_console_url(&mut val, &url);
-/// }
+/// .await;
 /// ```
 ///
 /// Returns `None` if `profile` has no matching target, or if no console base
@@ -166,32 +159,6 @@ pub async fn console_link_for_profile(
     build: impl FnOnce(&str) -> String,
 ) -> Option<String> {
     find_target(targets, profile)?.console_link(build).await
-}
-
-/// Resolve `profile`'s console link via [`console_link_for_profile`] and, if
-/// one was found, embed it into `val` via `render::tag_console_url`.
-///
-/// Collapses the `console_link_for_profile` + `render::tag_console_url`
-/// idiom that used to be repeated inline at every call site across command
-/// modules that print a "View in Coralogix" link and *only* tag a single
-/// result value with it - which is the overwhelming majority of those call
-/// sites (~100 of them at the time this was extracted). A handful of call
-/// sites still use `console_link_for_profile` directly instead of this
-/// helper, because they need the URL for more than just tagging one value
-/// (e.g. also embedding it in text-mode output) - those are intentionally
-/// left alone.
-///
-/// No-op (silently - a console link is always best-effort) if `profile` has
-/// no matching target, or if no console base URL could be resolved for it.
-pub async fn tag_console_link_for_profile(
-    targets: &[Arc<ExecutionTarget>],
-    profile: &str,
-    val: &mut serde_json::Value,
-    build: impl FnOnce(&str) -> String,
-) {
-    if let Some(url) = console_link_for_profile(targets, profile, build).await {
-        crate::render::tag_console_url(val, &url);
-    }
 }
 
 /// Build a list of `ExecutionTarget`s from a list of resolved configs.

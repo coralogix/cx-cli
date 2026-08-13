@@ -153,7 +153,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -225,11 +225,10 @@ pub async fn run_create(
                 policy.id.as_deref(),
                 &profile,
             );
-            let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
+            let policy_json = policy_to_json(&policy, include_profile, &profile);
+            crate::execution::console_link_for_profile(
                 targets,
                 &profile,
-                &mut policy_json,
                 crate::console_url::tco_url,
             )
             .await;
@@ -280,11 +279,10 @@ pub async fn run_update(
                 policy.id.as_deref(),
                 &profile,
             );
-            let mut policy_json = policy_to_json(&policy, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(
+            let policy_json = policy_to_json(&policy, include_profile, &profile);
+            crate::execution::console_link_for_profile(
                 targets,
                 &profile,
-                &mut policy_json,
                 crate::console_url::tco_url,
             )
             .await;
@@ -352,12 +350,12 @@ pub async fn run_reorder(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Reordered TCO policies in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -395,8 +393,8 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -436,7 +434,7 @@ pub async fn run_settings(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;
@@ -482,12 +480,12 @@ pub async fn run_settings_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated TCO settings in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::tco_url(b)
         })
         .await;

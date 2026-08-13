@@ -140,7 +140,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -195,8 +195,8 @@ pub async fn run_create(
                 integration.id.as_deref(),
                 &profile,
             );
-            let mut val = rg_to_json(&integration, include_profile, &profile);
-            crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+            let val = rg_to_json(&integration, include_profile, &profile);
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::integrations_url(b)
             })
             .await;
@@ -237,12 +237,12 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated integration {id} in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -312,7 +312,7 @@ pub async fn run_definition(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -364,7 +364,7 @@ pub async fn run_deployed(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -408,12 +408,12 @@ pub async fn run_test(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Test completed in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;
@@ -451,7 +451,7 @@ pub async fn run_template(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::integrations_url(b)
         })
         .await;

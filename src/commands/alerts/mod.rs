@@ -93,15 +93,6 @@ pub async fn run_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertDef)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // Unlike the static per-profile "page" links on other list commands,
-        // each alert has its own console URL - so every row gets its own
-        // consoleUrl, not just the first. `console_base` is cached per
-        // target and doesn't print, so resolving it here (once per profile)
-        // is cheap.
-        let console_base = match crate::execution::find_target(targets, &profile) {
-            Some(target) => target.console_base().await,
-            None => None,
-        };
         let matching: Vec<AlertDef> = resp
             .alert_defs
             .into_iter()
@@ -113,10 +104,8 @@ pub async fn run_list(
                 None => true,
             })
             .collect();
-        // Also print the alerts list page link to stderr once per profile -
-        // per-row consoleUrl above is per-alert, but this gives a human a
-        // link to the alerts overview itself. Skip when nothing matched
-        // (post-filter), since there's nothing to view.
+        // Print the alerts list page link to stderr once per profile. Skip
+        // when nothing matched (post-filter), since there's nothing to view.
         if !matching.is_empty() {
             crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::alerts_url(b)
@@ -124,18 +113,7 @@ pub async fn run_list(
             .await;
         }
         for alert in matching {
-            let mut json = alert_to_json(&alert, include_profile, &profile);
-            // Always insert `consoleUrl` - as `null` when this alert has no
-            // link - rather than only inserting it when present, so every
-            // row keeps the same key set. Otherwise a single alert missing
-            // an id/base would make this row's keys diverge from the rest,
-            // silently degrading the whole array's `-o agents` TOON encoding
-            // from its compact tabular form to the verbose expanded one.
-            if let (Some(base), Some(id)) = (&console_base, alert.id.as_deref()) {
-                render::tag_console_url(&mut json, &crate::console_url::alert_url(base, id));
-            } else if let Value::Object(ref mut m) = json {
-                m.insert("consoleUrl".to_string(), Value::Null);
-            }
+            let json = alert_to_json(&alert, include_profile, &profile);
             all_json.push(json);
             all_items.push((profile.clone(), alert));
         }
@@ -211,7 +189,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::alert_url(b, alert_id)
         })
         .await;
@@ -319,17 +297,13 @@ pub async fn run_create(
                 alert.id.as_deref(),
                 &profile,
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = alert.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::alert_url(b, id)
                 })
                 .await;
             }
-            let mut json = alert_to_json(&alert, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut json, url);
-            }
+            let json = alert_to_json(&alert, include_profile, &profile);
             all_results.push(json);
         } else {
             eprintln!(
@@ -631,73 +605,4 @@ pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFor
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn mock_alert(id: Option<&str>) -> AlertDef {
-        AlertDef {
-            id: id.map(ToString::to_string),
-            name: Some("Demo alert".to_string()),
-            description: None,
-            enabled: Some(true),
-            priority: Some("ALERT_DEF_PRIORITY_P3".to_string()),
-            alert_type: Some("ALERT_DEF_TYPE_LOGS_THRESHOLD".to_string()),
-            status: Some("ACTIVE".to_string()),
-            created_time: None,
-            updated_time: None,
-            last_triggered_time: None,
-            alert_def_properties: None,
-        }
-    }
-
-    /// Regression guard for the per-alert `consoleUrl` tagging in
-    /// `run_list`: every alert gets its own console link, but an alert
-    /// missing an `id` (rare, but the API contract allows it) can't be
-    /// linked. If that row simply omits `consoleUrl` while every other row
-    /// has it, the array's key sets diverge, and TOON's `-o agents` encoder
-    /// can no longer use its compact tabular form (one CSV-like line per
-    /// row) - it falls back to the verbose expanded form that repeats every
-    /// key name per row. `run_list` must therefore insert
-    /// `consoleUrl: null` on the id-less row instead of omitting the key.
-    #[test]
-    fn list_agents_output_stays_tabular_when_one_alert_lacks_id() {
-        let base = "https://mock.coralogix.com";
-        let alerts = [
-            mock_alert(Some("a1")),
-            mock_alert(None),
-            mock_alert(Some("a3")),
-        ];
-
-        // Mirrors the row construction in `run_list`'s per-alert loop.
-        let rows: Vec<Value> = alerts
-            .iter()
-            .map(|alert| {
-                let mut json = alert_to_json(alert, false, "mock-profile");
-                if let Some(id) = alert.id.as_deref() {
-                    render::tag_console_url(&mut json, &crate::console_url::alert_url(base, id));
-                } else if let Value::Object(ref mut m) = json {
-                    m.insert("consoleUrl".to_string(), Value::Null);
-                }
-                json
-            })
-            .collect();
-
-        let encoded = toon_encode(&Value::Array(rows)).expect("TOON encoding failed");
-
-        let header = encoded.lines().next().unwrap_or_default();
-        assert!(
-            header.contains('{'),
-            "expected TOON's compact tabular header (e.g. `[3]{{...}}:`), \
-             got expanded form instead - the id-less alert's missing key \
-             broke tabular encoding: {encoded}"
-        );
-        assert!(
-            !encoded.contains("\n  - "),
-            "TOON fell back to per-row expanded form, which repeats every \
-             key name on every row: {encoded}"
-        );
-    }
 }

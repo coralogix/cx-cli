@@ -186,9 +186,8 @@ pub async fn run_create(
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         render::print_created("Created", "custom role", None, resp.id.as_deref(), &profile);
-        let mut console_url: Option<String> = None;
         if let Some(id) = resp.id.as_deref() {
-            console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::iam_role_url(b, id)
             })
             .await;
@@ -198,9 +197,6 @@ pub async fn run_create(
             if let Value::Object(ref mut m) = v {
                 m.insert("profile".to_string(), Value::String(profile.to_string()));
             }
-        }
-        if let Some(url) = &console_url {
-            render::tag_console_url(&mut v, url);
         }
         all_results.push(v);
     }
@@ -238,12 +234,12 @@ pub async fn run_update(
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, val) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
             format!("Updated custom role in profile '{profile}'.").green()
         );
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::console_link_for_profile(targets, &profile, |b| {
             crate::console_url::iam_role_url(b, &id)
         })
         .await;

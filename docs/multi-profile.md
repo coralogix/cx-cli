@@ -42,7 +42,7 @@ Text output adds a `Profile` column to tables for REST commands (alerts, dashboa
 cx logs 'filter $m.severity == ERROR' -p prod -p staging --api-key sk-...
 ```
 
-Instead, store per-profile credentials ahead of time:
+Instead, store per-profile credentials ahead of time (use `--endpoint` for profiles targeting custom / BYOC endpoints):
 
 ```bash
 cx profiles add prod

@@ -21,14 +21,20 @@ fn cx(home: &std::path::Path) -> Command {
 }
 
 fn seed_profile(home: &std::path::Path, name: &str) {
+    seed_profile_with_region(home, name, "eu1");
+}
+
+fn seed_profile_with_region(home: &std::path::Path, name: &str, region: &str) {
     let profiles_dir = home.join(".cx").join("profiles");
     fs::create_dir_all(&profiles_dir).unwrap();
-    let profile_toml = r#"
+    let profile_toml = format!(
+        r#"
 auth = "api_key"
 credential_storage = "file"
 api_key = "fake-key-000"
-region = "eu1"
-"#;
+region = "{region}"
+"#
+    );
     fs::write(profiles_dir.join(format!("{name}.toml")), profile_toml).unwrap();
 }
 
@@ -81,6 +87,115 @@ fn set_default_flag_is_accepted_by_clap() {
     assert!(
         stdout.contains("--set-default"),
         "--set-default should appear in help, got: {stdout}"
+    );
+}
+
+// ── --endpoint flag ──────────────────────────────────────────────────────────
+
+#[test]
+fn add_endpoint_flag_is_accepted_by_clap() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--help"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success(), "--help should exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--endpoint"),
+        "--endpoint should appear in help, got: {stdout}"
+    );
+}
+
+#[test]
+fn add_invalid_endpoint_fails_before_prompting() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "myenv", "--endpoint", "not-a-url"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Invalid endpoint URL"),
+        "should report invalid endpoint, stderr: {stderr}"
+    );
+}
+
+// ── profiles show ────────────────────────────────────────────────────────────
+
+#[test]
+fn show_prints_resolved_endpoint_for_canned_region() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "prod");
+    seed_config(&tmp, "default_profile = \"prod\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "show", "prod"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("https://api.eu1.coralogix.com"),
+        "should print the resolved endpoint, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("fake-key-000"),
+        "must never print credentials, got: {stdout}"
+    );
+}
+
+#[test]
+fn show_prints_custom_endpoint() {
+    let tmp = temp_home();
+    seed_profile_with_region(&tmp, "byoc", "https://api.myenv.example.com");
+    seed_config(&tmp, "default_profile = \"byoc\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "show", "byoc"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("https://api.myenv.example.com"),
+        "should print the custom endpoint, got: {stdout}"
+    );
+}
+
+#[test]
+fn show_defaults_to_default_profile() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "primary");
+    seed_config(&tmp, "default_profile = \"primary\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "show"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("primary"),
+        "should show the default profile, got: {stdout}"
+    );
+}
+
+#[test]
+fn show_nonexistent_profile_fails() {
+    let tmp = temp_home();
+    seed_config(&tmp, "");
+
+    let output = cx(&tmp)
+        .args(["profiles", "show", "ghost"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not found"),
+        "should report not found, stderr: {stderr}"
     );
 }
 

@@ -24,7 +24,7 @@ cx profiles add <name>
 At the prompts:
 
 1. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
-2. **Region** — your Coralogix region (e.g. `eu2`, `us1`). See [Regions](#regions) for the full list.
+2. **Region** — your Coralogix region (e.g. `eu2`, `us1`), or a custom endpoint URL for BYOC / private environments. See [Regions](#regions) and [Custom / BYOC endpoints](#custom--byoc-endpoints).
 3. **Label** — an optional tag to group or identify profiles (e.g. `production`).
 4. **Credential storage** — `file` (default) saves credentials in the profile TOML; `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux).
 
@@ -197,7 +197,32 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 | `ap2` | `https://api.ap2.coralogix.com` |
 | `ap3` | `https://api.ap3.coralogix.com` |
 
-A fully qualified HTTPS URL can be used as a region value for non-standard environments.
+A fully qualified HTTPS URL can be used as a region value for non-standard environments — see below.
+
+## Custom / BYOC endpoints
+
+For BYOC, private-link, or other non-standard deployments whose API endpoint is not in the region list, `cx` accepts a full endpoint URL anywhere a region is accepted:
+
+- **Interactively** — select `Custom endpoint (specify URL)` (API-key auth) or `Custom (specify URL + client ID)` (OAuth) at the Region prompt and enter the URL.
+- **Scripted profile creation** — pass `--endpoint` to skip the region prompt:
+
+  ```sh
+  cx profiles add dev --endpoint https://api.myenv.example.com
+  ```
+
+- **Profile TOML** — set `region` to the URL directly:
+
+  ```toml
+  region = "https://api.myenv.example.com"
+  ```
+
+- **Runtime override / env-only mode** — `--region` and `CX_REGION` also accept a full URL, so headless environments need no profile file at all:
+
+  ```sh
+  CX_API_KEY=... CX_REGION=https://api.myenv.example.com cx logs "source logs | limit 1"
+  ```
+
+The URL must be an absolute `http(s)` URL; trailing slashes are stripped. Every subcommand uses it as the API base URL. Verify which endpoint a profile targets with `cx profiles show <name>`. If the web console is not discoverable via `/identity/whoami`, set `console_url` in the profile TOML to keep "View in Coralogix" links working — see [Console links](#console-links).
 
 ## Console links
 
@@ -232,7 +257,7 @@ Environment variables override profile file values:
 |---|---|
 | `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
-| `CX_REGION` | `region` in profile |
+| `CX_REGION` | `region` in profile (region name or a full endpoint URL) |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_TELEMETRY` | Set to `false`, `no`, `off`, or `0` to disable CLI request metadata |
@@ -290,7 +315,7 @@ The env var accepts `1`, `true`, `yes`, or `on` (case-insensitive).
 
 ## Shell completion and profiles
 
-Profile names discovered in `~/.cx/profiles/*.toml` are offered as tab-completion candidates for the `-p`/`--profile` flag and for the `profiles add`, `profiles delete`, and `profiles set-default` subcommands.
+Profile names discovered in `~/.cx/profiles/*.toml` are offered as tab-completion candidates for the `-p`/`--profile` flag and for the `profiles show`, `profiles add`, `profiles delete`, and `profiles set-default` subcommands.
 
 When using static completions installed with `cx completions install`, profile names are captured at installation time. After adding or deleting a profile, `cx` will print a reminder to run `cx completions refresh`, which regenerates every file registered in `managed_completions`.
 

@@ -27,6 +27,9 @@ default_output_format = "text"
 # region = "eu1"
 # label = "production"
 #
+# For BYOC / private environments, region accepts a full endpoint URL:
+# region = "https://api.myenv.example.com"
+#
 # Optional: override the web console base URL used to build "View in
 # Coralogix" links printed after dashboard/alert/case mutations. By default
 # this is resolved automatically via GET /identity/whoami; only needed when

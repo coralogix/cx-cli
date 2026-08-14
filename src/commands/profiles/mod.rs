@@ -12,9 +12,21 @@ use crate::oauth;
 
 const AUTH_METHODS: &[&str] = &["OAuth (browser login)", "API key (paste manually)"];
 
-const REGIONS: &[&str] = &["us1", "us2", "us3", "eu1", "eu2", "ap1", "ap2", "ap3"];
+/// Region list for API-key mode: canned regions plus a custom-endpoint option
+/// for BYOC / private environments.
+const REGIONS: &[&str] = &[
+    "us1",
+    "us2",
+    "us3",
+    "eu1",
+    "eu2",
+    "ap1",
+    "ap2",
+    "ap3",
+    "Custom endpoint (specify URL)",
+];
 
-/// Region list for OAuth mode: same as REGIONS plus a custom option.
+/// Region list for OAuth mode: same canned regions plus a custom option.
 const OAUTH_REGIONS: &[&str] = &[
     "us1",
     "us2",
@@ -61,6 +73,33 @@ fn hint_completions_refresh() {
              to update static completion scripts."
         );
     }
+}
+
+/// Validate a custom API endpoint: absolute http(s) URL with a host.
+/// Returns the URL with surrounding whitespace and trailing slashes removed.
+fn normalize_endpoint(raw: &str) -> Result<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    let url = url::Url::parse(trimmed)
+        .map_err(|e| anyhow::anyhow!("Invalid endpoint URL '{trimmed}': {e}."))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        anyhow::bail!("Invalid endpoint URL '{trimmed}': scheme must be http or https.");
+    }
+    if url.host_str().is_none() {
+        anyhow::bail!("Invalid endpoint URL '{trimmed}': missing host.");
+    }
+    Ok(trimmed.to_string())
+}
+
+fn prompt_endpoint(prompt: &str) -> Result<String> {
+    let raw = Text::new(prompt)
+        .with_validator(|input: &str| match normalize_endpoint(input) {
+            Ok(_) => Ok(inquire::validator::Validation::Valid),
+            Err(e) => Ok(inquire::validator::Validation::Invalid(
+                e.to_string().into(),
+            )),
+        })
+        .prompt()?;
+    normalize_endpoint(&raw)
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -163,9 +202,56 @@ pub fn run_list() -> Result<()> {
     Ok(())
 }
 
+// ── Show ──────────────────────────────────────────────────────────────────────
+
+pub fn run_show(profile_name: Option<String>) -> Result<()> {
+    let global_config = load_config().unwrap_or_default();
+    let name = profile_name.unwrap_or_else(|| global_config.default_profile.clone());
+
+    let path = profile_file(&name)?;
+    if !path.exists() {
+        anyhow::bail!("Profile '{name}' not found.");
+    }
+    let profile = load_profile(&name)?;
+
+    let auth = match profile.auth {
+        AuthKind::OAuth => "oauth",
+        AuthKind::ApiKey => "api-key",
+    };
+    let storage = match profile.credential_storage {
+        CredentialStorage::File => "file",
+        CredentialStorage::OsStore => "os-store",
+    };
+    let output_fmt = profile
+        .default_output_format
+        .map(|f| f.as_str())
+        .unwrap_or("-");
+    let is_default = if name == global_config.default_profile {
+        "yes"
+    } else {
+        "no"
+    };
+
+    println!("Name:      {name}");
+    println!("Label:     {}", profile.label.as_deref().unwrap_or("-"));
+    println!("Region:    {}", profile.region);
+    println!("Endpoint:  {}", profile.region.api_endpoint());
+    println!("Auth:      {auth}");
+    println!("Storage:   {storage}");
+    println!("Output:    {output_fmt}");
+    println!("Default:   {is_default}");
+
+    Ok(())
+}
+
 // ── Add ───────────────────────────────────────────────────────────────────────
 
-pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<()> {
+pub async fn run_add(
+    profile_name: Option<String>,
+    set_default: bool,
+    endpoint: Option<String>,
+) -> Result<()> {
+    let endpoint = endpoint.as_deref().map(normalize_endpoint).transpose()?;
     let is_first_profile = list_profile_names()?.is_empty();
 
     let name = match profile_name {
@@ -200,9 +286,9 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
     let use_oauth = auth_choice.starts_with("OAuth");
 
     let (mut profile, storage_desc) = if use_oauth {
-        configure_oauth(&name).await?
+        configure_oauth(&name, endpoint.as_deref()).await?
     } else {
-        configure_api_key(&name)?
+        configure_api_key(&name, endpoint.as_deref())?
     };
 
     // ── Common: default output format (per-profile) ────────────────────────────
@@ -346,17 +432,22 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
 
 // ── OAuth configure path ──────────────────────────────────────────────────────
 
-async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
-    // Region / environment selection
-    let region_str = Select::new("Region:", OAUTH_REGIONS.to_vec())
-        .with_starting_cursor(3) // eu2
-        .prompt()?;
+async fn configure_oauth(name: &str, endpoint: Option<&str>) -> Result<(Profile, &'static str)> {
+    // Region / environment selection; a --endpoint flag skips the prompt.
+    let region_str = match endpoint {
+        Some(_) => "Custom",
+        None => Select::new("Region:", OAUTH_REGIONS.to_vec())
+            .with_starting_cursor(3) // eu1
+            .prompt()?,
+    };
 
     let is_custom = region_str.starts_with("Custom");
 
     let (region, base_url, client_id, oauth_client_id_for_profile) = if is_custom {
-        let raw_url = Text::new("Base URL (e.g. https://api.myenv.coralogix.com):").prompt()?;
-        let base_url = raw_url.trim_end_matches('/').to_string();
+        let base_url = match endpoint {
+            Some(url) => url.to_string(),
+            None => prompt_endpoint("Base URL (e.g. https://api.myenv.coralogix.com):")?,
+        };
         let client_id = Text::new("OAuth client ID:").prompt()?;
         let region = Region::Custom(base_url.clone());
         // Store the client ID in the profile for custom environments.
@@ -433,7 +524,7 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
 
 // ── API key configure path ────────────────────────────────────────────────────
 
-fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
+fn configure_api_key(name: &str, endpoint: Option<&str>) -> Result<(Profile, &'static str)> {
     println!(
         "The API key must be a Team Key or a Personal Key.\n  \
          • Team Key:     Data Flow → API Keys → Team Keys\n  \
@@ -445,10 +536,21 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
         .without_confirmation()
         .prompt()?;
 
-    let region_str = Select::new("Region:", REGIONS.to_vec())
-        .with_starting_cursor(2) // eu1
-        .prompt()?;
-    let region: Region = region_str.parse()?;
+    let region = match endpoint {
+        Some(url) => Region::Custom(url.to_string()),
+        None => {
+            let region_str = Select::new("Region:", REGIONS.to_vec())
+                .with_starting_cursor(3) // eu1
+                .prompt()?;
+            if region_str.starts_with("Custom") {
+                Region::Custom(prompt_endpoint(
+                    "API endpoint URL (e.g. https://api.myenv.example.com):",
+                )?)
+            } else {
+                region_str.parse()?
+            }
+        }
+    };
 
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
@@ -521,6 +623,47 @@ mod tests {
                 "OUTPUT_FORMATS is missing canonical variant {:?}; picker cursor would \
                  not preselect it",
                 variant.as_str(),
+            );
+        }
+    }
+
+    /// Every canned picker entry must parse to a known `Region` variant.
+    /// `Region::FromStr` falls back to `Custom` for unrecognised strings, so a
+    /// typo in these lists would silently become a bogus endpoint.
+    #[test]
+    fn every_canned_region_parses_to_a_known_variant() {
+        for entry in REGIONS
+            .iter()
+            .chain(OAUTH_REGIONS.iter())
+            .filter(|r| !r.starts_with("Custom"))
+        {
+            let region: Region = entry.parse().expect("canned region should parse");
+            assert!(
+                !matches!(region, Region::Custom(_)),
+                "picker entry {entry:?} parsed to Region::Custom; \
+                 it would be used verbatim as an endpoint",
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_endpoint_accepts_https_and_trims() {
+        assert_eq!(
+            normalize_endpoint(" https://api.myenv.example.com/ ").unwrap(),
+            "https://api.myenv.example.com"
+        );
+        assert_eq!(
+            normalize_endpoint("http://localhost:8080").unwrap(),
+            "http://localhost:8080"
+        );
+    }
+
+    #[test]
+    fn normalize_endpoint_rejects_invalid_urls() {
+        for bad in ["", "api.myenv.example.com", "ftp://api.myenv.example.com"] {
+            assert!(
+                normalize_endpoint(bad).is_err(),
+                "expected {bad:?} to be rejected"
             );
         }
     }

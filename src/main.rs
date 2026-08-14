@@ -133,7 +133,7 @@ struct Cli {
     )]
     api_key: Option<String>,
 
-    /// Coralogix region (overrides a single profile; incompatible with multiple --profile).
+    /// Coralogix region or full endpoint URL (overrides a single profile; incompatible with multiple --profile).
     #[arg(
         long,
         global = true,
@@ -634,6 +634,12 @@ impl Commands {
 enum ProfilesCmd {
     /// List all configured profiles.
     List,
+    /// Show a profile's configuration, including the resolved API endpoint.
+    Show {
+        /// Profile name to show (defaults to the default profile).
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: Option<String>,
+    },
     /// Add or reconfigure a profile interactively.
     Add {
         /// Profile name to configure (prompted if not provided).
@@ -642,6 +648,10 @@ enum ProfilesCmd {
         /// Set this profile as the default without prompting.
         #[arg(long)]
         set_default: bool,
+        /// Custom API endpoint URL for BYOC / private environments.
+        /// Skips the region prompt.
+        #[arg(long, value_name = "URL")]
+        endpoint: Option<String>,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -2798,9 +2808,12 @@ async fn main() -> Result<()> {
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name, set_default } => {
-                commands::profiles::run_add(name, set_default).await
-            }
+            ProfilesCmd::Show { name } => commands::profiles::run_show(name),
+            ProfilesCmd::Add {
+                name,
+                set_default,
+                endpoint,
+            } => commands::profiles::run_add(name, set_default, endpoint).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -2867,9 +2880,12 @@ async fn main() -> Result<()> {
     if let Commands::Profiles { cmd } = cli.command {
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name, set_default } => {
-                commands::profiles::run_add(name, set_default).await
-            }
+            ProfilesCmd::Show { name } => commands::profiles::run_show(name),
+            ProfilesCmd::Add {
+                name,
+                set_default,
+                endpoint,
+            } => commands::profiles::run_add(name, set_default, endpoint).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };

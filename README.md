@@ -76,6 +76,8 @@ Follow these steps to go from a fresh install to a working query.
     cx profiles add <name>
     ```
 
+    For BYOC / private environments, pass the API endpoint directly instead of picking a region: `cx profiles add <name> --endpoint https://api.myenv.example.com`. See [Custom / BYOC endpoints](docs/configuration.md#custom--byoc-endpoints).
+
 2. Query logs. The positional argument is a DataPrime query:
 
     ```bash
@@ -194,7 +196,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | Command | Purpose |
 |---|---|
 | `cx schema` | Output the full command tree as JSON for agent consumption |
-| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx profiles` | Manage profiles: `list`, `show`, `add`, `delete`, `set-default` |
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
 
@@ -204,7 +206,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 ```
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
     --api-key <API_KEY>      Override the profile API key
-    --region <REGION>        Override the profile region
+    --region <REGION>        Override the profile region (name or full endpoint URL)
 -o, --output <FORMAT>        text | json | toon (default: text)
     --yes                    Skip confirmation prompts for destructive operations
 ```

@@ -43,10 +43,6 @@ pub async fn run_metrics_get(targets: &[Arc<ExecutionTarget>], output: OutputFor
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
         all_results.push(val);
     }
 
@@ -92,10 +88,6 @@ pub async fn run_metrics_create(
             "{}",
             format!("Created metrics archive config in profile '{profile}'.").green()
         );
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
         all_results.push(val);
     }
 
@@ -134,10 +126,6 @@ pub async fn run_metrics_update(
             "{}",
             format!("Updated metrics archive config in profile '{profile}'.").green()
         );
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
         all_results.push(val);
     }
 
@@ -168,10 +156,6 @@ pub async fn run_metrics_enable(targets: &[Arc<ExecutionTarget>]) -> Result<()> 
             "{}",
             format!("Metrics archive enabled in profile '{profile}'.").green()
         );
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
     }
     Ok(())
 }
@@ -191,10 +175,6 @@ pub async fn run_metrics_disable(targets: &[Arc<ExecutionTarget>]) -> Result<()>
             "{}",
             format!("Metrics archive disabled in profile '{profile}'.").green()
         );
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
     }
     Ok(())
 }
@@ -226,10 +206,6 @@ pub async fn run_metrics_validate(
             "{}",
             format!("Validation complete in profile '{profile}'.").green()
         );
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
         all_results.push(val);
     }
 
@@ -266,10 +242,6 @@ pub async fn run_logs_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
         all_results.push(val);
     }
 
@@ -315,10 +287,6 @@ pub async fn run_logs_set(
             "{}",
             format!("Logs archive target set in profile '{profile}'.").green()
         );
-        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::archive_url(b)
-        })
-        .await;
         all_results.push(val);
     }
 

@@ -282,30 +282,6 @@ pub fn olly_chat_url(base: &str, chat_id: &str) -> String {
     format!("{}/olly/chat/{}", trim_base(base), chat_id)
 }
 
-/// Build the console URL for a parsing rule group: `{base}/rules/group/{id}`.
-pub fn parsing_rule_group_url(base: &str, id: &str) -> String {
-    format!("{}/rules/group/{id}", trim_base(base))
-}
-
-/// Build the console URL for an alert suppression rule:
-/// `{base}/suppression-rules?edit={urlencoded id}`.
-pub fn suppression_rule_url(base: &str, id: &str) -> String {
-    let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
-    format!("{}/suppression-rules?edit={encoded}", trim_base(base))
-}
-
-/// Build the console URL for the Archive (metrics + logs) settings page:
-/// `{base}/physical-locations`.
-pub fn archive_url(base: &str) -> String {
-    format!("{}/physical-locations", trim_base(base))
-}
-
-/// Build the console URL for the Recording Rules page:
-/// `{base}/recording-rules`.
-pub fn recording_rules_url(base: &str) -> String {
-    format!("{}/recording-rules", trim_base(base))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

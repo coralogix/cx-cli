@@ -215,7 +215,11 @@ pub async fn run_create(
             &profile,
         );
         if include_profile {
-            render::tag_get_result(&mut resp, &profile);
+            // Create output uses the public `profile` key (list/create
+            // convention, see render.rs), not the get-only `_profile` hint.
+            if let Value::Object(ref mut m) = resp {
+                m.insert("profile".to_string(), Value::String(profile.to_string()));
+            }
         }
         crate::execution::emit_console_link_for_profile(
             targets,

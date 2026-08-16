@@ -30,7 +30,7 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 | `--end` | `now` | End time |
 | `--limit` | `100` | Maximum number of results |
 | `--tier` | `frequent` | Storage tier: `frequent` (hot/recent) or `archive` (cold/historical) |
-| `-o, --output` | `text` | Output format: `text`, `json`, or `agents` |
+| `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
 
 ---
 
@@ -250,8 +250,8 @@ cx logs 'filter $m.severity == ERROR | groupby $m.templateid aggregate any_value
 - Use `groupby` with aggregations instead of fetching all raw logs
 - Filter by time first when dealing with large datasets
 - Use specific filters (application, subsystem) to reduce scan scope
-- For large result sets, use `--output agents` which spills to a temp file automatically:
+- For large result sets, use `--output toon` which spills to a temp file automatically:
 
 ```bash
-cx logs 'filter $m.severity == ERROR' --start now-24h --limit 1000 -o agents
+cx logs 'filter $m.severity == ERROR' --start now-24h --limit 1000 -o toon
 ```

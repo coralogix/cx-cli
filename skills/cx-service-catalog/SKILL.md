@@ -31,7 +31,7 @@ usage, etc.) via the v2 Service Catalog API.
 | `cx service-catalog data <entity-type>` | Aggregated column data across every entity of a type | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation`, `--limit`, `--sort-column`, `--sort-order` |
 | `cx service-catalog entity-data <entity-type> <entity-id>` | Column data for one named entity (drilldown) | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation` |
 
-- All commands are **read-only** and support `-o json` / `-o agents` for
+- All commands are **read-only** and support `-o json` / `-o toon` for
   structured output.
 - **Entity type accepts short forms**: `service`, `database`, `operation`,
   `database-operation`, `jvm`, `jvm-gc`, `k8s-pod`, `transaction` (case-insensitive,
@@ -165,7 +165,7 @@ cx service-catalog data service --start now-1h --end now \
   responses are flat rows suitable for `-o json | jq '.rows'`; `timeseries`
   responses nest datapoints per series and are best consumed as raw JSON rather
   than forced into a table.
-- **Use `-o json` with `jq`** for filtering; use `-o agents` for token-efficient
+- **Use `-o json` with `jq`** for filtering; use `-o toon` for token-efficient
   output in agent contexts.
 - **Multi-profile fan-out** works on every subcommand — repeat `-p <profile>` to
   compare the same entity type/data across accounts; rows and series are tagged

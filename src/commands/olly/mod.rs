@@ -60,13 +60,19 @@ pub async fn run_ask(
         .send_message(&chat_id, message, model, timeout, agent_to_agent_mode)
         .await?;
 
+    // Olly is single-profile only, so unlike other command groups this uses
+    // the resolved target directly rather than looking one up by profile name.
+    target
+        .emit_console_link(|base| crate::console_url::olly_chat_url(base, &chat_id))
+        .await;
+
     // Render based on output format
     match output {
         OutputFormat::Json => {
             let response = interaction_to_json(&interaction, &chat_id);
             render::render_json(&[response])?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let response = interaction_to_json(&interaction, &chat_id);
             let toon = toon_encode(&[response])
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -151,7 +157,7 @@ pub async fn run_artifacts_get(
         OutputFormat::Json => {
             render_artifact_json(&artifact, &processed)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             render_artifact_agents(&artifact, &processed, max_direct, temp_dir)?;
         }
         OutputFormat::Text => {
@@ -336,7 +342,7 @@ pub async fn run_artifacts_list(
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             render::render_json(&response)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             let toon =
                 toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;

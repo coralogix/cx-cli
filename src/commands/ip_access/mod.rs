@@ -44,12 +44,16 @@ pub async fn run_get(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> 
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_ip_access_url(b)
+        })
+        .await;
         all_results.push(val);
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -91,17 +95,22 @@ pub async fn run_create(
                 "{}",
                 format!("Created IP access settings (ID: {id}) in profile '{profile}'.").green()
             );
-            all_results.push(json!({
+            let val = json!({
                 "id": settings.id,
                 "ip_access": settings.ip_access,
                 "enable_coralogix_customer_support_access": settings.enable_coralogix_customer_support_access,
-            }));
+            });
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_ip_access_url(b)
+            })
+            .await;
+            all_results.push(val);
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -135,17 +144,22 @@ pub async fn run_update(
                 "{}",
                 format!("Updated IP access settings in profile '{profile}'.").green()
             );
-            all_results.push(json!({
+            let val = json!({
                 "id": settings.id,
                 "ip_access": settings.ip_access,
                 "enable_coralogix_customer_support_access": settings.enable_coralogix_customer_support_access,
-            }));
+            });
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_ip_access_url(b)
+            })
+            .await;
+            all_results.push(val);
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -168,6 +182,10 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>]) -> Result<()> {
             "{}",
             format!("IP access settings deleted in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::iam_ip_access_url(b)
+        })
+        .await;
     }
     Ok(())
 }

@@ -55,7 +55,7 @@ cx logs 'filter $d.resource.attributes["service.name"]:string == "codex_cli_rs" 
 | aggregate sum(input:number) as totalInput, sum(output:number) as totalOutput, sum(cached:number) as totalCached
 | create totalTokens from totalInput + totalOutput
 | choose totalTokens, totalInput, totalOutput, totalCached' \
-  --start now-7d -o agents
+  --start now-7d -o toon
 ```
 
 ```text
@@ -80,7 +80,7 @@ cx logs 'filter $d.resource.attributes["service.name"]:string == "codex_cli_rs" 
 | create conversation_id from firstNonNull($d.logRecord.attributes["conversation.id"], $d.attributes["conversation.id"])
 | filter conversation_id != null
 | aggregate distinct_count(conversation_id) as uniqueSessions
-| choose uniqueSessions' --start now-7d -o agents
+| choose uniqueSessions' --start now-7d -o toon
 ```
 
 ```text
@@ -162,7 +162,7 @@ Use spans only for `run_turn` latency. Other metrics come from logs.
 cx spans 'filter $l.serviceName == "codex_cli_rs" || $l.serviceName == "codex-app-server"
 | filter $l.operationName == "run_turn"
 | create dur_ms from $m.duration:number / 1000
-| aggregate avg(dur_ms) as avg_ms' --start now-1d -o agents
+| aggregate avg(dur_ms) as avg_ms' --start now-1d -o toon
 ```
 
 ```text

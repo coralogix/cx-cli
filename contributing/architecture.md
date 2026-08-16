@@ -21,8 +21,8 @@ CLI parsing ──> Config resolution ──> Target building ──> Fan-out
 | 3. Target building | `src/execution.rs` | `build_targets()` → `Vec<Arc<ExecutionTarget>>` |
 | 4. Fan-out | `src/execution.rs` | `fan_out(targets, \|t\| async { ... })` |
 | 5. Result merging | `src/execution.rs` or `src/commands/dataprime/mod.rs` | `merge_tagged_results()` / `merge_results()` |
-| 6. Output rendering | Command module | `match output { Text \| Json \| Agents }` |
-| 7. Spilling | `src/spill.rs` | `maybe_spill()` (agents mode, DataPrime only) |
+| 6. Output rendering | Command module | `match output { Text \| Json \| Toon }` |
+| 7. Spilling | `src/spill.rs` | `maybe_spill()` (toon mode, DataPrime only) |
 
 ### Step details
 
@@ -91,7 +91,7 @@ pub async fn run_list(targets, ..., output) -> Result<()> {
     // Render: match on output format
     match output {
         OutputFormat::Json => { /* serde_json::to_string_pretty */ }
-        OutputFormat::Agents => { /* toon_encode */ }
+        OutputFormat::Toon => { /* toon_encode */ }
         OutputFormat::Text => { /* Table::new(rows) */ }
     }
 }
@@ -162,12 +162,12 @@ DataPrime commands use custom text renderers (e.g., `render_log_text`) that prin
 
 Raw API responses pretty-printed via `serde_json::to_string_pretty`. No transformation applied.
 
-### Agents
+### TOON
 
 Token-optimized format for AI consumers:
 
-1. **TOON encoding** -- all agents output uses `toon_format::encode_default()` for compact serialization
-2. **Metadata stripping** (DataPrime only) -- `transform_for_agents()` renames keys (`metadata` -> `$m`, `labels` -> `$l`, `userData` -> `$d`) and removes noisy metadata fields (`branchid`, `priorityclass`, `*TimestampMicros`, etc.)
+1. **TOON encoding** -- all toon output uses `toon_format::encode_default()` for compact serialization
+2. **Metadata stripping** (DataPrime only) -- `transform_for_toon()` renames keys (`metadata` -> `$m`, `labels` -> `$l`, `userData` -> `$d`) and removes noisy metadata fields (`branchid`, `priorityclass`, `*TimestampMicros`, etc.)
 3. **Spilling** (DataPrime non-aggregates only) -- `maybe_spill()` checks serialized size against `max_dataprime_direct_output_size` (default 100 KiB). If exceeded, writes to `cx_results_<hash>.json` in `temp_dir` and prints the path instead.
 
 ## Multi-profile pattern
@@ -282,7 +282,7 @@ src/
 ├── execution.rs         # ExecutionTarget, fan_out(), tag_rows(), merge_tagged_results()
 ├── render.rs            # Shared rendering helpers (render_table, render_json, bool_display, etc.)
 ├── error.rs             # CxError enum
-├── spill.rs             # Agents output spilling + transform_for_agents()
+├── spill.rs             # TOON output spilling + transform_for_toon()
 ├── time.rs              # Relative/absolute timestamp parsing
 ├── tier.rs              # Tier enum (FrequentSearch | Archive)
 ├── oauth.rs             # OAuth 2.0 + OIDC browser login flow

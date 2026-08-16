@@ -19,7 +19,7 @@ Use this skill to discover existing Coralogix dashboards and widgets using seman
 | `cx dashboards catalog -o json` | List all dashboards | - |
 | `cx dashboards get <id> -o json` | Get full dashboard definition | - |
 
-**Output format:** append `-o json` or `-o agents` for machine-readable output.
+**Output format:** append `-o json` or `-o toon` for machine-readable output.
 
 ## When to Use Each Command
 

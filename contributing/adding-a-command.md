@@ -112,7 +112,7 @@ pub async fn run(
 }
 ```
 
-The text renderer signature must be `fn(&MergedResults) -> Result<()>`. The shared pipeline calls it only for `OutputFormat::Text` - JSON and Agents output are handled generically.
+The text renderer signature must be `fn(&MergedResults) -> Result<()>`. The shared pipeline calls it only for `OutputFormat::Text` - JSON and Toon output are handled generically.
 
 **Reference:** `src/commands/logs/mod.rs` - the entire module is ~130 lines.
 
@@ -174,7 +174,7 @@ Commands::YourDomain {
 }
 ```
 
-That's it for a DataPrime command. The shared pipeline handles fan-out, merge, agents output, and spilling.
+That's it for a DataPrime command. The shared pipeline handles fan-out, merge, toon output, and spilling.
 
 ---
 
@@ -340,7 +340,7 @@ pub async fn run_list(
     // 3. Render: match on output format.
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -367,7 +367,7 @@ pub async fn run_list(
 Key patterns to follow:
 - **`include_profile = targets.len() > 1`** - this boolean controls all multi-profile behavior
 - **`render::render_table`** handles the Profile column automatically - pass headers without "Profile", and put the profile name as the first element of each row. The helper conditionally includes/excludes it based on `include_profile`.
-- **Agents output is command-owned** - each command calls `toon_encode` directly after any post-processing it needs
+- **Toon output is command-owned** - each command calls `toon_encode` directly after any post-processing it needs
 - **Fan-out errors are non-fatal** - print to stderr, continue with successful profiles
 - **Status messages go to stderr** - use `eprintln!` so they don't pollute piped output
 
@@ -693,7 +693,7 @@ After building (`cargo build`), do at least one human-in-the-loop pass:
 # DataPrime commands:
 cx your-domain 'filter $d.field == "value"'
 cx your-domain 'filter $d.field == "value"' -o json
-cx your-domain 'filter $d.field == "value"' -o agents
+cx your-domain 'filter $d.field == "value"' -o toon
 
 # REST commands:
 cx your-domain list
@@ -732,7 +732,7 @@ Copy this into your PR description:
 ### Command layer
 - [ ] `src/commands/your_domain/mod.rs` - subcommand runner(s) with fan-out/merge/render
 - [ ] `src/commands/your_domain/mod.rs` - dual row structs for text output (multi-profile + single)
-- [ ] `src/commands/your_domain/mod.rs` - all three output formats handled (Text, Json, Agents)
+- [ ] `src/commands/your_domain/mod.rs` - all three output formats handled (Text, Json, Toon)
 - [ ] `src/commands/mod.rs` - `pub mod your_domain;` registered
 
 ### CLI wiring
@@ -758,6 +758,6 @@ Copy this into your PR description:
 - [ ] `cargo test --test e2e -- --ignored --test-threads=1` passes against the test team
 - [ ] `cargo clippy` clean
 - [ ] `cargo fmt --check` clean
-- [ ] Manual smoke test: text, json, and agents output
+- [ ] Manual smoke test: text, json, and toon output
 - [ ] Manual smoke test: multi-profile (if applicable)
 ```

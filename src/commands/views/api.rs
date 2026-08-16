@@ -33,12 +33,6 @@ pub struct ListViewsResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateViewResponse {
-    pub view: Option<View>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct DeleteViewResponse {}
 
 // --- Folder response types ---
@@ -100,7 +94,7 @@ impl<'a> ViewsApi<'a> {
         self.client.get(&path, &[]).await
     }
 
-    pub async fn create(&self, body: &Value) -> Result<CreateViewResponse> {
+    pub async fn create(&self, body: &Value) -> Result<Value> {
         self.client.post(VIEWS_BASE, body).await
     }
 
@@ -177,13 +171,6 @@ mod tests {
         let resp: ListViewFoldersResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.folders.len(), 1);
         assert_eq!(resp.folders[0].display_name(), "Infra");
-    }
-
-    #[test]
-    fn deserialize_create_response() {
-        let json = json!({ "view": { "id": "v-001", "name": "My View" } });
-        let resp: CreateViewResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.view.unwrap().id.as_deref(), Some("v-001"));
     }
 
     #[test]

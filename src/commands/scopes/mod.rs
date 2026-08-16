@@ -58,6 +58,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, Scope)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the scopes list page link to stderr once per profile. Skip
+        // when there are no scopes, since there's nothing to view.
+        if !resp.scopes.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_scopes_url(b)
+            })
+            .await;
+        }
         for scope in resp.scopes {
             all_json.push(scope_to_json(&scope, include_profile, &profile));
             all_items.push((profile.clone(), scope));
@@ -66,7 +74,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -150,7 +158,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -195,13 +203,20 @@ pub async fn run_create(
                 scope.id.as_deref(),
                 &profile,
             );
-            all_results.push(scope_to_json(&scope, targets.len() > 1, &profile));
+            if let Some(id) = scope.id.as_deref() {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::iam_scope_url(b, id)
+                })
+                .await;
+            }
+            let json = scope_to_json(&scope, targets.len() > 1, &profile);
+            all_results.push(json);
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -234,12 +249,18 @@ pub async fn run_update(
             "{}",
             format!("Updated scope in profile '{profile}'.").green()
         );
+        if let Some(id) = crate::console_url::id_from_json(&val) {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::iam_scope_url(b, &id)
+            })
+            .await;
+        }
         all_results.push(val);
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

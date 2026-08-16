@@ -366,7 +366,7 @@ pub async fn run_query(
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             if all_rows.is_empty() {
                 println!("[]");
                 return Ok(());
@@ -430,7 +430,7 @@ pub async fn run_query_range(
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             if all_rows.is_empty() {
                 println!("[]");
                 return Ok(());
@@ -499,7 +499,7 @@ pub async fn run_search(
         }
 
         match output {
-            OutputFormat::Json | OutputFormat::Agents => {
+            OutputFormat::Json | OutputFormat::Toon => {
                 let json_rows: Vec<Value> = all_results
                     .iter()
                     .map(|(profile, r)| {
@@ -512,7 +512,11 @@ pub async fn run_search(
                         v
                     })
                     .collect();
-                render::render_json(&json_rows)?;
+                if output == OutputFormat::Toon {
+                    render::render_toon(&json_rows)?;
+                } else {
+                    render::render_json(&json_rows)?;
+                }
             }
             OutputFormat::Text => {
                 if all_results.is_empty() {
@@ -571,7 +575,7 @@ pub async fn run_search(
                     .collect::<Vec<_>>(),
             )?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             if all_matches.is_empty() {
                 println!("[]");
                 return Ok(());
@@ -630,7 +634,7 @@ pub async fn run_get_labels(
     }
 
     match output {
-        OutputFormat::Json | OutputFormat::Agents => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let json_rows: Vec<Value> = if include_profile {
                 all_labels
                     .iter()
@@ -642,7 +646,11 @@ pub async fn run_get_labels(
                     .map(|(_, label)| json!({"label": label}))
                     .collect()
             };
-            render::render_json(&json_rows)?;
+            if output == OutputFormat::Toon {
+                render::render_toon(&json_rows)?;
+            } else {
+                render::render_json(&json_rows)?;
+            }
         }
         OutputFormat::Text => {
             if all_labels.is_empty() {

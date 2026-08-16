@@ -146,7 +146,7 @@ struct Cli {
     )]
     region: Option<String>,
 
-    /// Output format: text, json, or agents. Overrides the default set in config.
+    /// Output format: text, json, or toon. Overrides the default set in config.
     #[arg(long, short = 'o', global = true, help_heading = "Global Options")]
     output: Option<OutputFormat>,
 
@@ -157,6 +157,10 @@ struct Cli {
     /// Block all write operations. Useful for safe agent/automation access.
     #[arg(long, global = true, help_heading = "Global Options")]
     read_only: bool,
+
+    /// Suppress "View in Coralogix" console links (stderr line).
+    #[arg(long, global = true, help_heading = "Global Options")]
+    no_console_link: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -2825,6 +2829,9 @@ async fn main() -> Result<()> {
 
     let read_only =
         cli.read_only || safety::env_is_truthy("CX_READ_ONLY") || global_cfg_early.read_only;
+    let no_console_link = cli.no_console_link
+        || safety::env_is_truthy("CX_NO_CONSOLE_LINK")
+        || global_cfg_early.no_console_link;
     if read_only {
         let top = safety::get_top_level_subcommand_name(&matches);
         let is_local = matches!(
@@ -2896,8 +2903,8 @@ async fn main() -> Result<()> {
     }
 
     // Schema command doesn't need API credentials - outputs command tree as JSON.
-    // The _meta.update block is already embedded in the JSON output for agents;
-    // the stderr notice covers TTY human users (or plain text for agents mode).
+    // The _meta.update block is already embedded in the JSON output for toon mode;
+    // the stderr notice covers TTY human users (or plain text for toon mode).
     if let Commands::Schema = cli.command {
         let result = commands::schema::run(Cli::command());
         let output = cli.output.unwrap_or(OutputFormat::Text);
@@ -2988,7 +2995,7 @@ async fn main() -> Result<()> {
     };
 
     let request_metadata = RequestMetadata::from_invocation(&matches, output, &configs, yes);
-    let targets = build_targets(configs, request_metadata)?;
+    let targets = build_targets(configs, request_metadata, no_console_link)?;
     let agent_mode = safety::is_agent_mode();
 
     // Wrap the dispatch in an async block so we can capture its Result and
@@ -4516,8 +4523,8 @@ async fn main() -> Result<()> {
     // Print update notice after command output so it doesn't scroll off.
     // Using a separate result variable (rather than ?) ensures the notice
     // fires even when the command returns an error — same behaviour as `gh`.
-    if output == OutputFormat::Agents {
-        update_check::maybe_print_agents_meta();
+    if output == OutputFormat::Toon {
+        update_check::maybe_print_toon_meta();
     } else {
         update_check::maybe_print_notice(output);
     }

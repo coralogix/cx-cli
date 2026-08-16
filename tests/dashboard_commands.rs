@@ -144,7 +144,7 @@ async fn dashboard_catalog_all_profiles_fail_returns_error() {
 }
 
 #[tokio::test]
-async fn dashboard_catalog_agents_output_succeeds() {
+async fn dashboard_catalog_toon_output_succeeds() {
     let server = MockServer::start().await;
     let body = json!({ "items": [] });
 
@@ -158,7 +158,7 @@ async fn dashboard_catalog_agents_output_succeeds() {
         .await;
 
     let target = common::test_target("test-profile", &server.uri());
-    dashboards::run_catalog(&[target], OutputFormat::Agents)
+    dashboards::run_catalog(&[target], OutputFormat::Toon)
         .await
         .expect("run_catalog with agents (TOON) should succeed");
 }
@@ -286,9 +286,12 @@ async fn dashboard_create_from_stdin_succeeds() {
         .received_requests()
         .await
         .expect("server should record requests");
-    assert_eq!(reqs.len(), 1);
+    let create_req = reqs
+        .iter()
+        .find(|r| r.url.path() == "/mgmt/openapi/5/dashboards/dashboards/v1")
+        .expect("dashboard create request should have been sent");
     let body: serde_json::Value =
-        serde_json::from_slice(&reqs[0].body).expect("request body must be valid JSON");
+        serde_json::from_slice(&create_req.body).expect("request body must be valid JSON");
     assert!(
         body.get("requestId").is_some(),
         "requestId must be injected by run_create"

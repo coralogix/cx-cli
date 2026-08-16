@@ -285,13 +285,15 @@ On failure: show the CLI error verbatim and return to Phase 5. The most common c
 
 The workflow is **not done** until the user has a clickable link to the dashboard. Printing the ID alone forces the user to navigate the Coralogix UI by hand, which defeats the point of automating deployment.
 
-After Phase 8 succeeds, capture the dashboard `id` returned by `cx dashboards create`, build the URL using the region → webapp host mapping in [`references/deploy.md`](references/deploy.md) § "Share the link", and emit the output template below. Render the dashboard **name** as the link text — that's what the user clicks.
+After Phase 8 succeeds, capture the `View in Coralogix: <url>` line that `cx dashboards create` prints to stderr (see [`references/deploy.md`](references/deploy.md) § "Share the link" for when it's omitted) and emit the output template below. Render the dashboard **name** as the link text — that's what the user clicks.
+
+Linking to a dashboard found via `cx dashboards catalog` (rather than one you just created) works differently: `catalog` prints only one link, to the catalog page, not a per-dashboard link. To link to one specific dashboard from that list, build `<base>/dashboards/<dashboard_id>`, where `<base>` is the console URL already seen in a `View in Coralogix: <base>/...` line printed by any `cx dashboards` command this session — never fabricate `<base>` yourself, and never invent it if no such line has been printed yet.
 
 ---
 
 ## Output format for the user
 
-When the webapp host is resolvable (any built-in region, or a `Custom` endpoint that follows the `api.<host>` convention):
+When `cx dashboards create` printed a `View in Coralogix:` link:
 
 ````
 ## Plan
@@ -302,17 +304,17 @@ When the webapp host is resolvable (any built-in region, or a `Custom` endpoint 
 - DataPrime queries verified: <N>/<N>
 
 ## Deployed
-- Dashboard: **[<Name>](https://<region>.app.coralogix.com/#/dashboards/<id>)**
+- Dashboard: **[<Name>](<url from the View in Coralogix line>)**
 - ID: `<id>`
 - Folder: `<folder name or "root">`
 - Profile: `<cx profile>`
 
-Open it: [<Name>](https://<region>.app.coralogix.com/#/dashboards/<id>)
+Open it: [<Name>](<url from the View in Coralogix line>)
 
 Adjust filter values (e.g. `account_id`) after opening it.
 ````
 
-When the webapp host **cannot** be derived (custom endpoint that doesn't match `api.<host>`), omit the link entirely — do not invent a URL. Use this template instead:
+When `cx dashboards create` did **not** print a `View in Coralogix:` line (no console link could be resolved for the profile and no `console_url` override configured), omit the link entirely — do not invent a URL. Use this template instead:
 
 ````
 ## Plan

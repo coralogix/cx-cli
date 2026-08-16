@@ -41,6 +41,21 @@ fn folder_to_json(folder: &ViewFolder, include_profile: bool, profile: &str) -> 
     v
 }
 
+/// Extract a view ID from a create response, trying the shapes the API has
+/// been observed to return: nested `view.id`, or a bare top-level `id`. IDs
+/// may come back as a JSON string or number. Returns `None` when the
+/// response carried no ID so callers can flag that rather than fabricate one.
+fn view_id_from_response(resp: &Value) -> Option<String> {
+    fn at(v: &Value, pointer: &str) -> Option<String> {
+        match v.pointer(pointer)? {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }
+    at(resp, "/view/id").or_else(|| at(resp, "/id"))
+}
+
 fn read_from_file(path: &str) -> Result<Value> {
     let raw = if path == "-" {
         eprintln!("{}", "Reading definition from stdin...".dimmed());
@@ -68,6 +83,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, View)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        // Print the Explore page link to stderr once per profile. Skip
+        // when there are no views, since there's nothing to view.
+        if !resp.views.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::views_url(b)
+            })
+            .await;
+        }
         for view in resp.views {
             all_json.push(view_to_json(&view, include_profile, &profile));
             all_items.push((profile.clone(), view));
@@ -75,7 +98,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     }
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -124,11 +147,15 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::view_url(b, &id)
+        })
+        .await;
         all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -151,6 +178,11 @@ pub async fn run_create(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    let name = body
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<unnamed>")
+        .to_string();
     eprintln!("{}", "Creating view...".dimmed());
     let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| {
@@ -162,22 +194,29 @@ pub async fn run_create(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(view) = resp.view {
-            eprintln!(
-                "{}",
-                format!(
-                    "Created view '{}' in profile '{profile}'.",
-                    view.display_name()
-                )
-                .green()
-            );
-            all_results.push(view_to_json(&view, include_profile, &profile));
+    for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
+        let created_id = view_id_from_response(&resp);
+        render::print_created(
+            "Created",
+            "view",
+            Some(&name),
+            created_id.as_deref(),
+            &profile,
+        );
+        if let Some(id) = &created_id {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::view_url(b, id)
+            })
+            .await;
         }
+        if include_profile {
+            render::tag_get_result(&mut resp, &profile);
+        }
+        all_results.push(resp);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -211,11 +250,15 @@ pub async fn run_update(
             "{}",
             format!("Updated view in profile '{profile}'.").green()
         );
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::view_url(b, &id)
+        })
+        .await;
         all_results.push(val);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -269,7 +312,7 @@ pub async fn run_folders_list(
     }
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -321,7 +364,7 @@ pub async fn run_folders_get(
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -370,7 +413,7 @@ pub async fn run_folders_create(
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -408,7 +451,7 @@ pub async fn run_folders_update(
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -437,4 +480,34 @@ pub async fn run_folders_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> R
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_id_from_response_reads_wrapped_shape() {
+        let resp = json!({ "view": { "id": "v-001", "name": "My View" } });
+        assert_eq!(view_id_from_response(&resp).as_deref(), Some("v-001"));
+    }
+
+    #[test]
+    fn view_id_from_response_reads_bare_shape() {
+        // Some deployments return the created view directly, with no `view` envelope.
+        let resp = json!({ "id": "v-002", "name": "My View" });
+        assert_eq!(view_id_from_response(&resp).as_deref(), Some("v-002"));
+    }
+
+    #[test]
+    fn view_id_from_response_reads_numeric_id() {
+        let resp = json!({ "view": { "id": 42 } });
+        assert_eq!(view_id_from_response(&resp).as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn view_id_from_response_none_when_id_absent() {
+        let resp = json!({});
+        assert_eq!(view_id_from_response(&resp), None);
+    }
 }

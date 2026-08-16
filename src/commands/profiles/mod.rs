@@ -46,7 +46,7 @@ enum RegionChoice {
     Custom { base_url: String },
 }
 
-const OUTPUT_FORMATS: &[&str] = &["text", "json", "agents"];
+const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
 /// Storage backend choices presented to the user. The first element is the
 /// label shown in the prompt; the second is the variant it maps to. Order
@@ -303,7 +303,7 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
         .prompt()?;
     profile.default_output_format = Some(match format_str {
         "json" => OutputFormat::Json,
-        "agents" => OutputFormat::Agents,
+        "toon" => OutputFormat::Toon,
         _ => OutputFormat::Text,
     });
 
@@ -507,6 +507,9 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
         oauth_tokens,
         default_output_format: None,
         default_tier: None,
+        console_url: None,
+        cached_console_url: None,
+        cached_console_url_at: None,
     };
 
     Ok((profile, storage_desc))
@@ -554,6 +557,9 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 oauth_tokens: None,
                 default_output_format: None,
                 default_tier: None,
+                console_url: None,
+                cached_console_url: None,
+                cached_console_url_at: None,
             };
             (profile, "OS credential store")
         }
@@ -571,10 +577,35 @@ fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
                 oauth_tokens: None,
                 default_output_format: None,
                 default_tier: None,
+                console_url: None,
+                cached_console_url: None,
+                cached_console_url_at: None,
             };
             (profile, "profile file")
         }
     };
 
     Ok((profile, storage_desc))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::ValueEnum;
+
+    /// The interactive picker seeds its cursor by matching `OutputFormat::as_str()`
+    /// against `OUTPUT_FORMATS`. If a canonical variant string is missing from the
+    /// list, the cursor silently falls back to index 0 instead of the user's current
+    /// setting (this regressed when `Agents`/`agents` was renamed to `Toon`/`toon`).
+    #[test]
+    fn every_output_format_is_selectable_in_picker() {
+        for variant in OutputFormat::value_variants() {
+            assert!(
+                OUTPUT_FORMATS.contains(&variant.as_str()),
+                "OUTPUT_FORMATS is missing canonical variant {:?}; picker cursor would \
+                 not preselect it",
+                variant.as_str(),
+            );
+        }
+    }
 }

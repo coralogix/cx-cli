@@ -27,7 +27,7 @@ Use this skill to list, inspect, create, delete, enable, and disable Coralogix a
 | `cx alerts suppression-rules update` | Update a suppression rule | `--from-file <path>` |
 | `cx alerts suppression-rules delete <id>` | Delete a suppression rule | - |
 
-**Output format:** append `-o json` or `-o agents` to `list`, `get`, and `create` commands for machine-readable output.
+**Output format:** append `-o json` or `-o toon` to `list`, `get`, and `create` commands for machine-readable output.
 
 **Multi-profile:** use `-p <profile>` (repeatable) to target multiple profiles simultaneously.
 
@@ -211,6 +211,12 @@ cx alerts suppression-rules create --from-file suppression-rule.json
 - **Use `--from-file -`** to pipe JSON from stdin when constructing alerts programmatically
 - **Verify after create** - always list or get the alert after creation to confirm
 - **Disable, don't delete** - prefer disabling alerts over deletion for auditability
+- **Link to a specific alert** - `cx alerts list` prints only one "View in
+  Coralogix" link, to the alerts overview page, not a per-alert link. To
+  link a user to one specific alert, build `<base>/alerts/<alert_id>`,
+  where `<base>` is the console URL already seen in a `View in Coralogix:
+  <base>/...` line printed by any `cx alerts` command this session - never
+  fabricate `<base>` yourself.
 
 ---
 

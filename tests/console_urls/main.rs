@@ -3433,7 +3433,7 @@ async fn api_keys_list_prints_console_link() {
 }
 
 #[tokio::test]
-async fn api_keys_list_empty_prints_no_console_link() {
+async fn api_keys_list_empty_still_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list/all"))
@@ -3458,8 +3458,77 @@ async fn api_keys_list_empty_prints_no_console_link() {
     assert!(output.status.success(), "{:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !stderr.contains("View in Coralogix:"),
-        "stderr unexpectedly contained a console link for an empty key list: {stderr}"
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link for an empty key list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn api_keys_admin_list_prints_console_link() {
+    let server = MockServer::start().await;
+    // `admin list` hits the bare collection route (get_team_members_keys).
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "keys": [{
+                "apiKey": { "id": "key-1", "keyName": "Demo Key", "isActive": true },
+                "permissions": [],
+                "presets": []
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "admin", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn api_keys_admin_list_empty_still_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "admin", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link for an empty key list: {stderr}"
     );
 }
 

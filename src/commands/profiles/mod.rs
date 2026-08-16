@@ -78,9 +78,28 @@ fn select_credential_storage(prompt: &str, help_message: &str) -> Result<Credent
 fn select_region_interactive() -> Result<RegionChoice> {
     let choice = Select::new("Region:", REGION_OPTIONS.to_vec())
         .with_starting_cursor(REGION_DEFAULT_CURSOR)
-        .with_help_message(
-            "Type to filter. Don't know your region? Choose \"Paste a Coralogix URL\".",
-        )
+        .with_help_message("Type to filter, or paste your Coralogix URL to auto-detect the region.")
+        // Custom scorer: when the typed/pasted text is a recognizable Coralogix
+        // URL, surface only the derived region option; otherwise fall back to the
+        // default fuzzy match (which a full URL wouldn't hit on its own).
+        .with_scorer(&|input, option, string_value, idx| {
+            match region_from_url(input) {
+                RegionMatch::Known(region) => {
+                    (region.to_string() == string_value).then_some(i64::MAX)
+                }
+                RegionMatch::Unresolved => {
+                    // A pasted-but-unrecognized URL (BYOC / private-link): keep the
+                    // escape hatches reachable instead of showing an empty list.
+                    if input.contains("://")
+                        && (string_value == PASTE_URL_OPTION
+                            || string_value == CUSTOM_ENDPOINT_OPTION)
+                    {
+                        return Some(0);
+                    }
+                    (Select::<&str>::DEFAULT_SCORER)(input, option, string_value, idx)
+                }
+            }
+        })
         .prompt()?;
 
     if choice == PASTE_URL_OPTION {

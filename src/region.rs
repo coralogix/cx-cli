@@ -35,59 +35,111 @@ pub enum RegionMatch {
 /// `eu2.coralogix.com`, `cx498.coralogix.com`) are tested before the bare
 /// `coralogix.com` catch-all that identifies EU1.
 ///
-/// Suffixes are matched against the URL host after a leading `api.` is stripped,
-/// so both the app hostname (`<team>.app.<suffix>`) and the API hostname
-/// (`api.<region>.coralogix.com`) resolve to the same region.
-const REGION_DOMAINS: &[(&str, &str)] = &[
-    // Region-specific domains (must precede the bare coralogix.com fallback).
-    ("us1.coralogix.com", "us1"),
-    ("cx498.coralogix.com", "us2"), // US2 app domain (quirky: segment != region)
-    ("us2.coralogix.com", "us2"),   // US2 API host
-    ("us3.coralogix.com", "us3"),
-    ("eu2.coralogix.com", "eu2"),
-    ("ap3.coralogix.com", "ap3"),
-    ("ap1.coralogix.com", "ap1"), // AP1 API host
-    ("ap2.coralogix.com", "ap2"), // AP2 API host
-    ("eu1.coralogix.com", "eu1"), // EU1 API host
-    // Distinct-TLD app domains.
+/// Known Coralogix **cluster labels** — the segment that sits immediately before
+/// the base domain in `<team>.app.<cluster>.coralogix.com` and in the API host
+/// `api.<cluster>.coralogix.com`. Only these are recognised; an unknown segment
+/// (a typo like `eua2`, or a private cluster) resolves to [`RegionMatch::Unresolved`]
+/// rather than being mistaken for the default region.
+///
+/// Note `cx498` is US2's quirky app-domain cluster (segment != region name).
+const CLUSTER_REGIONS: &[(&str, &str)] = &[
+    ("us1", "us1"),
+    ("us2", "us2"),
+    ("us3", "us3"),
+    ("eu1", "eu1"),
+    ("eu2", "eu2"),
+    ("ap1", "ap1"),
+    ("ap2", "ap2"),
+    ("ap3", "ap3"),
+    ("cx498", "us2"),
+    ("stg1", "stg1"),
+];
+
+/// Distinct-TLD app domains where the domain itself determines the region — there
+/// is no per-region cluster label (e.g. `<team>.app.coralogix.us` is always US1).
+const TLD_REGIONS: &[(&str, &str)] = &[
     ("coralogix.us", "us1"),
     ("coralogix.in", "ap1"),
     ("coralogixsg.com", "ap2"),
-    // Staging.
-    ("coralogix.net", "stg1"),
-    // Bare catch-all: `<team>.coralogix.com` is EU1's app domain. Kept last so
-    // it only matches when no region-specific suffix above did.
-    ("coralogix.com", "eu1"),
 ];
+
+/// Cluster-bearing base domains and the region used when no cluster label is
+/// present (the bare `<team>.coralogix.com` / `<team>.app.coralogix.com` form,
+/// which is EU1; `coralogix.net` is staging).
+const BASE_DOMAINS: &[(&str, &str)] = &[("coralogix.com", "eu1"), ("coralogix.net", "stg1")];
 
 /// Parse `input` as a Coralogix URL and resolve its [`Region`].
 ///
 /// Accepts URLs with or without a scheme (`https://` is assumed when absent),
-/// with any path / query / port. Matching is host-only, case-insensitive, and a
+/// with any path / query / port. Matching is host-only and case-insensitive; a
 /// leading `api.` label is stripped so API hosts resolve identically to app
 /// hosts.
 ///
 /// Returns [`RegionMatch::Unresolved`] for hosts that are not a known Coralogix
-/// domain — including coralogix-shaped-but-unknown clusters — so the caller can
-/// fall back to manual entry rather than guess a wrong endpoint.
+/// domain — **including coralogix-shaped hosts whose cluster label is unknown**
+/// (e.g. `<team>.app.eua2.coralogix.com`) — so the caller falls back to manual
+/// entry rather than silently picking the wrong region.
 pub fn region_from_url(input: &str) -> RegionMatch {
     let Some(host) = extract_host(input) else {
         return RegionMatch::Unresolved;
     };
     let host = host.to_ascii_lowercase();
-    // Strip a leading `api.` so `api.eu2.coralogix.com` matches `eu2.coralogix.com`.
+    // Strip a leading `api.` so `api.eu2.coralogix.com` reads like `eu2.coralogix.com`.
     let host = host.strip_prefix("api.").unwrap_or(&host);
 
-    for (suffix, region_name) in REGION_DOMAINS {
+    match region_for_host(host) {
+        Some(region) => RegionMatch::Known(region),
+        None => RegionMatch::Unresolved,
+    }
+}
+
+/// Resolve a normalised host (lowercase, no leading `api.`) to a [`Region`].
+fn region_for_host(host: &str) -> Option<Region> {
+    // 1. Distinct-TLD domains — the TLD alone fixes the region.
+    for (suffix, region) in TLD_REGIONS {
         if host_matches_suffix(host, suffix) {
-            // Every table entry names a valid region short-name, so this parse
-            // is infallible for known regions.
-            if let Ok(region) = region_name.parse::<Region>() {
-                return RegionMatch::Known(region);
-            }
+            return region.parse().ok();
         }
     }
-    RegionMatch::Unresolved
+
+    // 2. Cluster-bearing base domains (coralogix.com / coralogix.net).
+    for (base, default_region) in BASE_DOMAINS {
+        let Some(prefix) = host.strip_suffix(base) else {
+            continue;
+        };
+        // `strip_suffix` on a non-boundary match (e.g. `evilcoralogix.com`)
+        // leaves a prefix not ending in '.'; reject those.
+        let prefix = match prefix {
+            "" => "", // bare base domain, e.g. `coralogix.com`
+            p if p.ends_with('.') => p.trim_end_matches('.'),
+            _ => continue, // not a dot-boundary match → lookalike domain
+        };
+
+        if prefix.is_empty() {
+            // Bare `coralogix.com` with no team/cluster → default region.
+            return default_region.parse().ok();
+        }
+
+        // The cluster label is the last label before the base domain.
+        let cluster = prefix.rsplit('.').next().unwrap_or(prefix);
+
+        if let Some((_, region)) = CLUSTER_REGIONS.iter().find(|(c, _)| *c == cluster) {
+            return region.parse().ok();
+        }
+
+        // No cluster label present — `<team>.app.coralogix.com` or
+        // `<team>.coralogix.com` — is the default region (EU1 / stg1).
+        let label_count = prefix.split('.').count();
+        if cluster == "app" || label_count == 1 {
+            return default_region.parse().ok();
+        }
+
+        // A cluster label IS present but is not one we know (typo / private
+        // cluster) → unresolved, so we never guess the default region.
+        return None;
+    }
+
+    None
 }
 
 /// Resolve a `--region` argument value that may be a short-name, a full custom
@@ -254,6 +306,25 @@ mod tests {
     #[test]
     fn byoc_custom_domain_unresolved() {
         unresolved("https://coralogix.mycompany.internal");
+    }
+
+    /// An unknown cluster label (here a typo of `eu2`) must NOT fall through to
+    /// the EU1 default — that would silently target the wrong region.
+    #[test]
+    fn unknown_cluster_label_is_unresolved() {
+        unresolved("https://c4c.app.eua2.coralogix.com/olly/chat/abc-123");
+    }
+
+    /// `<team>.app.coralogix.com` has no cluster label → EU1.
+    #[test]
+    fn app_url_eu1_with_app_label() {
+        known("https://myteam.app.coralogix.com", "eu1");
+    }
+
+    /// A private/unknown cluster on the staging base domain is also unresolved.
+    #[test]
+    fn unknown_cluster_on_net_is_unresolved() {
+        unresolved("https://team.app.wat.coralogix.net");
     }
 
     #[test]

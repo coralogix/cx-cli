@@ -250,8 +250,9 @@ fn parse_region_flag(raw: &str) -> Result<Region> {
 /// Resolve the `--url` / `--region` flags into a [`RegionChoice`], if either
 /// was supplied. Validation happens eagerly so a bad flag value fails before
 /// any prompting starts. A `--url` that doesn't map to a picker-listed region
-/// (BYOC / private link / staging) is used as a custom API endpoint — the user
-/// supplied it explicitly, so this is not an invented value.
+/// (BYOC / private link / staging) is used **verbatim** as a custom API
+/// endpoint (trimmed, trailing slash stripped) — the customer supplied it
+/// explicitly, so we never rewrite it, e.g. by inventing an `https://` scheme.
 fn resolve_region_flags(url: Option<&str>, region: Option<&str>) -> Result<Option<RegionChoice>> {
     if let Some(raw) = region {
         return Ok(Some(RegionChoice::Known(parse_region_flag(raw)?)));
@@ -267,18 +268,17 @@ fn resolve_region_flags(url: Option<&str>, region: Option<&str>) -> Result<Optio
             println!("Detected region: {region}");
             Ok(Some(RegionChoice::Known(region)))
         }
-        _ => match custom_base_url_from(raw) {
-            Some(base_url) => {
-                println!(
-                    "Couldn't map '{raw}' to a known region — using it as a custom API endpoint."
+        _ => {
+            if crate::region::extract_host(raw).is_none() {
+                anyhow::bail!(
+                    "'--url {raw}' is not a valid URL — pass your Coralogix URL \
+                     (e.g. https://myteam.app.eu2.coralogix.com) or use --region"
                 );
-                Ok(Some(RegionChoice::Custom { base_url }))
             }
-            None => anyhow::bail!(
-                "'--url {raw}' is not a valid URL — pass your Coralogix URL \
-                 (e.g. https://myteam.app.eu2.coralogix.com) or use --region"
-            ),
-        },
+            println!("Couldn't map '{raw}' to a known region — using it as a custom API endpoint.");
+            let base_url = raw.trim().trim_end_matches('/').to_string();
+            Ok(Some(RegionChoice::Custom { base_url }))
+        }
     }
 }
 
@@ -965,6 +965,24 @@ mod tests {
             err.to_string().contains("not a valid URL"),
             "error should say the URL is invalid, got: {err}"
         );
+    }
+
+    /// A customer-supplied `--url` is stored exactly as typed (modulo trim and
+    /// trailing slash) — we never rewrite it, e.g. by inventing an `https://`
+    /// scheme the customer didn't ask for.
+    #[test]
+    fn url_flag_schemeless_host_is_stored_verbatim() {
+        let choice = resolve_region_flags(Some("api.myenv.internal"), None)
+            .expect("host-bearing input")
+            .expect("URL flag should produce a choice");
+        match choice {
+            RegionChoice::Custom { base_url } => {
+                assert_eq!(base_url, "api.myenv.internal")
+            }
+            RegionChoice::Known(region) => {
+                panic!("unknown host must not resolve to a known region {region}")
+            }
+        }
     }
 
     /// A `--url` for a recognised but unlisted region (staging `stg1`, no OAuth

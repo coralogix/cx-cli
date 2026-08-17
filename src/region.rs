@@ -11,9 +11,10 @@
 //! host. US2's app domain is `<team>.app.cx498.coralogix.com`, but its API host
 //! is `api.us2.coralogix.com` — `cx498 != us2`. So we cannot construct an API
 //! endpoint by string-munging an arbitrary URL; we can only recognise the
-//! *known* domains in [`REGION_DOMAINS`]. Anything else is [`RegionMatch::Unresolved`],
-//! which callers handle by falling back to manual region / endpoint entry
-//! (BYOC, private-link, custom domains).
+//! *known* domains in [`CLUSTER_REGIONS`], [`TLD_REGIONS`] and
+//! [`BASE_DOMAINS`]. Anything else is [`RegionMatch::Unresolved`], which
+//! callers handle by falling back to manual region / endpoint entry (BYOC,
+//! private-link, custom domains).
 
 use crate::config::Region;
 
@@ -28,45 +29,42 @@ pub enum RegionMatch {
     Unresolved,
 }
 
-/// Known Coralogix app/API domain suffixes mapped to their region short-name.
-///
-/// Ordered **most-specific first**: the matcher walks this list in order and
-/// takes the first host-suffix hit, so region-specific domains (e.g.
-/// `eu2.coralogix.com`, `cx498.coralogix.com`) are tested before the bare
-/// `coralogix.com` catch-all that identifies EU1.
-///
 /// Known Coralogix **cluster labels** — the segment that sits immediately before
 /// the base domain in `<team>.app.<cluster>.coralogix.com` and in the API host
-/// `api.<cluster>.coralogix.com`. Only these are recognised; an unknown segment
-/// (a typo like `eua2`, or a private cluster) resolves to [`RegionMatch::Unresolved`]
-/// rather than being mistaken for the default region.
+/// `api.<cluster>.coralogix.com` — mapped to their [`Region`]. Only these are
+/// recognised; an unknown segment (a typo like `eua2`, or a private cluster)
+/// resolves to [`RegionMatch::Unresolved`] rather than being mistaken for the
+/// default region.
 ///
 /// Note `cx498` is US2's quirky app-domain cluster (segment != region name).
-const CLUSTER_REGIONS: &[(&str, &str)] = &[
-    ("us1", "us1"),
-    ("us2", "us2"),
-    ("us3", "us3"),
-    ("eu1", "eu1"),
-    ("eu2", "eu2"),
-    ("ap1", "ap1"),
-    ("ap2", "ap2"),
-    ("ap3", "ap3"),
-    ("cx498", "us2"),
-    ("stg1", "stg1"),
+const CLUSTER_REGIONS: &[(&str, Region)] = &[
+    ("us1", Region::Us1),
+    ("us2", Region::Us2),
+    ("us3", Region::Us3),
+    ("eu1", Region::Eu1),
+    ("eu2", Region::Eu2),
+    ("ap1", Region::Ap1),
+    ("ap2", Region::Ap2),
+    ("ap3", Region::Ap3),
+    ("cx498", Region::Us2),
+    ("stg1", Region::Stg1),
 ];
 
 /// Distinct-TLD app domains where the domain itself determines the region — there
 /// is no per-region cluster label (e.g. `<team>.app.coralogix.us` is always US1).
-const TLD_REGIONS: &[(&str, &str)] = &[
-    ("coralogix.us", "us1"),
-    ("coralogix.in", "ap1"),
-    ("coralogixsg.com", "ap2"),
+const TLD_REGIONS: &[(&str, Region)] = &[
+    ("coralogix.us", Region::Us1),
+    ("coralogix.in", Region::Ap1),
+    ("coralogixsg.com", Region::Ap2),
 ];
 
 /// Cluster-bearing base domains and the region used when no cluster label is
 /// present (the bare `<team>.coralogix.com` / `<team>.app.coralogix.com` form,
 /// which is EU1; `coralogix.net` is staging).
-const BASE_DOMAINS: &[(&str, &str)] = &[("coralogix.com", "eu1"), ("coralogix.net", "stg1")];
+const BASE_DOMAINS: &[(&str, Region)] = &[
+    ("coralogix.com", Region::Eu1),
+    ("coralogix.net", Region::Stg1),
+];
 
 /// Parse `input` as a Coralogix URL and resolve its [`Region`].
 ///
@@ -85,20 +83,27 @@ pub fn region_from_url(input: &str) -> RegionMatch {
     };
     let host = host.to_ascii_lowercase();
     // Strip a leading `api.` so `api.eu2.coralogix.com` reads like `eu2.coralogix.com`.
-    let host = host.strip_prefix("api.").unwrap_or(&host);
+    let stripped = host.strip_prefix("api.");
+    let is_api_host = stripped.is_some();
+    let host = stripped.unwrap_or(&host);
 
-    match region_for_host(host) {
+    match region_for_host(host, is_api_host) {
         Some(region) => RegionMatch::Known(region),
         None => RegionMatch::Unresolved,
     }
 }
 
 /// Resolve a normalised host (lowercase, no leading `api.`) to a [`Region`].
-fn region_for_host(host: &str) -> Option<Region> {
+///
+/// `is_api_host` records that a leading `api.` label was stripped: in that
+/// form every remaining left-hand label is a *cluster* label, never a team
+/// name, so an unknown label must stay unresolved instead of falling back to
+/// the base domain's default region.
+fn region_for_host(host: &str, is_api_host: bool) -> Option<Region> {
     // 1. Distinct-TLD domains — the TLD alone fixes the region.
     for (suffix, region) in TLD_REGIONS {
         if host_matches_suffix(host, suffix) {
-            return region.parse().ok();
+            return Some(region.clone());
         }
     }
 
@@ -117,21 +122,24 @@ fn region_for_host(host: &str) -> Option<Region> {
 
         if prefix.is_empty() {
             // Bare `coralogix.com` with no team/cluster → default region.
-            return default_region.parse().ok();
+            return Some(default_region.clone());
         }
 
         // The cluster label is the last label before the base domain.
         let cluster = prefix.rsplit('.').next().unwrap_or(prefix);
 
         if let Some((_, region)) = CLUSTER_REGIONS.iter().find(|(c, _)| *c == cluster) {
-            return region.parse().ok();
+            return Some(region.clone());
         }
 
         // No cluster label present — `<team>.app.coralogix.com` or
-        // `<team>.coralogix.com` — is the default region (EU1 / stg1).
+        // `<team>.coralogix.com` — is the default region (EU1 / stg1). This
+        // never applies to API hosts: in `api.<label>.<base>` the label is a
+        // cluster, not a team, so `api.mycluster.coralogix.com` (BYOC /
+        // private cluster) must stay unresolved rather than become EU1.
         let label_count = prefix.split('.').count();
-        if cluster == "app" || label_count == 1 {
-            return default_region.parse().ok();
+        if !is_api_host && (cluster == "app" || label_count == 1) {
+            return Some(default_region.clone());
         }
 
         // A cluster label IS present but is not one we know (typo / private
@@ -146,17 +154,88 @@ fn region_for_host(host: &str) -> Option<Region> {
 /// endpoint URL, or a Coralogix app/API URL.
 ///
 /// Resolution order:
-///   1. If the value is a recognised Coralogix URL, use the derived region.
+///   1. If the value is a recognised Coralogix *app* URL (what users paste
+///      from the browser), or is exactly a canonical API endpoint, use the
+///      derived region.
 ///   2. Otherwise fall back to [`Region::from_str`]: a known short-name maps to
 ///      that region; anything else becomes a [`Region::Custom`] endpoint,
 ///      preserving the existing BYOC override behaviour.
+///
+/// Endpoint-shaped values that carry information a derived region would lose —
+/// an explicit port, a path, a non-https scheme, or an alternate API host such
+/// as `ng-api-http.eu2.coralogix.com` — are deliberately **not** coerced to the
+/// canonical endpoint: they stay [`Region::Custom`] and are used verbatim,
+/// exactly as before URL derivation existed.
 pub fn parse_region_arg(s: &str) -> Region {
     if let RegionMatch::Known(region) = region_from_url(s) {
-        return region;
+        if is_app_style_input(s) || is_canonical_endpoint(s, &region) {
+            return region;
+        }
     }
-    // Infallible: Region::from_str maps unknown values to Region::Custom.
-    s.parse::<Region>()
-        .unwrap_or_else(|_| Region::Custom(s.to_string()))
+    // Region::from_str is infallible: unknown values become Region::Custom.
+    s.parse::<Region>().expect("Region::from_str is infallible")
+}
+
+/// True when `input`'s host is app-shaped — a URL a user would paste from the
+/// browser rather than an endpoint override: `<team>.app.<cluster>.<base>`,
+/// `<team>.app.<base>`, EU1's bare `<team>.<base>`, or a distinct-TLD app
+/// domain. API-endpoint-shaped hosts (`api.*`, gateway hosts like
+/// `ng-api-http.<cluster>.<base>`) are not app-style.
+fn is_app_style_input(input: &str) -> bool {
+    let Some(host) = extract_host(input) else {
+        return false;
+    };
+    let host = host.to_ascii_lowercase();
+
+    // Distinct-TLD domains exist only as app domains.
+    if TLD_REGIONS
+        .iter()
+        .any(|(suffix, _)| host_matches_suffix(&host, suffix))
+    {
+        return true;
+    }
+
+    for (base, _) in BASE_DOMAINS {
+        let Some(prefix) = host.strip_suffix(base) else {
+            continue;
+        };
+        let Some(prefix) = prefix.strip_suffix('.') else {
+            continue; // bare base domain or lookalike — not app-style
+        };
+        let labels: Vec<&str> = prefix.split('.').collect();
+        // `<team>.app.<cluster>.<base>` / `<team>.app.<base>`.
+        if labels.contains(&"app") {
+            return true;
+        }
+        // EU1's bare `<team>.<base>` form (a single non-api label).
+        return labels.len() == 1 && labels[0] != "api";
+    }
+    false
+}
+
+/// True when `input` is exactly `region`'s canonical API endpoint — same https
+/// scheme, same host, no port, no path, no query — so coercing it to the
+/// derived [`Region`] loses nothing.
+fn is_canonical_endpoint(input: &str, region: &Region) -> bool {
+    let trimmed = input.trim();
+    let candidate = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{trimmed}")
+    };
+    let Ok(url) = url::Url::parse(&candidate) else {
+        return false;
+    };
+    if url.scheme() != "https"
+        || url.port().is_some()
+        || !matches!(url.path(), "" | "/")
+        || url.query().is_some()
+    {
+        return false;
+    }
+    url.host_str().is_some_and(|host| {
+        format!("https://{}", host.to_ascii_lowercase()) == region.api_endpoint()
+    })
 }
 
 /// Extract the host from a URL that may be missing its scheme.
@@ -315,6 +394,14 @@ mod tests {
         unresolved("https://c4c.app.eua2.coralogix.com/olly/chat/abc-123");
     }
 
+    /// The api-host form of the same rule: in `api.<label>.coralogix.com` the
+    /// label is a cluster, so an unknown one (BYOC / private cluster) must not
+    /// collapse into the bare-domain EU1 default after `api.` is stripped.
+    #[test]
+    fn unknown_cluster_api_host_is_unresolved() {
+        unresolved("https://api.mycluster.coralogix.com");
+    }
+
     /// `<team>.app.coralogix.com` has no cluster label → EU1.
     #[test]
     fn app_url_eu1_with_app_label() {
@@ -370,6 +457,55 @@ mod tests {
         assert_eq!(
             parse_region_arg("myteam.app.eu2.coralogix.com").to_string(),
             "eu2"
+        );
+    }
+
+    /// The canonical API endpoint coerces to its region — losing nothing.
+    #[test]
+    fn parse_region_arg_canonical_api_endpoint() {
+        assert_eq!(
+            parse_region_arg("https://api.eu2.coralogix.com").to_string(),
+            "eu2"
+        );
+        assert_eq!(
+            parse_region_arg("api.stg1.coralogix.net").to_string(),
+            "stg1"
+        );
+    }
+
+    /// A BYOC-style api host with an unknown cluster must stay a verbatim
+    /// custom endpoint (master behaviour), not silently become EU1.
+    #[test]
+    fn parse_region_arg_unknown_cluster_api_host_stays_custom() {
+        let region = parse_region_arg("https://api.mycluster.coralogix.com");
+        assert_eq!(region.api_endpoint(), "https://api.mycluster.coralogix.com");
+    }
+
+    /// Endpoint-shaped values carrying extra information — an explicit port,
+    /// an alternate gateway host — must be used verbatim, not coerced to the
+    /// canonical endpoint of the region they mention.
+    #[test]
+    fn parse_region_arg_endpoint_with_port_stays_custom() {
+        let region = parse_region_arg("api.eu2.coralogix.com:8443");
+        assert_eq!(region.api_endpoint(), "api.eu2.coralogix.com:8443");
+    }
+
+    #[test]
+    fn parse_region_arg_gateway_host_stays_custom() {
+        let region = parse_region_arg("https://ng-api-http.eu2.coralogix.com");
+        assert_eq!(
+            region.api_endpoint(),
+            "https://ng-api-http.eu2.coralogix.com"
+        );
+    }
+
+    /// App URLs coerce even with browser noise (path/query) — that's the
+    /// paste-your-URL feature, and an app URL is never an endpoint override.
+    #[test]
+    fn parse_region_arg_app_url_with_path_and_query() {
+        assert_eq!(
+            parse_region_arg("https://myteam.app.cx498.coralogix.com/logs?id=1").to_string(),
+            "us2"
         );
     }
 }

@@ -380,6 +380,8 @@ async fn view_create_prints_console_link() {
             "--from-file",
             file_path.to_str().unwrap(),
             "--yes",
+            "-o",
+            "json",
         ])
         .output()
         .expect("failed to run cx");
@@ -393,6 +395,15 @@ async fn view_create_prints_console_link() {
             "View in Coralogix: https://c4c.app.eu2.coralogix.com/explore?viewId=view-123"
         ),
         "stderr did not contain the console link: {stderr}"
+    );
+
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("stdout was not valid JSON ({e}): {:?}", output.stdout));
+    // The `{"view": {...}}` envelope must be unwrapped so scripts can rely
+    // on a top-level `id` regardless of deployment response shape.
+    assert_eq!(
+        stdout["id"], "view-123",
+        "created view id should be exposed at the top level: {stdout}"
     );
 }
 

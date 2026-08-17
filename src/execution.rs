@@ -31,8 +31,9 @@ pub struct ExecutionTarget {
     /// Lazily-resolved console base URL, cached in-process so repeated
     /// console-link lookups within one command invocation don't re-hit
     /// `/identity/whoami`. Backed by a longer-lived on-disk cache in the
-    /// profile file (see `config::load_cached_console_url`) so that most
-    /// invocations skip the network lookup entirely.
+    /// profile file (carried into `ResolvedConfig::cached_console_url` at
+    /// resolve time) so that most invocations skip the network lookup
+    /// entirely.
     console_base: OnceCell<Option<String>>,
     /// When true, [`console_base`](Self::console_base) always returns `None`,
     /// suppressing every "View in Coralogix" stderr link for this target. Set
@@ -68,10 +69,11 @@ impl ExecutionTarget {
     ///    with no profile file) - there is no `CX_CONSOLE_URL` equivalent, so
     ///    those callers always fall through to steps 2-4.
     /// 2. A fresh on-disk cache of the team's console URL in the profile file
-    ///    (see `config::load_cached_console_url`), written by a previous
-    ///    invocation. This is what spares the overwhelming majority of
-    ///    invocations - and, crucially, agents making many sequential calls -
-    ///    the extra `/identity/whoami` round-trip.
+    ///    (carried into `ResolvedConfig::cached_console_url` when the profile
+    ///    was resolved), written by a previous invocation. This is what spares
+    ///    the overwhelming majority of invocations - and, crucially, agents
+    ///    making many sequential calls - the extra `/identity/whoami`
+    ///    round-trip.
     /// 3. Otherwise, the team's console URL resolved automatically via
     ///    `GET /identity/whoami` (see `identity::resolve_team_url`), then
     ///    persisted to the profile cache for next time. This is the default on
@@ -81,11 +83,13 @@ impl ExecutionTarget {
     ///
     /// When `cfg.credentials_overridden` is set (the bearer token came from a
     /// `--api-key`/`CX_API_KEY` override rather than this profile's own
-    /// credentials), steps 1-2 are skipped and step 3's cache write is
-    /// skipped: the profile's `console_url` and cached URL belong to a
-    /// different team than the one actually in use, and must never be read
-    /// or clobbered by this run. Resolution always falls through to a live
-    /// `/identity/whoami` call in that case.
+    /// credentials), or `cfg.region_overridden` is set (`--region`/`CX_REGION`
+    /// pointed this run at a different region than the profile's own), steps
+    /// 1-2 are skipped and step 3's cache write is skipped: the profile's
+    /// `console_url` and cached URL belong to a different team/region than
+    /// the one actually in use, and must never be read or clobbered by this
+    /// run. Resolution always falls through to a live `/identity/whoami`
+    /// call in those cases.
     ///
     /// Best-effort and infallible: any lookup (or cache write) failure results
     /// in `None` rather than an error, since a console link is a "nice to
@@ -103,19 +107,25 @@ impl ExecutionTarget {
         }
         self.console_base
             .get_or_init(|| async {
-                if !self.cfg.credentials_overridden {
+                // The profile's console_url and cache are only valid for the
+                // profile's own credentials and region; any override targets
+                // a different team/region.
+                let profile_cache_usable =
+                    !self.cfg.credentials_overridden && !self.cfg.region_overridden;
+                if profile_cache_usable {
                     // 1. Explicit override always wins.
                     if let Some(url) = &self.cfg.console_url {
                         return Some(url.clone());
                     }
-                    // 2. Fresh on-disk cache - no network.
-                    if let Some(url) = crate::config::load_cached_console_url(&self.profile_name) {
-                        return Some(url);
+                    // 2. Fresh on-disk cache, carried at resolve time - no
+                    //    network, no profile re-read.
+                    if let Some(url) = &self.cfg.cached_console_url {
+                        return Some(url.clone());
                     }
                 }
-                // 3. Cold cache (or overridden credentials): resolve live.
+                // 3. Cold cache (or overridden credentials/region): resolve live.
                 let resolved = identity::resolve_team_url(&self.client).await;
-                if !self.cfg.credentials_overridden {
+                if profile_cache_usable {
                     if let Some(url) = &resolved {
                         crate::config::cache_console_url(&self.profile_name, url);
                     }
@@ -290,7 +300,9 @@ mod tests {
             endpoint: endpoint.to_string(),
             default_tier: crate::Tier::Archive,
             console_url: console_url.map(str::to_string),
+            cached_console_url: None,
             credentials_overridden: false,
+            region_overridden: false,
         }
     }
 

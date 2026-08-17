@@ -84,13 +84,21 @@ fn select_region_interactive() -> Result<RegionChoice> {
         // default fuzzy match (which a full URL wouldn't hit on its own).
         .with_scorer(&|input, option, string_value, idx| {
             match region_from_url(input) {
-                RegionMatch::Known(region) => {
+                // A URL that derives a region we actually list: surface only
+                // that region. A derived region *not* in the list (e.g. a
+                // staging URL) falls through to the escape hatches below —
+                // never to an empty list.
+                RegionMatch::Known(region)
+                    if REGION_OPTIONS.contains(&region.to_string().as_str()) =>
+                {
                     (region.to_string() == string_value).then_some(i64::MAX)
                 }
-                RegionMatch::Unresolved => {
-                    // A pasted-but-unrecognized URL (BYOC / private-link): keep the
-                    // escape hatches reachable instead of showing an empty list.
-                    if input.contains("://")
+                // Unrecognized-or-unlisted URL-ish input (BYOC / private-link
+                // / staging). Schemeless hosts count too — region_from_url
+                // accepts them — so gate on "looks like a host", not on a
+                // scheme being present.
+                _ => {
+                    if (input.contains("://") || input.contains('.'))
                         && (string_value == PASTE_URL_OPTION
                             || string_value == CUSTOM_ENDPOINT_OPTION)
                     {
@@ -605,6 +613,40 @@ mod tests {
                 "OUTPUT_FORMATS is missing canonical variant {:?}; picker cursor would \
                  not preselect it",
                 variant.as_str(),
+            );
+        }
+    }
+
+    /// The default cursor is a raw index into `REGION_OPTIONS`; if the list is
+    /// ever reordered or an entry is inserted before it, the picker would
+    /// silently pre-select a different region.
+    #[test]
+    fn region_default_cursor_points_at_eu2() {
+        assert_eq!(
+            REGION_OPTIONS[REGION_DEFAULT_CURSOR], "eu2",
+            "REGION_DEFAULT_CURSOR must point at eu2 in REGION_OPTIONS"
+        );
+    }
+
+    /// Every region entry in the picker must round-trip through
+    /// `Region::from_str` to a real (non-Custom) variant — `from_str` is
+    /// infallible, so a typo here would otherwise silently produce a
+    /// `Region::Custom` with a garbage endpoint.
+    #[test]
+    fn every_region_option_parses_to_a_known_region() {
+        for opt in REGION_OPTIONS {
+            if *opt == PASTE_URL_OPTION || *opt == CUSTOM_ENDPOINT_OPTION {
+                continue;
+            }
+            let region: Region = opt.parse().expect("Region::from_str is infallible");
+            assert!(
+                !matches!(region, Region::Custom(_)),
+                "REGION_OPTIONS entry {opt:?} is not a known region short-name"
+            );
+            assert_eq!(
+                region.to_string(),
+                *opt,
+                "REGION_OPTIONS entry {opt:?} does not round-trip through Region"
             );
         }
     }

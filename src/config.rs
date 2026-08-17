@@ -378,12 +378,23 @@ pub struct ResolvedConfig {
     /// any trailing slash trimmed. Takes precedence over the automatic
     /// `GET /identity/whoami`-based resolution.
     pub console_url: Option<String>,
+    /// Fresh (within [`CONSOLE_URL_CACHE_TTL_DAYS`]) cached team console URL
+    /// carried over from the profile file at resolve time, so console-link
+    /// resolution doesn't have to re-read and re-parse the profile TOML.
+    /// `None` when the cache is absent, stale, or there is no profile file.
+    pub cached_console_url: Option<String>,
     /// True when `api_key` came from a `--api-key`/`CX_API_KEY` override
     /// rather than the profile file's own stored credentials. When set, the
     /// profile's `console_url` and cached console URL must not be read or
     /// written, since they were resolved against a different team's
     /// credentials than the ones actually in use for this run.
     pub credentials_overridden: bool,
+    /// True when `--region`/`CX_REGION` overrode the profile's configured
+    /// region with a *different* one. When set, the profile's `console_url`
+    /// and cached console URL must not be read or written either: they
+    /// belong to the profile's own region, not the endpoint this run
+    /// actually executes against.
+    pub region_overridden: bool,
 }
 
 /// Returns the cx config directory: `~/.cx/`
@@ -513,15 +524,22 @@ async fn resolve_single(
                 auth_kind: AuthKind::ApiKey,
                 default_tier: crate::Tier::Archive,
                 console_url: None,
+                cached_console_url: None,
                 credentials_overridden: true,
+                region_overridden: true,
             });
         }
     }
 
     let mut profile = load_profile(profile_name)?;
 
+    let mut region_overridden = false;
     if let Some(region) = region_override {
-        profile.region = crate::region::parse_region_arg(region);
+        let overridden = crate::region::parse_region_arg(region);
+        // A no-op override (same region the profile already targets) keeps
+        // console-URL caching usable; only a real region switch disables it.
+        region_overridden = overridden != profile.region;
+        profile.region = overridden;
     }
 
     // CLI-level api_key_override (already filtered by main.rs) wins over profile creds.
@@ -595,7 +613,9 @@ async fn resolve_single(
             .console_url
             .as_deref()
             .map(|s| s.trim_end_matches('/').to_string()),
+        cached_console_url: fresh_cached_console_url(&profile),
         credentials_overridden: api_key_override.is_some(),
+        region_overridden,
     })
 }
 
@@ -637,16 +657,23 @@ pub async fn resolve_all(
 
 /// Write a profile to disk, creating directories as needed.
 /// Sets file permissions to 0600 on Unix to protect any inline secrets.
+///
+/// Writes via a temp file + rename so a concurrent `cx` process never
+/// observes a torn profile — the file can carry OAuth tokens, and a partial
+/// write would break every subsequent command for that profile.
 pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
     let dir = profiles_dir()?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{name}.toml"));
     let content = toml::to_string_pretty(profile).context("Failed to serialize profile")?;
-    std::fs::write(&path, &content)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
+    // Per-process temp name so parallel cx invocations don't clobber each
+    // other's in-flight writes before the rename.
+    let tmp = dir.join(format!(".{name}.toml.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, &content).with_context(|| format!("Failed to write {}", tmp.display()))?;
     #[cfg(unix)]
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("Failed to set permissions on {}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
 
@@ -659,9 +686,18 @@ pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
 /// `GET /identity/whoami` lookup.
 pub fn load_cached_console_url(profile_name: &str) -> Option<String> {
     let profile = load_profile(profile_name).ok()?;
+    fresh_cached_console_url(&profile)
+}
+
+/// Return an already-loaded profile's cached team console base URL, but only
+/// if it is still fresh (resolved within [`CONSOLE_URL_CACHE_TTL_DAYS`]).
+///
+/// Used by `resolve_single` to carry the cache into [`ResolvedConfig`] so
+/// console-link resolution doesn't re-read the profile file it just parsed.
+pub fn fresh_cached_console_url(profile: &Profile) -> Option<String> {
     let cached_at = profile.cached_console_url_at?;
     if Utc::now() - cached_at < Duration::days(CONSOLE_URL_CACHE_TTL_DAYS) {
-        profile.cached_console_url
+        profile.cached_console_url.clone()
     } else {
         None
     }
@@ -871,7 +907,9 @@ default_profile = "my-profile"
             endpoint: "https://api.eu2.coralogix.com".to_string(),
             default_tier: crate::Tier::Archive,
             console_url: None,
+            cached_console_url: None,
             credentials_overridden: false,
+            region_overridden: false,
         };
         assert_eq!(cfg.profile_name, "prod");
     }

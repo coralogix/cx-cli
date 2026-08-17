@@ -114,6 +114,24 @@ impl Region {
             Region::Custom(url) => url.as_str(),
         }
     }
+
+    /// Browser-console host suffix for this region (no scheme or team label).
+    ///
+    /// `None` for custom endpoints, which have no standard app domain.
+    pub fn app_url_template(&self) -> Option<&str> {
+        match self {
+            Region::Us1 => Some("app.coralogix.us"),
+            Region::Us2 => Some("app.cx498.coralogix.com"),
+            Region::Us3 => Some("app.us3.coralogix.com"),
+            Region::Eu1 => Some("coralogix.com"),
+            Region::Eu2 => Some("app.eu2.coralogix.com"),
+            Region::Ap1 => Some("app.coralogix.in"),
+            Region::Ap2 => Some("app.coralogixsg.com"),
+            Region::Ap3 => Some("app.ap3.coralogix.com"),
+            Region::Stg1 => Some("app.stg1.coralogix.net"),
+            Region::Custom(_) => None,
+        }
+    }
 }
 
 impl std::fmt::Display for Region {
@@ -884,6 +902,48 @@ default_profile = "my-profile"
     #[test]
     fn region_api_endpoint_us1() {
         assert_eq!(Region::Us1.api_endpoint(), "https://api.us1.coralogix.com");
+    }
+
+    #[test]
+    fn region_app_url_template_eu2() {
+        assert_eq!(
+            Region::Eu2.app_url_template(),
+            Some("app.eu2.coralogix.com")
+        );
+    }
+
+    #[test]
+    fn region_app_url_template_us2_uses_cx498() {
+        assert_eq!(
+            Region::Us2.app_url_template(),
+            Some("app.cx498.coralogix.com")
+        );
+    }
+
+    #[test]
+    fn region_app_url_template_custom_is_none() {
+        assert_eq!(
+            Region::Custom("https://api.myenv.example.com".into()).app_url_template(),
+            None
+        );
+    }
+
+    #[test]
+    fn every_named_region_has_an_app_url_template() {
+        let cases: &[(Region, &str)] = &[
+            (Region::Us1, "app.coralogix.us"),
+            (Region::Us2, "app.cx498.coralogix.com"),
+            (Region::Us3, "app.us3.coralogix.com"),
+            (Region::Eu1, "coralogix.com"),
+            (Region::Eu2, "app.eu2.coralogix.com"),
+            (Region::Ap1, "app.coralogix.in"),
+            (Region::Ap2, "app.coralogixsg.com"),
+            (Region::Ap3, "app.ap3.coralogix.com"),
+            (Region::Stg1, "app.stg1.coralogix.net"),
+        ];
+        for (region, expected) in cases {
+            assert_eq!(region.app_url_template(), Some(*expected), "{region}");
+        }
     }
 
     #[test]

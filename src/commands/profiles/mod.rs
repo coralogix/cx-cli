@@ -15,31 +15,49 @@ use crate::region::{region_from_url, RegionMatch};
 
 const AUTH_METHODS: &[&str] = &["OAuth (browser login)", "API key (paste manually)"];
 
-/// Label for the "paste a URL and derive the region" option.
-const PASTE_URL_OPTION: &str = "Paste a Coralogix URL";
 /// Label for the manual custom-endpoint (BYOC / private-link) option.
 const CUSTOM_ENDPOINT_OPTION: &str = "Custom endpoint (BYOC / private link)";
 
-/// Unified, searchable region list shown for every auth method. The eight known
-/// regions come first (typing filters them), followed by the URL-paste and
-/// custom-endpoint escape hatches.
-const REGION_OPTIONS: &[&str] = &[
-    "us1",
-    "us2",
-    "us3",
-    "eu1",
-    "eu2",
-    "ap1",
-    "ap2",
-    "ap3",
-    PASTE_URL_OPTION,
-    CUSTOM_ENDPOINT_OPTION,
+/// Known regions shown in the picker, in display order. Each is rendered as
+/// `({short-name}) {app_url_template}` so users can match against the URL they
+/// see in the browser. The URL-paste and custom-endpoint escape hatches are
+/// appended after these by [`region_picker_options`].
+const PICKER_REGIONS: &[Region] = &[
+    Region::Us1,
+    Region::Us2,
+    Region::Us3,
+    Region::Eu1,
+    Region::Eu2,
+    Region::Ap1,
+    Region::Ap2,
+    Region::Ap3,
 ];
 
-/// Zero-based cursor position of `eu2` in [`REGION_OPTIONS`] (the default).
+/// Zero-based cursor position of `eu2` in [`PICKER_REGIONS`] (the default).
 const REGION_DEFAULT_CURSOR: usize = 4;
 
+/// Picker label: `(eu2) app.eu2.coralogix.com`.
+fn region_option_label(region: &Region) -> String {
+    match region.app_url_template() {
+        Some(template) => format!("({region}) {template}"),
+        None => region.to_string(),
+    }
+}
+
+fn region_picker_options() -> Vec<String> {
+    PICKER_REGIONS
+        .iter()
+        .map(region_option_label)
+        .chain([CUSTOM_ENDPOINT_OPTION.to_string()])
+        .collect()
+}
+
+fn is_picker_region(region: &Region) -> bool {
+    PICKER_REGIONS.iter().any(|r| r == region)
+}
+
 /// Result of the interactive region prompt.
+// Debug is needed by the flag-resolution tests (`Result::expect_err`).
 #[derive(Debug)]
 enum RegionChoice {
     /// A known region — either picked from the list or derived from a pasted URL.
@@ -74,68 +92,120 @@ fn select_credential_storage(prompt: &str, help_message: &str) -> Result<Credent
 
 /// Prompt for a region using the unified searchable select.
 ///
-/// The list filters as the user types. Choosing [`PASTE_URL_OPTION`] asks for a
-/// Coralogix URL and derives the region from it; an unrecognised URL falls back
-/// to manual endpoint entry (same as [`CUSTOM_ENDPOINT_OPTION`]). This is the
-/// single region entry point shared by both the OAuth and API-key flows.
+/// The list filters as the user types, and pasting a Coralogix URL directly
+/// into the filter auto-detects the region (or surfaces the custom-endpoint
+/// option for an unrecognised one). Choosing [`CUSTOM_ENDPOINT_OPTION`] enters
+/// the manual BYOC / private-link flow. This is the single region entry point
+/// shared by both the OAuth and API-key flows.
 fn select_region_interactive() -> Result<RegionChoice> {
-    let choice = Select::new("Region:", REGION_OPTIONS.to_vec())
-        .with_starting_cursor(REGION_DEFAULT_CURSOR)
-        .with_help_message("Type to filter, or paste your Coralogix URL to auto-detect the region.")
-        // Custom scorer: when the typed/pasted text is a recognizable Coralogix
-        // URL, surface only the derived region option; otherwise fall back to the
-        // default fuzzy match (which a full URL wouldn't hit on its own).
-        .with_scorer(&|input, option, string_value, idx| {
-            match region_from_url(input) {
-                // A URL that derives a region we actually list: surface only
-                // that region. A derived region *not* in the list (e.g. a
-                // staging URL) falls through to the escape hatches below —
-                // never to an empty list.
-                RegionMatch::Known(region)
-                    if REGION_OPTIONS.contains(&region.to_string().as_str()) =>
-                {
-                    (region.to_string() == string_value).then_some(i64::MAX)
-                }
-                // Unrecognized-or-unlisted URL-ish input (BYOC / private-link
-                // / staging). Schemeless hosts count too — region_from_url
-                // accepts them — so gate on "looks like a host", not on a
-                // scheme being present.
-                _ => {
-                    if (input.contains("://") || input.contains('.'))
-                        && (string_value == PASTE_URL_OPTION
-                            || string_value == CUSTOM_ENDPOINT_OPTION)
-                    {
-                        return Some(0);
-                    }
-                    (Select::<&str>::DEFAULT_SCORER)(input, option, string_value, idx)
-                }
+    // `Select` doesn't hand back the filter text on selection, but we need it:
+    // if the user pasted a URL and then chose the custom-endpoint option, we
+    // should act on that URL instead of asking them to type it a second time.
+    // The scorer runs on every keystroke, so record the last input it sees.
+    let last_input = std::cell::RefCell::new(String::new());
+    let scorer = |input: &str, option: &String, string_value: &str, idx: usize| -> Option<i64> {
+        *last_input.borrow_mut() = input.to_string();
+        match region_from_url(input) {
+            // A URL that derives a region we actually list: surface only
+            // that region. A derived region *not* in the list (e.g. a
+            // staging URL) falls through to the custom-endpoint option below —
+            // never to an empty list.
+            RegionMatch::Known(region) if is_picker_region(&region) => {
+                (region_option_label(&region) == string_value).then_some(i64::MAX)
             }
-        })
+            // Unrecognized URL-ish input (BYOC / private-link / staging).
+            // Surface only the custom-endpoint option. Schemeless hosts count
+            // too — region_from_url accepts them — so gate on "looks like a
+            // host", not on a scheme being present.
+            _ => {
+                if (input.contains("://") || input.contains('.'))
+                    && string_value == CUSTOM_ENDPOINT_OPTION
+                {
+                    return Some(0);
+                }
+                (Select::<String>::DEFAULT_SCORER)(input, option, string_value, idx)
+            }
+        }
+    };
+    let choice = Select::new("Region / Coralogix URL:", region_picker_options())
+        .with_starting_cursor(REGION_DEFAULT_CURSOR)
+        .with_help_message("Enter your Coralogix URL to auto-detect the region, or type to filter.")
+        .with_scorer(&scorer)
         .prompt()?;
 
-    if choice == PASTE_URL_OPTION {
-        let raw = Text::new("Coralogix URL (e.g. https://myteam.app.eu2.coralogix.com):")
-            .with_help_message("Paste the URL from your browser; we'll derive the region.")
-            .prompt()?;
-        match region_from_url(&raw) {
-            RegionMatch::Known(region) => {
-                println!("Detected region: {region}");
-                Ok(RegionChoice::Known(region))
+    if choice == CUSTOM_ENDPOINT_OPTION {
+        // If the filter already holds a URL, act on it directly rather than
+        // prompting for the Base URL again: a recognised URL still resolves to
+        // its region, anything else with a host becomes a custom endpoint.
+        let typed = last_input.into_inner().trim().to_string();
+        if typed.contains("://") || typed.contains('.') {
+            return resolve_url_choice(&typed);
+        }
+        prompt_custom_endpoint()
+    } else {
+        let region = PICKER_REGIONS
+            .iter()
+            .find(|r| region_option_label(r) == choice)
+            .cloned()
+            .expect("inquire returns one of the labels we passed in");
+        Ok(RegionChoice::Known(region))
+    }
+}
+
+/// Resolve a user-supplied URL into a [`RegionChoice`] without further prompting:
+/// a recognised Coralogix URL yields its region; an unrecognised URL that still
+/// carries a host becomes a custom endpoint. Only a URL with no parseable host
+/// falls back to the manual [`prompt_custom_endpoint`].
+fn resolve_url_choice(raw: &str) -> Result<RegionChoice> {
+    match region_from_url(raw) {
+        // Only accept a derived region the picker actually lists — which is
+        // exactly the set with hard-coded OAuth client IDs. A recognised but
+        // *unlisted* region (e.g. staging `stg1`) has no client ID and no
+        // picker row, so returning it here would later abort the OAuth flow at
+        // the client-ID lookup. Route it through the custom-endpoint flow
+        // instead, matching how the picker's own scorer treats such URLs.
+        RegionMatch::Known(region) if is_picker_region(&region) => {
+            println!("Detected region: {region}");
+            Ok(RegionChoice::Known(region))
+        }
+        _ => match custom_base_url_from(raw) {
+            Some(base_url) => {
+                println!(
+                    "Couldn't map that URL to a known region - \
+                     using it as a custom endpoint: {base_url}"
+                );
+                Ok(RegionChoice::Custom { base_url })
             }
-            RegionMatch::Unresolved => {
+            None => {
                 println!(
                     "Couldn't map that URL to a known region - \
                      enter your API endpoint manually."
                 );
                 prompt_custom_endpoint()
             }
-        }
-    } else if choice == CUSTOM_ENDPOINT_OPTION {
-        prompt_custom_endpoint()
-    } else {
-        // A known region short-name from the list; infallible via FromStr.
-        Ok(RegionChoice::Known(choice.parse()?))
+        },
     }
+}
+
+/// Normalise a raw URL into a custom base URL: trailing slash stripped and an
+/// `https://` scheme added when the input is scheme-less. Returns `None` when
+/// the input has no parseable host.
+///
+/// The scheme is mandatory: a stored endpoint like `api.myenv.example.com`
+/// (which `extract_host` happily parses by prepending a scheme internally)
+/// would otherwise be written verbatim and then produce invalid request URLs
+/// in `CxClient` and fail OAuth OIDC discovery.
+fn custom_base_url_from(raw: &str) -> Option<String> {
+    let cleaned = raw.trim().trim_end_matches('/');
+    if cleaned.is_empty() {
+        return None;
+    }
+    let with_scheme = if cleaned.contains("://") {
+        cleaned.to_string()
+    } else {
+        format!("https://{cleaned}")
+    };
+    crate::region::extract_host(&with_scheme).map(|_| with_scheme)
 }
 
 /// Prompt for a manual custom API endpoint (BYOC / private-link).
@@ -156,7 +226,7 @@ fn prompt_custom_endpoint() -> Result<RegionChoice> {
             }
         })
         .prompt()?;
-    let base_url = raw_url.trim().trim_end_matches('/').to_string();
+    let base_url = custom_base_url_from(&raw_url).expect("validator guarantees a parseable host");
     Ok(RegionChoice::Custom { base_url })
 }
 
@@ -179,9 +249,9 @@ fn parse_region_flag(raw: &str) -> Result<Region> {
 
 /// Resolve the `--url` / `--region` flags into a [`RegionChoice`], if either
 /// was supplied. Validation happens eagerly so a bad flag value fails before
-/// any prompting starts. A `--url` that doesn't map to a known Coralogix
-/// domain is used verbatim as a custom API endpoint (BYOC / private link) —
-/// the user supplied it explicitly, so this is not an invented value.
+/// any prompting starts. A `--url` that doesn't map to a picker-listed region
+/// (BYOC / private link / staging) is used as a custom API endpoint — the user
+/// supplied it explicitly, so this is not an invented value.
 fn resolve_region_flags(url: Option<&str>, region: Option<&str>) -> Result<Option<RegionChoice>> {
     if let Some(raw) = region {
         return Ok(Some(RegionChoice::Known(parse_region_flag(raw)?)));
@@ -190,21 +260,25 @@ fn resolve_region_flags(url: Option<&str>, region: Option<&str>) -> Result<Optio
         return Ok(None);
     };
     match region_from_url(raw) {
-        RegionMatch::Known(region) => {
+        // Only accept regions the picker lists — the set with hard-coded OAuth
+        // client IDs. A recognised but unlisted region (e.g. staging `stg1`)
+        // routes through the custom-endpoint path, matching the interactive flow.
+        RegionMatch::Known(region) if is_picker_region(&region) => {
             println!("Detected region: {region}");
             Ok(Some(RegionChoice::Known(region)))
         }
-        RegionMatch::Unresolved => {
-            if crate::region::extract_host(raw).is_none() {
-                anyhow::bail!(
-                    "'--url {raw}' is not a valid URL — pass your Coralogix URL \
-                     (e.g. https://myteam.app.eu2.coralogix.com) or use --region"
+        _ => match custom_base_url_from(raw) {
+            Some(base_url) => {
+                println!(
+                    "Couldn't map '{raw}' to a known region — using it as a custom API endpoint."
                 );
+                Ok(Some(RegionChoice::Custom { base_url }))
             }
-            println!("Couldn't map '{raw}' to a known region — using it as a custom API endpoint.");
-            let base_url = raw.trim().trim_end_matches('/').to_string();
-            Ok(Some(RegionChoice::Custom { base_url }))
-        }
+            None => anyhow::bail!(
+                "'--url {raw}' is not a valid URL — pass your Coralogix URL \
+                 (e.g. https://myteam.app.eu2.coralogix.com) or use --region"
+            ),
+        },
     }
 }
 
@@ -816,14 +890,15 @@ mod tests {
         }
     }
 
-    /// The default cursor is a raw index into `REGION_OPTIONS`; if the list is
+    /// The default cursor is a raw index into `PICKER_REGIONS`; if the list is
     /// ever reordered or an entry is inserted before it, the picker would
     /// silently pre-select a different region.
     #[test]
     fn region_default_cursor_points_at_eu2() {
         assert_eq!(
-            REGION_OPTIONS[REGION_DEFAULT_CURSOR], "eu2",
-            "REGION_DEFAULT_CURSOR must point at eu2 in REGION_OPTIONS"
+            PICKER_REGIONS[REGION_DEFAULT_CURSOR],
+            Region::Eu2,
+            "REGION_DEFAULT_CURSOR must point at eu2 in PICKER_REGIONS"
         );
     }
 
@@ -892,26 +967,101 @@ mod tests {
         );
     }
 
-    /// Every region entry in the picker must round-trip through
-    /// `Region::from_str` to a real (non-Custom) variant — `from_str` is
-    /// infallible, so a typo here would otherwise silently produce a
-    /// `Region::Custom` with a garbage endpoint.
+    /// A `--url` for a recognised but unlisted region (staging `stg1`, no OAuth
+    /// client ID and no picker row) must become a custom endpoint instead of a
+    /// Known region the OAuth flow can't service — matching the interactive flow.
     #[test]
-    fn every_region_option_parses_to_a_known_region() {
-        for opt in REGION_OPTIONS {
-            if *opt == PASTE_URL_OPTION || *opt == CUSTOM_ENDPOINT_OPTION {
-                continue;
+    fn url_flag_unlisted_region_becomes_custom_endpoint() {
+        let choice = resolve_region_flags(Some("https://team.app.stg1.coralogix.net"), None)
+            .expect("host-bearing URL")
+            .expect("URL flag should produce a choice");
+        match choice {
+            RegionChoice::Custom { base_url } => {
+                assert_eq!(base_url, "https://team.app.stg1.coralogix.net")
             }
-            let region: Region = opt.parse().expect("Region::from_str is infallible");
+            RegionChoice::Known(region) => {
+                panic!("expected custom endpoint, got known region {region}")
+            }
+        }
+    }
+
+    /// Every picker region must have an app URL template and render as
+    /// `({short-name}) {template}`. A missing template would show a bare
+    /// short-name and break URL-paste scoring against the label.
+    #[test]
+    fn every_region_option_is_short_name_and_url_template() {
+        for region in PICKER_REGIONS {
+            let template = region
+                .app_url_template()
+                .expect("picker region must have an app URL template");
+            assert_eq!(
+                region_option_label(region),
+                format!("({region}) {template}")
+            );
             assert!(
                 !matches!(region, Region::Custom(_)),
-                "REGION_OPTIONS entry {opt:?} is not a known region short-name"
+                "PICKER_REGIONS entry {region} is not a known region"
             );
-            assert_eq!(
-                region.to_string(),
-                *opt,
-                "REGION_OPTIONS entry {opt:?} does not round-trip through Region"
-            );
+        }
+    }
+
+    #[test]
+    fn region_picker_ends_with_custom_endpoint() {
+        let options = region_picker_options();
+        assert_eq!(options[options.len() - 1], CUSTOM_ENDPOINT_OPTION);
+        assert_eq!(options.len(), PICKER_REGIONS.len() + 1);
+    }
+
+    /// A scheme-less endpoint must be stored with an `https://` scheme, otherwise
+    /// `CxClient` and OAuth discovery build invalid request URLs from it.
+    #[test]
+    fn custom_base_url_adds_scheme_when_missing() {
+        assert_eq!(
+            custom_base_url_from("api.myenv.example.com").as_deref(),
+            Some("https://api.myenv.example.com")
+        );
+    }
+
+    /// An explicit scheme is preserved (http stays http), and a trailing slash
+    /// is stripped.
+    #[test]
+    fn custom_base_url_preserves_scheme_and_strips_slash() {
+        assert_eq!(
+            custom_base_url_from("http://api.myenv.example.com/").as_deref(),
+            Some("http://api.myenv.example.com")
+        );
+    }
+
+    /// Input with no parseable host yields `None` rather than a bogus endpoint.
+    #[test]
+    fn custom_base_url_rejects_hostless_input() {
+        assert_eq!(custom_base_url_from(""), None);
+        assert_eq!(custom_base_url_from("   "), None);
+    }
+
+    /// A pasted URL for a listed region resolves to that region.
+    #[test]
+    fn paste_url_for_listed_region_stays_known() {
+        match resolve_url_choice("https://team.app.eu2.coralogix.com").unwrap() {
+            RegionChoice::Known(region) => assert_eq!(region.to_string(), "eu2"),
+            RegionChoice::Custom { base_url } => {
+                panic!("expected known region eu2, got custom endpoint {base_url}")
+            }
+        }
+    }
+
+    /// A recognised but unlisted region (staging `stg1`, no OAuth client ID and
+    /// no picker row) must route to a custom endpoint instead of a Known region
+    /// that the OAuth flow can't service.
+    #[test]
+    fn paste_url_for_unlisted_region_becomes_custom_endpoint() {
+        match resolve_url_choice("https://team.app.stg1.coralogix.net").unwrap() {
+            RegionChoice::Custom { base_url } => {
+                assert_eq!(base_url, "https://team.app.stg1.coralogix.net")
+            }
+            RegionChoice::Known(region) => {
+                panic!("expected custom endpoint, got known region {region}")
+            }
         }
     }
 }

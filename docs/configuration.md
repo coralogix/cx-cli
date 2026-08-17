@@ -44,17 +44,34 @@ OAuth uses the standard browser-based Authorization Code + PKCE flow.
   Run cx profiles add <name> to re-authenticate.
   ```
 
-#### Custom or non-standard environments
+#### Custom or non-standard environments (BYOC / private-link)
 
-If your environment is not in the standard region list, select `Custom (specify URL + client ID)` at the Region prompt:
+If your environment is not in the standard region list, choose `Custom endpoint (BYOC / private link)` at the Region prompt:
 
 ```
-Region: Custom (specify URL + client ID)
+Region: Custom endpoint (BYOC / private link)
 Base URL (e.g. https://api.myenv.coralogix.com): https://api.myenv.example.com
 OAuth client ID: abc123-my-client
 ```
 
 The base URL is used both as the API endpoint and for OpenID Connect discovery (`{base_url}/oauth/.well-known/openid-configuration`). The client ID is stored in the profile TOML (`oauth_client_id`) since there is no built-in mapping for it.
+
+#### Don't know your region? Paste your URL
+
+If you're not sure which region you're in, choose `Paste a Coralogix URL` at the Region prompt and paste the URL from your browser (e.g. `https://myteam.app.eu2.coralogix.com`). `cx` recognises the Coralogix app and API domains and derives the region for you:
+
+| URL you paste | Derived region |
+|---|---|
+| `https://<team>.app.coralogix.us` | `us1` |
+| `https://<team>.app.cx498.coralogix.com` | `us2` |
+| `https://<team>.app.us3.coralogix.com` | `us3` |
+| `https://<team>.coralogix.com` | `eu1` |
+| `https://<team>.app.eu2.coralogix.com` | `eu2` |
+| `https://<team>.app.coralogix.in` | `ap1` |
+| `https://<team>.app.coralogixsg.com` | `ap2` |
+| `https://<team>.app.ap3.coralogix.com` | `ap3` |
+
+A URL that doesn't match a known Coralogix domain (a bring-your-own-cloud deployment, private-link, or custom domain) falls back to manual endpoint entry rather than erroring out.
 
 ### API key
 

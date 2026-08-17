@@ -32,14 +32,22 @@ fn cx(home: &Path, path_dir: &Path) -> Command {
     cmd
 }
 
-/// Install a fake `npx` into `dir` that answers `--version` and records any
-/// other invocation's arguments into `args_file`.
+/// Install a fake `npx` into `dir` that answers `--version`, serves `ls_json`
+/// for `skills ls` (the already-installed detection), and records any other
+/// invocation's arguments into `args_file`.
 #[cfg(unix)]
-fn install_fake_npx(dir: &Path, args_file: &Path) {
+fn install_fake_npx(dir: &Path, args_file: &Path, ls_json: &str) {
     use std::os::unix::fs::PermissionsExt;
+    // Only `echo` (a shell builtin) is usable here: PATH contains nothing but
+    // this directory, so external tools like `cat` would not resolve.
+    assert!(
+        !ls_json.contains('\''),
+        "ls_json must not contain single quotes"
+    );
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '{ls_json}'; exit 0; fi\n\
          echo \"$@\" > \"{}\"\n",
         args_file.display()
     );
@@ -73,7 +81,7 @@ fn install_without_npx_fails_with_actionable_error() {
 fn install_without_scope_and_no_tty_fails_naming_the_flags() {
     let home = temp_dir("no_scope");
     let bin = temp_dir("no_scope_bin");
-    install_fake_npx(&bin, &bin.join("args.txt"));
+    install_fake_npx(&bin, &bin.join("args.txt"), "[]");
     let output = cx(&home, &bin)
         .args(["skills", "install"])
         .output()
@@ -94,7 +102,7 @@ fn install_global_runs_fully_noninteractive_express_command() {
     let home = temp_dir("express_global");
     let bin = temp_dir("express_global_bin");
     let args_file = bin.join("args.txt");
-    install_fake_npx(&bin, &args_file);
+    install_fake_npx(&bin, &args_file, "[]");
 
     cx(&home, &bin)
         .args(["skills", "install", "--global"])
@@ -114,7 +122,7 @@ fn install_local_with_agents_passes_them_through() {
     let home = temp_dir("express_local");
     let bin = temp_dir("express_local_bin");
     let args_file = bin.join("args.txt");
-    install_fake_npx(&bin, &args_file);
+    install_fake_npx(&bin, &args_file, "[]");
 
     cx(&home, &bin)
         .args([
@@ -144,7 +152,7 @@ fn install_interactive_runs_the_raw_installer() {
     let home = temp_dir("advanced");
     let bin = temp_dir("advanced_bin");
     let args_file = bin.join("args.txt");
-    install_fake_npx(&bin, &args_file);
+    install_fake_npx(&bin, &args_file, "[]");
 
     cx(&home, &bin)
         .args(["skills", "install", "--interactive"])
@@ -157,17 +165,21 @@ fn install_interactive_runs_the_raw_installer() {
 
 // ── Already-installed detection (explicit run reinstalls) ─────────────────────
 
+/// Detection asks the installer itself (`skills ls --json`); the fake npx
+/// reports one cx skill already installed.
 #[cfg(unix)]
 #[test]
 fn install_over_existing_skills_notes_the_update() {
     let home = temp_dir("preinstalled");
     let bin = temp_dir("preinstalled_bin");
     let args_file = bin.join("args.txt");
-    install_fake_npx(&bin, &args_file);
-
-    let skill_dir = home.join(".claude/skills/cx-alerts");
-    fs::create_dir_all(&skill_dir).unwrap();
-    fs::write(skill_dir.join("SKILL.md"), "# cx-alerts").unwrap();
+    install_fake_npx(
+        &bin,
+        &args_file,
+        r#"[{"name": "cx-alerts", "path": "/skills/cx-alerts", "scope": "global",
+             "agents": ["Claude Code"], "source": "coralogix/cx-cli",
+             "sourceUrl": null, "sourceType": "github"}]"#,
+    );
 
     let output = cx(&home, &bin)
         .args(["skills", "install", "--global"])
@@ -176,8 +188,8 @@ fn install_over_existing_skills_notes_the_update() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("already installed"),
-        "expected already-installed note, stdout: {stdout}"
+        stdout.contains("already installed") && stdout.contains("cx-alerts"),
+        "expected already-installed note naming the skill, stdout: {stdout}"
     );
     // Explicit install still runs the installer (reinstall/update).
     assert!(args_file.exists(), "installer should still have been run");

@@ -11,7 +11,6 @@ use toon_format::encode_default as toon_encode;
 pub mod api;
 
 use crate::config::OutputFormat;
-use crate::console_url::id_at;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use api::{
@@ -26,20 +25,27 @@ use crate::safety::confirm_destructive;
 /// JSON key for the source profile when merging multi-profile dashboard REST rows.
 const JSON_KEY_PROFILE: &str = "profile";
 
+/// Look up a string value at a JSON pointer path (e.g. `/dashboard/id`).
+fn json_str_at(v: &Value, pointer: &str) -> Option<String> {
+    v.pointer(pointer)
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
 /// Extract a dashboard ID from a create/replace response, trying the shapes
 /// the API has been observed to return: a top-level `dashboardId`, a
 /// top-level `id`, or a nested `dashboard.id`. Returns `None` when the
 /// response carried no ID so callers can flag that rather than fabricate one.
 fn dashboard_id_from_response(resp: &Value) -> Option<String> {
-    id_at(resp, "/dashboardId")
-        .or_else(|| id_at(resp, "/id"))
-        .or_else(|| id_at(resp, "/dashboard/id"))
+    json_str_at(resp, "/dashboardId")
+        .or_else(|| json_str_at(resp, "/id"))
+        .or_else(|| json_str_at(resp, "/dashboard/id"))
 }
 
 /// Extract a folder ID from a folder-create response, trying `folderId` then
 /// `id`. Returns `None` when the response carried no ID.
 fn folder_id_from_response(resp: &Value) -> Option<String> {
-    id_at(resp, "/folderId").or_else(|| id_at(resp, "/id"))
+    json_str_at(resp, "/folderId").or_else(|| json_str_at(resp, "/id"))
 }
 
 /// Builds one catalog row as JSON for `json` / `toon` output after fan-out.

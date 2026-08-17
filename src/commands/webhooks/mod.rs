@@ -34,8 +34,14 @@ fn webhook_to_json(webhook: &Webhook, include_profile: bool, profile: &str) -> V
 /// the response carried no ID so callers can flag that rather than
 /// fabricate one.
 fn webhook_id_from_response(resp: &Value) -> Option<String> {
-    use crate::console_url::id_at;
-    id_at(resp, "/webhook/id").or_else(|| id_at(resp, "/id"))
+    fn at(v: &Value, pointer: &str) -> Option<String> {
+        match v.pointer(pointer)? {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }
+    at(resp, "/webhook/id").or_else(|| at(resp, "/id"))
 }
 
 /// Pull the display name out of a create *request* body. The create response

@@ -187,15 +187,12 @@ fn is_app_style_input(input: &str) -> bool {
     };
     let host = host.to_ascii_lowercase();
 
-    // Distinct-TLD domains exist only as app domains.
-    if TLD_REGIONS
-        .iter()
-        .any(|(suffix, _)| host_matches_suffix(&host, suffix))
-    {
-        return true;
-    }
-
-    for (base, _) in BASE_DOMAINS {
+    // The distinct-TLD domains host API/gateway endpoints too
+    // (`ng-api-http.coralogix.us` is US1's gateway), so they get the same
+    // label-based check as the cluster-bearing base domains — never a blanket
+    // "any subdomain is app-style".
+    let all_domains = TLD_REGIONS.iter().chain(BASE_DOMAINS.iter());
+    for (base, _) in all_domains {
         let Some(prefix) = host.strip_suffix(base) else {
             continue;
         };
@@ -203,14 +200,28 @@ fn is_app_style_input(input: &str) -> bool {
             continue; // bare base domain or lookalike — not app-style
         };
         let labels: Vec<&str> = prefix.split('.').collect();
-        // `<team>.app.<cluster>.<base>` / `<team>.app.<base>`.
+        // `<team>.app.<cluster>.<base>` / `<team>.app.<base>` — the `app`
+        // label makes this unambiguously a browser URL.
         if labels.contains(&"app") {
             return true;
         }
-        // EU1's bare `<team>.<base>` form (a single non-api label).
-        return labels.len() == 1 && labels[0] != "api";
+        // Bare `<team>.<base>` form (EU1 / staging / distinct-TLD): a single
+        // label, as long as it doesn't name an API/ingestion service.
+        return labels.len() == 1 && !is_service_label(labels[0]);
     }
     false
+}
+
+/// True when a lone host label names a Coralogix API/ingestion service rather
+/// than a team. Service hosts share domains with team app hosts —
+/// `ng-api-http.coralogix.us`, `api.coralogix.us`, `ingress.coralogix.com`,
+/// `otel-traces.coralogix.us` — and a `--region` value naming one is a
+/// deliberate endpoint override that must stay verbatim, never be coerced to
+/// the canonical endpoint of the region its domain implies. A team unluckily
+/// matching one of these patterns just misses the coercion convenience and
+/// keeps the pre-derivation behaviour.
+fn is_service_label(label: &str) -> bool {
+    label.contains("api") || label == "ingress" || label.starts_with("otel")
 }
 
 /// True when `input` is exactly `region`'s canonical API endpoint — same https
@@ -240,9 +251,10 @@ fn is_canonical_endpoint(input: &str, region: &Region) -> bool {
 
 /// Extract the host from a URL that may be missing its scheme.
 ///
-/// Returns `None` when the input has no host component (e.g. a bare region
-/// short-name like `eu2`, which the `url` crate parses without a host).
-fn extract_host(input: &str) -> Option<String> {
+/// Returns `None` when the input has no host component (empty or unparseable
+/// input). Public so interactive prompts can reuse it to validate that a
+/// user-supplied endpoint at least carries a host.
+pub fn extract_host(input: &str) -> Option<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return None;
@@ -496,6 +508,45 @@ mod tests {
         assert_eq!(
             region.api_endpoint(),
             "https://ng-api-http.eu2.coralogix.com"
+        );
+    }
+
+    /// The distinct-TLD domains host gateway/API endpoints too — US1's
+    /// gateway is `ng-api-http.coralogix.us`. These are endpoint overrides
+    /// and must stay verbatim, exactly like their base-domain equivalents.
+    #[test]
+    fn parse_region_arg_tld_gateway_host_stays_custom() {
+        let region = parse_region_arg("https://ng-api-http.coralogix.us");
+        assert_eq!(region.api_endpoint(), "https://ng-api-http.coralogix.us");
+    }
+
+    #[test]
+    fn parse_region_arg_tld_api_host_stays_custom() {
+        let region = parse_region_arg("https://api.coralogix.us");
+        assert_eq!(region.api_endpoint(), "https://api.coralogix.us");
+    }
+
+    /// EU1's gateway lives on the bare base domain — the same shape as a
+    /// bare team app URL (`<team>.coralogix.com`) — and must not be coerced.
+    #[test]
+    fn parse_region_arg_bare_gateway_host_stays_custom() {
+        let region = parse_region_arg("https://ng-api-http.coralogix.com");
+        assert_eq!(region.api_endpoint(), "https://ng-api-http.coralogix.com");
+    }
+
+    #[test]
+    fn parse_region_arg_ingress_host_stays_custom() {
+        let region = parse_region_arg("https://ingress.coralogix.com");
+        assert_eq!(region.api_endpoint(), "https://ingress.coralogix.com");
+    }
+
+    /// App URLs on the distinct-TLD domains still coerce — the `app` label
+    /// makes them unambiguous browser URLs.
+    #[test]
+    fn parse_region_arg_tld_app_url_still_coerces() {
+        assert_eq!(
+            parse_region_arg("https://myteam.app.coralogix.us").to_string(),
+            "us1"
         );
     }
 

@@ -136,9 +136,24 @@ fn select_region_interactive() -> Result<RegionChoice> {
 }
 
 /// Prompt for a manual custom API endpoint (BYOC / private-link).
+///
+/// Rejects input without a parseable host — an empty or garbage endpoint
+/// would otherwise be written to the profile and fail every subsequent
+/// command with an opaque HTTP error instead of a config error here.
 fn prompt_custom_endpoint() -> Result<RegionChoice> {
-    let raw_url = Text::new("Base URL (e.g. https://api.myenv.coralogix.com):").prompt()?;
-    let base_url = raw_url.trim_end_matches('/').to_string();
+    use inquire::validator::Validation;
+    let raw_url = Text::new("Base URL (e.g. https://api.myenv.coralogix.com):")
+        .with_validator(|input: &str| {
+            if crate::region::extract_host(input).is_some() {
+                Ok(Validation::Valid)
+            } else {
+                Ok(Validation::Invalid(
+                    "Enter a URL with a host, e.g. https://api.myenv.coralogix.com".into(),
+                ))
+            }
+        })
+        .prompt()?;
+    let base_url = raw_url.trim().trim_end_matches('/').to_string();
     Ok(RegionChoice::Custom { base_url })
 }
 

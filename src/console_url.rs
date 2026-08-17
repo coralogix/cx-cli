@@ -22,25 +22,25 @@ fn trim_base(base: &str) -> &str {
     base.trim_end_matches('/')
 }
 
-/// Extract an entity ID at a JSON pointer path (e.g. `/view/id`) as a
-/// string, accepting either a JSON string or a JSON number (some APIs return
-/// numeric IDs, e.g. IAM roles/scopes/groups).
+/// Extract an entity's `id` field from an untyped JSON response as a string,
+/// accepting either a JSON string or a JSON number (some APIs return numeric
+/// IDs, e.g. IAM roles/scopes/groups).
 ///
-/// The single ID-extraction primitive shared by every command that only has
-/// a raw `serde_json::Value` response (no typed struct with an
-/// `id: Option<String>` field) and needs an ID for a console link or a
-/// success line.
-pub fn id_at(val: &Value, pointer: &str) -> Option<String> {
-    match val.pointer(pointer)? {
-        Value::String(s) => Some(s.clone()),
-        Value::Number(n) => Some(n.to_string()),
-        _ => None,
-    }
-}
-
-/// Extract an entity's top-level `id` field — see [`id_at`].
+/// Used by callers that only have a raw `serde_json::Value` response (no
+/// typed struct with an `id: Option<String>` field) to extract an ID for
+/// building a console link.
 pub fn id_from_json(val: &Value) -> Option<String> {
-    id_at(val, "/id")
+    let id = val.get("id")?;
+    if let Some(s) = id.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(n) = id.as_i64() {
+        return Some(n.to_string());
+    }
+    if let Some(n) = id.as_u64() {
+        return Some(n.to_string());
+    }
+    None
 }
 
 /// Build the console URL for a dashboard: `{base}/dashboards/{id}`.

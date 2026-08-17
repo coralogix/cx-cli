@@ -46,8 +46,14 @@ fn folder_to_json(folder: &ViewFolder, include_profile: bool, profile: &str) -> 
 /// may come back as a JSON string or number. Returns `None` when the
 /// response carried no ID so callers can flag that rather than fabricate one.
 fn view_id_from_response(resp: &Value) -> Option<String> {
-    use crate::console_url::id_at;
-    id_at(resp, "/view/id").or_else(|| id_at(resp, "/id"))
+    fn at(v: &Value, pointer: &str) -> Option<String> {
+        match v.pointer(pointer)? {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }
+    at(resp, "/view/id").or_else(|| at(resp, "/id"))
 }
 
 fn read_from_file(path: &str) -> Result<Value> {
@@ -188,7 +194,7 @@ pub async fn run_create(
     })
     .await;
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, mut resp) in report_errors_and_collect_successes(per_profile)? {
         let created_id = view_id_from_response(&resp);
         render::print_created(
             "Created",
@@ -203,23 +209,10 @@ pub async fn run_create(
             })
             .await;
         }
-        // Some deployments wrap the created view in a `{"view": {...}}`
-        // envelope; unwrap it so the emitted object always exposes a
-        // top-level `id` (scripts rely on `.[0].id`).
-        let mut out = match resp {
-            Value::Object(mut m) if m.contains_key("view") => {
-                m.remove("view").expect("key checked above")
-            }
-            other => other,
-        };
         if include_profile {
-            // Create output uses the public `profile` key (list/create
-            // convention, see render.rs), not the get-only `_profile` hint.
-            if let Value::Object(ref mut m) = out {
-                m.insert("profile".to_string(), Value::String(profile.to_string()));
-            }
+            render::tag_get_result(&mut resp, &profile);
         }
-        all_results.push(out);
+        all_results.push(resp);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,

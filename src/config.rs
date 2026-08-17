@@ -657,23 +657,16 @@ pub async fn resolve_all(
 
 /// Write a profile to disk, creating directories as needed.
 /// Sets file permissions to 0600 on Unix to protect any inline secrets.
-///
-/// Writes via a temp file + rename so a concurrent `cx` process never
-/// observes a torn profile — the file can carry OAuth tokens, and a partial
-/// write would break every subsequent command for that profile.
 pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
     let dir = profiles_dir()?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{name}.toml"));
     let content = toml::to_string_pretty(profile).context("Failed to serialize profile")?;
-    // Per-process temp name so parallel cx invocations don't clobber each
-    // other's in-flight writes before the rename.
-    let tmp = dir.join(format!(".{name}.toml.{}.tmp", std::process::id()));
-    std::fs::write(&tmp, &content).with_context(|| format!("Failed to write {}", tmp.display()))?;
+    std::fs::write(&path, &content)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
     #[cfg(unix)]
-    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("Failed to set permissions on {}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).with_context(|| format!("Failed to write {}", path.display()))?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
     Ok(())
 }
 

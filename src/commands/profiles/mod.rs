@@ -18,24 +18,46 @@ const PASTE_URL_OPTION: &str = "Paste a Coralogix URL";
 /// Label for the manual custom-endpoint (BYOC / private-link) option.
 const CUSTOM_ENDPOINT_OPTION: &str = "Custom endpoint (BYOC / private link)";
 
-/// Unified, searchable region list shown for every auth method. The eight known
-/// regions come first (typing filters them), followed by the URL-paste and
-/// custom-endpoint escape hatches.
-const REGION_OPTIONS: &[&str] = &[
-    "us1",
-    "us2",
-    "us3",
-    "eu1",
-    "eu2",
-    "ap1",
-    "ap2",
-    "ap3",
-    PASTE_URL_OPTION,
-    CUSTOM_ENDPOINT_OPTION,
+/// Known regions shown in the picker, in display order. Each is rendered as
+/// `({short-name}) {app_url_template}` so users can match against the URL they
+/// see in the browser. The URL-paste and custom-endpoint escape hatches are
+/// appended after these by [`region_picker_options`].
+const PICKER_REGIONS: &[Region] = &[
+    Region::Us1,
+    Region::Us2,
+    Region::Us3,
+    Region::Eu1,
+    Region::Eu2,
+    Region::Ap1,
+    Region::Ap2,
+    Region::Ap3,
 ];
 
-/// Zero-based cursor position of `eu2` in [`REGION_OPTIONS`] (the default).
+/// Zero-based cursor position of `eu2` in [`PICKER_REGIONS`] (the default).
 const REGION_DEFAULT_CURSOR: usize = 4;
+
+/// Picker label: `(eu2) app.eu2.coralogix.com`.
+fn region_option_label(region: &Region) -> String {
+    match region.app_url_template() {
+        Some(template) => format!("({region}) {template}"),
+        None => region.to_string(),
+    }
+}
+
+fn region_picker_options() -> Vec<String> {
+    PICKER_REGIONS
+        .iter()
+        .map(region_option_label)
+        .chain([
+            PASTE_URL_OPTION.to_string(),
+            CUSTOM_ENDPOINT_OPTION.to_string(),
+        ])
+        .collect()
+}
+
+fn is_picker_region(region: &Region) -> bool {
+    PICKER_REGIONS.iter().any(|r| r == region)
+}
 
 /// Result of the interactive region prompt.
 enum RegionChoice {
@@ -76,7 +98,7 @@ fn select_credential_storage(prompt: &str, help_message: &str) -> Result<Credent
 /// to manual endpoint entry (same as [`CUSTOM_ENDPOINT_OPTION`]). This is the
 /// single region entry point shared by both the OAuth and API-key flows.
 fn select_region_interactive() -> Result<RegionChoice> {
-    let choice = Select::new("Region:", REGION_OPTIONS.to_vec())
+    let choice = Select::new("Region / Coralogix URL:", region_picker_options())
         .with_starting_cursor(REGION_DEFAULT_CURSOR)
         .with_help_message("Type to filter, or paste your Coralogix URL to auto-detect the region.")
         // Custom scorer: when the typed/pasted text is a recognizable Coralogix
@@ -88,10 +110,8 @@ fn select_region_interactive() -> Result<RegionChoice> {
                 // that region. A derived region *not* in the list (e.g. a
                 // staging URL) falls through to the escape hatches below —
                 // never to an empty list.
-                RegionMatch::Known(region)
-                    if REGION_OPTIONS.contains(&region.to_string().as_str()) =>
-                {
-                    (region.to_string() == string_value).then_some(i64::MAX)
+                RegionMatch::Known(region) if is_picker_region(&region) => {
+                    (region_option_label(&region) == string_value).then_some(i64::MAX)
                 }
                 // Unrecognized-or-unlisted URL-ish input (BYOC / private-link
                 // / staging). Schemeless hosts count too — region_from_url
@@ -104,7 +124,7 @@ fn select_region_interactive() -> Result<RegionChoice> {
                     {
                         return Some(0);
                     }
-                    (Select::<&str>::DEFAULT_SCORER)(input, option, string_value, idx)
+                    (Select::<String>::DEFAULT_SCORER)(input, option, string_value, idx)
                 }
             }
         })
@@ -130,8 +150,12 @@ fn select_region_interactive() -> Result<RegionChoice> {
     } else if choice == CUSTOM_ENDPOINT_OPTION {
         prompt_custom_endpoint()
     } else {
-        // A known region short-name from the list; infallible via FromStr.
-        Ok(RegionChoice::Known(choice.parse()?))
+        let region = PICKER_REGIONS
+            .iter()
+            .find(|r| region_option_label(r) == choice)
+            .cloned()
+            .expect("inquire returns one of the labels we passed in");
+        Ok(RegionChoice::Known(region))
     }
 }
 
@@ -632,37 +656,43 @@ mod tests {
         }
     }
 
-    /// The default cursor is a raw index into `REGION_OPTIONS`; if the list is
+    /// The default cursor is a raw index into `PICKER_REGIONS`; if the list is
     /// ever reordered or an entry is inserted before it, the picker would
     /// silently pre-select a different region.
     #[test]
     fn region_default_cursor_points_at_eu2() {
         assert_eq!(
-            REGION_OPTIONS[REGION_DEFAULT_CURSOR], "eu2",
-            "REGION_DEFAULT_CURSOR must point at eu2 in REGION_OPTIONS"
+            PICKER_REGIONS[REGION_DEFAULT_CURSOR],
+            Region::Eu2,
+            "REGION_DEFAULT_CURSOR must point at eu2 in PICKER_REGIONS"
         );
     }
 
-    /// Every region entry in the picker must round-trip through
-    /// `Region::from_str` to a real (non-Custom) variant — `from_str` is
-    /// infallible, so a typo here would otherwise silently produce a
-    /// `Region::Custom` with a garbage endpoint.
+    /// Every picker region must have an app URL template and render as
+    /// `({short-name}) {template}`. A missing template would show a bare
+    /// short-name and break URL-paste scoring against the label.
     #[test]
-    fn every_region_option_parses_to_a_known_region() {
-        for opt in REGION_OPTIONS {
-            if *opt == PASTE_URL_OPTION || *opt == CUSTOM_ENDPOINT_OPTION {
-                continue;
-            }
-            let region: Region = opt.parse().expect("Region::from_str is infallible");
+    fn every_region_option_is_short_name_and_url_template() {
+        for region in PICKER_REGIONS {
+            let template = region
+                .app_url_template()
+                .expect("picker region must have an app URL template");
+            assert_eq!(
+                region_option_label(region),
+                format!("({region}) {template}")
+            );
             assert!(
                 !matches!(region, Region::Custom(_)),
-                "REGION_OPTIONS entry {opt:?} is not a known region short-name"
-            );
-            assert_eq!(
-                region.to_string(),
-                *opt,
-                "REGION_OPTIONS entry {opt:?} does not round-trip through Region"
+                "PICKER_REGIONS entry {region} is not a known region"
             );
         }
+    }
+
+    #[test]
+    fn region_picker_ends_with_escape_hatches() {
+        let options = region_picker_options();
+        assert_eq!(options[options.len() - 2], PASTE_URL_OPTION);
+        assert_eq!(options[options.len() - 1], CUSTOM_ENDPOINT_OPTION);
+        assert_eq!(options.len(), PICKER_REGIONS.len() + 2);
     }
 }

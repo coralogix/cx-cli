@@ -73,8 +73,6 @@ If you're not sure which region you're in, choose `Paste a Coralogix URL` at the
 
 A URL that doesn't match a known Coralogix domain (a bring-your-own-cloud deployment, private-link, or custom domain) falls back to manual endpoint entry rather than erroring out.
 
-The same derivation is applied to the `--region` / `CX_REGION` value, so `cx --region https://myteam.app.cx498.coralogix.com logs '...'` targets `us2`.
-
 ### API key
 
 A static Coralogix API key. The key **must be one of the following types** - `cx` uses it as a Bearer token when calling the query APIs, so ingress ("Send-Your-Data") keys will not work:
@@ -216,7 +214,7 @@ Legacy profiles without an `auth` field behave as `auth = "api_key"` automatical
 | `ap2` | `https://api.ap2.coralogix.com` |
 | `ap3` | `https://api.ap3.coralogix.com` |
 
-A fully qualified HTTPS URL can be used as a region value for non-standard environments. A Coralogix **app** URL (the one in your browser, e.g. `https://myteam.app.eu2.coralogix.com`) is also accepted anywhere a region is expected — `cx` derives the region from it. See [Don't know your region? Paste your URL](#dont-know-your-region-paste-your-url).
+A fully qualified HTTPS URL can be used as a region value for non-standard environments.
 
 ## Console links
 

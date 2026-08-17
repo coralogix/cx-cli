@@ -634,11 +634,40 @@ impl Commands {
 enum ProfilesCmd {
     /// List all configured profiles.
     List,
-    /// Add or reconfigure a profile interactively.
+    /// Add or reconfigure a profile.
+    ///
+    /// Values supplied via flags/env are never prompted for. On a terminal,
+    /// missing values are prompted interactively. Without a terminal (or when
+    /// both an API key and a region/URL are supplied), nothing is prompted:
+    /// missing required values are errors, and existing profiles are only
+    /// overwritten with --force.
+    #[command(after_help = "\
+Examples:
+  cx profiles add                                        # fully interactive
+  cx profiles add prod --region eu2                      # region answered, rest prompted
+  cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
+  CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite")]
     Add {
-        /// Profile name to configure (prompted if not provided).
+        /// Profile name to configure (prompted if not provided; defaults to
+        /// "default" when running non-interactively).
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: Option<String>,
+        /// Profile name to configure (alternative to the positional NAME).
+        #[arg(long, conflicts_with = "name", value_name = "NAME")]
+        profile: Option<String>,
+        /// Coralogix URL to derive the region from (e.g. your browser URL).
+        /// Unrecognized URLs are used as a custom API endpoint (BYOC / private link).
+        #[arg(long, conflicts_with = "region")]
+        url: Option<String>,
+        /// Region short-name (us1, us2, us3, eu1, eu2, ap1, ap2, ap3). Alternative to --url.
+        #[arg(long)]
+        region: Option<String>,
+        /// API key (Team Key or Personal Key). Also read from CX_API_KEY.
+        #[arg(long, env = "CX_API_KEY", hide_env_values = true, value_name = "KEY")]
+        api_key: Option<String>,
+        /// Overwrite an existing profile without prompting.
+        #[arg(long)]
+        force: bool,
         /// Set this profile as the default without prompting.
         #[arg(long)]
         set_default: bool,
@@ -2798,8 +2827,24 @@ async fn main() -> Result<()> {
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name, set_default } => {
-                commands::profiles::run_add(name, set_default).await
+            ProfilesCmd::Add {
+                name,
+                profile,
+                url,
+                region,
+                api_key,
+                force,
+                set_default,
+            } => {
+                commands::profiles::run_add(commands::profiles::AddArgs {
+                    name: name.or(profile),
+                    url,
+                    region,
+                    api_key,
+                    force,
+                    set_default,
+                })
+                .await
             }
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
@@ -2867,8 +2912,24 @@ async fn main() -> Result<()> {
     if let Commands::Profiles { cmd } = cli.command {
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name, set_default } => {
-                commands::profiles::run_add(name, set_default).await
+            ProfilesCmd::Add {
+                name,
+                profile,
+                url,
+                region,
+                api_key,
+                force,
+                set_default,
+            } => {
+                commands::profiles::run_add(commands::profiles::AddArgs {
+                    name: name.or(profile),
+                    url,
+                    region,
+                    api_key,
+                    force,
+                    set_default,
+                })
+                .await
             }
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),

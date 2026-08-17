@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
@@ -38,6 +40,7 @@ const REGION_OPTIONS: &[&str] = &[
 const REGION_DEFAULT_CURSOR: usize = 4;
 
 /// Result of the interactive region prompt.
+#[derive(Debug)]
 enum RegionChoice {
     /// A known region — either picked from the list or derived from a pasted URL.
     Known(Region),
@@ -157,6 +160,54 @@ fn prompt_custom_endpoint() -> Result<RegionChoice> {
     Ok(RegionChoice::Custom { base_url })
 }
 
+// ── Flag resolution (per-value: flag/env → prompt) ───────────────────────────
+
+/// Parse a `--region` flag value, rejecting anything that isn't a known
+/// region short-name. `Region::from_str` is infallible (unknown strings become
+/// `Region::Custom`), so without this guard a typo like `--region eu22` would
+/// silently write a garbage endpoint to the profile.
+fn parse_region_flag(raw: &str) -> Result<Region> {
+    let region: Region = raw.parse().expect("Region::from_str is infallible");
+    if matches!(region, Region::Custom(_)) {
+        anyhow::bail!(
+            "unknown region '{raw}' — expected one of us1, us2, us3, eu1, eu2, ap1, ap2, ap3, \
+             or pass --url with your Coralogix URL"
+        );
+    }
+    Ok(region)
+}
+
+/// Resolve the `--url` / `--region` flags into a [`RegionChoice`], if either
+/// was supplied. Validation happens eagerly so a bad flag value fails before
+/// any prompting starts. A `--url` that doesn't map to a known Coralogix
+/// domain is used verbatim as a custom API endpoint (BYOC / private link) —
+/// the user supplied it explicitly, so this is not an invented value.
+fn resolve_region_flags(url: Option<&str>, region: Option<&str>) -> Result<Option<RegionChoice>> {
+    if let Some(raw) = region {
+        return Ok(Some(RegionChoice::Known(parse_region_flag(raw)?)));
+    }
+    let Some(raw) = url else {
+        return Ok(None);
+    };
+    match region_from_url(raw) {
+        RegionMatch::Known(region) => {
+            println!("Detected region: {region}");
+            Ok(Some(RegionChoice::Known(region)))
+        }
+        RegionMatch::Unresolved => {
+            if crate::region::extract_host(raw).is_none() {
+                anyhow::bail!(
+                    "'--url {raw}' is not a valid URL — pass your Coralogix URL \
+                     (e.g. https://myteam.app.eu2.coralogix.com) or use --region"
+                );
+            }
+            println!("Couldn't map '{raw}' to a known region — using it as a custom API endpoint.");
+            let base_url = raw.trim().trim_end_matches('/').to_string();
+            Ok(Some(RegionChoice::Custom { base_url }))
+        }
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Print a one-line refresh hint when the user has managed static completions.
@@ -272,17 +323,52 @@ pub fn run_list() -> Result<()> {
 
 // ── Add ───────────────────────────────────────────────────────────────────────
 
-pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<()> {
+/// Flag surface for `cx profiles add`. Semantics in one line: flags answer
+/// questions; unanswered questions get prompted; no terminal means unanswered
+/// questions are errors.
+pub struct AddArgs {
+    /// Profile name (positional or `--profile`). Non-interactive default: "default".
+    pub name: Option<String>,
+    /// `--url`: Coralogix URL the region is derived from.
+    pub url: Option<String>,
+    /// `--region`: region short-name, alternative to `--url`.
+    pub region: Option<String>,
+    /// `--api-key` / `CX_API_KEY`.
+    pub api_key: Option<String>,
+    /// `--force`: overwrite an existing profile without prompting.
+    pub force: bool,
+    /// `--set-default`: set this profile as the default without prompting.
+    pub set_default: bool,
+}
+
+pub async fn run_add(args: AddArgs) -> Result<()> {
+    let AddArgs {
+        name,
+        url,
+        region,
+        api_key,
+        force,
+        set_default,
+    } = args;
+
+    // Validate flag values before any prompting starts.
+    let region_choice = resolve_region_flags(url.as_deref(), region.as_deref())?;
+
+    // A fully-specified invocation (API key + region) never prompts, even on a
+    // terminal — there are no unanswered questions left.
+    let fully_specified = api_key.is_some() && region_choice.is_some();
+    let interactive = std::io::stdin().is_terminal() && !fully_specified;
+
     let is_first_profile = list_profile_names()?.is_empty();
 
-    let name = match profile_name {
+    let name = match name {
         Some(n) => {
             if n.is_empty() {
                 anyhow::bail!("Profile name cannot be empty.");
             }
             n
         }
-        None => {
+        None if interactive => {
             let mut prompt = Text::new("Profile name:")
                 .with_help_message("A short identifier for this profile, e.g. 'prod' or 'staging'.")
                 .with_validator(inquire::validator::MinLengthValidator::new(1));
@@ -291,67 +377,95 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
             }
             prompt.prompt()?
         }
+        // The profile name is the one trivial default allowed non-interactively.
+        None => "default".to_string(),
     };
+
+    if profile_file(&name)?.exists() && !force {
+        if interactive {
+            let confirmed = Confirm::new(&format!("Reconfigure profile '{name}'?"))
+                .with_default(false)
+                .with_help_message("The profile already exists; reconfiguring replaces it.")
+                .prompt()?;
+            if !confirmed {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        } else {
+            anyhow::bail!("profile '{name}' already exists — pass --force to overwrite");
+        }
+    }
 
     println!("Configuring profile '{name}'\n");
 
-    let auth_choice = Select::new("Authentication method:", AUTH_METHODS.to_vec())
-        .with_starting_cursor(0) // OAuth is the default
-        .with_help_message(
-            "OAuth opens your browser for secure login. \
-             API key lets you paste credentials directly \
-             (must be a Team Key or Personal Key - not a Send-Your-Data key).",
-        )
-        .prompt()?;
-
-    let use_oauth = auth_choice.starts_with("OAuth");
-
-    let (mut profile, storage_desc) = if use_oauth {
-        configure_oauth(&name).await?
+    let (mut profile, storage_desc) = if !interactive {
+        build_profile_non_interactive(&name, api_key, region_choice)?
+    } else if api_key.is_some() {
+        // An API key was supplied, so the auth-method question is answered.
+        configure_api_key(&name, api_key, region_choice)?
     } else {
-        configure_api_key(&name)?
+        let auth_choice = Select::new("Authentication method:", AUTH_METHODS.to_vec())
+            .with_starting_cursor(0) // OAuth is the default
+            .with_help_message(
+                "OAuth opens your browser for secure login. \
+                 API key lets you paste credentials directly \
+                 (must be a Team Key or Personal Key - not a Send-Your-Data key).",
+            )
+            .prompt()?;
+
+        if auth_choice.starts_with("OAuth") {
+            configure_oauth(&name, region_choice).await?
+        } else {
+            configure_api_key(&name, None, region_choice)?
+        }
     };
 
     // ── Common: default output format (per-profile) ────────────────────────────
-    let global_config = load_config().unwrap_or_default();
-    let current_fmt = profile
-        .default_output_format
-        .unwrap_or(global_config.default_output_format);
-    let current_idx = OUTPUT_FORMATS
-        .iter()
-        .position(|&f| f == current_fmt.as_str())
-        .unwrap_or(0);
-    let format_str = Select::new("Default output format:", OUTPUT_FORMATS.to_vec())
-        .with_starting_cursor(current_idx)
-        .prompt()?;
-    profile.default_output_format = Some(match format_str {
-        "json" => OutputFormat::Json,
-        "toon" => OutputFormat::Toon,
-        _ => OutputFormat::Text,
-    });
+    // Non-interactive runs leave it unset, falling back to the global default.
+    if interactive {
+        let global_config = load_config().unwrap_or_default();
+        let current_fmt = profile
+            .default_output_format
+            .unwrap_or(global_config.default_output_format);
+        let current_idx = OUTPUT_FORMATS
+            .iter()
+            .position(|&f| f == current_fmt.as_str())
+            .unwrap_or(0);
+        let format_str = Select::new("Default output format:", OUTPUT_FORMATS.to_vec())
+            .with_starting_cursor(current_idx)
+            .prompt()?;
+        profile.default_output_format = Some(match format_str {
+            "json" => OutputFormat::Json,
+            "toon" => OutputFormat::Toon,
+            _ => OutputFormat::Text,
+        });
+    }
 
     save_profile(&name, &profile)?;
 
-    // On first profile creation, prompt for global safety settings and auto-set as default.
+    // On first profile creation, configure global safety settings and auto-set
+    // as default. Non-interactive runs keep the (permissive) defaults.
     if is_first_profile {
-        println!("\n─── Global Safety Settings ───");
-        println!("These apply to all profiles. Change later in ~/.cx/config.toml\n");
-
         let mut global_config = load_config().unwrap_or_default();
 
-        global_config.allow_risky_commands =
-            Confirm::new("Allow risky commands? (iam, archive write operations)")
-                .with_default(true)
-                .with_help_message(
-                    "When disabled, write operations under 'iam' and 'archive' are blocked. \
-             Read operations remain available.",
-                )
-                .prompt()?;
+        if interactive {
+            println!("\n─── Global Safety Settings ───");
+            println!("These apply to all profiles. Change later in ~/.cx/config.toml\n");
 
-        global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
-            .with_default(true)
-            .with_help_message("When disabled, 'olly ask' is blocked.")
-            .prompt()?;
+            global_config.allow_risky_commands =
+                Confirm::new("Allow risky commands? (iam, archive write operations)")
+                    .with_default(true)
+                    .with_help_message(
+                        "When disabled, write operations under 'iam' and 'archive' are blocked. \
+                 Read operations remain available.",
+                    )
+                    .prompt()?;
+
+            global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
+                .with_default(true)
+                .with_help_message("When disabled, 'olly ask' is blocked.")
+                .prompt()?;
+        }
 
         global_config.default_profile = name.clone();
         save_config(&global_config)?;
@@ -361,10 +475,12 @@ pub async fn run_add(profile_name: Option<String>, set_default: bool) -> Result<
         let mut global_config = load_config().unwrap_or_default();
         let should_set_default = if set_default {
             true
-        } else {
+        } else if interactive {
             Confirm::new(&format!("Set '{name}' as the default profile?"))
                 .with_default(false)
                 .prompt()?
+        } else {
+            false
         };
         if should_set_default {
             global_config.default_profile = name.clone();
@@ -451,38 +567,93 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
     Ok(())
 }
 
+// ── Non-interactive configure path ────────────────────────────────────────────
+
+/// Build an API-key profile from flags alone — no terminal involved. OAuth is
+/// unavailable here (it needs a browser), and consequential values are never
+/// invented: a missing API key or region is an error naming the exact flag to
+/// add. Credentials go to the profile file (the OS store may itself prompt).
+fn build_profile_non_interactive(
+    name: &str,
+    api_key: Option<String>,
+    region_choice: Option<RegionChoice>,
+) -> Result<(Profile, &'static str)> {
+    let mut missing = Vec::new();
+    if region_choice.is_none() {
+        missing.push("no region — pass --url or --region");
+    }
+    if api_key.is_none() {
+        missing.push("no API key — pass --api-key or set CX_API_KEY");
+    }
+    if !missing.is_empty() {
+        anyhow::bail!("{}", missing.join("\n"));
+    }
+    let (api_key, region_choice) = (api_key.unwrap(), region_choice.unwrap());
+
+    let region = match region_choice {
+        RegionChoice::Known(region) => region,
+        RegionChoice::Custom { base_url } => Region::Custom(base_url),
+    };
+
+    // Clean up any leftover keychain entries from a previous config.
+    keyring_store::delete_profile(name);
+    let profile = Profile {
+        auth: AuthKind::ApiKey,
+        credential_storage: CredentialStorage::File,
+        api_key: Some(api_key),
+        region,
+        label: None,
+        oauth_client_id: None,
+        oauth_base_url: None,
+        oauth_tokens: None,
+        default_output_format: None,
+        default_tier: None,
+        console_url: None,
+        cached_console_url: None,
+        cached_console_url_at: None,
+    };
+    Ok((profile, "profile file"))
+}
+
 // ── OAuth configure path ──────────────────────────────────────────────────────
 
-async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
-    // Region / environment selection (searchable list, URL derivation, or BYOC).
+async fn configure_oauth(
+    name: &str,
+    region_choice: Option<RegionChoice>,
+) -> Result<(Profile, &'static str)> {
+    // Region / environment selection: the --url/--region flags when supplied,
+    // otherwise the searchable list (URL derivation, BYOC).
+    let region_choice = match region_choice {
+        Some(choice) => choice,
+        None => select_region_interactive()?,
+    };
     let is_custom;
-    let (region, base_url, client_id, oauth_client_id_for_profile) =
-        match select_region_interactive()? {
-            RegionChoice::Custom { base_url } => {
-                is_custom = true;
-                let client_id = Text::new("OAuth client ID:").prompt()?;
-                let region = Region::Custom(base_url.clone());
-                // Store the client ID in the profile for custom environments.
-                let client_id_for_profile = Some(client_id.clone());
-                (region, base_url, client_id, client_id_for_profile)
-            }
-            RegionChoice::Known(region) => {
-                is_custom = false;
-                let base_url = region.api_endpoint().to_string();
-                let region_name = region.to_string();
-                let client_id = oauth::client_id_for_region(&region_name)
-                    .map(|s| s.to_string())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "No OAuth client ID found for region '{region_name}'.\n\
+    let (region, base_url, client_id, oauth_client_id_for_profile) = match region_choice {
+        RegionChoice::Custom { base_url } => {
+            is_custom = true;
+            let client_id = Text::new("OAuth client ID:").prompt()?;
+            let region = Region::Custom(base_url.clone());
+            // Store the client ID in the profile for custom environments.
+            let client_id_for_profile = Some(client_id.clone());
+            (region, base_url, client_id, client_id_for_profile)
+        }
+        RegionChoice::Known(region) => {
+            is_custom = false;
+            let base_url = region.api_endpoint().to_string();
+            let region_name = region.to_string();
+            let client_id = oauth::client_id_for_region(&region_name)
+                .map(|s| s.to_string())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No OAuth client ID found for region '{region_name}'.\n\
                              Please choose \"{CUSTOM_ENDPOINT_OPTION}\" to provide your own \
                              base URL and client ID."
-                        )
-                    })?;
-                // Known regions: client ID is hard-coded, don't store in profile TOML.
-                (region, base_url, client_id, None)
-            }
-        };
+                    )
+                })?;
+            // Known regions: client ID is hard-coded, don't store in profile TOML.
+            (region, base_url, client_id, None)
+        }
+    };
 
     let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
     let label = label.filter(|s| !s.is_empty());
@@ -540,19 +711,32 @@ async fn configure_oauth(name: &str) -> Result<(Profile, &'static str)> {
 
 // ── API key configure path ────────────────────────────────────────────────────
 
-fn configure_api_key(name: &str) -> Result<(Profile, &'static str)> {
-    println!(
-        "The API key must be a Team Key or a Personal Key.\n  \
-         • Team Key:     Data Flow → API Keys → Team Keys\n  \
-         • Personal Key: User menu (top-right) → Personal Keys\n\
-         Send-Your-Data / ingress keys will NOT work for querying."
-    );
-    let api_key = Password::new("Coralogix API key (Team Key or Personal Key):")
-        .with_display_mode(PasswordDisplayMode::Masked)
-        .without_confirmation()
-        .prompt()?;
+fn configure_api_key(
+    name: &str,
+    api_key: Option<String>,
+    region_choice: Option<RegionChoice>,
+) -> Result<(Profile, &'static str)> {
+    let api_key = match api_key {
+        Some(key) => key,
+        None => {
+            println!(
+                "The API key must be a Team Key or a Personal Key.\n  \
+                 • Team Key:     Data Flow → API Keys → Team Keys\n  \
+                 • Personal Key: User menu (top-right) → Personal Keys\n\
+                 Send-Your-Data / ingress keys will NOT work for querying."
+            );
+            Password::new("Coralogix API key (Team Key or Personal Key):")
+                .with_display_mode(PasswordDisplayMode::Masked)
+                .without_confirmation()
+                .prompt()?
+        }
+    };
 
-    let region = match select_region_interactive()? {
+    let region_choice = match region_choice {
+        Some(choice) => choice,
+        None => select_region_interactive()?,
+    };
+    let region = match region_choice {
         RegionChoice::Known(region) => region,
         RegionChoice::Custom { base_url } => Region::Custom(base_url),
     };
@@ -640,6 +824,71 @@ mod tests {
         assert_eq!(
             REGION_OPTIONS[REGION_DEFAULT_CURSOR], "eu2",
             "REGION_DEFAULT_CURSOR must point at eu2 in REGION_OPTIONS"
+        );
+    }
+
+    // ── --region / --url flag resolution ─────────────────────────────────────
+
+    #[test]
+    fn region_flag_parses_known_shortname() {
+        let region = parse_region_flag("eu2").expect("eu2 is a known region");
+        assert_eq!(region, Region::Eu2);
+    }
+
+    #[test]
+    fn region_flag_is_case_insensitive() {
+        let region = parse_region_flag("EU2").expect("region flag should be case-insensitive");
+        assert_eq!(region, Region::Eu2);
+    }
+
+    /// `Region::from_str` maps unknown strings to `Region::Custom`; the flag
+    /// parser must reject those instead of writing a garbage endpoint.
+    #[test]
+    fn region_flag_rejects_unknown_shortname() {
+        let err = parse_region_flag("eu22").expect_err("eu22 is not a region");
+        assert!(
+            err.to_string().contains("unknown region 'eu22'"),
+            "error should name the bad value, got: {err}"
+        );
+    }
+
+    #[test]
+    fn no_region_flags_resolve_to_none() {
+        assert!(resolve_region_flags(None, None)
+            .expect("no flags is valid")
+            .is_none());
+    }
+
+    #[test]
+    fn url_flag_derives_known_region() {
+        let choice = resolve_region_flags(Some("https://myteam.app.eu2.coralogix.com"), None)
+            .expect("recognizable URL")
+            .expect("URL flag should produce a choice");
+        assert!(
+            matches!(choice, RegionChoice::Known(Region::Eu2)),
+            "app URL should derive eu2"
+        );
+    }
+
+    /// A URL that doesn't map to a known Coralogix domain (BYOC / private
+    /// link) is used verbatim as a custom endpoint, trailing slash stripped.
+    #[test]
+    fn url_flag_unresolved_becomes_custom_endpoint() {
+        let choice = resolve_region_flags(Some("https://api.myenv.internal/"), None)
+            .expect("host-bearing URL")
+            .expect("URL flag should produce a choice");
+        match choice {
+            RegionChoice::Custom { base_url } => assert_eq!(base_url, "https://api.myenv.internal"),
+            RegionChoice::Known(_) => panic!("unknown host must not resolve to a known region"),
+        }
+    }
+
+    #[test]
+    fn url_flag_without_host_is_rejected() {
+        let err = resolve_region_flags(Some(""), None).expect_err("empty URL has no host");
+        assert!(
+            err.to_string().contains("not a valid URL"),
+            "error should say the URL is invalid, got: {err}"
         );
     }
 

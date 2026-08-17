@@ -312,6 +312,43 @@ fn add_non_interactive_missing_everything_reports_all_missing_values() {
     );
 }
 
+/// An empty `--api-key ""` (e.g. a CI secret expanding to nothing) must be
+/// treated as missing — not silently saved as an unusable profile.
+#[test]
+fn add_non_interactive_empty_api_key_is_treated_as_missing() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--region", "eu2", "--api-key", ""])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success(), "empty API key must be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --api-key or set CX_API_KEY"),
+        "error should name the exact flag to add, stderr: {stderr}"
+    );
+}
+
+/// A whitespace-only key is just as unusable as an empty one.
+#[test]
+fn add_non_interactive_whitespace_api_key_is_treated_as_missing() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .env("CX_API_KEY", "   ")
+        .args(["profiles", "add", "--region", "eu2"])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        !output.status.success(),
+        "whitespace-only API key must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --api-key or set CX_API_KEY"),
+        "error should name the exact flag to add, stderr: {stderr}"
+    );
+}
+
 #[test]
 fn add_honors_cx_api_key_env() {
     let tmp = temp_home();

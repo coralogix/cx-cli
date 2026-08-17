@@ -425,6 +425,11 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         set_default,
     } = args;
 
+    // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
+    // secret expanding to nothing) as missing, so it's prompted for or errors
+    // instead of silently saving an unusable profile.
+    let api_key = api_key.filter(|k| !k.trim().is_empty());
+
     // Validate flag values before any prompting starts.
     let region_choice = resolve_region_flags(url.as_deref(), region.as_deref())?;
 
@@ -802,6 +807,14 @@ fn configure_api_key(
             Password::new("Coralogix API key (Team Key or Personal Key):")
                 .with_display_mode(PasswordDisplayMode::Masked)
                 .without_confirmation()
+                .with_validator(|input: &str| {
+                    use inquire::validator::Validation;
+                    if input.trim().is_empty() {
+                        Ok(Validation::Invalid("API key cannot be empty".into()))
+                    } else {
+                        Ok(Validation::Valid)
+                    }
+                })
                 .prompt()?
         }
     };

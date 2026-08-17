@@ -186,7 +186,10 @@ fn command_path_from_matches(matches: &ArgMatches) -> (String, String) {
     }
 }
 
-fn installed_coralogix_skills() -> Vec<String> {
+/// Names of Coralogix skills (bundled or `cx-`/`coralogix-`-prefixed) found in
+/// the agents' skill directories, global and project scope. Also used by the
+/// skills install step to detect an existing install.
+pub fn installed_coralogix_skills() -> Vec<String> {
     installed_coralogix_skills_in(
         &skill_roots(),
         bundled_skills::BUNDLED_CORALOGIX_SKILL_NAMES,

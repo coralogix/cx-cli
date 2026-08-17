@@ -75,6 +75,7 @@ Agent:
 
 Local:
   profiles           Manage profiles (list, add, delete, set-default)
+  skills             Install the cx agent skills for coding agents
   cleanup            Remove stale temp files
 ```
 
@@ -86,6 +87,8 @@ Local:
 - `cx dashboards query-search --field <field-path>` — Find all queries referencing a specific field (e.g., `$d.http.status_code`)
 
 All use the Olly KB semantic-search-service API with gateway permission `legacy-archive-queries:Execute` (AAA id 40). See `olly-knowledge-base` `apps/semantic-search-service/AGENTS.md`.
+
+**`cx skills install`:** Installs the cx agent skills bundle by shelling out to the vercel-labs `skills` npx installer (`npx skills add coralogix/cx-cli`). Express mode asks one question (global vs local scope, skipped by `--global`/`--local`), then runs fully non-interactively with agent auto-detection; `--agent <name>` overrides auto-detect, `--interactive` walks the installer's full flow. Requires Node.js/npx; the CLI is fully usable without skills. Logic lives in `src/commands/skills/mod.rs` and is reused by `cx init` (FORGE-658).
 
 **Agent discovery:** `cx schema` outputs the full command tree (commands, subcommands, flags, descriptions) as JSON. Agents should call `cx schema` to discover available commands rather than parsing help text.
 
@@ -205,6 +208,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx olly` | `cx-olly` | Covered |
 | `cx infra` | `cx-infra` | Covered |
 | `cx profiles` | - | Local command |
+| `cx skills` | - | Local command (installs the skills in this table) |
 | `cx cleanup` | - | Local command |
 
 ### Testing Expectations

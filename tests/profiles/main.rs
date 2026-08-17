@@ -17,8 +17,8 @@ fn temp_home() -> PathBuf {
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
-    // `profiles add` reads CX_API_KEY; a key exported in the developer's shell
-    // must not leak into the tests.
+    // `profiles add` reads CX_API_KEY; a key exported in the user's shell
+    // must not be used in tests.
     cmd.env_remove("CX_API_KEY");
     cmd
 }

@@ -366,6 +366,59 @@ fn add_honors_cx_api_key_env() {
     );
 }
 
+// ── --oauth flag ─────────────────────────────────────────────────────────────
+
+/// Non-interactive `--oauth` works (the sign-in URL is printed, approval
+/// happens in the browser), but the region has no default: without a terminal
+/// to prompt on, missing --url/--region is an error before any login starts.
+#[test]
+fn add_oauth_non_interactive_without_region_fails_with_flag_hint() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--oauth"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --url or --region"),
+        "expected missing-region error naming the flags, stderr: {stderr}"
+    );
+    assert!(
+        load_profile_toml(&tmp, "default").is_empty(),
+        "no profile should be written on failure"
+    );
+}
+
+/// `--oauth` must win over an exported CX_API_KEY: with a custom endpoint the
+/// OAuth path fails on the missing client ID, while the API-key path would
+/// have silently saved a profile from the env value.
+#[test]
+fn add_oauth_wins_over_env_api_key() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .env("CX_API_KEY", "env-key-456")
+        .args([
+            "profiles",
+            "add",
+            "--oauth",
+            "--url",
+            "https://api.myenv.internal",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("OAuth client ID"),
+        "expected the OAuth path's client-ID error, not the API-key path, stderr: {stderr}"
+    );
+    assert!(
+        load_profile_toml(&tmp, "default").is_empty(),
+        "no API-key profile should be written when --oauth is passed"
+    );
+}
+
 #[test]
 fn add_url_flag_derives_region() {
     let tmp = temp_home();

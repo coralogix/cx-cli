@@ -645,6 +645,7 @@ enum ProfilesCmd {
 Examples:
   cx profiles add                                        # fully interactive
   cx profiles add prod --region eu2                      # region answered, rest prompted
+  cx profiles add --oauth --region eu2                   # straight to browser login
   cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
   CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite")]
     Add {
@@ -665,6 +666,11 @@ Examples:
         /// API key (Team Key or Personal Key). Also read from CX_API_KEY.
         #[arg(long, env = "CX_API_KEY", hide_env_values = true, value_name = "KEY")]
         api_key: Option<String>,
+        /// Use OAuth browser login, skipping the auth-method prompt. Takes
+        /// precedence over --api-key / CX_API_KEY. Prints the sign-in URL, so
+        /// it also works without a terminal (requires --url or --region there).
+        #[arg(long)]
+        oauth: bool,
         /// Overwrite an existing profile without prompting.
         #[arg(long)]
         force: bool,
@@ -2833,6 +2839,7 @@ async fn main() -> Result<()> {
                 url,
                 region,
                 api_key,
+                oauth,
                 force,
                 set_default,
             } => {
@@ -2841,6 +2848,7 @@ async fn main() -> Result<()> {
                     url,
                     region,
                     api_key,
+                    oauth,
                     force,
                     set_default,
                 })
@@ -2918,6 +2926,7 @@ async fn main() -> Result<()> {
                 url,
                 region,
                 api_key,
+                oauth,
                 force,
                 set_default,
             } => {
@@ -2926,6 +2935,7 @@ async fn main() -> Result<()> {
                     url,
                     region,
                     api_key,
+                    oauth,
                     force,
                     set_default,
                 })

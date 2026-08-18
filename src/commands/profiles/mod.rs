@@ -409,6 +409,8 @@ pub struct AddArgs {
     pub region: Option<String>,
     /// `--api-key` / `CX_API_KEY`.
     pub api_key: Option<String>,
+    /// `--oauth`: use OAuth browser login, skipping the auth-method prompt.
+    pub oauth: bool,
     /// `--force`: overwrite an existing profile without prompting.
     pub force: bool,
     /// `--set-default`: set this profile as the default without prompting.
@@ -421,6 +423,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         url,
         region,
         api_key,
+        oauth,
         force,
         set_default,
     } = args;
@@ -428,7 +431,11 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
     // secret expanding to nothing) as missing, so it's prompted for or errors
     // instead of silently saving an unusable profile.
-    let api_key = api_key.filter(|k| !k.trim().is_empty());
+    //
+    // `--oauth` takes precedence over the key: CX_API_KEY is commonly exported
+    // in shells, and a clap conflict would fire on the env value too, making
+    // `--oauth` unusable for exactly the users most likely to want it.
+    let api_key = api_key.filter(|k| !k.trim().is_empty()).filter(|_| !oauth);
 
     // Validate flag values before any prompting starts.
     let region_choice = resolve_region_flags(url.as_deref(), region.as_deref())?;
@@ -477,7 +484,13 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
     println!("Configuring profile '{name}'\n");
 
-    let (mut profile, storage_desc) = if !interactive {
+    let (mut profile, storage_desc) = if oauth {
+        // `--oauth` answers the auth-method question; go straight to the
+        // browser login. A terminal is not required: the approval happens in
+        // the browser, the login URL is printed for the user (or an agent) to
+        // open, and the remaining questions fall back to defaults.
+        configure_oauth(&name, region_choice, interactive).await?
+    } else if !interactive {
         build_profile_non_interactive(&name, api_key, region_choice)?
     } else if api_key.is_some() {
         // An API key was supplied, so the auth-method question is answered.
@@ -493,7 +506,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             .prompt()?;
 
         if auth_choice.starts_with("OAuth") {
-            configure_oauth(&name, region_choice).await?
+            configure_oauth(&name, region_choice, interactive).await?
         } else {
             configure_api_key(&name, None, region_choice)?
         }
@@ -699,17 +712,28 @@ fn build_profile_non_interactive(
 async fn configure_oauth(
     name: &str,
     region_choice: Option<RegionChoice>,
+    interactive: bool,
 ) -> Result<(Profile, &'static str)> {
     // Region / environment selection: the --url/--region flags when supplied,
-    // otherwise the searchable list (URL derivation, BYOC).
+    // otherwise the searchable list (URL derivation, BYOC). The browser login
+    // itself needs no terminal — the user approves in the browser and the
+    // callback lands on localhost — so without one, only the questions with
+    // no flag answer are errors and the rest fall back to defaults.
     let region_choice = match region_choice {
         Some(choice) => choice,
-        None => select_region_interactive()?,
+        None if interactive => select_region_interactive()?,
+        None => anyhow::bail!("no region — pass --url or --region"),
     };
     let is_custom;
     let (region, base_url, client_id, oauth_client_id_for_profile) = match region_choice {
         RegionChoice::Custom { base_url } => {
             is_custom = true;
+            if !interactive {
+                anyhow::bail!(
+                    "a custom endpoint needs an OAuth client ID, which is prompted \
+                     interactively — run on a terminal, or use --api-key/CX_API_KEY"
+                );
+            }
             let client_id = Text::new("OAuth client ID:").prompt()?;
             let region = Region::Custom(base_url.clone());
             // Store the client ID in the profile for custom environments.
@@ -734,8 +758,13 @@ async fn configure_oauth(
         }
     };
 
-    let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
-    let label = label.filter(|s| !s.is_empty());
+    let label = if interactive {
+        Text::new("Label (e.g. 'prod'):")
+            .prompt_skippable()?
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
 
     // Clean up any existing keyring entries before writing new ones, regardless
     // of which storage backend the user picks below.
@@ -746,11 +775,17 @@ async fn configure_oauth(
     let tokens = oauth::browser_login(&base_url, &client_id).await?;
     println!("Login successful!");
 
-    let credential_storage = select_credential_storage(
-        "Where should OAuth tokens be stored?",
-        "'file' stores tokens in the profile config (0600 perms). \
-         'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
-    )?;
+    // Non-interactive runs store tokens in the profile file, matching the
+    // non-interactive API-key path (the OS store may itself prompt).
+    let credential_storage = if interactive {
+        select_credential_storage(
+            "Where should OAuth tokens be stored?",
+            "'file' stores tokens in the profile config (0600 perms). \
+             'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
+        )?
+    } else {
+        CredentialStorage::File
+    };
 
     // For custom environments, explicitly store the base URL so that token
     // refresh can reach the correct OIDC discovery endpoint even if the

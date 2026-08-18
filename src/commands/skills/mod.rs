@@ -27,6 +27,11 @@ const INSTALLED_SOURCE: &str = "coralogix/cx-cli";
 /// The command a user can run by hand when cx fails the install.
 const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
 
+/// Where to review the installed skills (and their risk assessments). Shown in
+/// the compact summary in place of the installer's own security-risk table,
+/// which we suppress along with the rest of its verbose output.
+const SKILLS_REVIEW_URL: &str = "https://skills.sh/coralogix/cx-cli";
+
 /// Where the installer puts skills: the user's home (`~/`) or the project (`./`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillsScope {
@@ -93,21 +98,59 @@ pub fn run_install(opts: InstallOptions) -> Result<()> {
     }
 
     let args = build_install_args(scope, &opts.agents);
-    println!("Installing cx agent skills: npx {}", display_args(&args));
 
-    let status = Command::new(npx_program())
+    // The `-y` installer runs fully non-interactively, so it needs no terminal
+    // and its verbose TUI (banner, per-skill table, risk matrix) is pure noise.
+    // Capture it and replace it with a one-line summary; only surface the raw
+    // output on failure, where the error detail matters. The user-driven
+    // interactive walk (`run_advanced_install`) keeps full passthrough.
+    println!("Installing cx agent skills…");
+
+    let output = Command::new(npx_program())
         .args(&args)
-        .status()
+        .output()
         .context("failed to run npx")?;
-    if !status.success() {
+    if !output.status.success() {
+        // Show the installer's own diagnostics before the retry hint.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let trimmed = stderr.trim();
+        if !trimmed.is_empty() {
+            eprintln!("{trimmed}");
+        }
         bail!(
-            "skills installer exited with {status}.\n\
-             You can retry manually with: {MANUAL_INSTALL_CMD}"
+            "skills installer exited with {}.\n\
+             You can retry manually with: {MANUAL_INSTALL_CMD}",
+            output.status
         );
     }
 
-    println!("cx agent skills installed.");
+    print_install_summary(scope);
     Ok(())
+}
+
+/// The compact success line shown after a non-interactive install, in place of
+/// the installer's verbose output. Keeps the installer's own "review before
+/// use" nudge alive, since we've hidden its security-risk table.
+fn print_install_summary(scope: SkillsScope) {
+    let scope_label = match scope {
+        SkillsScope::Global => "global",
+        SkillsScope::Local => "local",
+    };
+    // Re-query so the count reflects what's actually on disk now.
+    let count = installed_cx_skills(scope).len();
+    if count > 0 {
+        println!(
+            "✓ Installed {count} cx agent skills ({scope_label}). \
+             Review before use: {SKILLS_REVIEW_URL}"
+        );
+    } else {
+        // Installer succeeded but detection came up empty (e.g. an older
+        // installer without `--json`); still confirm and point to review.
+        println!(
+            "✓ cx agent skills installed ({scope_label}). \
+             Review before use: {SKILLS_REVIEW_URL}"
+        );
+    }
 }
 
 /// Advanced install: run the raw installer with no flags and let the user
@@ -211,25 +254,6 @@ fn build_install_args(scope: SkillsScope, agents: &[String]) -> Vec<String> {
     args
 }
 
-/// Shell-quoted rendering of the args, safe to copy back into a shell
-/// (`*` would otherwise glob-expand).
-fn display_args(args: &[String]) -> String {
-    args.iter()
-        .map(|arg| {
-            let safe = !arg.is_empty()
-                && arg
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "-_./:@=".contains(c));
-            if safe {
-                arg.clone()
-            } else {
-                format!("'{arg}'")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// e.g. "3 skills: cx-alerts, cx-dashboards, ..."
 fn installed_summary(installed: &[String]) -> String {
     const SHOWN: usize = 3;
@@ -313,15 +337,6 @@ mod tests {
                 "claude-code",
                 "cursor"
             ]
-        );
-    }
-
-    #[test]
-    fn displayed_command_is_shell_safe() {
-        let args = build_install_args(SkillsScope::Global, &[]);
-        assert_eq!(
-            display_args(&args),
-            "-y skills add coralogix/cx-cli/skills --skill '*' -y -g"
         );
     }
 

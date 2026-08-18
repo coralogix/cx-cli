@@ -108,6 +108,7 @@ pub enum SearchByValueDataset {
   \x1b[1molly\x1b[0m               Interact with the AI assistant
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
+  \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
   \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
   \x1b[1mskills\x1b[0m             Install the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
@@ -259,6 +260,42 @@ Examples:
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
+    /// One-step onboarding: configure a profile and install the cx agent skills.
+    ///
+    /// Interactive by default (OAuth browser login); fully non-interactive when
+    /// `--url` and an API key are supplied — no prompts, ideal for CI and coding
+    /// agents. Idempotent: if a profile already exists the profile step is
+    /// skipped (reconfigure with `cx profiles add --force`).
+    #[command(after_help = "\
+Examples:
+  cx init                                              # interactive walkthrough
+  cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY
+  cx init --oauth --url https://myteam.app.eu2.coralogix.com
+  cx init --no-skills                                  # skip the agent-skills install")]
+    Init {
+        /// Coralogix URL to derive the region from (e.g. your browser URL).
+        /// Unrecognized URLs are used as a custom API endpoint (BYOC / private link).
+        #[arg(long)]
+        url: Option<String>,
+        /// Use OAuth browser login even when an API key is available. In
+        /// interactive setup OAuth is the default regardless.
+        #[arg(long)]
+        oauth: bool,
+        /// Skip the agent-skills install step (installed by default).
+        #[arg(long)]
+        no_skills: bool,
+        /// Install skills globally (~/), available in every project.
+        #[arg(long, conflicts_with = "local")]
+        global: bool,
+        /// Install skills locally (./), for this project only.
+        #[arg(long)]
+        local: bool,
+        /// Target specific agents for the skills install (passed through to the
+        /// installer's -a; overrides its auto-detection). Repeatable.
+        #[arg(long = "agent", value_name = "NAME")]
+        agents: Vec<String>,
+    },
+
     /// Manage profiles (list, add, delete, set-default).
     Profiles {
         #[command(subcommand)]
@@ -2894,6 +2931,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    quick: false,
                 })
                 .await
             }
@@ -2933,6 +2971,7 @@ async fn main() -> Result<()> {
                 | Some("completions")
                 | Some("docs")
                 | Some("skills")
+                | Some("init")
         );
         if !is_local {
             if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
@@ -2985,6 +3024,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    quick: false,
                 })
                 .await
             }
@@ -3012,6 +3052,42 @@ async fn main() -> Result<()> {
     // Cleanup command doesn't need API credentials.
     if let Commands::Cleanup = cli.command {
         let result = commands::cleanup::run();
+        update_check::maybe_print_notice(OutputFormat::Text);
+        return result;
+    }
+
+    // Init chains profile setup + skills install locally - no API credentials
+    // up front (the profile step acquires them). Handled before credential
+    // resolution, like profiles/skills.
+    if let Commands::Init {
+        url,
+        oauth,
+        no_skills,
+        global,
+        local,
+        agents,
+    } = cli.command
+    {
+        let scope = if global {
+            Some(commands::skills::SkillsScope::Global)
+        } else if local {
+            Some(commands::skills::SkillsScope::Local)
+        } else {
+            None
+        };
+        let result = commands::init::run_init(commands::init::InitArgs {
+            // The global --profile selector is a Vec (fan-out); init configures a
+            // single profile, so take the first value if supplied.
+            profile: cli.profile.into_iter().next(),
+            url,
+            region: cli.region,
+            api_key: cli.api_key,
+            oauth,
+            install_skills: !no_skills,
+            agents,
+            scope,
+        })
+        .await;
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
     }
@@ -3141,6 +3217,7 @@ async fn main() -> Result<()> {
     let cmd_result = async {
         match cli.command {
             Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
+            Commands::Init { .. } => unreachable!("handled above"),
             Commands::Cleanup => unreachable!("handled above"),
             Commands::Skills { .. } => unreachable!("handled above"),
             Commands::Schema => unreachable!("handled above"),

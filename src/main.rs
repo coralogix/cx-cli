@@ -3034,12 +3034,7 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-            commands::skills::run_install(commands::skills::InstallOptions {
-                scope,
-                agents,
-                request: commands::skills::InstallRequest::Explicit,
-            })
-            .map(|_| ())
+            commands::skills::run_install(commands::skills::InstallOptions { scope, agents })
         };
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;

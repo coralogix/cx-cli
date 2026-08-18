@@ -88,7 +88,7 @@ Local:
 
 All use the Olly KB semantic-search-service API with gateway permission `legacy-archive-queries:Execute` (AAA id 40). See `olly-knowledge-base` `apps/semantic-search-service/AGENTS.md`.
 
-**`cx skills install`:** Installs the cx agent skills bundle by shelling out to the vercel-labs `skills` npx installer (`npx skills add coralogix/cx-cli`). By default it asks one question (global vs local scope, skipped by `--global`/`--local`), then runs fully non-interactively with agent auto-detection; `--agent <name>` overrides auto-detect, `--interactive` walks the installer's full flow. Requires Node.js/npx; the CLI is fully usable without skills. Logic lives in `src/commands/skills/mod.rs`.
+**`cx skills install`:** Installs the cx agent skills bundle by shelling out to the vercel-labs `skills` npx installer (`npx skills add coralogix/cx-cli/skills` — the `skills/` subdir, so the contributor-only dev skills under `.claude/skills/` are never installed for end users). By default it asks one question (global vs local scope, skipped by `--global`/`--local`), then runs fully non-interactively with agent auto-detection; `--agent <name>` overrides auto-detect, `--interactive` walks the installer's full flow. Requires Node.js/npx; the CLI is fully usable without skills. Logic lives in `src/commands/skills/mod.rs`.
 
 **Agent discovery:** `cx schema` outputs the full command tree (commands, subcommands, flags, descriptions) as JSON. Agents should call `cx schema` to discover available commands rather than parsing help text.
 

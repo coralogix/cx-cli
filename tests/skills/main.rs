@@ -32,22 +32,30 @@ fn cx(home: &Path, path_dir: &Path) -> Command {
     cmd
 }
 
-/// Install a fake `npx` into `dir` that answers `--version`, serves `ls_json`
-/// for `skills ls` (the already-installed detection), and records any other
-/// invocation's arguments into `args_file`.
+/// Install a fake `npx` into `dir` that answers `--version`, serves
+/// `project_json` for `skills ls --json` and `global_json` for `skills ls -g
+/// --json` (the scope-aware already-installed detection), and records any
+/// other invocation's arguments into `args_file`.
 #[cfg(unix)]
-fn install_fake_npx(dir: &Path, args_file: &Path, ls_json: &str) {
+fn install_fake_npx(dir: &Path, args_file: &Path, project_json: &str, global_json: &str) {
     use std::os::unix::fs::PermissionsExt;
     // Only `echo` (a shell builtin) is usable here: PATH contains nothing but
     // this directory, so external tools like `cat` would not resolve.
-    assert!(
-        !ls_json.contains('\''),
-        "ls_json must not contain single quotes"
-    );
+    for json in [project_json, global_json] {
+        assert!(
+            !json.contains('\''),
+            "ls json must not contain single quotes"
+        );
+    }
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '{ls_json}'; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then\n\
+           for a in \"$@\"; do\n\
+             if [ \"$a\" = \"-g\" ]; then echo '{global_json}'; exit 0; fi\n\
+           done\n\
+           echo '{project_json}'; exit 0\n\
+         fi\n\
          echo \"$@\" > \"{}\"\n",
         args_file.display()
     );
@@ -81,7 +89,7 @@ fn install_without_npx_fails_with_actionable_error() {
 fn install_without_scope_and_no_tty_fails_naming_the_flags() {
     let home = temp_dir("no_scope");
     let bin = temp_dir("no_scope_bin");
-    install_fake_npx(&bin, &bin.join("args.txt"), "[]");
+    install_fake_npx(&bin, &bin.join("args.txt"), "[]", "[]");
     let output = cx(&home, &bin)
         .args(["skills", "install"])
         .output()
@@ -102,7 +110,7 @@ fn install_global_runs_fully_noninteractive_command() {
     let home = temp_dir("noninteractive_global");
     let bin = temp_dir("noninteractive_global_bin");
     let args_file = bin.join("args.txt");
-    install_fake_npx(&bin, &args_file, "[]");
+    install_fake_npx(&bin, &args_file, "[]", "[]");
 
     cx(&home, &bin)
         .args(["skills", "install", "--global"])
@@ -112,7 +120,7 @@ fn install_global_runs_fully_noninteractive_command() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli --skill * -y -g"
+        "-y skills add coralogix/cx-cli/skills --skill * -y -g"
     );
 }
 
@@ -122,7 +130,7 @@ fn install_local_with_agents_passes_them_through() {
     let home = temp_dir("noninteractive_local");
     let bin = temp_dir("noninteractive_local_bin");
     let args_file = bin.join("args.txt");
-    install_fake_npx(&bin, &args_file, "[]");
+    install_fake_npx(&bin, &args_file, "[]", "[]");
 
     cx(&home, &bin)
         .args([
@@ -140,7 +148,7 @@ fn install_local_with_agents_passes_them_through() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli --skill * -y -a claude-code cursor"
+        "-y skills add coralogix/cx-cli/skills --skill * -y -a claude-code cursor"
     );
 }
 
@@ -152,7 +160,7 @@ fn install_interactive_runs_the_raw_installer() {
     let home = temp_dir("advanced");
     let bin = temp_dir("advanced_bin");
     let args_file = bin.join("args.txt");
-    install_fake_npx(&bin, &args_file, "[]");
+    install_fake_npx(&bin, &args_file, "[]", "[]");
 
     cx(&home, &bin)
         .args(["skills", "install", "--interactive"])
@@ -160,13 +168,13 @@ fn install_interactive_runs_the_raw_installer() {
         .success();
 
     let recorded = fs::read_to_string(&args_file).unwrap();
-    assert_eq!(recorded.trim(), "skills add coralogix/cx-cli");
+    assert_eq!(recorded.trim(), "skills add coralogix/cx-cli/skills");
 }
 
 // ── Already-installed detection (explicit run reinstalls) ─────────────────────
 
-/// Detection asks the installer itself (`skills ls --json`); the fake npx
-/// reports one cx skill already installed.
+/// Detection asks the installer itself (`skills ls -g --json`); the fake npx
+/// reports one cx skill already installed globally.
 #[cfg(unix)]
 #[test]
 fn install_over_existing_skills_notes_the_update() {
@@ -176,6 +184,7 @@ fn install_over_existing_skills_notes_the_update() {
     install_fake_npx(
         &bin,
         &args_file,
+        "[]",
         r#"[{"name": "cx-alerts", "path": "/skills/cx-alerts", "scope": "global",
              "agents": ["Claude Code"], "source": "coralogix/cx-cli",
              "sourceUrl": null, "sourceType": "github"}]"#,
@@ -192,6 +201,34 @@ fn install_over_existing_skills_notes_the_update() {
         "expected already-installed note naming the skill, stdout: {stdout}"
     );
     // Explicit install still runs the installer (reinstall/update).
+    assert!(args_file.exists(), "installer should still have been run");
+}
+
+/// Detection is scoped: skills present only globally must not be reported as
+/// already-installed for a `--local` install.
+#[cfg(unix)]
+#[test]
+fn install_local_ignores_globally_installed_skills() {
+    let home = temp_dir("scoped");
+    let bin = temp_dir("scoped_bin");
+    let args_file = bin.join("args.txt");
+    install_fake_npx(
+        &bin,
+        &args_file,
+        "[]",
+        r#"[{"name": "cx-alerts", "source": "coralogix/cx-cli"}]"#,
+    );
+
+    let output = cx(&home, &bin)
+        .args(["skills", "install", "--local"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("already installed"),
+        "global skills must not count for a local install, stdout: {stdout}"
+    );
     assert!(args_file.exists(), "installer should still have been run");
 }
 

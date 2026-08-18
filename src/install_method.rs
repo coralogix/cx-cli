@@ -56,7 +56,7 @@ pub fn binary_upgrade_command(method: &InstallMethod) -> String {
 
 /// Return the one-liner that refreshes agent skills from the cx-cli repo.
 pub fn skills_upgrade_command() -> &'static str {
-    "npx skills add coralogix/cx-cli"
+    "npx skills add coralogix/cx-cli/skills"
 }
 
 /// Official install docs URL (binary + skills).
@@ -88,6 +88,9 @@ mod tests {
 
     #[test]
     fn skills_upgrade_command_is_npx() {
-        assert_eq!(skills_upgrade_command(), "npx skills add coralogix/cx-cli");
+        assert_eq!(
+            skills_upgrade_command(),
+            "npx skills add coralogix/cx-cli/skills"
+        );
     }
 }

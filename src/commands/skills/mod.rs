@@ -1,5 +1,5 @@
 //! Skills install step: shells out to the vercel-labs `skills` npx installer
-//! to install the cx agent skills bundle (`coralogix/cx-cli`).
+//! to install the cx agent skills bundle (`coralogix/cx-cli/skills`).
 //!
 //! Owns no skill/agent logic of its own beyond driving the one scope
 //! question (global vs local) and passing flags through to the installer.
@@ -12,11 +12,20 @@ use anyhow::{bail, Context, Result};
 use inquire::Select;
 use serde::Deserialize;
 
-/// The skills source passed to the installer, always fixed.
-pub const SKILLS_SOURCE: &str = "coralogix/cx-cli";
+/// The source passed to `skills add`. Points at the repo's user-facing
+/// `skills/` subdirectory, not the repo root: `--skill '*'` installs every
+/// `SKILL.md` the installer discovers, and the repo root also carries the
+/// contributor-only dev skills under `.claude/skills/` (add-command,
+/// run-tests, ...) which must never reach end users.
+pub const SKILLS_SOURCE: &str = "coralogix/cx-cli/skills";
 
-/// The command a user can run by hand when cx skips or fails the install.
-const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli";
+/// The source the installer records in its lock file for skills installed from
+/// this repo. It stores the repo slug without the subdir, so already-installed
+/// detection matches on this rather than [`SKILLS_SOURCE`].
+const INSTALLED_SOURCE: &str = "coralogix/cx-cli";
+
+/// The command a user can run by hand when cx fails the install.
+const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
 
 /// Where the installer puts skills: the user's home (`~/`) or the project (`./`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,155 +34,63 @@ pub enum SkillsScope {
     Local,
 }
 
-/// How the skills step was requested. Decides how obstacles are handled:
-/// an implied run skips with guidance, an explicit run
-/// (`cx skills install`) fails with an actionable error.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstallRequest {
-    Implied,
-    Explicit,
-}
-
-/// What the install step ended up doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstallOutcome {
-    Installed,
-    AlreadyInstalled,
-    /// npx is unavailable; the manual command was printed instead.
-    SkippedNoNpx,
-    /// Non-interactive implied run with no `--global`/`--local`; skipped.
-    SkippedNoScope,
-}
-
 pub struct InstallOptions {
     /// Scope from `--global`/`--local`; `None` asks interactively.
     pub scope: Option<SkillsScope>,
     /// Agents passed through to the installer's `-a` (overrides auto-detect).
     pub agents: Vec<String>,
-    pub request: InstallRequest,
 }
 
-/// The decision run_install makes before touching the installer, kept pure
-/// so every branch is unit-testable.
+/// The pre-flight gate run_install evaluates before touching the installer,
+/// kept pure so both failure branches are unit-testable without a terminal.
 #[derive(Debug, PartialEq, Eq)]
-enum InstallPlan {
+enum Preflight {
     Fail(String),
-    Skip {
-        outcome: InstallOutcome,
-        message: String,
-    },
+    /// `scope` is `None` when it still needs to be asked interactively.
     Proceed {
-        /// `None` means ask interactively.
         scope: Option<SkillsScope>,
-        reinstall_note: Option<String>,
     },
 }
 
-fn plan_install(
+fn preflight(
     npx_available: bool,
-    installed: &[String],
     scope: Option<SkillsScope>,
     stdin_is_terminal: bool,
-    request: InstallRequest,
-) -> InstallPlan {
-    let explicit = request == InstallRequest::Explicit;
-
+) -> Preflight {
     if !npx_available {
-        if explicit {
-            return InstallPlan::Fail(
-                "Node.js/npx is required to install the cx agent skills.\n\
-                 Install Node.js (https://nodejs.org) and rerun, or skip the skills install."
-                    .to_string(),
-            );
-        }
-        return InstallPlan::Skip {
-            outcome: InstallOutcome::SkippedNoNpx,
-            message: format!(
-                "warning: npx not found - skipping the agent skills install.\n\
-                 The CLI is fully usable without skills. To install them later, \
-                 install Node.js and run:\n  {MANUAL_INSTALL_CMD}"
-            ),
-        };
+        return Preflight::Fail(
+            "Node.js/npx is required to install the cx agent skills.\n\
+             Install Node.js (https://nodejs.org) and rerun, or skip the skills install."
+                .to_string(),
+        );
     }
-
-    let reinstall_note = if installed.is_empty() {
-        None
-    } else {
-        let summary = installed_summary(installed);
-        if !explicit {
-            return InstallPlan::Skip {
-                outcome: InstallOutcome::AlreadyInstalled,
-                message: format!(
-                    "cx agent skills already installed ({summary}) - skipping.\n\
-                     To update them, run: {MANUAL_INSTALL_CMD}"
-                ),
-            };
-        }
-        Some(format!(
-            "cx agent skills already installed ({summary}) - reinstalling to update."
-        ))
-    };
-
     if scope.is_none() && !stdin_is_terminal {
-        if explicit {
-            return InstallPlan::Fail("no skills install scope - pass --global or --local".into());
-        }
-        return InstallPlan::Skip {
-            outcome: InstallOutcome::SkippedNoScope,
-            message: format!(
-                "warning: no terminal to ask for the skills install scope - \
-                 skipping the agent skills install.\n\
-                 To install them later, run: {MANUAL_INSTALL_CMD}"
-            ),
-        };
+        return Preflight::Fail("no skills install scope - pass --global or --local".into());
     }
-
-    InstallPlan::Proceed {
-        scope,
-        reinstall_note,
-    }
+    Preflight::Proceed { scope }
 }
 
 /// Install with at most one question (scope), then a fully
 /// non-interactive `npx skills add` run.
-pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
-    let npx_available = npx_available();
-    let installed = if npx_available {
-        installed_cx_skills()
-    } else {
-        Vec::new()
-    };
-    let plan = plan_install(
-        npx_available,
-        &installed,
-        opts.scope,
-        std::io::stdin().is_terminal(),
-        opts.request,
-    );
-
-    let (scope, reinstall_note) = match plan {
-        InstallPlan::Fail(message) => bail!(message),
-        InstallPlan::Skip { outcome, message } => {
-            if outcome == InstallOutcome::AlreadyInstalled {
-                println!("{message}");
-            } else {
-                eprintln!("{message}");
-            }
-            return Ok(outcome);
-        }
-        InstallPlan::Proceed {
-            scope,
-            reinstall_note,
-        } => (scope, reinstall_note),
+pub fn run_install(opts: InstallOptions) -> Result<()> {
+    let scope = match preflight(npx_available(), opts.scope, std::io::stdin().is_terminal()) {
+        Preflight::Fail(message) => bail!(message),
+        Preflight::Proceed { scope } => match scope {
+            Some(scope) => scope,
+            None => ask_scope()?,
+        },
     };
 
-    if let Some(note) = reinstall_note {
-        println!("{note}");
+    // Informational only: an explicit install reinstalls to update. Detection
+    // is scoped to the scope we're about to install into, so skills present in
+    // the other scope don't muddy the message.
+    let installed = installed_cx_skills(scope);
+    if !installed.is_empty() {
+        println!(
+            "cx agent skills already installed ({}) - reinstalling to update.",
+            installed_summary(&installed)
+        );
     }
-    let scope = match scope {
-        Some(scope) => scope,
-        None => ask_scope()?,
-    };
 
     let args = build_install_args(scope, &opts.agents);
     println!("Installing cx agent skills: npx {}", display_args(&args));
@@ -190,7 +107,7 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     }
 
     println!("cx agent skills installed.");
-    Ok(InstallOutcome::Installed)
+    Ok(())
 }
 
 /// Advanced install: run the raw installer with no flags and let the user
@@ -238,37 +155,36 @@ struct LsSkill {
     source: Option<String>,
 }
 
-/// cx skills already installed, according to the installer itself
-/// (`npx skills ls --json`, project and global scope). A skill counts as
-/// ours when its lock-file source is `coralogix/cx-cli` or its name carries
-/// the cx prefix. Any failure (old installer without `--json`, unparseable
-/// output) counts as nothing installed, so the install proceeds.
-fn installed_cx_skills() -> Vec<String> {
-    let mut names = BTreeSet::new();
-    for global in [false, true] {
-        let mut cmd = Command::new(npx_program());
-        cmd.args(["-y", "skills", "ls"]);
-        if global {
-            cmd.arg("-g");
-        }
-        cmd.arg("--json");
-        let Ok(output) = cmd.output() else { continue };
-        if !output.status.success() {
-            continue;
-        }
-        let Ok(skills) = serde_json::from_slice::<Vec<LsSkill>>(&output.stdout) else {
-            continue;
-        };
-        for skill in skills {
-            if skill.source.as_deref() == Some(SKILLS_SOURCE)
-                || skill.name.starts_with("cx-")
-                || skill.name.starts_with("coralogix-")
-            {
-                names.insert(skill.name);
-            }
-        }
+/// cx skills already installed in `scope`, according to the installer itself
+/// (`npx skills ls [-g] --json`). A skill counts as ours when its lock-file
+/// source is [`INSTALLED_SOURCE`]. Any failure (old installer without `--json`,
+/// unparseable output) counts as nothing installed, so the install proceeds.
+///
+/// Copy installs (`--copy`) drop the lock-file source and so are not detected;
+/// the installer's default is symlink, which preserves it.
+fn installed_cx_skills(scope: SkillsScope) -> Vec<String> {
+    let mut cmd = Command::new(npx_program());
+    cmd.args(["-y", "skills", "ls"]);
+    if scope == SkillsScope::Global {
+        cmd.arg("-g");
     }
-    names.into_iter().collect()
+    cmd.arg("--json");
+    let Ok(output) = cmd.output() else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let Ok(skills) = serde_json::from_slice::<Vec<LsSkill>>(&output.stdout) else {
+        return Vec::new();
+    };
+    skills
+        .into_iter()
+        .filter(|skill| skill.source.as_deref() == Some(INSTALLED_SOURCE))
+        .map(|skill| skill.name)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 /// Arguments for the fully non-interactive install.
@@ -405,7 +321,7 @@ mod tests {
         let args = build_install_args(SkillsScope::Global, &[]);
         assert_eq!(
             display_args(&args),
-            "-y skills add coralogix/cx-cli --skill '*' -y -g"
+            "-y skills add coralogix/cx-cli/skills --skill '*' -y -g"
         );
     }
 
@@ -423,133 +339,57 @@ mod tests {
     }
 
     #[test]
-    fn ls_json_parses_and_ignores_extra_fields() {
+    fn ls_json_matches_only_our_source_ignoring_extra_fields() {
+        // Our skills carry the repo source; a same-named skill from another
+        // source and a copy-installed skill (null source) are not ours.
         let json = r#"[
             {"name": "cx-alerts", "path": "/p", "scope": "global",
              "agents": ["Claude Code"], "source": "coralogix/cx-cli",
              "sourceUrl": null, "sourceType": "github"},
-            {"name": "other-skill", "source": "someone/else"},
-            {"name": "local-skill", "source": null}
+            {"name": "cx-other", "source": "someone/else"},
+            {"name": "cx-copied", "source": null}
         ]"#;
         let skills: Vec<LsSkill> = serde_json::from_str(json).unwrap();
         let ours: Vec<&str> = skills
             .iter()
-            .filter(|s| s.source.as_deref() == Some(SKILLS_SOURCE) || s.name.starts_with("cx-"))
+            .filter(|s| s.source.as_deref() == Some(INSTALLED_SOURCE))
             .map(|s| s.name.as_str())
             .collect();
         assert_eq!(ours, ["cx-alerts"]);
     }
 
-    // ── plan_install: every branch, including the implied ones ────────────────
-
-    const NO_SKILLS: &[String] = &[];
-
-    fn one_skill() -> Vec<String> {
-        vec!["cx-alerts".to_string()]
-    }
+    // ── preflight: both failure branches and the two proceed branches ─────────
 
     #[test]
-    fn plan_no_npx_explicit_fails_actionably() {
-        let plan = plan_install(false, NO_SKILLS, None, true, InstallRequest::Explicit);
-        let InstallPlan::Fail(message) = plan else {
-            panic!("expected Fail, got {plan:?}");
+    fn preflight_no_npx_fails_actionably() {
+        let Preflight::Fail(message) = preflight(false, None, true) else {
+            panic!("expected Fail");
         };
         assert!(message.contains("Node.js"));
     }
 
     #[test]
-    fn plan_no_npx_implied_skips_with_manual_command() {
-        let plan = plan_install(false, NO_SKILLS, None, true, InstallRequest::Implied);
-        let InstallPlan::Skip { outcome, message } = plan else {
-            panic!("expected Skip, got {plan:?}");
-        };
-        assert_eq!(outcome, InstallOutcome::SkippedNoNpx);
-        assert!(message.contains(MANUAL_INSTALL_CMD));
-    }
-
-    #[test]
-    fn plan_already_installed_implied_skips_with_update_hint() {
-        let plan = plan_install(
-            true,
-            &one_skill(),
-            Some(SkillsScope::Global),
-            true,
-            InstallRequest::Implied,
-        );
-        let InstallPlan::Skip { outcome, message } = plan else {
-            panic!("expected Skip, got {plan:?}");
-        };
-        assert_eq!(outcome, InstallOutcome::AlreadyInstalled);
-        assert!(message.contains("cx-alerts") && message.contains(MANUAL_INSTALL_CMD));
-    }
-
-    #[test]
-    fn plan_already_installed_explicit_proceeds_with_note() {
-        let plan = plan_install(
-            true,
-            &one_skill(),
-            Some(SkillsScope::Global),
-            true,
-            InstallRequest::Explicit,
-        );
-        assert_eq!(
-            plan,
-            InstallPlan::Proceed {
-                scope: Some(SkillsScope::Global),
-                reinstall_note: Some(
-                    "cx agent skills already installed (1 skills: cx-alerts) \
-                     - reinstalling to update."
-                        .to_string()
-                ),
-            }
-        );
-    }
-
-    #[test]
-    fn plan_no_scope_no_tty_explicit_fails_naming_the_flags() {
-        let plan = plan_install(true, NO_SKILLS, None, false, InstallRequest::Explicit);
-        let InstallPlan::Fail(message) = plan else {
-            panic!("expected Fail, got {plan:?}");
+    fn preflight_no_scope_no_tty_fails_naming_the_flags() {
+        let Preflight::Fail(message) = preflight(true, None, false) else {
+            panic!("expected Fail");
         };
         assert!(message.contains("--global") && message.contains("--local"));
     }
 
     #[test]
-    fn plan_no_scope_no_tty_implied_skips() {
-        let plan = plan_install(true, NO_SKILLS, None, false, InstallRequest::Implied);
-        let InstallPlan::Skip { outcome, message } = plan else {
-            panic!("expected Skip, got {plan:?}");
-        };
-        assert_eq!(outcome, InstallOutcome::SkippedNoScope);
-        assert!(message.contains(MANUAL_INSTALL_CMD));
-    }
-
-    #[test]
-    fn plan_no_scope_with_tty_asks() {
-        let plan = plan_install(true, NO_SKILLS, None, true, InstallRequest::Implied);
+    fn preflight_no_scope_with_tty_asks() {
         assert_eq!(
-            plan,
-            InstallPlan::Proceed {
-                scope: None,
-                reinstall_note: None,
-            }
+            preflight(true, None, true),
+            Preflight::Proceed { scope: None }
         );
     }
 
     #[test]
-    fn plan_scope_flag_proceeds_without_asking() {
-        let plan = plan_install(
-            true,
-            NO_SKILLS,
-            Some(SkillsScope::Local),
-            false,
-            InstallRequest::Explicit,
-        );
+    fn preflight_scope_flag_proceeds_without_asking() {
         assert_eq!(
-            plan,
-            InstallPlan::Proceed {
-                scope: Some(SkillsScope::Local),
-                reinstall_note: None,
+            preflight(true, Some(SkillsScope::Local), false),
+            Preflight::Proceed {
+                scope: Some(SkillsScope::Local)
             }
         );
     }

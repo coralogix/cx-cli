@@ -506,13 +506,13 @@ fn add_url_conflicts_with_region() {
 // ── profiles add: --profile flag ─────────────────────────────────────────────
 
 #[test]
-fn add_profile_flag_names_the_profile() {
+fn add_name_flag_names_the_profile() {
     let tmp = temp_home();
     let output = cx(&tmp)
         .args([
             "profiles",
             "add",
-            "--profile",
+            "--name",
             "prod",
             "--api-key",
             "k",
@@ -530,14 +530,14 @@ fn add_profile_flag_names_the_profile() {
 }
 
 #[test]
-fn add_profile_flag_conflicts_with_positional_name() {
+fn add_name_flag_conflicts_with_positional_name() {
     let tmp = temp_home();
     let output = cx(&tmp)
         .args([
             "profiles",
             "add",
             "prod",
-            "--profile",
+            "--name",
             "other",
             "--api-key",
             "k",
@@ -548,7 +548,7 @@ fn add_profile_flag_conflicts_with_positional_name() {
         .expect("failed to run cx");
     assert!(
         !output.status.success(),
-        "positional NAME and --profile are mutually exclusive"
+        "positional NAME and --name are mutually exclusive"
     );
 }
 

@@ -401,7 +401,7 @@ pub fn run_list() -> Result<()> {
 /// questions; unanswered questions get prompted; no terminal means unanswered
 /// questions are errors.
 pub struct AddArgs {
-    /// Profile name (positional or `--profile`). Non-interactive default: "default".
+    /// Profile name (positional or `--name`). Non-interactive default: "default".
     pub name: Option<String>,
     /// `--url`: Coralogix URL the region is derived from.
     pub url: Option<String>,

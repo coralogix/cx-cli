@@ -654,8 +654,9 @@ Examples:
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: Option<String>,
         /// Profile name to configure (alternative to the positional NAME).
-        #[arg(long, conflicts_with = "name", value_name = "NAME")]
-        profile: Option<String>,
+        /// Named --name to stay clear of the global --profile selector.
+        #[arg(long = "name", conflicts_with = "name", value_name = "NAME")]
+        name_flag: Option<String>,
         /// Coralogix URL to derive the region from (e.g. your browser URL).
         /// Unrecognized URLs are used as a custom API endpoint (BYOC / private link).
         #[arg(long, conflicts_with = "region")]
@@ -2835,7 +2836,7 @@ async fn main() -> Result<()> {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add {
                 name,
-                profile,
+                name_flag,
                 url,
                 region,
                 api_key,
@@ -2844,7 +2845,7 @@ async fn main() -> Result<()> {
                 set_default,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
-                    name: name.or(profile),
+                    name: name.or(name_flag),
                     url,
                     region,
                     api_key,
@@ -2922,7 +2923,7 @@ async fn main() -> Result<()> {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add {
                 name,
-                profile,
+                name_flag,
                 url,
                 region,
                 api_key,
@@ -2931,7 +2932,7 @@ async fn main() -> Result<()> {
                 set_default,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
-                    name: name.or(profile),
+                    name: name.or(name_flag),
                     url,
                     region,
                     api_key,

@@ -249,7 +249,8 @@ Examples:
         agents: Vec<String>,
 
         /// Walk the skills installer's full interactive flow (skill/agent
-        /// selection, scope, install method) instead of the express install.
+        /// selection, scope, install method) instead of the default
+        /// non-interactive install.
         #[arg(long)]
         interactive: bool,
     },

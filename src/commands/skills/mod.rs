@@ -1,9 +1,8 @@
 //! Skills install step: shells out to the vercel-labs `skills` npx installer
 //! to install the cx agent skills bundle (`coralogix/cx-cli`).
 //!
-//! `cx init` (FORGE-658) invokes this step; it owns no skill/agent logic of
-//! its own beyond driving the one express question (global vs local scope)
-//! and passing flags through to the installer.
+//! Owns no skill/agent logic of its own beyond driving the one scope
+//! question (global vs local) and passing flags through to the installer.
 
 use std::collections::BTreeSet;
 use std::io::IsTerminal;
@@ -27,8 +26,8 @@ pub enum SkillsScope {
 }
 
 /// How the skills step was requested. Decides how obstacles are handled:
-/// an implied run (the `cx init` default) skips with guidance, an explicit
-/// run (`--skills` / `cx skills install`) fails with an actionable error.
+/// an implied run skips with guidance, an explicit run
+/// (`cx skills install`) fails with an actionable error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallRequest {
     Implied,
@@ -55,8 +54,7 @@ pub struct InstallOptions {
 }
 
 /// The decision run_install makes before touching the installer, kept pure
-/// so every branch (including the implied ones only `cx init` reaches) is
-/// unit-testable.
+/// so every branch is unit-testable.
 #[derive(Debug, PartialEq, Eq)]
 enum InstallPlan {
     Fail(String),
@@ -136,7 +134,7 @@ fn plan_install(
     }
 }
 
-/// Express install: at most one question (scope), then a fully
+/// Install with at most one question (scope), then a fully
 /// non-interactive `npx skills add` run.
 pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     let npx_available = npx_available();
@@ -273,7 +271,7 @@ fn installed_cx_skills() -> Vec<String> {
     names.into_iter().collect()
 }
 
-/// Arguments for the fully non-interactive express install.
+/// Arguments for the fully non-interactive install.
 ///
 /// The leading `-y` is npx's own auto-approve (first-run package download
 /// prompt); the trailing `-y` is the installer's skip-all-confirmations.
@@ -352,7 +350,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn express_args_local_scope() {
+    fn install_args_local_scope() {
         let args = build_install_args(SkillsScope::Local, &[]);
         assert_eq!(
             args,
@@ -361,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn express_args_global_scope() {
+    fn install_args_global_scope() {
         let args = build_install_args(SkillsScope::Global, &[]);
         assert_eq!(
             args,
@@ -379,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn express_args_pass_agents_through() {
+    fn install_args_pass_agents_through() {
         let args = build_install_args(
             SkillsScope::Global,
             &["claude-code".to_string(), "cursor".to_string()],
@@ -442,7 +440,7 @@ mod tests {
         assert_eq!(ours, ["cx-alerts"]);
     }
 
-    // ── plan_install: every branch, including the implied ones `cx init` uses ──
+    // ── plan_install: every branch, including the implied ones ────────────────
 
     const NO_SKILLS: &[String] = &[];
 

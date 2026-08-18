@@ -94,13 +94,13 @@ fn install_without_scope_and_no_tty_fails_naming_the_flags() {
     );
 }
 
-// ── Express install shell-out ─────────────────────────────────────────────────
+// ── Non-interactive install shell-out ─────────────────────────────────────────
 
 #[cfg(unix)]
 #[test]
-fn install_global_runs_fully_noninteractive_express_command() {
-    let home = temp_dir("express_global");
-    let bin = temp_dir("express_global_bin");
+fn install_global_runs_fully_noninteractive_command() {
+    let home = temp_dir("noninteractive_global");
+    let bin = temp_dir("noninteractive_global_bin");
     let args_file = bin.join("args.txt");
     install_fake_npx(&bin, &args_file, "[]");
 
@@ -119,8 +119,8 @@ fn install_global_runs_fully_noninteractive_express_command() {
 #[cfg(unix)]
 #[test]
 fn install_local_with_agents_passes_them_through() {
-    let home = temp_dir("express_local");
-    let bin = temp_dir("express_local_bin");
+    let home = temp_dir("noninteractive_local");
+    let bin = temp_dir("noninteractive_local_bin");
     let args_file = bin.join("args.txt");
     install_fake_npx(&bin, &args_file, "[]");
 

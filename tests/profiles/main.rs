@@ -17,7 +17,19 @@ fn temp_home() -> PathBuf {
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
+    // `profiles add` reads CX_API_KEY; a key exported in the user's shell
+    // must not be used in tests.
+    cmd.env_remove("CX_API_KEY");
     cmd
+}
+
+fn load_profile_toml(home: &std::path::Path, name: &str) -> String {
+    fs::read_to_string(
+        home.join(".cx")
+            .join("profiles")
+            .join(format!("{name}.toml")),
+    )
+    .unwrap_or_default()
 }
 
 fn seed_profile(home: &std::path::Path, name: &str) {
@@ -60,10 +72,6 @@ fn add_empty_name_via_arg_is_rejected() {
 }
 
 // ── --set-default flag ───────────────────────────────────────────────────────
-// `profiles add` is interactive (prompts for auth), so we can't drive it
-// end-to-end without a TTY. Instead we verify the flag is accepted by Clap
-// and that `profiles set-default` (non-interactive) works correctly on a
-// seeded profile.
 
 #[test]
 fn set_default_flag_is_accepted_by_clap() {
@@ -209,5 +217,446 @@ fn delete_nonexistent_profile_fails() {
     assert!(
         stderr.contains("not found"),
         "should report not found, stderr: {stderr}"
+    );
+}
+
+// ── profiles add: non-interactive (no TTY) ───────────────────────────────────
+// The test harness runs the binary without a terminal, so `profiles add`
+// takes the non-interactive path: flags answer questions, missing required
+// values are errors, and nothing hangs waiting for input.
+
+#[test]
+fn add_non_interactive_with_flags_creates_default_profile() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "--api-key",
+            "test-key-123",
+            "--region",
+            "eu2",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+
+    let profile = load_profile_toml(&tmp, "default");
+    assert!(
+        profile.contains("\"eu2\""),
+        "profile should record region eu2, got: {profile}"
+    );
+    assert!(
+        profile.contains("test-key-123"),
+        "profile should store the API key in the file, got: {profile}"
+    );
+    assert!(
+        profile.contains("api_key"),
+        "profile should use api-key auth, got: {profile}"
+    );
+
+    // First profile becomes the default automatically.
+    let config = load_config_toml(&tmp);
+    assert!(
+        config.contains("\"default\""),
+        "config should set 'default' as default profile, got: {config}"
+    );
+}
+
+#[test]
+fn add_non_interactive_missing_region_fails_with_flag_hint() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--api-key", "k"])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        !output.status.success(),
+        "missing region must not hang or succeed"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --url or --region"),
+        "error should name the exact flags to add, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn add_non_interactive_missing_api_key_fails_with_flag_hint() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--region", "eu2"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --api-key or set CX_API_KEY"),
+        "error should name the exact flag to add, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn add_non_interactive_missing_everything_reports_all_missing_values() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --url or --region") && stderr.contains("pass --api-key"),
+        "error should list every missing value, stderr: {stderr}"
+    );
+}
+
+/// An empty `--api-key ""` (e.g. a CI secret expanding to nothing) must be
+/// treated as missing — not silently saved as an unusable profile.
+#[test]
+fn add_non_interactive_empty_api_key_is_treated_as_missing() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--region", "eu2", "--api-key", ""])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success(), "empty API key must be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --api-key or set CX_API_KEY"),
+        "error should name the exact flag to add, stderr: {stderr}"
+    );
+}
+
+/// A whitespace-only key is just as unusable as an empty one.
+#[test]
+fn add_non_interactive_whitespace_api_key_is_treated_as_missing() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .env("CX_API_KEY", "   ")
+        .args(["profiles", "add", "--region", "eu2"])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        !output.status.success(),
+        "whitespace-only API key must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --api-key or set CX_API_KEY"),
+        "error should name the exact flag to add, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn add_honors_cx_api_key_env() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .env("CX_API_KEY", "env-key-456")
+        .args(["profiles", "add", "--region", "us1"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let profile = load_profile_toml(&tmp, "default");
+    assert!(
+        profile.contains("env-key-456"),
+        "profile should store the key from CX_API_KEY, got: {profile}"
+    );
+}
+
+// ── --oauth flag ─────────────────────────────────────────────────────────────
+
+/// Non-interactive `--oauth` works (the sign-in URL is printed, approval
+/// happens in the browser), but the region has no default: without a terminal
+/// to prompt on, missing --url/--region is an error before any login starts.
+#[test]
+fn add_oauth_non_interactive_without_region_fails_with_flag_hint() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--oauth"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pass --url or --region"),
+        "expected missing-region error naming the flags, stderr: {stderr}"
+    );
+    assert!(
+        load_profile_toml(&tmp, "default").is_empty(),
+        "no profile should be written on failure"
+    );
+}
+
+/// `--oauth` must win over an exported CX_API_KEY: with a custom endpoint the
+/// OAuth path fails on the missing client ID, while the API-key path would
+/// have silently saved a profile from the env value.
+#[test]
+fn add_oauth_wins_over_env_api_key() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .env("CX_API_KEY", "env-key-456")
+        .args([
+            "profiles",
+            "add",
+            "--oauth",
+            "--url",
+            "https://api.myenv.internal",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("OAuth client ID"),
+        "expected the OAuth path's client-ID error, not the API-key path, stderr: {stderr}"
+    );
+    assert!(
+        load_profile_toml(&tmp, "default").is_empty(),
+        "no API-key profile should be written when --oauth is passed"
+    );
+}
+
+#[test]
+fn add_url_flag_derives_region() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "--url",
+            "https://myteam.app.cx498.coralogix.com/logs",
+            "--api-key",
+            "k",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let profile = load_profile_toml(&tmp, "default");
+    // cx498 is US2's app-domain cluster label — the crux derivation case.
+    assert!(
+        profile.contains("\"us2\""),
+        "profile should record derived region us2, got: {profile}"
+    );
+}
+
+#[test]
+fn add_url_flag_unresolved_becomes_custom_endpoint() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "--url",
+            "https://api.myenv.internal/",
+            "--api-key",
+            "k",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let profile = load_profile_toml(&tmp, "default");
+    assert!(
+        profile.contains("https://api.myenv.internal"),
+        "profile should record the custom endpoint, got: {profile}"
+    );
+}
+
+#[test]
+fn add_unknown_region_flag_is_rejected() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--api-key", "k", "--region", "eu22"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unknown region 'eu22'"),
+        "should reject a typo'd region instead of writing it, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn add_url_conflicts_with_region() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "--url",
+            "https://myteam.coralogix.com",
+            "--region",
+            "eu1",
+            "--api-key",
+            "k",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        !output.status.success(),
+        "--url and --region are mutually exclusive"
+    );
+}
+
+// ── profiles add: --profile flag ─────────────────────────────────────────────
+
+#[test]
+fn add_name_flag_names_the_profile() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "--name",
+            "prod",
+            "--api-key",
+            "k",
+            "--region",
+            "eu1",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    assert!(
+        tmp.join(".cx").join("profiles").join("prod.toml").exists(),
+        "profile 'prod' should be created"
+    );
+}
+
+#[test]
+fn add_name_flag_conflicts_with_positional_name() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "prod",
+            "--name",
+            "other",
+            "--api-key",
+            "k",
+            "--region",
+            "eu1",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        !output.status.success(),
+        "positional NAME and --name are mutually exclusive"
+    );
+}
+
+// ── profiles add: existing-profile guard ─────────────────────────────────────
+
+#[test]
+fn add_existing_profile_non_interactive_fails_without_force() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "default");
+    seed_config(&tmp, "default_profile = \"default\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "add", "--api-key", "new-key", "--region", "eu2"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("profile 'default' already exists"),
+        "should refuse to overwrite, stderr: {stderr}"
+    );
+    let profile = load_profile_toml(&tmp, "default");
+    assert!(
+        profile.contains("fake-key-000"),
+        "existing profile must be untouched, got: {profile}"
+    );
+}
+
+#[test]
+fn add_existing_profile_with_force_overwrites() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "default");
+    seed_config(&tmp, "default_profile = \"default\"\n");
+
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "--api-key",
+            "new-key",
+            "--region",
+            "eu2",
+            "--force",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let profile = load_profile_toml(&tmp, "default");
+    assert!(
+        profile.contains("new-key") && profile.contains("\"eu2\""),
+        "profile should be overwritten, got: {profile}"
+    );
+}
+
+// ── profiles add: --set-default non-interactive ──────────────────────────────
+
+#[test]
+fn add_second_profile_with_set_default_updates_config() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "first");
+    seed_config(&tmp, "default_profile = \"first\"\n");
+
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "second",
+            "--api-key",
+            "k",
+            "--region",
+            "eu1",
+            "--set-default",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let config = load_config_toml(&tmp);
+    assert!(
+        config.contains("\"second\""),
+        "config should switch default to 'second', got: {config}"
+    );
+}
+
+#[test]
+fn add_second_profile_without_set_default_keeps_existing_default() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "first");
+    seed_config(&tmp, "default_profile = \"first\"\n");
+
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "second",
+            "--api-key",
+            "k",
+            "--region",
+            "eu1",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let config = load_config_toml(&tmp);
+    assert!(
+        config.contains("\"first\""),
+        "default profile must stay 'first', got: {config}"
     );
 }

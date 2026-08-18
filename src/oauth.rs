@@ -512,9 +512,12 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
         state,
     );
 
-    println!("Opening browser for authentication...");
-    if open::that(&auth_url).is_err() {
-        println!("Could not open browser automatically.\nPlease visit:\n  {auth_url}");
+    // Always print the URL: when the browser can't be opened (headless run,
+    // or cx driven by a coding agent), it is the user's only way in — the
+    // agent relays it and the callback still lands on localhost.
+    println!("Sign in by visiting:\n  {auth_url}");
+    if open::that(&auth_url).is_ok() {
+        println!("(opened in your default browser)");
     }
 
     // Run the blocking TCP listener on a dedicated thread so it does not

@@ -197,6 +197,10 @@ fn installed_coralogix_skills_in(
     roots: &[std::path::PathBuf],
     bundled_skill_names: &[&str],
 ) -> Vec<String> {
+    // Match only against the definitive list of skills bundled with this `cx`
+    // build (generated from `skills/` at compile time). A bare `cx-`/`coralogix-`
+    // name prefix is too loose - unrelated third-party skills can carry it - so
+    // detection trusts the known-ours list rather than guessing from the name.
     let mut skills = BTreeSet::new();
     for root in roots {
         for skill_name in bundled_skill_names {
@@ -204,23 +208,8 @@ fn installed_coralogix_skills_in(
                 skills.insert((*skill_name).to_string());
             }
         }
-        let Ok(entries) = std::fs::read_dir(root) else {
-            continue;
-        };
-        for entry in entries.filter_map(Result::ok) {
-            let Some(skill_name) = entry.file_name().to_str().map(str::to_string) else {
-                continue;
-            };
-            if is_coralogix_skill_name(&skill_name) && entry.path().join("SKILL.md").is_file() {
-                skills.insert(skill_name);
-            }
-        }
     }
     skills.into_iter().collect()
-}
-
-fn is_coralogix_skill_name(skill_name: &str) -> bool {
-    skill_name.starts_with("cx-") || skill_name.starts_with("coralogix-")
 }
 
 fn skill_roots() -> Vec<std::path::PathBuf> {
@@ -310,27 +299,28 @@ mod tests {
     }
 
     #[test]
-    fn detects_bundled_and_prefixed_coralogix_skills() {
+    fn detects_only_bundled_coralogix_skills() {
         let root = std::env::temp_dir().join(format!("cx-skill-test-{}", uuid::Uuid::new_v4()));
         let bundled_skill = bundled_skills::BUNDLED_CORALOGIX_SKILL_NAMES[0];
         let installed_skill = root.join(bundled_skill);
+        // A third-party skill that merely shares the `cx-` prefix is NOT ours.
         let prefixed_skill = root.join("cx-unrelated-skill");
         let unrelated_skill = root.join("other-skill");
         std::fs::create_dir_all(&installed_skill).unwrap();
         std::fs::create_dir_all(&prefixed_skill).unwrap();
         std::fs::create_dir_all(&unrelated_skill).unwrap();
         std::fs::write(installed_skill.join("SKILL.md"), "# Coralogix skill").unwrap();
-        std::fs::write(prefixed_skill.join("SKILL.md"), "# Coralogix skill").unwrap();
+        std::fs::write(prefixed_skill.join("SKILL.md"), "# Unrelated skill").unwrap();
         std::fs::write(unrelated_skill.join("SKILL.md"), "# Unrelated skill").unwrap();
 
-        let mut expected = vec![bundled_skill.to_string(), "cx-unrelated-skill".to_string()];
-        expected.sort();
+        // Only the bundled skill is detected; the bare-prefix and unrelated
+        // skills are ignored.
         assert_eq!(
             installed_coralogix_skills_in(
                 std::slice::from_ref(&root),
                 bundled_skills::BUNDLED_CORALOGIX_SKILL_NAMES,
             ),
-            expected
+            vec![bundled_skill.to_string()]
         );
 
         std::fs::remove_dir_all(root).unwrap();

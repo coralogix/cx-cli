@@ -36,6 +36,7 @@ pub mod scopes;
 pub mod search_by_value;
 pub mod search_fields;
 pub mod service_catalog;
+pub mod skills;
 pub mod slos;
 pub mod spans;
 pub mod suppression_rules;

@@ -39,25 +39,25 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 Install all skills:
 
 ```bash
-npx skills add coralogix/cx-cli
+npx skills add coralogix/cx-cli/skills
 ```
 
 Install specific skills:
 
 ```bash
-npx skills add coralogix/cx-cli --skill query-logs --skill dataprime
+npx skills add coralogix/cx-cli/skills --skill query-logs --skill dataprime
 ```
 
 Install globally (available across all projects):
 
 ```bash
-npx skills add coralogix/cx-cli -g
+npx skills add coralogix/cx-cli/skills -g
 ```
 
 Install for a specific agent:
 
 ```bash
-npx skills add coralogix/cx-cli -a claude-code -g -y
+npx skills add coralogix/cx-cli/skills -a claude-code -g -y
 ```
 
 ## Usage

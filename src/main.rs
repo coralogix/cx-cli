@@ -109,6 +109,7 @@ pub enum SearchByValueDataset {
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mskills\x1b[0m             Install the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
 struct Cli {
@@ -221,6 +222,41 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum SkillsCmd {
+    /// Install the cx agent skills bundle via the `skills` npx installer.
+    ///
+    /// By default this asks one question (install scope) and then runs the
+    /// installer fully non-interactively with agent auto-detection. Requires
+    /// Node.js (npx).
+    #[command(after_help = "\
+Examples:
+  cx skills install                     # asks global vs local, then installs
+  cx skills install --global            # no questions asked
+  cx skills install --local --agent claude-code
+  cx skills install --interactive       # walk the installer's full flow")]
+    Install {
+        /// Install skills globally (~/), available in every project.
+        #[arg(long, conflicts_with_all = ["local", "interactive"])]
+        global: bool,
+
+        /// Install skills locally (./), for this project only.
+        #[arg(long, conflicts_with = "interactive")]
+        local: bool,
+
+        /// Target specific agents (passed through to the installer's -a;
+        /// overrides its auto-detection). Repeatable.
+        #[arg(long = "agent", value_name = "NAME", conflicts_with = "interactive")]
+        agents: Vec<String>,
+
+        /// Walk the skills installer's full interactive flow (skill/agent
+        /// selection, scope, install method) instead of the default
+        /// non-interactive install.
+        #[arg(long)]
+        interactive: bool,
+    },
+}
+
+#[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Manage profiles (list, add, delete, set-default).
@@ -237,6 +273,12 @@ enum Commands {
 
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
     Cleanup,
+
+    /// Install the cx agent skills for coding agents (Claude Code, Cursor, Codex, ...).
+    Skills {
+        #[command(subcommand)]
+        cmd: SkillsCmd,
+    },
 
     /// Query logs using DataPrime syntax.
     #[command(after_help = "\
@@ -2886,7 +2928,11 @@ async fn main() -> Result<()> {
         let top = safety::get_top_level_subcommand_name(&matches);
         let is_local = matches!(
             top.as_deref(),
-            Some("profiles") | Some("cleanup") | Some("completions") | Some("docs")
+            Some("profiles")
+                | Some("cleanup")
+                | Some("completions")
+                | Some("docs")
+                | Some("skills")
         );
         if !is_local {
             if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
@@ -2966,6 +3012,30 @@ async fn main() -> Result<()> {
     // Cleanup command doesn't need API credentials.
     if let Commands::Cleanup = cli.command {
         let result = commands::cleanup::run();
+        update_check::maybe_print_notice(OutputFormat::Text);
+        return result;
+    }
+
+    // Skills install shells out to npx locally - no API credentials.
+    if let Commands::Skills { cmd } = cli.command {
+        let SkillsCmd::Install {
+            global,
+            local,
+            agents,
+            interactive,
+        } = cmd;
+        let result = if interactive {
+            commands::skills::run_advanced_install()
+        } else {
+            let scope = if global {
+                Some(commands::skills::SkillsScope::Global)
+            } else if local {
+                Some(commands::skills::SkillsScope::Local)
+            } else {
+                None
+            };
+            commands::skills::run_install(commands::skills::InstallOptions { scope, agents })
+        };
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
     }
@@ -3072,6 +3142,7 @@ async fn main() -> Result<()> {
         match cli.command {
             Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
             Commands::Cleanup => unreachable!("handled above"),
+            Commands::Skills { .. } => unreachable!("handled above"),
             Commands::Schema => unreachable!("handled above"),
             Commands::Completions { .. } => unreachable!("handled above"),
             Commands::Docs { .. } => unreachable!("handled above"),

@@ -3068,6 +3068,15 @@ async fn main() -> Result<()> {
         agents,
     } = cli.command
     {
+        // init configures exactly one profile. The global --profile selector is a
+        // Vec (fan-out); reject more than one value rather than silently keeping
+        // the first, so a success message can't imply all were configured.
+        if cli.profile.len() > 1 {
+            bail!(
+                "cx init configures a single profile, but multiple --profile values were given.\n\
+                 Run init once per profile, or add more with `cx profiles add <name>`."
+            );
+        }
         let scope = if global {
             Some(commands::skills::SkillsScope::Global)
         } else if local {
@@ -3076,8 +3085,8 @@ async fn main() -> Result<()> {
             None
         };
         let result = commands::init::run_init(commands::init::InitArgs {
-            // The global --profile selector is a Vec (fan-out); init configures a
-            // single profile, so take the first value if supplied.
+            // At most one --profile reaches here (guarded above); init configures a
+            // single profile, so take that value if supplied.
             profile: cli.profile.into_iter().next(),
             url,
             region: cli.region,
@@ -3201,10 +3210,23 @@ async fn main() -> Result<()> {
     {
         Ok(configs) => configs,
         Err(error) => {
-            eprintln!("Configuration error: {error}");
-            eprintln!("Run `cx profiles add` to set up credentials.");
-            let result = Err(error);
-            return result;
+            // First-run guidance: when nothing is configured at all (no profile
+            // on disk and no env-only credentials), don't dump the underlying
+            // config-resolution error. Point the user at the single guided entry
+            // point instead. The onboarding commands that *fix* this state
+            // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
+            // never reach here, so they can't be short-circuited by this branch.
+            if config::list_profile_names()
+                .map(|names| names.is_empty())
+                .unwrap_or(false)
+            {
+                eprintln!("No Coralogix profile is configured.");
+                eprintln!("Run `cx init` to set up a profile and get started.");
+            } else {
+                eprintln!("Configuration error: {error}");
+                eprintln!("Run `cx profiles add` to set up credentials.");
+            }
+            return Err(error);
         }
     };
 

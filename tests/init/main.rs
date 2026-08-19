@@ -132,6 +132,43 @@ fn init_names_profile_from_profile_flag() {
     );
 }
 
+/// init configures a single profile; more than one --profile must be rejected
+/// rather than silently keeping the first and reporting success.
+#[cfg(unix)]
+#[test]
+fn init_rejects_multiple_profiles() {
+    let home = temp_dir("multi_profile");
+    let bin = temp_dir("multi_profile_bin");
+    install_fake_npx(&bin, &bin.join("args.txt"));
+
+    let output = cx(&home, &bin)
+        .args([
+            "init",
+            "--profile",
+            "prod",
+            "--profile",
+            "staging",
+            "--region",
+            "eu2",
+            "--api-key",
+            "k",
+            "--no-skills",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success(), "multiple --profile must fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("single profile"),
+        "expected a single-profile error, stderr: {stderr}"
+    );
+    // Nothing should have been configured for either profile.
+    assert!(
+        !profile_path(&home, "prod").exists() && !profile_path(&home, "staging").exists(),
+        "no profile should be written when the command is rejected"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn init_agents_flag_reaches_the_installer() {

@@ -566,7 +566,9 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
             global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
                 .with_default(true)
-                .with_help_message("When disabled, 'olly ask' is blocked.")
+                .with_help_message(
+                    "When disabled, Olly is unavailable from the CLI ('cx olly ask').",
+                )
                 .prompt()?;
         }
 

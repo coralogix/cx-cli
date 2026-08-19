@@ -5,9 +5,10 @@
 //! of its own — each step delegates to the command that owns it.
 //!
 //! **Idempotent by design:** if any profile already exists, the profile step is
-//! skipped entirely and init drops straight to the skills install. Re-running
-//! `cx init` therefore never re-prompts or clobbers an existing setup; to
-//! reconfigure a profile, use `cx profiles add --force`.
+//! skipped; if the cx skills are already installed, the skills step is skipped
+//! too. Re-running `cx init` therefore never re-prompts, clobbers, or reinstalls
+//! an existing setup. To reconfigure a profile use `cx profiles add --force`; to
+//! update the skills use `cx skills install`.
 //!
 //! The profile step only runs on a fresh machine (no profiles yet), so it always
 //! creates the *first* profile — which means no name prompt and no "set as
@@ -89,22 +90,29 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         })
         .await?;
     } else {
-        println!(
-            "A Coralogix profile is already configured - skipping profile setup.\n\
-             Manage profiles with `cx profiles add` (use --force to reconfigure)."
-        );
+        println!("A Coralogix profile is already configured - skipping profile setup.");
     }
 
     // ── Step 2: skills ──────────────────────────────────────────────────────────
-    // The skills step must never brick onboarding. `skills::run_install` owns
-    // the npx/scope diagnostics and fails hard on a missing prerequisite; init
-    // downgrades that to a warning and continues, so a working profile still
-    // counts as a successful setup. The error already names the fix (install
-    // Node.js, pass --global/--local, or retry the manual command).
+    // Idempotent, like the profile step: if cx skills are already installed,
+    // skip rather than reinstall. Updating is the explicit command's job
+    // (`cx skills install` reinstalls to pull the latest).
+    //
+    // Otherwise install. The skills step must never brick onboarding:
+    // `skills::run_install` owns the npx/scope diagnostics and fails hard on a
+    // missing prerequisite; init downgrades that to a warning and continues, so
+    // a working profile still counts as a successful setup.
     if install_skills {
-        println!("\nInstalling the cx agent skills for coding agents...");
-        if let Err(error) = skills::run_install(skills::InstallOptions { scope, agents }) {
-            eprintln!("warning: skipped the agent-skills install: {error:#}");
+        if skills::cx_skills_present(scope) {
+            println!(
+                "\ncx agent skills are already installed - skipping.\n\
+                 Update them anytime with `cx skills install`."
+            );
+        } else {
+            println!("\nInstalling the cx agent skills for coding agents...");
+            if let Err(error) = skills::run_install(skills::InstallOptions { scope, agents }) {
+                eprintln!("warning: skipped the agent-skills install: {error:#}");
+            }
         }
     }
 

@@ -170,6 +170,27 @@ pub fn run_advanced_install() -> Result<()> {
     Ok(())
 }
 
+/// Best-effort check for whether cx skills are already installed, used by
+/// `cx init` to stay idempotent and skip the skills step on a re-run. When
+/// `scope` is `Some`, only that scope is checked (an explicit `--global`/
+/// `--local`); when `None` (init hasn't asked yet), either scope counts.
+///
+/// Returns `false` when npx is unavailable or detection fails, so `init` falls
+/// through to a normal install rather than skipping on a bad signal. Detection
+/// shares `installed_cx_skills`' limitation: copy-installed skills aren't seen.
+pub fn cx_skills_present(scope: Option<SkillsScope>) -> bool {
+    if !npx_available() {
+        return false;
+    }
+    match scope {
+        Some(scope) => !installed_cx_skills(scope).is_empty(),
+        None => {
+            !installed_cx_skills(SkillsScope::Global).is_empty()
+                || !installed_cx_skills(SkillsScope::Local).is_empty()
+        }
+    }
+}
+
 // ── Building blocks ───────────────────────────────────────────────────────────
 
 /// `npx` resolves through a `.cmd` shim on Windows; `Command` needs the

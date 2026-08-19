@@ -298,6 +298,45 @@ fn init_skips_profile_setup_when_one_already_exists() {
     );
 }
 
+/// When cx skills are already installed, init skips the skills step (idempotent)
+/// rather than reinstalling — updating is `cx skills install`'s job.
+#[cfg(unix)]
+#[test]
+fn init_skips_skills_when_already_installed() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_dir("skills_present");
+    let bin = temp_dir("skills_present_bin");
+    let args_file = bin.join("args.txt");
+
+    // Fake npx reports a cx skill already installed; records `add` args if run.
+    let script = format!(
+        "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then \
+           echo '[{{\"name\":\"cx-alerts\",\"source\":\"coralogix/cx-cli\"}}]'; exit 0; fi\n\
+         echo \"$@\" > \"{}\"\n",
+        args_file.display()
+    );
+    let npx = bin.join("npx");
+    fs::write(&npx, script).unwrap();
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = cx(&home, &bin)
+        .args(["init", "--region", "eu2", "--api-key", "k", "--global"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("already installed") && stdout.contains("skipping"),
+        "expected the skills step to be skipped, stdout: {stdout}"
+    );
+    assert!(
+        !args_file.exists(),
+        "the skills installer must not run when skills are already present"
+    );
+}
+
 // ── Missing required profile values fail actionably ───────────────────────────
 
 #[test]

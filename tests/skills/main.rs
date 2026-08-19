@@ -303,6 +303,36 @@ fn noninteractive_install_failure_surfaces_installer_stderr() {
     );
 }
 
+/// Fail-open contract (see `installed_cx_skills`): an old installer without
+/// `--json` prints human-formatted text on exit 0, which fails to parse as
+/// JSON. That must count as nothing installed and let the install proceed,
+/// rather than erroring out.
+#[cfg(unix)]
+#[test]
+fn install_treats_unparseable_ls_output_as_nothing_installed() {
+    let home = temp_dir("unparseable_ls");
+    let bin = temp_dir("unparseable_ls_bin");
+    let args_file = bin.join("args.txt");
+    // Realistic old-installer output: a human-formatted table, not JSON.
+    let plain = "cx-alerts  global  Claude Code  coralogix/cx-cli";
+    install_fake_npx(&bin, &args_file, plain, plain);
+
+    let output = cx(&home, &bin)
+        .args(["skills", "install", "--global"])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        output.status.success(),
+        "unparseable ls output must fail open, not error the install"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("already installed"),
+        "unparseable ls output must count as nothing installed, stdout: {stdout}"
+    );
+    assert!(args_file.exists(), "installer should still have been run");
+}
+
 // ── Flag conflicts ────────────────────────────────────────────────────────────
 
 #[test]

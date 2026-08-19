@@ -53,7 +53,7 @@ brew install coralogix/tap/cx
 Skills teach your AI agent how to use `cx` for observability investigations.
 
 ```bash
-npx skills add coralogix/cx-cli
+npx skills add coralogix/cx-cli/skills
 ```
 
 ### 3. Optional: install shell autocomplete
@@ -249,13 +249,13 @@ The install flow above installs all skills. Use these variants if you want to cu
 Install selected skills:
 
 ```bash
-npx skills add coralogix/cx-cli --skill query-logs --skill dataprime
+npx skills add coralogix/cx-cli/skills --skill query-logs --skill dataprime
 ```
 
 Install globally for all projects:
 
 ```bash
-npx skills add coralogix/cx-cli -g
+npx skills add coralogix/cx-cli/skills -g
 ```
 
 Available skills: `cx-query-logs`, `cx-query-spans`, `cx-metrics-query`, `cx-alerts`, `cx-dataprime`, `cx-rum`, `cx-telemetry-querying`, `cx-dashboards`, `cx-cost-optimization`, `cx-cases`, `cx-slos`, `cx-data-pipeline`, `cx-platform-admin`, `cx-observability-setup`. See [skills/README.md](https://github.com/coralogix/cx-cli/blob/master/skills/README.md) for per-skill usage.

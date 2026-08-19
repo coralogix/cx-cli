@@ -268,9 +268,8 @@ authentication type, installed CX skills, selected and configured
 profile counts, and write-operation and `--yes` flags.
 `X-Cx-Cli-Metadata` also contains the same values as compact JSON.
 `X-Cx-Cli-Installed-Skills` is a sorted JSON list of installed skill directory
-names, without filesystem paths. It includes skills bundled with this `cx`
-version and any installed skill whose directory name starts with `cx-` or
-`coralogix-`.
+names, without filesystem paths. It lists only the skills bundled with this
+`cx` version that are found installed.
 `X-Cx-Cli-Is-Agent` is `true` when the master agent-environment detector
 matches, and `false` otherwise.
 

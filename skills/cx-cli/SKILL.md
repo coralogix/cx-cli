@@ -22,7 +22,7 @@ An update notice always has **two parts** — binary upgrade and skills refresh.
 Commands with `--output toon` append a **standalone trailing JSON line** to stdout:
 
 ```json
-{"_meta":{"update":{"binary":{"current":"0.1.7","latest":"0.2.0","command":"brew upgrade cx"},"skills":{"command":"npx skills add coralogix/cx-cli","docs":"https://github.com/coralogix/cx-cli#install"}}}}
+{"_meta":{"update":{"binary":{"current":"0.1.7","latest":"0.2.0","command":"brew upgrade cx"},"skills":{"command":"npx skills add coralogix/cx-cli/skills","docs":"https://github.com/coralogix/cx-cli#install"}}}}
 ```
 
 Scan the **last line** of stdout for `_meta.update`. When present:
@@ -39,14 +39,14 @@ Scan the **last line** of stdout for `_meta.update`. When present:
 Also scan stderr and stdout for plain-text notices. Binary and skills appear on one line, separated by `|`:
 
 ```
-[cx update] v0.2.0 available (you have 0.1.9) | upgrade: brew upgrade cx | skills: npx skills add coralogix/cx-cli
+[cx update] v0.2.0 available (you have 0.1.9) | upgrade: brew upgrade cx | skills: npx skills add coralogix/cx-cli/skills
 ```
 
 TTY text mode uses two lines with the same `upgrade: ... | skills: ...` pattern:
 
 ```
 cx 0.2.0 is available (you have 0.1.9).
-upgrade: brew upgrade cx | skills: npx skills add coralogix/cx-cli
+upgrade: brew upgrade cx | skills: npx skills add coralogix/cx-cli/skills
 ```
 
 These appear on stderr for text/json mode after normal commands.
@@ -56,7 +56,7 @@ These appear on stderr for text/json mode after normal commands.
 > [Summarize the command result here]
 >
 > ---
-> A newer cx version (X.Y.Z) is available — you have A.B.C. Would you like me to run `<binary upgrade command>` and `npx skills add coralogix/cx-cli` to update?
+> A newer cx version (X.Y.Z) is available — you have A.B.C. Would you like me to run `<binary upgrade command>` and `npx skills add coralogix/cx-cli/skills` to update?
 
 Keep it to one brief closing line. Don't repeat on later commands in the same session.
 

@@ -262,14 +262,17 @@ Examples:
 enum Commands {
     /// One-step onboarding: configure a profile and install the cx agent skills.
     ///
-    /// Interactive by default (OAuth browser login); fully non-interactive when
-    /// `--url` and an API key are supplied — no prompts, ideal for CI and coding
-    /// agents. Idempotent: if a profile already exists the profile step is
-    /// skipped (reconfigure with `cx profiles add --force`).
+    /// Interactive by default (OAuth browser login). With `--url` and an API
+    /// key the profile step is prompt-free; add `--global`/`--local` (or
+    /// `--no-skills`) to also answer the skills-scope question and get a fully
+    /// prompt-free run for CI and coding agents — without a scope flag, a run
+    /// with no terminal skips the skills install with a warning. Idempotent:
+    /// if a profile already exists the profile step is skipped (reconfigure
+    /// with `cx profiles add --force`).
     #[command(after_help = "\
 Examples:
   cx init                                              # interactive walkthrough
-  cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY
+  cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global
   cx init --oauth --url https://myteam.app.eu2.coralogix.com
   cx init --no-skills                                  # skip the agent-skills install")]
     Init {

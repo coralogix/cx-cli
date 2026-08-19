@@ -303,6 +303,35 @@ fn noninteractive_install_failure_surfaces_installer_stderr() {
     );
 }
 
+/// Node CLIs often report errors on stdout; a failing install must surface
+/// those diagnostics too, not just stderr.
+#[cfg(unix)]
+#[test]
+fn noninteractive_install_failure_surfaces_installer_stdout() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_dir("failout_stdout");
+    let bin = temp_dir("failout_stdout_bin");
+
+    let script = "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         echo 'INSTALLER_STDOUT_BOOM'; exit 1\n";
+    let npx = bin.join("npx");
+    fs::write(&npx, script).unwrap();
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = cx(&home, &bin)
+        .args(["skills", "install", "--global"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("INSTALLER_STDOUT_BOOM"),
+        "installer stdout diagnostics must be surfaced on failure, stderr: {stderr}"
+    );
+}
+
 /// Fail-open contract (see `installed_cx_skills`): an old installer without
 /// `--json` prints human-formatted text on exit 0, which fails to parse as
 /// JSON. That must count as nothing installed and let the install proceed,

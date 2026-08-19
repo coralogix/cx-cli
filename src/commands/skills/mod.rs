@@ -111,11 +111,14 @@ pub fn run_install(opts: InstallOptions) -> Result<()> {
         .output()
         .context("failed to run npx")?;
     if !output.status.success() {
-        // Show the installer's own diagnostics before the retry hint.
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let trimmed = stderr.trim();
-        if !trimmed.is_empty() {
-            eprintln!("{trimmed}");
+        // Show the installer's own diagnostics before the retry hint. Node
+        // CLIs report errors on either stream, so surface both.
+        for captured in [&output.stdout, &output.stderr] {
+            let text = String::from_utf8_lossy(captured);
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                eprintln!("{trimmed}");
+            }
         }
         bail!(
             "skills installer exited with {}.\n\

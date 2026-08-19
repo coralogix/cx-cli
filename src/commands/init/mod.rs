@@ -20,8 +20,12 @@
 //!   first-profile safety questions. Credential storage, output format, and
 //!   label are defaulted (file / JSON / none) rather than asked.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or
-//!   there is no terminal). Prompt-free; the coding-agent one-liner:
-//!   `cx init --url … --api-key $CX_API_KEY`.
+//!   there is no terminal). The flags make the *profile* step prompt-free; the
+//!   skills step still asks its scope question unless `--global`/`--local` (or
+//!   `--no-skills`) answers it — so the fully prompt-free coding-agent
+//!   one-liner is: `cx init --url … --api-key $CX_API_KEY --global`. Without a
+//!   scope flag and with no terminal, the skills step is skipped with a
+//!   warning.
 
 use anyhow::Result;
 

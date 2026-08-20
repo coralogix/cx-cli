@@ -75,7 +75,7 @@ Agent:
 
 Local:
   profiles           Manage profiles (list, add, delete, set-default)
-  skills             Install the cx agent skills for coding agents
+  skills             Install or update the cx agent skills for coding agents
   cleanup            Remove stale temp files
 ```
 

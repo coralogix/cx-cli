@@ -27,9 +27,12 @@ const INSTALLED_SOURCE: &str = "coralogix/cx-cli";
 /// The command a user can run by hand when cx fails the install.
 const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
 
-/// Where to review the installed skills (and their risk assessments). Shown in
-/// the compact summary in place of the installer's own security-risk table,
-/// which we suppress along with the rest of its verbose output.
+/// Where to browse the installed skills and read their contents. Shown in the
+/// compact summary as a pointer for manually reviewing what was installed;
+/// the installer's own verbose output (including its security-risk table) is
+/// suppressed in the non-interactive run, and this page does not replace that
+/// table — use `cx skills install --interactive` to see the installer's full
+/// output.
 const SKILLS_REVIEW_URL: &str = "https://skills.sh/coralogix/cx-cli";
 
 /// Where the installer puts skills: the user's home (`~/`) or the project (`./`).
@@ -44,6 +47,21 @@ pub struct InstallOptions {
     pub scope: Option<SkillsScope>,
     /// Agents passed through to the installer's `-a` (overrides auto-detect).
     pub agents: Vec<String>,
+    /// When true (init), an already-installed detection skips the install
+    /// (idempotent onboarding). When false (`cx skills install`), it
+    /// reinstalls to update.
+    pub skip_if_installed: bool,
+}
+
+/// What [`run_install`] did, so callers (init) can message accordingly
+/// without probing the installer themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallOutcome {
+    /// The installer ran (fresh install or reinstall-to-update).
+    Installed,
+    /// Skipped: cx skills already installed in the target scope. Only
+    /// returned with [`InstallOptions::skip_if_installed`].
+    AlreadyInstalled,
 }
 
 /// The pre-flight gate run_install evaluates before touching the installer,
@@ -77,7 +95,7 @@ fn preflight(
 
 /// Install with at most one question (scope), then a fully
 /// non-interactive `npx skills add` run.
-pub fn run_install(opts: InstallOptions) -> Result<()> {
+pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     let scope = match preflight(npx_available(), opts.scope, std::io::stdin().is_terminal()) {
         Preflight::Fail(message) => bail!(message),
         Preflight::Proceed { scope } => match scope {
@@ -86,11 +104,15 @@ pub fn run_install(opts: InstallOptions) -> Result<()> {
         },
     };
 
-    // Informational only: an explicit install reinstalls to update. Detection
-    // is scoped to the scope we're about to install into, so skills present in
-    // the other scope don't muddy the message.
+    // The single already-installed probe (npx spawns are slow — seconds on a
+    // cold first run — so callers must not duplicate it). Detection is scoped
+    // to the scope we're about to install into, so skills present in the
+    // other scope don't muddy the result.
     let installed = installed_cx_skills(scope);
     if !installed.is_empty() {
+        if opts.skip_if_installed {
+            return Ok(InstallOutcome::AlreadyInstalled);
+        }
         println!(
             "cx agent skills already installed ({}) - reinstalling to update.",
             installed_summary(&installed)
@@ -128,12 +150,12 @@ pub fn run_install(opts: InstallOptions) -> Result<()> {
     }
 
     print_install_summary(scope);
-    Ok(())
+    Ok(InstallOutcome::Installed)
 }
 
 /// The compact success line shown after a non-interactive install, in place of
-/// the installer's verbose output. Keeps the installer's own "review before
-/// use" nudge alive, since we've hidden its security-risk table.
+/// the installer's verbose output. Points at the skill listing so the user can
+/// review what was installed, since the installer's verbose output was hidden.
 fn print_install_summary(scope: SkillsScope) {
     let scope_label = match scope {
         SkillsScope::Global => "global",
@@ -144,14 +166,14 @@ fn print_install_summary(scope: SkillsScope) {
     if count > 0 {
         println!(
             "✓ Installed {count} cx agent skills ({scope_label}). \
-             Review before use: {SKILLS_REVIEW_URL}"
+             Browse them at: {SKILLS_REVIEW_URL}"
         );
     } else {
         // Installer succeeded but detection came up empty (e.g. an older
         // installer without `--json`); still confirm and point to review.
         println!(
             "✓ cx agent skills installed ({scope_label}). \
-             Review before use: {SKILLS_REVIEW_URL}"
+             Browse them at: {SKILLS_REVIEW_URL}"
         );
     }
 }
@@ -171,27 +193,6 @@ pub fn run_advanced_install() -> Result<()> {
         bail!("skills installer exited with {status}");
     }
     Ok(())
-}
-
-/// Best-effort check for whether cx skills are already installed, used by
-/// `cx init` to stay idempotent and skip the skills step on a re-run. When
-/// `scope` is `Some`, only that scope is checked (an explicit `--global`/
-/// `--local`); when `None` (init hasn't asked yet), either scope counts.
-///
-/// Returns `false` when npx is unavailable or detection fails, so `init` falls
-/// through to a normal install rather than skipping on a bad signal. Detection
-/// shares `installed_cx_skills`' limitation: copy-installed skills aren't seen.
-pub fn cx_skills_present(scope: Option<SkillsScope>) -> bool {
-    if !npx_available() {
-        return false;
-    }
-    match scope {
-        Some(scope) => !installed_cx_skills(scope).is_empty(),
-        None => {
-            !installed_cx_skills(SkillsScope::Global).is_empty()
-                || !installed_cx_skills(SkillsScope::Local).is_empty()
-        }
-    }
 }
 
 // ── Building blocks ───────────────────────────────────────────────────────────

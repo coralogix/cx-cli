@@ -60,10 +60,16 @@ fn no_profile_points_to_cx_init() {
         stderr.contains("cx init"),
         "stderr should point at `cx init`: {stderr}"
     );
-    // The raw config-resolution error should not be dumped on a first run.
+    // The guidance must be the *entire* output: no anyhow chain dumped after
+    // it, and no second, contradicting instruction. Assert on the whole
+    // stderr, not just the absence of the generic wrapper string.
     assert!(
-        !stderr.contains("Configuration error:"),
-        "first-run guidance should replace the generic config error: {stderr}"
+        !stderr.to_lowercase().contains("error:") && !stderr.contains("Caused by:"),
+        "first-run guidance must not be followed by the raw error chain: {stderr}"
+    );
+    assert!(
+        !stderr.contains("cx profiles add"),
+        "first-run guidance must give exactly one next step (`cx init`): {stderr}"
     );
 }
 

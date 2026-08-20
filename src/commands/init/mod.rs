@@ -32,15 +32,13 @@ use anyhow::Result;
 use crate::commands::{profiles, skills};
 use crate::config::list_profile_names;
 
-/// Default profile name created on a fresh machine when `--profile` is absent.
+/// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
 
-/// Resolved arguments for `cx init`. The profile/credential values come from
-/// the shared global flags (`--profile`, `--api-key`, `--region`); the rest are
-/// `init`-local flags.
+/// Resolved arguments for `cx init`. The credential values come from the
+/// shared global flags (`--api-key`, `--region`); the rest are `init`-local
+/// flags.
 pub struct InitArgs {
-    /// Profile name (`--profile`); defaults to "default" when absent.
-    pub profile: Option<String>,
     /// `--url`: Coralogix URL the region is derived from.
     pub url: Option<String>,
     /// `--region`: region short-name, alternative to `--url`.
@@ -61,7 +59,6 @@ pub struct InitArgs {
 /// Orchestrate the onboarding chain: profile → skills → success.
 pub async fn run_init(args: InitArgs) -> Result<()> {
     let InitArgs {
-        profile,
         url,
         region,
         api_key,
@@ -83,7 +80,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
 
         println!("Setting up your Coralogix profile...\n");
         profiles::run_add(profiles::AddArgs {
-            name: Some(profile.unwrap_or_else(|| DEFAULT_PROFILE_NAME.to_string())),
+            name: Some(DEFAULT_PROFILE_NAME.to_string()),
             url,
             region,
             api_key,
@@ -99,24 +96,31 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
 
     // ── Step 2: skills ──────────────────────────────────────────────────────────
     // Idempotent, like the profile step: if cx skills are already installed,
-    // skip rather than reinstall. Updating is the explicit command's job
-    // (`cx skills install` reinstalls to pull the latest).
+    // skip rather than reinstall (`skip_if_installed`). Updating is the
+    // explicit command's job (`cx skills install` reinstalls to pull the
+    // latest). Detection lives inside `run_install` — its single probe — and
+    // init only branches on the reported outcome, so the slow npx spawns are
+    // never duplicated on the first-run path.
     //
-    // Otherwise install. The skills step must never brick onboarding:
-    // `skills::run_install` owns the npx/scope diagnostics and fails hard on a
-    // missing prerequisite; init downgrades that to a warning and continues, so
-    // a working profile still counts as a successful setup.
+    // The skills step must never brick onboarding: `skills::run_install` owns
+    // the npx/scope diagnostics and fails hard on a missing prerequisite; init
+    // downgrades that to a warning and continues, so a working profile still
+    // counts as a successful setup.
     if install_skills {
-        if skills::cx_skills_present(scope) {
-            println!(
-                "\ncx agent skills are already installed - skipping.\n\
-                 Update them anytime with `cx skills install`."
-            );
-        } else {
-            println!("\nInstalling the cx agent skills for coding agents...");
-            if let Err(error) = skills::run_install(skills::InstallOptions { scope, agents }) {
-                eprintln!("warning: skipped the agent-skills install: {error:#}");
+        println!("\nInstalling the cx agent skills for coding agents...");
+        match skills::run_install(skills::InstallOptions {
+            scope,
+            agents,
+            skip_if_installed: true,
+        }) {
+            Ok(skills::InstallOutcome::Installed) => {}
+            Ok(skills::InstallOutcome::AlreadyInstalled) => {
+                println!(
+                    "cx agent skills are already installed - skipping.\n\
+                     Update them anytime with `cx skills install`."
+                );
             }
+            Err(error) => eprintln!("warning: skipped the agent-skills install: {error:#}"),
         }
     }
 

@@ -270,8 +270,8 @@ fn noninteractive_install_hides_installer_output_and_summarizes() {
         "installer's verbose output must be suppressed, stdout: {stdout}"
     );
     assert!(
-        stdout.contains("Installed 2 cx agent skills") && stdout.contains("Review before use"),
-        "expected the compact summary with a review pointer, stdout: {stdout}"
+        stdout.contains("Installed 2 cx agent skills") && stdout.contains("Browse them at"),
+        "expected the compact summary with a skill-listing pointer, stdout: {stdout}"
     );
 }
 

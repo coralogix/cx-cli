@@ -285,7 +285,7 @@ Examples:
         #[arg(long)]
         oauth: bool,
         /// Skip the agent-skills install step (installed by default).
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["global", "local", "agents"])]
         no_skills: bool,
         /// Install skills globally (~/), available in every project.
         #[arg(long, conflicts_with = "local")]
@@ -3071,15 +3071,6 @@ async fn main() -> Result<()> {
         agents,
     } = cli.command
     {
-        // init configures exactly one profile. The global --profile selector is a
-        // Vec (fan-out); reject more than one value rather than silently keeping
-        // the first, so a success message can't imply all were configured.
-        if cli.profile.len() > 1 {
-            bail!(
-                "cx init configures a single profile, but multiple --profile values were given.\n\
-                 Run init once per profile, or add more with `cx profiles add <name>`."
-            );
-        }
         let scope = if global {
             Some(commands::skills::SkillsScope::Global)
         } else if local {
@@ -3088,9 +3079,6 @@ async fn main() -> Result<()> {
             None
         };
         let result = commands::init::run_init(commands::init::InitArgs {
-            // At most one --profile reaches here (guarded above); init configures a
-            // single profile, so take that value if supplied.
-            profile: cli.profile.into_iter().next(),
             url,
             region: cli.region,
             api_key: cli.api_key,
@@ -3122,7 +3110,14 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-            commands::skills::run_install(commands::skills::InstallOptions { scope, agents })
+            // The explicit command always (re)installs to update, so the
+            // outcome is uninteresting here — only init branches on it.
+            commands::skills::run_install(commands::skills::InstallOptions {
+                scope,
+                agents,
+                skip_if_installed: false,
+            })
+            .map(|_| ())
         };
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
@@ -3225,10 +3220,14 @@ async fn main() -> Result<()> {
             {
                 eprintln!("No Coralogix profile is configured.");
                 eprintln!("Run `cx init` to set up a profile and get started.");
-            } else {
-                eprintln!("Configuration error: {error}");
-                eprintln!("Run `cx profiles add` to set up credentials.");
+                // Exit here instead of returning the error: propagating it
+                // would dump the anyhow config-resolution chain (with a second,
+                // contradicting `cx profiles add` instruction) after the
+                // guidance. The two lines above are the entire first-run story.
+                std::process::exit(1);
             }
+            eprintln!("Configuration error: {error}");
+            eprintln!("Run `cx profiles add` to set up credentials.");
             return Err(error);
         }
     };

@@ -110,7 +110,7 @@ pub enum SearchByValueDataset {
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
   \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
-  \x1b[1mskills\x1b[0m             Install the cx agent skills for coding agents
+  \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
 struct Cli {
@@ -224,15 +224,16 @@ Examples:
 
 #[derive(Subcommand)]
 enum SkillsCmd {
-    /// Install the cx agent skills bundle via the `skills` npx installer.
+    /// Install or update the cx agent skills bundle via the `skills` npx installer.
     ///
     /// By default this asks one question (install scope) and then runs the
-    /// installer fully non-interactively with agent auto-detection. Requires
-    /// Node.js (npx).
+    /// installer fully non-interactively with agent auto-detection. Re-running
+    /// updates already-installed skills to the latest published bundle.
+    /// Requires Node.js (npx).
     #[command(after_help = "\
 Examples:
   cx skills install                     # asks global vs local, then installs
-  cx skills install --global            # no questions asked
+  cx skills install --global            # no questions asked (also updates in place)
   cx skills install --local --agent claude-code
   cx skills install --interactive       # walk the installer's full flow")]
     Install {
@@ -262,8 +263,9 @@ Examples:
 enum Commands {
     /// One-step onboarding: configure a profile and install the cx agent skills.
     ///
-    /// Interactive by default (OAuth browser login). With `--url` and an API
-    /// key the profile step is prompt-free; add `--global`/`--local` (or
+    /// Interactive by default (OAuth browser login); pass `--api-key` (or set
+    /// CX_API_KEY) to authenticate with an API key instead. With `--url` and
+    /// an API key the profile step is prompt-free; add `--global`/`--local` (or
     /// `--no-skills`) to also answer the skills-scope question and get a fully
     /// prompt-free run for CI and coding agents — without a scope flag, a run
     /// with no terminal skips the skills install with a warning. Idempotent:
@@ -280,8 +282,8 @@ Examples:
         /// Unrecognized URLs are used as a custom API endpoint (BYOC / private link).
         #[arg(long)]
         url: Option<String>,
-        /// Use OAuth browser login even when an API key is available. In
-        /// interactive setup OAuth is the default regardless.
+        /// Force OAuth browser login, ignoring any supplied API key
+        /// (--api-key / CX_API_KEY). Without a key, OAuth is used anyway.
         #[arg(long)]
         oauth: bool,
         /// Skip the agent-skills install step (installed by default).
@@ -314,7 +316,10 @@ Examples:
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
     Cleanup,
 
-    /// Install the cx agent skills for coding agents (Claude Code, Cursor, Codex, ...).
+    /// Install or update the cx agent skills for coding agents (Claude Code, Cursor, Codex, ...).
+    ///
+    /// Re-run `cx skills install` anytime to update already-installed skills
+    /// to the latest published bundle.
     Skills {
         #[command(subcommand)]
         cmd: SkillsCmd,

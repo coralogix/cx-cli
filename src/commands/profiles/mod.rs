@@ -415,6 +415,13 @@ pub struct AddArgs {
     pub force: bool,
     /// `--set-default`: set this profile as the default without prompting.
     pub set_default: bool,
+    /// Quick setup: on a terminal, skip the optional prompts (credential
+    /// storage, default output format, label) and apply sensible defaults
+    /// (file storage, JSON output, no label). The essential prompts — region,
+    /// browser login, and the first-profile safety questions — are unaffected.
+    /// Used by `cx init`'s guided flow; `cx profiles add` leaves it `false` and
+    /// keeps its full prompt set.
+    pub quick: bool,
 }
 
 pub async fn run_add(args: AddArgs) -> Result<()> {
@@ -426,6 +433,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         oauth,
         force,
         set_default,
+        quick,
     } = args;
 
     // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
@@ -489,12 +497,12 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         // browser login. A terminal is not required: the approval happens in
         // the browser, the login URL is printed for the user (or an agent) to
         // open, and the remaining questions fall back to defaults.
-        configure_oauth(&name, region_choice, interactive).await?
+        configure_oauth(&name, region_choice, interactive, quick).await?
     } else if !interactive {
         build_profile_non_interactive(&name, api_key, region_choice)?
     } else if api_key.is_some() {
         // An API key was supplied, so the auth-method question is answered.
-        configure_api_key(&name, api_key, region_choice)?
+        configure_api_key(&name, api_key, region_choice, quick)?
     } else {
         let auth_choice = Select::new("Authentication method:", AUTH_METHODS.to_vec())
             .with_starting_cursor(0) // OAuth is the default
@@ -506,15 +514,18 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             .prompt()?;
 
         if auth_choice.starts_with("OAuth") {
-            configure_oauth(&name, region_choice, interactive).await?
+            configure_oauth(&name, region_choice, interactive, quick).await?
         } else {
-            configure_api_key(&name, None, region_choice)?
+            configure_api_key(&name, None, region_choice, quick)?
         }
     };
 
     // ── Common: default output format (per-profile) ────────────────────────────
-    // Non-interactive runs leave it unset, falling back to the global default.
-    if interactive {
+    // Quick setup pins JSON without asking. Non-interactive runs leave it unset,
+    // falling back to the global default.
+    if quick {
+        profile.default_output_format = Some(OutputFormat::Json);
+    } else if interactive {
         let global_config = load_config().unwrap_or_default();
         let current_fmt = profile
             .default_output_format
@@ -555,7 +566,9 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
             global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
                 .with_default(true)
-                .with_help_message("When disabled, 'olly ask' is blocked.")
+                .with_help_message(
+                    "When disabled, Olly is unavailable from the CLI ('cx olly ask').",
+                )
                 .prompt()?;
         }
 
@@ -713,6 +726,7 @@ async fn configure_oauth(
     name: &str,
     region_choice: Option<RegionChoice>,
     interactive: bool,
+    quick: bool,
 ) -> Result<(Profile, &'static str)> {
     // Region / environment selection: the --url/--region flags when supplied,
     // otherwise the searchable list (URL derivation, BYOC). The browser login
@@ -758,7 +772,7 @@ async fn configure_oauth(
         }
     };
 
-    let label = if interactive {
+    let label = if interactive && !quick {
         Text::new("Label (e.g. 'prod'):")
             .prompt_skippable()?
             .filter(|s| !s.is_empty())
@@ -775,9 +789,9 @@ async fn configure_oauth(
     let tokens = oauth::browser_login(&base_url, &client_id).await?;
     println!("Login successful!");
 
-    // Non-interactive runs store tokens in the profile file, matching the
-    // non-interactive API-key path (the OS store may itself prompt).
-    let credential_storage = if interactive {
+    // Quick setup and non-interactive runs store tokens in the profile file,
+    // matching the non-interactive API-key path (the OS store may itself prompt).
+    let credential_storage = if interactive && !quick {
         select_credential_storage(
             "Where should OAuth tokens be stored?",
             "'file' stores tokens in the profile config (0600 perms). \
@@ -829,6 +843,7 @@ fn configure_api_key(
     name: &str,
     api_key: Option<String>,
     region_choice: Option<RegionChoice>,
+    quick: bool,
 ) -> Result<(Profile, &'static str)> {
     let api_key = match api_key {
         Some(key) => key,
@@ -863,14 +878,24 @@ fn configure_api_key(
         RegionChoice::Custom { base_url } => Region::Custom(base_url),
     };
 
-    let label = Text::new("Label (e.g. 'prod'):").prompt_skippable()?;
-    let label = label.filter(|s| !s.is_empty());
+    let label = if quick {
+        None
+    } else {
+        Text::new("Label (e.g. 'prod'):")
+            .prompt_skippable()?
+            .filter(|s| !s.is_empty())
+    };
 
-    let credential_storage = select_credential_storage(
-        "Where should API keys be stored?",
-        "'file' stores in profile config (0600 perms). \
-         'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
-    )?;
+    // Quick setup pins file storage without asking.
+    let credential_storage = if quick {
+        CredentialStorage::File
+    } else {
+        select_credential_storage(
+            "Where should API keys be stored?",
+            "'file' stores in profile config (0600 perms). \
+             'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
+        )?
+    };
 
     let (profile, storage_desc) = match credential_storage {
         CredentialStorage::OsStore => {

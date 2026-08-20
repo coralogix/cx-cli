@@ -232,6 +232,106 @@ fn install_local_ignores_globally_installed_skills() {
     assert!(args_file.exists(), "installer should still have been run");
 }
 
+// ── Verbose installer output is suppressed for the -y install ─────────────────
+
+/// The non-interactive install captures the installer's verbose TUI and prints
+/// a compact summary instead — the banner must not reach the user, but the
+/// count and the "review before use" pointer must.
+#[cfg(unix)]
+#[test]
+fn noninteractive_install_hides_installer_output_and_summarizes() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_dir("summary");
+    let bin = temp_dir("summary_bin");
+
+    // A fake npx that spews a banner to stdout on `skills add`, and reports two
+    // cx skills installed for `skills ls --json`.
+    let ls_json = r#"[{"name":"cx-alerts","source":"coralogix/cx-cli"},
+                      {"name":"cx-dashboards","source":"coralogix/cx-cli"}]"#;
+    let script = format!(
+        "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '{ls_json}'; exit 0; fi\n\
+         echo 'BANNER_LINE_SHOULD_BE_HIDDEN'; exit 0\n"
+    );
+    let npx = bin.join("npx");
+    fs::write(&npx, script).unwrap();
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = cx(&home, &bin)
+        .args(["skills", "install", "--global"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        !stdout.contains("BANNER_LINE_SHOULD_BE_HIDDEN"),
+        "installer's verbose output must be suppressed, stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("Installed 2 cx agent skills") && stdout.contains("Browse them at"),
+        "expected the compact summary with a skill-listing pointer, stdout: {stdout}"
+    );
+}
+
+/// On failure, the installer's diagnostics are surfaced (not swallowed).
+#[cfg(unix)]
+#[test]
+fn noninteractive_install_failure_surfaces_installer_stderr() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_dir("failout");
+    let bin = temp_dir("failout_bin");
+
+    let script = "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         echo 'INSTALLER_BOOM' 1>&2; exit 1\n";
+    let npx = bin.join("npx");
+    fs::write(&npx, script).unwrap();
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = cx(&home, &bin)
+        .args(["skills", "install", "--global"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("INSTALLER_BOOM"),
+        "installer diagnostics must be surfaced on failure, stderr: {stderr}"
+    );
+}
+
+/// Node CLIs often report errors on stdout; a failing install must surface
+/// those diagnostics too, not just stderr.
+#[cfg(unix)]
+#[test]
+fn noninteractive_install_failure_surfaces_installer_stdout() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_dir("failout_stdout");
+    let bin = temp_dir("failout_stdout_bin");
+
+    let script = "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         echo 'INSTALLER_STDOUT_BOOM'; exit 1\n";
+    let npx = bin.join("npx");
+    fs::write(&npx, script).unwrap();
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = cx(&home, &bin)
+        .args(["skills", "install", "--global"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("INSTALLER_STDOUT_BOOM"),
+        "installer stdout diagnostics must be surfaced on failure, stderr: {stderr}"
+    );
+}
+
 /// Fail-open contract (see `installed_cx_skills`): an old installer without
 /// `--json` prints human-formatted text on exit 0, which fails to parse as
 /// JSON. That must count as nothing installed and let the install proceed,

@@ -108,6 +108,7 @@ pub enum SearchByValueDataset {
   \x1b[1molly\x1b[0m               Interact with the AI assistant
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
+  \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
   \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
   \x1b[1mskills\x1b[0m             Install the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
@@ -259,6 +260,45 @@ Examples:
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
+    /// One-step onboarding: configure a profile and install the cx agent skills.
+    ///
+    /// Interactive by default (OAuth browser login). With `--url` and an API
+    /// key the profile step is prompt-free; add `--global`/`--local` (or
+    /// `--no-skills`) to also answer the skills-scope question and get a fully
+    /// prompt-free run for CI and coding agents — without a scope flag, a run
+    /// with no terminal skips the skills install with a warning. Idempotent:
+    /// if a profile already exists the profile step is skipped (reconfigure
+    /// with `cx profiles add --force`).
+    #[command(after_help = "\
+Examples:
+  cx init                                              # interactive walkthrough
+  cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global
+  cx init --oauth --url https://myteam.app.eu2.coralogix.com
+  cx init --no-skills                                  # skip the agent-skills install")]
+    Init {
+        /// Coralogix URL to derive the region from (e.g. your browser URL).
+        /// Unrecognized URLs are used as a custom API endpoint (BYOC / private link).
+        #[arg(long)]
+        url: Option<String>,
+        /// Use OAuth browser login even when an API key is available. In
+        /// interactive setup OAuth is the default regardless.
+        #[arg(long)]
+        oauth: bool,
+        /// Skip the agent-skills install step (installed by default).
+        #[arg(long, conflicts_with_all = ["global", "local", "agents"])]
+        no_skills: bool,
+        /// Install skills globally (~/), available in every project.
+        #[arg(long, conflicts_with = "local")]
+        global: bool,
+        /// Install skills locally (./), for this project only.
+        #[arg(long)]
+        local: bool,
+        /// Target specific agents for the skills install (passed through to the
+        /// installer's -a; overrides its auto-detection). Repeatable.
+        #[arg(long = "agent", value_name = "NAME")]
+        agents: Vec<String>,
+    },
+
     /// Manage profiles (list, add, delete, set-default).
     Profiles {
         #[command(subcommand)]
@@ -2894,6 +2934,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    quick: false,
                 })
                 .await
             }
@@ -2933,6 +2974,7 @@ async fn main() -> Result<()> {
                 | Some("completions")
                 | Some("docs")
                 | Some("skills")
+                | Some("init")
         );
         if !is_local {
             if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
@@ -2985,6 +3027,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    quick: false,
                 })
                 .await
             }
@@ -3016,6 +3059,39 @@ async fn main() -> Result<()> {
         return result;
     }
 
+    // Init chains profile setup + skills install locally - no API credentials
+    // up front (the profile step acquires them). Handled before credential
+    // resolution, like profiles/skills.
+    if let Commands::Init {
+        url,
+        oauth,
+        no_skills,
+        global,
+        local,
+        agents,
+    } = cli.command
+    {
+        let scope = if global {
+            Some(commands::skills::SkillsScope::Global)
+        } else if local {
+            Some(commands::skills::SkillsScope::Local)
+        } else {
+            None
+        };
+        let result = commands::init::run_init(commands::init::InitArgs {
+            url,
+            region: cli.region,
+            api_key: cli.api_key,
+            oauth,
+            install_skills: !no_skills,
+            agents,
+            scope,
+        })
+        .await;
+        update_check::maybe_print_notice(OutputFormat::Text);
+        return result;
+    }
+
     // Skills install shells out to npx locally - no API credentials.
     if let Commands::Skills { cmd } = cli.command {
         let SkillsCmd::Install {
@@ -3034,7 +3110,14 @@ async fn main() -> Result<()> {
             } else {
                 None
             };
-            commands::skills::run_install(commands::skills::InstallOptions { scope, agents })
+            // The explicit command always (re)installs to update, so the
+            // outcome is uninteresting here — only init branches on it.
+            commands::skills::run_install(commands::skills::InstallOptions {
+                scope,
+                agents,
+                skip_if_installed: false,
+            })
+            .map(|_| ())
         };
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
@@ -3125,10 +3208,27 @@ async fn main() -> Result<()> {
     {
         Ok(configs) => configs,
         Err(error) => {
+            // First-run guidance: when nothing is configured at all (no profile
+            // on disk and no env-only credentials), don't dump the underlying
+            // config-resolution error. Point the user at the single guided entry
+            // point instead. The onboarding commands that *fix* this state
+            // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
+            // never reach here, so they can't be short-circuited by this branch.
+            if config::list_profile_names()
+                .map(|names| names.is_empty())
+                .unwrap_or(false)
+            {
+                eprintln!("No Coralogix profile is configured.");
+                eprintln!("Run `cx init` to set up a profile and get started.");
+                // Exit here instead of returning the error: propagating it
+                // would dump the anyhow config-resolution chain (with a second,
+                // contradicting `cx profiles add` instruction) after the
+                // guidance. The two lines above are the entire first-run story.
+                std::process::exit(1);
+            }
             eprintln!("Configuration error: {error}");
             eprintln!("Run `cx profiles add` to set up credentials.");
-            let result = Err(error);
-            return result;
+            return Err(error);
         }
     };
 
@@ -3141,6 +3241,7 @@ async fn main() -> Result<()> {
     let cmd_result = async {
         match cli.command {
             Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
+            Commands::Init { .. } => unreachable!("handled above"),
             Commands::Cleanup => unreachable!("handled above"),
             Commands::Skills { .. } => unreachable!("handled above"),
             Commands::Schema => unreachable!("handled above"),

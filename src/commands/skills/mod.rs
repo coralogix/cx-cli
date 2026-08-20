@@ -27,6 +27,14 @@ const INSTALLED_SOURCE: &str = "coralogix/cx-cli";
 /// The command a user can run by hand when cx fails the install.
 const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
 
+/// Where to browse the installed skills and read their contents. Shown in the
+/// compact summary as a pointer for manually reviewing what was installed;
+/// the installer's own verbose output (including its security-risk table) is
+/// suppressed in the non-interactive run, and this page does not replace that
+/// table — use `cx skills install --interactive` to see the installer's full
+/// output.
+const SKILLS_REVIEW_URL: &str = "https://skills.sh/coralogix/cx-cli";
+
 /// Where the installer puts skills: the user's home (`~/`) or the project (`./`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillsScope {
@@ -39,6 +47,21 @@ pub struct InstallOptions {
     pub scope: Option<SkillsScope>,
     /// Agents passed through to the installer's `-a` (overrides auto-detect).
     pub agents: Vec<String>,
+    /// When true (init), an already-installed detection skips the install
+    /// (idempotent onboarding). When false (`cx skills install`), it
+    /// reinstalls to update.
+    pub skip_if_installed: bool,
+}
+
+/// What [`run_install`] did, so callers (init) can message accordingly
+/// without probing the installer themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallOutcome {
+    /// The installer ran (fresh install or reinstall-to-update).
+    Installed,
+    /// Skipped: cx skills already installed in the target scope. Only
+    /// returned with [`InstallOptions::skip_if_installed`].
+    AlreadyInstalled,
 }
 
 /// The pre-flight gate run_install evaluates before touching the installer,
@@ -72,7 +95,7 @@ fn preflight(
 
 /// Install with at most one question (scope), then a fully
 /// non-interactive `npx skills add` run.
-pub fn run_install(opts: InstallOptions) -> Result<()> {
+pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     let scope = match preflight(npx_available(), opts.scope, std::io::stdin().is_terminal()) {
         Preflight::Fail(message) => bail!(message),
         Preflight::Proceed { scope } => match scope {
@@ -81,11 +104,15 @@ pub fn run_install(opts: InstallOptions) -> Result<()> {
         },
     };
 
-    // Informational only: an explicit install reinstalls to update. Detection
-    // is scoped to the scope we're about to install into, so skills present in
-    // the other scope don't muddy the message.
+    // The single already-installed probe (npx spawns are slow — seconds on a
+    // cold first run — so callers must not duplicate it). Detection is scoped
+    // to the scope we're about to install into, so skills present in the
+    // other scope don't muddy the result.
     let installed = installed_cx_skills(scope);
     if !installed.is_empty() {
+        if opts.skip_if_installed {
+            return Ok(InstallOutcome::AlreadyInstalled);
+        }
         println!(
             "cx agent skills already installed ({}) - reinstalling to update.",
             installed_summary(&installed)
@@ -93,21 +120,62 @@ pub fn run_install(opts: InstallOptions) -> Result<()> {
     }
 
     let args = build_install_args(scope, &opts.agents);
-    println!("Installing cx agent skills: npx {}", display_args(&args));
 
-    let status = Command::new(npx_program())
+    // The `-y` installer runs fully non-interactively, so it needs no terminal
+    // and its verbose TUI (banner, per-skill table, risk matrix) is pure noise.
+    // Capture it and replace it with a one-line summary; only surface the raw
+    // output on failure, where the error detail matters. The user-driven
+    // interactive walk (`run_advanced_install`) keeps full passthrough.
+    println!("Installing cx agent skills…");
+
+    let output = Command::new(npx_program())
         .args(&args)
-        .status()
+        .output()
         .context("failed to run npx")?;
-    if !status.success() {
+    if !output.status.success() {
+        // Show the installer's own diagnostics before the retry hint. Node
+        // CLIs report errors on either stream, so surface both.
+        for captured in [&output.stdout, &output.stderr] {
+            let text = String::from_utf8_lossy(captured);
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                eprintln!("{trimmed}");
+            }
+        }
         bail!(
-            "skills installer exited with {status}.\n\
-             You can retry manually with: {MANUAL_INSTALL_CMD}"
+            "skills installer exited with {}.\n\
+             You can retry manually with: {MANUAL_INSTALL_CMD}",
+            output.status
         );
     }
 
-    println!("cx agent skills installed.");
-    Ok(())
+    print_install_summary(scope);
+    Ok(InstallOutcome::Installed)
+}
+
+/// The compact success line shown after a non-interactive install, in place of
+/// the installer's verbose output. Points at the skill listing so the user can
+/// review what was installed, since the installer's verbose output was hidden.
+fn print_install_summary(scope: SkillsScope) {
+    let scope_label = match scope {
+        SkillsScope::Global => "global",
+        SkillsScope::Local => "local",
+    };
+    // Re-query so the count reflects what's actually on disk now.
+    let count = installed_cx_skills(scope).len();
+    if count > 0 {
+        println!(
+            "✓ Installed {count} cx agent skills ({scope_label}). \
+             Browse them at: {SKILLS_REVIEW_URL}"
+        );
+    } else {
+        // Installer succeeded but detection came up empty (e.g. an older
+        // installer without `--json`); still confirm and point to review.
+        println!(
+            "✓ cx agent skills installed ({scope_label}). \
+             Browse them at: {SKILLS_REVIEW_URL}"
+        );
+    }
 }
 
 /// Advanced install: run the raw installer with no flags and let the user
@@ -211,25 +279,6 @@ fn build_install_args(scope: SkillsScope, agents: &[String]) -> Vec<String> {
     args
 }
 
-/// Shell-quoted rendering of the args, safe to copy back into a shell
-/// (`*` would otherwise glob-expand).
-fn display_args(args: &[String]) -> String {
-    args.iter()
-        .map(|arg| {
-            let safe = !arg.is_empty()
-                && arg
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "-_./:@=".contains(c));
-            if safe {
-                arg.clone()
-            } else {
-                format!("'{arg}'")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// e.g. "3 skills: cx-alerts, cx-dashboards, ..."
 fn installed_summary(installed: &[String]) -> String {
     const SHOWN: usize = 3;
@@ -313,15 +362,6 @@ mod tests {
                 "claude-code",
                 "cursor"
             ]
-        );
-    }
-
-    #[test]
-    fn displayed_command_is_shell_safe() {
-        let args = build_install_args(SkillsScope::Global, &[]);
-        assert_eq!(
-            display_args(&args),
-            "-y skills add coralogix/cx-cli/skills --skill '*' -y -g"
         );
     }
 

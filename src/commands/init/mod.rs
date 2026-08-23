@@ -144,19 +144,29 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     }
 
     // ── Step 3: shell completions ─────────────────────────────────────────────────
-    // `--install-completions <shell>` installs for that shell without prompting;
-    // an interactive run with no flag shows a picker (default: don't install,
-    // plus an "Other" escape hatch for a custom shell/path); a non-interactive
-    // run with no flag skips the step.
-    let completions_choice = match install_completions {
-        Some(shell) => Some((shell, None)),
-        None if std::io::stdin().is_terminal() => prompt_completions_shell()?,
-        None => None,
+    // `--install-completions <shell>` installs for that shell using its default
+    // path, without prompting. With no flag, an interactive run shows a picker
+    // (default: don't install, plus an "Other" escape hatch for a custom
+    // shell/path) and a non-interactive run skips the step.
+    let completions_choice = if let Some(shell) = install_completions {
+        Some((shell, None))
+    } else if std::io::stdin().is_terminal() {
+        prompt_completions_shell()?
+    } else {
+        None
     };
     if let Some((shell, path)) = completions_choice {
-        println!("\nInstalling {shell} shell completions...");
-        if let Err(error) = completions::run_install(shell, path) {
-            eprintln!("warning: skipped the shell-completions install: {error:#}");
+        // Idempotent: if the chosen shell's completions are already installed and
+        // we'd write to the default location, skip rather than rewrite them, so
+        // re-running `cx init` is quiet. An explicit "Other" path is always
+        // honored, and `cx completions install`/`refresh` force a rewrite.
+        if path.is_none() && completions::installed_shells().contains(&shell) {
+            println!("\n{shell} shell completions are already installed - skipping.");
+        } else {
+            println!("\nInstalling {shell} shell completions...");
+            if let Err(error) = completions::run_install(shell, path) {
+                eprintln!("warning: skipped the shell-completions install: {error:#}");
+            }
         }
     }
 
@@ -165,16 +175,19 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     Ok(())
 }
 
-/// Interactive picker for the shell-completions step. Offers the shells with a
-/// known default install path, a default "don't install" option, and an "other"
+/// Interactive picker for the shell-completions step. Offers the standard
+/// shells (zsh/bash/fish), a default "don't install" option, and an "other"
 /// escape hatch that asks for an explicit shell and path (for shells like
 /// PowerShell that have no canonical per-user completion directory, or a custom
 /// location). Returns the chosen shell and optional install path, or `None` to
-/// skip.
+/// skip. Whether the chosen shell is already installed is handled by the caller
+/// (it skips the actual install), so every shell is always listed.
 fn prompt_completions_shell() -> Result<Option<(Shell, Option<PathBuf>)>> {
     const SKIP: &str = "Don't install";
     const OTHER: &str = "Other (specify shell and path)";
-    // "Don't install" is first so it is the default (starting cursor).
+
+    // "Don't install" first so it is the default (starting cursor); the "Other"
+    // escape hatch last.
     let options = vec![SKIP, "zsh", "bash", "fish", OTHER];
     let choice = Select::new(
         "Install shell completions? (enables <Tab> completion for cx)",

@@ -31,6 +31,19 @@ pub fn default_install_path(shell: Shell) -> Option<PathBuf> {
     Some(path)
 }
 
+/// The shells cx currently tracks an installed completion for. Used by the
+/// guided `cx init` flow to stay idempotent: once a shell is selected (via the
+/// picker or `--install-completions`), init skips the actual install when that
+/// shell is already in this list, so re-running `cx init` never rewrites an
+/// existing install. `cx completions install`/`refresh` force a rewrite.
+pub fn installed_shells() -> Vec<Shell> {
+    config::managed_completions()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|entry| entry.shell.parse::<Shell>().ok())
+        .collect()
+}
+
 // ── Post-install setup notes ──────────────────────────────────────────────────
 
 fn setup_note(shell: Shell, path: &Path) -> Option<String> {

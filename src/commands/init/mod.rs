@@ -21,9 +21,10 @@
 //!   label are defaulted (file / JSON / none) rather than asked.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or
 //!   there is no terminal). The flags make the *profile* step prompt-free; the
-//!   skills step still asks its scope question unless `--global`/`--local` (or
-//!   `--no-skills`) answers it — so the fully prompt-free coding-agent
-//!   one-liner is: `cx init --url … --api-key $CX_API_KEY --global`. Without a
+//!   skills step still asks its scope question unless `--global-skills`/
+//!   `--local-skills` (or `--no-skills`) answers it — so the fully prompt-free
+//!   coding-agent one-liner is:
+//!   `cx init --url … --api-key $CX_API_KEY --global-skills`. Without a
 //!   scope flag and with no terminal, the skills step is skipped with a
 //!   warning.
 
@@ -51,8 +52,8 @@ pub struct InitArgs {
     pub install_skills: bool,
     /// `--agent`: agents passed through to the skills installer.
     pub agents: Vec<String>,
-    /// Install scope for skills (`--global` / `--local`); `None` asks (quick)
-    /// or skips the step (non-interactive).
+    /// Install scope for skills (`--global-skills` / `--local-skills`); `None`
+    /// asks (quick) or skips the step (non-interactive).
     pub scope: Option<skills::SkillsScope>,
 }
 

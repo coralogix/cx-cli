@@ -88,7 +88,11 @@ fn preflight(
         );
     }
     if scope.is_none() && !stdin_is_terminal {
-        return Preflight::Fail("no skills install scope - pass --global or --local".into());
+        return Preflight::Fail(
+            "no skills install scope - pass --global or --local \
+             (--global-skills/--local-skills on `cx init`)"
+                .into(),
+        );
     }
     Preflight::Proceed { scope }
 }

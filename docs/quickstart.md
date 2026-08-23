@@ -18,9 +18,12 @@ Install the Coralogix CLI from https://github.com/coralogix/cx-cli and set up a 
 My Coralogix URL is https://myteam.app.eu2.coralogix.com
 ```
 
-Or, you can [install manually](#install-manually).
 
-## Install manually
+> **Find your URL:** It's the address you use in the browser when you open Coralogix. Replace `myteam` with your team subdomain and pick the domain for your region: `app.coralogix.com` (EU1) · `app.eu2.coralogix.com` (EU2) · `app.us.coralogix.com` (US1) · `app.us2.coralogix.com` (US2) · `app.ap1.coralogix.com` (APAC1) · `app.ap2.coralogix.com` (APAC2). [Full list →](https://coralogix.com/docs/user-guides/account-management/account-settings/coralogix-domain/)
+
+Or, you can [Install Manually](#install-manually).
+
+## Install Manually
 
 ### 1. Install the CLI
 
@@ -77,16 +80,16 @@ For CI, containers, and coding agents, spell the whole thing out and the run is
 prompt-free:
 
 ```bash
-cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global
+cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global-skills
 ```
 
 | Flag | Purpose |
 |---|---|
 | `--url <URL>` | Derive the region from a Coralogix URL. Unrecognised URLs are used as a custom API endpoint (BYOC / private link). |
 | `--oauth` | Force browser login even when an API key is available. |
-| `--global` / `--local` | Answer the skills-scope question up front. Without one of these and with no terminal, the skills step is skipped with a warning. |
+| `--global-skills` / `--local-skills` | Answer the skills-scope question up front. Without one of these and with no terminal, the skills step is skipped with a warning. |
 | `--agent <name>` | Target specific agents instead of letting the installer auto-detect. Repeatable. |
-| `--no-skills` | Skip the agent-skills step. Conflicts with `--global`, `--local`, and `--agent`. |
+| `--no-skills` | Skip the agent-skills step. Conflicts with `--global-skills`, `--local-skills`, and `--agent`. |
 
 With no terminal and no API key, `cx init` fails immediately and names
 `--api-key` rather than hanging on a prompt. A failed skills install never blocks

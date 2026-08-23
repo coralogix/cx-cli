@@ -265,8 +265,9 @@ enum Commands {
     ///
     /// Interactive by default (OAuth browser login); pass `--api-key` (or set
     /// CX_API_KEY) to authenticate with an API key instead. With `--url` and
-    /// an API key the profile step is prompt-free; add `--global`/`--local` (or
-    /// `--no-skills`) to also answer the skills-scope question and get a fully
+    /// an API key the profile step is prompt-free; add `--global-skills`/
+    /// `--local-skills` (or `--no-skills`) to also answer the skills-scope
+    /// question and get a fully
     /// prompt-free run for CI and coding agents — without a scope flag, a run
     /// with no terminal skips the skills install with a warning. `--oauth`
     /// works without a terminal too: the sign-in URL is printed for you (or an
@@ -278,7 +279,7 @@ enum Commands {
     #[command(after_help = "\
 Examples:
   cx init                                              # interactive walkthrough
-  cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global
+  cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global-skills
   cx init --oauth --url https://myteam.app.eu2.coralogix.com
   cx init --no-skills                                  # skip the agent-skills install")]
     Init {
@@ -294,14 +295,14 @@ Examples:
         #[arg(long)]
         oauth: bool,
         /// Skip the agent-skills install step (installed by default).
-        #[arg(long, conflicts_with_all = ["global", "local", "agents"])]
+        #[arg(long, conflicts_with_all = ["global_skills", "local_skills", "agents"])]
         no_skills: bool,
         /// Install skills globally (~/), available in every project.
-        #[arg(long, conflicts_with = "local")]
-        global: bool,
+        #[arg(long, conflicts_with = "local_skills")]
+        global_skills: bool,
         /// Install skills locally (./), for this project only.
         #[arg(long)]
-        local: bool,
+        local_skills: bool,
         /// Target specific agents for the skills install (passed through to the
         /// installer's -a; overrides its auto-detection). Repeatable.
         #[arg(long = "agent", value_name = "NAME")]
@@ -3078,14 +3079,14 @@ async fn main() -> Result<()> {
         url,
         oauth,
         no_skills,
-        global,
-        local,
+        global_skills,
+        local_skills,
         agents,
     } = cli.command
     {
-        let scope = if global {
+        let scope = if global_skills {
             Some(commands::skills::SkillsScope::Global)
-        } else if local {
+        } else if local_skills {
             Some(commands::skills::SkillsScope::Local)
         } else {
             None

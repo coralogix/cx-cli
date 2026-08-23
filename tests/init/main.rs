@@ -79,7 +79,7 @@ fn init_writes_profile_then_installs_skills() {
             "https://team.app.us1.coralogix.com",
             "--api-key",
             "faketoken",
-            "--global",
+            "--global-skills",
         ])
         .assert()
         .success();
@@ -120,7 +120,7 @@ fn init_agents_flag_reaches_the_installer() {
             "eu2",
             "--api-key",
             "k",
-            "--global",
+            "--global-skills",
             "--agent",
             "claude-code",
             "--agent",
@@ -163,7 +163,7 @@ fn init_no_skills_skips_the_installer() {
 
 // ── Skills obstacles never brick onboarding ───────────────────────────────────
 
-/// A non-interactive run without `--global`/`--local` cannot resolve a scope,
+/// A non-interactive run without `--global-skills`/`--local-skills` cannot resolve a scope,
 /// so the skills step fails inside the skills command — but init downgrades
 /// that to a warning and still succeeds, having written the profile.
 #[cfg(unix)]
@@ -201,7 +201,14 @@ fn init_without_npx_warns_but_succeeds() {
     let empty_path = temp_dir("nonpx_path"); // no npx on PATH
 
     let output = cx(&home, &empty_path)
-        .args(["init", "--region", "eu2", "--api-key", "k", "--global"])
+        .args([
+            "init",
+            "--region",
+            "eu2",
+            "--api-key",
+            "k",
+            "--global-skills",
+        ])
         .output()
         .expect("failed to run cx");
 
@@ -238,7 +245,7 @@ fn init_skips_profile_setup_when_one_already_exists() {
             "https://team.app.us1.coralogix.com",
             "--api-key",
             "first",
-            "--global",
+            "--global-skills",
         ])
         .assert()
         .success();
@@ -247,7 +254,14 @@ fn init_skips_profile_setup_when_one_already_exists() {
     // Second run supplies different credentials/region, but the existing
     // profile must win: init skips profile setup entirely.
     let output = cx(&home, &bin)
-        .args(["init", "--region", "eu2", "--api-key", "second", "--global"])
+        .args([
+            "init",
+            "--region",
+            "eu2",
+            "--api-key",
+            "second",
+            "--global-skills",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(output.status.success());
@@ -295,7 +309,14 @@ fn init_skips_skills_when_already_installed() {
     fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
 
     let output = cx(&home, &bin)
-        .args(["init", "--region", "eu2", "--api-key", "k", "--global"])
+        .args([
+            "init",
+            "--region",
+            "eu2",
+            "--api-key",
+            "k",
+            "--global-skills",
+        ])
         .output()
         .expect("failed to run cx");
     assert!(output.status.success());

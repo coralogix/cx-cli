@@ -39,7 +39,8 @@ cx init --oauth --url <coralogix-url>
 `--oauth` opens a browser window for the user to log in, so there is no API
 key to collect. Run `cx init --help` for the other options supported by the
 installed version (API-key login, non-interactive flags for CI, skipping the
-skills install).
+skills install). If the skills install is skipped, it can be done later with
+`cx skills install`.
 
 ## 3. Verify
 

@@ -593,16 +593,6 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
 
-/// OAuth secrets written by `oauth::store_tokens_keyring`. Listed here so a
-/// refresh can clear the previous set without touching the API keys that share
-/// the same keyring entry.
-const OAUTH_KEYRING_KEYS: &[&str] = &[
-    "oauth_access_token",
-    "oauth_refresh_token",
-    "oauth_id_token",
-    "oauth_token_expiry",
-];
-
 /// Re-run the OAuth browser login for an existing profile.
 ///
 /// Only the stored token set is replaced - region, label, credential storage,
@@ -633,13 +623,14 @@ pub async fn run_refresh(profile_name: String) -> Result<()> {
 
     let storage_desc = match profile.credential_storage {
         CredentialStorage::OsStore => {
-            // `store_tokens_keyring` only writes the fields the IdP returned, so
-            // clear the old set first to avoid leaving a stale refresh or id
-            // token behind. Per-key deletion: the entry also holds API keys.
-            for key in OAUTH_KEYRING_KEYS {
-                keyring_store::delete_secret(&profile_name, key);
-            }
-            oauth::store_tokens_keyring(&profile_name, &tokens)?;
+            // Full replacement, not a merge: `store_tokens_keyring` writes only
+            // the fields the IdP returned, so a stale refresh or id token from
+            // the previous session could otherwise survive a re-login. The
+            // clear and the write are a single checked keyring operation, so a
+            // failure here leaves the old token set in place rather than
+            // wiping a working session it cannot replace. API keys in the same
+            // entry are preserved.
+            oauth::replace_tokens_keyring(&profile_name, &tokens)?;
             // Drop any inline tokens left over from a previous `file` setup.
             profile.oauth_tokens = None;
             "OS credential store"

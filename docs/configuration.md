@@ -162,6 +162,11 @@ silent refresh-token path has already run (and failed) by the time you need it.
 
 Tokens are written to whichever backend the profile already uses, so an
 `os_store` profile stays in the keyring and a `file` profile stays in its TOML.
+For `os_store` the previous token set is replaced wholesale in a single keyring
+write, so no stale refresh or id token can outlive the re-login, and a failed
+write leaves the old session intact rather than deleting it. Other secrets in
+the same keyring entry are preserved.
+
 The command fails without touching the profile if it names an API key profile
 (those don't expire - use `cx profiles add <name>` to change the key) or an OAuth
 profile whose custom environment has no `oauth_client_id`.

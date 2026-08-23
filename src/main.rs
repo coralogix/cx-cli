@@ -3286,7 +3286,9 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
             eprintln!("Configuration error: {error}");
-            eprintln!("Run `cx profiles add` to set up credentials.");
+            if config::wants_generic_credentials_hint(&error) {
+                eprintln!("Run `cx profiles add` to set up credentials.");
+            }
             return Err(error);
         }
     };

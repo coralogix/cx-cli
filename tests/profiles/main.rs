@@ -247,6 +247,34 @@ fn refresh_leaves_profile_untouched_on_failure() {
     );
 }
 
+// ── re-authentication hint on stderr ─────────────────────────────────────────
+
+#[test]
+fn expired_oauth_profile_is_not_also_told_to_run_profiles_add() {
+    // An OAuth profile with no stored tokens fails in `oauth::resolve_token`
+    // with its own `cx profiles refresh` instruction. The generic
+    // "Run `cx profiles add` to set up credentials." fallback must not be
+    // printed underneath it - two contradictory instructions on one stderr is
+    // what `profiles refresh` exists to fix.
+    let tmp = temp_home();
+    seed_oauth_profile(&tmp, "expired", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .args(["-p", "expired", "alerts", "list"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cx profiles refresh expired"),
+        "should point at `profiles refresh`, stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("cx profiles add"),
+        "should not also suggest `profiles add`, stderr: {stderr}"
+    );
+}
+
 #[test]
 fn refresh_appears_in_profiles_help() {
     let tmp = temp_home();

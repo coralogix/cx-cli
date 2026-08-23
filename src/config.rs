@@ -410,6 +410,22 @@ impl Profile {
     }
 }
 
+/// Whether the generic "Run `cx profiles add` to set up credentials." hint
+/// should be printed after `error`.
+///
+/// Most configuration failures are a missing or unconfigured profile, where
+/// that hint is the right next step. Some, though, already carry a more
+/// specific instruction of their own: an expired OAuth session says to run
+/// `cx profiles refresh <name>`. Appending the generic hint to one of those
+/// contradicts it on the same stderr and points the user back at the
+/// reconfiguration flow `profiles refresh` exists to spare them, so suppress
+/// it whenever the error chain has already said what to run.
+pub fn wants_generic_credentials_hint(error: &anyhow::Error) -> bool {
+    !error
+        .chain()
+        .any(|cause| cause.to_string().contains("cx profiles"))
+}
+
 /// Resolved configuration ready for use at runtime.
 #[derive(Debug, Clone)]
 pub struct ResolvedConfig {
@@ -804,6 +820,40 @@ mod tests {
             OutputFormat::from_str("agents", true).unwrap(),
             OutputFormat::Toon
         );
+    }
+
+    // ── wants_generic_credentials_hint ────────────────────────────────────────
+
+    #[test]
+    fn generic_hint_shown_for_errors_with_no_instruction_of_their_own() {
+        let err = anyhow::anyhow!("Profile 'prod' not found.");
+        assert!(wants_generic_credentials_hint(&err));
+    }
+
+    #[test]
+    fn generic_hint_suppressed_when_the_error_already_names_a_command() {
+        // The message `oauth::resolve_token` produces for an expired session.
+        let err = anyhow::anyhow!(
+            "OAuth session expired for profile 'prod'.\n\
+             Run `cx profiles refresh prod` to re-authenticate."
+        );
+        assert!(
+            !wants_generic_credentials_hint(&err),
+            "an error that already says `cx profiles refresh` must not be followed \
+             by `cx profiles add`"
+        );
+    }
+
+    #[test]
+    fn generic_hint_suppressed_when_a_wrapped_cause_names_a_command() {
+        // `resolve_token` attaches its instruction with `.with_context(...)`,
+        // and the transport failure is wrapped underneath it - so the check has
+        // to walk the whole chain, not just the outermost message.
+        let err = anyhow::anyhow!("Token refresh failed (400 Bad Request)").context(
+            "OAuth token refresh failed for profile 'prod'.\n\
+             Run `cx profiles refresh prod` to re-authenticate.",
+        );
+        assert!(!wants_generic_credentials_hint(&err));
     }
 
     // ── Profile::oauth_endpoint ───────────────────────────────────────────────

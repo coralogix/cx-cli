@@ -18,9 +18,9 @@ Install the Coralogix CLI from https://github.com/coralogix/cx-cli and set up a 
 My Coralogix URL is https://myteam.app.eu2.coralogix.com
 ```
 
-Or, you can [install it yourself](#install-it-yourself).
+Or, you can [install manually](#install-manually).
 
-## Install it yourself
+## Install manually
 
 ### 1. Install the CLI
 

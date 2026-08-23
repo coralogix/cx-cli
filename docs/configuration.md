@@ -167,6 +167,9 @@ write, so no stale refresh or id token can outlive the re-login, and a failed
 write leaves the old session intact rather than deleting it. Other secrets in
 the same keyring entry are preserved.
 
+Unlike the other `profiles` subcommands, `refresh` is blocked in
+[read-only mode](#read-only-mode) - it writes credentials.
+
 The command fails without touching the profile if it names an API key profile
 (those don't expire - use `cx profiles add <name>` to change the key) or an OAuth
 profile whose custom environment has no `oauth_client_id`.
@@ -479,6 +482,8 @@ Error: Write operation 'create' is blocked in read-only mode
 ```
 
 Local commands (`profiles`, `cleanup`, `completions`) are exempt from read-only enforcement - they manage local configuration and never touch the Coralogix API.
+
+The one exception is `cx profiles refresh`, which is blocked: unlike the other local commands it performs a browser login and persists a new credential set.
 
 The env var accepts `1`, `true`, `yes`, or `on` (case-insensitive).
 

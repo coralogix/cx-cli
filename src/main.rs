@@ -2941,6 +2941,31 @@ Examples:
     },
 }
 
+/// Block `cx profiles refresh` in read-only mode.
+///
+/// The `profiles` command tree is otherwise exempt from read-only gating: its
+/// subcommands touch local config, not tenant data. `refresh` is the exception
+/// worth singling out — it runs a browser login and persists a new credential
+/// set — so it is checked here instead.
+///
+/// `flag` carries `--read-only` when the caller has parsed the global flags.
+/// The early `profiles` parser runs before `Cli` exists and passes `false`;
+/// there the env var and `~/.cx/config.toml` still apply, and `--read-only`
+/// reaches the other call site by being written before the subcommand
+/// (`cx --read-only profiles refresh …`).
+fn enforce_profiles_read_only(cmd: &ProfilesCmd, flag: bool) -> Result<()> {
+    if !matches!(cmd, ProfilesCmd::Refresh { .. }) {
+        return Ok(());
+    }
+    let read_only = flag
+        || safety::env_is_truthy("CX_READ_ONLY")
+        || config::load_config().unwrap_or_default().read_only;
+    if read_only {
+        safety::enforce_read_only("refresh")?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -2965,6 +2990,7 @@ async fn main() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        enforce_profiles_read_only(&cmd, false)?;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add {
@@ -3061,6 +3087,7 @@ async fn main() -> Result<()> {
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // it falls through to here.
     if let Commands::Profiles { cmd } = cli.command {
+        enforce_profiles_read_only(&cmd, read_only)?;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add {

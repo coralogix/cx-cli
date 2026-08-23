@@ -247,6 +247,86 @@ fn refresh_leaves_profile_untouched_on_failure() {
     );
 }
 
+// ── profiles refresh under --read-only ───────────────────────────────────────
+// `profiles` is exempt from read-only gating because its subcommands touch
+// local config rather than tenant data. `refresh` is the exception: it runs a
+// browser login and persists a new credential set, so it must be blocked
+// before it opens anything.
+
+#[test]
+fn refresh_is_blocked_by_read_only_env_var() {
+    let tmp = temp_home();
+    seed_oauth_profile(&tmp, "prod", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .env("CX_READ_ONLY", "1")
+        .args(["profiles", "refresh", "prod"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("read-only mode"),
+        "refresh should be blocked in read-only mode, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_is_blocked_by_read_only_flag_before_the_subcommand() {
+    // `cx --read-only profiles ...` misses the early `profiles` parser and
+    // falls through to the main `Cli`, so it is a separate code path.
+    let tmp = temp_home();
+    seed_oauth_profile(&tmp, "prod", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .args(["--read-only", "profiles", "refresh", "prod"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("read-only mode"),
+        "refresh should be blocked by --read-only, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_is_blocked_by_read_only_in_config() {
+    let tmp = temp_home();
+    seed_config(&tmp, "read_only = true\n");
+    seed_oauth_profile(&tmp, "prod", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "prod"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("read-only mode"),
+        "refresh should be blocked by read_only in config.toml, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn read_only_does_not_block_the_rest_of_profiles() {
+    // Guard against the gate widening into the other profiles subcommands,
+    // which stay exempt.
+    let tmp = temp_home();
+    seed_profile(&tmp, "prod");
+
+    let output = cx(&tmp)
+        .env("CX_READ_ONLY", "1")
+        .args(["profiles", "list"])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        output.status.success(),
+        "profiles list must still work in read-only mode, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 // ── re-authentication hint on stderr ─────────────────────────────────────────
 
 #[test]

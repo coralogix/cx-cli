@@ -32,6 +32,22 @@ fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
         .collect()
 }
 
+/// Value parser for `cx init --install-completions <shell>`. Restricts the
+/// choice to the shells the guided flow can install to a known default path
+/// (zsh, bash, fish); other shells need an explicit path, available via the
+/// interactive picker's "Other" option or `cx completions install --path`.
+fn parse_completions_shell(value: &str) -> Result<Shell, String> {
+    match value {
+        "zsh" => Ok(Shell::Zsh),
+        "bash" => Ok(Shell::Bash),
+        "fish" => Ok(Shell::Fish),
+        other => Err(format!(
+            "unsupported shell '{other}' (choose zsh, bash, or fish; \
+             for other shells use `cx completions install <shell> --path ...`)"
+        )),
+    }
+}
+
 /// How `search-fields` searches: by semantic description or by value content.
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum SearchType {
@@ -307,6 +323,15 @@ Examples:
         /// installer's -a; overrides its auto-detection). Repeatable.
         #[arg(long = "agent", value_name = "NAME")]
         agents: Vec<String>,
+        /// Enable the Olly AI assistant (`cx olly ask`) without prompting.
+        /// Interactive runs ask; other non-interactive runs leave it off.
+        #[arg(long)]
+        olly_enabled: bool,
+        /// Install shell completions for the given shell (zsh, bash, or fish)
+        /// without prompting. Omit to be asked interactively (a picker with a
+        /// "don't install" default); a non-interactive run then skips the step.
+        #[arg(long, value_name = "SHELL", value_parser = parse_completions_shell)]
+        install_completions: Option<Shell>,
     },
 
     /// Manage profiles (list, add, delete, set-default).
@@ -773,6 +798,12 @@ Examples:
         /// Set this profile as the default without prompting.
         #[arg(long)]
         set_default: bool,
+        /// When creating the first profile, enable the Olly AI assistant
+        /// (`cx olly ask`) without prompting. Only affects first-profile setup,
+        /// where the global Olly setting is written. Interactive runs ask
+        /// instead; other non-interactive runs leave it off.
+        #[arg(long)]
+        olly_enabled: bool,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -2938,6 +2969,7 @@ async fn main() -> Result<()> {
                 oauth,
                 force,
                 set_default,
+                olly_enabled,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -2947,6 +2979,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    olly_enabled,
                     quick: false,
                 })
                 .await
@@ -3031,6 +3064,7 @@ async fn main() -> Result<()> {
                 oauth,
                 force,
                 set_default,
+                olly_enabled,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3040,6 +3074,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    olly_enabled,
                     quick: false,
                 })
                 .await
@@ -3082,6 +3117,8 @@ async fn main() -> Result<()> {
         global_skills,
         local_skills,
         agents,
+        olly_enabled,
+        install_completions,
     } = cli.command
     {
         let scope = if global_skills {
@@ -3099,6 +3136,8 @@ async fn main() -> Result<()> {
             install_skills: !no_skills,
             agents,
             scope,
+            olly_enabled,
+            install_completions,
         })
         .await;
         update_check::maybe_print_notice(OutputFormat::Text);
@@ -3153,7 +3192,7 @@ async fn main() -> Result<()> {
                 commands::completions::run_generate(shell, &mut Cli::command())
             }
             CompletionsCmd::Install { shell, path } => {
-                commands::completions::run_install(shell, path, &mut Cli::command())
+                commands::completions::run_install(shell, path)
             }
             CompletionsCmd::Refresh => commands::completions::run_refresh(Cli::command),
         };

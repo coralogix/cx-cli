@@ -120,11 +120,7 @@ pub fn run_generate(shell: Shell, _clap_cmd: &mut Command) -> Result<()> {
 }
 
 /// Install a completion script to a default (or specified) path and register it.
-pub fn run_install(
-    shell: Shell,
-    path_override: Option<PathBuf>,
-    _clap_cmd: &mut Command,
-) -> Result<()> {
+pub fn run_install(shell: Shell, path_override: Option<PathBuf>) -> Result<()> {
     let path = path_override
         .or_else(|| default_install_path(shell))
         .with_context(|| {

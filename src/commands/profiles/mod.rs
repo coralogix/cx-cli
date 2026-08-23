@@ -415,6 +415,11 @@ pub struct AddArgs {
     pub force: bool,
     /// `--set-default`: set this profile as the default without prompting.
     pub set_default: bool,
+    /// `--olly-enabled`: on first-profile creation, enable the Olly AI
+    /// assistant (`olly ask`) without prompting. Only meaningful when creating
+    /// the first profile (that is when the global Olly setting is written).
+    /// When absent, interactive runs ask and non-interactive runs leave it off.
+    pub olly_enabled: bool,
     /// Quick setup: on a terminal, skip the optional prompts (credential
     /// storage, default output format, label) and apply sensible defaults
     /// (file storage, JSON output, no label). The essential prompts — region,
@@ -433,6 +438,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         oauth,
         force,
         set_default,
+        olly_enabled,
         quick,
     } = args;
 
@@ -546,31 +552,31 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
     save_profile(&name, &profile)?;
 
-    // On first profile creation, configure global safety settings and auto-set
-    // as default. Non-interactive runs keep the (permissive) defaults.
+    // On first profile creation, configure the global Olly setting and auto-set
+    // this profile as default. Risky commands (iam/archive writes) stay allowed
+    // by default — no question, no flag. Olly is opt-in: a passed flag turns it
+    // on, an interactive run asks (default off), and a non-interactive run with
+    // no flag leaves it off.
     if is_first_profile {
         let mut global_config = load_config().unwrap_or_default();
 
-        if interactive {
+        if interactive && !olly_enabled {
             println!("\n─── Global Safety Settings ───");
             println!("These apply to all profiles. Change later in ~/.cx/config.toml\n");
+        }
 
-            global_config.allow_risky_commands =
-                Confirm::new("Allow risky commands? (iam, archive write operations)")
-                    .with_default(true)
-                    .with_help_message(
-                        "When disabled, write operations under 'iam' and 'archive' are blocked. \
-                 Read operations remain available.",
-                    )
-                    .prompt()?;
-
-            global_config.olly_enabled = Confirm::new("Enable Olly AI assistant? (olly ask)")
-                .with_default(true)
+        global_config.olly_enabled = if olly_enabled {
+            true
+        } else if interactive {
+            Confirm::new("Enable Olly AI assistant? (olly ask)")
+                .with_default(false)
                 .with_help_message(
                     "When disabled, Olly is unavailable from the CLI ('cx olly ask').",
                 )
-                .prompt()?;
-        }
+                .prompt()?
+        } else {
+            false
+        };
 
         global_config.default_profile = name.clone();
         save_config(&global_config)?;

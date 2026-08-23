@@ -10,11 +10,11 @@ Paste this into Claude Code, Cursor, Codex, or any other coding agent:
 Install and set up the Coralogix CLI by following https://github.com/coralogix/cx-cli/blob/master/docs/agent-setup.md
 ```
 
-The agent will ask for your Coralogix URL during setup. Select your region to find it in advance:
+Optionally, tell the agent your Coralogix URL up front so it doesn't have to ask. Pick your region in the domain selector at the top of this page and the URL below updates to match:
 
-<DomainSelector />
+My Coralogix URL is https://[[DOMAIN_VAR:team_hostname]]
 
-Your URL is `https://MY-TEAM.app.[[DOMAIN_VALUE]]` — replace `MY-TEAM` with your team subdomain. Add it as a second line of the prompt to skip the question.
+Add that as a second line of the prompt, replacing `team` with your own team name.
 
 Or, you can [Install Manually](#install-manually).
 

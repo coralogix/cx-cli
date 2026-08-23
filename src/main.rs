@@ -268,9 +268,13 @@ enum Commands {
     /// an API key the profile step is prompt-free; add `--global`/`--local` (or
     /// `--no-skills`) to also answer the skills-scope question and get a fully
     /// prompt-free run for CI and coding agents — without a scope flag, a run
-    /// with no terminal skips the skills install with a warning. Idempotent:
-    /// if a profile already exists the profile step is skipped (reconfigure
-    /// with `cx profiles add --force`).
+    /// with no terminal skips the skills install with a warning. `--oauth`
+    /// works without a terminal too: the sign-in URL is printed for you (or an
+    /// agent's user) to approve in a browser, then the command waits for the
+    /// approval — handy when no API key is on hand, but because it needs a
+    /// browser it is not suited to fully headless CI (use `--api-key` there).
+    /// Idempotent: if a profile already exists the profile step is skipped
+    /// (reconfigure with `cx profiles add --force`).
     #[command(after_help = "\
 Examples:
   cx init                                              # interactive walkthrough
@@ -284,6 +288,9 @@ Examples:
         url: Option<String>,
         /// Force OAuth browser login, ignoring any supplied API key
         /// (--api-key / CX_API_KEY). Without a key, OAuth is used anyway.
+        /// No terminal required: the sign-in URL is printed and the command
+        /// waits while it is approved in a browser, so an agent can onboard
+        /// with OAuth by surfacing the URL to its user.
         #[arg(long)]
         oauth: bool,
         /// Skip the agent-skills install step (installed by default).

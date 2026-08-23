@@ -4823,3 +4823,40 @@ async fn main() -> Result<()> {
 
     cmd_result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_completions_shell_accepts_supported_shells() {
+        assert_eq!(parse_completions_shell("zsh").unwrap(), Shell::Zsh);
+        assert_eq!(parse_completions_shell("bash").unwrap(), Shell::Bash);
+        assert_eq!(parse_completions_shell("fish").unwrap(), Shell::Fish);
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_elvish() {
+        // Elvish is a valid clap_complete Shell variant but cx has no adapter
+        // for it, so the `cx init --install-completions` flag must reject it
+        // up front rather than fail later at registration time.
+        let err = parse_completions_shell("elvish").unwrap_err();
+        assert!(err.contains("elvish"), "error should name the bad shell");
+        assert!(
+            err.contains("zsh") && err.contains("bash") && err.contains("fish"),
+            "error should list the supported shells"
+        );
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_powershell_without_path() {
+        // PowerShell has no default install path, so it isn't offered by the
+        // flag (the interactive picker's "Other" + explicit path covers it).
+        assert!(parse_completions_shell("powershell").is_err());
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_garbage() {
+        assert!(parse_completions_shell("not-a-shell").is_err());
+    }
+}

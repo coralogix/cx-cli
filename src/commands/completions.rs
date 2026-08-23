@@ -31,19 +31,6 @@ pub fn default_install_path(shell: Shell) -> Option<PathBuf> {
     Some(path)
 }
 
-/// The shells cx currently tracks an installed completion for. Used by the
-/// guided `cx init` flow to stay idempotent: once a shell is selected (via the
-/// picker or `--install-completions`), init skips the actual install when that
-/// shell is already in this list, so re-running `cx init` never rewrites an
-/// existing install. `cx completions install`/`refresh` force a rewrite.
-pub fn installed_shells() -> Vec<Shell> {
-    config::managed_completions()
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|entry| entry.shell.parse::<Shell>().ok())
-        .collect()
-}
-
 // ── Post-install setup notes ──────────────────────────────────────────────────
 
 fn setup_note(shell: Shell, path: &Path) -> Option<String> {
@@ -227,4 +214,23 @@ pub fn run_refresh(_clap_cmd_factory: impl Fn() -> Command) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_install_path_none_for_powershell() {
+        // PowerShell has no canonical per-user path; callers must pass --path.
+        assert!(default_install_path(Shell::PowerShell).is_none());
+    }
+
+    #[test]
+    fn default_install_path_some_for_standard_shells() {
+        // The shells the guided flow installs without an explicit path.
+        assert!(default_install_path(Shell::Zsh).is_some());
+        assert!(default_install_path(Shell::Bash).is_some());
+        assert!(default_install_path(Shell::Fish).is_some());
+    }
 }

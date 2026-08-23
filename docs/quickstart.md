@@ -4,22 +4,17 @@ From nothing installed to a working query. If you only read one page, read this 
 
 ## Let your coding agent do it
 
-Paste this into Claude Code, Cursor, Codex, or any other coding agent. It reads
-this repo, installs the CLI, and signs you in through your browser:
+Paste this into Claude Code, Cursor, Codex, or any other coding agent:
 
 ```text
-Install the Coralogix CLI from https://github.com/coralogix/cx-cli and set up a profile for me.
+Install and set up the Coralogix CLI by following https://github.com/coralogix/cx-cli/blob/master/docs/agent-setup.md
 ```
 
-If you already know your Coralogix URL, include it and the agent won't have to ask:
+The agent will ask for your Coralogix URL during setup. Select your region to find it in advance:
 
-```text
-Install the Coralogix CLI from https://github.com/coralogix/cx-cli and set up a profile for me.
-My Coralogix URL is https://myteam.app.eu2.coralogix.com
-```
+<DomainSelector />
 
-
-> **Find your URL:** It's the address you use in the browser when you open Coralogix. Replace `myteam` with your team subdomain and pick the domain for your region: `app.coralogix.com` (EU1) · `app.eu2.coralogix.com` (EU2) · `app.us.coralogix.com` (US1) · `app.us2.coralogix.com` (US2) · `app.ap1.coralogix.com` (APAC1) · `app.ap2.coralogix.com` (APAC2). [Full list →](https://coralogix.com/docs/user-guides/account-management/account-settings/coralogix-domain/)
+Your URL is `https://MY-TEAM.app.[[DOMAIN_VALUE]]` — replace `MY-TEAM` with your team subdomain. Add it as a second line of the prompt to skip the question.
 
 Or, you can [Install Manually](#install-manually).
 

@@ -326,6 +326,8 @@ Examples:
         /// Install shell completions for the given shell (zsh, bash, or fish)
         /// without prompting. Omit to be asked interactively (a picker with a
         /// "don't install" default); a non-interactive run then skips the step.
+        /// Ignored when completions are already installed - use
+        /// `cx completions install <shell>` to add a shell or reinstall.
         #[arg(long, value_name = "SHELL", value_parser = parse_completions_shell)]
         install_completions: Option<Shell>,
     },

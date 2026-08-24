@@ -415,11 +415,11 @@ pub struct AddArgs {
     pub force: bool,
     /// `--set-default`: set this profile as the default without prompting.
     pub set_default: bool,
-    /// `--olly-enabled`: on first-profile creation, enable the Olly AI
-    /// assistant (`olly ask`) without prompting. Only meaningful when creating
-    /// the first profile (that is when the global Olly setting is written).
-    /// When absent, interactive runs ask and non-interactive runs leave it off.
-    pub olly_enabled: bool,
+    /// `--disable-olly`: on first-profile creation, disable the Olly AI
+    /// assistant (`olly ask`) instead of the default (enabled). Only meaningful
+    /// when creating the first profile (that is when the global Olly setting is
+    /// written). No prompt either way.
+    pub disable_olly: bool,
     /// Quick setup: on a terminal, skip the optional prompts (credential
     /// storage, default output format, label) and apply sensible defaults
     /// (file storage, JSON output, no label). The essential prompts — region,
@@ -438,7 +438,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         oauth,
         force,
         set_default,
-        olly_enabled,
+        disable_olly,
         quick,
     } = args;
 
@@ -554,29 +554,12 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
     // On first profile creation, configure the global Olly setting and auto-set
     // this profile as default. Risky commands (iam/archive writes) stay allowed
-    // by default — no question, no flag. Olly is opt-in: a passed flag turns it
-    // on, an interactive run asks (default off), and a non-interactive run with
-    // no flag leaves it off.
+    // by default — no question, no flag. Olly is enabled by default; the
+    // `--disable-olly` flag opts out. No prompt either way.
     if is_first_profile {
         let mut global_config = load_config().unwrap_or_default();
 
-        if interactive && !olly_enabled {
-            println!("\n─── Global Safety Settings ───");
-            println!("These apply to all profiles. Change later in ~/.cx/config.toml\n");
-        }
-
-        global_config.olly_enabled = if olly_enabled {
-            true
-        } else if interactive {
-            Confirm::new("Enable Olly AI assistant? (olly ask)")
-                .with_default(false)
-                .with_help_message(
-                    "When disabled, Olly is unavailable from the CLI ('cx olly ask').",
-                )
-                .prompt()?
-        } else {
-            false
-        };
+        global_config.olly_enabled = !disable_olly;
 
         global_config.default_profile = name.clone();
         save_config(&global_config)?;

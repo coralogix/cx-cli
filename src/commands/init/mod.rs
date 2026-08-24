@@ -16,9 +16,10 @@
 //! `cx profiles add`:
 //!
 //! * **Quick (interactive)** — bare `cx init` on a terminal. Guided prompts:
-//!   OAuth browser login (no auth-method question), a region prompt, and the
-//!   first-profile safety questions. Credential storage, output format, and
-//!   label are defaulted (file / JSON / none) rather than asked.
+//!   OAuth browser login (no auth-method question) and a region prompt.
+//!   Credential storage, output format, and label are defaulted
+//!   (file / JSON / none) rather than asked; Olly is enabled on the first
+//!   profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or
 //!   there is no terminal). The flags make the *profile* step prompt-free; the
 //!   skills step still asks its scope question unless `--global-skills`/
@@ -60,10 +61,6 @@ pub struct InitArgs {
     /// Install scope for skills (`--global-skills` / `--local-skills`); `None`
     /// asks (quick) or skips the step (non-interactive).
     pub scope: Option<skills::SkillsScope>,
-    /// `--olly-enabled`: enable the Olly AI assistant (`olly ask`) on the first
-    /// profile without prompting. Interactive runs ask; other non-interactive
-    /// runs leave it off.
-    pub olly_enabled: bool,
     /// `--install-completions <shell>`: install shell completions for the given
     /// shell (zsh/bash/fish) without prompting. `None` means the flag was not
     /// passed: interactive runs show a picker (default: don't install), other
@@ -81,7 +78,6 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         install_skills,
         agents,
         scope,
-        olly_enabled,
         install_completions,
     } = args;
 
@@ -104,7 +100,9 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
             oauth,
             force: false,
             set_default: false,
-            olly_enabled,
+            // `cx init` always enables Olly on the first profile - no opt-out.
+            // (`cx profiles add` exposes `--disable-olly`.)
+            disable_olly: false,
             quick: true,
         })
         .await?;

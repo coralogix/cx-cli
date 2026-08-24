@@ -323,10 +323,6 @@ Examples:
         /// installer's -a; overrides its auto-detection). Repeatable.
         #[arg(long = "agent", value_name = "NAME")]
         agents: Vec<String>,
-        /// Enable the Olly AI assistant (`cx olly ask`) without prompting.
-        /// Interactive runs ask; other non-interactive runs leave it off.
-        #[arg(long)]
-        olly_enabled: bool,
         /// Install shell completions for the given shell (zsh, bash, or fish)
         /// without prompting. Omit to be asked interactively (a picker with a
         /// "don't install" default); a non-interactive run then skips the step.
@@ -798,12 +794,12 @@ Examples:
         /// Set this profile as the default without prompting.
         #[arg(long)]
         set_default: bool,
-        /// When creating the first profile, enable the Olly AI assistant
-        /// (`cx olly ask`) without prompting. Only affects first-profile setup,
-        /// where the global Olly setting is written. Interactive runs ask
-        /// instead; other non-interactive runs leave it off.
+        /// When creating the first profile, disable the Olly AI assistant
+        /// (`cx olly ask`). Olly is enabled by default; this opts out. Only
+        /// affects first-profile setup, where the global Olly setting is
+        /// written. No prompt either way.
         #[arg(long)]
-        olly_enabled: bool,
+        disable_olly: bool,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -2969,7 +2965,7 @@ async fn main() -> Result<()> {
                 oauth,
                 force,
                 set_default,
-                olly_enabled,
+                disable_olly,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -2979,7 +2975,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
-                    olly_enabled,
+                    disable_olly,
                     quick: false,
                 })
                 .await
@@ -3064,7 +3060,7 @@ async fn main() -> Result<()> {
                 oauth,
                 force,
                 set_default,
-                olly_enabled,
+                disable_olly,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3074,7 +3070,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
-                    olly_enabled,
+                    disable_olly,
                     quick: false,
                 })
                 .await
@@ -3117,7 +3113,6 @@ async fn main() -> Result<()> {
         global_skills,
         local_skills,
         agents,
-        olly_enabled,
         install_completions,
     } = cli.command
     {
@@ -3136,7 +3131,6 @@ async fn main() -> Result<()> {
             install_skills: !no_skills,
             agents,
             scope,
-            olly_enabled,
             install_completions,
         })
         .await;

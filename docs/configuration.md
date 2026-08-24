@@ -14,10 +14,9 @@
 ```
 
 `cx init` writes both for you. `config.toml` holds the settings that apply to
-every profile — including the two safety answers `init` asks for,
-[`allow_risky_commands`](#global-config-cxconfigtoml) and
-[`olly_enabled`](#global-config-cxconfigtoml) — and you can edit them there at
-any time. Each file under `profiles/` is one connection to Coralogix: its region
+every profile, including [`allow_risky_commands`](#global-config-cxconfigtoml)
+and [`olly_enabled`](#global-config-cxconfigtoml), which `init` turns on for you
+without asking. You can edit them there at any time. Each file under `profiles/` is one connection to Coralogix: its region
 or endpoint, its credentials, and its default output format. Add as many as you
 have teams (see [Multi-profile fan-out](multi-profile.md)).
 
@@ -76,8 +75,11 @@ At the prompts, in order:
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
-If this is the first profile on the machine, `cx` also asks the two global safety
-questions — see [Quick start](quickstart.md#2-run-the-setup).
+If this is the first profile on the machine, `cx` also writes the two global
+settings, `allow_risky_commands` and `olly_enabled`. Neither is prompted: risky
+commands stay allowed and Olly is enabled. Pass `--disable-olly` to create the
+first profile with Olly switched off, and change either later in
+[`config.toml`](#global-config-cxconfigtoml).
 
 To re-authenticate an existing OAuth profile, run `cx profiles add <name>` again
 for that name.
@@ -120,6 +122,7 @@ scripts unless you mean to write the default one.
 | `--oauth` | Use browser login and skip the auth-method prompt. Takes precedence over `--api-key`. Prints the sign-in URL, so it works without a terminal too (which then requires `--url` or `--region`). |
 | `--force` | Overwrite an existing profile without prompting. |
 | `--set-default` | Make this the default profile without prompting. |
+| `--disable-olly` | Create the first profile with the Olly AI assistant switched off. Only meaningful for the first profile, since that is when `olly_enabled` is written. No prompt either way. |
 | `-h` / `--help` | `--help` prints the full reference above; `-h` prints a short summary. |
 
 Without a terminal, a missing required value is an error rather than a prompt, and
@@ -258,8 +261,8 @@ The default install script and release binaries are built for musl on Linux, so 
 | `temp_dir` | `"/tmp/"` | Directory for spilled result files |
 | `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
 | `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |
-| `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`). Asked once, when you create your first profile. |
-| `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`). Asked once, when you create your first profile. |
+| `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`). Written when you create your first profile; never prompted. |
+| `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`). Written when you create your first profile; never prompted. Use `cx profiles add --disable-olly` to create it switched off. |
 
 Example:
 

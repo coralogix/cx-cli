@@ -32,6 +32,22 @@ fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
         .collect()
 }
 
+/// Value parser for `cx init --install-completions <shell>`. Restricts the
+/// choice to the shells the guided flow can install to a known default path
+/// (zsh, bash, fish); other shells need an explicit path, available via the
+/// interactive picker's "Other" option or `cx completions install --path`.
+fn parse_completions_shell(value: &str) -> Result<Shell, String> {
+    match value {
+        "zsh" => Ok(Shell::Zsh),
+        "bash" => Ok(Shell::Bash),
+        "fish" => Ok(Shell::Fish),
+        other => Err(format!(
+            "unsupported shell '{other}' (choose zsh, bash, or fish; \
+             for other shells use `cx completions install <shell> --path ...`)"
+        )),
+    }
+}
+
 /// How `search-fields` searches: by semantic description or by value content.
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum SearchType {
@@ -307,6 +323,11 @@ Examples:
         /// installer's -a; overrides its auto-detection). Repeatable.
         #[arg(long = "agent", value_name = "NAME")]
         agents: Vec<String>,
+        /// Install shell completions for the given shell (zsh, bash, or fish)
+        /// without prompting. Omit to be asked interactively (a picker with a
+        /// "don't install" default); a non-interactive run then skips the step.
+        #[arg(long, value_name = "SHELL", value_parser = parse_completions_shell)]
+        install_completions: Option<Shell>,
     },
 
     /// Manage profiles (list, add, delete, set-default).
@@ -773,6 +794,12 @@ Examples:
         /// Set this profile as the default without prompting.
         #[arg(long)]
         set_default: bool,
+        /// When creating the first profile, disable the Olly AI assistant
+        /// (`cx olly ask`). Olly is enabled by default; this opts out. Only
+        /// affects first-profile setup, where the global Olly setting is
+        /// written. No prompt either way.
+        #[arg(long)]
+        disable_olly: bool,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -2938,6 +2965,7 @@ async fn main() -> Result<()> {
                 oauth,
                 force,
                 set_default,
+                disable_olly,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -2947,6 +2975,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    disable_olly,
                     quick: false,
                 })
                 .await
@@ -3031,6 +3060,7 @@ async fn main() -> Result<()> {
                 oauth,
                 force,
                 set_default,
+                disable_olly,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3040,6 +3070,7 @@ async fn main() -> Result<()> {
                     oauth,
                     force,
                     set_default,
+                    disable_olly,
                     quick: false,
                 })
                 .await
@@ -3082,6 +3113,7 @@ async fn main() -> Result<()> {
         global_skills,
         local_skills,
         agents,
+        install_completions,
     } = cli.command
     {
         let scope = if global_skills {
@@ -3099,6 +3131,7 @@ async fn main() -> Result<()> {
             install_skills: !no_skills,
             agents,
             scope,
+            install_completions,
         })
         .await;
         update_check::maybe_print_notice(OutputFormat::Text);
@@ -3153,7 +3186,7 @@ async fn main() -> Result<()> {
                 commands::completions::run_generate(shell, &mut Cli::command())
             }
             CompletionsCmd::Install { shell, path } => {
-                commands::completions::run_install(shell, path, &mut Cli::command())
+                commands::completions::run_install(shell, path)
             }
             CompletionsCmd::Refresh => commands::completions::run_refresh(Cli::command),
         };
@@ -4783,4 +4816,41 @@ async fn main() -> Result<()> {
     }
 
     cmd_result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_completions_shell_accepts_supported_shells() {
+        assert_eq!(parse_completions_shell("zsh").unwrap(), Shell::Zsh);
+        assert_eq!(parse_completions_shell("bash").unwrap(), Shell::Bash);
+        assert_eq!(parse_completions_shell("fish").unwrap(), Shell::Fish);
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_elvish() {
+        // Elvish is a valid clap_complete Shell variant but cx has no adapter
+        // for it, so the `cx init --install-completions` flag must reject it
+        // up front rather than fail later at registration time.
+        let err = parse_completions_shell("elvish").unwrap_err();
+        assert!(err.contains("elvish"), "error should name the bad shell");
+        assert!(
+            err.contains("zsh") && err.contains("bash") && err.contains("fish"),
+            "error should list the supported shells"
+        );
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_powershell_without_path() {
+        // PowerShell has no default install path, so it isn't offered by the
+        // flag (the interactive picker's "Other" + explicit path covers it).
+        assert!(parse_completions_shell("powershell").is_err());
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_garbage() {
+        assert!(parse_completions_shell("not-a-shell").is_err());
+    }
 }

@@ -16,9 +16,10 @@
 //! `cx profiles add`:
 //!
 //! * **Quick (interactive)** — bare `cx init` on a terminal. Guided prompts:
-//!   OAuth browser login (no auth-method question), a region prompt, and the
-//!   first-profile safety questions. Credential storage, output format, and
-//!   label are defaulted (file / JSON / none) rather than asked.
+//!   OAuth browser login (no auth-method question) and a region prompt.
+//!   Credential storage, output format, and label are defaulted
+//!   (file / JSON / none) rather than asked; Olly is enabled on the first
+//!   profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or
 //!   there is no terminal). The flags make the *profile* step prompt-free; the
 //!   skills step still asks its scope question unless `--global-skills`/
@@ -28,10 +29,15 @@
 //!   scope flag and with no terminal, the skills step is skipped with a
 //!   warning.
 
-use anyhow::Result;
+use std::io::IsTerminal;
+use std::path::PathBuf;
 
-use crate::commands::{profiles, skills};
-use crate::config::list_profile_names;
+use anyhow::Result;
+use clap_complete::aot::Shell;
+use inquire::{Select, Text};
+
+use crate::commands::{completions, profiles, skills};
+use crate::config::{has_managed_completions, list_profile_names};
 
 /// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
@@ -55,6 +61,11 @@ pub struct InitArgs {
     /// Install scope for skills (`--global-skills` / `--local-skills`); `None`
     /// asks (quick) or skips the step (non-interactive).
     pub scope: Option<skills::SkillsScope>,
+    /// `--install-completions <shell>`: install shell completions for the given
+    /// shell (zsh/bash/fish) without prompting. `None` means the flag was not
+    /// passed: interactive runs show a picker (default: don't install), other
+    /// non-interactive runs skip the step.
+    pub install_completions: Option<Shell>,
 }
 
 /// Orchestrate the onboarding chain: profile → skills → success.
@@ -67,6 +78,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         install_skills,
         agents,
         scope,
+        install_completions,
     } = args;
 
     // ── Step 1: profile ─────────────────────────────────────────────────────────
@@ -88,6 +100,9 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
             oauth,
             force: false,
             set_default: false,
+            // `cx init` always enables Olly on the first profile - no opt-out.
+            // (`cx profiles add` exposes `--disable-olly`.)
+            disable_olly: false,
             quick: true,
         })
         .await?;
@@ -125,9 +140,84 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         }
     }
 
+    // ── Step 3: shell completions ─────────────────────────────────────────────────
+    // Idempotent, like the profile and skills steps: if cx already tracks an
+    // installed completion, skip the step entirely - no prompt, no rewrite - so
+    // re-running `cx init` stays quiet. Add another shell or reinstall later with
+    // `cx completions install <shell>`. An explicit `--install-completions
+    // <shell>` is the opt-in override that installs even on a re-run.
+    //
+    // On a first run: `--install-completions <shell>` installs for that shell at
+    // its default path without prompting; otherwise an interactive run shows a
+    // picker (default: don't install, plus an "Other" escape hatch for a custom
+    // shell/path) and a non-interactive run skips the step.
+    if install_completions.is_none() && has_managed_completions() {
+        println!("\nShell completions are already installed - skipping.");
+    } else {
+        let completions_choice = if let Some(shell) = install_completions {
+            Some((shell, None))
+        } else if std::io::stdin().is_terminal() {
+            prompt_completions_shell()?
+        } else {
+            None
+        };
+        if let Some((shell, path)) = completions_choice {
+            println!("\nInstalling {shell} shell completions...");
+            if let Err(error) = completions::run_install(shell, path) {
+                eprintln!("warning: skipped the shell-completions install: {error:#}");
+            }
+        }
+    }
+
     // ── Done ────────────────────────────────────────────────────────────────────
     print_success();
     Ok(())
+}
+
+/// Interactive picker for the shell-completions step. Offers the standard
+/// shells (zsh/bash/fish), a default "don't install" option, and an "other"
+/// escape hatch that asks for an explicit shell and path (for shells like
+/// PowerShell that have no canonical per-user completion directory, or a custom
+/// location). Returns the chosen shell and optional install path, or `None` to
+/// skip. Only reached when nothing is installed yet (the caller skips the whole
+/// step otherwise).
+fn prompt_completions_shell() -> Result<Option<(Shell, Option<PathBuf>)>> {
+    const SKIP: &str = "Don't install";
+    const OTHER: &str = "Other (specify shell and path)";
+
+    // "Don't install" first so it is the default (starting cursor); the "Other"
+    // escape hatch last.
+    let options = vec![SKIP, "zsh", "bash", "fish", OTHER];
+    let choice = Select::new(
+        "Install shell completions? (enables <Tab> completion for cx)",
+        options,
+    )
+    .prompt()?;
+
+    let selection = if choice == "zsh" {
+        Some((Shell::Zsh, None))
+    } else if choice == "bash" {
+        Some((Shell::Bash, None))
+    } else if choice == "fish" {
+        Some((Shell::Fish, None))
+    } else if choice == OTHER {
+        // Only shells cx can actually register. Elvish is a clap_complete
+        // variant but has no cx adapter, so it's intentionally omitted;
+        // PowerShell has no default path, hence the explicit path prompt below.
+        let shell = Select::new(
+            "Which shell?",
+            vec![Shell::Bash, Shell::Zsh, Shell::Fish, Shell::PowerShell],
+        )
+        .prompt()?;
+        let path = Text::new("Install path:")
+            .with_help_message("Absolute path to write the completion script to.")
+            .with_validator(inquire::validator::MinLengthValidator::new(1))
+            .prompt()?;
+        Some((shell, Some(PathBuf::from(path))))
+    } else {
+        None
+    };
+    Ok(selection)
 }
 
 fn print_success() {

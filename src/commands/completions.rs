@@ -120,11 +120,7 @@ pub fn run_generate(shell: Shell, _clap_cmd: &mut Command) -> Result<()> {
 }
 
 /// Install a completion script to a default (or specified) path and register it.
-pub fn run_install(
-    shell: Shell,
-    path_override: Option<PathBuf>,
-    _clap_cmd: &mut Command,
-) -> Result<()> {
+pub fn run_install(shell: Shell, path_override: Option<PathBuf>) -> Result<()> {
     let path = path_override
         .or_else(|| default_install_path(shell))
         .with_context(|| {
@@ -218,4 +214,23 @@ pub fn run_refresh(_clap_cmd_factory: impl Fn() -> Command) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_install_path_none_for_powershell() {
+        // PowerShell has no canonical per-user path; callers must pass --path.
+        assert!(default_install_path(Shell::PowerShell).is_none());
+    }
+
+    #[test]
+    fn default_install_path_some_for_standard_shells() {
+        // The shells the guided flow installs without an explicit path.
+        assert!(default_install_path(Shell::Zsh).is_some());
+        assert!(default_install_path(Shell::Bash).is_some());
+        assert!(default_install_path(Shell::Fish).is_some());
+    }
 }

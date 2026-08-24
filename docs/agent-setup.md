@@ -27,9 +27,9 @@ cx --version
 
 ## 2. Configure
 
-`cx` ships a one-step onboarding command that sets up a profile and installs
-the agent skills. Before running it, ask the user two questions (skip any
-already answered):
+`cx` ships a one-step onboarding command that sets up a profile, installs
+the agent skills, and installs shell completions. Before running it, ask the
+user three questions (skip any already answered):
 
 1. **Coralogix URL** — the address they use to open Coralogix in the browser,
    e.g. `https://myteam.app.eu2.coralogix.com`. If they already provided it,
@@ -41,11 +41,17 @@ already answered):
      there.
    - **Don't install** (`--no-skills`): mention to them they can install
      later with `cx skills install`.
+3. **Shell completions** — whether they want `<Tab>` completion for `cx`,
+   and for which shell (`zsh`, `bash`, or `fish` — usually inferable from
+   `$SHELL`):
+   - **Yes** (`--install-completions <shell>`): installs without prompting.
+   - **No** (omit the flag): without a terminal the step is skipped; mention
+     they can install later with `cx completions install <shell>`.
 
 Then run:
 
 ```bash
-cx init --oauth --url <coralogix-url> <scope-flag>
+cx init --oauth --url <coralogix-url> <scope-flag> [--install-completions <shell>]
 ```
 
 `--oauth` opens a browser window for the user to log in, so there is no API

@@ -64,7 +64,8 @@ pub struct InitArgs {
     /// `--install-completions <shell>`: install shell completions for the given
     /// shell (zsh/bash/fish) without prompting. `None` means the flag was not
     /// passed: interactive runs show a picker (default: don't install), other
-    /// non-interactive runs skip the step.
+    /// non-interactive runs skip the step. Ignored when completions are
+    /// already installed.
     pub install_completions: Option<Shell>,
 }
 
@@ -143,15 +144,14 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     // ── Step 3: shell completions ─────────────────────────────────────────────────
     // Idempotent, like the profile and skills steps: if cx already tracks an
     // installed completion, skip the step entirely - no prompt, no rewrite - so
-    // re-running `cx init` stays quiet. Add another shell or reinstall later with
-    // `cx completions install <shell>`. An explicit `--install-completions
-    // <shell>` is the opt-in override that installs even on a re-run.
+    // re-running `cx init` stays quiet. Add another shell or reinstall later
+    // with `cx completions install <shell>`.
     //
     // On a first run: `--install-completions <shell>` installs for that shell at
     // its default path without prompting; otherwise an interactive run shows a
     // picker (default: don't install, plus an "Other" escape hatch for a custom
     // shell/path) and a non-interactive run skips the step.
-    if install_completions.is_none() && has_managed_completions() {
+    if has_managed_completions() {
         println!("\nShell completions are already installed - skipping.");
     } else {
         let completions_choice = if let Some(shell) = install_completions {

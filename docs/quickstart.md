@@ -12,13 +12,7 @@ My Coralogix URL is [paste your Coralogix URL]
 ```
 
 Replace `[paste your Coralogix URL]` with the address you use to open Coralogix in
-your browser. Delete that line instead and the agent will ask you for it.
-
-Not sure what yours looks like? Pick your region with the domain selector in the
-upper-right corner of this page and it follows this pattern, with `team` replaced
-by your own team name:
-
-https://[[DOMAIN_VAR:team_hostname]]
+your browser.
 
 Or, you can [Install manually](#install-manually).
 
@@ -68,10 +62,11 @@ What it asks you:
 Everything else is defaulted rather than asked: profile name `default`, `file`
 credential storage, no label, and `json` as the profile's default output format
 (pass `-o text` for a run you want to read by eye, or set `default_output_format`
-in the profile). Risky commands (`iam` and `archive` writes) are allowed and
-[Olly](https://coralogix.com/docs/user-guides/olly/ask-olly/) is enabled, both without a prompt. `cx init` has no flag for
-either: change `allow_risky_commands` or `olly_enabled` in `~/.cx/config.toml`
-afterwards, or create the profile with `cx profiles add --disable-olly`.
+in the profile). You also get [Olly](https://coralogix.com/docs/user-guides/olly/ask-olly/), Coralogix's AI assistant, and the
+full command set including `iam` and `archive` writes, all available from the
+start. To switch either off, set `olly_enabled` or `allow_risky_commands` to
+`false` in `~/.cx/config.toml`, or create your first profile with
+`cx profiles add --disable-olly`.
 
 `cx init` is idempotent: on a machine that already has a profile it skips the
 profile step, and on one that already has the skills it skips the install. Nothing

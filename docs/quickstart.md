@@ -16,9 +16,9 @@ My Coralogix URL is https://[[DOMAIN_VAR:team_hostname]]
 
 Add that as a second line of the prompt, replacing `team` with your own team name.
 
-Or, you can [Install Manually](#install-manually).
+Or, you can [Install manually](#install-manually).
 
-## Install Manually
+## Install manually
 
 ### 1. Install the CLI
 

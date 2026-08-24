@@ -76,10 +76,10 @@ At the prompts, in order:
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
-If this is the first profile on the machine, `cx` also writes the two global
-settings, `allow_risky_commands` and `olly_enabled`. Neither is prompted: risky
-commands stay allowed and Olly is enabled. Pass `--disable-olly` to create the
-first profile with Olly switched off, and change either later in
+Creating the first profile on a machine also writes the two global settings,
+`allow_risky_commands` and `olly_enabled`. Both are on from the start, so Olly
+and the full command set are available with no extra setup. Pass `--disable-olly`
+to create the first profile with Olly switched off, and change either later in
 [`config.toml`](#global-config-cxconfigtoml).
 
 To re-authenticate an existing OAuth profile, run `cx profiles add <name>` again

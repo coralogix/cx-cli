@@ -16,9 +16,10 @@
 `cx init` writes both for you. `config.toml` holds the settings that apply to
 every profile, including [`allow_risky_commands`](#global-config-cxconfigtoml)
 and [`olly_enabled`](#global-config-cxconfigtoml), which `init` turns on for you
-without asking. You can edit them there at any time. Each file under `profiles/` is one connection to Coralogix: its region
-or endpoint, its credentials, and its default output format. Add as many as you
-have teams (see [Multi-profile fan-out](multi-profile.md)).
+without asking. You can edit them there at any time. Each file under `profiles/`
+is one connection to Coralogix: its region or endpoint, its credentials, and its
+default output format. Add as many as you have teams (see
+[Multi-profile fan-out](multi-profile.md)).
 
 ## Profiles
 

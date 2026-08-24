@@ -62,13 +62,16 @@ What it asks you:
 |---|---|
 | **Region / Coralogix URL** | **Don't know your region? You don't need to.** Paste the URL you use to reach Coralogix in the browser (e.g. `https://myteam.app.eu2.coralogix.com`) and `cx` works the region out for you. Pick it from the list instead if you do know it, or look yours up in the [Coralogix domain](https://coralogix.com/docs/user-guides/account-management/account-settings/coralogix-domain/) table. A URL `cx` doesn't recognise - a bring-your-own-cloud or private-link deployment - becomes a custom API endpoint instead of an error. |
 | **Sign in** | Opens your browser for [OAuth login](https://coralogix.com/docs/user-guides/account-management/user-management/oauth/). Approve the scopes and choose which team the CLI may access, then come back to the terminal. |
-| **Two safety settings** | Whether to allow risky commands (`iam` and `archive` write operations) and whether to enable [Olly](https://coralogix.com/docs/user-guides/olly/ask-olly/), Coralogix's AI assistant. Both apply to every profile and both can be changed later in `~/.cx/config.toml`. |
 | **Where to put the agent skills** | Local to this project (`./`) or global (`~/`). `cx` installs them for you and tells you how to update them later. |
+| **Install shell completions?** | Turns on `<Tab>` completion for `cx`. Pick `zsh`, `bash`, or `fish`, or keep the default and skip it. **Other** lets you name a shell and an install path yourself. Skipped without asking when completions are already installed. |
 
 Everything else is defaulted rather than asked: profile name `default`, `file`
 credential storage, no label, and `json` as the profile's default output format
 (pass `-o text` for a run you want to read by eye, or set `default_output_format`
-in the profile).
+in the profile). Risky commands (`iam` and `archive` writes) are allowed and
+[Olly](https://coralogix.com/docs/user-guides/olly/ask-olly/) is enabled, both without a prompt. `cx init` has no flag for
+either: change `allow_risky_commands` or `olly_enabled` in `~/.cx/config.toml`
+afterwards, or create the profile with `cx profiles add --disable-olly`.
 
 `cx init` is idempotent: on a machine that already has a profile it skips the
 profile step, and on one that already has the skills it skips the install. Nothing
@@ -89,6 +92,7 @@ cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --globa
 | `--global-skills` / `--local-skills` | Answer the skills-scope question up front. Without one of these and with no terminal, the skills step is skipped with a warning. |
 | `--agent <name>` | Target specific agents instead of letting the installer auto-detect. Repeatable. |
 | `--no-skills` | Skip the agent-skills step. Conflicts with `--global-skills`, `--local-skills`, and `--agent`. |
+| `--install-completions <shell>` | Install completions for `zsh`, `bash`, or `fish` without prompting. Omit it and an interactive run asks; a run with no terminal skips the step. Ignored when completions are already installed. |
 
 With no terminal and no API key, `cx init` fails immediately and names
 `--api-key` rather than hanging on a prompt. A failed skills install never blocks
@@ -118,9 +122,10 @@ No Coralogix profile is configured.
 Run `cx init` to set up a profile and get started.
 ```
 
-### 4. Optional: install shell autocomplete
+### 4. Optional: add autocomplete for another shell
 
-Most macOS users use `zsh`:
+`cx init` offers this during setup, so most people are already done. Use this to
+add a second shell, or if you skipped it there:
 
 ```bash
 cx completions install zsh

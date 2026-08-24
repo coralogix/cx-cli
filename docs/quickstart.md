@@ -8,13 +8,17 @@ Paste this into Claude Code, Cursor, Codex, or any other coding agent:
 
 ```text
 Install and set up the Coralogix CLI by following https://github.com/coralogix/cx-cli/blob/master/docs/agent-setup.md
+My Coralogix URL is [paste your Coralogix URL]
 ```
 
-Optionally, tell the agent your Coralogix URL up front so it doesn't have to ask. Pick your region in the domain selector at the top of this page and the URL below updates to match:
+Replace `[paste your Coralogix URL]` with the address you use to open Coralogix in
+your browser. Delete that line instead and the agent will ask you for it.
 
-My Coralogix URL is https://[[DOMAIN_VAR:team_hostname]]
+Not sure what yours looks like? Pick your region with the domain selector in the
+upper-right corner of this page and it follows this pattern, with `team` replaced
+by your own team name:
 
-Add that as a second line of the prompt, replacing `team` with your own team name.
+https://[[DOMAIN_VAR:team_hostname]]
 
 Or, you can [Install manually](#install-manually).
 

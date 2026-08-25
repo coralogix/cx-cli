@@ -252,7 +252,6 @@ Environment variables override profile file values:
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
-| `CX_TELEMETRY` | Set to `false`, `no`, `off`, or `0` to disable CLI request metadata |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
@@ -260,26 +259,13 @@ Environment variables override profile file values:
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
 
-### Request metadata
+### Gateway metrics
 
-Each authenticated Coralogix API request includes bounded `X-Cx-Cli-*` headers
-for the current invocation: command path and family, output format,
-authentication type, installed CX skills, selected and configured
-profile counts, and write-operation and `--yes` flags.
-`X-Cx-Cli-Metadata` also contains the same values as compact JSON.
-`X-Cx-Cli-Installed-Skills` is a sorted JSON list of installed skill directory
-names, without filesystem paths. It lists only the skills bundled with this
-`cx` version that are found installed.
-`X-Cx-Cli-Is-Agent` is `true` when the master agent-environment detector
-matches, and `false` otherwise.
-
-The installation identifier is a random UUID stored in `~/.cx/state.json`; it
-identifies a CLI installation, not a person or API key. Request metadata never
-includes API keys, profile names, command arguments, query text, raw error
-messages, arbitrary environment variables, outcome, error details, HTTP
-status, or duration.
-
-Set `CX_TELEMETRY=false` to opt out of these headers entirely.
+Each authenticated Coralogix API request identifies `cx` through
+`User-Agent: cx-cli/<agent>` and `X-Cx-Sdk-Version: cx-cli-<version>`. When an
+agent environment variable is detected, `<agent>` is its lowercased name (for
+example, `CURSOR_AGENT` becomes `cursor_agent`); otherwise it is `direct`.
+Gateway metrics can use these existing values to identify CLI traffic.
 
 ## Read-only mode
 

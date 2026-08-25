@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use coralogix_cli::config::{AuthKind, ResolvedConfig};
 use coralogix_cli::execution::ExecutionTarget;
-use coralogix_cli::request_metadata::RequestMetadata;
 
 /// Build an [`ExecutionTarget`] that sends all HTTP traffic to `base_url`.
 ///
@@ -33,8 +32,5 @@ pub fn test_target_with_token(
         console_url: None,
         credentials_overridden: false,
     };
-    Arc::new(
-        ExecutionTarget::new(cfg, RequestMetadata::default())
-            .expect("test_target: failed to build ExecutionTarget"),
-    )
+    Arc::new(ExecutionTarget::new(cfg).expect("test_target: failed to build ExecutionTarget"))
 }

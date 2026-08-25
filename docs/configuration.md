@@ -632,6 +632,7 @@ COMPLETE=fish cx | source
 `cx` replaces the older Scala-based `cxctl`. If you are looking for documentation on the legacy tool, see the [Coralogix CLI (legacy) docs](https://coralogix.com/docs/developer-portal/infrastructure-as-code/cli/coralogix-cli/). `cx` does not currently cover all legacy surfaces, including LiveTail and account invite flows.
 
 </details>
+
 ## OAuth callback ports
 
 The local HTTP callback listener used by the OAuth browser login (`cx init`, or `cx profiles add <name>` on the OAuth path) binds one port from the following fixed allow-list, chosen at random:

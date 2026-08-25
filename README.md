@@ -24,9 +24,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 - Browse the DataPrime language reference offline.
 - Plug Coralogix into your AI coding agent with bundled skills for Claude Code, Cursor, Codex, and 40+ more agents.
 
-:::tip[Ready to get started?]
-Use the [Quick start guide](docs/quickstart.md) for instant installation.
-:::
+> **Ready to get started?** Use the [Quick start guide](docs/quickstart.md) for instant installation.
 
 ## Further reading
 

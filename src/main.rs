@@ -342,14 +342,15 @@ Examples:
     /// Verify credentials and show the authenticated identity.
     ///
     /// Runs a single cheap authenticated call (`GET /identity/whoami`) against
-    /// each selected profile and prints who the credentials belong to. It is
-    /// the same health check `cx init` runs at the end of onboarding: a success
-    /// is a definitive "your setup works" signal; a failure pinpoints invalid
-    /// credentials vs. a wrong region/URL.
+    /// one profile and prints who the credentials belong to. It is the same
+    /// health check `cx init` runs at the end of onboarding: a success is a
+    /// definitive "your setup works" signal; a failure pinpoints invalid
+    /// credentials vs. a wrong region/URL. It checks a single profile (the
+    /// default, or the one named with `-p`) rather than fanning out.
     #[command(after_help = "\
 \x1b[1m\x1b[4mExamples:\x1b[0m
   cx whoami                         # verify the default profile
-  cx whoami -p prod -p staging      # verify several profiles at once
+  cx whoami -p prod                 # verify a specific profile
   cx whoami -o json                 # machine-readable identity")]
     Whoami,
 

@@ -289,8 +289,14 @@ fn print_connected_box(identity: &str) {
 /// identity, then the "ready to go" hints. `identity` is the caller summary
 /// from [`verify_credentials`].
 fn print_success(identity: &str) {
-    // Blank line, then the shared `--help` logo (left-aligned, green gradient).
-    println!("\n{}", banner::render_logo());
+    // The decorative logo is for humans only: gate it on the same condition as
+    // the startup banner (interactive TTY, color enabled, not an agent) so a
+    // coding agent running `cx init` gets the plain "Connected" box + hints
+    // without the ASCII art. Callers/agents still get the definitive signal.
+    if banner::should_show() {
+        // Blank line, then the shared `--help` logo (left-aligned, green gradient).
+        println!("\n{}", banner::render_logo());
+    }
     println!();
     print_connected_box(identity);
     println!();

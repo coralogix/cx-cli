@@ -16,7 +16,6 @@ use tokio::sync::OnceCell;
 use crate::api_client::CxClient;
 use crate::config::ResolvedConfig;
 use crate::identity;
-use crate::request_metadata::RequestMetadata;
 
 // ── Execution target ──────────────────────────────────────────────────────────
 
@@ -40,13 +39,12 @@ pub struct ExecutionTarget {
     /// `no_console_link` config key via [`build_targets`]. Defaults to
     /// `false` here so direct `new()` callers (tests) are unaffected.
     no_console_link: bool,
-    pub request_metadata: RequestMetadata,
 }
 
 impl ExecutionTarget {
     /// Build an `ExecutionTarget` from an already-resolved config.
-    pub fn new(cfg: ResolvedConfig, request_metadata: RequestMetadata) -> Result<Self> {
-        let client = CxClient::new_with_metadata(&cfg.endpoint, &cfg.api_key, &request_metadata)?;
+    pub fn new(cfg: ResolvedConfig) -> Result<Self> {
+        let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
         let profile_name = cfg.profile_name.clone();
         Ok(Self {
             profile_name,
@@ -54,7 +52,6 @@ impl ExecutionTarget {
             client,
             console_base: OnceCell::new(),
             no_console_link: false,
-            request_metadata,
         })
     }
 
@@ -182,13 +179,12 @@ pub async fn emit_console_link_for_profile(
 /// across a fan-out.
 pub fn build_targets(
     configs: Vec<ResolvedConfig>,
-    request_metadata: RequestMetadata,
     no_console_link: bool,
 ) -> Result<Vec<Arc<ExecutionTarget>>> {
     configs
         .into_iter()
         .map(|cfg| {
-            let mut target = ExecutionTarget::new(cfg, request_metadata.clone())?;
+            let mut target = ExecutionTarget::new(cfg)?;
             target.no_console_link = no_console_link;
             Ok(Arc::new(target))
         })
@@ -303,13 +299,7 @@ mod tests {
     #[test]
     fn find_target_locates_by_profile_name() {
         install_rustls_provider();
-        let a = Arc::new(
-            ExecutionTarget::new(
-                test_cfg("http://127.0.0.1:1", None),
-                RequestMetadata::default(),
-            )
-            .unwrap(),
-        );
+        let a = Arc::new(ExecutionTarget::new(test_cfg("http://127.0.0.1:1", None)).unwrap());
         let targets = vec![a.clone()];
         assert!(find_target(&targets, "test-profile").is_some());
         assert!(find_target(&targets, "missing-profile").is_none());
@@ -321,10 +311,10 @@ mod tests {
         // No mock server is started for this test, so a whoami call would
         // fail the test outright (connection refused) - the explicit
         // console_url must short-circuit before that.
-        let target = ExecutionTarget::new(
-            test_cfg("http://127.0.0.1:1", Some("https://c4c.example.com/")),
-            RequestMetadata::default(),
-        )
+        let target = ExecutionTarget::new(test_cfg(
+            "http://127.0.0.1:1",
+            Some("https://c4c.example.com/"),
+        ))
         .unwrap();
         assert_eq!(
             target.console_base().await,
@@ -348,9 +338,7 @@ mod tests {
 
         // No explicit console_url - must resolve via /identity/whoami by
         // default.
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None), RequestMetadata::default())
-                .unwrap();
+        let target = ExecutionTarget::new(test_cfg(&server.uri(), None)).unwrap();
         assert_eq!(
             target.console_base().await,
             Some("https://c4c.app.eu2.coralogix.com".to_string())
@@ -370,9 +358,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None), RequestMetadata::default())
-                .unwrap();
+        let target = ExecutionTarget::new(test_cfg(&server.uri(), None)).unwrap();
         assert_eq!(target.console_base().await, None);
     }
 
@@ -386,9 +372,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None), RequestMetadata::default())
-                .unwrap();
+        let target = ExecutionTarget::new(test_cfg(&server.uri(), None)).unwrap();
         // Best-effort: a failing /identity/whoami must not error the caller,
         // just result in no console link.
         assert_eq!(target.console_base().await, None);
@@ -412,10 +396,10 @@ mod tests {
         // An explicit console_url must win outright - whoami must not even
         // be called (wiremock's `.expect(0)` above enforces this at drop
         // time).
-        let target = ExecutionTarget::new(
-            test_cfg(&server.uri(), Some("https://c4c.app.eu2.coralogix.com")),
-            RequestMetadata::default(),
-        )
+        let target = ExecutionTarget::new(test_cfg(
+            &server.uri(),
+            Some("https://c4c.app.eu2.coralogix.com"),
+        ))
         .unwrap();
         assert_eq!(
             target.console_base().await,
@@ -438,9 +422,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let target =
-            ExecutionTarget::new(test_cfg(&server.uri(), None), RequestMetadata::default())
-                .unwrap();
+        let target = ExecutionTarget::new(test_cfg(&server.uri(), None)).unwrap();
         // Two calls must only hit /identity/whoami once (wiremock's `.expect(1)`
         // above would fail the mock verification otherwise).
         let first = target.console_base().await;
@@ -456,10 +438,10 @@ mod tests {
         // didn't short-circuit before the explicit `console_url` check, this
         // test would still pass (explicit URL wins), so the real assertion is
         // that suppression overrides *everything*, not just the whoami path.
-        let mut target = ExecutionTarget::new(
-            test_cfg("http://127.0.0.1:1", Some("https://c4c.example.com/")),
-            RequestMetadata::default(),
-        )
+        let mut target = ExecutionTarget::new(test_cfg(
+            "http://127.0.0.1:1",
+            Some("https://c4c.example.com/"),
+        ))
         .unwrap();
         target.no_console_link = true;
         assert_eq!(target.console_base().await, None);
@@ -472,7 +454,7 @@ mod tests {
             test_cfg("http://127.0.0.1:1", Some("https://c4c.example.com/")),
             test_cfg("http://127.0.0.1:2", Some("https://other.example.com/")),
         ];
-        let targets = build_targets(configs, RequestMetadata::default(), true).unwrap();
+        let targets = build_targets(configs, true).unwrap();
         assert_eq!(targets.len(), 2);
         for target in &targets {
             assert!(target.no_console_link);

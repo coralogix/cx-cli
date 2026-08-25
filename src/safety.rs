@@ -68,7 +68,7 @@ pub fn enforce_read_only(verb: &str) -> Result<()> {
     Ok(())
 }
 
-const AGENT_ENV_VARS: &[&str] = &[
+pub(crate) const AGENT_ENV_VARS: &[&str] = &[
     "AIDER",
     "AMAZON_Q",
     "AWS_Q_DEVELOPER",

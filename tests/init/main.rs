@@ -129,11 +129,26 @@ async fn init_writes_profile_then_installs_skills() {
     );
 }
 
-/// The health check runs and its success is reported to the user.
+/// A custom / BYOC endpoint (any URL that doesn't resolve to a known Coralogix
+/// region) skips the health check entirely: such deployments may not expose
+/// `GET /identity/whoami`, so probing it would be a false negative. Since the
+/// wiremock URL is itself a custom endpoint, we assert the route is never hit,
+/// init still succeeds, and the user is told the check was skipped.
 #[cfg(unix)]
 #[tokio::test]
-async fn init_verifies_credentials_and_reports_identity() {
-    let server = whoami_ok_server().await;
+async fn init_skips_verification_for_custom_endpoint() {
+    let server = MockServer::start().await;
+    // Mounted so any stray call is answerable, but it must receive zero hits.
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "team_id": 53623,
+            "user_name": "agent@example.com"
+        })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
     let home = temp_dir("verify");
     let bin = temp_dir("verify_bin");
     install_fake_npx(&bin, &bin.join("args.txt"));
@@ -152,26 +167,35 @@ async fn init_verifies_credentials_and_reports_identity() {
 
     assert!(
         output.status.success(),
-        "init should succeed when verify passes"
+        "init should succeed for a custom endpoint (verification skipped)"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Connected as agent@example.com"),
-        "expected the verify success line, stdout: {stdout}"
+        stdout.contains("Skipped the automatic credential check"),
+        "expected the skip notice for a custom endpoint, stdout: {stdout}"
+    );
+    // No identity probe was issued against the custom endpoint.
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        0,
+        "the whoami health check must not run for a custom endpoint"
     );
 }
 
-/// A profile that fails verification (bad key → 401) makes `cx init` exit
-/// non-zero, but the profile is still written so the user can fix and re-run.
+/// The bot's scenario (FORGE-660 review): a custom endpoint whose identity
+/// route would error must NOT block onboarding. Because the probe is skipped
+/// before any call, even a 401-returning identity route never runs — init
+/// succeeds, writes the profile, and proceeds to the skills step.
 #[cfg(unix)]
 #[tokio::test]
-async fn init_fails_when_verification_fails() {
+async fn init_custom_endpoint_does_not_block_on_identity_route() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/identity/whoami"))
         .respond_with(
             ResponseTemplate::new(401).set_body_json(serde_json::json!({ "message": "bad key" })),
         )
+        .expect(0)
         .mount(&server)
         .await;
 
@@ -193,23 +217,23 @@ async fn init_fails_when_verification_fails() {
         .expect("failed to run cx");
 
     assert!(
-        !output.status.success(),
-        "init must exit non-zero when verification fails"
+        output.status.success(),
+        "a custom endpoint must not fail onboarding on the identity route"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("authentication failed"),
-        "expected the classified auth error, stderr: {stderr}"
-    );
-    // The profile is kept so the user can fix credentials and re-run.
+    // The profile is written and the skills step still runs.
     assert!(
         profile_path(&home, "default").exists(),
-        "profile must be written even when verification fails"
+        "profile must be written for a custom endpoint"
     );
-    // Verification fails fast, before the skills step runs.
     assert!(
-        !args_file.exists(),
-        "the skills installer must not run after a failed verification"
+        args_file.exists(),
+        "the skills installer must run after a skipped verification"
+    );
+    // The identity route was never probed.
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        0,
+        "the whoami health check must not run for a custom endpoint"
     );
 }
 

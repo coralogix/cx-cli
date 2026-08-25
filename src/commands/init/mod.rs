@@ -42,6 +42,7 @@ use crate::banner;
 use crate::commands::{completions, profiles, skills};
 use crate::config::{self, has_managed_completions, list_profile_names};
 use crate::identity;
+use crate::region::{region_from_url, RegionMatch};
 
 /// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
@@ -126,6 +127,8 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     //
     // Verifies the default profile: on a fresh machine that is the profile we
     // just created; on a re-run it is whatever the user already had configured.
+    // Custom / BYOC endpoints skip the probe (returns `None`) — see
+    // `verify_credentials` — since they may not expose the whoami route.
     let identity = verify_credentials().await?;
 
     // ── Step 3: skills ──────────────────────────────────────────────────────────
@@ -187,7 +190,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     }
 
     // ── Done ────────────────────────────────────────────────────────────────────
-    print_success(&identity);
+    print_success(identity.as_deref());
     Ok(())
 }
 
@@ -245,10 +248,23 @@ fn prompt_completions_shell() -> Result<Option<(Shell, Option<PathBuf>)>> {
 /// likely fix right away, so `cx init` fails fast and exits non-zero. On success
 /// returns the identity summary so the caller can confirm it at the very end of
 /// the command, rather than mid-flow.
-async fn verify_credentials() -> Result<String> {
+///
+/// The probe is **skipped for custom / BYOC / private-link endpoints** (any URL
+/// that doesn't resolve to a known Coralogix region): a self-hosted deployment
+/// may not expose `GET /identity/whoami` even when its query APIs work, so
+/// failing onboarding there would be a false negative. Those setups get
+/// `Ok(None)` — verification is not attempted, and the caller reports the skip
+/// instead of a "Connected as …" line.
+async fn verify_credentials() -> Result<Option<String>> {
     let cfg = config::resolve(None, None, None)
         .await
         .map_err(|e| anyhow::anyhow!("could not load the profile to verify it: {e:#}"))?;
+
+    // Only known regions are guaranteed to serve the whoami health-check route.
+    if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
+        return Ok(None);
+    }
+
     let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
     let whoami = identity::verify_identity(&client).await?;
 
@@ -261,7 +277,7 @@ async fn verify_credentials() -> Result<String> {
             .map(|id| format!(" on team id {id}"))
             .unwrap_or_default(),
     };
-    Ok(format!("{user}{team}"))
+    Ok(Some(format!("{user}{team}")))
 }
 
 /// Coralogix brand green, used for the "Connected!" confirmation box.
@@ -287,8 +303,10 @@ fn print_connected_box(identity: &str) {
 /// Final success output, printed once at the very end of a clean `cx init`:
 /// the left-aligned `--help` logo, then a green box confirming the verified
 /// identity, then the "ready to go" hints. `identity` is the caller summary
-/// from [`verify_credentials`].
-fn print_success(identity: &str) {
+/// from [`verify_credentials`]; `None` means verification was skipped (a custom
+/// / BYOC endpoint), in which case the "Connected as …" box is replaced by a
+/// note that the credentials weren't checked.
+fn print_success(identity: Option<&str>) {
     // The decorative logo is for humans only: gate it on the same condition as
     // the startup banner (interactive TTY, color enabled, not an agent) so a
     // coding agent running `cx init` gets the plain "Connected" box + hints
@@ -298,10 +316,15 @@ fn print_success(identity: &str) {
         println!("\n{}", banner::render_logo());
     }
     println!();
-    print_connected_box(identity);
+    match identity {
+        Some(identity) => print_connected_box(identity),
+        // Custom / BYOC endpoint: we didn't probe the identity route, so don't
+        // claim a verified identity — just say plainly that the automatic check
+        // didn't run (the endpoint may not expose that route at all).
+        None => println!("Profile configured. Skipped the automatic credential check"),
+    }
     println!();
     println!("Try it out:");
     println!("  cx logs 'source logs | limit 10'");
-    println!("  cx whoami        # confirm your credentials anytime");
     println!("  cx schema        # discover every command as JSON");
 }

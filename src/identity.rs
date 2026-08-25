@@ -30,9 +30,9 @@ pub struct Whoami {
 /// team/user identity for a definitive "authenticated as ..." success signal.
 ///
 /// On failure the underlying [`CxError`] is mapped to guidance that names the
-/// likely fix — invalid credentials vs. a wrong region/endpoint — so both
-/// `cx init` and `cx whoami` report a precise, actionable message. Shared so a
-/// future `cx doctor` can reuse the same probe with machine-readable output.
+/// likely fix — invalid credentials vs. a wrong region/endpoint — so `cx init`
+/// reports a precise, actionable message. Shared so a future `cx doctor` can
+/// reuse the same probe with machine-readable output.
 pub async fn verify_identity(client: &CxClient) -> anyhow::Result<Whoami> {
     client
         .get::<Whoami>(WHOAMI_BASE, &[])

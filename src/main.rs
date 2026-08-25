@@ -125,7 +125,6 @@ pub enum SearchByValueDataset {
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
   \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
-  \x1b[1mwhoami\x1b[0m             Verify credentials and show the authenticated identity
   \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
@@ -337,21 +336,6 @@ Examples:
         #[command(subcommand)]
         cmd: ProfilesCmd,
     },
-
-    /// Verify credentials and show the authenticated identity.
-    ///
-    /// Runs a single cheap authenticated call (`GET /identity/whoami`) against
-    /// one profile and prints who the credentials belong to. It is the same
-    /// health check `cx init` runs at the end of onboarding: a success is a
-    /// definitive "your setup works" signal; a failure pinpoints invalid
-    /// credentials vs. a wrong region/URL. It checks a single profile (the
-    /// default, or the one named with `-p`) rather than fanning out.
-    #[command(after_help = "\
-\x1b[1m\x1b[4mExamples:\x1b[0m
-  cx whoami                         # verify the default profile
-  cx whoami -p prod                 # verify a specific profile
-  cx whoami -o json                 # machine-readable identity")]
-    Whoami,
 
     /// Generate, install, or refresh shell completion scripts.
     Completions {
@@ -4645,10 +4629,6 @@ async fn main() -> Result<()> {
                     commands::slos::run_delete(&targets, &id).await?;
                 }
             },
-
-            Commands::Whoami => {
-                commands::whoami::run_whoami(&targets, output).await?;
-            }
 
             Commands::Infra { cmd } => match cmd {
                 InfraCmd::Resources { cmd } => match cmd {

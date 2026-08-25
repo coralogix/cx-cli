@@ -46,4 +46,3 @@ pub mod team_groups;
 pub mod users;
 pub mod views;
 pub mod webhooks;
-pub mod whoami;

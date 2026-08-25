@@ -6,9 +6,11 @@
 //! no terminal or Node.js is required: the skills installer is a fake `npx` on
 //! PATH that records its arguments, exactly as the skills tests do.
 //!
-//! The health check is a real HTTP call, so tests point `--url` at a `wiremock`
-//! server serving `/identity/whoami` instead of a real region. That keeps the
-//! run hermetic while exercising the verification step end-to-end.
+//! Tests point `--url` at a `wiremock` server. Its `127.0.0.1` address is not a
+//! known Coralogix region, so `cx init` treats it as a custom endpoint and
+//! skips the health check. Most tests therefore exercise the profile/skills
+//! chain; the two `*_custom_endpoint*` tests assert the probe is skipped (the
+//! identity route receives zero requests).
 
 use assert_cmd::Command;
 use std::fs;
@@ -28,21 +30,13 @@ fn temp_dir(tag: &str) -> PathBuf {
     dir
 }
 
-/// Start a mock that answers the end-of-init health check with a valid
-/// identity, so verification succeeds. Returns the server (keep it alive for
-/// the duration of the test) so `server.uri()` can be passed as `--url`.
-async fn whoami_ok_server() -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/identity/whoami"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "team_id": 53623,
-            "team_name": "c4c",
-            "user_name": "agent@example.com"
-        })))
-        .mount(&server)
-        .await;
-    server
+/// Start a mock server purely to supply a reachable `--url`. Its `127.0.0.1`
+/// address is not a known Coralogix region, so `cx init` classifies it as a
+/// custom endpoint and skips the credential check — the identity route is never
+/// called. Returns the server (keep it alive) so `server.uri()` can be passed
+/// as `--url`.
+async fn custom_endpoint_server() -> MockServer {
+    MockServer::start().await
 }
 
 /// A `cx` command hermetically sealed off from the developer's real home,
@@ -91,7 +85,7 @@ fn profile_path(home: &Path, name: &str) -> PathBuf {
 #[cfg(unix)]
 #[tokio::test]
 async fn init_writes_profile_then_installs_skills() {
-    let server = whoami_ok_server().await;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("chain");
     let bin = temp_dir("chain_bin");
     let args_file = bin.join("args.txt");
@@ -240,7 +234,7 @@ async fn init_custom_endpoint_does_not_block_on_identity_route() {
 #[cfg(unix)]
 #[tokio::test]
 async fn init_agents_flag_reaches_the_installer() {
-    let server = whoami_ok_server().await;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("agents");
     let bin = temp_dir("agents_bin");
     let args_file = bin.join("args.txt");
@@ -274,7 +268,7 @@ async fn init_agents_flag_reaches_the_installer() {
 #[cfg(unix)]
 #[tokio::test]
 async fn init_no_skills_skips_the_installer() {
-    let server = whoami_ok_server().await;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("noskills");
     let bin = temp_dir("noskills_bin");
     let args_file = bin.join("args.txt");
@@ -310,7 +304,7 @@ async fn init_no_skills_skips_the_installer() {
 #[cfg(unix)]
 #[tokio::test]
 async fn init_without_scope_warns_but_succeeds() {
-    let server = whoami_ok_server().await;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("noscope");
     let bin = temp_dir("noscope_bin");
     install_fake_npx(&bin, &bin.join("args.txt"));
@@ -339,7 +333,7 @@ async fn init_without_scope_warns_but_succeeds() {
 #[cfg(unix)]
 #[tokio::test]
 async fn init_without_npx_warns_but_succeeds() {
-    let server = whoami_ok_server().await;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("nonpx");
     let empty_path = temp_dir("nonpx_path"); // no npx on PATH
 
@@ -375,7 +369,7 @@ async fn init_without_npx_warns_but_succeeds() {
 #[cfg(unix)]
 #[tokio::test]
 async fn init_skips_profile_setup_when_one_already_exists() {
-    let server = whoami_ok_server().await;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("idempotent");
     let bin = temp_dir("idempotent_bin");
     let args_file = bin.join("args.txt");
@@ -435,7 +429,7 @@ async fn init_skips_profile_setup_when_one_already_exists() {
 #[tokio::test]
 async fn init_skips_skills_when_already_installed() {
     use std::os::unix::fs::PermissionsExt;
-    let server = whoami_ok_server().await;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("skills_present");
     let bin = temp_dir("skills_present_bin");
     let args_file = bin.join("args.txt");

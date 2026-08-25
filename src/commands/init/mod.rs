@@ -127,9 +127,9 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     //
     // Verifies the default profile: on a fresh machine that is the profile we
     // just created; on a re-run it is whatever the user already had configured.
-    // Custom / BYOC endpoints skip the probe (returns `None`) — see
+    // Custom / BYOC endpoints skip the probe (returns `false`) — see
     // `verify_credentials` — since they may not expose the whoami route.
-    let identity = verify_credentials().await?;
+    let verified = verify_credentials().await?;
 
     // ── Step 3: skills ──────────────────────────────────────────────────────────
     // Idempotent, like the profile step: if cx skills are already installed,
@@ -190,7 +190,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     }
 
     // ── Done ────────────────────────────────────────────────────────────────────
-    print_success(identity.as_deref());
+    print_success(verified);
     Ok(())
 }
 
@@ -245,51 +245,39 @@ fn prompt_completions_shell() -> Result<Option<(Shell, Option<PathBuf>)>> {
 /// Resolves the default profile (the one just created on a fresh machine, or the
 /// user's existing default on a re-run) into a client and runs the shared
 /// [`identity::verify_identity`] probe. On failure returns an error naming the
-/// likely fix right away, so `cx init` fails fast and exits non-zero. On success
-/// returns the identity summary so the caller can confirm it at the very end of
-/// the command, rather than mid-flow.
+/// likely fix right away, so `cx init` fails fast and exits non-zero.
 ///
-/// The probe is **skipped for custom / BYOC / private-link endpoints** (any URL
-/// that doesn't resolve to a known Coralogix region): a self-hosted deployment
-/// may not expose `GET /identity/whoami` even when its query APIs work, so
-/// failing onboarding there would be a false negative. Those setups get
-/// `Ok(None)` — verification is not attempted, and the caller reports the skip
-/// instead of a "Connected as …" line.
-async fn verify_credentials() -> Result<Option<String>> {
+/// Returns `Ok(true)` when the probe ran and succeeded, and `Ok(false)` when it
+/// was **skipped for a custom / BYOC / private-link endpoint** (any URL that
+/// doesn't resolve to a known Coralogix region): a self-hosted deployment may
+/// not expose `GET /identity/whoami` even when its query APIs work, so failing
+/// onboarding there would be a false negative. The caller reports the skip
+/// instead of the "Connected" box.
+async fn verify_credentials() -> Result<bool> {
     let cfg = config::resolve(None, None, None)
         .await
         .map_err(|e| anyhow::anyhow!("could not load the profile to verify it: {e:#}"))?;
 
     // Only known regions are guaranteed to serve the whoami health-check route.
     if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
-        return Ok(None);
+        return Ok(false);
     }
 
     let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
-    let whoami = identity::verify_identity(&client).await?;
-
-    let user = whoami.user_name.as_deref().unwrap_or("unknown user");
-    let team = match whoami.team_name.as_deref() {
-        Some(name) => format!(" on team \"{name}\""),
-        // Fall back to the id only when the team has no name to show.
-        None => whoami
-            .team_id
-            .map(|id| format!(" on team id {id}"))
-            .unwrap_or_default(),
-    };
-    Ok(Some(format!("{user}{team}")))
+    // The identity payload isn't shown; the probe succeeding is the signal.
+    identity::verify_identity(&client).await?;
+    Ok(true)
 }
 
-/// Coralogix brand green, used for the "Connected!" confirmation box.
+/// Coralogix brand green, used for the "Connected" confirmation box.
 const GREEN: (u8, u8, u8) = (37, 222, 179);
 
-/// Left-aligned green box confirming the verified identity, e.g.
-/// `✓ Connected as alice@example.com on team "c4c" (id 53623)`. Merges the
-/// "connected" signal with the who/team it resolved into one element.
-fn print_connected_box(identity: &str) {
+/// Left-aligned green `✓ Connected` box — the definitive "your credentials
+/// work" signal at the end of a verified `cx init`.
+fn print_connected_box() {
     let (r, g, b) = GREEN;
     // Fixed-width interior so the box borders line up regardless of glyph bytes.
-    let interior = format!(" ✓ Connected as {identity} ");
+    let interior = " ✓ Connected ";
     let width = interior.chars().count();
 
     let top = format!("┌{}┐", "─".repeat(width));
@@ -301,27 +289,27 @@ fn print_connected_box(identity: &str) {
 }
 
 /// Final success output, printed once at the very end of a clean `cx init`:
-/// the left-aligned `--help` logo, then a green box confirming the verified
-/// identity, then the "ready to go" hints. `identity` is the caller summary
-/// from [`verify_credentials`]; `None` means verification was skipped (a custom
-/// / BYOC endpoint), in which case the "Connected as …" box is replaced by a
-/// note that the credentials weren't checked.
-fn print_success(identity: Option<&str>) {
+/// the left-aligned `--help` logo, then a green box confirming the setup, then
+/// the "ready to go" hints. `verified` is the outcome from [`verify_credentials`]:
+/// `true` shows the `✓ Connected` box; `false` means verification was skipped
+/// (a custom / BYOC endpoint), replaced by a note that the check didn't run.
+fn print_success(verified: bool) {
     // The decorative logo is for humans only: gate it on the same condition as
     // the startup banner (interactive TTY, color enabled, not an agent) so a
-    // coding agent running `cx init` gets the plain "Connected" box + hints
+    // coding agent running `cx init` gets the plain confirmation + hints
     // without the ASCII art. Callers/agents still get the definitive signal.
     if banner::should_show() {
         // Blank line, then the shared `--help` logo (left-aligned, green gradient).
         println!("\n{}", banner::render_logo());
     }
     println!();
-    match identity {
-        Some(identity) => print_connected_box(identity),
+    if verified {
+        print_connected_box();
+    } else {
         // Custom / BYOC endpoint: we didn't probe the identity route, so don't
-        // claim a verified identity — just say plainly that the automatic check
+        // claim a verified setup — just say plainly that the automatic check
         // didn't run (the endpoint may not expose that route at all).
-        None => println!("Profile configured. Skipped the automatic credential check"),
+        println!("Profile configured. Skipped the automatic credential check");
     }
     println!();
     println!("Try it out:");

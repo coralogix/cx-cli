@@ -1,11 +1,8 @@
-use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::{json, Value};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::api_client::CxClient;
-use coralogix_cli::config::OutputFormat;
-use coralogix_cli::request_metadata::RequestMetadata;
 
 fn init_tls() {
     rustls::crypto::ring::default_provider()
@@ -13,46 +10,29 @@ fn init_tls() {
         .ok();
 }
 
-#[derive(Parser)]
-struct TestCli {
-    #[command(subcommand)]
-    command: TestCommand,
-}
-
-#[derive(Subcommand)]
-enum TestCommand {
-    Logs,
-}
-
 #[tokio::test]
-async fn attaches_cli_request_metadata_headers() {
+async fn attaches_gateway_metric_headers() {
     init_tls();
     let server = MockServer::start().await;
     let sdk_version = concat!("cx-cli-", env!("CARGO_PKG_VERSION"));
     Mock::given(method("GET"))
         .and(path("/test"))
         .and(header("x-cx-sdk-version", sdk_version))
-        .and(header("x-cx-cli-command-path", "logs"))
-        .and(header("x-cx-cli-output-format", "toon"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .mount(&server)
         .await;
 
-    let matches = TestCli::command()
-        .try_get_matches_from(["cx", "logs"])
-        .unwrap();
-    let metadata = RequestMetadata::from_invocation(&matches, OutputFormat::Toon, &[], false);
-    let client = CxClient::new_with_metadata(server.uri(), "test-key", &metadata).unwrap();
+    let client = CxClient::new(server.uri(), "test-key").unwrap();
 
     client.get::<Value>("/test", &[]).await.unwrap();
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
-    assert!(requests[0]
-        .headers
-        .get("x-cx-cli-installation-id")
-        .is_some());
-    assert!(requests[0].headers.get("x-cx-cli-metadata").is_some());
+    assert!(requests[0].headers["user-agent"]
+        .to_str()
+        .unwrap()
+        .starts_with("cx-cli/"));
+    assert!(requests[0].headers.get("x-cx-cli-metadata").is_none());
 }
 
 #[tokio::test]

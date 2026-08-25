@@ -12,7 +12,6 @@ pub mod keyring_store;
 pub mod oauth;
 pub mod region;
 pub mod render;
-pub mod request_metadata;
 pub mod safety;
 pub mod serde_helpers;
 pub mod spill;

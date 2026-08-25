@@ -15,7 +15,6 @@ use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
 use coralogix_cli::execution::build_targets;
-use coralogix_cli::request_metadata::RequestMetadata;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
 use coralogix_cli::update_check;
@@ -3280,8 +3279,7 @@ async fn main() -> Result<()> {
         }
     };
 
-    let request_metadata = RequestMetadata::from_invocation(&matches, output, &configs, yes);
-    let targets = build_targets(configs, request_metadata, no_console_link)?;
+    let targets = build_targets(configs, no_console_link)?;
     let agent_mode = safety::is_agent_mode();
 
     // Wrap the dispatch in an async block so we can capture its Result and

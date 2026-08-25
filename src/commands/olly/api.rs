@@ -3,7 +3,6 @@ use serde_json::{json, Value};
 
 use crate::api_client::CxClient;
 use crate::error::Result;
-use crate::request_metadata::RequestMetadata;
 
 // ── Base paths ─────────────────────────────────────────────────────────────────
 
@@ -180,8 +179,8 @@ pub struct OllyApi {
 
 impl OllyApi {
     /// Create a new OllyApi client.
-    pub fn new(endpoint: &str, api_key: &str, request_metadata: &RequestMetadata) -> Result<Self> {
-        let client = CxClient::new_with_metadata(endpoint, api_key, request_metadata)?;
+    pub fn new(endpoint: &str, api_key: &str) -> Result<Self> {
+        let client = CxClient::new(endpoint, api_key)?;
         Ok(Self { client })
     }
 

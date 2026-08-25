@@ -3,7 +3,14 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::{CxError, Result};
-use crate::request_metadata::RequestMetadata;
+use crate::safety::AGENT_ENV_VARS;
+
+fn cli_user_agent(agent_env_var: Option<&str>) -> String {
+    match agent_env_var {
+        Some(agent_env_var) => format!("cx-cli/{}", agent_env_var.to_ascii_lowercase()),
+        None => "cx-cli/direct".to_string(),
+    }
+}
 
 /// Thin wrapper around reqwest::Client pre-configured with Coralogix auth.
 #[derive(Clone)]
@@ -14,14 +21,6 @@ pub struct CxClient {
 
 impl CxClient {
     pub fn new(endpoint: impl Into<String>, api_key: &str) -> Result<Self> {
-        Self::new_with_metadata(endpoint, api_key, &RequestMetadata::default())
-    }
-
-    pub fn new_with_metadata(
-        endpoint: impl Into<String>,
-        api_key: &str,
-        metadata: &RequestMetadata,
-    ) -> Result<Self> {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             header::AUTHORIZATION,
@@ -36,11 +35,14 @@ impl CxClient {
             header::HeaderName::from_static("x-cx-sdk-version"),
             header::HeaderValue::from_static(concat!("cx-cli-", env!("CARGO_PKG_VERSION"))),
         );
-        headers.extend(metadata.headers().clone());
 
+        let agent_env_var = AGENT_ENV_VARS
+            .iter()
+            .find(|var| std::env::var(var).is_ok())
+            .copied();
         let inner = Client::builder()
             .default_headers(headers)
-            .user_agent(concat!("cx-cli/", env!("CARGO_PKG_VERSION")))
+            .user_agent(cli_user_agent(agent_env_var))
             .build()?;
 
         Ok(Self {
@@ -239,7 +241,14 @@ pub(crate) fn extract_error_detail(body: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_error_detail, normalize_endpoint};
+    use super::{cli_user_agent, extract_error_detail, normalize_endpoint};
+
+    #[test]
+    fn user_agent_uses_detected_agent_environment_variable() {
+        assert_eq!(cli_user_agent(Some("CURSOR_AGENT")), "cx-cli/cursor_agent");
+        assert_eq!(cli_user_agent(Some("CLAUDE_CODE")), "cx-cli/claude_code");
+        assert_eq!(cli_user_agent(None), "cx-cli/direct");
+    }
 
     #[test]
     fn trims_single_trailing_slash() {

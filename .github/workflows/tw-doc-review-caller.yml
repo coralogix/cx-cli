@@ -1,0 +1,27 @@
+name: TW doc review
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "docs/*.md"
+
+permissions:
+  contents: read
+
+jobs:
+  tw-review:
+    # Pinned to a specific commit SHA to prevent supply-chain risk from
+    # upstream changes in coralogix/documentation. To bump, review the diff
+    # at https://github.com/coralogix/documentation/commits/master/.github/workflows/tw-doc-review.yml
+    # then update both the SHA and the trailing date comment.
+    uses: coralogix/documentation/.github/workflows/tw-doc-review.yml@1bd3ba3219547e9461cc0fec2335857e8bde6f0e  # 2026-05-19
+    permissions: {}
+    with:
+      doc_paths: "README.md docs/*.md"
+      shadow: true
+    # Forward only the one secret the reusable workflow declares
+    # (ANTHROPIC_API_KEY). Avoid `secrets: inherit` so an upstream change
+    # cannot pull additional secrets out of this repo.
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

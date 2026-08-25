@@ -94,3 +94,5 @@ mod users;
 mod views;
 #[path = "e2e/webhooks.rs"]
 mod webhooks;
+#[path = "e2e/whoami.rs"]
+mod whoami;

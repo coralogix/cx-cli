@@ -34,10 +34,14 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap_complete::aot::Shell;
+use colored::Colorize;
 use inquire::{Select, Text};
 
+use crate::api_client::CxClient;
+use crate::banner;
 use crate::commands::{completions, profiles, skills};
-use crate::config::{has_managed_completions, list_profile_names};
+use crate::config::{self, has_managed_completions, list_profile_names};
+use crate::identity;
 
 /// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
@@ -111,7 +115,20 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         println!("A Coralogix profile is already configured - skipping profile setup.");
     }
 
-    // ── Step 2: skills ──────────────────────────────────────────────────────────
+    // ── Step 2: verify credentials ────────────────────────────────────────────────
+    // A deterministic "your setup works" check: one cheap authenticated call
+    // (`GET /identity/whoami`) with the resolved credentials, before the slower
+    // skills / completions steps so a bad key or wrong region fails fast instead
+    // of surfacing on the user's first real query. On failure this returns an
+    // error, so `cx init` exits non-zero — the definitive signal a coding agent
+    // needs. The profile stays on disk so the user can fix it with
+    // `cx profiles add --force` (or by editing the region) and re-run.
+    //
+    // Verifies the default profile: on a fresh machine that is the profile we
+    // just created; on a re-run it is whatever the user already had configured.
+    let identity = verify_credentials().await?;
+
+    // ── Step 3: skills ──────────────────────────────────────────────────────────
     // Idempotent, like the profile step: if cx skills are already installed,
     // skip rather than reinstall (`skip_if_installed`). Updating is the
     // explicit command's job (`cx skills install` reinstalls to pull the
@@ -141,7 +158,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         }
     }
 
-    // ── Step 3: shell completions ─────────────────────────────────────────────────
+    // ── Step 4: shell completions ─────────────────────────────────────────────────
     // Idempotent, like the profile and skills steps: if cx already tracks an
     // installed completion, skip the step entirely - no prompt, no rewrite - so
     // re-running `cx init` stays quiet. Add another shell or reinstall later
@@ -170,7 +187,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     }
 
     // ── Done ────────────────────────────────────────────────────────────────────
-    print_success();
+    print_success(&identity);
     Ok(())
 }
 
@@ -220,9 +237,65 @@ fn prompt_completions_shell() -> Result<Option<(Shell, Option<PathBuf>)>> {
     Ok(selection)
 }
 
-fn print_success() {
-    println!("\ncx is ready to go.");
+/// Run the end-of-setup authenticated health check against the default profile.
+///
+/// Resolves the default profile (the one just created on a fresh machine, or the
+/// user's existing default on a re-run) into a client and runs the shared
+/// [`identity::verify_identity`] probe. On failure returns an error naming the
+/// likely fix right away, so `cx init` fails fast and exits non-zero. On success
+/// returns the identity summary so the caller can confirm it at the very end of
+/// the command, rather than mid-flow.
+async fn verify_credentials() -> Result<String> {
+    let cfg = config::resolve(None, None, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("could not load the profile to verify it: {e:#}"))?;
+    let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
+    let whoami = identity::verify_identity(&client).await?;
+
+    let user = whoami.user_name.as_deref().unwrap_or("unknown user");
+    let team = match whoami.team_name.as_deref() {
+        Some(name) => format!(" on team \"{name}\""),
+        // Fall back to the id only when the team has no name to show.
+        None => whoami
+            .team_id
+            .map(|id| format!(" on team id {id}"))
+            .unwrap_or_default(),
+    };
+    Ok(format!("{user}{team}"))
+}
+
+/// Coralogix brand green, used for the "Connected!" confirmation box.
+const GREEN: (u8, u8, u8) = (37, 222, 179);
+
+/// Left-aligned green box confirming the verified identity, e.g.
+/// `✓ Connected as alice@example.com on team "c4c" (id 53623)`. Merges the
+/// "connected" signal with the who/team it resolved into one element.
+fn print_connected_box(identity: &str) {
+    let (r, g, b) = GREEN;
+    // Fixed-width interior so the box borders line up regardless of glyph bytes.
+    let interior = format!(" ✓ Connected as {identity} ");
+    let width = interior.chars().count();
+
+    let top = format!("┌{}┐", "─".repeat(width));
+    let mid = format!("│{interior}│");
+    let bot = format!("└{}┘", "─".repeat(width));
+    println!("{}", top.truecolor(r, g, b));
+    println!("{}", mid.truecolor(r, g, b));
+    println!("{}", bot.truecolor(r, g, b));
+}
+
+/// Final success output, printed once at the very end of a clean `cx init`:
+/// the left-aligned `--help` logo, then a green box confirming the verified
+/// identity, then the "ready to go" hints. `identity` is the caller summary
+/// from [`verify_credentials`].
+fn print_success(identity: &str) {
+    // Blank line, then the shared `--help` logo (left-aligned, green gradient).
+    println!("\n{}", banner::render_logo());
+    println!();
+    print_connected_box(identity);
+    println!();
     println!("Try it out:");
     println!("  cx logs 'source logs | limit 10'");
+    println!("  cx whoami        # confirm your credentials anytime");
     println!("  cx schema        # discover every command as JSON");
 }

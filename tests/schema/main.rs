@@ -21,7 +21,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 33, "expected 33 top-level commands");
+    assert_eq!(commands.len(), 34, "expected 34 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()
@@ -51,6 +51,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     );
     assert!(names.contains(&"skills"), "missing skills");
     assert!(names.contains(&"init"), "missing init");
+    assert!(names.contains(&"whoami"), "missing whoami");
 
     // Verify old commands are gone
     assert!(

@@ -75,6 +75,7 @@ Agent:
 
 Local:
   profiles           Manage profiles (list, add, delete, set-default)
+  whoami             Verify credentials and show the authenticated identity
   skills             Install or update the cx agent skills for coding agents
   cleanup            Remove stale temp files
 ```

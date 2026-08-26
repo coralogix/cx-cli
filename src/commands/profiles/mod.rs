@@ -586,8 +586,8 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     }
 
     // Record the onboarded user. Best-effort and silent — see
-    // `maybe_report_onboarding`.
-    maybe_report_onboarding(&name).await;
+    // `report_onboarding`.
+    report_onboarding(&name).await;
 
     let cx_dir = crate::config::config_dir()?;
     println!(
@@ -609,7 +609,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 /// rejects, a transient error) is swallowed silently: onboarding is invisible
 /// telemetry and must never affect the outcome of `cx profiles add` (or the
 /// `cx init` that wraps it).
-async fn maybe_report_onboarding(name: &str) {
+async fn report_onboarding(name: &str) {
     let Ok(cfg) = crate::config::resolve(Some(name), None, None).await else {
         return;
     };
@@ -619,7 +619,14 @@ async fn maybe_report_onboarding(name: &str) {
     let Ok(client) = CxClient::new(&cfg.endpoint, &cfg.api_key) else {
         return;
     };
-    let _ = api::report_onboarded(&client).await;
+    // Bound the request: the shared client carries no request timeout, so a
+    // gateway that accepts the connection but stalls the response would
+    // otherwise hang setup. A stall is swallowed like any other failure.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        api::report_onboarded(&client),
+    )
+    .await;
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────

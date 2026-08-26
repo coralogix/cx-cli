@@ -1,16 +1,9 @@
-//! HTTP client for the cx-cli onboarding service (FORGE-876).
+//! HTTP client for the cx-cli onboarding service.
 //!
-//! A single `POST /api/v2/onboarding` that records the calling user as
-//! onboarded. The endpoint takes no body and returns `204` on success; it is
-//! idempotent, so re-running `cx init` simply re-marks an already-onboarded
-//! user. Identity comes from the auth context the gateway injects — the service
-//! reads no request body.
-//!
-//! The call is best-effort for every auth kind: `cx init` reports onboarding
-//! with whatever bearer token the resolved profile carries (OAuth or API key),
-//! since API-key/agent onboardings are part of the population we track. If the
-//! service rejects a given token kind, the caller swallows the error (see
-//! `maybe_report_onboarding` in `mod.rs`).
+//! A single `POST /api/v2/onboarding` marking the caller as onboarded: no body,
+//! `204` on success, idempotent. Identity comes from the auth context the
+//! gateway injects. Best-effort — the caller swallows any error (see
+//! `report_onboarding` in `mod.rs`).
 
 use anyhow::Result;
 use serde_json::Value;

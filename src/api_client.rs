@@ -51,6 +51,13 @@ impl CxClient {
         })
     }
 
+    /// The normalized base endpoint this client sends requests to (no trailing
+    /// slash). Used for diagnostics — e.g. naming the endpoint in the
+    /// health-check error when a region/URL looks wrong.
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
     /// POST JSON body, return the raw response text.
     /// Used for NDJSON / streaming endpoints (e.g. DataPrime query).
     pub async fn post_raw(&self, path: &str, body: &Value) -> Result<String> {

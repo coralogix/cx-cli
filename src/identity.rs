@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use serde::Deserialize;
 
 use crate::api_client::CxClient;
+use crate::error::CxError;
 
 const WHOAMI_BASE: &str = "/identity/whoami";
 
@@ -17,6 +18,45 @@ pub struct Whoami {
     /// [`resolve_team_url`]) to build "View in Coralogix" console links.
     #[serde(default)]
     pub team_url: Option<String>,
+}
+
+/// Run the end-of-setup authenticated health check: a single cheap
+/// `GET /identity/whoami` call that proves the resolved credentials and
+/// region/endpoint actually work together, returning the caller's identity.
+///
+/// `/identity/whoami` is the ideal probe: it is readable by every API key
+/// regardless of scopes (so it never false-fails on a valid key that merely
+/// lacks a scope), works for both API-key and OAuth auth, and returns the
+/// team/user identity for a definitive "authenticated as ..." success signal.
+///
+/// On failure the underlying [`CxError`] is mapped to guidance that names the
+/// likely fix — invalid credentials vs. a wrong region/endpoint — so `cx init`
+/// reports a precise, actionable message. Shared so a future `cx doctor` can
+/// reuse the same probe with machine-readable output.
+pub async fn verify_identity(client: &CxClient) -> anyhow::Result<Whoami> {
+    client
+        .get::<Whoami>(WHOAMI_BASE, &[])
+        .await
+        .map_err(|err| classify_health_error(client, err))
+}
+
+/// Turn a raw [`CxError`] from the health-check ping into an actionable message.
+///
+/// The two failure modes worth distinguishing at setup time are bad
+/// credentials (401) and an unreachable endpoint (wrong region / URL, DNS,
+/// TLS, timeout). Everything else (rate limits, transient 5xx) is surfaced
+/// verbatim — its own `Display` is already specific enough.
+fn classify_health_error(client: &CxClient, err: CxError) -> anyhow::Error {
+    match err {
+        // `CxError::Auth`'s message already names the fix (`cx profiles add`).
+        CxError::Auth(msg) => anyhow!("authentication failed — {msg}"),
+        // Connection-level failures point at the region/URL, not the key.
+        CxError::Http(e) if e.is_connect() || e.is_timeout() || e.is_request() => anyhow!(
+            "could not reach {} — the region or URL may be incorrect ({e})",
+            client.endpoint()
+        ),
+        other => anyhow!("{other}"),
+    }
 }
 
 /// Resolve the team ID for the current API key via `GET /identity/whoami`.
@@ -154,6 +194,71 @@ mod tests {
 
         let client = CxClient::new(server.uri(), "test-key").unwrap();
         assert_eq!(resolve_team_url(&client).await, None);
+    }
+
+    #[tokio::test]
+    async fn verify_identity_returns_whoami_on_success() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "team_id": 53623,
+                "team_name": "c4c",
+                "user_name": "alice@example.com"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = CxClient::new(server.uri(), "test-key").unwrap();
+        let whoami = verify_identity(&client)
+            .await
+            .expect("whoami should succeed");
+        assert_eq!(whoami.team_id, Some(53623));
+        assert_eq!(whoami.user_name.as_deref(), Some("alice@example.com"));
+    }
+
+    /// A 401 is classified as an authentication failure with actionable text.
+    #[tokio::test]
+    async fn verify_identity_classifies_auth_failure() {
+        install_rustls_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/identity/whoami"))
+            .respond_with(
+                ResponseTemplate::new(401)
+                    .set_body_json(serde_json::json!({ "message": "invalid token" })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = CxClient::new(server.uri(), "bad-key").unwrap();
+        let err = verify_identity(&client)
+            .await
+            .expect_err("401 should be an error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("authentication failed"),
+            "expected auth classification, got: {msg}"
+        );
+    }
+
+    /// An unreachable endpoint (connection refused) is classified as a
+    /// region/URL problem and names the endpoint we tried.
+    #[tokio::test]
+    async fn verify_identity_classifies_unreachable_endpoint() {
+        install_rustls_provider();
+        // Port 1 is reserved and refuses connections — a fast, deterministic
+        // stand-in for a wrong region/URL.
+        let client = CxClient::new("http://127.0.0.1:1", "test-key").unwrap();
+        let err = verify_identity(&client)
+            .await
+            .expect_err("connection refused should be an error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("could not reach") && msg.contains("127.0.0.1:1"),
+            "expected region/URL classification naming the endpoint, got: {msg}"
+        );
     }
 
     #[tokio::test]

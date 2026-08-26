@@ -34,10 +34,15 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap_complete::aot::Shell;
+use colored::Colorize;
 use inquire::{Select, Text};
 
+use crate::api_client::CxClient;
+use crate::banner;
 use crate::commands::{completions, profiles, skills};
-use crate::config::{has_managed_completions, list_profile_names};
+use crate::config::{self, has_managed_completions, list_profile_names};
+use crate::identity;
+use crate::region::{region_from_url, RegionMatch};
 
 /// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
@@ -111,7 +116,22 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         println!("A Coralogix profile is already configured - skipping profile setup.");
     }
 
-    // ── Step 2: skills ──────────────────────────────────────────────────────────
+    // ── Step 2: verify credentials ────────────────────────────────────────────────
+    // A deterministic "your setup works" check: one cheap authenticated call
+    // (`GET /identity/whoami`) with the resolved credentials, before the slower
+    // skills / completions steps so a bad key or wrong region fails fast instead
+    // of surfacing on the user's first real query. On failure this returns an
+    // error, so `cx init` exits non-zero — the definitive signal a coding agent
+    // needs. The profile stays on disk so the user can fix it with
+    // `cx profiles add --force` (or by editing the region) and re-run.
+    //
+    // Verifies the default profile: on a fresh machine that is the profile we
+    // just created; on a re-run it is whatever the user already had configured.
+    // Custom / BYOC endpoints skip the probe (returns `false`) — see
+    // `verify_credentials` — since they may not expose the whoami route.
+    let verified = verify_credentials().await?;
+
+    // ── Step 3: skills ──────────────────────────────────────────────────────────
     // Idempotent, like the profile step: if cx skills are already installed,
     // skip rather than reinstall (`skip_if_installed`). Updating is the
     // explicit command's job (`cx skills install` reinstalls to pull the
@@ -141,7 +161,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         }
     }
 
-    // ── Step 3: shell completions ─────────────────────────────────────────────────
+    // ── Step 4: shell completions ─────────────────────────────────────────────────
     // Idempotent, like the profile and skills steps: if cx already tracks an
     // installed completion, skip the step entirely - no prompt, no rewrite - so
     // re-running `cx init` stays quiet. Add another shell or reinstall later
@@ -170,7 +190,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     }
 
     // ── Done ────────────────────────────────────────────────────────────────────
-    print_success();
+    print_success(verified);
     Ok(())
 }
 
@@ -220,8 +240,78 @@ fn prompt_completions_shell() -> Result<Option<(Shell, Option<PathBuf>)>> {
     Ok(selection)
 }
 
-fn print_success() {
-    println!("\ncx is ready to go.");
+/// Run the end-of-setup authenticated health check against the default profile.
+///
+/// Resolves the default profile (the one just created on a fresh machine, or the
+/// user's existing default on a re-run) into a client and runs the shared
+/// [`identity::verify_identity`] probe. On failure returns an error naming the
+/// likely fix right away, so `cx init` fails fast and exits non-zero.
+///
+/// Returns `Ok(true)` when the probe ran and succeeded, and `Ok(false)` when it
+/// was **skipped for a custom / BYOC / private-link endpoint** (any URL that
+/// doesn't resolve to a known Coralogix region): a self-hosted deployment may
+/// not expose `GET /identity/whoami` even when its query APIs work, so failing
+/// onboarding there would be a false negative. The caller reports the skip
+/// instead of the "Connected" box.
+async fn verify_credentials() -> Result<bool> {
+    let cfg = config::resolve(None, None, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("could not load the profile to verify it: {e:#}"))?;
+
+    // Only known regions are guaranteed to serve the whoami health-check route.
+    if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
+        return Ok(false);
+    }
+
+    let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
+    // The identity payload isn't shown; the probe succeeding is the signal.
+    identity::verify_identity(&client).await?;
+    Ok(true)
+}
+
+/// Coralogix brand green, used for the "Connected" confirmation box.
+const GREEN: (u8, u8, u8) = (37, 222, 179);
+
+/// Left-aligned green `✓ Connected` box — the definitive "your credentials
+/// work" signal at the end of a verified `cx init`.
+fn print_connected_box() {
+    let (r, g, b) = GREEN;
+    // Fixed-width interior so the box borders line up regardless of glyph bytes.
+    let interior = " ✓ Connected ";
+    let width = interior.chars().count();
+
+    let top = format!("┌{}┐", "─".repeat(width));
+    let mid = format!("│{interior}│");
+    let bot = format!("└{}┘", "─".repeat(width));
+    println!("{}", top.truecolor(r, g, b));
+    println!("{}", mid.truecolor(r, g, b));
+    println!("{}", bot.truecolor(r, g, b));
+}
+
+/// Final success output, printed once at the very end of a clean `cx init`:
+/// the left-aligned `--help` logo, then a green box confirming the setup, then
+/// the "ready to go" hints. `verified` is the outcome from [`verify_credentials`]:
+/// `true` shows the `✓ Connected` box; `false` means verification was skipped
+/// (a custom / BYOC endpoint), replaced by a note that the check didn't run.
+fn print_success(verified: bool) {
+    // The decorative logo is for humans only: gate it on the same condition as
+    // the startup banner (interactive TTY, color enabled, not an agent) so a
+    // coding agent running `cx init` gets the plain confirmation + hints
+    // without the ASCII art. Callers/agents still get the definitive signal.
+    if banner::should_show() {
+        // Blank line, then the shared `--help` logo (left-aligned, green gradient).
+        println!("\n{}", banner::render_logo());
+    }
+    println!();
+    if verified {
+        print_connected_box();
+    } else {
+        // Custom / BYOC endpoint: we didn't probe the identity route, so don't
+        // claim a verified setup — just say plainly that the automatic check
+        // didn't run (the endpoint may not expose that route at all).
+        println!("Profile configured. Skipped the automatic credential check");
+    }
+    println!();
     println!("Try it out:");
     println!("  cx logs 'source logs | limit 10'");
     println!("  cx schema        # discover every command as JSON");

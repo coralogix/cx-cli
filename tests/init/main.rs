@@ -1,14 +1,23 @@
 //! Integration tests for `cx init` (FORGE-658).
 //!
-//! `cx init` chains `cx profiles add` and `cx skills install`. These tests
+//! `cx init` chains `cx profiles add`, an authenticated health check
+//! (`GET /identity/whoami`, FORGE-660), and `cx skills install`. These tests
 //! drive the non-interactive (advanced) path — the coding-agent one-liner — so
-//! no terminal, Node.js, or network is required: the skills installer is a fake
-//! `npx` on PATH that records its arguments, exactly as the skills tests do.
+//! no terminal or Node.js is required: the skills installer is a fake `npx` on
+//! PATH that records its arguments, exactly as the skills tests do.
+//!
+//! Tests point `--url` at a `wiremock` server. Its `127.0.0.1` address is not a
+//! known Coralogix region, so `cx init` treats it as a custom endpoint and
+//! skips the health check. Most tests therefore exercise the profile/skills
+//! chain; the two `*_custom_endpoint*` tests assert the probe is skipped (the
+//! identity route receives zero requests).
 
 use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -19,6 +28,15 @@ fn temp_dir(tag: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// Start a mock server purely to supply a reachable `--url`. Its `127.0.0.1`
+/// address is not a known Coralogix region, so `cx init` classifies it as a
+/// custom endpoint and skips the credential check — the identity route is never
+/// called. Returns the server (keep it alive) so `server.uri()` can be passed
+/// as `--url`.
+async fn custom_endpoint_server() -> MockServer {
+    MockServer::start().await
 }
 
 /// A `cx` command hermetically sealed off from the developer's real home,
@@ -62,11 +80,12 @@ fn profile_path(home: &Path, name: &str) -> PathBuf {
         .join(format!("{name}.toml"))
 }
 
-// ── Advanced (non-interactive) profile + skills chain ─────────────────────────
+// ── Advanced (non-interactive) profile + verify + skills chain ─────────────────
 
 #[cfg(unix)]
-#[test]
-fn init_writes_profile_then_installs_skills() {
+#[tokio::test]
+async fn init_writes_profile_then_installs_skills() {
+    let server = custom_endpoint_server().await;
     let home = temp_dir("chain");
     let bin = temp_dir("chain_bin");
     let args_file = bin.join("args.txt");
@@ -76,7 +95,7 @@ fn init_writes_profile_then_installs_skills() {
         .args([
             "init",
             "--url",
-            "https://team.app.us1.coralogix.com",
+            &server.uri(),
             "--api-key",
             "faketoken",
             "--global-skills",
@@ -87,7 +106,6 @@ fn init_writes_profile_then_installs_skills() {
     // Step 1: profile written with the quick-setup defaults (file + json).
     let toml = fs::read_to_string(profile_path(&home, "default")).unwrap();
     assert!(toml.contains("auth = \"api_key\""), "profile: {toml}");
-    assert!(toml.contains("region = \"us1\""), "profile: {toml}");
     assert!(
         toml.contains("credential_storage = \"file\""),
         "quick setup pins file storage: {toml}"
@@ -105,9 +123,118 @@ fn init_writes_profile_then_installs_skills() {
     );
 }
 
+/// A custom / BYOC endpoint (any URL that doesn't resolve to a known Coralogix
+/// region) skips the health check entirely: such deployments may not expose
+/// `GET /identity/whoami`, so probing it would be a false negative. Since the
+/// wiremock URL is itself a custom endpoint, we assert the route is never hit,
+/// init still succeeds, and the user is told the check was skipped.
 #[cfg(unix)]
-#[test]
-fn init_agents_flag_reaches_the_installer() {
+#[tokio::test]
+async fn init_skips_verification_for_custom_endpoint() {
+    let server = MockServer::start().await;
+    // Mounted so any stray call is answerable, but it must receive zero hits.
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "team_id": 53623,
+            "user_name": "agent@example.com"
+        })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = temp_dir("verify");
+    let bin = temp_dir("verify_bin");
+    install_fake_npx(&bin, &bin.join("args.txt"));
+
+    let output = cx(&home, &bin)
+        .args([
+            "init",
+            "--url",
+            &server.uri(),
+            "--api-key",
+            "faketoken",
+            "--global-skills",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(
+        output.status.success(),
+        "init should succeed for a custom endpoint (verification skipped)"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Skipped the automatic credential check"),
+        "expected the skip notice for a custom endpoint, stdout: {stdout}"
+    );
+    // No identity probe was issued against the custom endpoint.
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        0,
+        "the whoami health check must not run for a custom endpoint"
+    );
+}
+
+/// The bot's scenario (FORGE-660 review): a custom endpoint whose identity
+/// route would error must NOT block onboarding. Because the probe is skipped
+/// before any call, even a 401-returning identity route never runs — init
+/// succeeds, writes the profile, and proceeds to the skills step.
+#[cfg(unix)]
+#[tokio::test]
+async fn init_custom_endpoint_does_not_block_on_identity_route() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(
+            ResponseTemplate::new(401).set_body_json(serde_json::json!({ "message": "bad key" })),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = temp_dir("verifyfail");
+    let bin = temp_dir("verifyfail_bin");
+    let args_file = bin.join("args.txt");
+    install_fake_npx(&bin, &args_file);
+
+    let output = cx(&home, &bin)
+        .args([
+            "init",
+            "--url",
+            &server.uri(),
+            "--api-key",
+            "faketoken",
+            "--global-skills",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(
+        output.status.success(),
+        "a custom endpoint must not fail onboarding on the identity route"
+    );
+    // The profile is written and the skills step still runs.
+    assert!(
+        profile_path(&home, "default").exists(),
+        "profile must be written for a custom endpoint"
+    );
+    assert!(
+        args_file.exists(),
+        "the skills installer must run after a skipped verification"
+    );
+    // The identity route was never probed.
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        0,
+        "the whoami health check must not run for a custom endpoint"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn init_agents_flag_reaches_the_installer() {
+    let server = custom_endpoint_server().await;
     let home = temp_dir("agents");
     let bin = temp_dir("agents_bin");
     let args_file = bin.join("args.txt");
@@ -116,8 +243,8 @@ fn init_agents_flag_reaches_the_installer() {
     cx(&home, &bin)
         .args([
             "init",
-            "--region",
-            "eu2",
+            "--url",
+            &server.uri(),
             "--api-key",
             "k",
             "--global-skills",
@@ -139,15 +266,23 @@ fn init_agents_flag_reaches_the_installer() {
 // ── --no-skills skips the installer entirely ──────────────────────────────────
 
 #[cfg(unix)]
-#[test]
-fn init_no_skills_skips_the_installer() {
+#[tokio::test]
+async fn init_no_skills_skips_the_installer() {
+    let server = custom_endpoint_server().await;
     let home = temp_dir("noskills");
     let bin = temp_dir("noskills_bin");
     let args_file = bin.join("args.txt");
     install_fake_npx(&bin, &args_file);
 
     cx(&home, &bin)
-        .args(["init", "--region", "eu2", "--api-key", "k", "--no-skills"])
+        .args([
+            "init",
+            "--url",
+            &server.uri(),
+            "--api-key",
+            "k",
+            "--no-skills",
+        ])
         .assert()
         .success();
 
@@ -167,14 +302,15 @@ fn init_no_skills_skips_the_installer() {
 /// so the skills step fails inside the skills command — but init downgrades
 /// that to a warning and still succeeds, having written the profile.
 #[cfg(unix)]
-#[test]
-fn init_without_scope_warns_but_succeeds() {
+#[tokio::test]
+async fn init_without_scope_warns_but_succeeds() {
+    let server = custom_endpoint_server().await;
     let home = temp_dir("noscope");
     let bin = temp_dir("noscope_bin");
     install_fake_npx(&bin, &bin.join("args.txt"));
 
     let output = cx(&home, &bin)
-        .args(["init", "--region", "eu2", "--api-key", "k"])
+        .args(["init", "--url", &server.uri(), "--api-key", "k"])
         .output()
         .expect("failed to run cx");
 
@@ -195,16 +331,17 @@ fn init_without_scope_warns_but_succeeds() {
 
 /// npx missing → the skills step fails, but onboarding still succeeds.
 #[cfg(unix)]
-#[test]
-fn init_without_npx_warns_but_succeeds() {
+#[tokio::test]
+async fn init_without_npx_warns_but_succeeds() {
+    let server = custom_endpoint_server().await;
     let home = temp_dir("nonpx");
     let empty_path = temp_dir("nonpx_path"); // no npx on PATH
 
     let output = cx(&home, &empty_path)
         .args([
             "init",
-            "--region",
-            "eu2",
+            "--url",
+            &server.uri(),
             "--api-key",
             "k",
             "--global-skills",
@@ -230,19 +367,20 @@ fn init_without_npx_warns_but_succeeds() {
 /// step (leaving the existing profile untouched) and still run the skills
 /// install. This is what makes `cx init` safe to re-run.
 #[cfg(unix)]
-#[test]
-fn init_skips_profile_setup_when_one_already_exists() {
+#[tokio::test]
+async fn init_skips_profile_setup_when_one_already_exists() {
+    let server = custom_endpoint_server().await;
     let home = temp_dir("idempotent");
     let bin = temp_dir("idempotent_bin");
     let args_file = bin.join("args.txt");
     install_fake_npx(&bin, &args_file);
 
-    // First run creates the default profile (region us1).
+    // First run creates the default profile pointing at the mock endpoint.
     cx(&home, &bin)
         .args([
             "init",
             "--url",
-            "https://team.app.us1.coralogix.com",
+            &server.uri(),
             "--api-key",
             "first",
             "--global-skills",
@@ -251,13 +389,13 @@ fn init_skips_profile_setup_when_one_already_exists() {
         .success();
     let _ = fs::remove_file(&args_file); // so we can prove skills ran the 2nd time
 
-    // Second run supplies different credentials/region, but the existing
-    // profile must win: init skips profile setup entirely.
+    // Second run supplies different credentials, but the existing profile must
+    // win: init skips profile setup entirely.
     let output = cx(&home, &bin)
         .args([
             "init",
-            "--region",
-            "eu2",
+            "--url",
+            &server.uri(),
             "--api-key",
             "second",
             "--global-skills",
@@ -271,10 +409,10 @@ fn init_skips_profile_setup_when_one_already_exists() {
         "expected a skip notice on the second run, stdout: {stdout}"
     );
 
-    // The profile is unchanged — still region us1 with the first key.
+    // The profile is unchanged — still the first key.
     let toml = fs::read_to_string(profile_path(&home, "default")).unwrap();
     assert!(
-        toml.contains("region = \"us1\"") && toml.contains("first"),
+        toml.contains("first"),
         "existing profile must not be overwritten: {toml}"
     );
 
@@ -288,9 +426,10 @@ fn init_skips_profile_setup_when_one_already_exists() {
 /// When cx skills are already installed, init skips the skills step (idempotent)
 /// rather than reinstalling — updating is `cx skills install`'s job.
 #[cfg(unix)]
-#[test]
-fn init_skips_skills_when_already_installed() {
+#[tokio::test]
+async fn init_skips_skills_when_already_installed() {
     use std::os::unix::fs::PermissionsExt;
+    let server = custom_endpoint_server().await;
     let home = temp_dir("skills_present");
     let bin = temp_dir("skills_present_bin");
     let args_file = bin.join("args.txt");
@@ -311,8 +450,8 @@ fn init_skips_skills_when_already_installed() {
     let output = cx(&home, &bin)
         .args([
             "init",
-            "--region",
-            "eu2",
+            "--url",
+            &server.uri(),
             "--api-key",
             "k",
             "--global-skills",

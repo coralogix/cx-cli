@@ -3,6 +3,7 @@ use std::io::IsTerminal;
 use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
+use crate::api_client::CxClient;
 use crate::config::{
     has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
     save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
@@ -10,6 +11,8 @@ use crate::config::{
 use crate::keyring_store;
 use crate::oauth;
 use crate::region::{region_from_url, RegionMatch};
+
+mod api;
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 
@@ -582,6 +585,10 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         }
     }
 
+    // Record the onboarded user. Best-effort and silent — see
+    // `maybe_report_onboarding`.
+    maybe_report_onboarding(&name).await;
+
     let cx_dir = crate::config::config_dir()?;
     println!(
         "\nProfile '{name}' saved to {}\nCredentials stored in {storage_desc}",
@@ -589,6 +596,30 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     );
     hint_completions_refresh();
     Ok(())
+}
+
+/// Best-effort onboarding recording for the profile just saved (FORGE-876).
+///
+/// Resolves the named profile and calls `POST /api/v2/onboarding` to mark the
+/// user as onboarded, for every auth kind: API-key/agent onboardings are part of
+/// the population we track, so this is deliberately not restricted to OAuth.
+/// Gated to known regions — a custom / BYOC endpoint won't expose the route.
+///
+/// Any failure (service not yet deployed to the region, a token the service
+/// rejects, a transient error) is swallowed silently: onboarding is invisible
+/// telemetry and must never affect the outcome of `cx profiles add` (or the
+/// `cx init` that wraps it).
+async fn maybe_report_onboarding(name: &str) {
+    let Ok(cfg) = crate::config::resolve(Some(name), None, None).await else {
+        return;
+    };
+    if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
+        return;
+    }
+    let Ok(client) = CxClient::new(&cfg.endpoint, &cfg.api_key) else {
+        return;
+    };
+    let _ = api::report_onboarded(&client).await;
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────

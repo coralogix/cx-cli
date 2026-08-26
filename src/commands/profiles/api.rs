@@ -6,9 +6,11 @@
 //! user. Identity comes from the auth context the gateway injects — the service
 //! reads no request body.
 //!
-//! The route requires a *user token*: the platform rejects team API keys and
-//! service tokens with `403`. `cx init` therefore only calls this for OAuth
-//! profiles (see the caller in `mod.rs`), where the bearer token is user-scoped.
+//! The call is best-effort for every auth kind: `cx init` reports onboarding
+//! with whatever bearer token the resolved profile carries (OAuth or API key),
+//! since API-key/agent onboardings are part of the population we track. If the
+//! service rejects a given token kind, the caller swallows the error (see
+//! `maybe_report_onboarding` in `mod.rs`).
 
 use anyhow::Result;
 use serde_json::Value;

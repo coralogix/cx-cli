@@ -40,9 +40,11 @@ use inquire::{Select, Text};
 use crate::api_client::CxClient;
 use crate::banner;
 use crate::commands::{completions, profiles, skills};
-use crate::config::{self, has_managed_completions, list_profile_names};
+use crate::config::{self, has_managed_completions, list_profile_names, AuthKind};
 use crate::identity;
 use crate::region::{region_from_url, RegionMatch};
+
+mod api;
 
 /// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
@@ -130,6 +132,16 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     // Custom / BYOC endpoints skip the probe (returns `false`) — see
     // `verify_credentials` — since they may not expose the whoami route.
     let verified = verify_credentials().await?;
+
+    // ── Step 2b: record onboarding (OAuth only, best-effort) ──────────────────────
+    // Additionally mark this user as onboarded via the onboarding service
+    // (`POST /api/v2/onboarding`, FORGE-876). Credential verification is owned
+    // by the `whoami` probe above; this call is purely for recording onboarding.
+    // It runs only for OAuth profiles, whose bearer token is user-scoped — the
+    // endpoint requires a user token and rejects team API keys. It is fully
+    // best-effort and silent: a failure (service not yet deployed to the region,
+    // a transient error) must never fail an otherwise-verified setup.
+    maybe_report_onboarding().await;
 
     // ── Step 3: skills ──────────────────────────────────────────────────────────
     // Idempotent, like the profile step: if cx skills are already installed,
@@ -267,6 +279,34 @@ async fn verify_credentials() -> Result<bool> {
     // The identity payload isn't shown; the probe succeeding is the signal.
     identity::verify_identity(&client).await?;
     Ok(true)
+}
+
+/// Best-effort onboarding recording for the default profile (FORGE-876).
+///
+/// Calls `POST /api/v2/onboarding` to mark the user as onboarded, but only when
+/// the resolved profile authenticates via OAuth: the endpoint requires a
+/// user-scoped token and rejects team API keys, so calling it for an API-key
+/// profile would only ever 403. Gated to known regions for the same reason
+/// [`verify_credentials`] is — a custom / BYOC endpoint won't expose the route.
+///
+/// Any failure (service not yet deployed to the region, non-user token, a
+/// transient error) is swallowed silently: onboarding is invisible telemetry,
+/// and credential verification is already owned by [`verify_credentials`], so a
+/// failure here must never affect the outcome of `cx init`.
+async fn maybe_report_onboarding() {
+    let Ok(cfg) = config::resolve(None, None, None).await else {
+        return;
+    };
+    if cfg.auth_kind != AuthKind::OAuth {
+        return;
+    }
+    if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
+        return;
+    }
+    let Ok(client) = CxClient::new(&cfg.endpoint, &cfg.api_key) else {
+        return;
+    };
+    let _ = api::report_onboarded(&client).await;
 }
 
 /// Coralogix brand green, used for the "Connected" confirmation box.

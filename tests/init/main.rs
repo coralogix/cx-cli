@@ -1,7 +1,9 @@
 //! Integration tests for `cx init` (FORGE-658).
 //!
 //! `cx init` chains `cx profiles add`, an authenticated health check
-//! (`GET /identity/whoami`, FORGE-660), and `cx skills install`. These tests
+//! (`GET /identity/whoami`, FORGE-660), a best-effort onboarding recording for
+//! OAuth profiles (`POST /api/v2/onboarding`, FORGE-876), and `cx skills
+//! install`. These tests
 //! drive the non-interactive (advanced) path — the coding-agent one-liner — so
 //! no terminal or Node.js is required: the skills installer is a fake `npx` on
 //! PATH that records its arguments, exactly as the skills tests do.
@@ -228,6 +230,47 @@ async fn init_custom_endpoint_does_not_block_on_identity_route() {
         server.received_requests().await.unwrap().len(),
         0,
         "the whoami health check must not run for a custom endpoint"
+    );
+}
+
+/// The onboarding recording (`POST /api/v2/onboarding`, FORGE-876) must never
+/// fire on the standard init path exercised here: these tests use an API-key
+/// profile against a custom (non-region) endpoint, and the call is gated to
+/// OAuth profiles on known regions. So the route must receive zero hits, and
+/// init must still succeed. (The POST's own behavior is unit-tested in
+/// `src/commands/init/api.rs`; a true-positive here would need a known-region
+/// host resolving to a local mock, which the harness cannot fake.)
+#[cfg(unix)]
+#[tokio::test]
+async fn init_does_not_report_onboarding_for_api_key_custom_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/onboarding"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = temp_dir("noonboard");
+    let bin = temp_dir("noonboard_bin");
+    install_fake_npx(&bin, &bin.join("args.txt"));
+
+    cx(&home, &bin)
+        .args([
+            "init",
+            "--url",
+            &server.uri(),
+            "--api-key",
+            "faketoken",
+            "--global-skills",
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        0,
+        "the onboarding POST must not run for an API-key / custom-endpoint init"
     );
 }
 

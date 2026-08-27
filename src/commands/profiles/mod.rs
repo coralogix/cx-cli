@@ -598,17 +598,10 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     Ok(())
 }
 
-/// Best-effort onboarding recording for the profile just saved (FORGE-876).
+/// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
 ///
-/// Resolves the named profile and calls `POST /api/v2/onboarding` to mark the
-/// user as onboarded, for every auth kind: API-key/agent onboardings are part of
-/// the population we track, so this is deliberately not restricted to OAuth.
-/// Gated to known regions — a custom / BYOC endpoint won't expose the route.
-///
-/// Any failure (service not yet deployed to the region, a token the service
-/// rejects, a transient error) is swallowed silently: onboarding is invisible
-/// telemetry and must never affect the outcome of `cx profiles add` (or the
-/// `cx init` that wraps it).
+/// Best-effort and silent: gated to known regions, and any failure is swallowed
+/// so it never affects the outcome of `cx profiles add`.
 async fn report_onboarding(name: &str) {
     let Ok(cfg) = crate::config::resolve(Some(name), None, None).await else {
         return;

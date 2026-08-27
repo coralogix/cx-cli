@@ -233,13 +233,8 @@ async fn init_custom_endpoint_does_not_block_on_identity_route() {
     );
 }
 
-/// The onboarding recording (`POST /api/v2/onboarding`, FORGE-876) must never
-/// fire on the standard init path exercised here: these tests run against a
-/// custom (non-region) endpoint, and the call is gated to known regions
-/// regardless of auth kind. So the route must receive zero hits, and init must
-/// still succeed. (The POST's own behavior is unit-tested in
-/// `src/commands/init/api.rs`; a true-positive here would need a known-region
-/// host resolving to a local mock, which the harness cannot fake.)
+/// Onboarding is gated to known regions, so the custom (non-region) endpoint
+/// these tests use must receive zero onboarding hits while init still succeeds.
 #[cfg(unix)]
 #[tokio::test]
 async fn init_does_not_report_onboarding_for_custom_endpoint() {

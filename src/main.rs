@@ -2765,6 +2765,21 @@ Examples:
 enum InfraResourcesCmd {
     /// List the available resource types (category/type pairs).
     Types,
+    /// List the attributes resources can be filtered by.
+    #[command(after_help = "\
+Examples:
+  cx infra resources filters
+  cx infra resources filters --category Hosts
+  cx infra resources filters --category Hosts --type EC2_Instances")]
+    Filters {
+        /// Limit to one category (discover with `cx infra resources types`).
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Limit to one resource type within the category.
+        #[arg(long)]
+        r#type: Option<String>,
+    },
     /// List resources of a given category and type.
     #[command(after_help = "\
 Examples:
@@ -4634,6 +4649,15 @@ async fn main() -> Result<()> {
                 InfraCmd::Resources { cmd } => match cmd {
                     InfraResourcesCmd::Types => {
                         commands::infra::run_types(&targets, output).await?;
+                    }
+                    InfraResourcesCmd::Filters { category, r#type } => {
+                        commands::infra::run_filters(
+                            &targets,
+                            category.as_deref(),
+                            r#type.as_deref(),
+                            output,
+                        )
+                        .await?;
                     }
                     InfraResourcesCmd::List {
                         category,

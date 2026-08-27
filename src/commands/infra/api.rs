@@ -37,6 +37,28 @@ pub struct CategoryType {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GetFiltersResponse {
+    #[serde(default)]
+    pub filters: Vec<FilterDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterDescriptor {
+    pub name: Option<String>,
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub wildcard: bool,
+    /// Absent for an open set; present only for a closed one such as `Health`.
+    #[serde(default)]
+    pub values: Vec<String>,
+    /// Absent when the request pinned a type.
+    #[serde(default)]
+    pub types: Vec<CategoryType>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetResourcesResponse {
     #[serde(default)]
     pub resources: Vec<ResourceData>,
@@ -115,6 +137,24 @@ impl<'a> InfraApi<'a> {
     pub async fn available_types(&self) -> Result<GetAvailableResourceTypesResponse> {
         let path = format!("{BASE_PATH}/types");
         self.client.get(&path, &[]).await
+    }
+
+    /// List the filterable attributes. Narrowest first: both parameters pin one
+    /// type, a category alone spans its types, neither spans everything.
+    pub async fn filters(
+        &self,
+        category: Option<&str>,
+        resource_type: Option<&str>,
+    ) -> Result<GetFiltersResponse> {
+        let mut query: Vec<(&str, &str)> = Vec::new();
+        if let Some(category) = category {
+            query.push(("category", category));
+        }
+        if let Some(resource_type) = resource_type {
+            query.push(("type", resource_type));
+        }
+        let path = format!("{BASE_PATH}/filters");
+        self.client.get(&path, &query).await
     }
 
     /// List resources of a given category and type, with optional name filter,

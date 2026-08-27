@@ -5,7 +5,9 @@ use serde_json::json;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::infra::{run_health_history, run_list, run_raw_data, run_types};
+use coralogix_cli::commands::infra::{
+    run_filters, run_health_history, run_list, run_raw_data, run_types,
+};
 use coralogix_cli::config::OutputFormat;
 
 const BASE: &str = "/mgmt/api/infrastructure/resources/v1";
@@ -110,6 +112,153 @@ async fn types_errors_when_all_profiles_fail() {
 
     let result = run_types(&targets, OutputFormat::Json).await;
     assert!(result.is_err(), "all profiles failing should be an error");
+}
+
+fn filters_body() -> serde_json::Value {
+    json!({
+        "filters": [
+            { "name": "Region", "kind": "string", "wildcard": true },
+            {
+                "name": "Health",
+                "kind": "status",
+                "wildcard": false,
+                "values": ["critical", "healthy", "unmonitored"]
+            }
+        ]
+    })
+}
+
+#[tokio::test]
+async fn filters_sends_both_query_params() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/filters")))
+        .and(query_param("category", "Hosts"))
+        .and(query_param("type", "EC2_Instances"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(filters_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_filters(
+        &targets,
+        Some("Hosts"),
+        Some("EC2_Instances"),
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_filters should send both query params");
+}
+
+#[tokio::test]
+async fn filters_omits_absent_query_params() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/filters")))
+        .and(query_param_is_missing("category"))
+        .and(query_param_is_missing("type"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "filters": [
+                {
+                    "name": "Region",
+                    "kind": "string",
+                    "wildcard": true,
+                    "types": [{ "category": "Hosts", "type": "EC2_Instances" }]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_filters(&targets, None, None, OutputFormat::Json)
+        .await
+        .expect("run_filters should omit both query params when unset");
+}
+
+#[tokio::test]
+async fn filters_accepts_a_category_without_a_type() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/filters")))
+        .and(query_param("category", "Hosts"))
+        .and(query_param_is_missing("type"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(filters_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_filters(&targets, Some("Hosts"), None, OutputFormat::Json)
+        .await
+        .expect("run_filters should accept a category alone");
+}
+
+#[tokio::test]
+async fn filters_renders_an_empty_list_as_text() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/filters")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "filters": [] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_filters(&targets, Some("Hosts"), None, OutputFormat::Text)
+        .await
+        .expect("run_filters should render an empty list without failing");
+}
+
+#[tokio::test]
+async fn filters_merges_multiple_profiles() {
+    let server_a = MockServer::start().await;
+    let server_b = MockServer::start().await;
+
+    for server in [&server_a, &server_b] {
+        Mock::given(method("GET"))
+            .and(path(format!("{BASE}/filters")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(filters_body()))
+            .expect(1)
+            .mount(server)
+            .await;
+    }
+
+    let targets = vec![
+        common::test_target("profile-a", &server_a.uri()),
+        common::test_target("profile-b", &server_b.uri()),
+    ];
+
+    run_filters(&targets, Some("Hosts"), None, OutputFormat::Json)
+        .await
+        .expect("run_filters should merge both profiles");
+}
+
+#[tokio::test]
+async fn filters_rejects_a_blank_category_before_any_request() {
+    let server = MockServer::start().await;
+    // No mocks mounted: a blank --category must fail client-side without HTTP.
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    let err = run_filters(&targets, Some("   "), None, OutputFormat::Json)
+        .await
+        .expect_err("a blank --category should be rejected");
+
+    assert!(
+        err.to_string().contains("--category"),
+        "unexpected error: {err}"
+    );
 }
 
 #[tokio::test]

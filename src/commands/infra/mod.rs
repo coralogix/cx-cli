@@ -7,7 +7,10 @@ use toon_format::encode_default as toon_encode;
 
 pub mod api;
 
-use api::{HealthHistoryEntry, InfraApi, ListResourcesParams, ResourceData, ResourceTypeMapping};
+use api::{
+    CategoryType, FilterDescriptor, HealthHistoryEntry, InfraApi, ListResourcesParams,
+    ResourceData, ResourceTypeMapping,
+};
 
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
@@ -72,6 +75,75 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
                 })
                 .collect();
             render::render_table(&["Category", "Type", "Label"], rows, include_profile);
+        }
+    }
+
+    Ok(())
+}
+
+/// `cx infra resources filters` - list the attributes a resource type can be
+/// filtered by.
+pub async fn run_filters(
+    targets: &[Arc<ExecutionTarget>],
+    category: Option<&str>,
+    resource_type: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let category = category
+        .map(|c| require_non_empty(c, "--category"))
+        .transpose()?;
+    let resource_type = resource_type
+        .map(|t| require_non_empty(t, "--type"))
+        .transpose()?;
+
+    eprintln!("{}", "Fetching filterable attributes...".dimmed());
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |target| async move {
+        let api = InfraApi::new(&target.client);
+        Ok(api.filters(category, resource_type).await?)
+    })
+    .await;
+
+    let mut merged: Vec<(String, FilterDescriptor)> = Vec::new();
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for descriptor in resp.filters {
+            merged.push((profile.clone(), descriptor));
+        }
+    }
+
+    match output {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let rows: Vec<Value> = merged
+                .iter()
+                .map(|(profile, f)| filter_to_json(f, include_profile, profile))
+                .collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if merged.is_empty() {
+                render::print_no_results("No filterable attributes found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = merged
+                .iter()
+                .map(|(profile, f)| {
+                    vec![
+                        profile.clone(),
+                        display_or_dash(f.name.as_deref()),
+                        display_or_dash(f.kind.as_deref()),
+                        if f.wildcard { "yes" } else { "no" }.to_string(),
+                        join_or_dash(&f.values),
+                        join_or_dash(&format_type_pairs(&f.types)),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["Attribute", "Kind", "Wildcard", "Values", "Types"],
+                rows,
+                include_profile,
+            );
         }
     }
 
@@ -484,6 +556,44 @@ fn parse_scope_filters(scope: &[String]) -> Result<Vec<(String, String)>> {
     }
 
     Ok(filters)
+}
+
+/// Builds one filter row as JSON for `json` / `toon` output after fan-out.
+fn filter_to_json(item: &FilterDescriptor, include_profile: bool, profile: &str) -> Value {
+    let v = json!({
+        "name": item.name,
+        "kind": item.kind,
+        "wildcard": item.wildcard,
+        "values": item.values,
+        "types": item
+            .types
+            .iter()
+            .map(|t| json!({ "category": t.category, "type": t.type_name }))
+            .collect::<Vec<Value>>(),
+    });
+    tag_profile(v, include_profile, profile)
+}
+
+/// `Category/Type` per pair, the form `--category`/`--type` accept.
+fn format_type_pairs(types: &[CategoryType]) -> Vec<String> {
+    types
+        .iter()
+        .map(|t| {
+            format!(
+                "{}/{}",
+                display_or_dash(t.category.as_deref()),
+                display_or_dash(t.type_name.as_deref())
+            )
+        })
+        .collect()
+}
+
+fn join_or_dash(values: &[String]) -> String {
+    if values.is_empty() {
+        "-".to_string()
+    } else {
+        values.join(", ")
+    }
 }
 
 /// Builds one resource row as JSON for `json` / `toon` output after fan-out.

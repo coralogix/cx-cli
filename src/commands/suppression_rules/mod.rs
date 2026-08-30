@@ -10,7 +10,7 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use api::{rule_found, AlertSchedulerRule, AlertSchedulersApi};
+use api::{classify_rule_id, rule_found, AlertSchedulerRule, AlertSchedulersApi, RuleIdKind};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -60,27 +60,34 @@ fn read_json_body(from_file: &str, entity_name: &str) -> Result<Value> {
     Ok(body)
 }
 
-/// Warn when an update body identifies the rule by `id` alone.
+/// The identifier an update body uses to name its rule, if any.
 ///
-/// The backend keys updates off `uniqueIdentifier`; a body carrying only `id`
-/// (the version id) is rejected with a bare `400 Bad Request: Invalid UUID
-/// format` that names no field, which is near-impossible to diagnose from the
-/// error alone. Advisory only - the request still goes out, since the check is
-/// a heuristic over a body we otherwise pass through untouched.
-fn warn_if_body_keyed_by_version_id(body: &Value) {
+/// Accepts either a top-level body or one nested under `alertSchedulerRule`,
+/// preferring `uniqueIdentifier` (the addressable id) and falling back to `id`
+/// (the version id) so a body keyed by the wrong field is still classified
+/// rather than sent blindly.
+fn update_body_identifier(body: &Value) -> Option<&str> {
     let rule = body.get("alertSchedulerRule").unwrap_or(body);
-    let has_unique = rule.get("uniqueIdentifier").is_some_and(|v| !v.is_null());
-    let has_id = rule.get("id").is_some_and(|v| !v.is_null());
-    if has_id && !has_unique {
-        eprintln!(
-            "{}",
-            "Warning: the update body sets 'id' but not 'uniqueIdentifier'. 'id' is the rule \
-             version id and is not addressable - the API rejects such bodies with a field-less \
-             \"Invalid UUID format\" error. Use the rule's uniqueIdentifier (see \
-             `cx alerts suppression-rules list`)."
-                .yellow()
-        );
-    }
+    rule.get("uniqueIdentifier")
+        .and_then(|v| v.as_str())
+        .or_else(|| rule.get("id").and_then(|v| v.as_str()))
+}
+
+/// Warn that an input id was a rule version id and we auto-corrected it.
+///
+/// `get`/`delete` take a rule id but silently accept the version id (the API
+/// answers 200 either way), so when [`classify_rule_id`] resolves the version
+/// id to its stable `unique_identifier` we tell the user rather than switching
+/// ids behind their back.
+fn warn_version_id_autocorrected(input: &str, unique_identifier: &str) {
+    eprintln!(
+        "{}",
+        format!(
+            "Note: '{input}' is a rule version id, not its stable id. Using uniqueIdentifier \
+             '{unique_identifier}' instead - the version id changes on every update."
+        )
+        .yellow()
+    );
 }
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
@@ -170,13 +177,31 @@ pub async fn run_get(
         let id = id.clone();
         async move {
             let api = AlertSchedulersApi::new(&t.client);
-            Ok(api.get(&id).await?)
+            let val = api.get(&id).await?;
+            if rule_found(&val) {
+                return Ok((val, id));
+            }
+            // A miss might just be a version id. One extra `list` call tells us,
+            // and if so we re-fetch by the addressable id and carry it back so
+            // the console link points at the rule the user actually got.
+            match classify_rule_id(&api, &id).await? {
+                RuleIdKind::VersionId(uid) => {
+                    warn_version_id_autocorrected(&id, &uid);
+                    let val = api.get(&uid).await?;
+                    Ok((val, uid))
+                }
+                // Not a version id - hand back the empty body for the
+                // "Rule not found." path. (`Addressable` is unreachable after a
+                // `get` miss, but re-using `id` is the correct no-op if it ever
+                // arises from a transient miss.)
+                _ => Ok((val, id)),
+            }
         }
     })
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, (mut val, resolved_id)) in report_errors_and_collect_successes(per_profile)? {
         // An unknown id answers 200 `{}` instead of 404, so drop misses here
         // and let the "Rule not found." path handle them.
         if !rule_found(&val) {
@@ -185,10 +210,10 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        // `rule_id` is the rule's unique_identifier - the fetch only succeeded
-        // because it was - so it's what the console link needs.
+        // `resolved_id` is the rule's unique_identifier - the fetch only
+        // succeeded because it was - so it's what the console link needs.
         crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::suppression_rule_url(b, rule_id)
+            crate::console_url::suppression_rule_url(b, &resolved_id)
         })
         .await;
         all_results.push(val);
@@ -266,7 +291,7 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_json_body(from_file, "alert scheduler rule")?;
-    warn_if_body_keyed_by_version_id(&body);
+    let identifier = update_body_identifier(&body).map(str::to_string);
 
     eprintln!("{}", "Updating alert scheduler rule...".dimmed());
 
@@ -274,8 +299,27 @@ pub async fn run_update(
 
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
+        let identifier = identifier.clone();
         async move {
             let api = AlertSchedulersApi::new(&t.client);
+            // The backend keys updates off `uniqueIdentifier` and rejects a
+            // version id with a field-less "400 Invalid UUID format". Catch that
+            // before sending: one `list` call tells us which id the body carries,
+            // and we point the user at the addressable one rather than the PUT
+            // going out to fail cryptically.
+            if let Some(identifier) = identifier.as_deref() {
+                match classify_rule_id(&api, identifier).await? {
+                    RuleIdKind::Addressable => {}
+                    RuleIdKind::VersionId(uid) => bail!(
+                        "The update body identifies the rule by '{identifier}', which is a rule \
+                         version id (not addressable). Use uniqueIdentifier '{uid}' instead."
+                    ),
+                    RuleIdKind::Unknown => bail!(
+                        "No suppression rule found matching id '{identifier}'. Run \
+                         `cx alerts suppression-rules list` to find its uniqueIdentifier."
+                    ),
+                }
+            }
             Ok(api.update(&body).await?)
         }
     })
@@ -326,23 +370,35 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], rule_id: &str) -> Resu
             // so without this check deleting by the wrong id (the rule's
             // version id is the easy mistake) reports success while the rule
             // stays put. Confirm it resolves before claiming we removed it.
-            if !rule_found(&api.get(&id).await?) {
-                bail!(
-                    "No suppression rule found with ID '{id}'. This must be the rule's \
-                     uniqueIdentifier, not its version id - run \
-                     `cx alerts suppression-rules list` to find it."
-                );
-            }
-            api.delete(&id).await?;
-            Ok(())
+            let target = if rule_found(&api.get(&id).await?) {
+                id.clone()
+            } else {
+                // The miss might be a version id - one extra `list` call maps it
+                // to the addressable id so we can delete the rule the user meant
+                // instead of failing on a technicality.
+                match classify_rule_id(&api, &id).await? {
+                    RuleIdKind::VersionId(uid) => {
+                        warn_version_id_autocorrected(&id, &uid);
+                        uid
+                    }
+                    RuleIdKind::Addressable => id.clone(),
+                    RuleIdKind::Unknown => bail!(
+                        "No suppression rule found with ID '{id}'. This must be the rule's \
+                         uniqueIdentifier, not its version id - run \
+                         `cx alerts suppression-rules list` to find it."
+                    ),
+                }
+            };
+            api.delete(&target).await?;
+            Ok(target)
         }
     })
     .await;
 
-    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, target) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
-            format!("Deleted rule {rule_id} in profile '{profile}'.").green()
+            format!("Deleted rule {target} in profile '{profile}'.").green()
         );
     }
 

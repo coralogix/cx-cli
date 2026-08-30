@@ -122,6 +122,48 @@ pub fn rule_found(val: &Value) -> bool {
         .is_some_and(|r| r.is_object() && r.as_object().is_some_and(|m| !m.is_empty()))
 }
 
+/// How an input id relates to the rules that actually exist.
+#[derive(Debug, PartialEq)]
+pub enum RuleIdKind {
+    /// Matches a rule's `unique_identifier` - addressable as-is.
+    Addressable,
+    /// Matches a rule's *version* `id`; carries the addressable `unique_identifier`.
+    VersionId(String),
+    /// Matches no rule under either field.
+    Unknown,
+}
+
+/// Classify an id against an already-fetched rule list.
+///
+/// `Addressable` wins over `VersionId` if (pathologically) an id matches both a
+/// rule's `unique_identifier` and another rule's version `id`, since the
+/// addressable interpretation is the one every route accepts.
+pub fn classify_rule_id_in(resp: &GetBulkAlertSchedulerRuleResponse, input: &str) -> RuleIdKind {
+    let mut version_match: Option<String> = None;
+    for rule in resp
+        .alert_scheduler_rules
+        .iter()
+        .filter_map(|e| e.alert_scheduler_rule.as_ref())
+    {
+        if rule.unique_identifier.as_deref() == Some(input) {
+            return RuleIdKind::Addressable;
+        }
+        if rule.id.as_deref() == Some(input) {
+            version_match = rule.unique_identifier.clone();
+        }
+    }
+    version_match.map_or(RuleIdKind::Unknown, RuleIdKind::VersionId)
+}
+
+/// Classify `input` against the live rule set. Costs one `list` call.
+///
+/// Because `get`/`delete` answer 200 for an unknown or version id rather than
+/// erroring, listing every rule and matching on both id fields is the only way
+/// to tell an addressable `unique_identifier` from a rule *version* id.
+pub async fn classify_rule_id(api: &AlertSchedulersApi<'_>, input: &str) -> Result<RuleIdKind> {
+    Ok(classify_rule_id_in(&api.list().await?, input))
+}
+
 // --- Tests ---
 
 #[cfg(test)]
@@ -287,5 +329,37 @@ mod tests {
         assert!(!rule_found(&json!({})));
         assert!(!rule_found(&json!({"alertSchedulerRule": {}})));
         assert!(!rule_found(&json!({"alertSchedulerRule": null})));
+    }
+
+    #[test]
+    fn classify_recognises_a_unique_identifier_as_addressable() {
+        let resp: GetBulkAlertSchedulerRuleResponse =
+            serde_json::from_value(list_response_fixture()).unwrap();
+        assert_eq!(
+            classify_rule_id_in(&resp, "38c4a964-a237-41ea-9b02-87af3d734571"),
+            RuleIdKind::Addressable
+        );
+    }
+
+    /// The point of the feature: a version id resolves to the rule's addressable
+    /// `unique_identifier` so callers can auto-correct.
+    #[test]
+    fn classify_maps_a_version_id_to_its_unique_identifier() {
+        let resp: GetBulkAlertSchedulerRuleResponse =
+            serde_json::from_value(list_response_fixture()).unwrap();
+        assert_eq!(
+            classify_rule_id_in(&resp, "04b68179-b051-4c2c-a684-ef3a4fb0f80f"),
+            RuleIdKind::VersionId("38c4a964-a237-41ea-9b02-87af3d734571".to_string())
+        );
+    }
+
+    #[test]
+    fn classify_reports_an_unknown_id() {
+        let resp: GetBulkAlertSchedulerRuleResponse =
+            serde_json::from_value(list_response_fixture()).unwrap();
+        assert_eq!(
+            classify_rule_id_in(&resp, "ffffffff-ffff-ffff-ffff-ffffffffffff"),
+            RuleIdKind::Unknown
+        );
     }
 }

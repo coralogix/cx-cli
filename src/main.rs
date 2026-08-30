@@ -161,12 +161,12 @@ struct Cli {
 
     /// HTTP request timeout in seconds.
     #[arg(
-        long,
+        long = "http-timeout",
         global = true,
-        env = "CX_TIMEOUT",
+        env = "CX_HTTP_TIMEOUT",
         help_heading = "Global Options"
     )]
-    timeout: Option<u64>,
+    http_timeout: Option<u64>,
 
     /// Output format: text, json, or toon. Overrides the default set in config.
     #[arg(long, short = 'o', global = true, help_heading = "Global Options")]
@@ -932,9 +932,9 @@ Examples:
         #[arg(long, default_value = "gpt-5.2")]
         model: String,
 
-        /// Timeout in seconds for response.
+        /// Maximum seconds to wait for an Olly response.
         #[arg(long, default_value_t = 900)]
-        timeout: u32,
+        response_timeout: u32,
 
         /// Ask Olly as a sub-agent (agent-to-agent mode): shorter responses, no
         /// charts/tables, asks clarifying questions instead of guessing.
@@ -3291,7 +3291,7 @@ async fn main() -> Result<()> {
     let targets = build_targets(
         configs,
         no_console_link,
-        cli.timeout.map(std::time::Duration::from_secs),
+        cli.http_timeout.map(std::time::Duration::from_secs),
     )?;
     let agent_mode = safety::is_agent_mode();
 
@@ -4784,7 +4784,7 @@ async fn main() -> Result<()> {
                     message,
                     chat_id,
                     model,
-                    timeout,
+                    response_timeout,
                     agent_to_agent_mode,
                 } => {
                     commands::olly::run_ask(
@@ -4792,7 +4792,7 @@ async fn main() -> Result<()> {
                         &message,
                         chat_id.as_deref(),
                         &model,
-                        timeout,
+                        response_timeout,
                         agent_to_agent_mode,
                         output,
                     )

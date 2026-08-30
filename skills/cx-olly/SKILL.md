@@ -15,7 +15,7 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 
 | Command | Purpose | Key flags |
 |---|---|---|
-| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
+| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--response-timeout`, `--agent-to-agent-mode` |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
@@ -56,13 +56,18 @@ Available models include `gpt-5.2` (default), `claude-sonnet-4-5`, `sonnet-4.6`,
 cx olly ask "Explain this error" --model claude-sonnet-4-5 --agent-to-agent-mode
 ```
 
-### Timeout
+### Response timeout
 
-For complex queries that may take longer, increase the timeout (default: 900 seconds):
+For complex queries that may take longer, increase Olly's response timeout
+(default: 900 seconds):
 
 ```bash
-cx olly ask "Deep analysis of last week's incidents" --timeout 1800 --agent-to-agent-mode
+cx olly ask "Deep analysis of last week's incidents" --response-timeout 1800 --agent-to-agent-mode
 ```
+
+`--http-timeout <SECONDS>` (or `CX_HTTP_TIMEOUT`) sets the HTTP request
+deadline for all CLI commands, including Olly. It is separate from the Olly
+response timeout.
 
 ### Agent-to-agent mode
 
@@ -134,7 +139,7 @@ cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
 ```bash
 cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
   --model claude-sonnet-4-5 \
-  --timeout 1800 \
+  --response-timeout 1800 \
   --agent-to-agent-mode
 ```
 

@@ -417,6 +417,7 @@ Environment variables override profile file values:
 | `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
+| `CX_HTTP_TIMEOUT` | HTTP request deadline in seconds (equivalent to `--http-timeout`) |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
 
@@ -425,6 +426,24 @@ Environment variables override profile file values:
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
+
+## Request timeouts
+
+Use `--http-timeout <SECONDS>` or `CX_HTTP_TIMEOUT` to set a deadline for every
+Coralogix API request, including Olly requests:
+
+```sh
+cx --http-timeout 30 alerts list
+CX_HTTP_TIMEOUT=30 cx olly artifacts list
+```
+
+`cx olly ask --response-timeout <SECONDS>` controls how long Olly should wait
+for the assistant response (default: 900 seconds). It is separate from the HTTP
+request deadline:
+
+```sh
+cx --http-timeout 120 olly ask "Investigate elevated error rates" --response-timeout 90
+```
 
 ### Gateway metrics
 

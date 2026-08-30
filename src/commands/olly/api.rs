@@ -178,10 +178,9 @@ pub struct OllyApi {
 }
 
 impl OllyApi {
-    /// Create a new OllyApi client.
-    pub fn new(endpoint: &str, api_key: &str) -> Result<Self> {
-        let client = CxClient::new(endpoint, api_key)?;
-        Ok(Self { client })
+    /// Create an Olly API client from the configured shared HTTP client.
+    pub fn from_client(client: CxClient) -> Self {
+        Self { client }
     }
 
     // ── Chats ──────────────────────────────────────────────────────────────────

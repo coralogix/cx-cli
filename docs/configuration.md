@@ -21,6 +21,19 @@ Coralogix: its region or endpoint, its credentials, and its default output
 format. Add as many as you have teams (see
 [Multi-profile fan-out](multi-profile.md)).
 
+### Custom configuration directory
+
+To create the `.cx/` directory under a different parent directory, set
+`CX_HOME`. For example:
+
+```bash
+export CX_HOME="$HOME/.config"
+```
+
+With this setting, `cx` stores its configuration in `~/.config/.cx/`,
+including `config.toml` and `profiles/`. When `CX_HOME` is not set, the default
+remains `~/.cx/`.
+
 ## Profiles
 
 `cx init` creates your first profile as part of setup — see the
@@ -419,6 +432,7 @@ Environment variables override profile file values:
 | `CX_REGION` | `region` in profile |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
+| `CX_HOME` | Parent directory for cx configuration (`$CX_HOME/.cx`) |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 

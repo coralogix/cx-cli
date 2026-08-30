@@ -193,6 +193,8 @@ Manage alert suppression rules that mute alerts during maintenance windows or kn
 | `cx alerts suppression-rules update --from-file` | Update a suppression rule |
 | `cx alerts suppression-rules delete <id>` | Delete a suppression rule |
 
+A rule has two IDs: `unique_identifier` is its stable, addressable ID (use it for get/update/delete), while `id` is the rule version ID that changes on every update.
+
 ### Request body shape
 
 `create` and `update` take the rule wrapped in an `alertSchedulerRule` object.

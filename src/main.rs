@@ -159,6 +159,15 @@ struct Cli {
     )]
     region: Option<String>,
 
+    /// HTTP request timeout in seconds.
+    #[arg(
+        long,
+        global = true,
+        env = "CX_TIMEOUT",
+        help_heading = "Global Options"
+    )]
+    timeout: Option<u64>,
+
     /// Output format: text, json, or toon. Overrides the default set in config.
     #[arg(long, short = 'o', global = true, help_heading = "Global Options")]
     output: Option<OutputFormat>,
@@ -3279,7 +3288,11 @@ async fn main() -> Result<()> {
         }
     };
 
-    let targets = build_targets(configs, no_console_link)?;
+    let targets = build_targets(
+        configs,
+        no_console_link,
+        cli.timeout.map(std::time::Duration::from_secs),
+    )?;
     let agent_mode = safety::is_agent_mode();
 
     // Wrap the dispatch in an async block so we can capture its Result and

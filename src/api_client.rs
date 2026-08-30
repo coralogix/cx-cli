@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use reqwest::{header, Client, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -21,6 +23,15 @@ pub struct CxClient {
 
 impl CxClient {
     pub fn new(endpoint: impl Into<String>, api_key: &str) -> Result<Self> {
+        Self::with_timeout(endpoint, api_key, None)
+    }
+
+    /// Builds a client with an optional deadline for each HTTP request.
+    pub fn with_timeout(
+        endpoint: impl Into<String>,
+        api_key: &str,
+        timeout: Option<Duration>,
+    ) -> Result<Self> {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             header::AUTHORIZATION,
@@ -40,10 +51,13 @@ impl CxClient {
             .iter()
             .find(|var| std::env::var(var).is_ok())
             .copied();
-        let inner = Client::builder()
+        let mut builder = Client::builder()
             .default_headers(headers)
-            .user_agent(cli_user_agent(agent_env_var))
-            .build()?;
+            .user_agent(cli_user_agent(agent_env_var));
+        if let Some(timeout) = timeout {
+            builder = builder.timeout(timeout);
+        }
+        let inner = builder.build()?;
 
         Ok(Self {
             inner,

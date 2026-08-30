@@ -30,7 +30,7 @@ The `source spans` is automatically injected - do not include it in the query.
 | `--end` | `now` | End time |
 | `--limit` | `200` | Maximum number of results |
 | `--tier` | `frequent` | Storage tier: `frequent` (hot/recent) or `archive` (cold/historical) |
-| `-o, --output` | `text` | Output format: `text`, `json`, or `agents` |
+| `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
 
 ---
 
@@ -295,8 +295,8 @@ cx spans "filter \$d.traceID == 'abc123' | groupby \$l.serviceName aggregate cou
 - Filter by time first when dealing with large datasets
 - Use specific filters (service name, operation) to reduce scan scope
 - Don't rely solely on aggregations - retrieve sample spans to find information you didn't anticipate
-- For large result sets, use `--output agents` which spills automatically:
+- For large result sets, use `--output toon` which spills automatically:
 
 ```bash
-cx spans "filter \$l.serviceName == 'api'" --start now-24h --limit 1000 -o agents
+cx spans "filter \$l.serviceName == 'api'" --start now-24h --limit 1000 -o toon
 ```

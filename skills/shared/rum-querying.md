@@ -33,7 +33,7 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 | `--end` | `now` | End time |
 | `--limit` | `100` | Maximum number of results |
 | `--tier` | `frequent` | Storage tier: `frequent` or `archive` |
-| `-o, --output` | `text` | Output format: `text`, `json`, or `agents` |
+| `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
 
 **Note:** Use `--start now-7d` (or wider) for web vitals and page performance queries. Short time ranges produce unreliable percentiles - low-traffic pages have too few data points.
 

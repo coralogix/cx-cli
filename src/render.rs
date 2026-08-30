@@ -1,6 +1,6 @@
 //! Shared rendering helpers for command output.
 //!
-//! Provides functions for the three output modes (Text, JSON, Agents) so that
+//! Provides functions for the three output modes (Text, JSON, Toon) so that
 //! individual commands can delegate formatting without duplicating boilerplate.
 //!
 //! ## Profile key convention
@@ -28,17 +28,17 @@ pub fn render_json(rows: &[Value]) -> Result<()> {
     Ok(())
 }
 
-/// Format merged result rows for agents output (TOON-encoded).
+/// Format merged result rows for toon output (TOON-encoded).
 ///
-/// See `docs/agents-output.md` — agents mode uses TOON, not pretty JSON.
-pub fn format_agents(rows: &[Value]) -> Result<String> {
+/// See `docs/toon-output.md` — toon mode uses TOON encoding, not pretty JSON.
+pub fn format_toon(rows: &[Value]) -> Result<String> {
     let wrapped = Value::Array(rows.to_vec());
     toon_encode(&wrapped).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))
 }
 
-/// Print merged rows in agents (TOON) format.
-pub fn render_agents(rows: &[Value]) -> Result<()> {
-    println!("{}", format_agents(rows)?);
+/// Print merged rows in toon (TOON) format.
+pub fn render_toon(rows: &[Value]) -> Result<()> {
+    println!("{}", format_toon(rows)?);
     Ok(())
 }
 
@@ -106,82 +106,9 @@ pub fn print_created(verb: &str, kind: &str, name: Option<&str>, id: Option<&str
 ///
 /// Callers only invoke this when a console base URL was successfully
 /// resolved (see `ExecutionTarget::console_base`) and an entity ID was
-/// extracted from the API response. This is the human-readable echo of the
-/// same URL that `tag_console_url` embeds in `-o json` / `-o agents`
-/// payloads - the two are always called together at each call site so the
-/// stderr line and the structured `consoleUrl` field never disagree.
+/// extracted from the API response.
 pub fn print_console_link(url: &str) {
     eprintln!("{}", format!("View in Coralogix: {url}").cyan());
-}
-
-/// Embed the "View in Coralogix" URL as a `consoleUrl` field in a JSON
-/// result object, so `-o json` / `-o agents` consumers get the link in the
-/// structured payload itself, not only as an informational stderr line.
-///
-/// Many `cx` command responses wrap their single "real" entity in an object
-/// with exactly one key, mirroring the underlying API's response shape -
-/// e.g. `{"alertDef": {...}}`, `{"case": {...}}`, `{"webhook": {...}}`.
-/// Inserting `consoleUrl` at the root of a response shaped like that would
-/// make it an odd sibling of the wrapper key instead of living alongside
-/// the entity's own fields (`{"alertDef": {...}, "consoleUrl": ...}` reads
-/// oddly - a consumer expecting `alertDef` to be the complete alert object
-/// has to know to look one level up for its console link). So: when `val`
-/// is a JSON object with **exactly one** key whose value is *itself* a JSON
-/// object (ignoring any `_profile` tag), `consoleUrl` is inserted into that
-/// nested object instead of the root. This was checked against every response
-/// shape exercised by
-/// `tests/console_urls/main.rs` (spanning all 28 command groups that print
-/// console links) and correctly nests every single-entity-wrapper shape
-/// while leaving every other shape at the root:
-/// - Already-flat entities with multiple top-level fields (e.g. a `connectors get`
-///   response with `id`/`name`/`type` at the root) - nothing to descend into.
-/// - Single-key responses whose value isn't an object - a bare id/count/bool
-///   (`{"id": "..."}`, `{"enabled": true}`) or a list (`{"policies": [...]}`,
-///   `{"enrichments": [...]}`) - again nothing to nest a single console link
-///   into.
-///
-/// No-op if `val` isn't a JSON object at all (e.g. a bare scalar/array
-/// result), so it's always safe to call unconditionally alongside
-/// `print_console_link`.
-///
-/// Also a no-op if there's no real data to attach the link to in the first
-/// place - an empty root (ignoring `_profile`) or an empty nested wrapper,
-/// which some backends return on an otherwise-successful write. Tagging
-/// either would produce a JSON object whose *only* content is the URL that
-/// `print_console_link` already echoed to stderr moments earlier, which
-/// duplicates rather than adds information.
-pub fn tag_console_url(val: &mut Value, url: &str) {
-    let Value::Object(root) = val else { return };
-
-    // In multi-profile mode `tag_get_result` may have already inserted a
-    // `_profile` tag at the root. That's presentation metadata, not part of the
-    // entity, so ignore it when deciding whether this is a single-object
-    // wrapper to nest into. Otherwise the wrapper would look like a flat
-    // multi-field object and the link would land at a *different* JSON path in
-    // multi-profile vs. single-profile output, breaking scripts parsing it.
-    let nest_key = {
-        let mut data_keys = root.iter().filter(|(k, _)| k.as_str() != "_profile");
-        match (data_keys.next(), data_keys.next()) {
-            (Some((k, Value::Object(_))), None) => Some(k.clone()),
-            _ => None,
-        }
-    };
-
-    if let Some(key) = nest_key {
-        if let Some(Value::Object(nested)) = root.get_mut(&key) {
-            if nested.is_empty() {
-                return;
-            }
-            nested.insert("consoleUrl".to_string(), Value::String(url.to_string()));
-            return;
-        }
-    }
-
-    if root.iter().all(|(k, _)| k == "_profile") {
-        return;
-    }
-
-    root.insert("consoleUrl".to_string(), Value::String(url.to_string()));
 }
 
 // ── Text tables ──────────────────────────────────────────────────────────────
@@ -275,102 +202,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn tag_console_url_nests_inside_single_object_wrapper() {
-        let mut val = json!({"alertDef": {"id": "a1", "name": "Demo"}});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/alerts/a1");
-        assert_eq!(val["consoleUrl"], Value::Null, "must not tag the root");
-        assert_eq!(
-            val["alertDef"]["consoleUrl"],
-            "https://c4c.app.eu2.coralogix.com/#/alerts/a1"
-        );
-    }
-
-    #[test]
-    fn tag_console_url_nests_inside_wrapper_even_with_profile_tag() {
-        // Multi-profile mode: `tag_get_result` adds `_profile` at the root
-        // first. The link must still nest inside the wrapper so it lands at the
-        // same path (`.alertDef.consoleUrl`) as single-profile output.
-        let mut val = json!({"alertDef": {"id": "a1", "name": "Demo"}, "_profile": "prod"});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/alerts/a1");
-        assert_eq!(val["consoleUrl"], Value::Null, "must not tag the root");
-        assert_eq!(
-            val["alertDef"]["consoleUrl"],
-            "https://c4c.app.eu2.coralogix.com/#/alerts/a1"
-        );
-        assert_eq!(val["_profile"], "prod", "profile tag must be preserved");
-    }
-
-    #[test]
-    fn tag_console_url_stays_at_root_for_flat_entity_with_profile_tag() {
-        // Already-flat entity + `_profile`: still no single object wrapper to
-        // descend into, so the link stays at the root.
-        let mut val = json!({"id": "conn-1", "name": "Demo", "type": "SLACK", "_profile": "prod"});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
-        assert_eq!(val["consoleUrl"], "https://c4c.app.eu2.coralogix.com/#/x");
-    }
-
-    #[test]
-    fn tag_console_url_stays_at_root_for_already_flat_multi_field_object() {
-        let mut val = json!({"id": "conn-1", "name": "Demo Connector", "type": "SLACK"});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
-        assert_eq!(val["consoleUrl"], "https://c4c.app.eu2.coralogix.com/#/x");
-    }
-
-    #[test]
-    fn tag_console_url_stays_at_root_for_single_key_string_value() {
-        let mut val = json!({"dashboardId": "dash-1"});
-        tag_console_url(
-            &mut val,
-            "https://c4c.app.eu2.coralogix.com/#/dashboards/dash-1",
-        );
-        assert_eq!(
-            val["consoleUrl"],
-            "https://c4c.app.eu2.coralogix.com/#/dashboards/dash-1"
-        );
-    }
-
-    #[test]
-    fn tag_console_url_stays_at_root_for_single_key_array_value() {
-        let mut val = json!({"policies": []});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/tco-policies");
-        assert_eq!(
-            val["consoleUrl"],
-            "https://c4c.app.eu2.coralogix.com/#/tco-policies"
-        );
-    }
-
-    #[test]
-    fn tag_console_url_no_op_on_non_object_value() {
-        let mut val = json!([1, 2, 3]);
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
-        assert_eq!(val, json!([1, 2, 3]));
-    }
-
-    #[test]
-    fn tag_console_url_no_op_on_completely_empty_object() {
-        // Some backends echo an empty `{}` on an otherwise-successful write.
-        // Tagging it would make stdout's only content a duplicate of the
-        // link `print_console_link` already printed to stderr.
-        let mut val = json!({});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
-        assert_eq!(val, json!({}));
-    }
-
-    #[test]
-    fn tag_console_url_no_op_on_profile_tag_only_object() {
-        let mut val = json!({"_profile": "prod"});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
-        assert_eq!(val, json!({"_profile": "prod"}));
-    }
-
-    #[test]
-    fn tag_console_url_no_op_on_empty_nested_wrapper() {
-        let mut val = json!({"alertDef": {}});
-        tag_console_url(&mut val, "https://c4c.app.eu2.coralogix.com/#/x");
-        assert_eq!(val, json!({"alertDef": {}}));
-    }
-
-    #[test]
     fn bool_display_some_true() {
         assert_eq!(bool_display(Some(true)), "yes");
     }
@@ -443,13 +274,13 @@ mod tests {
     }
 
     #[test]
-    fn format_agents_toon_differs_from_pretty_json() {
+    fn format_toon_differs_from_pretty_json() {
         let rows = vec![json!({"query_text": "q", "similarity": 0.5})];
         let json = format_json(&rows).unwrap();
-        let agents = format_agents(&rows).unwrap();
+        let toon = format_toon(&rows).unwrap();
         assert_ne!(
-            json, agents,
-            "agents output must be TOON, not identical to pretty JSON"
+            json, toon,
+            "toon output must be TOON-encoded, not identical to pretty JSON"
         );
     }
 

@@ -47,7 +47,7 @@ cx spans 'filter $l.serviceName == "github-copilot" || tags["otel.scope.name"] =
 | filter tags["gen_ai.operation.name"] == "invoke_agent"
 | create cost from tags["github.copilot.cost"]:number
 | aggregate sum(cost) as totalCost
-| choose totalCost' --start now-7d -o agents
+| choose totalCost' --start now-7d -o toon
 ```
 
 ```text
@@ -96,7 +96,7 @@ cx spans 'filter $l.serviceName == "github-copilot" || tags["otel.scope.name"] =
 | groupby user aggregate sum(cost) as totalCost
 | sort by totalCost desc
 | limit 10
-| choose user as userEmail, totalCost' --start now-7d -o agents
+| choose user as userEmail, totalCost' --start now-7d -o toon
 ```
 
 ```text

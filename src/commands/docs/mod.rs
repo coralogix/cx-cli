@@ -235,12 +235,12 @@ pub async fn run_search(query: &str, limit: u32, output: OutputFormat) -> Result
                 .collect();
             render::render_json(&json_rows)?;
         }
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let values: Vec<serde_json::Value> = rows
                 .iter()
                 .map(|r| serde_json::to_value(r).unwrap_or_default())
                 .collect();
-            render::render_agents(&values)?;
+            render::render_toon(&values)?;
         }
     }
 
@@ -264,8 +264,8 @@ pub async fn run_fetch(suffix: &str, output: OutputFormat) -> Result<()> {
         OutputFormat::Json => {
             render::render_json_auto(&[serde_json::to_value(&result)?])?;
         }
-        OutputFormat::Agents => {
-            render::render_agents(&[serde_json::to_value(&result)?])?;
+        OutputFormat::Toon => {
+            render::render_toon(&[serde_json::to_value(&result)?])?;
         }
     }
 

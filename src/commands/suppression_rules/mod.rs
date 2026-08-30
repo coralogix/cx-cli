@@ -99,19 +99,11 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertSchedulerRule)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // Each suppression rule has its own console route, so every row gets
-        // its own consoleUrl rather than one shared page link. `console_base`
-        // is cached per target and doesn't print, so resolving it once per
-        // profile here is cheap.
-        let console_base = match crate::execution::find_target(targets, &profile) {
-            Some(target) => target.console_base().await,
-            None => None,
-        };
-        // Also echo the suppression-rules page itself once per profile, the
-        // way `alerts list` echoes the alerts page. Skipped when the profile
+        // Echo the suppression-rules page once per profile, the way
+        // `alerts list` echoes the alerts page. Skipped when the profile
         // returned nothing, since there'd be nothing to look at.
         if !resp.alert_scheduler_rules.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::suppression_rules_url(b)
             })
             .await;
@@ -123,21 +115,14 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
             .into_iter()
             .filter_map(|entry| entry.alert_scheduler_rule)
         {
-            let mut json = rule_to_json(&rule, include_profile, &profile);
-            if let (Some(base), Some(id)) = (&console_base, rule.unique_identifier.as_deref()) {
-                render::tag_console_url(
-                    &mut json,
-                    &crate::console_url::suppression_rule_url(base, id),
-                );
-            }
-            all_json.push(json);
+            all_json.push(rule_to_json(&rule, include_profile, &profile));
             all_items.push((profile.clone(), rule));
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -202,7 +187,7 @@ pub async fn run_get(
         }
         // `rule_id` is the rule's unique_identifier - the fetch only succeeded
         // because it was - so it's what the console link needs.
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::suppression_rule_url(b, rule_id)
         })
         .await;
@@ -211,7 +196,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -252,23 +237,19 @@ pub async fn run_create(
             // value the user feeds back into get/update/delete.
             let id = rule.unique_identifier.as_deref();
             render::print_created("Created", "rule", Some(name), id, &profile);
-            let mut rule_json = rule_to_json(&rule, include_profile, &profile);
             if let Some(id) = id {
-                crate::execution::tag_console_link_for_profile(
-                    targets,
-                    &profile,
-                    &mut rule_json,
-                    |b| crate::console_url::suppression_rule_url(b, id),
-                )
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::suppression_rule_url(b, id)
+                })
                 .await;
             }
-            all_results.push(rule_json);
+            all_results.push(rule_to_json(&rule, include_profile, &profile));
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -306,23 +287,19 @@ pub async fn run_update(
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
             let id = rule.unique_identifier.as_deref();
             render::print_created("Updated", "rule", Some(name), id, &profile);
-            let mut rule_json = rule_to_json(&rule, include_profile, &profile);
             if let Some(id) = id {
-                crate::execution::tag_console_link_for_profile(
-                    targets,
-                    &profile,
-                    &mut rule_json,
-                    |b| crate::console_url::suppression_rule_url(b, id),
-                )
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::suppression_rule_url(b, id)
+                })
                 .await;
             }
-            all_results.push(rule_json);
+            all_results.push(rule_to_json(&rule, include_profile, &profile));
         }
     }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

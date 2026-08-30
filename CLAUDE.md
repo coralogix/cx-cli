@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`cx` - a Rust CLI for querying Coralogix observability data (logs, metrics, traces, dashboards, alerts) from the terminal. Supports multi-profile fan-out, multiple output formats (text/json/agents), and AI-optimized result spilling.
+`cx` - a Rust CLI for querying Coralogix observability data (logs, metrics, traces, dashboards, alerts) from the terminal. Supports multi-profile fan-out, multiple output formats (text/json/toon), and AI-optimized result spilling.
 
 ## Build & Development
 
@@ -113,7 +113,7 @@ All use the Olly KB semantic-search-service API with gateway permission `legacy-
 3. **Target building** (`execution.rs`) - Each profile becomes an `ExecutionTarget` wrapping a `ResolvedConfig` + `CxClient`
 4. **Fan-out** (`execution.rs::fan_out`) - Runs the command handler concurrently across all targets
 5. **Result merging** (`execution.rs::merge_tagged_results`) - Combines per-profile results, tags rows with profile names when multi-profile
-6. **Output rendering** (`render.rs`) - Shared helpers for text tables, JSON, and TOON-encoded agents format
+6. **Output rendering** (`render.rs`) - Shared helpers for text tables, JSON, and TOON-encoded toon output
 7. **Spilling** (`spill.rs`) - If output exceeds `max_dataprime_direct_output_size` (default 100KiB), writes to a temp file and returns the path
 
 ### Layout
@@ -131,8 +131,8 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 - **`src/commands/metrics/api.rs`** - PromQL queries (instant, range, search, labels)
 - **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, parsing-rules, tco, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
 - **`src/time.rs`** - Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
-- **`src/render.rs`** - Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/agents output
-- **`src/spill.rs`** - Large result spilling + `transform_for_agents()` (shrinks output for AI consumers)
+- **`src/render.rs`** - Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/toon output
+- **`src/spill.rs`** - Large result spilling + `transform_for_toon()` (shrinks output for AI consumers)
 - **`src/tier.rs`** - Storage tier enum (FrequentSearch vs Archive)
 - **`src/error.rs`** - `CxError` enum (Auth, Api, Http, Json, Io)
 
@@ -154,7 +154,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 **Contributor guides:** [architecture](contributing/architecture.md), [adding a command](contributing/adding-a-command.md), [adding a skill](contributing/adding-a-skill.md), [development](contributing/development.md)
 
-**Reference docs:** [configuration](docs/configuration.md), [agents output format](docs/agents-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md)
+**Reference docs:** [configuration](docs/configuration.md), [TOON output format](docs/toon-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md)
 
 ## Contributing
 

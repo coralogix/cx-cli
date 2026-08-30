@@ -59,7 +59,7 @@ pub async fn run(
 
     match output {
         OutputFormat::Json => render::render_json(&json_rows)?,
-        OutputFormat::Agents => render::render_agents(&json_rows)?,
+        OutputFormat::Toon => render::render_toon(&json_rows)?,
         OutputFormat::Text => {
             if all_results.is_empty() {
                 render::print_no_results("No matching values found.");

@@ -1,5 +1,5 @@
 //! Helpers for spilling large non-aggregated Dataprime results to disk when
-//! the serialized `agents` payload would exceed `max_dataprime_direct_output_size`.
+//! the serialized `toon` payload would exceed `max_dataprime_direct_output_size`.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -15,7 +15,7 @@ pub const FILE_PREFIX: &str = "cx_results";
 pub const CLEANUP_AGE: Duration = Duration::from_secs(30 * 60);
 
 /// Metadata fields that carry no signal for an AI agent and are stripped from
-/// `agents` output to reduce token usage.
+/// `toon` output to reduce token usage.
 const METADATA_OMIT: &[&str] = &[
     "branchid",
     "priorityclass",
@@ -32,13 +32,13 @@ pub enum SpillOutcome {
     Spilled { path: PathBuf, count: usize },
 }
 
-/// Transform a single normalized Dataprime row for `agents` output:
+/// Transform a single normalized Dataprime row for `toon` output:
 ///
 /// - `metadata` → `$m` (with noisy fields removed)
 /// - `labels`   → `$l`
 /// - `userData` → `$d`
 /// - All other top-level keys are kept unchanged.
-pub fn transform_for_agents(row: &Value) -> Value {
+pub fn transform_for_toon(row: &Value) -> Value {
     let obj = match row {
         Value::Object(m) => m,
         other => return other.clone(),
@@ -83,7 +83,7 @@ pub fn transform_for_agents(row: &Value) -> Value {
 /// [`SpillOutcome::Direct`].
 ///
 /// The caller is responsible for any pre-serialization transformations (e.g.
-/// [`transform_for_agents`]).
+/// [`transform_for_toon`]).
 pub fn maybe_spill(
     raw_results: &[Value],
     max_bytes: Option<usize>,
@@ -245,7 +245,7 @@ mod tests {
         }
     }
 
-    // ── transform_for_agents ──────────────────────────────────────────────────
+    // ── transform_for_toon ──────────────────────────────────────────────────
 
     #[test]
     fn transform_renames_top_level_keys() {
@@ -254,7 +254,7 @@ mod tests {
             "labels":   {"applicationname": "api"},
             "userData": {"message": "hello"}
         });
-        let out = transform_for_agents(&row);
+        let out = transform_for_toon(&row);
         assert!(out.get("$m").is_some(), "$m should be present");
         assert!(out.get("$l").is_some(), "$l should be present");
         assert!(out.get("$d").is_some(), "$d should be present");
@@ -287,7 +287,7 @@ mod tests {
             "labels": {},
             "userData": {}
         });
-        let out = transform_for_agents(&row);
+        let out = transform_for_toon(&row);
         let m = out.get("$m").unwrap();
         assert_eq!(m.get("severity").unwrap(), "5");
         assert_eq!(m.get("timestamp").unwrap(), "2026-01-01T00:00:00Z");
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn transform_preserves_non_special_keys() {
         let row = json!({"some_other_field": 42, "another": "value"});
-        let out = transform_for_agents(&row);
+        let out = transform_for_toon(&row);
         assert_eq!(out.get("some_other_field").unwrap(), 42);
         assert_eq!(out.get("another").unwrap(), "value");
     }
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn transform_non_object_is_returned_as_is() {
         let row = json!("just a string");
-        let out = transform_for_agents(&row);
+        let out = transform_for_toon(&row);
         assert_eq!(out, row);
     }
 

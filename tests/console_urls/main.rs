@@ -2,8 +2,7 @@
 //!
 //! After a successful `dashboards create`/`replace`, `alerts create`,
 //! `views create`/`update`, or `cases` lifecycle mutation, the CLI should print a
-//! `View in Coralogix: <url>` line to stderr - purely informational, never
-//! affecting `-o json` / `-o agents` stdout.
+//! `View in Coralogix: <url>` line to stderr.
 //!
 //! These tests spawn the real `cx` binary (via `assert_cmd`) against a
 //! `wiremock` server so stdout and stderr can be asserted independently,
@@ -16,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use assert_cmd::Command;
+use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -65,6 +65,43 @@ fn write_config(home: &std::path::Path, default_profile: &str) {
         format!("default_profile = \"{default_profile}\"\n"),
     )
     .unwrap();
+}
+
+/// Same as [`write_config`], but with `no_console_link = true` set globally.
+fn write_config_no_console_link(home: &std::path::Path, default_profile: &str) {
+    let cx_dir = home.join(".cx");
+    fs::create_dir_all(&cx_dir).unwrap();
+    fs::write(
+        cx_dir.join("config.toml"),
+        format!("default_profile = \"{default_profile}\"\nno_console_link = true\n"),
+    )
+    .unwrap();
+}
+
+/// Write a profile pointing at `base_url` with a pre-seeded on-disk console
+/// URL cache entry (`cached_console_url`/`cached_console_url_at`) - no
+/// explicit `console_url` override, so cache-read/expiry logic is actually
+/// exercised.
+fn write_profile_with_cached_console_url(
+    home: &std::path::Path,
+    name: &str,
+    base_url: &str,
+    cached_url: &str,
+    cached_at: DateTime<Utc>,
+) {
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let content = format!(
+        r#"auth = "api_key"
+credential_storage = "file"
+api_key = "test-key"
+region = "{base_url}"
+cached_console_url = "{cached_url}"
+cached_console_url_at = "{}"
+"#,
+        cached_at.to_rfc3339()
+    );
+    fs::write(profiles_dir.join(format!("{name}.toml")), content).unwrap();
 }
 
 fn cx(home: &std::path::Path) -> Command {
@@ -247,15 +284,6 @@ async fn dashboard_replace_falls_back_to_request_id_when_response_has_no_id() {
         !stderr.contains("did not include an ID"),
         "should not warn about a missing ID once it fell back to the request's own id: {stderr}"
     );
-
-    // The API echoed back an empty `{}`, so -o json has nothing to attach the
-    // link to - it should stay empty rather than becoming a redundant
-    // `{"consoleUrl": ...}` that just repeats the stderr line above.
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !stdout.contains("consoleUrl"),
-        "stdout should not carry a consoleUrl-only payload when the response was empty: {stdout}"
-    );
 }
 
 // ── alerts create ────────────────────────────────────────────────────────────
@@ -425,10 +453,6 @@ async fn view_create_prints_console_link_with_bare_response() {
     assert_eq!(
         stdout["id"], "view-456",
         "created view should be present, not dropped: {stdout}"
-    );
-    assert_eq!(
-        stdout["consoleUrl"],
-        "https://c4c.app.eu2.coralogix.com/explore?viewId=view-456"
     );
 }
 
@@ -794,17 +818,160 @@ async fn no_console_link_when_whoami_has_no_team_url() {
     );
 }
 
-// ── stdout carries the console link as a `consoleUrl` field ──────────────────
+// ── --api-key override bypasses/never poisons the profile's console cache ──
 
-/// `-o json` output must embed the same URL that's echoed to stderr as a
-/// `consoleUrl` field on the result object - see `render::tag_console_url`.
-/// This intentionally supersedes an earlier version of this test
-/// (`json_output_is_unaffected_by_console_link`) which asserted the opposite:
-/// that stdout was untouched by the console-link feature. Per reviewer
-/// feedback, agent/script consumers of `-o json` / `-o agents` need the link
-/// in the structured payload too, not only as a human-readable stderr line.
+/// A `--api-key` override targeting a different team than the named
+/// profile's own credentials must not surface that profile's stale
+/// `console_url` - it must resolve live via `/identity/whoami` instead.
 #[tokio::test]
-async fn json_output_includes_console_url_field() {
+async fn api_key_override_ignores_stale_profile_console_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 2,
+            "team_url": "https://team-b.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    // Profile's own console_url points at team A - must be ignored once the
+    // API key is overridden to a different team.
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://team-a.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("dash_override_link");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "--api-key",
+            "team-b-key",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    // The override must force a live whoami call rather than trusting the
+    // profile's stale console_url.
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.url.path() == "/identity/whoami"),
+        "expected /identity/whoami to be called when credentials are overridden"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://team-b.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "stderr did not contain team B's console link: {stderr}"
+    );
+}
+
+/// An `--api-key` override must never write its resolved console URL back
+/// into the profile file - doing so would poison the profile's cache for
+/// subsequent, non-overridden invocations.
+#[tokio::test]
+async fn api_key_override_does_not_poison_profile_cache() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 2,
+            "team_url": "https://team-b.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), None);
+    write_config(&home, "mock");
+    let profile_path = home.join(".cx").join("profiles").join("mock.toml");
+    let profile_before = fs::read_to_string(&profile_path).unwrap();
+
+    let file_path = temp_json_path("dash_override_no_cache");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "--api-key",
+            "team-b-key",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    // The overridden run must not have written team B's URL into the
+    // profile's on-disk cache.
+    let profile_after = fs::read_to_string(&profile_path).unwrap();
+    assert_eq!(
+        profile_before, profile_after,
+        "profile file must be unchanged after an --api-key override run"
+    );
+    assert!(
+        !profile_after.contains("cached_console_url"),
+        "profile file must not have gained a cached_console_url: {profile_after}"
+    );
+}
+
+// ── --no-console-link flag / env / config suppress the link ────────────────
+
+/// `--no-console-link` suppresses the link even when an explicit
+/// `console_url` override is configured (isolating "was it suppressed" from
+/// "was a URL resolved").
+#[tokio::test]
+async fn no_console_link_flag_suppresses_link() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
@@ -819,11 +986,116 @@ async fn json_output_includes_console_url_field() {
         &home,
         "mock",
         &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
+        Some("https://team-a.app.eu2.coralogix.com"),
     );
     write_config(&home, "mock");
 
-    let file_path = temp_json_path("dash_json_output");
+    let file_path = temp_json_path("no_link_flag");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "--no-console-link",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "--no-console-link must suppress the link: {stderr}"
+    );
+}
+
+/// `CX_NO_CONSOLE_LINK=1` suppresses the link, same as the flag.
+#[tokio::test]
+async fn no_console_link_env_var_suppresses_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://team-a.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("no_link_env");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .env("CX_NO_CONSOLE_LINK", "1")
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "CX_NO_CONSOLE_LINK=1 must suppress the link: {stderr}"
+    );
+}
+
+/// `no_console_link = true` in the global config.toml suppresses the link,
+/// same as the flag/env var.
+#[tokio::test]
+async fn no_console_link_config_suppresses_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://team-a.app.eu2.coralogix.com"),
+    );
+    write_config_no_console_link(&home, "mock");
+
+    let file_path = temp_json_path("no_link_config");
     fs::write(
         &file_path,
         r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
@@ -839,8 +1111,6 @@ async fn json_output_includes_console_url_field() {
             "--from-file",
             file_path.to_str().unwrap(),
             "--yes",
-            "-o",
-            "json",
         ])
         .output()
         .expect("failed to run cx");
@@ -848,96 +1118,281 @@ async fn json_output_includes_console_url_field() {
     let _ = fs::remove_file(&file_path);
     assert!(output.status.success(), "{:?}", output);
 
-    // stdout is the API response plus a `consoleUrl` field - no
-    // "View in Coralogix: " prefix text (that's stderr-only phrasing).
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-    assert_eq!(
-        parsed,
-        json!({
-            "dashboardId": "dash-abc123",
-            "consoleUrl": "https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123",
-        })
-    );
-    assert!(!stdout.contains("View in Coralogix"));
-
-    // The human-readable line still goes to stderr too, with the same URL.
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr
-        .contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"));
+    assert!(
+        !stderr.contains("View in Coralogix"),
+        "no_console_link config key must suppress the link: {stderr}"
+    );
 }
 
-/// Regression test for the single- vs. multi-profile path invariant: on a
-/// wrapper-shaped `get` (`{"alertDef": {...}}`), the console link must nest
-/// inside the wrapper (`.alertDef.consoleUrl`) in *both* modes. In
-/// multi-profile mode `_profile` is added at the root first, and an earlier
-/// version of `tag_console_url` treated that as a second top-level field and
-/// pushed the link to `.consoleUrl` instead - silently moving it for scripts
-/// as soon as a second profile was added.
+// ── on-disk console URL cache lifecycle ─────────────────────────────────────
+
+/// First invocation resolves via `/identity/whoami` and persists the result
+/// into the profile's on-disk cache; a second invocation against the same
+/// `CX_HOME`/profile reuses that cache and makes zero additional whoami
+/// calls.
 #[tokio::test]
-async fn multi_profile_get_nests_console_link_inside_wrapper() {
+async fn console_url_cache_written_then_reused_across_invocations() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-1"))
+        .and(path("/identity/whoami"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertDef": {"id": "alert-1", "name": "My Alert"}
+            "team_id": 1,
+            "team_url": "https://c4c.app.eu2.coralogix.com"
         })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
         .mount(&server)
         .await;
 
     let home = temp_home();
-    write_profile(
-        &home,
-        "prod",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
+    write_profile(&home, "mock", &server.uri(), None);
+    write_config(&home, "mock");
+    let profile_path = home.join(".cx").join("profiles").join("mock.toml");
+
+    let whoami_call_count = |requests: &[wiremock::Request]| {
+        requests
+            .iter()
+            .filter(|r| r.url.path() == "/identity/whoami")
+            .count()
+    };
+
+    // Run 1: cold cache -> live whoami call, then persist to disk.
+    let file_path_1 = temp_json_path("cache_write_run1");
+    fs::write(
+        &file_path_1,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+    let output_1 = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path_1.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let _ = fs::remove_file(&file_path_1);
+    assert!(output_1.status.success(), "{:?}", output_1);
+
+    let stderr_1 = String::from_utf8_lossy(&output_1.stderr);
+    assert!(
+        stderr_1.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "run 1 stderr did not contain the console link: {stderr_1}"
     );
-    write_profile(
-        &home,
-        "staging",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
+    assert_eq!(
+        whoami_call_count(&server.received_requests().await.unwrap()),
+        1,
+        "run 1 should call /identity/whoami exactly once"
     );
-    write_config(&home, "prod");
+
+    let profile_after_run1 = fs::read_to_string(&profile_path).unwrap();
+    assert!(
+        profile_after_run1.contains("cached_console_url"),
+        "run 1 should persist cached_console_url to the profile file: {profile_after_run1}"
+    );
+
+    // Run 2: same CX_HOME/profile -> fresh on-disk cache, zero additional
+    // whoami calls.
+    let file_path_2 = temp_json_path("cache_write_run2");
+    fs::write(
+        &file_path_2,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+    let output_2 = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path_2.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let _ = fs::remove_file(&file_path_2);
+    assert!(output_2.status.success(), "{:?}", output_2);
+
+    let stderr_2 = String::from_utf8_lossy(&output_2.stderr);
+    assert!(
+        stderr_2.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "run 2 stderr did not contain the console link: {stderr_2}"
+    );
+    assert_eq!(
+        whoami_call_count(&server.received_requests().await.unwrap()),
+        1,
+        "run 2 must reuse the on-disk cache and make no additional whoami calls"
+    );
+}
+
+/// A fresh (well within the 7-day TTL) on-disk cache entry is used directly;
+/// `/identity/whoami` is never called.
+#[tokio::test]
+async fn console_url_cache_fresh_entry_used_without_whoami_call() {
+    let server = MockServer::start().await;
+    // If the cache were mistakenly bypassed, this whoami response would leak
+    // a different, detectable URL into stderr.
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 1,
+            "team_url": "https://should-not-be-called.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile_with_cached_console_url(
+        &home,
+        "mock",
+        &server.uri(),
+        "https://cached.app.eu2.coralogix.com",
+        Utc::now() - Duration::days(1),
+    );
+    write_config(&home, "mock");
+
+    let file_path = temp_json_path("cache_fresh");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
 
     let output = cx(&home)
         .args([
             "--profile",
-            "prod",
-            "--profile",
-            "staging",
-            "alerts",
-            "get",
-            "alert-1",
-            "-o",
-            "json",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
         ])
         .output()
         .expect("failed to run cx");
 
+    let _ = fs::remove_file(&file_path);
     assert!(output.status.success(), "{:?}", output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
 
-    let results = parsed.as_array().expect("multi-profile output is an array");
-    assert_eq!(results.len(), 2, "expected one result per profile");
-    for result in results {
-        assert_eq!(
-            result["alertDef"]["consoleUrl"], "https://c4c.app.eu2.coralogix.com/alerts/alert-1",
-            "link must nest inside the wrapper, same path as single-profile: {result}"
-        );
-        assert_eq!(
-            result["consoleUrl"],
-            serde_json::Value::Null,
-            "link must not leak to the root when `_profile` is present: {result}"
-        );
-        assert!(
-            result["_profile"].is_string(),
-            "profile tag preserved: {result}"
-        );
-    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://cached.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "expected the cached console link, not a freshly resolved one: {stderr}"
+    );
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|r| r.url.path() != "/identity/whoami"),
+        "a fresh on-disk cache entry must not trigger a whoami call"
+    );
+}
+
+/// A stale (past the 7-day TTL) on-disk cache entry is discarded: `cx`
+/// resolves a fresh URL via `/identity/whoami` and rewrites the cache.
+#[tokio::test]
+async fn console_url_cache_stale_entry_triggers_refresh_and_rewrite() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "team_id": 1,
+            "team_url": "https://fresh.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"dashboardId": "dash-abc123"})),
+        )
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile_with_cached_console_url(
+        &home,
+        "mock",
+        &server.uri(),
+        "https://stale.app.eu2.coralogix.com",
+        Utc::now() - Duration::days(10),
+    );
+    write_config(&home, "mock");
+    let profile_path = home.join(".cx").join("profiles").join("mock.toml");
+
+    let file_path = temp_json_path("cache_stale");
+    fs::write(
+        &file_path,
+        r#"{"name": "Demo Dashboard", "layout": {"sections": []}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home)
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "create",
+            "--from-file",
+            file_path.to_str().unwrap(),
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+
+    let _ = fs::remove_file(&file_path);
+    assert!(output.status.success(), "{:?}", output);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://fresh.app.eu2.coralogix.com/dashboards/dash-abc123"
+        ),
+        "expected the freshly resolved console link, not the stale cached one: {stderr}"
+    );
+    assert_eq!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path() == "/identity/whoami")
+            .count(),
+        1,
+        "a stale cache entry must trigger exactly one whoami refresh call"
+    );
+
+    let profile_after = fs::read_to_string(&profile_path).unwrap();
+    assert!(
+        profile_after.contains("https://fresh.app.eu2.coralogix.com"),
+        "the stale cache entry should be rewritten with the fresh URL: {profile_after}"
+    );
 }
 
 // ── e2m create/update ────────────────────────────────────────────────────────
@@ -1164,462 +1619,6 @@ async fn slo_update_prints_console_link() {
     );
 }
 
-// ── alerts suppression-rules ────────────────────────────────────────────────
-//
-// Rules carry two IDs: `uniqueIdentifier` (stable, addressable) and `id` (the
-// rule version id). The console's `?edit=` lookup only matches
-// `uniqueIdentifier`, so every mock below returns both and every assertion
-// pins the link to the former and explicitly rejects the latter - that swap
-// is the bug these tests exist to catch.
-
-const SUPPRESSION_UNIQUE_ID: &str = "38c4a964-a237-41ea-9b02-87af3d734571";
-const SUPPRESSION_VERSION_ID: &str = "04b68179-b051-4c2c-a684-ef3a4fb0f80f";
-
-fn suppression_link(id: &str) -> String {
-    format!("https://c4c.app.eu2.coralogix.com/suppression-rules?edit={id}&meta=edit")
-}
-
-#[tokio::test]
-async fn suppression_rule_create_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertSchedulerRule": {
-                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
-                "id": SUPPRESSION_VERSION_ID,
-                "name": "New Rule"
-            }
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("suppression_rule_create");
-    fs::write(
-        &file_path,
-        r#"{"alertSchedulerRule": {"name": "New Rule"}}"#,
-    )
-    .unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "suppression-rules",
-            "create",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains(&format!(
-            "View in Coralogix: {}",
-            suppression_link(SUPPRESSION_UNIQUE_ID)
-        )),
-        "stderr did not link the rule's uniqueIdentifier: {stderr}"
-    );
-    assert!(
-        !stderr.contains(SUPPRESSION_VERSION_ID),
-        "stderr leaked the rule version id, which the console can't resolve: {stderr}"
-    );
-
-    // The created-rule line should report the addressable id too, since that's
-    // what the user feeds into get/update/delete next.
-    assert!(
-        stderr.contains(&format!("(ID: {SUPPRESSION_UNIQUE_ID})")),
-        "stderr did not report the uniqueIdentifier as the rule's ID: {stderr}"
-    );
-
-    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(
-        stdout["consoleUrl"],
-        suppression_link(SUPPRESSION_UNIQUE_ID)
-    );
-    // Both IDs are surfaced under the API's own names.
-    assert_eq!(stdout["unique_identifier"], SUPPRESSION_UNIQUE_ID);
-    assert_eq!(stdout["id"], SUPPRESSION_VERSION_ID);
-}
-
-#[tokio::test]
-async fn suppression_rule_update_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("PUT"))
-        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertSchedulerRule": {
-                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
-                // An update mints a fresh version id; the link must not follow it.
-                "id": "808f396d-4e85-4872-b18f-9b1a39f466a5",
-                "name": "Updated Rule"
-            }
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("suppression_rule_update");
-    fs::write(
-        &file_path,
-        format!(
-            r#"{{"alertSchedulerRule": {{"uniqueIdentifier": "{SUPPRESSION_UNIQUE_ID}", "name": "Updated Rule"}}}}"#
-        ),
-    )
-    .unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "suppression-rules",
-            "update",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains(&format!(
-            "View in Coralogix: {}",
-            suppression_link(SUPPRESSION_UNIQUE_ID)
-        )),
-        "stderr did not link the rule's uniqueIdentifier: {stderr}"
-    );
-    assert!(
-        !stderr.contains("808f396d-4e85-4872-b18f-9b1a39f466a5"),
-        "the link followed the new version id instead of the stable one: {stderr}"
-    );
-    // A body that already carries uniqueIdentifier must not trip the warning.
-    assert!(
-        !stderr.contains("Warning:"),
-        "a correctly-keyed update body should not warn: {stderr}"
-    );
-}
-
-/// A body identifying the rule by `id` alone is what the backend rejects with a
-/// field-less "Invalid UUID format"; warn before the request goes out.
-#[tokio::test]
-async fn suppression_rule_update_warns_when_body_uses_the_version_id() {
-    let server = MockServer::start().await;
-    Mock::given(method("PUT"))
-        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertSchedulerRule": {
-                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
-                "id": SUPPRESSION_VERSION_ID,
-                "name": "Updated Rule"
-            }
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("suppression_rule_update_bad_id");
-    fs::write(
-        &file_path,
-        format!(
-            r#"{{"alertSchedulerRule": {{"id": "{SUPPRESSION_VERSION_ID}", "name": "Updated Rule"}}}}"#
-        ),
-    )
-    .unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "suppression-rules",
-            "update",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("sets 'id' but not 'uniqueIdentifier'"),
-        "stderr did not warn about the version-id-keyed body: {stderr}"
-    );
-}
-
-#[tokio::test]
-async fn suppression_rule_get_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path(format!(
-            "/mgmt/openapi/5/alerts/suppression-rules/v1/{SUPPRESSION_UNIQUE_ID}"
-        )))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertSchedulerRule": {
-                "uniqueIdentifier": SUPPRESSION_UNIQUE_ID,
-                "id": SUPPRESSION_VERSION_ID,
-                "name": "Maintenance Window"
-            }
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "suppression-rules",
-            "get",
-            SUPPRESSION_UNIQUE_ID,
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains(&format!(
-            "View in Coralogix: {}",
-            suppression_link(SUPPRESSION_UNIQUE_ID)
-        )),
-        "stderr did not contain the console link: {stderr}"
-    );
-
-    // The response is a single-key wrapper, so the tag nests inside it.
-    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(
-        stdout["alertSchedulerRule"]["consoleUrl"],
-        suppression_link(SUPPRESSION_UNIQUE_ID)
-    );
-}
-
-/// An unknown id - the version id being the easy mistake - answers 200 `{}`
-/// rather than 404, so there's nothing to link and nothing to print.
-#[tokio::test]
-async fn suppression_rule_get_miss_prints_no_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path(format!(
-            "/mgmt/openapi/5/alerts/suppression-rules/v1/{SUPPRESSION_VERSION_ID}"
-        )))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "suppression-rules",
-            "get",
-            SUPPRESSION_VERSION_ID,
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("View in Coralogix"),
-        "a miss should not produce a console link: {stderr}"
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Rule not found."),
-        "a miss should say so instead of printing an empty object: {stdout}"
-    );
-}
-
-#[tokio::test]
-async fn suppression_rule_list_tags_every_row_with_its_own_console_url() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertSchedulerRules": [
-                {
-                    "alertSchedulerRule": {
-                        "uniqueIdentifier": "unique-1",
-                        "id": "version-1",
-                        "name": "First Rule",
-                        "enabled": true
-                    },
-                    "nextActiveTimeframes": []
-                },
-                {
-                    "alertSchedulerRule": {
-                        "uniqueIdentifier": "unique-2",
-                        "id": "version-2",
-                        "name": "Second Rule",
-                        "enabled": false
-                    },
-                    "nextActiveTimeframes": []
-                }
-            ]
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "suppression-rules",
-            "list",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let items = stdout.as_array().expect("expected a json array");
-    assert_eq!(items.len(), 2);
-
-    for (i, (unique, name)) in [("unique-1", "First Rule"), ("unique-2", "Second Rule")]
-        .iter()
-        .enumerate()
-    {
-        // Unwrapping the list envelope is what keeps these from being null.
-        assert_eq!(items[i]["name"], *name, "row {i}: {items:#?}");
-        assert_eq!(items[i]["unique_identifier"], *unique);
-        assert_eq!(
-            items[i]["consoleUrl"],
-            suppression_link(unique),
-            "row {i} did not carry its own rule's consoleUrl: {items:#?}"
-        );
-    }
-
-    // Text mode shows the addressable id in the ID column, not the version id,
-    // and echoes the suppression-rules page once on stderr.
-    let text_output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "suppression-rules",
-            "list",
-            "-o",
-            "text",
-        ])
-        .output()
-        .expect("failed to run cx");
-    assert!(text_output.status.success(), "{:?}", text_output);
-    let stdout = String::from_utf8_lossy(&text_output.stdout);
-    assert!(
-        stdout.contains("unique-1") && !stdout.contains("version-1"),
-        "text table should show the uniqueIdentifier, not the version id: {stdout}"
-    );
-    let stderr = String::from_utf8_lossy(&text_output.stderr);
-    assert!(
-        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/suppression-rules"),
-        "stderr did not contain the suppression-rules page link: {stderr}"
-    );
-}
-
-#[tokio::test]
-async fn suppression_rule_list_empty_prints_no_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/alerts/suppression-rules/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"alertSchedulerRules": []})))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args(["--profile", "mock", "alerts", "suppression-rules", "list"])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("View in Coralogix"),
-        "an empty list has nothing to view: {stderr}"
-    );
-}
-
 // ── notifications connectors create/update ───────────────────────────────────
 
 #[tokio::test]
@@ -1728,11 +1727,11 @@ async fn connector_update_prints_console_link() {
     );
 }
 
-/// `notifications connectors list` has a distinct console URL per connector
-/// (same as `alerts list`), so every row must be tagged with its own
-/// `consoleUrl` - not just the first.
+/// `notifications connectors list` prints a single "View in Coralogix" link
+/// to the connectors list page - never a per-row link in stdout, in any
+/// output mode.
 #[tokio::test]
-async fn connectors_list_tags_every_row_with_its_own_console_url() {
+async fn connectors_list_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(
@@ -1774,17 +1773,21 @@ async fn connectors_list_tags_every_row_with_its_own_console_url() {
     let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let items = stdout.as_array().expect("expected a json array");
     assert_eq!(items.len(), 3);
-    for (i, id) in ["conn-1", "conn-2", "conn-3"].iter().enumerate() {
-        assert_eq!(
-            items[i]["consoleUrl"],
-            format!("https://c4c.app.eu2.coralogix.com/notification-center/connectors?id={id}"),
-            "row {i} did not carry its own connector's consoleUrl: {items:#?}"
+    for item in items {
+        assert!(
+            item.get("consoleUrl").is_none(),
+            "stdout must never carry a consoleUrl field: {item:#?}"
         );
     }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/connectors"
+        ),
+        "stderr did not contain the connectors list page link: {stderr}"
+    );
 
-    // Text mode doesn't repeat every connector's own link in the table (that
-    // would bloat it) - instead it gets a single "View in Coralogix" line
-    // to stderr pointing at the connectors list page itself.
+    // Text mode doesn't carry a per-row Console URL column either.
     let text_output = cx(&home)
         .args([
             "--profile",
@@ -2302,95 +2305,6 @@ async fn tco_create_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco-policies"),
-        "stderr did not contain the console link: {stderr}"
-    );
-}
-
-#[tokio::test]
-async fn archive_metrics_create_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/metrics/data-setup/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("archive_metrics_create");
-    fs::write(&file_path, r#"{"enabled": true}"#).unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "archive",
-            "metrics",
-            "create",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/physical-locations"),
-        "stderr did not contain the console link: {stderr}"
-    );
-}
-
-#[tokio::test]
-async fn recording_rules_create_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/recording-rules/recording-rules/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "group": {"id": "rr-1", "name": "New Group"}
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let file_path = temp_json_path("recording_rules_create");
-    fs::write(&file_path, r#"{"name": "New Group"}"#).unwrap();
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "recording-rules",
-            "create",
-            "--from-file",
-            file_path.to_str().unwrap(),
-            "--yes",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    let _ = fs::remove_file(&file_path);
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/recording-rules"),
         "stderr did not contain the console link: {stderr}"
     );
 }
@@ -2942,9 +2856,8 @@ async fn tco_list_prints_console_link() {
 
 /// Regression test for a real-world bug: when a team has zero TCO policies,
 /// the list command used to print the console link to stderr unconditionally
-/// while `-o json`/`-o agents` had no row left to tag it onto - violating the
-/// "stderr and consoleUrl never disagree" invariant. Resolving (and
-/// printing) the link must be skipped entirely when the list is empty.
+/// even though there was nothing to view. Resolving (and printing) the link
+/// must be skipped entirely when the list is empty.
 #[tokio::test]
 async fn tco_list_empty_prints_no_console_link() {
     let server = MockServer::start().await;
@@ -2973,37 +2886,6 @@ async fn tco_list_empty_prints_no_console_link() {
     assert!(
         !stderr.contains("View in Coralogix:"),
         "stderr unexpectedly contained a console link for an empty policy list: {stderr}"
-    );
-}
-
-#[tokio::test]
-async fn archive_metrics_get_prints_console_link() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/metrics/data-setup/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args(["--profile", "mock", "archive", "metrics", "get"])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/physical-locations"),
-        "stderr did not contain the console link: {stderr}"
     );
 }
 
@@ -3077,10 +2959,8 @@ async fn ai_center_evaluations_list_prints_console_link() {
 
 /// Regression test for a real-world bug: when a team has zero AI Center
 /// evaluations, the list command used to print the console link to stderr
-/// unconditionally while `-o json`/`-o agents` had no row left to tag it
-/// onto - violating the "stderr and consoleUrl never disagree" invariant.
-/// Resolving (and printing) the link must be skipped entirely when the list
-/// is empty.
+/// unconditionally even though there was nothing to view. Resolving (and
+/// printing) the link must be skipped entirely when the list is empty.
 #[tokio::test]
 async fn ai_center_evaluations_list_empty_prints_no_console_link() {
     let server = MockServer::start().await;
@@ -3112,12 +2992,11 @@ async fn ai_center_evaluations_list_empty_prints_no_console_link() {
     );
 }
 
-/// Regression test: unlike other list commands (whose console link is one
-/// static per-profile "page" URL, not any individual row's own link),
-/// `alerts list` has a distinct console URL per alert, so every row must be
-/// tagged with its own `consoleUrl` - not just the first.
+/// Regression test: `alerts list` prints a single "View in Coralogix" link
+/// to the alerts list page - never a per-row link in stdout, in any output
+/// mode.
 #[tokio::test]
-async fn alerts_list_tags_every_row_with_its_own_console_url() {
+async fn alerts_list_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
@@ -3149,17 +3028,19 @@ async fn alerts_list_tags_every_row_with_its_own_console_url() {
     let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let items = stdout.as_array().expect("expected a json array");
     assert_eq!(items.len(), 3);
-    for (i, id) in ["alert-1", "alert-2", "alert-3"].iter().enumerate() {
-        assert_eq!(
-            items[i]["consoleUrl"],
-            format!("https://c4c.app.eu2.coralogix.com/alerts/{id}"),
-            "row {i} did not carry its own alert's consoleUrl: {items:#?}"
+    for item in items {
+        assert!(
+            item.get("consoleUrl").is_none(),
+            "stdout must never carry a consoleUrl field: {item:#?}"
         );
     }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts"),
+        "stderr did not contain the alerts list page link: {stderr}"
+    );
 
-    // Text mode doesn't repeat every alert's own link in the table (that
-    // would bloat it) - instead it gets a single "View in Coralogix" line
-    // to stderr pointing at the alerts list page itself.
+    // Text mode doesn't carry a per-row Console URL column either.
     let text_output = cx(&home)
         .args(["--profile", "mock", "alerts", "list", "-o", "text"])
         .output()
@@ -3250,70 +3131,6 @@ async fn dashboard_check_by_id_prints_console_link() {
     );
 }
 
-/// `-o json` on `dashboards check <id>` must embed the same URL as a
-/// `consoleUrl` field on every issue row (there's no single "the dashboard"
-/// object here - `check` returns a list of validation issues - so the URL is
-/// repeated per row via `issue_json_row`'s `console_url` parameter).
-#[tokio::test]
-async fn dashboard_check_by_id_json_output_includes_console_url_on_first_issue_only() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/dashboards/check/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "issues": [
-                {"severity": "SEVERITY_WARNING", "message": "deprecated function", "location": "/a"},
-                {"severity": "SEVERITY_ERROR", "message": "bad query", "location": "/b"},
-            ]
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "dashboards",
-            "check",
-            "dash-abc123",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    // Exits non-zero because of the error-severity issue - CI-gate semantics -
-    // but stdout should still have rendered the JSON rows first.
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-    let rows = parsed.as_array().expect("expected a JSON array of issues");
-    assert_eq!(rows.len(), 2);
-    // It's one static dashboard-page link for the whole check, not per-issue -
-    // only the first row should carry it so `-o agents` output doesn't repeat
-    // the identical URL once per issue.
-    assert_eq!(
-        rows[0].get("consoleUrl").and_then(|v| v.as_str()),
-        Some("https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"),
-        "expected consoleUrl on the first issue row: {}",
-        rows[0]
-    );
-    for row in &rows[1..] {
-        assert!(
-            row.get("consoleUrl").is_none(),
-            "expected no consoleUrl on subsequent issue rows: {row}"
-        );
-    }
-}
-
 #[tokio::test]
 async fn dashboard_check_from_file_prints_no_console_link() {
     let server = MockServer::start().await;
@@ -3390,62 +3207,6 @@ async fn alert_get_prints_console_link() {
     assert!(
         stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
         "stderr did not contain the console link: {stderr}"
-    );
-}
-
-/// `-o json` on `alerts get` must embed the same URL as a `consoleUrl` field
-/// nested inside the `alertDef` wrapper object (see
-/// `render::tag_console_url`'s single-object-wrapper nesting), not at the
-/// JSON root, and not only printed to stderr.
-#[tokio::test]
-async fn alert_get_json_output_includes_console_url() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-xyz789"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "alertDef": {"id": "alert-xyz789", "name": "Demo Alert"}
-        })))
-        .mount(&server)
-        .await;
-
-    let home = temp_home();
-    write_profile(
-        &home,
-        "mock",
-        &server.uri(),
-        Some("https://c4c.app.eu2.coralogix.com"),
-    );
-    write_config(&home, "mock");
-
-    let output = cx(&home)
-        .args([
-            "--profile",
-            "mock",
-            "alerts",
-            "get",
-            "alert-xyz789",
-            "-o",
-            "json",
-        ])
-        .output()
-        .expect("failed to run cx");
-
-    assert!(output.status.success(), "{:?}", output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout was not valid JSON: {e}\nstdout: {stdout}"));
-    assert_eq!(
-        parsed.get("consoleUrl"),
-        None,
-        "consoleUrl must not sit at the root alongside alertDef: {parsed}"
-    );
-    assert_eq!(
-        parsed
-            .get("alertDef")
-            .and_then(|v| v.get("consoleUrl"))
-            .and_then(|v| v.as_str()),
-        Some("https://c4c.app.eu2.coralogix.com/alerts/alert-xyz789"),
-        "expected consoleUrl field nested inside alertDef: {parsed}"
     );
 }
 
@@ -3627,5 +3388,670 @@ async fn connector_get_prints_console_link() {
             "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/connectors?id=conn-1"
         ),
         "stderr did not contain the console link: {stderr}"
+    );
+}
+
+// ── newly-wired list-page links ─────────────────────────────────────────────
+//
+// These commands previously printed no console link at all. Each pair below
+// mirrors the existing `tco_list_prints_console_link` /
+// `tco_list_empty_prints_no_console_link` pattern: one link per profile when
+// the list is non-empty, no link (and no `/identity/whoami` lookup wasted)
+// when it's empty.
+
+#[tokio::test]
+async fn api_keys_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list/all"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "keys": [{ "id": "key-1", "name": "Demo Key" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn api_keys_list_empty_still_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/list/all"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link for an empty key list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn api_keys_admin_list_prints_console_link() {
+    let server = MockServer::start().await;
+    // `admin list` hits the bare collection route (get_team_members_keys).
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "keys": [{
+                "apiKey": { "id": "key-1", "keyName": "Demo Key", "isActive": true },
+                "permissions": [],
+                "presets": []
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "admin", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn api_keys_admin_list_empty_still_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "api-keys", "admin", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/api-keys"),
+        "stderr did not contain the console link for an empty key list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_catalog_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [{ "id": "dash-1", "name": "Demo Dashboard" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "catalog"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_catalog_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/catalog/list",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"items": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "catalog"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty catalog: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_folders_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dashboards/folders/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "folder": [{ "id": "folder-1", "name": "Ops" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "folders", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn dashboards_folders_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/dashboards/folders/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folder": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "dashboards", "folders", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty folder list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn routers_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/routers",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "routers": [{ "id": "router-1", "name": "Demo Router" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "notifications", "routers", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/notification-center/routers"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn routers_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/notifications/notification-center/v1/routers",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"routers": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "notifications", "routers", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty router list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn e2m_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/events2metrics/events2metrics/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "e2m": [{ "id": "e2m-1", "name": "Demo E2M", "type": "E2M_TYPE_LOGS2METRICS" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "e2m", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/tco/metrics"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn e2m_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/events2metrics/events2metrics/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"e2m": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "e2m", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty E2M list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn slos_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "slos": [{ "id": "slo-1", "name": "Demo SLO" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "slos", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/slo"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn slos_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"slos": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "slos", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty SLO list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_scopes_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-scopes/v1/all/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "scopes": [{ "id": "scope-1", "displayName": "Production" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "scopes", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/scopes"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_scopes_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-scopes/v1/all/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"scopes": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "scopes", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty scope list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_groups_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-groups/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "groups": [{ "groupId": "grp-1", "name": "Engineering" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "groups", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/settings/account/groups"
+        ),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn iam_groups_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/aaa/team-groups/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"groups": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "iam", "groups", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty group list: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn views_list_prints_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "views": [{ "id": "view-1", "name": "Demo View" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "views", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("View in Coralogix: https://c4c.app.eu2.coralogix.com/explore"),
+        "stderr did not contain the console link: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn views_list_empty_prints_no_console_link() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/data-exploration/views/v1/views"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"views": []})))
+        .mount(&server)
+        .await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "mock",
+        &server.uri(),
+        Some("https://c4c.app.eu2.coralogix.com"),
+    );
+    write_config(&home, "mock");
+
+    let output = cx(&home)
+        .args(["--profile", "mock", "views", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(output.status.success(), "{:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("View in Coralogix:"),
+        "stderr unexpectedly contained a console link for an empty view list: {stderr}"
     );
 }

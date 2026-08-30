@@ -93,36 +93,27 @@ pub async fn run_list(
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertDef)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // Unlike the static per-profile "page" links on other list commands,
-        // each alert has its own console URL - so every row gets its own
-        // consoleUrl, not just the first. `console_base` is cached per
-        // target and doesn't print, so resolving it here (once per profile)
-        // is cheap.
-        let console_base = match crate::execution::find_target(targets, &profile) {
-            Some(target) => target.console_base().await,
-            None => None,
-        };
-        // Also print the alerts list page link to stderr once per profile -
-        // per-row consoleUrl above is per-alert, but this gives a human a
-        // link to the alerts overview itself. Skip when the profile's
-        // result is empty, since there's nothing to view.
-        if !resp.alert_defs.is_empty() {
-            crate::execution::console_link_for_profile(targets, &profile, |b| {
+        let matching: Vec<AlertDef> = resp
+            .alert_defs
+            .into_iter()
+            .filter(|alert| match name_filter {
+                Some(filter) => alert
+                    .display_name()
+                    .to_lowercase()
+                    .contains(&filter.to_lowercase()),
+                None => true,
+            })
+            .collect();
+        // Print the alerts list page link to stderr once per profile. Skip
+        // when nothing matched (post-filter), since there's nothing to view.
+        if !matching.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::alerts_url(b)
             })
             .await;
         }
-        for alert in resp.alert_defs {
-            if let Some(filter) = name_filter {
-                let name = alert.display_name().to_lowercase();
-                if !name.contains(&filter.to_lowercase()) {
-                    continue;
-                }
-            }
-            let mut json = alert_to_json(&alert, include_profile, &profile);
-            if let (Some(base), Some(id)) = (&console_base, alert.id.as_deref()) {
-                render::tag_console_url(&mut json, &crate::console_url::alert_url(base, id));
-            }
+        for alert in matching {
+            let json = alert_to_json(&alert, include_profile, &profile);
             all_json.push(json);
             all_items.push((profile.clone(), alert));
         }
@@ -131,7 +122,7 @@ pub async fn run_list(
     // Render
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -198,7 +189,7 @@ pub async fn run_get(
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        crate::execution::tag_console_link_for_profile(targets, &profile, &mut val, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::alert_url(b, alert_id)
         })
         .await;
@@ -208,7 +199,7 @@ pub async fn run_get(
     // Render
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -306,17 +297,13 @@ pub async fn run_create(
                 alert.id.as_deref(),
                 &profile,
             );
-            let mut console_url: Option<String> = None;
             if let Some(id) = alert.id.as_deref() {
-                console_url = crate::execution::console_link_for_profile(targets, &profile, |b| {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                     crate::console_url::alert_url(b, id)
                 })
                 .await;
             }
-            let mut json = alert_to_json(&alert, include_profile, &profile);
-            if let Some(url) = &console_url {
-                render::tag_console_url(&mut json, url);
-            }
+            let json = alert_to_json(&alert, include_profile, &profile);
             all_results.push(json);
         } else {
             eprintln!(
@@ -329,7 +316,7 @@ pub async fn run_create(
     // Render
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -416,7 +403,7 @@ pub async fn run_enable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Res
             "{}",
             format!("Alert {alert_id} enabled in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::alert_url(b, alert_id)
         })
         .await;
@@ -447,7 +434,7 @@ pub async fn run_disable(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Re
             "{}",
             format!("Alert {alert_id} disabled in profile '{profile}'.").green()
         );
-        crate::execution::console_link_for_profile(targets, &profile, |b| {
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::alert_url(b, alert_id)
         })
         .await;
@@ -536,7 +523,7 @@ pub async fn run_events(
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -601,7 +588,7 @@ pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFor
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Agents => {
+        OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");

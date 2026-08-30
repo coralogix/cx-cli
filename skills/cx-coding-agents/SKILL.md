@@ -63,7 +63,7 @@ All query commands (`cx metrics`, `cx logs`, `cx spans`, `cx dataprime`) are rea
 | `cx spans '<dataprime_query>'` | Span query | Cursor, Codex latency, Copilot CLI direct OTel |
 | `cx dataprime query '<query>'` | Raw DataPrime query | When you need an explicit `source logs` or `source spans` in the query |
 
-**Output format:** append `-o agents` to any command when passing results to an agent or further processing.
+**Output format:** append `-o toon` to any command when passing results to an agent or further processing.
 
 **Multi-profile:** use `-p <profile>` (repeatable) to fan out across profiles simultaneously.
 

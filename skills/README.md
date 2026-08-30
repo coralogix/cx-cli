@@ -16,6 +16,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts`                                                        |
 | `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation                                       |
 | `cx-infra` | Explore infrastructure resources - discover monitored resource types, list resources, check per-resource data                                     |
+| `cx-service-catalog` | Query Service Catalog APM entities - services, databases, operations, JVMs, K8s pods; schema, entities, and aggregated/timeseries data          |
 
 ### Workflow
 
@@ -70,6 +71,7 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "Why is the checkout page slow for users?"
 - "Debug the 500 errors on the payment endpoint"
 - "Which of our EC2 instances were unhealthy this week?"
+- "Show me the top 5 services by p99 latency in the last hour"
 - "How can we reduce our Coralogix costs?"
 - "Help me triage this case"
 - "Set up parsing rules for our new service"

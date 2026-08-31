@@ -83,7 +83,7 @@ async fn artifacts_list_honors_http_timeout() {
 }
 
 #[tokio::test]
-async fn ask_uses_response_timeout() {
+async fn ask_uses_timeout() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v2/olly/v2/chats/existing-chat/interactions/"))
@@ -107,7 +107,7 @@ async fn ask_uses_response_timeout() {
             "What alerts fired today?",
             "--chat-id",
             "existing-chat",
-            "--response-timeout",
+            "--timeout",
             "42",
         ])
         .assert()

@@ -451,14 +451,6 @@ cx --http-timeout 30 alerts list
 CX_HTTP_TIMEOUT=30 cx olly artifacts list
 ```
 
-`cx olly ask --response-timeout <SECONDS>` controls how long Olly should wait
-for the assistant response (default: 900 seconds). It is separate from the HTTP
-request deadline:
-
-```sh
-cx --http-timeout 120 olly ask "Investigate elevated error rates" --response-timeout 90
-```
-
 ### Gateway metrics
 
 Each authenticated Coralogix API request identifies `cx` through

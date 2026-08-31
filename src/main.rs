@@ -934,7 +934,7 @@ Examples:
 
         /// Maximum seconds to wait for an Olly response.
         #[arg(long, default_value_t = 900)]
-        response_timeout: u32,
+        timeout: u32,
 
         /// Ask Olly as a sub-agent (agent-to-agent mode): shorter responses, no
         /// charts/tables, asks clarifying questions instead of guessing.
@@ -4784,7 +4784,7 @@ async fn main() -> Result<()> {
                     message,
                     chat_id,
                     model,
-                    response_timeout,
+                    timeout,
                     agent_to_agent_mode,
                 } => {
                     commands::olly::run_ask(
@@ -4792,7 +4792,7 @@ async fn main() -> Result<()> {
                         &message,
                         chat_id.as_deref(),
                         &model,
-                        response_timeout,
+                        timeout,
                         agent_to_agent_mode,
                         output,
                     )

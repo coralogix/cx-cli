@@ -58,11 +58,16 @@ cx olly ask "Explain this error" --model claude-sonnet-4-5 --agent-to-agent-mode
 
 ### Timeout
 
-For complex queries that may take longer, increase the timeout (default: 900 seconds):
+For complex queries that may take longer, increase Olly's response timeout
+(default: 900 seconds):
 
 ```bash
 cx olly ask "Deep analysis of last week's incidents" --timeout 1800 --agent-to-agent-mode
 ```
+
+`--http-timeout <SECONDS>` (or `CX_HTTP_TIMEOUT`) sets the HTTP request
+deadline for all CLI commands, including Olly. It is separate from the Olly
+response timeout.
 
 ### Agent-to-agent mode
 

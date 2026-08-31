@@ -50,6 +50,7 @@ fn classify_health_error(client: &CxClient, err: CxError) -> anyhow::Error {
     match err {
         // `CxError::Auth`'s message already names the fix (`cx profiles add`).
         CxError::Auth(msg) => anyhow!("authentication failed — {msg}"),
+        CxError::Timeout => anyhow!("could not reach {} — request timed out", client.endpoint()),
         // Connection-level failures point at the region/URL, not the key.
         CxError::Http(e) if e.is_connect() || e.is_timeout() || e.is_request() => anyhow!(
             "could not reach {} — the region or URL may be incorrect ({e})",

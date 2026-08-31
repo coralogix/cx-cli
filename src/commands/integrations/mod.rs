@@ -112,7 +112,11 @@ fn integration_metadata(body: &Value, deployment_id: &str) -> Result<Value> {
 
 fn test_request(body: &Value, deployment_id: Option<&str>) -> Result<Value> {
     if body.get("integrationData").is_some() && body.get("integrationId").is_some() {
-        return Ok(body.clone());
+        let mut request = body.clone();
+        if let Some(deployment_id) = deployment_id {
+            request["integrationId"] = Value::String(deployment_id.to_string());
+        }
+        return Ok(request);
     }
 
     let deployment_id = deployment_id

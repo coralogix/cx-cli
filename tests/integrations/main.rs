@@ -168,3 +168,46 @@ async fn test_uses_metadata_endpoint_and_normalizes_deployment_details() {
     .expect("run_test should use the metadata endpoint");
     fs::remove_file(file).expect("temporary file should be removed");
 }
+
+#[tokio::test]
+async fn test_cli_id_overrides_embedded_request_id() {
+    let server = MockServer::start().await;
+    let input = json!({
+        "integrationId": "deployment-a",
+        "integrationData": {
+            "integrationKey": "aws-metrics-collector",
+            "integrationParameters": { "parameters": [] },
+            "version": "0.11.0"
+        }
+    });
+    let expected = json!({
+        "integrationId": "deployment-b",
+        "integrationData": {
+            "integrationKey": "aws-metrics-collector",
+            "integrationParameters": { "parameters": [] },
+            "version": "0.11.0"
+        }
+    });
+    let file = write_json_file(input);
+
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/integrations/metadata/v1/test"))
+        .and(body_json(&expected))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "result": { "success": {} } })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    run_test(
+        &[target],
+        Some("deployment-b"),
+        file.to_str().expect("temporary path must be UTF-8"),
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_test should use the explicitly supplied deployment ID");
+    fs::remove_file(file).expect("temporary file should be removed");
+}

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde_json::{json, Value};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -33,6 +35,22 @@ async fn attaches_gateway_metric_headers() {
         .unwrap()
         .starts_with("cx-cli/"));
     assert!(requests[0].headers.get("x-cx-cli-metadata").is_none());
+}
+
+#[tokio::test]
+async fn honors_configured_request_timeout() {
+    init_tls();
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/test"))
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(1)))
+        .mount(&server)
+        .await;
+
+    let client =
+        CxClient::with_timeout(server.uri(), "test-key", Some(Duration::from_millis(10))).unwrap();
+    let err = client.get::<Value>("/test", &[]).await.unwrap_err();
+    assert!(matches!(err, coralogix_cli::error::CxError::Timeout));
 }
 
 #[tokio::test]

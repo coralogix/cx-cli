@@ -7,6 +7,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{bail, Result};
 use colored::Colorize;
@@ -44,7 +45,12 @@ pub struct ExecutionTarget {
 impl ExecutionTarget {
     /// Build an `ExecutionTarget` from an already-resolved config.
     pub fn new(cfg: ResolvedConfig) -> Result<Self> {
-        let client = CxClient::new(&cfg.endpoint, &cfg.api_key)?;
+        Self::with_timeout(cfg, None)
+    }
+
+    /// Build an `ExecutionTarget` with an optional per-request deadline.
+    pub fn with_timeout(cfg: ResolvedConfig, timeout: Option<Duration>) -> Result<Self> {
+        let client = CxClient::with_timeout(&cfg.endpoint, &cfg.api_key, timeout)?;
         let profile_name = cfg.profile_name.clone();
         Ok(Self {
             profile_name,
@@ -180,11 +186,12 @@ pub async fn emit_console_link_for_profile(
 pub fn build_targets(
     configs: Vec<ResolvedConfig>,
     no_console_link: bool,
+    timeout: Option<Duration>,
 ) -> Result<Vec<Arc<ExecutionTarget>>> {
     configs
         .into_iter()
         .map(|cfg| {
-            let mut target = ExecutionTarget::new(cfg)?;
+            let mut target = ExecutionTarget::with_timeout(cfg, timeout)?;
             target.no_console_link = no_console_link;
             Ok(Arc::new(target))
         })
@@ -454,7 +461,7 @@ mod tests {
             test_cfg("http://127.0.0.1:1", Some("https://c4c.example.com/")),
             test_cfg("http://127.0.0.1:2", Some("https://other.example.com/")),
         ];
-        let targets = build_targets(configs, true).unwrap();
+        let targets = build_targets(configs, true, None).unwrap();
         assert_eq!(targets.len(), 2);
         for target in &targets {
             assert!(target.no_console_link);

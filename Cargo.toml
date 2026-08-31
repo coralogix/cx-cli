@@ -51,7 +51,7 @@ open = "5"
 
 # Terminal output
 colored = "3"
-tabled = { version = "0.20", features = ["ansi"] }
+tabled = { version = "0.21", default-features = false, features = ["ansi"] }
 indicatif = "0.18"
 terminal_size = "0.4"
 

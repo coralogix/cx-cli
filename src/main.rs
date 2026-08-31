@@ -1244,7 +1244,20 @@ Examples:
   cx alerts suppression-rules list
   cx alerts suppression-rules get <rule-id>
   cx alerts suppression-rules create --from-file rule.json
-  cx alerts suppression-rules delete <rule-id>")]
+  cx alerts suppression-rules update --from-file rule.json
+  cx alerts suppression-rules delete <rule-id>
+
+Rule IDs:
+  Rules carry two IDs. 'uniqueIdentifier' is the rule's own, stable ID and is
+  what get/update/delete and console links take. 'id' is the rule *version* ID
+  and changes on every update - it is not addressable. Use the ID column of
+  `list`, or the 'uniqueIdentifier' field in -o json output.
+
+Request bodies:
+  create/update take the rule wrapped in an 'alertSchedulerRule' object, and
+  update must identify the rule by 'uniqueIdentifier':
+
+  {\"alertSchedulerRule\": {\"uniqueIdentifier\": \"<rule-id>\", \"name\": \"...\", ...}}")]
     SuppressionRules {
         #[command(subcommand)]
         cmd: SuppressionRulesCmd,
@@ -1373,20 +1386,26 @@ enum SuppressionRulesCmd {
     List,
     /// Get a single suppression rule by ID.
     Get {
-        /// Suppression rule ID.
+        /// Suppression rule ID: the rule's uniqueIdentifier, not its version id.
         id: String,
     },
     /// Create a suppression rule from a JSON definition file [requires --yes].
     #[command(after_help = "\
 Examples:
   cx alerts suppression-rules create --from-file rule.json
-  cat rule.json | cx alerts suppression-rules create")]
+  cat rule.json | cx alerts suppression-rules create
+
+The rule must be wrapped in an 'alertSchedulerRule' object.")]
     Create {
         /// Path to JSON file with the rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
     /// Update a suppression rule from a JSON definition file [requires --yes].
+    #[command(after_help = "\
+The rule must be wrapped in an 'alertSchedulerRule' object and must identify
+itself by 'uniqueIdentifier'. Setting 'id' instead (the rule version id) is
+rejected with a field-less \"Invalid UUID format\" error.")]
     Update {
         /// Path to JSON file with the updated rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1394,7 +1413,7 @@ Examples:
     },
     /// Delete a suppression rule [requires --yes].
     Delete {
-        /// Suppression rule ID.
+        /// Suppression rule ID: the rule's uniqueIdentifier, not its version id.
         id: String,
     },
 }

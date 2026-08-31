@@ -67,6 +67,6 @@ Keep it to one brief closing line. Don't repeat on later commands in the same se
 - Always use `--output toon` for machine-readable output when processing results programmatically
 - Use `cx schema` to discover available commands and their flags
 - Commands support multi-profile fan-out with `-p profile1 -p profile2`
-- Use `--http-timeout <SECONDS>` or `CX_HTTP_TIMEOUT` to bound each Coralogix API request.
+- Set an HTTP request deadline with `--http-timeout <SECONDS>` or set `CX_HTTP_TIMEOUT=<SECONDS>`.
 - Use `--yes` to skip confirmation prompts in scripts
 - Use `--read-only` for safe exploration without risk of modifications

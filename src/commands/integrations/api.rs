@@ -70,6 +70,7 @@ pub struct DeleteIntegrationResponse {}
 // --- API ---
 
 const INTEGRATIONS_BASE: &str = "/mgmt/openapi/5/integrations/integrations/v1";
+const INTEGRATIONS_METADATA_BASE: &str = "/mgmt/openapi/5/integrations/metadata/v1";
 
 pub struct IntegrationsApi<'a> {
     client: &'a CxClient,
@@ -103,9 +104,8 @@ impl<'a> IntegrationsApi<'a> {
         self.client.post(INTEGRATIONS_BASE, body).await
     }
 
-    pub async fn update(&self, id: &str, body: &Value) -> Result<Value> {
-        let path = format!("{INTEGRATIONS_BASE}/{id}");
-        self.client.put(&path, body).await
+    pub async fn update(&self, body: &Value) -> Result<Value> {
+        self.client.put(INTEGRATIONS_METADATA_BASE, body).await
     }
 
     pub async fn delete(&self, id: &str) -> Result<DeleteIntegrationResponse> {
@@ -114,7 +114,7 @@ impl<'a> IntegrationsApi<'a> {
     }
 
     pub async fn test(&self, body: &Value) -> Result<Value> {
-        let path = format!("{INTEGRATIONS_BASE}/test");
+        let path = format!("{INTEGRATIONS_METADATA_BASE}/test");
         self.client.post(&path, body).await
     }
 

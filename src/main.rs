@@ -159,6 +159,15 @@ struct Cli {
     )]
     region: Option<String>,
 
+    /// HTTP request timeout in seconds.
+    #[arg(
+        long = "http-timeout",
+        global = true,
+        env = "CX_HTTP_TIMEOUT",
+        help_heading = "Global Options"
+    )]
+    http_timeout: Option<u64>,
+
     /// Output format: text, json, or toon. Overrides the default set in config.
     #[arg(long, short = 'o', global = true, help_heading = "Global Options")]
     output: Option<OutputFormat>,
@@ -933,7 +942,7 @@ Examples:
         #[arg(long, default_value = "gpt-5.2")]
         model: String,
 
-        /// Timeout in seconds for response.
+        /// Maximum seconds to wait for an Olly response.
         #[arg(long, default_value_t = 900)]
         timeout: u32,
 
@@ -1952,6 +1961,9 @@ enum IntegrationsCmd {
     },
     /// Test an integration configuration.
     Test {
+        /// Deployed integration ID. Required unless the JSON contains integrationId and integrationData.
+        #[arg(long)]
+        id: Option<String>,
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
@@ -3320,7 +3332,11 @@ async fn main() -> Result<()> {
         }
     };
 
-    let targets = build_targets(configs, no_console_link)?;
+    let targets = build_targets(
+        configs,
+        no_console_link,
+        cli.http_timeout.map(std::time::Duration::from_secs),
+    )?;
     let agent_mode = safety::is_agent_mode();
 
     // Wrap the dispatch in an async block so we can capture its Result and
@@ -4092,9 +4108,15 @@ async fn main() -> Result<()> {
                     confirm_destructive(&format!("Delete integration '{id}'?"), yes, agent_mode)?;
                     commands::integrations::run_delete(&targets, &id).await?;
                 }
-                IntegrationsCmd::Test { from_file } => {
+                IntegrationsCmd::Test { id, from_file } => {
                     confirm_destructive("Test integration?", yes, agent_mode)?;
-                    commands::integrations::run_test(&targets, &from_file, output).await?;
+                    commands::integrations::run_test(
+                        &targets,
+                        id.as_deref(),
+                        &from_file,
+                        output,
+                    )
+                    .await?;
                 }
                 IntegrationsCmd::Template => {
                     commands::integrations::run_template(&targets, output).await?;

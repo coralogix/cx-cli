@@ -1,7 +1,9 @@
 //! Integration tests for `cx init` (FORGE-658).
 //!
 //! `cx init` chains `cx profiles add`, an authenticated health check
-//! (`GET /identity/whoami`, FORGE-660), and `cx skills install`. These tests
+//! (`GET /identity/whoami`, FORGE-660), a best-effort onboarding recording for
+//! OAuth profiles (`POST /api/v2/onboarding`, FORGE-876), and `cx skills
+//! install`. These tests
 //! drive the non-interactive (advanced) path — the coding-agent one-liner — so
 //! no terminal or Node.js is required: the skills installer is a fake `npx` on
 //! PATH that records its arguments, exactly as the skills tests do.
@@ -228,6 +230,42 @@ async fn init_custom_endpoint_does_not_block_on_identity_route() {
         server.received_requests().await.unwrap().len(),
         0,
         "the whoami health check must not run for a custom endpoint"
+    );
+}
+
+/// Onboarding is gated to known regions, so the custom (non-region) endpoint
+/// these tests use must receive zero onboarding hits while init still succeeds.
+#[cfg(unix)]
+#[tokio::test]
+async fn init_does_not_report_onboarding_for_custom_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/onboarding"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let home = temp_dir("noonboard");
+    let bin = temp_dir("noonboard_bin");
+    install_fake_npx(&bin, &bin.join("args.txt"));
+
+    cx(&home, &bin)
+        .args([
+            "init",
+            "--url",
+            &server.uri(),
+            "--api-key",
+            "faketoken",
+            "--global-skills",
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        0,
+        "the onboarding POST must not run for a custom-endpoint init"
     );
 }
 

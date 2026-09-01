@@ -21,6 +21,19 @@ Coralogix: its region or endpoint, its credentials, and its default output
 format. Add as many as you have teams (see
 [Multi-profile fan-out](multi-profile.md)).
 
+### Custom configuration directory
+
+To create the `.cx/` directory under a different parent directory, set
+`CX_HOME`. For example:
+
+```bash
+export CX_HOME="$HOME/.config"
+```
+
+With this setting, `cx` stores its configuration in `~/.config/.cx/`,
+including `config.toml` and `profiles/`. When `CX_HOME` is not set, the default
+remains `~/.cx/`.
+
 ## Profiles
 
 `cx init` creates your first profile as part of setup — see the
@@ -445,14 +458,26 @@ Environment variables override profile file values:
 | `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
+| `CX_HTTP_TIMEOUT` | HTTP request deadline in seconds (equivalent to `--http-timeout`) |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
+| `CX_HOME` | Parent directory for cx configuration (`$CX_HOME/.cx`) |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 
 > **Note:** `CX_API_KEY` / `--api-key` always win, even for OAuth profiles. This lets scripts and CI systems inject tokens directly without going through the browser login flow.
 
 > **Env-only mode:** when no profile file exists on disk but both `CX_API_KEY` (or `--api-key`) and `CX_REGION` (or `--region`) are supplied, `cx` runs without a profile file. This is convenient for ephemeral environments (CI runners, containers, ad-hoc scripts) where running `cx profiles add <name>` first would be a paper-cut.
+
+## Request timeouts
+
+Use `--http-timeout <SECONDS>` or `CX_HTTP_TIMEOUT` to set a deadline for every
+Coralogix API request, including Olly requests:
+
+```sh
+cx --http-timeout 30 alerts list
+CX_HTTP_TIMEOUT=30 cx olly artifacts list
+```
 
 ### Gateway metrics
 

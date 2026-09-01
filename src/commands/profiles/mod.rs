@@ -3,6 +3,7 @@ use std::io::IsTerminal;
 use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
+use crate::api_client::CxClient;
 use crate::config::{
     has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
     save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
@@ -10,6 +11,8 @@ use crate::config::{
 use crate::keyring_store;
 use crate::oauth;
 use crate::region::{region_from_url, RegionMatch};
+
+mod api;
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 
@@ -582,6 +585,10 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         }
     }
 
+    // Record the onboarded user. Best-effort and silent — see
+    // `report_onboarding`.
+    report_onboarding(&name).await;
+
     let cx_dir = crate::config::config_dir()?;
     println!(
         "\nProfile '{name}' saved to {}\nCredentials stored in {storage_desc}",
@@ -645,6 +652,30 @@ pub async fn run_refresh(profile_name: String) -> Result<()> {
 
     println!("OAuth tokens for '{profile_name}' refreshed in {storage_desc}.");
     Ok(())
+}
+
+/// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
+///
+/// Best-effort and silent: gated to known regions, and any failure is swallowed
+/// so it never affects the outcome of `cx profiles add`.
+async fn report_onboarding(name: &str) {
+    let Ok(cfg) = crate::config::resolve(Some(name), None, None).await else {
+        return;
+    };
+    if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
+        return;
+    }
+    let Ok(client) = CxClient::new(&cfg.endpoint, &cfg.api_key) else {
+        return;
+    };
+    // Bound the request: the shared client carries no request timeout, so a
+    // gateway that accepts the connection but stalls the response would
+    // otherwise hang setup. A stall is swallowed like any other failure.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        api::report_onboarded(&client),
+    )
+    .await;
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────

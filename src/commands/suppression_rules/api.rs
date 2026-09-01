@@ -22,9 +22,15 @@ pub struct AlertSchedulerRule {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AlertSchedulerRuleWithActiveTimeframe {
+    pub alert_scheduler_rule: Option<AlertSchedulerRule>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetBulkAlertSchedulerRuleResponse {
     #[serde(default)]
-    pub alert_scheduler_rules: Vec<AlertSchedulerRule>,
+    pub alert_scheduler_rules: Vec<AlertSchedulerRuleWithActiveTimeframe>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,17 +96,22 @@ mod tests {
         let json = json!({
             "alertSchedulerRules": [
                 {
-                    "id": "rule-1",
-                    "name": "Maintenance Window",
-                    "enabled": true,
-                    "createdAt": "2026-01-01T00:00:00Z"
+                    "alertSchedulerRule": {
+                        "id": "rule-1",
+                        "name": "Maintenance Window",
+                        "enabled": true,
+                        "createdAt": "2026-01-01T00:00:00Z"
+                    }
                 }
             ]
         });
         let resp: GetBulkAlertSchedulerRuleResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.alert_scheduler_rules.len(), 1);
         assert_eq!(
-            resp.alert_scheduler_rules[0].name.as_deref(),
+            resp.alert_scheduler_rules[0]
+                .alert_scheduler_rule
+                .as_ref()
+                .and_then(|rule| rule.name.as_deref()),
             Some("Maintenance Window")
         );
     }

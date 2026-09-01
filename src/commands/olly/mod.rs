@@ -39,7 +39,7 @@ pub async fn run_ask(
     }
 
     let target = &targets[0];
-    let api = OllyApi::new(&target.cfg.endpoint, &target.cfg.api_key)?;
+    let api = OllyApi::from_client(target.client.clone());
 
     // Create a new chat if no chat_id provided
     let chat_id = match chat_id {
@@ -106,7 +106,7 @@ pub async fn run_artifacts_get(
     }
 
     let target = &targets[0];
-    let api = OllyApi::new(&target.cfg.endpoint, &target.cfg.api_key)?;
+    let api = OllyApi::from_client(target.client.clone());
 
     eprintln!("{}", "Fetching artifact...".dimmed());
     let artifact = api.get_artifact(artifact_id).await?;
@@ -320,7 +320,7 @@ pub async fn run_artifacts_list(
     }
 
     let target = &targets[0];
-    let api = OllyApi::new(&target.cfg.endpoint, &target.cfg.api_key)?;
+    let api = OllyApi::from_client(target.client.clone());
 
     eprintln!("{}", "Fetching artifacts...".dimmed());
     let artifacts = api.list_artifacts().await?;
@@ -418,42 +418,35 @@ fn artifact_to_json(artifact: &api::Artifact) -> Value {
 }
 
 fn render_artifacts_list_text(artifacts: &[api::Artifact]) -> Result<()> {
-    use tabled::{settings::Style, Table, Tabled};
-
-    #[derive(Tabled)]
-    struct Row {
-        #[tabled(rename = "ID")]
-        id: String,
-        #[tabled(rename = "FILENAME")]
-        filename: String,
-        #[tabled(rename = "TYPE")]
-        artifact_type: String,
-        #[tabled(rename = "SIZE")]
-        size: String,
-        #[tabled(rename = "CREATED")]
-        created_at: String,
-    }
+    use tabled::{builder::Builder, settings::Style};
 
     if artifacts.is_empty() {
         println!("{}", "No artifacts found.".yellow());
         return Ok(());
     }
 
-    let rows: Vec<Row> = artifacts
-        .iter()
-        .map(|a| Row {
-            id: a.id.clone().unwrap_or_else(|| "-".to_string()),
-            filename: a.filename.clone().unwrap_or_else(|| "-".to_string()),
-            artifact_type: a.artifact_type.clone().unwrap_or_else(|| "-".to_string()),
-            size: a
+    let mut builder = Builder::default();
+    builder.push_record(["ID", "FILENAME", "TYPE", "SIZE", "CREATED"]);
+    for artifact in artifacts {
+        builder.push_record([
+            artifact.id.clone().unwrap_or_else(|| "-".to_string()),
+            artifact.filename.clone().unwrap_or_else(|| "-".to_string()),
+            artifact
+                .artifact_type
+                .clone()
+                .unwrap_or_else(|| "-".to_string()),
+            artifact
                 .size
                 .map(|s| format!("{} B", s))
                 .unwrap_or_else(|| "-".to_string()),
-            created_at: a.created_at.clone().unwrap_or_else(|| "-".to_string()),
-        })
-        .collect();
+            artifact
+                .created_at
+                .clone()
+                .unwrap_or_else(|| "-".to_string()),
+        ]);
+    }
 
-    let table = Table::new(rows).with(Style::blank()).to_string();
+    let table = builder.build().with(Style::blank()).to_string();
     println!("{table}");
 
     Ok(())

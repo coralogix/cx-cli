@@ -72,7 +72,10 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertSchedulerRule)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        for rule in resp.alert_scheduler_rules {
+        for entry in resp.alert_scheduler_rules {
+            let Some(rule) = entry.alert_scheduler_rule else {
+                continue;
+            };
             all_json.push(rule_to_json(&rule, include_profile, &profile));
             all_items.push((profile.clone(), rule));
         }

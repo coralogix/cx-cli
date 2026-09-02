@@ -8,8 +8,8 @@ use toon_format::encode_default as toon_encode;
 pub mod api;
 
 use api::{
-    CategoryType, FilterDescriptor, HealthHistoryEntry, InfraApi, ListResourcesParams,
-    ResourceData, ResourceTypeMapping,
+    BoolFilter, CategoryType, FieldMatch, Filter, FilterDescriptor, HealthHistoryEntry, InfraApi,
+    ListResourcesParams, Op, ResourceData, ResourceTypeMapping,
 };
 
 use crate::config::OutputFormat;
@@ -154,18 +154,25 @@ pub async fn run_filters(
 #[allow(clippy::too_many_arguments)]
 pub async fn run_list(
     targets: &[Arc<ExecutionTarget>],
-    category: &str,
-    resource_type: &str,
+    category: Option<&str>,
+    resource_type: Option<&str>,
     name_filter: Option<&str>,
     scope: &[String],
+    match_all: &[String],
+    match_any: &[String],
     start_row: Option<i64>,
     end_row: Option<i64>,
     output: OutputFormat,
 ) -> Result<()> {
-    let category = require_non_empty(category, "--category")?;
-    let resource_type = require_non_empty(resource_type, "--type")?;
+    let category = category
+        .map(|c| require_non_empty(c, "--category"))
+        .transpose()?;
+    let resource_type = resource_type
+        .map(|t| require_non_empty(t, "--type"))
+        .transpose()?;
     let name_filter = name_filter.map(str::trim).filter(|s| !s.is_empty());
     let scope_filters = parse_scope_filters(scope)?;
+    let filter = build_filter(match_all, match_any)?;
     validate_page_window(start_row, end_row)?;
 
     eprintln!("{}", "Fetching resources...".dimmed());
@@ -174,16 +181,18 @@ pub async fn run_list(
 
     let per_profile = fan_out(targets, |target| {
         let scope_filters = scope_filters.clone();
-        let category = category.to_string();
-        let resource_type = resource_type.to_string();
+        let category = category.map(String::from);
+        let resource_type = resource_type.map(String::from);
         let name_filter = name_filter.map(String::from);
+        let filter = &filter;
         async move {
             let api = InfraApi::new(&target.client);
             let params = ListResourcesParams {
-                category: &category,
-                resource_type: &resource_type,
+                category: category.as_deref(),
+                resource_type: resource_type.as_deref(),
                 name_filter: name_filter.as_deref(),
                 scope_filters: &scope_filters,
+                filter: filter.as_ref(),
                 start_row,
                 end_row,
             };
@@ -518,6 +527,76 @@ fn validate_page_window(start_row: Option<i64>, end_row: Option<i64>) -> Result<
     Ok(())
 }
 
+/// Every `--match-all` ANDs, every `--match-any` ORs, and the two groups AND
+/// with each other.
+fn build_filter(match_all: &[String], match_any: &[String]) -> Result<Option<Filter>> {
+    let mut operands: Vec<Filter> = parse_matches(match_all, "--match-all")?
+        .into_iter()
+        .map(Filter::Match)
+        .collect();
+
+    let any: Vec<Filter> = parse_matches(match_any, "--match-any")?
+        .into_iter()
+        .map(Filter::Match)
+        .collect();
+    if any.len() == 1 {
+        operands.extend(any);
+    } else if !any.is_empty() {
+        operands.push(Filter::Bool(BoolFilter {
+            op: Op::Or,
+            operands: any,
+        }));
+    }
+
+    if operands.len() == 1 {
+        return Ok(operands.pop());
+    }
+    Ok((!operands.is_empty()).then_some(Filter::Bool(BoolFilter {
+        op: Op::And,
+        operands,
+    })))
+}
+
+/// One `NAME=VALUE[,VALUE…]` flag per attribute; a repeat within one group is
+/// rejected in favour of the comma form.
+fn parse_matches(raw: &[String], flag: &str) -> Result<Vec<FieldMatch>> {
+    let mut matches: Vec<FieldMatch> = Vec::new();
+
+    for entry in raw {
+        let Some((field, values)) = entry.split_once('=') else {
+            bail!("invalid {flag} '{entry}': expected NAME=VALUE");
+        };
+        let field = field.trim();
+        if field.is_empty() {
+            bail!("invalid {flag} '{entry}': attribute name must not be empty");
+        }
+        let values: Vec<String> = values
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(String::from)
+            .collect();
+        if values.is_empty() {
+            bail!("invalid {flag} '{entry}': value must not be empty");
+        }
+        if matches
+            .iter()
+            .any(|m| m.field.eq_ignore_ascii_case(field))
+        {
+            bail!(
+                "{flag} attribute '{field}' given more than once; \
+                 list its values on one flag instead - {flag} {field}=a,b"
+            );
+        }
+        matches.push(FieldMatch {
+            field: field.to_string(),
+            values,
+        });
+    }
+
+    Ok(matches)
+}
+
 /// Parses repeatable `--scope key=value` flags and validates keys against
 /// [`ALLOWED_SCOPE_KEYS`].
 ///
@@ -761,6 +840,219 @@ mod tests {
         assert!(err.to_string().contains("given more than once"));
     }
 
+    // ── parse_matches ────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_matches_reads_one_attribute_and_one_value() {
+        let matches = parse_matches(&["Region=eu-west-1".to_string()], "--match-all").unwrap();
+        assert_eq!(
+            matches,
+            vec![FieldMatch {
+                field: "Region".to_string(),
+                values: vec!["eu-west-1".to_string()],
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_matches_splits_values_on_commas() {
+        let matches =
+            parse_matches(&["Region=eu-west-1,us-east-1".to_string()], "--match-all").unwrap();
+        assert_eq!(matches[0].values, vec!["eu-west-1", "us-east-1"]);
+    }
+
+    #[test]
+    fn parse_matches_trims_whitespace_around_both_sides() {
+        let matches =
+            parse_matches(&[" Region = eu-west-1 , us-east-1 ".to_string()], "--match-all").unwrap();
+        assert_eq!(matches[0].field, "Region");
+        assert_eq!(matches[0].values, vec!["eu-west-1", "us-east-1"]);
+    }
+
+    #[test]
+    fn parse_matches_keeps_a_value_containing_an_equals() {
+        let matches =
+            parse_matches(&["Tag=env=prod".to_string()], "--match-all").unwrap();
+        assert_eq!(matches[0].values, vec!["env=prod"]);
+    }
+
+    #[test]
+    fn parse_matches_rejects_a_missing_equals() {
+        let err = parse_matches(&["Region".to_string()], "--match-all").unwrap_err();
+        assert!(err.to_string().contains("expected NAME=VALUE"));
+    }
+
+    #[test]
+    fn parse_matches_rejects_an_empty_attribute_name() {
+        let err = parse_matches(&["=eu-west-1".to_string()], "--match-all").unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn parse_matches_rejects_an_empty_value() {
+        for entry in ["Region=", "Region=,", "Region= , "] {
+            let err = parse_matches(&[entry.to_string()], "--match-all").unwrap_err();
+            assert!(
+                err.to_string().contains("value must not be empty"),
+                "{entry} should be refused"
+            );
+        }
+    }
+
+    /// The group's own operator would decide what a repeat means, which is never
+    /// what the caller intended - the comma form says it unambiguously.
+    #[test]
+    fn parse_matches_rejects_a_repeated_attribute() {
+        let err = parse_matches(
+            &["Region=eu-west-1".to_string(), "Region=us-east-1".to_string()],
+            "--match-all",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("'Region' given more than once"), "got: {msg}");
+        assert!(msg.contains("--match-all Region=a,b"), "got: {msg}");
+    }
+
+    #[test]
+    fn parse_matches_detects_a_repeat_whatever_its_case() {
+        let err = parse_matches(
+            &["Region=eu-west-1".to_string(), "region=us-east-1".to_string()],
+            "--match-any",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("given more than once"));
+    }
+
+    #[test]
+    fn parse_matches_names_the_flag_it_was_given() {
+        let err = parse_matches(&["Region".to_string()], "--match-any").unwrap_err();
+        assert!(err.to_string().contains("--match-any"));
+    }
+
+    #[test]
+    fn parse_matches_empty_input_yields_no_matches() {
+        assert!(parse_matches(&[], "--match-all").unwrap().is_empty());
+    }
+
+    // ── build_filter ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn build_filter_is_absent_without_either_flag() {
+        assert_eq!(build_filter(&[], &[]).unwrap(), None);
+    }
+
+    /// One attribute needs no `bool` wrapper - the API accepts a bare node, and
+    /// wrapping it would put a one-operand group on the wire for nothing.
+    #[test]
+    fn build_filter_collapses_a_single_attribute() {
+        let filter = build_filter(&["Health=critical".to_string()], &[])
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            filter,
+            Filter::Match(FieldMatch {
+                field: "Health".to_string(),
+                values: vec!["critical".to_string()],
+            })
+        );
+    }
+
+    /// A lone `--match-any` collapses the same way: an OR of one is that one.
+    #[test]
+    fn build_filter_collapses_a_single_match_any() {
+        let filter = build_filter(&[], &["Health=critical".to_string()])
+            .unwrap()
+            .unwrap();
+        assert!(matches!(filter, Filter::Match(_)), "{filter:?}");
+    }
+
+    #[test]
+    fn build_filter_ands_every_match_all() {
+        let filter = build_filter(
+            &["Region=eu-west-1".to_string(), "Health=critical".to_string()],
+            &[],
+        )
+        .unwrap()
+        .unwrap();
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::And);
+        assert_eq!(operands.len(), 2);
+        assert!(operands.iter().all(|o| matches!(o, Filter::Match(_))));
+    }
+
+    #[test]
+    fn build_filter_ors_every_match_any() {
+        let filter = build_filter(
+            &[],
+            &["Name=coredns".to_string(), "Namespace=kube-system".to_string()],
+        )
+        .unwrap()
+        .unwrap();
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::Or);
+        assert_eq!(operands.len(), 2);
+    }
+
+    /// `--match-all OS=Linux --match-any Health=critical --match-any Region=eu`
+    /// means `OS=Linux AND (critical OR eu)` - the OS applies to both branches.
+    #[test]
+    fn build_filter_nests_the_or_group_inside_the_and() {
+        let filter = build_filter(
+            &["OS=Linux".to_string()],
+            &["Health=critical".to_string(), "Region=eu-west-1".to_string()],
+        )
+        .unwrap()
+        .unwrap();
+
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::And);
+        assert_eq!(operands.len(), 2);
+
+        assert_eq!(
+            operands[0],
+            Filter::Match(FieldMatch {
+                field: "OS".to_string(),
+                values: vec!["Linux".to_string()],
+            })
+        );
+        let Filter::Bool(BoolFilter {
+            op: inner_op,
+            operands: inner,
+        }) = &operands[1]
+        else {
+            panic!("expected the second operand to be the OR group");
+        };
+        assert_eq!(*inner_op, Op::Or);
+        assert_eq!(inner.len(), 2);
+    }
+
+    /// Each group dedups on its own, so the same attribute may appear in both.
+    /// For a single-valued attribute that is unsatisfiable - accepted here
+    /// because a multi-valued one makes it meaningful, and the API answers with
+    /// zero rows rather than an error either way.
+    #[test]
+    fn build_filter_allows_one_attribute_in_both_groups() {
+        let filter = build_filter(&["Region=eu-west-1".to_string()], &["Region=us-east-1".to_string()])
+            .unwrap()
+            .unwrap();
+        let Filter::Bool(BoolFilter { operands, .. }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(operands.len(), 2);
+    }
+
+    #[test]
+    fn build_filter_propagates_a_parse_error() {
+        assert!(build_filter(&["Region".to_string()], &[]).is_err());
+        assert!(build_filter(&[], &["Region".to_string()]).is_err());
+    }
+
     // ── validate_page_window ─────────────────────────────────────────────────
 
     #[test]
@@ -974,6 +1266,8 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            category: Some("Hosts".to_string()),
+            type_name: Some("EC2_Instances".to_string()),
         }
     }
 

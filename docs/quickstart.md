@@ -7,7 +7,7 @@ From nothing installed to a working query. If you only read one page, read this 
 Paste this into Claude Code, Cursor, Codex, or any other coding agent:
 
 ```text
-Install and set up the Coralogix CLI by following http://coralogix.com/docs/cli.md .
+Install and set up the Coralogix CLI by following https://coralogix.com/docs/cli .
 My Coralogix URL is [paste your Coralogix URL]
 ```
 

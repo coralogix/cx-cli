@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::api_client::CxClient;
@@ -37,6 +37,28 @@ pub struct CategoryType {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GetFiltersResponse {
+    #[serde(default)]
+    pub filters: Vec<FilterDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterDescriptor {
+    pub name: Option<String>,
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub wildcard: bool,
+    /// Absent for an open set; present only for a closed one such as `Health`.
+    #[serde(default)]
+    pub values: Vec<String>,
+    /// Absent when the request pinned a type.
+    #[serde(default)]
+    pub types: Vec<CategoryType>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetResourcesResponse {
     #[serde(default)]
     pub resources: Vec<ResourceData>,
@@ -51,6 +73,9 @@ pub struct ResourceData {
     /// `BTreeMap` so that `serde_json` maintains column order.
     #[serde(default)]
     pub columns: BTreeMap<String, String>,
+    pub category: Option<String>,
+    #[serde(rename = "type")]
+    pub type_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,15 +100,59 @@ pub struct GetRawDataResponse {
     pub raw_data: Option<Value>,
 }
 
-/// Query parameters for [`InfraApi::list`]. Scope filters are sent as flat
-/// `scopeFilter.{key}` query parameters, matching the API contract.
+/// Scope filters travel as flat `scopeFilter.{key}` query parameters whichever
+/// method is used; the rest moves into the body when a filter is present.
 pub struct ListResourcesParams<'p> {
-    pub category: &'p str,
-    pub resource_type: &'p str,
+    pub category: Option<&'p str>,
+    pub resource_type: Option<&'p str>,
     pub name_filter: Option<&'p str>,
     pub scope_filters: &'p [(String, String)],
+    pub filter: Option<&'p Filter>,
     pub start_row: Option<i64>,
     pub end_row: Option<i64>,
+}
+
+/// One node of the filter the API accepts: a `match` on a single attribute, or a
+/// `bool` joining operands.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum Filter {
+    Match(FieldMatch),
+    Bool(BoolFilter),
+}
+
+/// The values of one attribute are alternatives.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldMatch {
+    pub field: String,
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoolFilter {
+    pub op: Op,
+    pub operands: Vec<Filter>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Op {
+    And,
+    Or,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ListResourcesBody<'p> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<&'p str>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    resource_type: Option<&'p str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name_filter: Option<&'p str>,
+    filter: &'p Filter,
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────
@@ -117,15 +186,38 @@ impl<'a> InfraApi<'a> {
         self.client.get(&path, &[]).await
     }
 
-    /// List resources of a given category and type, with optional name filter,
-    /// scope filters, and a `startRow`/`endRow` page window.
+    /// List the filterable attributes. Narrowest first: both parameters pin one
+    /// type, a category alone spans its types, neither spans everything.
+    pub async fn filters(
+        &self,
+        category: Option<&str>,
+        resource_type: Option<&str>,
+    ) -> Result<GetFiltersResponse> {
+        let mut query: Vec<(&str, &str)> = Vec::new();
+        if let Some(category) = category {
+            query.push(("category", category));
+        }
+        if let Some(resource_type) = resource_type {
+            query.push(("type", resource_type));
+        }
+        let path = format!("{BASE_PATH}/filters");
+        self.client.get(&path, &query).await
+    }
+
+    /// A filter has to travel in a body, so a filtered request goes over `POST`
+    /// and an unfiltered one keeps using `GET`.
     pub async fn list(&self, params: &ListResourcesParams<'_>) -> Result<GetResourcesResponse> {
-        let mut query: Vec<(String, String)> = vec![
-            ("category".to_string(), params.category.to_string()),
-            ("type".to_string(), params.resource_type.to_string()),
-        ];
-        if let Some(name) = params.name_filter {
-            query.push(("nameFilter".to_string(), name.to_string()));
+        let mut query: Vec<(String, String)> = Vec::new();
+        if params.filter.is_none() {
+            if let Some(category) = params.category {
+                query.push(("category".to_string(), category.to_string()));
+            }
+            if let Some(resource_type) = params.resource_type {
+                query.push(("type".to_string(), resource_type.to_string()));
+            }
+            if let Some(name) = params.name_filter {
+                query.push(("nameFilter".to_string(), name.to_string()));
+            }
         }
         for (key, value) in params.scope_filters {
             query.push((format!("scopeFilter.{key}"), value.clone()));
@@ -140,7 +232,19 @@ impl<'a> InfraApi<'a> {
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        self.client.get(BASE_PATH, &query_refs).await
+
+        let Some(filter) = params.filter else {
+            return self.client.get(BASE_PATH, &query_refs).await;
+        };
+        let body = serde_json::to_value(ListResourcesBody {
+            category: params.category,
+            resource_type: params.resource_type,
+            name_filter: params.name_filter,
+            filter,
+        })?;
+        self.client
+            .post_with_query(BASE_PATH, &query_refs, &body)
+            .await
     }
 
     /// Get the daily health status history for one resource, oldest first.

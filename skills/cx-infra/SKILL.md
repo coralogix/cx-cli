@@ -2,12 +2,15 @@
 name: cx-infra
 description: >
   Query Coralogix infrastructure resources with the `cx infra` CLI — discover
-  monitored resource types, list resources, check per-resource data. Use when the user asks
+  monitored resource types and filterable attributes, list and filter resources,
+  check per-resource data. Use when the user asks
   to "show resource types", "list infrastructure resources", "what resources of this kind are monitored",
   "list resources of this kind", "is this resource healthy",
   "resource health history", "when did this resource go critical",
   "get raw resource data", "infrastructure inventory", "find resources by name",
-  "filter resources by service or environment", or wants to explore
+  "filter resources by service or environment", "unhealthy resources",
+  "critical hosts in a region", "what can I filter resources by",
+  "resources in this cluster or namespace", or wants to explore
   infrastructure resources and their data.
 metadata:
   version: "0.1.0"
@@ -23,16 +26,43 @@ is healthy, and what its raw data contains.
 | Command | Purpose | Key flags |
 |---|---|---|
 | `cx infra resources types` | List available resource types (category/type pairs) | - |
-| `cx infra resources list` | List resources of one category/type | `--category`, `--type` (required); `--name-filter`, `--scope key=value`, `--start-row`, `--end-row` |
+| `cx infra resources list` | List resources, narrowed by any filterable attribute | all optional: `--match-all NAME=VALUE`, `--match-any NAME=VALUE`, `--category`, `--type`, `--name-filter`, `--scope key=value`, `--start-row`, `--end-row` |
+| `cx infra resources filters` | List the attributes resources can be filtered by, with their accepted values | `--category`, `--type` |
 | `cx infra resources health-history <resource-id>` | Daily health samples for one resource, oldest first | - |
 | `cx infra resources raw-data <resource-id>` | Raw resource document as JSON | - |
 
 - All commands are **read-only** and support `-o json` / `-o toon` for
   structured output.
-- **Multi-profile fan-out applies to `types` and `list` only.** Repeat
+- **Multi-profile fan-out applies to `types`, `filters` and `list` only.** Repeat
   `-p <profile>` on those to compare fleets across accounts. `health-history` and
   `raw-data` take a resource id, which is scoped to one team, so they **reject**
   more than one `-p` — run them once per profile instead.
+- **Filtering takes two flags.** Every `--match-all` must match; at least one
+  `--match-any` must match; the two groups combine with **AND**. So
+  `--match-all OS=Linux --match-any Health=critical --match-any Region=eu-west-1`
+  means `OS=Linux AND (Health=critical OR Region=eu-west-1)`. A comma within one
+  flag means **either value** for that attribute: `--match-all Region=eu-west-1,us-east-1`.
+  An attribute may appear **at most once per flag** — use the comma form instead.
+- **Nothing is required except one narrowing input.** `--category` and `--type`
+  are ordinary filters, not prerequisites, so `--match-all Health=critical` alone
+  works. Only a request naming nothing at all is rejected.
+- **`Category` and `Type` are not filterable attributes.** They select which
+  resource types a request covers, have their own flags, and never appear in
+  `filters` output — so there is no `--match-all Category=Hosts`, use
+  `--category Hosts`.
+- **An unknown attribute name is rejected**, naming `filters` as where to look. A
+  *known* attribute that happens to be unpopulated returns 0 rows, which is a real
+  answer rather than an error.
+- **`filters` tells you three things per attribute.** `kind` is what the value
+  looks like — `string` means free text, `status` means a fixed set, and `number`,
+  `bool` and `date` mean themselves. `values` lists the accepted values of a fixed
+  set, so `Health` is exactly `critical`, `healthy` or `unmonitored` and nothing
+  else. `wildcard` says whether a `*` is accepted in the value — only `string`
+  attributes accept one, and it matches anywhere in the value:
+  `--match-all 'Name=*checkout*'` — quote it, or the shell expands the `*`.
+- **A result spanning several types** prints `Category` and `Type` columns plus
+  the union of the matched types' columns, with `-` where a resource does not
+  carry one. Narrow with `--type` for one type's full set.
 - `--scope` is repeatable across **different** keys; allowed keys are `service`,
   `environment`, `team` (e.g. `--scope environment=prod --scope service=checkout`).
   Multiple keys combine with **AND** — a resource must match all of them. Each key
@@ -47,8 +77,11 @@ is healthy, and what its raw data contains.
 - **The window cannot reach past row 10,000.** The API rejects any request whose
   `start-row + rows` exceeds 10,000, so paging cannot enumerate a fleet larger
   than that even though `total_count` reports its true size. In any case,
-  narrow with `--name-filter` or `--scope` and page within each subset rather
-  than trying to walk the whole list.
+  narrow until the result fits — add `--match-all` attributes, or a `--type` — and
+  page within each subset rather than trying to walk the whole list. Compare
+  `total_count` against `returned_count` before reasoning over the rows: if
+  `total_count` exceeds what you can page to, the answer is incomplete and the
+  query needs narrowing, not more pages.
 - `list` wraps its rows in an envelope (`total_count`, `returned_count`,
   `resources`) — the other subcommands return bare arrays. `total_count` is the
   fleet-wide match count, always present and independent of the window, so use it
@@ -60,20 +93,26 @@ is healthy, and what its raw data contains.
 ## Inspection Workflow
 
 Three steps, and only because each one supplies an input the next one requires:
-`types` gives the mandatory `--category`/`--type`, `list` gives the `resource_id`.
-Answering "is `web-server-1` healthy?" is these three calls — nothing more.
+`filters` gives the attribute names and their accepted values, `list` gives the
+`resource_id`. Answering "is `web-server-1` healthy?" is these three calls —
+nothing more.
 
-1. **Discover what exists** — categories and types are dynamic, so never guess:
+1. **Discover what can be filtered** — attribute names and their accepted values
+   are per resource type and dynamic, so never guess. Omit both flags for the
+   union across every type:
 
    ```bash
-   cx infra resources types -o json
+   cx infra resources filters --category Hosts --type EC2_Instances -o json
    ```
 
-2. **List resources** of that category/type, narrowing with name and scope filters:
+   `cx infra resources types -o json` lists the `(category, type)` pairs, when
+   you need those rather than the attributes.
+
+2. **List resources**, narrowing by any attribute `filters` offered:
 
    ```bash
    cx infra resources list --category Hosts --type EC2_Instances \
-     --name-filter web --scope environment=prod -o json
+     --match-all Health=critical -o json
    ```
 
 3. **Inspect one resource** using a `resource_id` from step 2. Statuses are
@@ -87,6 +126,37 @@ Answering "is `web-server-1` healthy?" is these three calls — nothing more.
    instead when you need source-specific detail rather than health.
 
 ## Examples
+
+### Unhealthy hosts in one region
+
+```bash
+# Health is a fixed set, so `filters` first for the accepted values
+cx infra resources filters --category Hosts -o json | jq '.[] | select(.name == "Health")'
+
+cx infra resources list --category Hosts \
+  --match-all Health=critical --match-all Region=eu-west-1 -o json \
+  | jq '.resources[] | {name, type}'
+```
+
+### Every resource whose name contains a substring
+
+```bash
+# `filters` reports wildcard: true for Name, so `*` is accepted
+cx infra resources list --match-all 'Name=*checkout*' -o json \
+  | jq '.resources[] | {name, category, type}'
+```
+
+### Either of two attributes, any resource type
+
+```bash
+# --match-any ORs across attributes; no category or type needed
+cx infra resources list \
+  --match-any Name=coredns --match-any Namespace=kube-system -o json \
+  | jq '.resources[] | {name, category, type}'
+
+# Two values of the *same* attribute take the comma form, not a second flag
+cx infra resources list --match-all Namespace=kube-system,otel-demo -o json
+```
 
 ### Just the ids and names
 
@@ -124,8 +194,8 @@ cx infra resources raw-data "1001234:host_id=i-abc123" -o json
 
 ## Key Principles
 
-- **Discover before listing** — `--category` and `--type` are required;
-  always start from `cx infra resources types`.
+- **Discover before filtering** — never guess an attribute name or a status
+  value; start from `cx infra resources filters`, which lists both.
 - **Quote resource IDs and pass them verbatim** — they embed `:`, `|`, and `=`;
   the CLI handles URL encoding.
 - **Scope keys are a fixed set** (`service`, `environment`, `team`) — unknown
@@ -137,7 +207,7 @@ cx infra resources raw-data "1001234:host_id=i-abc123" -o json
   failure — and do not expect stdout to be blank.
 - **Use `-o json` with `jq`** for filtering; use `-o toon` for token-efficient
   output in agent contexts.
-- **Multi-profile fan-out is for `types` and `list` only** — repeating
+- **Multi-profile fan-out is for `types`, `filters` and `list` only** — repeating
   `-p <profile>` tags each row with its profile so fleets can be compared across
   accounts. The row window applies per profile, so `list` adds a
   `counts_by_profile` breakdown — page each profile against its own `total_count`,

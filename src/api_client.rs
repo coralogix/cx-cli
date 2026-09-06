@@ -109,6 +109,25 @@ impl CxClient {
         self.post_with_headers(path, body, &[]).await
     }
 
+    /// POST JSON body with optional query params, deserialize response into T.
+    pub async fn post_with_query<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+        body: &Value,
+    ) -> Result<T> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self
+            .inner
+            .post(&url)
+            .query(params)
+            .json(body)
+            .send()
+            .await?;
+        let text = self.checked_text(resp).await?;
+        Ok(serde_json::from_str(&text)?)
+    }
+
     /// POST JSON body with extra headers, deserialize response into T.
     pub async fn post_with_headers<T: DeserializeOwned>(
         &self,

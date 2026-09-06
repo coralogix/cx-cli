@@ -2777,21 +2777,53 @@ Examples:
 enum InfraResourcesCmd {
     /// List the available resource types (category/type pairs).
     Types,
-    /// List resources of a given category and type.
+    /// List the attributes resources can be filtered by.
+    #[command(after_help = "\
+Examples:
+  cx infra resources filters
+  cx infra resources filters --category Hosts
+  cx infra resources filters --category Hosts --type EC2_Instances")]
+    Filters {
+        /// Limit to one category (discover with `cx infra resources types`).
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Limit to one resource type within the category.
+        #[arg(long)]
+        r#type: Option<String>,
+    },
+    /// List resources, optionally narrowed by category, type or attribute filters.
     #[command(after_help = "\
 Examples:
   cx infra resources list --category Hosts --type EC2_Instances
-  cx infra resources list --category Hosts --type EC2_Instances --name-filter web
-  cx infra resources list --category Hosts --type EC2_Instances --scope service=checkout --scope environment=prod
-  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200")]
+  cx infra resources list --match-all Health=critical
+  cx infra resources list --match-all Region=eu-west-1 --match-all Health=critical
+  cx infra resources list --match-any Name=coredns --match-any Namespace=kube-system
+  cx infra resources list --match-all OS=Linux --match-any Health=critical --match-any Region=eu-west-1
+  cx infra resources list --match-all Region=eu-west-1,us-east-1
+  cx infra resources list --category Hosts --type EC2_Instances --scope service=checkout
+  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200
+
+Discover what can be filtered with `cx infra resources filters`.")]
     List {
         /// Resource category (discover with `cx infra resources types`).
         #[arg(long)]
-        category: String,
+        category: Option<String>,
 
         /// Resource type within the category (discover with `cx infra resources types`).
         #[arg(long)]
-        r#type: String,
+        r#type: Option<String>,
+
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. Every one must
+        /// match. Commas within one flag mean either value. Discover names with
+        /// `cx infra resources filters`.
+        #[arg(long)]
+        match_all: Vec<String>,
+
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. At least one
+        /// must match. Combined with --match-all by AND.
+        #[arg(long)]
+        match_any: Vec<String>,
 
         /// Filter resources by name.
         #[arg(long)]
@@ -4657,9 +4689,20 @@ async fn main() -> Result<()> {
                     InfraResourcesCmd::Types => {
                         commands::infra::run_types(&targets, output).await?;
                     }
+                    InfraResourcesCmd::Filters { category, r#type } => {
+                        commands::infra::run_filters(
+                            &targets,
+                            category.as_deref(),
+                            r#type.as_deref(),
+                            output,
+                        )
+                        .await?;
+                    }
                     InfraResourcesCmd::List {
                         category,
                         r#type,
+                        match_all,
+                        match_any,
                         name_filter,
                         scope,
                         start_row,
@@ -4667,10 +4710,12 @@ async fn main() -> Result<()> {
                     } => {
                         commands::infra::run_list(
                             &targets,
-                            &category,
-                            &r#type,
+                            category.as_deref(),
+                            r#type.as_deref(),
                             name_filter.as_deref(),
                             &scope,
+                            &match_all,
+                            &match_any,
                             start_row,
                             end_row,
                             output,

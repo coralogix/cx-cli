@@ -33,7 +33,7 @@ is healthy, and what its raw data contains.
 
 - All commands are **read-only** and support `-o json` / `-o toon` for
   structured output.
-- **Multi-profile fan-out applies to `types` and `list` only.** Repeat
+- **Multi-profile fan-out applies to `types`, `filters` and `list` only.** Repeat
   `-p <profile>` on those to compare fleets across accounts. `health-history` and
   `raw-data` take a resource id, which is scoped to one team, so they **reject**
   more than one `-p` — run them once per profile instead.
@@ -59,7 +59,7 @@ is healthy, and what its raw data contains.
   set, so `Health` is exactly `critical`, `healthy` or `unmonitored` and nothing
   else. `wildcard` says whether a `*` is accepted in the value — only `string`
   attributes accept one, and it matches anywhere in the value:
-  `--match-all Name=*checkout*`.
+  `--match-all 'Name=*checkout*'` — quote it, or the shell expands the `*`.
 - **A result spanning several types** prints `Category` and `Type` columns plus
   the union of the matched types' columns, with `-` where a resource does not
   carry one. Narrow with `--type` for one type's full set.
@@ -142,17 +142,20 @@ cx infra resources list --category Hosts \
 
 ```bash
 # `filters` reports wildcard: true for Name, so `*` is accepted
-cx infra resources list --match-all Name=*checkout* -o json \
+cx infra resources list --match-all 'Name=*checkout*' -o json \
   | jq '.resources[] | {name, category, type}'
 ```
 
-### Either of two namespaces, any resource type
+### Either of two attributes, any resource type
 
 ```bash
-# --match-any ORs; no category or type needed
+# --match-any ORs across attributes; no category or type needed
 cx infra resources list \
-  --match-any Namespace=kube-system --match-any Namespace=otel-demo -o json \
+  --match-any Name=coredns --match-any Namespace=kube-system -o json \
   | jq '.resources[] | {name, category, type}'
+
+# Two values of the *same* attribute take the comma form, not a second flag
+cx infra resources list --match-all Namespace=kube-system,otel-demo -o json
 ```
 
 ### Just the ids and names
@@ -204,7 +207,7 @@ cx infra resources raw-data "1001234:host_id=i-abc123" -o json
   failure — and do not expect stdout to be blank.
 - **Use `-o json` with `jq`** for filtering; use `-o toon` for token-efficient
   output in agent contexts.
-- **Multi-profile fan-out is for `types` and `list` only** — repeating
+- **Multi-profile fan-out is for `types`, `filters` and `list` only** — repeating
   `-p <profile>` tags each row with its profile so fleets can be compared across
   accounts. The row window applies per profile, so `list` adds a
   `counts_by_profile` breakdown — page each profile against its own `total_count`,

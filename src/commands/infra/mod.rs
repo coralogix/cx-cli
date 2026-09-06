@@ -229,8 +229,8 @@ pub async fn run_list(
                 render::print_no_results("No resources found.");
                 return Ok(());
             }
+            let spans_types = category.is_none() || resource_type.is_none();
             let resources: Vec<&ResourceData> = merged.iter().map(|(_, r)| r).collect();
-            let spans_types = spans_several_types(&resources);
             let columns = union_of_columns(&resources);
 
             let mut headers: Vec<&str> = vec!["Resource ID", "Name"];
@@ -765,19 +765,6 @@ fn union_of_columns(resources: &[&ResourceData]) -> Vec<String> {
         }
     }
     columns
-}
-
-fn spans_several_types(resources: &[&ResourceData]) -> bool {
-    let mut seen: Option<(Option<&str>, Option<&str>)> = None;
-    for resource in resources {
-        let pair = (resource.category.as_deref(), resource.type_name.as_deref());
-        match seen {
-            None => seen = Some(pair),
-            Some(first) if first != pair => return true,
-            Some(_) => {}
-        }
-    }
-    false
 }
 
 /// The name the API matches `--name-filter` against.
@@ -1395,44 +1382,6 @@ mod tests {
     #[test]
     fn union_of_columns_is_empty_without_rows() {
         assert!(union_of_columns(&[]).is_empty());
-    }
-
-    // ── spans_several_types ──────────────────────────────────────────────────
-
-    #[test]
-    fn one_type_does_not_span() {
-        let a = typed_resource("Hosts", "EC2_Instances", &[]);
-        let b = typed_resource("Hosts", "EC2_Instances", &[]);
-        assert!(!spans_several_types(&[&a, &b]));
-        assert!(!spans_several_types(&[&a]));
-        assert!(!spans_several_types(&[]));
-    }
-
-    #[test]
-    fn two_types_span_even_within_one_category() {
-        let a = typed_resource("Hosts", "EC2_Instances", &[]);
-        let b = typed_resource("Hosts", "Azure_VMs", &[]);
-        assert!(spans_several_types(&[&a, &b]));
-    }
-
-    #[test]
-    fn rows_without_a_classification_do_not_span() {
-        let mut a = resource(Some("a"), &[]);
-        let mut b = resource(Some("b"), &[]);
-        for r in [&mut a, &mut b] {
-            r.category = None;
-            r.type_name = None;
-        }
-        assert!(!spans_several_types(&[&a, &b]));
-    }
-
-    #[test]
-    fn a_row_missing_its_classification_spans_against_one_that_has_it() {
-        let mut unclassified = resource(Some("a"), &[]);
-        unclassified.category = None;
-        unclassified.type_name = None;
-        let classified = typed_resource("Hosts", "EC2_Instances", &[]);
-        assert!(spans_several_types(&[&unclassified, &classified]));
     }
 
     fn counts(entries: &[(&str, i64, usize)]) -> Vec<ProfileCounts> {

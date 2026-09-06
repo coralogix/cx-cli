@@ -103,7 +103,13 @@ impl CxClient {
         body: &Value,
     ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.post(&url).query(params).json(body).send().await?;
+        let resp = self
+            .inner
+            .post(&url)
+            .query(params)
+            .json(body)
+            .send()
+            .await?;
         let text = self.checked_text(resp).await?;
         Ok(serde_json::from_str(&text)?)
     }

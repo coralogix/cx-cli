@@ -239,26 +239,25 @@ pub async fn run_list(
             }
             headers.extend(columns.iter().map(String::as_str));
 
-            let rows: Vec<Vec<String>> = merged
-                .iter()
-                .map(|(profile, r)| {
-                    let mut row = vec![
-                        profile.clone(),
-                        display_or_dash(r.resource_id.as_deref()),
-                        display_or_dash(display_name(r)),
-                    ];
-                    if spans_types {
-                        row.push(display_or_dash(r.category.as_deref()));
-                        row.push(display_or_dash(r.type_name.as_deref()));
-                    }
-                    row.extend(
-                        columns
-                            .iter()
-                            .map(|column| display_or_dash(r.columns.get(column).map(String::as_str))),
-                    );
-                    row
-                })
-                .collect();
+            let rows: Vec<Vec<String>> =
+                merged
+                    .iter()
+                    .map(|(profile, r)| {
+                        let mut row = vec![
+                            profile.clone(),
+                            display_or_dash(r.resource_id.as_deref()),
+                            display_or_dash(display_name(r)),
+                        ];
+                        if spans_types {
+                            row.push(display_or_dash(r.category.as_deref()));
+                            row.push(display_or_dash(r.type_name.as_deref()));
+                        }
+                        row.extend(columns.iter().map(|column| {
+                            display_or_dash(r.columns.get(column).map(String::as_str))
+                        }));
+                        row
+                    })
+                    .collect();
             render::render_table(&headers, rows, include_profile);
             eprintln!(
                 "{}",
@@ -606,10 +605,7 @@ fn parse_matches(raw: &[String], flag: &str) -> Result<Vec<FieldMatch>> {
         if values.is_empty() {
             bail!("invalid {flag} '{entry}': value must not be empty");
         }
-        if matches
-            .iter()
-            .any(|m| m.field.eq_ignore_ascii_case(field))
-        {
+        if matches.iter().any(|m| m.field.eq_ignore_ascii_case(field)) {
             bail!(
                 "{flag} attribute '{field}' given more than once; \
                  list its values on one flag instead - {flag} {field}=a,b"
@@ -905,16 +901,18 @@ mod tests {
 
     #[test]
     fn parse_matches_trims_whitespace_around_both_sides() {
-        let matches =
-            parse_matches(&[" Region = eu-west-1 , us-east-1 ".to_string()], "--match-all").unwrap();
+        let matches = parse_matches(
+            &[" Region = eu-west-1 , us-east-1 ".to_string()],
+            "--match-all",
+        )
+        .unwrap();
         assert_eq!(matches[0].field, "Region");
         assert_eq!(matches[0].values, vec!["eu-west-1", "us-east-1"]);
     }
 
     #[test]
     fn parse_matches_keeps_a_value_containing_an_equals() {
-        let matches =
-            parse_matches(&["Tag=env=prod".to_string()], "--match-all").unwrap();
+        let matches = parse_matches(&["Tag=env=prod".to_string()], "--match-all").unwrap();
         assert_eq!(matches[0].values, vec!["env=prod"]);
     }
 
@@ -946,7 +944,10 @@ mod tests {
     #[test]
     fn parse_matches_rejects_a_repeated_attribute() {
         let err = parse_matches(
-            &["Region=eu-west-1".to_string(), "Region=us-east-1".to_string()],
+            &[
+                "Region=eu-west-1".to_string(),
+                "Region=us-east-1".to_string(),
+            ],
             "--match-all",
         )
         .unwrap_err();
@@ -958,7 +959,10 @@ mod tests {
     #[test]
     fn parse_matches_detects_a_repeat_whatever_its_case() {
         let err = parse_matches(
-            &["Region=eu-west-1".to_string(), "region=us-east-1".to_string()],
+            &[
+                "Region=eu-west-1".to_string(),
+                "region=us-east-1".to_string(),
+            ],
             "--match-any",
         )
         .unwrap_err();
@@ -1011,7 +1015,10 @@ mod tests {
     #[test]
     fn build_filter_ands_every_match_all() {
         let filter = build_filter(
-            &["Region=eu-west-1".to_string(), "Health=critical".to_string()],
+            &[
+                "Region=eu-west-1".to_string(),
+                "Health=critical".to_string(),
+            ],
             &[],
         )
         .unwrap()
@@ -1028,7 +1035,10 @@ mod tests {
     fn build_filter_ors_every_match_any() {
         let filter = build_filter(
             &[],
-            &["Name=coredns".to_string(), "Namespace=kube-system".to_string()],
+            &[
+                "Name=coredns".to_string(),
+                "Namespace=kube-system".to_string(),
+            ],
         )
         .unwrap()
         .unwrap();
@@ -1045,7 +1055,10 @@ mod tests {
     fn build_filter_nests_the_or_group_inside_the_and() {
         let filter = build_filter(
             &["OS=Linux".to_string()],
-            &["Health=critical".to_string(), "Region=eu-west-1".to_string()],
+            &[
+                "Health=critical".to_string(),
+                "Region=eu-west-1".to_string(),
+            ],
         )
         .unwrap()
         .unwrap();
@@ -1080,9 +1093,12 @@ mod tests {
     /// zero rows rather than an error either way.
     #[test]
     fn build_filter_allows_one_attribute_in_both_groups() {
-        let filter = build_filter(&["Region=eu-west-1".to_string()], &["Region=us-east-1".to_string()])
-            .unwrap()
-            .unwrap();
+        let filter = build_filter(
+            &["Region=eu-west-1".to_string()],
+            &["Region=us-east-1".to_string()],
+        )
+        .unwrap()
+        .unwrap();
         let Filter::Bool(BoolFilter { operands, .. }) = filter else {
             panic!("expected a bool");
         };
@@ -1345,11 +1361,7 @@ mod tests {
 
     // ── union_of_columns ─────────────────────────────────────────────────────
 
-    fn typed_resource(
-        category: &str,
-        type_name: &str,
-        columns: &[(&str, &str)],
-    ) -> ResourceData {
+    fn typed_resource(category: &str, type_name: &str, columns: &[(&str, &str)]) -> ResourceData {
         let mut r = resource(Some("name"), columns);
         r.category = Some(category.to_string());
         r.type_name = Some(type_name.to_string());
@@ -1358,17 +1370,29 @@ mod tests {
 
     #[test]
     fn union_of_columns_keeps_first_seen_order() {
-        let a = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu"), ("OS", "Linux")]);
+        let a = typed_resource(
+            "Hosts",
+            "EC2_Instances",
+            &[("Region", "eu"), ("OS", "Linux")],
+        );
         let b = typed_resource("Kubernetes", "Pods", &[("Namespace", "kube-system")]);
         assert_eq!(
             union_of_columns(&[&a, &b]),
-            vec!["OS".to_string(), "Region".to_string(), "Namespace".to_string()]
+            vec![
+                "OS".to_string(),
+                "Region".to_string(),
+                "Namespace".to_string()
+            ]
         );
     }
 
     #[test]
     fn union_of_columns_leaves_name_to_its_own_column() {
-        let r = typed_resource("Hosts", "EC2_Instances", &[("Name", "web-01"), ("Region", "eu")]);
+        let r = typed_resource(
+            "Hosts",
+            "EC2_Instances",
+            &[("Name", "web-01"), ("Region", "eu")],
+        );
         assert_eq!(union_of_columns(&[&r]), vec!["Region".to_string()]);
     }
 

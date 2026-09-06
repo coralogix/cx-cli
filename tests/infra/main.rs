@@ -654,6 +654,82 @@ async fn a_filtered_list_fans_out_across_profiles() {
 }
 
 #[tokio::test]
+async fn a_mixed_type_result_renders_in_text_mode() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(BASE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "resources": [
+                {
+                    "resourceId": "7000098:host_id=i-abc",
+                    "name": "prod-api-01",
+                    "columns": { "Name": "prod-api-01", "Region": "eu-west-1" },
+                    "category": "Hosts",
+                    "type": "EC2_Instances"
+                },
+                {
+                    "resourceId": "7000098:k8s_pod_name=coredns",
+                    "name": "coredns",
+                    "columns": { "Name": "coredns", "Namespace": "kube-system" },
+                    "category": "Kubernetes",
+                    "type": "Pods"
+                }
+            ],
+            "totalCount": 2
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_list(
+        &targets,
+        None,
+        None,
+        None,
+        &[],
+        &["Health=critical".to_string()],
+        &[],
+        None,
+        None,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("a mixed-type result should render");
+}
+
+#[tokio::test]
+async fn json_output_carries_the_category_and_type() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(BASE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_list(
+        &targets,
+        Some("Hosts"),
+        Some("EC2_Instances"),
+        None,
+        &[],
+        &[],
+        &[],
+        None,
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_list should render JSON");
+}
+
+#[tokio::test]
 async fn a_repeated_attribute_in_one_group_is_refused_before_any_request() {
     let server = MockServer::start().await;
     let targets = vec![common::test_target("test-profile", &server.uri())];

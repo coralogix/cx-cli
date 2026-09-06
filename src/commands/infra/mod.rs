@@ -229,21 +229,48 @@ pub async fn run_list(
                 render::print_no_results("No resources found.");
                 return Ok(());
             }
+            let resources: Vec<&ResourceData> = merged.iter().map(|(_, r)| r).collect();
+            let spans_types = spans_several_types(&resources);
+            let columns = union_of_columns(&resources);
+
+            let mut headers: Vec<&str> = vec!["Resource ID", "Name"];
+            if spans_types {
+                headers.extend(["Category", "Type"]);
+            }
+            headers.extend(columns.iter().map(String::as_str));
+
             let rows: Vec<Vec<String>> = merged
                 .iter()
                 .map(|(profile, r)| {
-                    vec![
+                    let mut row = vec![
                         profile.clone(),
                         display_or_dash(r.resource_id.as_deref()),
                         display_or_dash(display_name(r)),
-                    ]
+                    ];
+                    if spans_types {
+                        row.push(display_or_dash(r.category.as_deref()));
+                        row.push(display_or_dash(r.type_name.as_deref()));
+                    }
+                    row.extend(
+                        columns
+                            .iter()
+                            .map(|column| display_or_dash(r.columns.get(column).map(String::as_str))),
+                    );
+                    row
                 })
                 .collect();
-            render::render_table(&["Resource ID", "Name"], rows, include_profile);
+            render::render_table(&headers, rows, include_profile);
             eprintln!(
                 "{}",
                 format_count_summary(merged.len(), total_count, &counts, include_profile).dimmed()
             );
+            if spans_types {
+                eprintln!(
+                    "{}",
+                    "Rows span several types; narrow with --type for one type's full column set."
+                        .dimmed()
+                );
+            }
         }
     }
 
@@ -680,6 +707,8 @@ fn resource_to_json(item: &ResourceData, include_profile: bool, profile: &str) -
     let v = json!({
         "resource_id": item.resource_id,
         "name": item.name,
+        "category": item.category,
+        "type": item.type_name,
         "columns": item.columns,
     });
     tag_profile(v, include_profile, profile)
@@ -723,6 +752,32 @@ fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profi
 
 fn display_or_dash(value: Option<&str>) -> String {
     value.filter(|s| !s.is_empty()).unwrap_or("-").to_string()
+}
+
+/// In first-seen order. `Name` is excluded - the table has its own column.
+fn union_of_columns(resources: &[&ResourceData]) -> Vec<String> {
+    let mut columns: Vec<String> = Vec::new();
+    for resource in resources {
+        for name in resource.columns.keys() {
+            if !name.eq_ignore_ascii_case("name") && !columns.contains(name) {
+                columns.push(name.clone());
+            }
+        }
+    }
+    columns
+}
+
+fn spans_several_types(resources: &[&ResourceData]) -> bool {
+    let mut seen: Option<(Option<&str>, Option<&str>)> = None;
+    for resource in resources {
+        let pair = (resource.category.as_deref(), resource.type_name.as_deref());
+        match seen {
+            None => seen = Some(pair),
+            Some(first) if first != pair => return true,
+            Some(_) => {}
+        }
+    }
+    false
 }
 
 /// The name the API matches `--name-filter` against.
@@ -1299,6 +1354,85 @@ mod tests {
 
         let neither = resource(None, &[]);
         assert_eq!(display_name(&neither), None);
+    }
+
+    // ── union_of_columns ─────────────────────────────────────────────────────
+
+    fn typed_resource(
+        category: &str,
+        type_name: &str,
+        columns: &[(&str, &str)],
+    ) -> ResourceData {
+        let mut r = resource(Some("name"), columns);
+        r.category = Some(category.to_string());
+        r.type_name = Some(type_name.to_string());
+        r
+    }
+
+    #[test]
+    fn union_of_columns_keeps_first_seen_order() {
+        let a = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu"), ("OS", "Linux")]);
+        let b = typed_resource("Kubernetes", "Pods", &[("Namespace", "kube-system")]);
+        assert_eq!(
+            union_of_columns(&[&a, &b]),
+            vec!["OS".to_string(), "Region".to_string(), "Namespace".to_string()]
+        );
+    }
+
+    #[test]
+    fn union_of_columns_leaves_name_to_its_own_column() {
+        let r = typed_resource("Hosts", "EC2_Instances", &[("Name", "web-01"), ("Region", "eu")]);
+        assert_eq!(union_of_columns(&[&r]), vec!["Region".to_string()]);
+    }
+
+    #[test]
+    fn union_of_columns_does_not_repeat_a_shared_column() {
+        let a = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu")]);
+        let b = typed_resource("Hosts", "Azure_VMs", &[("Region", "westeu")]);
+        assert_eq!(union_of_columns(&[&a, &b]), vec!["Region".to_string()]);
+    }
+
+    #[test]
+    fn union_of_columns_is_empty_without_rows() {
+        assert!(union_of_columns(&[]).is_empty());
+    }
+
+    // ── spans_several_types ──────────────────────────────────────────────────
+
+    #[test]
+    fn one_type_does_not_span() {
+        let a = typed_resource("Hosts", "EC2_Instances", &[]);
+        let b = typed_resource("Hosts", "EC2_Instances", &[]);
+        assert!(!spans_several_types(&[&a, &b]));
+        assert!(!spans_several_types(&[&a]));
+        assert!(!spans_several_types(&[]));
+    }
+
+    #[test]
+    fn two_types_span_even_within_one_category() {
+        let a = typed_resource("Hosts", "EC2_Instances", &[]);
+        let b = typed_resource("Hosts", "Azure_VMs", &[]);
+        assert!(spans_several_types(&[&a, &b]));
+    }
+
+    #[test]
+    fn rows_without_a_classification_do_not_span() {
+        let mut a = resource(Some("a"), &[]);
+        let mut b = resource(Some("b"), &[]);
+        for r in [&mut a, &mut b] {
+            r.category = None;
+            r.type_name = None;
+        }
+        assert!(!spans_several_types(&[&a, &b]));
+    }
+
+    #[test]
+    fn a_row_missing_its_classification_spans_against_one_that_has_it() {
+        let mut unclassified = resource(Some("a"), &[]);
+        unclassified.category = None;
+        unclassified.type_name = None;
+        let classified = typed_resource("Hosts", "EC2_Instances", &[]);
+        assert!(spans_several_types(&[&unclassified, &classified]));
     }
 
     fn counts(entries: &[(&str, i64, usize)]) -> Vec<ProfileCounts> {

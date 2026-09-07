@@ -50,7 +50,7 @@ impl ExecutionTarget {
 
     /// Build an `ExecutionTarget` with an optional per-request deadline.
     pub fn with_timeout(cfg: ResolvedConfig, timeout: Option<Duration>) -> Result<Self> {
-        let client = CxClient::with_timeout(&cfg.endpoint, &cfg.api_key, timeout)?;
+        let client = CxClient::with_timeout(&cfg.endpoint, &cfg.api_key, timeout, cfg.verbose)?;
         let profile_name = cfg.profile_name.clone();
         Ok(Self {
             profile_name,

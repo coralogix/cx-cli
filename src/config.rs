@@ -380,6 +380,52 @@ pub struct Profile {
     pub cached_console_url_at: Option<DateTime<Utc>>,
 }
 
+impl Profile {
+    /// Resolve the OAuth base URL and client ID for this profile.
+    ///
+    /// The base URL comes from `oauth_base_url` when set (custom environments),
+    /// otherwise from the region's API endpoint. The client ID comes from
+    /// `oauth_client_id` when set, otherwise from the hard-coded per-region
+    /// table in `oauth::KNOWN_ENVIRONMENTS`.
+    ///
+    /// `profile_name` is used only to build the error message.
+    pub fn oauth_endpoint(&self, profile_name: &str) -> Result<(String, String)> {
+        let region_name = self.region.to_string();
+        let base_url = self
+            .oauth_base_url
+            .clone()
+            .unwrap_or_else(|| self.region.api_endpoint().to_string());
+        let client_id = self
+            .oauth_client_id
+            .clone()
+            .or_else(|| oauth::client_id_for_region(&region_name).map(str::to_string))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No OAuth client ID configured for profile '{profile_name}' \
+                     (region: {region_name}).\n\
+                     Run `cx profiles add {profile_name}` to reconfigure."
+                )
+            })?;
+        Ok((base_url, client_id))
+    }
+}
+
+/// Whether the generic "Run `cx profiles add` to set up credentials." hint
+/// should be printed after `error`.
+///
+/// Most configuration failures are a missing or unconfigured profile, where
+/// that hint is the right next step. Some, though, already carry a more
+/// specific instruction of their own: an expired OAuth session says to run
+/// `cx profiles refresh <name>`. Appending the generic hint to one of those
+/// contradicts it on the same stderr and points the user back at the
+/// reconfiguration flow `profiles refresh` exists to spare them, so suppress
+/// it whenever the error chain has already said what to run.
+pub fn wants_generic_credentials_hint(error: &anyhow::Error) -> bool {
+    !error
+        .chain()
+        .any(|cause| cause.to_string().contains("cx profiles"))
+}
+
 /// Resolved configuration ready for use at runtime.
 #[derive(Debug, Clone)]
 pub struct ResolvedConfig {
@@ -569,22 +615,7 @@ async fn resolve_single(
         }
         AuthKind::OAuth => {
             debug_assert!(api_key_override.is_none());
-            let region_name = profile.region.to_string();
-            let base_url = profile
-                .oauth_base_url
-                .clone()
-                .unwrap_or_else(|| profile.region.api_endpoint().to_string());
-            let client_id = profile
-                .oauth_client_id
-                .clone()
-                .or_else(|| oauth::client_id_for_region(&region_name).map(str::to_string))
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "No OAuth client ID configured for profile '{profile_name}' \
-                         (region: {region_name}).\n\
-                         Run `cx profiles add {profile_name}` to reconfigure."
-                    )
-                })?;
+            let (base_url, client_id) = profile.oauth_endpoint(profile_name)?;
             let storage = profile.credential_storage;
             let (bearer, refreshed) = oauth::resolve_token(
                 profile_name,
@@ -789,6 +820,101 @@ mod tests {
             OutputFormat::from_str("agents", true).unwrap(),
             OutputFormat::Toon
         );
+    }
+
+    // ── wants_generic_credentials_hint ────────────────────────────────────────
+
+    #[test]
+    fn generic_hint_shown_for_errors_with_no_instruction_of_their_own() {
+        let err = anyhow::anyhow!("Profile 'prod' not found.");
+        assert!(wants_generic_credentials_hint(&err));
+    }
+
+    #[test]
+    fn generic_hint_suppressed_when_the_error_already_names_a_command() {
+        // The message `oauth::resolve_token` produces for an expired session.
+        let err = anyhow::anyhow!(
+            "OAuth session expired for profile 'prod'.\n\
+             Run `cx profiles refresh prod` to re-authenticate."
+        );
+        assert!(
+            !wants_generic_credentials_hint(&err),
+            "an error that already says `cx profiles refresh` must not be followed \
+             by `cx profiles add`"
+        );
+    }
+
+    #[test]
+    fn generic_hint_suppressed_when_a_wrapped_cause_names_a_command() {
+        // `resolve_token` attaches its instruction with `.with_context(...)`,
+        // and the transport failure is wrapped underneath it - so the check has
+        // to walk the whole chain, not just the outermost message.
+        let err = anyhow::anyhow!("Token refresh failed (400 Bad Request)").context(
+            "OAuth token refresh failed for profile 'prod'.\n\
+             Run `cx profiles refresh prod` to re-authenticate.",
+        );
+        assert!(!wants_generic_credentials_hint(&err));
+    }
+
+    // ── Profile::oauth_endpoint ───────────────────────────────────────────────
+
+    fn oauth_profile(region: Region) -> Profile {
+        Profile {
+            auth: AuthKind::OAuth,
+            credential_storage: CredentialStorage::File,
+            api_key: None,
+            region,
+            label: None,
+            oauth_client_id: None,
+            oauth_base_url: None,
+            oauth_tokens: None,
+            default_output_format: None,
+            default_tier: None,
+            console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
+        }
+    }
+
+    #[test]
+    fn oauth_endpoint_known_region_uses_builtin_client_id() {
+        let profile = oauth_profile(Region::Eu2);
+        let (base_url, client_id) = profile.oauth_endpoint("prod").unwrap();
+        assert_eq!(base_url, "https://api.eu2.coralogix.com");
+        assert_eq!(client_id, oauth::client_id_for_region("eu2").unwrap());
+    }
+
+    #[test]
+    fn oauth_endpoint_profile_overrides_win() {
+        let mut profile = oauth_profile(Region::Eu2);
+        profile.oauth_base_url = Some("https://api.myenv.coralogix.com".to_string());
+        profile.oauth_client_id = Some("custom-client".to_string());
+        let (base_url, client_id) = profile.oauth_endpoint("custom").unwrap();
+        assert_eq!(base_url, "https://api.myenv.coralogix.com");
+        assert_eq!(client_id, "custom-client");
+    }
+
+    #[test]
+    fn oauth_endpoint_custom_region_without_client_id_errors() {
+        let profile = oauth_profile(Region::Custom(
+            "https://api.myenv.coralogix.com".to_string(),
+        ));
+        let err = profile
+            .oauth_endpoint("custom")
+            .expect_err("a custom region with no client ID cannot be resolved");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("No OAuth client ID configured") && msg.contains("custom"),
+            "error should name the profile and the missing client ID, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn oauth_endpoint_stg1_has_no_builtin_client_id() {
+        // stg1 is a known Region variant but is absent from KNOWN_ENVIRONMENTS,
+        // so it behaves like a custom environment and needs an explicit ID.
+        let profile = oauth_profile(Region::Stg1);
+        assert!(profile.oauth_endpoint("staging").is_err());
     }
 
     // ── list_profile_names_from ────────────────────────────────────────────────

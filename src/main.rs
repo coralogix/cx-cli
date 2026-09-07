@@ -124,7 +124,7 @@ pub enum SearchByValueDataset {
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
-  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, refresh, delete, set-default)
   \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
@@ -202,7 +202,7 @@ struct ProfilesCli {
 
 #[derive(Subcommand)]
 enum ProfilesTopLevel {
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, refresh, delete, set-default).
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -340,7 +340,7 @@ Examples:
         install_completions: Option<Shell>,
     },
 
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, refresh, delete, set-default).
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -810,6 +810,16 @@ Examples:
         /// written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
+    },
+    /// Re-run the OAuth browser login for an existing profile.
+    ///
+    /// Replaces only the stored OAuth tokens. Region, label, credential
+    /// storage, and output format are left exactly as they are, and nothing
+    /// is prompted for. Use this when a session has expired.
+    Refresh {
+        /// Profile name to re-authenticate.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -2943,6 +2953,31 @@ Examples:
     },
 }
 
+/// Block `cx profiles refresh` in read-only mode.
+///
+/// The `profiles` command tree is otherwise exempt from read-only gating: its
+/// subcommands touch local config, not tenant data. `refresh` is the exception
+/// worth singling out — it runs a browser login and persists a new credential
+/// set — so it is checked here instead.
+///
+/// `flag` carries `--read-only` when the caller has parsed the global flags.
+/// The early `profiles` parser runs before `Cli` exists and passes `false`;
+/// there the env var and `~/.cx/config.toml` still apply, and `--read-only`
+/// reaches the other call site by being written before the subcommand
+/// (`cx --read-only profiles refresh …`).
+fn enforce_profiles_read_only(cmd: &ProfilesCmd, flag: bool) -> Result<()> {
+    if !matches!(cmd, ProfilesCmd::Refresh { .. }) {
+        return Ok(());
+    }
+    let read_only = flag
+        || safety::env_is_truthy("CX_READ_ONLY")
+        || config::load_config().unwrap_or_default().read_only;
+    if read_only {
+        safety::enforce_read_only("refresh")?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -2967,6 +3002,7 @@ async fn main() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        enforce_profiles_read_only(&cmd, false)?;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add {
@@ -2993,6 +3029,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3062,6 +3099,7 @@ async fn main() -> Result<()> {
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // it falls through to here.
     if let Commands::Profiles { cmd } = cli.command {
+        enforce_profiles_read_only(&cmd, read_only)?;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add {
@@ -3088,6 +3126,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3286,7 +3325,9 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
             eprintln!("Configuration error: {error}");
-            eprintln!("Run `cx profiles add` to set up credentials.");
+            if config::wants_generic_credentials_hint(&error) {
+                eprintln!("Run `cx profiles add` to set up credentials.");
+            }
             return Err(error);
         }
     };

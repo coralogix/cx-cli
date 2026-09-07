@@ -392,6 +392,7 @@ pub async fn run_catalog(targets: &[Arc<ExecutionTarget>], output: OutputFormat)
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
+        OutputFormat::Yaml => render::render_yaml(&all_rows)?,
         OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -535,6 +536,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -691,6 +693,7 @@ pub async fn run_create(
     }
 
     match output {
+        OutputFormat::Yaml => {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
@@ -852,6 +855,7 @@ pub async fn run_folders_list(
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
+        OutputFormat::Yaml => render::render_yaml(&all_rows)?,
         OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_rows).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -933,6 +937,7 @@ pub async fn run_folders_create(
     }
 
     match output {
+        OutputFormat::Yaml => {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)

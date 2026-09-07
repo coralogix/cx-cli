@@ -318,6 +318,7 @@ pub async fn run_get(
     let values: Vec<Value> = all_results.iter().map(|(v, _)| v.clone()).collect();
     match output {
         OutputFormat::Json => render::render_json_auto(&values)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&values)?,
         OutputFormat::Toon => {
             let toon =
                 toon_encode(&values).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -764,6 +765,7 @@ pub async fn run_events_list(
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Yaml => render::render_yaml(&all_json)?,
         OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -849,6 +851,7 @@ pub async fn run_event_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -918,6 +921,7 @@ pub async fn run_notifications(
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Yaml => render::render_yaml(&all_json)?,
         OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -998,6 +1002,7 @@ async fn finish_lifecycle(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;

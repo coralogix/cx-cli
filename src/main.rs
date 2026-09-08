@@ -1041,7 +1041,7 @@ Examples:
     Catalog,
     /// Get a single dashboard by ID.
     Get {
-        /// Dashboard ID.
+        /// Dashboard ID (21-character nanoid from `cx dashboards catalog`, not a folder UUID or name).
         dashboard_id: String,
     },
     /// Create a new dashboard from a JSON definition file [requires --yes].
@@ -1086,8 +1086,8 @@ Examples:
 Examples:
   cx dashboards check --from-file dash.json
   cx dashboards check --from-file -            # read from stdin
-  cx dashboards check 01234abcd                 # validate a stored dashboard by id
-  cx -p prod -p staging dashboards check 01234abcd   # multi-profile")]
+  cx dashboards check nPl9zg5A61iJ75CtN2FDB                 # validate a stored dashboard by id
+  cx -p prod -p staging dashboards check nPl9zg5A61iJ75CtN2FDB   # multi-profile")]
     Check {
         /// Path to a JSON file with the dashboard definition. Use '-' for stdin.
         /// Accepts either a bare dashboard document or a `{\"dashboard\": {...}}` wrapper.
@@ -1095,13 +1095,13 @@ Examples:
         #[arg(long, conflicts_with = "dashboard_id")]
         from_file: Option<String>,
 
-        /// Validate an existing dashboard by id. Mutually exclusive with --from-file.
+        /// Validate an existing dashboard by id (21-character nanoid from catalog). Mutually exclusive with --from-file.
         #[arg(conflicts_with = "from_file")]
         dashboard_id: Option<String>,
     },
     /// Delete a dashboard [requires --yes].
     Delete {
-        /// Dashboard ID.
+        /// Dashboard ID (21-character nanoid from `cx dashboards catalog`, not a folder UUID or name).
         dashboard_id: String,
     },
     /// Search dashboards semantically by description.
@@ -3430,6 +3430,7 @@ async fn main() -> Result<()> {
                     .await?;
                 }
                 DashboardsCmd::Delete { dashboard_id } => {
+                    commands::dashboards::validate_dashboard_id(&dashboard_id)?;
                     confirm_destructive(
                         &format!("Delete dashboard '{dashboard_id}'?"),
                         yes,

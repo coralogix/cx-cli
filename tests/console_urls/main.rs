@@ -3069,8 +3069,12 @@ async fn alerts_list_prints_console_link() {
 async fn dashboard_get_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/dash-abc123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "dash-abc123"})))
+        .and(path(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/nPl9zg5A61iJ75CtN2FDB",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"id": "nPl9zg5A61iJ75CtN2FDB"})),
+        )
         .mount(&server)
         .await;
 
@@ -3084,7 +3088,13 @@ async fn dashboard_get_prints_console_link() {
     write_config(&home, "mock");
 
     let output = cx(&home)
-        .args(["--profile", "mock", "dashboards", "get", "dash-abc123"])
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "get",
+            "nPl9zg5A61iJ75CtN2FDB",
+        ])
         .output()
         .expect("failed to run cx");
 
@@ -3092,7 +3102,7 @@ async fn dashboard_get_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/nPl9zg5A61iJ75CtN2FDB"
         ),
         "stderr did not contain the console link: {stderr}"
     );
@@ -3117,7 +3127,13 @@ async fn dashboard_check_by_id_prints_console_link() {
     write_config(&home, "mock");
 
     let output = cx(&home)
-        .args(["--profile", "mock", "dashboards", "check", "dash-abc123"])
+        .args([
+            "--profile",
+            "mock",
+            "dashboards",
+            "check",
+            "nPl9zg5A61iJ75CtN2FDB",
+        ])
         .output()
         .expect("failed to run cx");
 
@@ -3125,7 +3141,7 @@ async fn dashboard_check_by_id_prints_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/dash-abc123"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/dashboards/nPl9zg5A61iJ75CtN2FDB"
         ),
         "stderr did not contain the console link: {stderr}"
     );

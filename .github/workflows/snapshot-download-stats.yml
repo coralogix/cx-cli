@@ -1,0 +1,52 @@
+name: Snapshot CLI download stats
+
+on:
+  schedule:
+    - cron: "15 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    name: Write daily.csv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Check delta logic
+        run: python3 scripts/cli-download-stats.py --self-test
+
+      - name: Snapshot GitHub + crates.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/cli-download-stats.py --stats-dir /tmp/cli-stats
+
+      - name: Publish download-stats branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          work=/tmp/download-stats-repo
+          rm -rf "$work"
+          mkdir -p "$work"
+          cd "$work"
+          git init
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads origin download-stats >/dev/null; then
+            git fetch origin download-stats
+            git checkout download-stats
+          else
+            git checkout --orphan download-stats
+          fi
+          cp /tmp/cli-stats/daily.csv /tmp/cli-stats/snapshots.jsonl /tmp/cli-stats/README.md .
+          git add daily.csv snapshots.jsonl README.md
+          if git diff --cached --quiet; then
+            echo "No stats change"
+            exit 0
+          fi
+          git commit -m "cli download snapshot $(date -u +%F)"
+          git push origin HEAD:download-stats

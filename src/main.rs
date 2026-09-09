@@ -2764,7 +2764,6 @@ enum InfraCmd {
     #[command(after_help = "\
 Examples:
   cx infra resources types
-  cx infra resources list --category Hosts --type EC2_Instances --scope environment=prod
   cx infra resources health-history \"1001234:host_id=i-abc123\"
   cx infra resources raw-data \"1001234:host_id=i-abc123\"")]
     Resources {
@@ -2777,29 +2776,71 @@ Examples:
 enum InfraResourcesCmd {
     /// List the available resource types (category/type pairs).
     Types,
-    /// List resources of a given category and type.
+    /// List the attributes resources can be filtered by.
+    #[command(after_help = "\
+Examples:
+  cx infra resources filters
+  cx infra resources filters --category Hosts
+  cx infra resources filters --category Hosts --type EC2_Instances")]
+    Filters {
+        /// Limit to one category (discover with `cx infra resources types`).
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Limit to one resource type within the category.
+        #[arg(long)]
+        r#type: Option<String>,
+    },
+    /// List resources, optionally narrowed by category, type or attribute filters.
     #[command(after_help = "\
 Examples:
   cx infra resources list --category Hosts --type EC2_Instances
-  cx infra resources list --category Hosts --type EC2_Instances --name-filter web
-  cx infra resources list --category Hosts --type EC2_Instances --scope service=checkout --scope environment=prod
-  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200")]
+  cx infra resources list --match-all Health=critical
+  cx infra resources list --match-all Region=eu-west-1 --match-all Health=critical
+  cx infra resources list --match-any Name=coredns --match-any Namespace=kube-system
+  cx infra resources list --match-all OS=Linux --match-any Health=critical --match-any Region=eu-west-1
+  cx infra resources list --match-all Region=eu-west-1,us-east-1
+  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200
+
+Discover what can be filtered with `cx infra resources filters`.")]
     List {
         /// Resource category (discover with `cx infra resources types`).
         #[arg(long)]
-        category: String,
+        category: Option<String>,
 
         /// Resource type within the category (discover with `cx infra resources types`).
         #[arg(long)]
-        r#type: String,
+        r#type: Option<String>,
 
-        /// Filter resources by name.
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. Every one must
+        /// match. Commas within one flag mean either value. Discover names with
+        /// `cx infra resources filters`.
         #[arg(long)]
+        match_all: Vec<String>,
+
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. At least one
+        /// must match. Combined with --match-all by AND.
+        #[arg(long)]
+        match_any: Vec<String>,
+
+        /// Filter resources by name. Legacy: needs --category and --type, and
+        /// cannot be combined with --match-all or --match-any.
+        #[arg(
+            long,
+            requires_all = ["category", "type"],
+            conflicts_with_all = ["match_all", "match_any"]
+        )]
         name_filter: Option<String>,
 
         /// Scope filter as key=value; repeatable across different keys, at most
         /// once per key. Keys: service, environment, team. Multiple keys AND together.
-        #[arg(long)]
+        /// Legacy: needs --category and --type, and cannot be combined with
+        /// --match-all or --match-any.
+        #[arg(
+            long,
+            requires_all = ["category", "type"],
+            conflicts_with_all = ["match_all", "match_any"]
+        )]
         scope: Vec<String>,
 
         /// First row of the page window (0-based; default 0).
@@ -4657,25 +4698,48 @@ async fn main() -> Result<()> {
                     InfraResourcesCmd::Types => {
                         commands::infra::run_types(&targets, output).await?;
                     }
+                    InfraResourcesCmd::Filters { category, r#type } => {
+                        commands::infra::run_filters(
+                            &targets,
+                            category.as_deref(),
+                            r#type.as_deref(),
+                            output,
+                        )
+                        .await?;
+                    }
                     InfraResourcesCmd::List {
                         category,
                         r#type,
+                        match_all,
+                        match_any,
                         name_filter,
                         scope,
                         start_row,
                         end_row,
                     } => {
-                        commands::infra::run_list(
-                            &targets,
-                            &category,
-                            &r#type,
-                            name_filter.as_deref(),
-                            &scope,
-                            start_row,
-                            end_row,
-                            output,
-                        )
-                        .await?;
+                        if name_filter.is_some() || !scope.is_empty() {
+                            commands::infra::run_list_legacy(
+                                &targets,
+                                category.as_deref(),
+                                r#type.as_deref(),
+                                name_filter.as_deref(),
+                                &scope,
+                                commands::infra::PageWindow { start_row, end_row },
+                                output,
+                            )
+                            .await?;
+                        } else {
+                            commands::infra::run_list(
+                                &targets,
+                                category.as_deref(),
+                                r#type.as_deref(),
+                                &match_all,
+                                &match_any,
+                                commands::infra::PageWindow { start_row, end_row },
+                                output,
+                            )
+                            .await?;
+                        }
                     }
                     InfraResourcesCmd::HealthHistory { resource_id } => {
                         commands::infra::run_health_history(&targets, &resource_id, output)

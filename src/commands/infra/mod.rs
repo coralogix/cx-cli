@@ -6,8 +6,12 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 pub mod api;
+mod legacy;
 
-use api::{HealthHistoryEntry, InfraApi, ListResourcesParams, ResourceData, ResourceTypeMapping};
+use api::{
+    BoolFilter, CategoryType, FieldMatch, Filter, FilterDescriptor, GetResourcesResponse,
+    HealthHistoryEntry, InfraApi, ListResourcesParams, Op, ResourceData, ResourceTypeMapping,
+};
 
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
@@ -16,9 +20,11 @@ use crate::render;
 /// JSON key for the source profile when merging multi-profile infra REST rows.
 const JSON_KEY_PROFILE: &str = "profile";
 
-/// Scope filter keys accepted by the infrastructure resources API. Validated
-/// client-side so a typo fails fast instead of round-tripping for a 400.
-const ALLOWED_SCOPE_KEYS: [&str; 3] = ["service", "environment", "team"];
+#[derive(Debug, Clone, Copy)]
+pub struct PageWindow {
+    pub start_row: Option<i64>,
+    pub end_row: Option<i64>,
+}
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
@@ -78,48 +84,176 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
     Ok(())
 }
 
-/// `cx infra resources list` - list resources of a given category and type.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_list(
+pub async fn run_filters(
     targets: &[Arc<ExecutionTarget>],
-    category: &str,
-    resource_type: &str,
-    name_filter: Option<&str>,
-    scope: &[String],
-    start_row: Option<i64>,
-    end_row: Option<i64>,
+    category: Option<&str>,
+    resource_type: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
-    let category = require_non_empty(category, "--category")?;
-    let resource_type = require_non_empty(resource_type, "--type")?;
-    let name_filter = name_filter.map(str::trim).filter(|s| !s.is_empty());
-    let scope_filters = parse_scope_filters(scope)?;
-    validate_page_window(start_row, end_row)?;
+    let category = category
+        .map(|c| require_non_empty(c, "--category"))
+        .transpose()?;
+    let resource_type = resource_type
+        .map(|t| require_non_empty(t, "--type"))
+        .transpose()?;
 
-    eprintln!("{}", "Fetching resources...".dimmed());
+    eprintln!("{}", "Fetching filterable attributes...".dimmed());
 
     let include_profile = targets.len() > 1;
 
+    let per_profile = fan_out(targets, |target| async move {
+        let api = InfraApi::new(&target.client);
+        Ok(api.filters(category, resource_type).await?)
+    })
+    .await;
+
+    let mut merged: Vec<(String, FilterDescriptor)> = Vec::new();
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        for descriptor in resp.filters {
+            merged.push((profile.clone(), descriptor));
+        }
+    }
+
+    match output {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let rows: Vec<Value> = merged
+                .iter()
+                .map(|(profile, f)| filter_to_json(f, include_profile, profile))
+                .collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if merged.is_empty() {
+                render::print_no_results("No filterable attributes found.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = merged
+                .iter()
+                .map(|(profile, f)| {
+                    vec![
+                        profile.clone(),
+                        display_or_dash(f.name.as_deref()),
+                        display_or_dash(f.kind.as_deref()),
+                        if f.wildcard { "yes" } else { "no" }.to_string(),
+                        join_or_dash(&f.values),
+                        join_or_dash(&format_type_pairs(&f.types)),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["Attribute", "Kind", "Wildcard", "Values", "Types"],
+                rows,
+                include_profile,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// `cx infra resources list` - list resources, narrowed by category, type or attribute.
+pub async fn run_list(
+    targets: &[Arc<ExecutionTarget>],
+    category: Option<&str>,
+    resource_type: Option<&str>,
+    match_all: &[String],
+    match_any: &[String],
+    window: PageWindow,
+    output: OutputFormat,
+) -> Result<()> {
+    let category = category
+        .map(|c| require_non_empty(c, "--category"))
+        .transpose()?;
+    let resource_type = resource_type
+        .map(|t| require_non_empty(t, "--type"))
+        .transpose()?;
+    let filter = build_filter(match_all, match_any)?;
+    if category.is_none() && resource_type.is_none() && filter.is_none() {
+        bail!(
+            "nothing to narrow by; pass at least one of --category, --type, \
+             --match-all or --match-any - `cx infra resources filters` lists \
+             the attributes this tenant can filter on"
+        );
+    }
+    window.validate()?;
+
+    eprintln!("{}", "Fetching resources...".dimmed());
+
     let per_profile = fan_out(targets, |target| {
-        let scope_filters = scope_filters.clone();
-        let category = category.to_string();
-        let resource_type = resource_type.to_string();
-        let name_filter = name_filter.map(String::from);
+        let category = category.map(String::from);
+        let resource_type = resource_type.map(String::from);
+        let filter = &filter;
         async move {
             let api = InfraApi::new(&target.client);
             let params = ListResourcesParams {
-                category: &category,
-                resource_type: &resource_type,
-                name_filter: name_filter.as_deref(),
-                scope_filters: &scope_filters,
-                start_row,
-                end_row,
+                category: category.as_deref(),
+                resource_type: resource_type.as_deref(),
+                filter: filter.as_ref(),
+                start_row: window.start_row,
+                end_row: window.end_row,
             };
             Ok(api.list(&params).await?)
         }
     })
     .await;
 
+    render_resources(
+        per_profile,
+        targets.len() > 1,
+        resource_type.is_some(),
+        output,
+    )
+}
+
+/// `cx infra resources list` - list resources of a given category and type.
+pub async fn run_list_legacy(
+    targets: &[Arc<ExecutionTarget>],
+    category: Option<&str>,
+    resource_type: Option<&str>,
+    name_filter: Option<&str>,
+    scope: &[String],
+    window: PageWindow,
+    output: OutputFormat,
+) -> Result<()> {
+    let (Some(category), Some(resource_type)) = (category, resource_type) else {
+        bail!("--name-filter and --scope require both --category and --type");
+    };
+    let category = require_non_empty(category, "--category")?;
+    let resource_type = require_non_empty(resource_type, "--type")?;
+    let name_filter = name_filter.map(str::trim).filter(|s| !s.is_empty());
+    let scope_filters = legacy::parse_scope_filters(scope)?;
+    window.validate()?;
+
+    eprintln!("{}", "Fetching resources...".dimmed());
+
+    let per_profile = fan_out(targets, |target| {
+        let category = category.to_string();
+        let resource_type = resource_type.to_string();
+        let name_filter = name_filter.map(String::from);
+        let scope_filters = scope_filters.clone();
+        async move {
+            let params = legacy::LegacyListParams {
+                category: &category,
+                resource_type: &resource_type,
+                name_filter: name_filter.as_deref(),
+                scope_filters: &scope_filters,
+                start_row: window.start_row,
+                end_row: window.end_row,
+            };
+            Ok(legacy::list(&target.client, &params).await?)
+        }
+    })
+    .await;
+
+    render_resources(per_profile, targets.len() > 1, true, output)
+}
+
+fn render_resources(
+    per_profile: Vec<(String, Result<GetResourcesResponse>)>,
+    include_profile: bool,
+    type_pinned: bool,
+    output: OutputFormat,
+) -> Result<()> {
     let mut counts: Vec<ProfileCounts> = Vec::new();
     let mut merged: Vec<(String, ResourceData)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
@@ -148,21 +282,21 @@ pub async fn run_list(
                 render::print_no_results("No resources found.");
                 return Ok(());
             }
-            let rows: Vec<Vec<String>> = merged
-                .iter()
-                .map(|(profile, r)| {
-                    vec![
-                        profile.clone(),
-                        display_or_dash(r.resource_id.as_deref()),
-                        display_or_dash(display_name(r)),
-                    ]
-                })
-                .collect();
-            render::render_table(&["Resource ID", "Name"], rows, include_profile);
+            let (headers, rows) = list_table(&merged);
+            let header_refs: Vec<&str> = headers.iter().map(String::as_str).collect();
+            render::render_table(&header_refs, rows, include_profile);
             eprintln!(
                 "{}",
                 format_count_summary(merged.len(), total_count, &counts, include_profile).dimmed()
             );
+            if !type_pinned {
+                eprintln!(
+                    "{}",
+                    "Columns are the union of the matched types; a blank cell means the resource \
+                     does not carry that column. Narrow with --type for one type's set."
+                        .dimmed()
+                );
+            }
         }
     }
 
@@ -421,69 +555,131 @@ fn single_target<'t>(
 /// Deliberately not checked here: the service's ceiling on `startRow + rows`.
 /// That is a server-side policy constant which the CLI should not mirror, and its
 /// 400 already names the limit and how to get under it.
-fn validate_page_window(start_row: Option<i64>, end_row: Option<i64>) -> Result<()> {
-    if let Some(start) = start_row {
-        if start < 0 {
-            bail!("--start-row must not be negative (got {start}); rows are 0-based");
+impl PageWindow {
+    fn validate(self) -> Result<()> {
+        let Self { start_row, end_row } = self;
+        if let Some(start) = start_row {
+            if start < 0 {
+                bail!("--start-row must not be negative (got {start}); rows are 0-based");
+            }
         }
-    }
 
-    if let Some(end) = end_row {
-        if end < 0 {
-            bail!("--end-row must not be negative (got {end})");
+        if let Some(end) = end_row {
+            if end < 0 {
+                bail!("--end-row must not be negative (got {end})");
+            }
         }
-    }
 
-    if let (Some(start), Some(end)) = (start_row, end_row) {
-        if end <= start {
-            bail!(
-                "--end-row ({end}) must be greater than --start-row ({start}); \
-                 --end-row is exclusive, so this window selects no rows"
-            );
+        if let (Some(start), Some(end)) = (start_row, end_row) {
+            if end <= start {
+                bail!(
+                    "--end-row ({end}) must be greater than --start-row ({start}); \
+                     --end-row is exclusive, so this window selects no rows"
+                );
+            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
-/// Parses repeatable `--scope key=value` flags and validates keys against
-/// [`ALLOWED_SCOPE_KEYS`].
-///
-/// Distinct keys are combined by the API with AND ("when more than one field is
-/// set, a resource must match all of them"). A key given twice is rejected: each
-/// scope field holds a single value server-side, so repeating one cannot express
-/// "either value".
-/// Failing here makes that intent explicit instead of quietly answering a
-/// different question.
-fn parse_scope_filters(scope: &[String]) -> Result<Vec<(String, String)>> {
-    let mut filters: Vec<(String, String)> = Vec::new();
+fn build_filter(match_all: &[String], match_any: &[String]) -> Result<Option<Filter>> {
+    let mut operands: Vec<Filter> = parse_matches(match_all, "--match-all")?
+        .into_iter()
+        .map(Filter::Match)
+        .collect();
 
-    for raw in scope {
-        let Some((key, value)) = raw.split_once('=') else {
-            bail!("invalid --scope '{raw}': expected key=value");
-        };
-        let key = key.trim();
-        let value = value.trim();
-        if !ALLOWED_SCOPE_KEYS.contains(&key) {
-            bail!(
-                "unknown --scope key '{key}'; allowed keys: {}",
-                ALLOWED_SCOPE_KEYS.join(", ")
-            );
-        }
-        if value.is_empty() {
-            bail!("invalid --scope '{raw}': value must not be empty");
-        }
-        if let Some((_, existing)) = filters.iter().find(|(k, _)| k == key) {
-            bail!(
-                "--scope key '{key}' given more than once ('{existing}' then '{value}'); \
-                 each scope key accepts a single value and different keys combine with AND, \
-                 so repeating one cannot match either value - run one query per value"
-            );
-        }
-        filters.push((key.to_string(), value.to_string()));
+    let any: Vec<Filter> = parse_matches(match_any, "--match-any")?
+        .into_iter()
+        .map(Filter::Match)
+        .collect();
+    if any.len() == 1 {
+        operands.extend(any);
+    } else if !any.is_empty() {
+        operands.push(Filter::Bool(BoolFilter {
+            op: Op::Or,
+            operands: any,
+        }));
     }
 
-    Ok(filters)
+    if operands.len() == 1 {
+        return Ok(operands.pop());
+    }
+    Ok((!operands.is_empty()).then_some(Filter::Bool(BoolFilter {
+        op: Op::And,
+        operands,
+    })))
+}
+
+fn parse_matches(raw: &[String], flag: &str) -> Result<Vec<FieldMatch>> {
+    let mut matches: Vec<FieldMatch> = Vec::new();
+
+    for entry in raw {
+        let Some((field, values)) = entry.split_once('=') else {
+            bail!("invalid {flag} '{entry}': expected NAME=VALUE");
+        };
+        let field = field.trim();
+        if field.is_empty() {
+            bail!("invalid {flag} '{entry}': attribute name must not be empty");
+        }
+        let values: Vec<String> = values
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(String::from)
+            .collect();
+        if values.is_empty() {
+            bail!("invalid {flag} '{entry}': value must not be empty");
+        }
+        if matches.iter().any(|m| m.field.eq_ignore_ascii_case(field)) {
+            bail!(
+                "{flag} attribute '{field}' given more than once; \
+                 list its values on one flag instead - {flag} {field}=a,b"
+            );
+        }
+        matches.push(FieldMatch {
+            field: field.to_string(),
+            values,
+        });
+    }
+
+    Ok(matches)
+}
+
+fn filter_to_json(item: &FilterDescriptor, include_profile: bool, profile: &str) -> Value {
+    let v = json!({
+        "name": item.name,
+        "kind": item.kind,
+        "wildcard": item.wildcard,
+        "values": item.values,
+        "types": item
+            .types
+            .iter()
+            .map(|t| json!({ "category": t.category, "type": t.type_name }))
+            .collect::<Vec<Value>>(),
+    });
+    tag_profile(v, include_profile, profile)
+}
+
+fn format_type_pairs(types: &[CategoryType]) -> Vec<String> {
+    types
+        .iter()
+        .map(|t| {
+            format!(
+                "{}/{}",
+                display_or_dash(t.category.as_deref()),
+                display_or_dash(t.type_name.as_deref())
+            )
+        })
+        .collect()
+}
+
+fn join_or_dash(values: &[String]) -> String {
+    if values.is_empty() {
+        "-".to_string()
+    } else {
+        values.join(", ")
+    }
 }
 
 /// Builds one resource row as JSON for `json` / `toon` output after fan-out.
@@ -491,6 +687,8 @@ fn resource_to_json(item: &ResourceData, include_profile: bool, profile: &str) -
     let v = json!({
         "resource_id": item.resource_id,
         "name": item.name,
+        "category": item.category,
+        "type": item.type_name,
         "columns": item.columns,
     });
     tag_profile(v, include_profile, profile)
@@ -536,6 +734,50 @@ fn display_or_dash(value: Option<&str>) -> String {
     value.filter(|s| !s.is_empty()).unwrap_or("-").to_string()
 }
 
+fn list_table(merged: &[(String, ResourceData)]) -> (Vec<String>, Vec<Vec<String>>) {
+    let resources: Vec<&ResourceData> = merged.iter().map(|(_, r)| r).collect();
+    let columns = union_of_columns(&resources);
+
+    let headers: Vec<String> = ["Resource ID", "Name", "Category", "Type"]
+        .into_iter()
+        .map(String::from)
+        .chain(columns.iter().cloned())
+        .collect();
+
+    let rows: Vec<Vec<String>> = merged
+        .iter()
+        .map(|(profile, r)| {
+            let mut row = vec![
+                profile.clone(),
+                display_or_dash(r.resource_id.as_deref()),
+                display_or_dash(display_name(r)),
+                display_or_dash(r.category.as_deref()),
+                display_or_dash(r.type_name.as_deref()),
+            ];
+            row.extend(
+                columns
+                    .iter()
+                    .map(|column| r.columns.get(column).cloned().unwrap_or_default()),
+            );
+            row
+        })
+        .collect();
+
+    (headers, rows)
+}
+
+fn union_of_columns(resources: &[&ResourceData]) -> Vec<String> {
+    let mut columns: Vec<String> = Vec::new();
+    for resource in resources {
+        for name in resource.columns.keys() {
+            if !name.eq_ignore_ascii_case("name") && !columns.contains(name) {
+                columns.push(name.clone());
+            }
+        }
+    }
+    columns
+}
+
 /// The name the API matches `--name-filter` against.
 ///
 /// The `name` field is an internal identifier, while the `Name` column holds the display name
@@ -569,105 +811,282 @@ mod tests {
         assert!(err.to_string().contains("resource id must not be empty"));
     }
 
-    #[test]
-    fn parse_scope_filters_accepts_allowed_keys() {
-        let scope = vec![
-            "service=checkout".to_string(),
-            "environment=prod".to_string(),
-            "team=platform".to_string(),
-        ];
-        let filters = parse_scope_filters(&scope).unwrap();
-        assert_eq!(
-            filters,
-            vec![
-                ("service".to_string(), "checkout".to_string()),
-                ("environment".to_string(), "prod".to_string()),
-                ("team".to_string(), "platform".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn parse_scope_filters_trims_whitespace() {
-        let scope = vec![" service = checkout ".to_string()];
-        let filters = parse_scope_filters(&scope).unwrap();
-        assert_eq!(
-            filters,
-            vec![("service".to_string(), "checkout".to_string())]
-        );
-    }
-
-    #[test]
-    fn parse_scope_filters_rejects_missing_equals() {
-        let err = parse_scope_filters(&["service".to_string()]).unwrap_err();
-        assert!(err.to_string().contains("expected key=value"));
-    }
-
-    #[test]
-    fn parse_scope_filters_rejects_unknown_key() {
-        let err = parse_scope_filters(&["region=us-east-1".to_string()]).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("unknown --scope key 'region'"));
-        assert!(msg.contains("service, environment, team"));
-    }
-
-    #[test]
-    fn parse_scope_filters_rejects_empty_value() {
-        let err = parse_scope_filters(&["service=".to_string()]).unwrap_err();
-        assert!(err.to_string().contains("must not be empty"));
-    }
-
-    #[test]
-    fn parse_scope_filters_empty_input_yields_no_filters() {
-        assert!(parse_scope_filters(&[]).unwrap().is_empty());
-    }
-
     /// Each scope field holds one value server-side and distinct keys AND
     /// together, so a repeated key cannot mean "either". The service collapses
     /// the query string into a `HashMap`, silently keeping only the last value -
     /// so this must fail here rather than quietly filter on `b` alone.
-    #[test]
-    fn parse_scope_filters_rejects_a_repeated_key() {
-        let err =
-            parse_scope_filters(&["service=a".to_string(), "service=b".to_string()]).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("'service' given more than once"), "got: {msg}");
-        assert!(msg.contains('a') && msg.contains('b'), "got: {msg}");
-    }
-
     /// Rejected uniformly - "at most once per key" is a simpler rule to rely on
     /// than one that quietly tolerates exact repeats.
     #[test]
-    fn parse_scope_filters_rejects_a_repeated_key_even_with_the_same_value() {
-        let err =
-            parse_scope_filters(&["service=a".to_string(), "service=a".to_string()]).unwrap_err();
+    fn parse_matches_reads_one_attribute_and_one_value() {
+        let matches = parse_matches(&["Region=eu-west-1".to_string()], "--match-all").unwrap();
+        assert_eq!(
+            matches,
+            vec![FieldMatch {
+                field: "Region".to_string(),
+                values: vec!["eu-west-1".to_string()],
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_matches_splits_values_on_commas() {
+        let matches =
+            parse_matches(&["Region=eu-west-1,us-east-1".to_string()], "--match-all").unwrap();
+        assert_eq!(matches[0].values, vec!["eu-west-1", "us-east-1"]);
+    }
+
+    #[test]
+    fn parse_matches_trims_whitespace_around_both_sides() {
+        let matches = parse_matches(
+            &[" Region = eu-west-1 , us-east-1 ".to_string()],
+            "--match-all",
+        )
+        .unwrap();
+        assert_eq!(matches[0].field, "Region");
+        assert_eq!(matches[0].values, vec!["eu-west-1", "us-east-1"]);
+    }
+
+    #[test]
+    fn parse_matches_keeps_a_value_containing_an_equals() {
+        let matches = parse_matches(&["Tag=env=prod".to_string()], "--match-all").unwrap();
+        assert_eq!(matches[0].values, vec!["env=prod"]);
+    }
+
+    #[test]
+    fn parse_matches_rejects_a_missing_equals() {
+        let err = parse_matches(&["Region".to_string()], "--match-all").unwrap_err();
+        assert!(err.to_string().contains("expected NAME=VALUE"));
+    }
+
+    #[test]
+    fn parse_matches_rejects_an_empty_attribute_name() {
+        let err = parse_matches(&["=eu-west-1".to_string()], "--match-all").unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn parse_matches_rejects_an_empty_value() {
+        for entry in ["Region=", "Region=,", "Region= , "] {
+            let err = parse_matches(&[entry.to_string()], "--match-all").unwrap_err();
+            assert!(
+                err.to_string().contains("value must not be empty"),
+                "{entry} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_matches_rejects_a_repeated_attribute() {
+        let err = parse_matches(
+            &[
+                "Region=eu-west-1".to_string(),
+                "Region=us-east-1".to_string(),
+            ],
+            "--match-all",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("'Region' given more than once"), "got: {msg}");
+        assert!(msg.contains("--match-all Region=a,b"), "got: {msg}");
+    }
+
+    #[test]
+    fn parse_matches_detects_a_repeat_whatever_its_case() {
+        let err = parse_matches(
+            &[
+                "Region=eu-west-1".to_string(),
+                "region=us-east-1".to_string(),
+            ],
+            "--match-any",
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("given more than once"));
     }
 
     #[test]
-    fn parse_scope_filters_detects_a_repeat_after_trimming() {
-        let err = parse_scope_filters(&[" service = a ".to_string(), "service=b".to_string()])
-            .unwrap_err();
-        assert!(err.to_string().contains("given more than once"));
+    fn parse_matches_names_the_flag_it_was_given() {
+        let err = parse_matches(&["Region".to_string()], "--match-any").unwrap_err();
+        assert!(err.to_string().contains("--match-any"));
+    }
+
+    #[test]
+    fn parse_matches_empty_input_yields_no_matches() {
+        assert!(parse_matches(&[], "--match-all").unwrap().is_empty());
+    }
+
+    #[test]
+    fn build_filter_is_absent_without_either_flag() {
+        assert_eq!(build_filter(&[], &[]).unwrap(), None);
+    }
+
+    #[test]
+    fn build_filter_collapses_a_single_attribute() {
+        let filter = build_filter(&["Health=critical".to_string()], &[])
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            filter,
+            Filter::Match(FieldMatch {
+                field: "Health".to_string(),
+                values: vec!["critical".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn build_filter_collapses_a_single_match_any() {
+        let filter = build_filter(&[], &["Health=critical".to_string()])
+            .unwrap()
+            .unwrap();
+        assert!(matches!(filter, Filter::Match(_)), "{filter:?}");
+    }
+
+    #[test]
+    fn build_filter_ands_every_match_all() {
+        let filter = build_filter(
+            &[
+                "Region=eu-west-1".to_string(),
+                "Health=critical".to_string(),
+            ],
+            &[],
+        )
+        .unwrap()
+        .unwrap();
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::And);
+        assert_eq!(operands.len(), 2);
+        assert!(operands.iter().all(|o| matches!(o, Filter::Match(_))));
+    }
+
+    #[test]
+    fn build_filter_ors_every_match_any() {
+        let filter = build_filter(
+            &[],
+            &[
+                "Name=coredns".to_string(),
+                "Namespace=kube-system".to_string(),
+            ],
+        )
+        .unwrap()
+        .unwrap();
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::Or);
+        assert_eq!(operands.len(), 2);
+    }
+
+    #[test]
+    fn build_filter_nests_the_or_group_inside_the_and() {
+        let filter = build_filter(
+            &["OS=Linux".to_string()],
+            &[
+                "Health=critical".to_string(),
+                "Region=eu-west-1".to_string(),
+            ],
+        )
+        .unwrap()
+        .unwrap();
+
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::And);
+        assert_eq!(operands.len(), 2);
+
+        assert_eq!(
+            operands[0],
+            Filter::Match(FieldMatch {
+                field: "OS".to_string(),
+                values: vec!["Linux".to_string()],
+            })
+        );
+        let Filter::Bool(BoolFilter {
+            op: inner_op,
+            operands: inner,
+        }) = &operands[1]
+        else {
+            panic!("expected the second operand to be the OR group");
+        };
+        assert_eq!(*inner_op, Op::Or);
+        assert_eq!(inner.len(), 2);
+    }
+
+    #[test]
+    fn build_filter_allows_one_attribute_in_both_groups() {
+        let filter = build_filter(
+            &["Region=eu-west-1".to_string()],
+            &["Region=us-east-1".to_string()],
+        )
+        .unwrap()
+        .unwrap();
+        let Filter::Bool(BoolFilter { operands, .. }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(operands.len(), 2);
+    }
+
+    #[test]
+    fn build_filter_propagates_a_parse_error() {
+        assert!(build_filter(&["Region".to_string()], &[]).is_err());
+        assert!(build_filter(&[], &["Region".to_string()]).is_err());
     }
 
     // ── validate_page_window ─────────────────────────────────────────────────
 
     #[test]
     fn page_window_accepts_an_ascending_window_and_open_ends() {
-        assert!(validate_page_window(None, None).is_ok());
-        assert!(validate_page_window(Some(0), Some(100)).is_ok());
-        assert!(validate_page_window(Some(100), Some(200)).is_ok());
-        assert!(validate_page_window(Some(100), None).is_ok());
-        assert!(validate_page_window(None, Some(50)).is_ok());
-        assert!(validate_page_window(Some(0), Some(1)).is_ok());
+        assert!(PageWindow {
+            start_row: None,
+            end_row: None
+        }
+        .validate()
+        .is_ok());
+        assert!(PageWindow {
+            start_row: Some(0),
+            end_row: Some(100)
+        }
+        .validate()
+        .is_ok());
+        assert!(PageWindow {
+            start_row: Some(100),
+            end_row: Some(200)
+        }
+        .validate()
+        .is_ok());
+        assert!(PageWindow {
+            start_row: Some(100),
+            end_row: None
+        }
+        .validate()
+        .is_ok());
+        assert!(PageWindow {
+            start_row: None,
+            end_row: Some(50)
+        }
+        .validate()
+        .is_ok());
+        assert!(PageWindow {
+            start_row: Some(0),
+            end_row: Some(1)
+        }
+        .validate()
+        .is_ok());
     }
 
     /// The API clamps a negative `startRow` to 0 and returns 200, so without this
     /// check the caller silently gets the first window instead of an error.
     #[test]
     fn page_window_rejects_a_negative_start_row() {
-        let err = validate_page_window(Some(-5), None).unwrap_err();
+        let err = PageWindow {
+            start_row: Some(-5),
+            end_row: None,
+        }
+        .validate()
+        .unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("--start-row must not be negative"),
@@ -678,7 +1097,12 @@ mod tests {
 
     #[test]
     fn page_window_rejects_a_negative_end_row() {
-        let err = validate_page_window(None, Some(-1)).unwrap_err();
+        let err = PageWindow {
+            start_row: None,
+            end_row: Some(-1),
+        }
+        .validate()
+        .unwrap_err();
         assert!(err.to_string().contains("--end-row must not be negative"));
     }
 
@@ -686,7 +1110,12 @@ mod tests {
     /// an empty result set and can easily read it as "no such resources".
     #[test]
     fn page_window_rejects_an_inverted_window() {
-        let err = validate_page_window(Some(200), Some(100)).unwrap_err();
+        let err = PageWindow {
+            start_row: Some(200),
+            end_row: Some(100),
+        }
+        .validate()
+        .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("must be greater than"), "got: {msg}");
         assert!(msg.contains("100") && msg.contains("200"), "got: {msg}");
@@ -696,24 +1125,16 @@ mod tests {
     /// nothing - always a mistake rather than a meaningful request.
     #[test]
     fn page_window_rejects_an_empty_window() {
-        let err = validate_page_window(Some(100), Some(100)).unwrap_err();
+        let err = PageWindow {
+            start_row: Some(100),
+            end_row: Some(100),
+        }
+        .validate()
+        .unwrap_err();
         assert!(err.to_string().contains("selects no rows"));
     }
 
     /// The repeat check must not reject distinct keys that share a value.
-    #[test]
-    fn parse_scope_filters_allows_distinct_keys_sharing_a_value() {
-        let filters =
-            parse_scope_filters(&["service=core".to_string(), "team=core".to_string()]).unwrap();
-        assert_eq!(
-            filters,
-            vec![
-                ("service".to_string(), "core".to_string()),
-                ("team".to_string(), "core".to_string()),
-            ]
-        );
-    }
-
     #[test]
     fn tag_profile_inserts_key_only_when_multi_profile() {
         let tagged = tag_profile(json!({"a": 1}), true, "prod");
@@ -864,6 +1285,8 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            category: Some("Hosts".to_string()),
+            type_name: Some("EC2_Instances".to_string()),
         }
     }
 
@@ -895,6 +1318,109 @@ mod tests {
 
         let neither = resource(None, &[]);
         assert_eq!(display_name(&neither), None);
+    }
+
+    fn typed_resource(category: &str, type_name: &str, columns: &[(&str, &str)]) -> ResourceData {
+        let mut r = resource(Some("name"), columns);
+        r.category = Some(category.to_string());
+        r.type_name = Some(type_name.to_string());
+        r
+    }
+
+    #[test]
+    fn union_of_columns_sorts_each_row_then_appends_new_names() {
+        let a = typed_resource(
+            "Hosts",
+            "EC2_Instances",
+            &[("Region", "eu"), ("OS", "Linux")],
+        );
+        let b = typed_resource("Kubernetes", "Pods", &[("Namespace", "kube-system")]);
+        assert_eq!(
+            union_of_columns(&[&a, &b]),
+            vec![
+                "OS".to_string(),
+                "Region".to_string(),
+                "Namespace".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn union_of_columns_leaves_name_to_its_own_column() {
+        let r = typed_resource(
+            "Hosts",
+            "EC2_Instances",
+            &[("Name", "web-01"), ("Region", "eu")],
+        );
+        assert_eq!(union_of_columns(&[&r]), vec!["Region".to_string()]);
+    }
+
+    #[test]
+    fn union_of_columns_does_not_repeat_a_shared_column() {
+        let a = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu")]);
+        let b = typed_resource("Hosts", "Azure_VMs", &[("Region", "westeu")]);
+        assert_eq!(union_of_columns(&[&a, &b]), vec!["Region".to_string()]);
+    }
+
+    #[test]
+    fn union_of_columns_is_empty_without_rows() {
+        assert!(union_of_columns(&[]).is_empty());
+    }
+
+    fn merged_row(
+        category: &str,
+        type_name: &str,
+        columns: &[(&str, &str)],
+    ) -> (String, ResourceData) {
+        (
+            "p".to_string(),
+            typed_resource(category, type_name, columns),
+        )
+    }
+
+    #[test]
+    fn list_table_always_carries_the_classification_columns() {
+        let (headers, rows) = list_table(&[merged_row(
+            "Hosts",
+            "EC2_Instances",
+            &[("Region", "eu-west-1")],
+        )]);
+        assert_eq!(headers[..4], ["Resource ID", "Name", "Category", "Type"]);
+        assert_eq!(rows[0][3], "Hosts");
+        assert_eq!(rows[0][4], "EC2_Instances");
+    }
+
+    #[test]
+    fn list_table_has_one_shape_whatever_the_row_mix() {
+        let one_type = list_table(&[merged_row("Hosts", "EC2_Instances", &[("Region", "eu")])]).0;
+        let mixed = list_table(&[
+            merged_row("Hosts", "EC2_Instances", &[("Region", "eu")]),
+            merged_row("Hosts", "Azure_VMs", &[("Region", "westeu")]),
+        ])
+        .0;
+        assert_eq!(one_type, mixed);
+    }
+
+    #[test]
+    fn list_table_leaves_a_missing_column_blank() {
+        let (headers, rows) = list_table(&[
+            merged_row("Hosts", "EC2_Instances", &[("Region", "eu-west-1")]),
+            merged_row("Kubernetes", "Pods", &[("Namespace", "kube-system")]),
+        ]);
+        assert_eq!(headers[4..], ["Region", "Namespace"]);
+        assert_eq!(rows[0][5], "eu-west-1");
+        assert_eq!(rows[0][6], "");
+        assert_eq!(rows[1][5], "");
+        assert_eq!(rows[1][6], "kube-system");
+    }
+
+    #[test]
+    fn list_table_dashes_a_missing_fixed_column() {
+        let mut row = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu")]);
+        row.category = None;
+        let (_, rows) = list_table(&[("p".to_string(), row)]);
+        assert_eq!(rows[0][3], "-");
+        assert_eq!(rows[0][5], "eu");
     }
 
     fn counts(entries: &[(&str, i64, usize)]) -> Vec<ProfileCounts> {

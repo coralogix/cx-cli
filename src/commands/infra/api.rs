@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::api_client::CxClient;
 use crate::error::Result;
 
-const BASE_PATH: &str = "/mgmt/api/infrastructure/resources/v1";
+pub(super) const BASE_PATH: &str = "/mgmt/api/infrastructure/resources/v1";
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -37,6 +37,26 @@ pub struct CategoryType {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GetFiltersResponse {
+    #[serde(default)]
+    pub filters: Vec<FilterDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterDescriptor {
+    pub name: Option<String>,
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub wildcard: bool,
+    #[serde(default)]
+    pub values: Vec<String>,
+    #[serde(default)]
+    pub types: Vec<CategoryType>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetResourcesResponse {
     #[serde(default)]
     pub resources: Vec<ResourceData>,
@@ -51,6 +71,9 @@ pub struct ResourceData {
     /// `BTreeMap` so that `serde_json` maintains column order.
     #[serde(default)]
     pub columns: BTreeMap<String, String>,
+    pub category: Option<String>,
+    #[serde(rename = "type")]
+    pub type_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,15 +98,53 @@ pub struct GetRawDataResponse {
     pub raw_data: Option<Value>,
 }
 
-/// Query parameters for [`InfraApi::list`]. Scope filters are sent as flat
-/// `scopeFilter.{key}` query parameters, matching the API contract.
+/// Scope and page window for [`InfraApi::list`]. Everything but the window
+/// travels in the request body.
 pub struct ListResourcesParams<'p> {
-    pub category: &'p str,
-    pub resource_type: &'p str,
-    pub name_filter: Option<&'p str>,
-    pub scope_filters: &'p [(String, String)],
+    pub category: Option<&'p str>,
+    pub resource_type: Option<&'p str>,
+    pub filter: Option<&'p Filter>,
     pub start_row: Option<i64>,
     pub end_row: Option<i64>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum Filter {
+    Match(FieldMatch),
+    Bool(BoolFilter),
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldMatch {
+    pub field: String,
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoolFilter {
+    pub op: Op,
+    pub operands: Vec<Filter>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Op {
+    And,
+    Or,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ListResourcesBody<'p> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<&'p str>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    resource_type: Option<&'p str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filter: Option<&'p Filter>,
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────
@@ -117,19 +178,26 @@ impl<'a> InfraApi<'a> {
         self.client.get(&path, &[]).await
     }
 
+    pub async fn filters(
+        &self,
+        category: Option<&str>,
+        resource_type: Option<&str>,
+    ) -> Result<GetFiltersResponse> {
+        let mut query: Vec<(&str, &str)> = Vec::new();
+        if let Some(category) = category {
+            query.push(("category", category));
+        }
+        if let Some(resource_type) = resource_type {
+            query.push(("type", resource_type));
+        }
+        let path = format!("{BASE_PATH}/filters");
+        self.client.get(&path, &query).await
+    }
+
     /// List resources of a given category and type, with optional name filter,
     /// scope filters, and a `startRow`/`endRow` page window.
     pub async fn list(&self, params: &ListResourcesParams<'_>) -> Result<GetResourcesResponse> {
-        let mut query: Vec<(String, String)> = vec![
-            ("category".to_string(), params.category.to_string()),
-            ("type".to_string(), params.resource_type.to_string()),
-        ];
-        if let Some(name) = params.name_filter {
-            query.push(("nameFilter".to_string(), name.to_string()));
-        }
-        for (key, value) in params.scope_filters {
-            query.push((format!("scopeFilter.{key}"), value.clone()));
-        }
+        let mut query: Vec<(String, String)> = Vec::new();
         if let Some(start) = params.start_row {
             query.push(("startRow".to_string(), start.to_string()));
         }
@@ -140,7 +208,15 @@ impl<'a> InfraApi<'a> {
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        self.client.get(BASE_PATH, &query_refs).await
+
+        let body = serde_json::to_value(ListResourcesBody {
+            category: params.category,
+            resource_type: params.resource_type,
+            filter: params.filter,
+        })?;
+        self.client
+            .post_with_query(BASE_PATH, &query_refs, &body)
+            .await
     }
 
     /// Get the daily health status history for one resource, oldest first.

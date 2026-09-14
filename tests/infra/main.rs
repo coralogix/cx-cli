@@ -137,7 +137,7 @@ fn filters_body() -> serde_json::Value {
                 "name": "Health",
                 "kind": "status",
                 "wildcard": false,
-                "values": ["critical", "healthy", "unmonitored"]
+                "values": ["Critical", "Healthy", "Unmonitored"]
             }
         ]
     })

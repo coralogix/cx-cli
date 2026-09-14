@@ -2764,6 +2764,8 @@ enum InfraCmd {
     #[command(after_help = "\
 Examples:
   cx infra resources types
+  cx infra resources filters --category Hosts
+  cx infra resources list --category Hosts --type EC2_Instances
   cx infra resources health-history \"1001234:host_id=i-abc123\"
   cx infra resources raw-data \"1001234:host_id=i-abc123\"")]
     Resources {
@@ -2795,10 +2797,10 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx infra resources list --category Hosts --type EC2_Instances
-  cx infra resources list --match-all Health=critical
-  cx infra resources list --match-all Region=eu-west-1 --match-all Health=critical
+  cx infra resources list --match-all Health=Critical
+  cx infra resources list --match-all Region=eu-west-1 --match-all Health=Critical
   cx infra resources list --match-any Name=coredns --match-any Namespace=kube-system
-  cx infra resources list --match-all OS=Linux --match-any Health=critical --match-any Region=eu-west-1
+  cx infra resources list --match-all OS=linux --match-any Health=Critical --match-any Region=eu-west-1
   cx infra resources list --match-all Region=eu-west-1,us-east-1
   cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200
 

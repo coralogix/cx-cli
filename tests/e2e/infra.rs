@@ -191,22 +191,21 @@ fn infra_list_with_a_nested_filter() {
     if harness::require_creds("infra_list_with_a_nested_filter").is_none() {
         return;
     }
-    let (Some((category, _)), Some((attribute, value))) =
-        (discover_category_type(), discover_closed_set_filter())
+    let Some([(first, first_value), (second, second_value)]) = discover_two_closed_set_filters()
     else {
-        eprintln!("[e2e] skipping infra_list_with_a_nested_filter: nothing to filter on");
+        eprintln!("[e2e] skipping infra_list_with_a_nested_filter: need two closed-set attributes");
         return;
     };
     let v = harness::run_ok_json(&[
         "infra",
         "resources",
         "list",
-        "--category",
-        &category,
+        "--match-all",
+        &format!("{first}={first_value}"),
         "--match-any",
-        &format!("{attribute}={value}"),
+        &format!("{first}={first_value}"),
         "--match-any",
-        &format!("{attribute}={value}"),
+        &format!("{second}={second_value}"),
         "-o",
         "json",
     ]);
@@ -251,6 +250,39 @@ fn infra_list_rows_carry_their_classification() {
             "a pinned request still returns the type on every row, got: {row}"
         );
     }
+}
+
+fn discover_two_closed_set_filters() -> Option<[(String, String); 2]> {
+    static CACHE: OnceLock<Option<[(String, String); 2]>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            harness::require_creds("infra_discover_two_filters")?;
+            let stdout = harness::run_ok(&["infra", "resources", "filters", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            let mut found: Vec<(String, String)> = Vec::new();
+            for item in v.as_array()? {
+                let Some(name) = item.get("name").and_then(|n| n.as_str()) else {
+                    continue;
+                };
+                let Some(value) = item
+                    .get("values")
+                    .and_then(|v| v.as_array())
+                    .and_then(|v| v.first())
+                    .and_then(|v| v.as_str())
+                else {
+                    continue;
+                };
+                if found.iter().any(|(seen, _)| seen == name) {
+                    continue;
+                }
+                found.push((name.to_string(), value.to_string()));
+                if found.len() == 2 {
+                    return Some([found[0].clone(), found[1].clone()]);
+                }
+            }
+            None
+        })
+        .clone()
 }
 
 fn discover_closed_set_filter() -> Option<(String, String)> {

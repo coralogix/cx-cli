@@ -194,8 +194,7 @@ impl<'a> InfraApi<'a> {
         self.client.get(&path, &query).await
     }
 
-    /// List resources of a given category and type, with optional name filter,
-    /// scope filters, and a `startRow`/`endRow` page window.
+    /// List resources matching a filter, with a `startRow`/`endRow` page window.
     pub async fn list(&self, params: &ListResourcesParams<'_>) -> Result<GetResourcesResponse> {
         let mut query: Vec<(String, String)> = Vec::new();
         if let Some(start) = params.start_row {
@@ -215,7 +214,7 @@ impl<'a> InfraApi<'a> {
             filter: params.filter,
         })?;
         self.client
-            .post_with_query(BASE_PATH, &query_refs, &body)
+            .post_with_headers(BASE_PATH, Some(&query_refs), &body, &[])
             .await
     }
 

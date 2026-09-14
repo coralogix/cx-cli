@@ -52,7 +52,9 @@ pub async fn list(
         resource_type: params.resource_type,
         name_filter: params.name_filter,
     })?;
-    client.post_with_query(BASE_PATH, &query_refs, &body).await
+    client
+        .post_with_headers(BASE_PATH, Some(&query_refs), &body, &[])
+        .await
 }
 
 /// Parses repeatable `--scope key=value` flags and validates keys against
@@ -152,6 +154,10 @@ mod tests {
         assert!(parse_scope_filters(&[]).unwrap().is_empty());
     }
 
+    /// Each scope field holds one value server-side and distinct keys AND
+    /// together, so a repeated key cannot mean "either". The service collapses
+    /// the query string into a `HashMap`, silently keeping only the last value -
+    /// so this must fail here rather than quietly filter on `b` alone.
     #[test]
     fn parse_scope_filters_rejects_a_repeated_key() {
         let err =
@@ -161,6 +167,8 @@ mod tests {
         assert!(msg.contains('a') && msg.contains('b'), "got: {msg}");
     }
 
+    /// Rejected uniformly - "at most once per key" is a simpler rule to rely on
+    /// than one that quietly tolerates exact repeats.
     #[test]
     fn parse_scope_filters_rejects_a_repeated_key_even_with_the_same_value() {
         let err =

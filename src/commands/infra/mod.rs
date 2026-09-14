@@ -205,7 +205,8 @@ pub async fn run_list(
     )
 }
 
-/// `cx infra resources list` - list resources of a given category and type.
+/// `cx infra resources list` - the deprecated name and scope filters, which
+/// still require a category and a type.
 pub async fn run_list_legacy(
     targets: &[Arc<ExecutionTarget>],
     category: Option<&str>,
@@ -811,12 +812,6 @@ mod tests {
         assert!(err.to_string().contains("resource id must not be empty"));
     }
 
-    /// Each scope field holds one value server-side and distinct keys AND
-    /// together, so a repeated key cannot mean "either". The service collapses
-    /// the query string into a `HashMap`, silently keeping only the last value -
-    /// so this must fail here rather than quietly filter on `b` alone.
-    /// Rejected uniformly - "at most once per key" is a simpler rule to rely on
-    /// than one that quietly tolerates exact repeats.
     #[test]
     fn parse_matches_reads_one_attribute_and_one_value() {
         let matches = parse_matches(&["Region=eu-west-1".to_string()], "--match-all").unwrap();

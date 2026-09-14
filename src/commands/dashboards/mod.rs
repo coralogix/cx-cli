@@ -25,6 +25,33 @@ use crate::safety::confirm_destructive;
 /// JSON key for the source profile when merging multi-profile dashboard REST rows.
 const JSON_KEY_PROFILE: &str = "profile";
 
+/// Coralogix dashboard ids are nanoids of this length. Folder ids are UUIDs
+/// (36 chars) and must not be passed to get / check / delete.
+pub const DASHBOARD_ID_LEN: usize = 21;
+
+/// Reject empty ids and anything that is not a 21-character dashboard nanoid.
+///
+/// Agents commonly pass a folder UUID, a folder name (`BMLL`), or the path
+/// segment `catalog` to `cx dashboards get`. The API then returns
+/// `dashboard_id is not 21 characters length`. Fail locally with a pointer
+/// to `cx dashboards catalog` instead of making that request.
+pub fn validate_dashboard_id(id: &str) -> Result<()> {
+    let id = id.trim();
+    if id.is_empty() {
+        bail!("dashboard id cannot be empty");
+    }
+    let len = id.chars().count();
+    if len != DASHBOARD_ID_LEN {
+        bail!(
+            "'{id}' is not a dashboard id (got {len} characters, need {DASHBOARD_ID_LEN}).\n\
+             Dashboard ids are 21-character nanoids from `cx dashboards catalog` (each item's `id`).\n\
+             Folder ids are UUIDs from `cx dashboards folders list` — use them only with `--folder` / `--parent-id`.\n\
+             To list dashboards in a folder, run `cx dashboards catalog -o json` and filter by `folder.name` or `folder.id`. Do not pass a folder id or folder name to get, check, or delete."
+        );
+    }
+    Ok(())
+}
+
 /// Look up a string value at a JSON pointer path (e.g. `/dashboard/id`).
 fn json_str_at(v: &Value, pointer: &str) -> Option<String> {
     v.pointer(pointer)
@@ -501,9 +528,7 @@ pub async fn run_get(
     dashboard_id: &str,
     output: OutputFormat,
 ) -> Result<()> {
-    if dashboard_id.trim().is_empty() {
-        bail!("dashboard id cannot be empty");
-    }
+    validate_dashboard_id(dashboard_id)?;
     eprintln!(
         "{}",
         format!("Fetching dashboard {dashboard_id}...").dimmed()
@@ -797,6 +822,7 @@ pub async fn run_replace(
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
+    validate_dashboard_id(id)?;
     eprintln!("{}", format!("Deleting dashboard {id}...").dimmed());
     let dashboard_id_owned = id.to_string();
     let per_profile = fan_out(targets, |target| {
@@ -1037,9 +1063,7 @@ pub async fn run_check(
             check_body_from_file(path)?
         }
         (None, Some(id)) => {
-            if id.trim().is_empty() {
-                bail!("dashboard id cannot be empty");
-            }
+            validate_dashboard_id(id)?;
             eprintln!("{}", format!("Checking dashboard {id}...").dimmed());
             check_body_from_id(id)
         }
@@ -1133,6 +1157,30 @@ pub async fn run_check(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_dashboard_id_accepts_21_char_nanoid() {
+        validate_dashboard_id("nPl9zg5A61iJ75CtN2FDB").expect("21-char id should pass");
+    }
+
+    #[test]
+    fn validate_dashboard_id_rejects_folder_name_and_uuid() {
+        for bad in [
+            "BMLL",
+            "catalog",
+            "6d4aac44-0f7e-46e6-9f51-2454af16fd0f",
+            "   ",
+        ] {
+            let err = validate_dashboard_id(bad).expect_err(bad);
+            let msg = err.to_string();
+            if bad.trim().is_empty() {
+                assert!(msg.contains("empty"), "{msg}");
+            } else {
+                assert!(msg.contains("not a dashboard id"), "{msg}");
+                assert!(msg.contains("cx dashboards catalog"), "{msg}");
+            }
+        }
+    }
 
     /// Regression guard for the `render_table` profile-column contract.
     ///

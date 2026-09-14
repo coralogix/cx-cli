@@ -2,7 +2,7 @@
 name: cx-search-dashboard
 description: This skill should be used when the user asks to "find a dashboard", "search dashboards", "does a dashboard exist for X", "find widgets that query Y", "which dashboards use this field", "find a dashboard about errors", "look up dashboards by description", "search for existing monitoring dashboards", "find widgets that reference a field", or wants to discover existing Coralogix dashboards or widgets using natural-language or field-based search.
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Dashboard Search Skill
@@ -16,10 +16,12 @@ Use this skill to discover existing Coralogix dashboards and widgets using seman
 | `cx dashboards search "<description>"` | Find dashboards by natural-language description | `--limit` |
 | `cx dashboards query-search --description "<text>"` | Find widgets whose queries match a description | `--limit` |
 | `cx dashboards query-search --field "<field-path>"` | Find all widgets that reference a specific field | `--limit` |
-| `cx dashboards catalog -o json` | List all dashboards | - |
-| `cx dashboards get <id> -o json` | Get full dashboard definition | - |
+| `cx dashboards catalog -o json` | List all dashboards (use each item's 21-character `id`) | - |
+| `cx dashboards get <dashboard-id> -o json` | Get full definition. Use catalog `id` only — not `folder.id` and not a folder name | - |
 
 **Output format:** append `-o json` or `-o toon` for machine-readable output.
+
+Dashboard ids are 21-character nanoids. Folder ids are UUIDs. To see what is in a folder, filter `cx dashboards catalog -o json` by `folder.name` / `folder.id`. Do not `get` a folder id. If you see `dashboard_id is not 21 characters length`, you used the wrong id.
 
 ## When to Use Each Command
 

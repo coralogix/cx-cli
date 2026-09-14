@@ -12,6 +12,8 @@ List folders and suggest the best match:
 cx dashboards folders list -o json
 ```
 
+Folder ids from this list are UUIDs. Pass them only as `--folder` / `--parent-id` on create. They are not dashboard ids — never `cx dashboards get <folder-id>`.
+
 Rank the existing folders by relevance (service name, team, product area) and present the top matches with `AskQuestion`:
 
 - "Folder X (id: `<id>`) - best match by name"

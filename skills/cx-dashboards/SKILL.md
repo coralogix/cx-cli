@@ -9,7 +9,7 @@ description: >
   deploy, update, replace, or modify a Coralogix dashboard, monitoring dashboard,
   or observability dashboard for a service, app, or pipeline.
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # Create Coralogix Dashboard
@@ -39,18 +39,22 @@ For choosing the right signal (metrics / logs / traces), use `cx-telemetry-query
 
 ## Dashboard Management
 
-Beyond creating dashboards, use these commands to manage existing ones:
+Beyond creating dashboards, use these commands to manage existing ones.
+
+**Ids are not interchangeable.** Dashboard ids are **21-character nanoids**. Folder ids are **UUIDs**. There is no “list dashboards in this folder” command.
 
 | Command | Purpose |
 |---|---|
-| `cx dashboards catalog -o json` | List all dashboards in the catalog |
-| `cx dashboards get <id> -o json` | Get a dashboard definition (useful as a template) |
-| `cx dashboards folders list -o json` | List dashboard folders |
+| `cx dashboards catalog -o json` | List all dashboards (each row has `id` plus `folder.id` / `folder.name`) |
+| `cx dashboards get <dashboard-id> -o json` | Get a dashboard definition. `<dashboard-id>` must be the catalog item `id` (21 chars) — never a folder UUID or folder name |
+| `cx dashboards folders list -o json` | List dashboard folders (UUID ids). Use these only with `--folder` / `--parent-id` |
 | `cx dashboards folders create --name "Name"` | Create a dashboard folder |
 | `cx dashboards folders create --name "Sub" --parent-id <id>` | Create a nested folder |
 | `cx dashboards replace --from-file dashboard.json` | Replace an existing dashboard with updated JSON |
 | `cx dashboards check --from-file dashboard.json` | Validate a dashboard definition without persisting (server-side strict check; exits non-zero on errors) |
-| `cx dashboards check <dashboard-id>` | Validate a stored dashboard by id |
+| `cx dashboards check <dashboard-id>` | Validate a stored dashboard by catalog `id` (21 chars) |
+
+**Inventory a folder:** `cx dashboards catalog -o json`, then filter on `folder.name` or `folder.id`. Do **not** run `cx dashboards get <folder-id>` or `cx dashboards get BMLL`. If the CLI or API says `dashboard_id is not 21 characters length`, you passed a folder id, a folder name, or a path segment like `catalog` — take the 21-character `id` from catalog instead.
 
 To update an existing dashboard:
 

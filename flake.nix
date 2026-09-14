@@ -1,8 +1,7 @@
 {
   description = "cx - Coralogix CLI";
 
-  # Unstable channel: tracks the rustc version pinned in rust-toolchain.toml
-  # (1.96.1). Stable channels lag behind and would mismatch the toolchain file.
+  # Unstable channel since the toolchain version in the stable one is not recent enough.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs }:

@@ -585,15 +585,35 @@ impl PageWindow {
 }
 
 fn build_filter(match_all: &[String], match_any: &[String]) -> Result<Option<Filter>> {
-    let mut operands: Vec<Filter> = parse_matches(match_all, "--match-all")?
+    let all = parse_matches(match_all, "--match-all")?;
+    let any_matches = parse_matches(match_any, "--match-any")?;
+
+    if let Some(field) = all.iter().map(|m| &m.field).find(|field| {
+        any_matches
+            .iter()
+            .any(|m| m.field.eq_ignore_ascii_case(field))
+    }) {
+        bail!(
+            "attribute '{field}' appears in both --match-all and --match-any; \
+             an attribute belongs to one of them - require it with --match-all, \
+             or make it one alternative with --match-any"
+        );
+    }
+
+    let mut operands: Vec<Filter> = all
         .into_iter()
-        .map(Filter::Match)
+        .flat_map(|m| {
+            let field = m.field;
+            m.values.into_iter().map(move |value| {
+                Filter::Match(FieldMatch {
+                    field: field.clone(),
+                    values: vec![value],
+                })
+            })
+        })
         .collect();
 
-    let any: Vec<Filter> = parse_matches(match_any, "--match-any")?
-        .into_iter()
-        .map(Filter::Match)
-        .collect();
+    let any: Vec<Filter> = any_matches.into_iter().map(Filter::Match).collect();
     if any.len() == 1 {
         operands.extend(any);
     } else if !any.is_empty() {
@@ -616,19 +636,19 @@ fn parse_matches(raw: &[String], flag: &str) -> Result<Vec<FieldMatch>> {
     let mut matches: Vec<FieldMatch> = Vec::new();
 
     for entry in raw {
-        let Some((field, values)) = entry.split_once('=') else {
+        let Some((field, values_raw)) = entry.split_once('=') else {
             bail!("invalid {flag} '{entry}': expected NAME=VALUE");
         };
         let field = field.trim();
         if field.is_empty() {
             bail!("invalid {flag} '{entry}': attribute name must not be empty");
         }
-        let values: Vec<String> = values
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(String::from)
-            .collect();
+        let mut values: Vec<String> = Vec::new();
+        for value in values_raw.split(',').map(str::trim) {
+            if !value.is_empty() && !values.iter().any(|seen| seen == value) {
+                values.push(value.to_string());
+            }
+        }
         if values.is_empty() {
             bail!("invalid {flag} '{entry}': value must not be empty");
         }
@@ -832,6 +852,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_matches_dedupes_repeated_values_in_one_list() {
+        let matches = parse_matches(
+            &["Region=eu-west-1,us-east-1,eu-west-1".to_string()],
+            "--match-all",
+        )
+        .unwrap();
+        assert_eq!(matches[0].values, vec!["eu-west-1", "us-east-1"]);
+    }
+
+    #[test]
     fn parse_matches_trims_whitespace_around_both_sides() {
         let matches = parse_matches(
             &[" Region = eu-west-1 , us-east-1 ".to_string()],
@@ -1010,18 +1040,110 @@ mod tests {
         assert_eq!(inner.len(), 2);
     }
 
+    /// Across the groups this ANDs two nodes on one field, which either matches
+    /// nothing or quietly collapses to the `--match-all` value alone.
     #[test]
-    fn build_filter_allows_one_attribute_in_both_groups() {
-        let filter = build_filter(
+    fn build_filter_refuses_one_attribute_in_both_groups() {
+        let err = build_filter(
             &["Region=eu-west-1".to_string()],
             &["Region=us-east-1".to_string()],
         )
-        .unwrap()
-        .unwrap();
-        let Filter::Bool(BoolFilter { operands, .. }) = filter else {
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("'Region' appears in both"), "got: {msg}");
+        assert!(
+            msg.contains("--match-all") && msg.contains("--match-any"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn build_filter_detects_a_cross_group_repeat_whatever_its_case() {
+        let err = build_filter(
+            &["Region=eu-west-1".to_string()],
+            &["region=us-east-1".to_string()],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("appears in both"));
+    }
+
+    #[test]
+    fn build_filter_ands_the_values_of_one_match_all() {
+        let filter = build_filter(&["Tag=a,b".to_string()], &[])
+            .unwrap()
+            .unwrap();
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
             panic!("expected a bool");
         };
-        assert_eq!(operands.len(), 2);
+        assert_eq!(op, Op::And);
+        assert_eq!(
+            operands,
+            vec![
+                Filter::Match(FieldMatch {
+                    field: "Tag".to_string(),
+                    values: vec!["a".to_string()],
+                }),
+                Filter::Match(FieldMatch {
+                    field: "Tag".to_string(),
+                    values: vec!["b".to_string()],
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn build_filter_ors_the_values_of_one_match_any() {
+        let filter = build_filter(&[], &["Tag=a,b".to_string()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            filter,
+            Filter::Match(FieldMatch {
+                field: "Tag".to_string(),
+                values: vec!["a".to_string(), "b".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn build_filter_expands_each_match_all_attribute_independently() {
+        let filter = build_filter(&["Tag=a,b".to_string(), "OS=linux".to_string()], &[])
+            .unwrap()
+            .unwrap();
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::And);
+        assert_eq!(operands.len(), 3);
+        assert!(operands.iter().all(|o| matches!(o, Filter::Match(_))));
+    }
+
+    #[test]
+    fn build_filter_keeps_the_groups_distinct() {
+        let filter = build_filter(&["Tag=a,b".to_string()], &["Region=eu,us".to_string()])
+            .unwrap()
+            .unwrap();
+        let Filter::Bool(BoolFilter { op, operands }) = filter else {
+            panic!("expected a bool");
+        };
+        assert_eq!(op, Op::And);
+        assert_eq!(
+            operands,
+            vec![
+                Filter::Match(FieldMatch {
+                    field: "Tag".to_string(),
+                    values: vec!["a".to_string()],
+                }),
+                Filter::Match(FieldMatch {
+                    field: "Tag".to_string(),
+                    values: vec!["b".to_string()],
+                }),
+                Filter::Match(FieldMatch {
+                    field: "Region".to_string(),
+                    values: vec!["eu".to_string(), "us".to_string()],
+                }),
+            ]
+        );
     }
 
     #[test]

@@ -440,7 +440,42 @@ async fn the_two_groups_and_with_each_other() {
 }
 
 #[tokio::test]
-async fn a_comma_ors_the_values_of_one_attribute() {
+async fn a_comma_ands_the_values_of_one_match_all() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(BASE))
+        .and(body_json(json!({
+            "filter": {"bool": {"op": "AND", "operands": [
+                {"match": {"field": "Tag", "values": ["a"]}},
+                {"match": {"field": "Tag", "values": ["b"]}}
+            ]}}
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_list(
+        &targets,
+        None,
+        None,
+        &["Tag=a,b".to_string()],
+        &[],
+        PageWindow {
+            start_row: None,
+            end_row: None,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_list should post one match per required value");
+}
+
+#[tokio::test]
+async fn a_comma_ors_the_values_of_one_match_any() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -459,8 +494,8 @@ async fn a_comma_ors_the_values_of_one_attribute() {
         &targets,
         None,
         None,
-        &["Region=eu-west-1,us-east-1".to_string()],
         &[],
+        &["Region=eu-west-1,us-east-1".to_string()],
         PageWindow {
             start_row: None,
             end_row: None,
@@ -469,6 +504,34 @@ async fn a_comma_ors_the_values_of_one_attribute() {
     )
     .await
     .expect("run_list should send one match carrying both values");
+}
+
+#[tokio::test]
+async fn one_attribute_in_both_groups_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    let err = run_list(
+        &targets,
+        None,
+        None,
+        &["Region=eu-west-1".to_string()],
+        &["Region=us-east-1".to_string()],
+        PageWindow {
+            start_row: None,
+            end_row: None,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("an attribute in both groups must be refused");
+
+    let msg = err.to_string();
+    assert!(msg.contains("'Region' appears in both"), "got: {msg}");
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "nothing should reach the API"
+    );
 }
 
 #[tokio::test]

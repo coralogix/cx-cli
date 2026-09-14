@@ -191,9 +191,12 @@ fn infra_list_with_a_nested_filter() {
     if harness::require_creds("infra_list_with_a_nested_filter").is_none() {
         return;
     }
-    let Some([(first, first_value), (second, second_value)]) = discover_two_closed_set_filters()
+    let Some([(first, first_value), (second, second_value), (third, third_value)]) =
+        discover_closed_set_filters()
     else {
-        eprintln!("[e2e] skipping infra_list_with_a_nested_filter: need two closed-set attributes");
+        eprintln!(
+            "[e2e] skipping infra_list_with_a_nested_filter: need three closed-set attributes"
+        );
         return;
     };
     let v = harness::run_ok_json(&[
@@ -203,9 +206,9 @@ fn infra_list_with_a_nested_filter() {
         "--match-all",
         &format!("{first}={first_value}"),
         "--match-any",
-        &format!("{first}={first_value}"),
-        "--match-any",
         &format!("{second}={second_value}"),
+        "--match-any",
+        &format!("{third}={third_value}"),
         "-o",
         "json",
     ]);
@@ -252,11 +255,13 @@ fn infra_list_rows_carry_their_classification() {
     }
 }
 
-fn discover_two_closed_set_filters() -> Option<[(String, String); 2]> {
-    static CACHE: OnceLock<Option<[(String, String); 2]>> = OnceLock::new();
+/// Three distinct attributes, so a nested filter can name one per flag - an
+/// attribute repeated across the two groups is refused.
+fn discover_closed_set_filters() -> Option<[(String, String); 3]> {
+    static CACHE: OnceLock<Option<[(String, String); 3]>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            harness::require_creds("infra_discover_two_filters")?;
+            harness::require_creds("infra_discover_filters_for_nesting")?;
             let stdout = harness::run_ok(&["infra", "resources", "filters", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             let mut found: Vec<(String, String)> = Vec::new();
@@ -276,8 +281,8 @@ fn discover_two_closed_set_filters() -> Option<[(String, String); 2]> {
                     continue;
                 }
                 found.push((name.to_string(), value.to_string()));
-                if found.len() == 2 {
-                    return Some([found[0].clone(), found[1].clone()]);
+                if found.len() == 3 {
+                    return Some([found[0].clone(), found[1].clone(), found[2].clone()]);
                 }
             }
             None

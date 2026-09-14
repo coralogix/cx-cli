@@ -2801,7 +2801,8 @@ Examples:
   cx infra resources list --match-all Region=eu-west-1 --match-all Health=Critical
   cx infra resources list --match-any Name=coredns --match-any Namespace=kube-system
   cx infra resources list --match-all OS=linux --match-any Health=Critical --match-any Region=eu-west-1
-  cx infra resources list --match-all Region=eu-west-1,us-east-1
+  cx infra resources list --match-any Region=eu-west-1,us-east-2
+  cx infra resources list --match-all 'Name=*alert*,*processing*'
   cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200
 
 Discover what can be filtered with `cx infra resources filters`.")]
@@ -2815,13 +2816,14 @@ Discover what can be filtered with `cx infra resources filters`.")]
         r#type: Option<String>,
 
         /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. Every one must
-        /// match. Commas within one flag mean either value. Discover names with
+        /// match, and commas require every listed value. Discover names with
         /// `cx infra resources filters`.
         #[arg(long)]
         match_all: Vec<String>,
 
         /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. At least one
-        /// must match. Combined with --match-all by AND.
+        /// must match, and commas accept any listed value. Combined with
+        /// --match-all by AND.
         #[arg(long)]
         match_any: Vec<String>,
 

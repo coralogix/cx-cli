@@ -40,9 +40,16 @@ is healthy, and what its raw data contains.
 - **Filtering takes two flags.** Every `--match-all` must match; at least one
   `--match-any` must match; the two groups combine with **AND**. So
   `--match-all OS=linux --match-any Health=Critical --match-any Region=eu-west-1`
-  means `OS=linux AND (Health=Critical OR Region=eu-west-1)`. A comma within one
-  flag means **either value** for that attribute: `--match-all Region=eu-west-1,us-east-1`.
-  An attribute may appear **at most once per flag** — use the comma form instead.
+  means `OS=linux AND (Health=Critical OR Region=eu-west-1)`.
+- **A comma lists several values for one attribute, and the flag decides what
+  that means.** In `--match-any` they are alternatives — any one matches:
+  `--match-any Region=eu-west-1,us-east-2`. In `--match-all` every one must
+  match, which is how to narrow on two substrings at once:
+  `--match-all 'Name=*alert*,*processing*'` finds the names holding both. An
+  attribute that carries a single value cannot equal two of them, so for
+  **either value**, reach for `--match-any`.
+- **An attribute belongs to exactly one flag.** Repeating it within a flag, or
+  naming it in both, is refused — list its values after the comma instead.
 - **Nothing is required except one narrowing input.** `--category` and `--type`
   are ordinary filters, not prerequisites, so `--match-all Health=Critical` alone
   works. A request naming none of `--match-all`, `--match-any`, `--category` or
@@ -155,7 +162,10 @@ cx infra resources list \
   | jq '.resources[] | {name, category, type}'
 
 # Two values of the *same* attribute take the comma form, not a second flag
-cx infra resources list --match-all Namespace=kube-system,observability -o json
+cx infra resources list --match-any Namespace=kube-system,observability -o json
+
+# The same comma in --match-all requires *all* the values: names holding both
+cx infra resources list --match-all 'Name=*alert*,*processing*' -o json
 ```
 
 ### Just the ids and names

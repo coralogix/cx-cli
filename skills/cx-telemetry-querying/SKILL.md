@@ -15,7 +15,7 @@ description: |
   "how do I write a DataPrime query", "DataPrime syntax",
   or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM.
 metadata:
-  version: "0.2.0"
+  version: "0.2.2"
 ---
 
 # Telemetry Querying Skill
@@ -39,6 +39,16 @@ Before querying, load the reference files for the chosen pillar:
 ## Safety
 
 All query commands (`cx logs`, `cx spans`, `cx metrics`, `cx dataprime`, `cx search-fields`) are read-only and work in `--read-only` mode. They never modify data and can be run freely without `--yes`.
+
+## Console links
+
+Do **not** include Coralogix UI / Explore URLs unless the user explicitly asked for a link to the console. If they did not ask, omit the link. Do not invent one.
+
+If they did ask:
+
+- Commands that already print `View in Coralogix:` (dashboards, views, alerts, and similar) — copy that URL **verbatim**. Never invent a host or path.
+- `cx logs`, `cx spans`, and `cx dataprime` never print one. Say so, and point the user at Explore's **URL Builder** (Explore → actions menu, top-right) to build a link for the query you ran.
+- Never construct a console URL yourself, and never use the legacy `#/query-new/...` route.
 
 ---
 
@@ -218,3 +228,4 @@ Not every question is answered by querying data. If the user's intent is operati
 - **Parallel discovery**: for ambiguous questions, search metrics, logs, and spans concurrently
 - **Validate with code**: when unsure what a metric or field represents, check the codebase
 - **Pivot on failure**: if one pillar is empty, try another before giving up
+- **No console URLs unless asked**: if the user did not ask for a UI link, do not include one. If they did, copy `View in Coralogix:` when the CLI printed it — logs/spans/dataprime never print one. Never construct a URL yourself; see [Console links](#console-links).

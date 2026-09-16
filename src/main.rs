@@ -180,6 +180,10 @@ struct Cli {
     #[arg(long, global = true, help_heading = "Global Options")]
     read_only: bool,
 
+    /// Enable verbose debug logging of HTTP requests.
+    #[arg(long, short = 'v', global = true, help_heading = "Global Options")]
+    verbose: bool,
+
     /// Suppress "View in Coralogix" console links (stderr line).
     #[arg(long, global = true, help_heading = "Global Options")]
     no_console_link: bool,
@@ -3263,7 +3267,7 @@ async fn main() -> Result<()> {
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = match config::resolve_all(&cli.profile, effective_api_key, effective_region).await
+    let configs = match config::resolve_all(&cli.profile, effective_api_key, effective_region, cli.verbose).await
     {
         Ok(configs) => configs,
         Err(error) => {

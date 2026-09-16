@@ -26,7 +26,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | Skill | Description |
 |---|---|
 | `cx-cost-optimization` | Analyze and reduce Coralogix data costs - usage analysis, TCO policies, retention, archive |
-| `cx-cases` | Manage Coralogix Cases - list, inspect, assign/acknowledge/resolve/close, set priority overrides |
+| `cx-cases` | Manage Coralogix Cases - inspect, assign/acknowledge/resolve/close, set priority overrides, read parent-child links and case provenance (discovery is via the cases dataset) |
 | `cx-slos` | Manage SLO definitions - list, inspect, check error budgets, create/update/delete |
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |

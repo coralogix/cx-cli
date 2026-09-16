@@ -498,11 +498,20 @@ cargo install coralogix-cli
 
 ### Pre-built binaries
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
-Every release ships a SHA-256 checksum and a signature beside each artifact, so
-this is the route to take when a security policy rules out piping a shell script
-into `sh`. On Windows the artifact is `cx-<version>-x86_64-pc-windows-msvc.zip`:
-unzip it and put `cx.exe` on your `PATH`.
+Download a platform archive from the latest GitHub Release (filenames without a
+version always resolve to the current release):
+
+- [macOS Intel](https://github.com/coralogix/cx-cli/releases/latest/download/cx-x86_64-apple-darwin.tar.gz)
+- [macOS Apple silicon](https://github.com/coralogix/cx-cli/releases/latest/download/cx-aarch64-apple-darwin.tar.gz)
+- [Linux x86_64](https://github.com/coralogix/cx-cli/releases/latest/download/cx-x86_64-unknown-linux-musl.tar.gz)
+- [Linux aarch64](https://github.com/coralogix/cx-cli/releases/latest/download/cx-aarch64-unknown-linux-musl.tar.gz)
+- [Windows](https://github.com/coralogix/cx-cli/releases/latest/download/cx-x86_64-pc-windows-msvc.zip)
+- [SHA-256 checksums](https://github.com/coralogix/cx-cli/releases/latest/download/checksums-sha256.txt)
+
+Every release ships a signature beside the checksum file, so this is the route
+to take when a security policy rules out piping a shell script into `sh`. On
+Windows, unzip the zip and put `cx.exe` on your `PATH`. Versioned filenames
+(`cx-<version>-<target>`) remain on each tagged release for pinning.
 
 <details markdown="1">
 <summary>Nix</summary>

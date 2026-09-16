@@ -92,6 +92,8 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../cx-${RELEASE_TAG#v}-${{ matrix.target }}.tar.gz cx
+          cp ../../../cx-${RELEASE_TAG#v}-${{ matrix.target }}.tar.gz \
+            ../../../cx-${{ matrix.target }}.tar.gz
           cd ../../..
 
       - name: Package (windows)
@@ -100,6 +102,7 @@ jobs:
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
           Compress-Archive -Path "target/${{ matrix.target }}/release/cx.exe" -DestinationPath "cx-$version-${{ matrix.target }}.zip"
+          Copy-Item "cx-$version-${{ matrix.target }}.zip" "cx-${{ matrix.target }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

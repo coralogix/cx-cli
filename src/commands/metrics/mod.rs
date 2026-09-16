@@ -366,6 +366,7 @@ pub async fn run_query(
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
+        OutputFormat::Yaml => render::render_yaml(&all_rows)?,
         OutputFormat::Toon => {
             if all_rows.is_empty() {
                 println!("[]");
@@ -430,6 +431,7 @@ pub async fn run_query_range(
 
     match output {
         OutputFormat::Json => render::render_json(&all_rows)?,
+        OutputFormat::Yaml => render::render_yaml(&all_rows)?,
         OutputFormat::Toon => {
             if all_rows.is_empty() {
                 println!("[]");
@@ -518,6 +520,21 @@ pub async fn run_search(
                     render::render_json(&json_rows)?;
                 }
             }
+            OutputFormat::Yaml => {
+                let yaml_rows: Vec<Value> = all_results
+                    .iter()
+                    .map(|(profile, r)| {
+                        let mut v = serde_json::to_value(r).unwrap_or(Value::Null);
+                        if include_profile {
+                            if let Value::Object(ref mut m) = v {
+                                m.insert("profile".to_string(), Value::String(profile.clone()));
+                            }
+                        }
+                        v
+                    })
+                    .collect();
+                render::render_yaml(&yaml_rows)?;
+            }
             OutputFormat::Text => {
                 if all_results.is_empty() {
                     render::print_no_results("No matching metrics found.");
@@ -575,6 +592,7 @@ pub async fn run_search(
                     .collect::<Vec<_>>(),
             )?;
         }
+        OutputFormat::Yaml => {
         OutputFormat::Toon => {
             if all_matches.is_empty() {
                 println!("[]");
@@ -651,6 +669,20 @@ pub async fn run_get_labels(
             } else {
                 render::render_json(&json_rows)?;
             }
+        }
+        OutputFormat::Yaml => {
+            let yaml_rows: Vec<Value> = if include_profile {
+                all_labels
+                    .iter()
+                    .map(|(profile, label)| json!({"profile": profile, "label": label}))
+                    .collect()
+            } else {
+                all_labels
+                    .iter()
+                    .map(|(_, label)| json!({"label": label}))
+                    .collect()
+            };
+            render::render_yaml(&yaml_rows)?;
         }
         OutputFormat::Text => {
             if all_labels.is_empty() {

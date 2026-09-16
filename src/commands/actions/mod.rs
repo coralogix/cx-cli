@@ -66,6 +66,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Yaml => render::render_yaml(&all_json)?,
         OutputFormat::Toon => {
             let toon =
                 toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -127,6 +128,7 @@ pub async fn run_get(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -179,6 +181,7 @@ pub async fn run_create(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -222,6 +225,7 @@ pub async fn run_update(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -285,6 +289,7 @@ pub async fn run_batch(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
@@ -331,6 +336,7 @@ pub async fn run_reorder(
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Yaml => render::render_yaml_auto(&all_results)?,
         OutputFormat::Toon => {
             let toon = toon_encode(&all_results)
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;

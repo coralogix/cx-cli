@@ -121,18 +121,11 @@ Linking a case as a child **mutes it** by default, so the parent becomes the sin
 notifying case. Expect a child to be quiet; that is the design, not a delivery
 failure.
 
-`cx cases get <id>` returns the case's `relationship`. It is absent for a
-standalone case, `{"type": "PARENT"}` for a parent, and
-`{"type": "CHILD", "parentCaseId": "<uuid>"}` for a child — a parent does not
-inline its children, so list those from the dataset:
-
-```bash
-# Children of a parent case
-cx dataprime "source system/labs.cases.state_updates \
-  | dedupeby caseId orderby \$m.timestamp desc \
-  | filter relationship != null && relationship.parentCaseId == '<parent-uuid>' \
-  | choose caseId, caseNumber, title, status, priority" --from 24h
-```
+`cx cases get <id>` returns the case's `relationship`: absent for a standalone case,
+`{"type": "PARENT"}` for a parent, `{"type": "CHILD", "parentCaseId": "<uuid>"}` for
+a child. A parent does not inline its children — to list them, see
+[Case relationships](references/case-analytics.md#case-relationships-parent--child)
+in the analytics reference.
 
 When triaging a child, read the parent first — the investigation usually lives
 there. When resolving a parent, check its children: they do not resolve with it.
@@ -140,29 +133,21 @@ there. When resolving a parent, check its children: they do not resolve with it.
 ## Cases opened by Olly
 
 A case has **no top-level source field**. Provenance lives on its indicators, so a
-case opened by an Olly scheduled task carries a generic indicator with
-`indicatorType == "OLLY_SCHEDULED_TASK"`, plus a free-form `metadata` object naming
-the task and run it came from. That also means you cannot filter for "Olly's cases"
-with `cx cases` — it is a dataset query:
-
-```bash
-# Cases opened by an Olly scheduled task
-cx dataprime "source system/labs.cases.state_updates \
-  | dedupeby caseId orderby \$m.timestamp desc \
-  | explode indicators.genericIndicators into gi \
-  | filter gi.indicatorType == 'OLLY_SCHEDULED_TASK' \
-  | choose caseId, caseNumber, title, status, priority, gi.metadata as source, createdAt \
-  | orderby createdAt desc" --from 7d
-```
+case Olly opened carries a generic indicator with
+`indicatorType == "OLLY_SCHEDULED_TASK"` and a free-form `metadata` object naming the
+task and run it came from. That also means `cx cases` cannot filter for Olly's cases
+— see
+[Generic indicators](references/case-analytics.md#generic-indicators--non-alert-sources-including-olly)
+in the analytics reference for the query.
 
 Triage one the same way as any other case, with one addition: open the run link in
-the indicator's `metadata` to see the evidence Olly based the case on, and judge
-that evidence rather than taking the case's own summary at face value.
+the indicator's `metadata` to see the evidence Olly based the case on, and judge that
+evidence rather than taking the case's own summary at face value.
 
-The indicator's `externalId` is the dedup key. One unresolved case exists per key,
-and a recurrence reopens the resolved case rather than forking a new one — so a
-case with a non-null `lastReactivatedAt` is a repeat, which is usually the more
-interesting signal than the current occurrence.
+The indicator's `externalId` is the dedup key. One unresolved case exists per key, and
+a recurrence reopens the resolved case rather than forking a new one — so a case with
+a non-null `lastReactivatedAt` is a repeat, which is usually the more interesting
+signal than the current occurrence.
 
 ## Bulk Operations
 

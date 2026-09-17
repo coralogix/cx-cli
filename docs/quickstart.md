@@ -35,7 +35,7 @@ curl -fsSL https://get.coralogix.dev/cli | sh
 If your security policy blocks piped shell scripts, use a signed release binary
 instead - see [Installation reference](configuration.md#installation-reference).
 
-**Windows** - download `cx-<version>-x86_64-pc-windows-msvc.zip` from
+**Windows** - download `cx-x86_64-pc-windows-msvc.zip` from
 [GitHub Releases](https://github.com/coralogix/cx-cli/releases), unzip it, and put
 `cx.exe` on your `PATH`. Every release ships a SHA-256 checksum and a signature
 beside it. If you already have Rust, `cargo install coralogix-cli` works on every

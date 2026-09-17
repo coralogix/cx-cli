@@ -44,12 +44,19 @@ main() {
     TMPDIR_CLEANUP="$(mktemp -d)"
     trap 'rm -rf "$TMPDIR_CLEANUP"' EXIT
 
-    local archive_name="cx-${version}-${target}.tar.gz"
+    local archive_name="cx-${target}.tar.gz"
     local archive_url="https://github.com/${REPO}/releases/download/v${version}/${archive_name}"
     local checksums_url="https://github.com/${REPO}/releases/download/v${version}/checksums-sha256.txt"
 
+    # Pre-rename tags used cx-${version}-${target}.tar.gz; try the current name first.
     say "Downloading ${archive_url}..."
-    download "$archive_url" "${TMPDIR_CLEANUP}/${archive_name}"
+    if ! download "$archive_url" "${TMPDIR_CLEANUP}/${archive_name}" 2>/dev/null; then
+        rm -f "${TMPDIR_CLEANUP}/${archive_name}"
+        archive_name="cx-${version}-${target}.tar.gz"
+        archive_url="https://github.com/${REPO}/releases/download/v${version}/${archive_name}"
+        say "Downloading ${archive_url}..."
+        download "$archive_url" "${TMPDIR_CLEANUP}/${archive_name}"
+    fi
     download "$checksums_url" "${TMPDIR_CLEANUP}/checksums-sha256.txt"
 
     say "Verifying checksum..."

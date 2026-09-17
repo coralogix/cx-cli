@@ -501,7 +501,7 @@ cargo install coralogix-cli
 Download the latest release for your platform from [GitHub Releases](https://github.com/coralogix/cx-cli/releases).
 Every release ships a SHA-256 checksum and a signature beside each artifact, so
 this is the route to take when a security policy rules out piping a shell script
-into `sh`. On Windows the artifact is `cx-<version>-x86_64-pc-windows-msvc.zip`:
+into `sh`. On Windows the artifact is `cx-x86_64-pc-windows-msvc.zip`:
 unzip it and put `cx.exe` on your `PATH`.
 
 <details markdown="1">

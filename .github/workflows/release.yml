@@ -91,15 +91,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../cx-${RELEASE_TAG#v}-${{ matrix.target }}.tar.gz cx
+          tar czf ../../../cx-${{ matrix.target }}.tar.gz cx
           cd ../../..
 
       - name: Package (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $version = $env:RELEASE_TAG -replace '^v', ''
-          Compress-Archive -Path "target/${{ matrix.target }}/release/cx.exe" -DestinationPath "cx-$version-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/cx.exe" -DestinationPath "cx-${{ matrix.target }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

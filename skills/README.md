@@ -13,6 +13,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-olly` | Interact with Coralogix's Observability Agent (Olly) - chat, follow-up questions, retrieve generated artifacts                                    |
 | `cx-telemetry-querying` | Gateway for all telemetry investigation - logs, spans, metrics, RUM, and DataPrime queries. Loads pillar-specific reference files per query type. |
 | `coralogix-docs` | Search and fetch official Coralogix product documentation (`cx docs search`, `cx docs fetch`) — not live tenant data                              |
+| `coralogix-ai-center` | Instrument a GenAI app with OTel `gen_ai.*` spans, run it, and verify it renders in Coralogix AI Center — any language, provider, or framework |
 | `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts`                                                        |
 | `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation                                       |
 | `cx-infra` | Explore infrastructure resources - discover monitored resource types, list resources, check per-resource data                                     |

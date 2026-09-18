@@ -10,7 +10,8 @@ mod legacy;
 
 use api::{
     BoolFilter, CategoryType, FieldMatch, Filter, FilterDescriptor, GetResourcesResponse,
-    HealthHistoryEntry, InfraApi, ListResourcesParams, Op, ResourceData, ResourceTypeMapping,
+    HealthHistoryEntry, HealthPolicyData, InfraApi, ListResourcesParams, Op, ResourceData,
+    ResourceTypeMapping,
 };
 
 use crate::config::OutputFormat;
@@ -695,6 +696,19 @@ fn format_type_pairs(types: &[CategoryType]) -> Vec<String> {
         .collect()
 }
 
+fn format_health_policies(policies: &[HealthPolicyData]) -> Vec<String> {
+    policies
+        .iter()
+        .map(|p| {
+            format!(
+                "{} ({})",
+                display_or_dash(p.name.as_deref()),
+                display_or_dash(p.status.as_deref())
+            )
+        })
+        .collect()
+}
+
 fn join_or_dash(values: &[String]) -> String {
     if values.is_empty() {
         "-".to_string()
@@ -705,11 +719,17 @@ fn join_or_dash(values: &[String]) -> String {
 
 /// Builds one resource row as JSON for `json` / `toon` output after fan-out.
 fn resource_to_json(item: &ResourceData, include_profile: bool, profile: &str) -> Value {
+    let policies: Vec<Value> = item
+        .health_policies
+        .iter()
+        .map(|p| json!({ "id": p.id, "name": p.name, "status": p.status }))
+        .collect();
     let v = json!({
         "resource_id": item.resource_id,
         "name": item.name,
         "category": item.category,
         "type": item.type_name,
+        "health_policies": policies,
         "columns": item.columns,
     });
     tag_profile(v, include_profile, profile)
@@ -759,7 +779,7 @@ fn list_table(merged: &[(String, ResourceData)]) -> (Vec<String>, Vec<Vec<String
     let resources: Vec<&ResourceData> = merged.iter().map(|(_, r)| r).collect();
     let columns = union_of_columns(&resources);
 
-    let headers: Vec<String> = ["Resource ID", "Name", "Category", "Type"]
+    let headers: Vec<String> = ["Resource ID", "Name", "Category", "Type", "Policies"]
         .into_iter()
         .map(String::from)
         .chain(columns.iter().cloned())
@@ -774,6 +794,7 @@ fn list_table(merged: &[(String, ResourceData)]) -> (Vec<String>, Vec<Vec<String
                 display_or_dash(display_name(r)),
                 display_or_dash(r.category.as_deref()),
                 display_or_dash(r.type_name.as_deref()),
+                join_or_dash(&format_health_policies(&r.health_policies)),
             ];
             row.extend(
                 columns
@@ -1405,6 +1426,7 @@ mod tests {
                 .collect(),
             category: Some("Hosts".to_string()),
             type_name: Some("EC2_Instances".to_string()),
+            health_policies: Vec::new(),
         }
     }
 
@@ -1503,7 +1525,10 @@ mod tests {
             "EC2_Instances",
             &[("Region", "eu-west-1")],
         )]);
-        assert_eq!(headers[..4], ["Resource ID", "Name", "Category", "Type"]);
+        assert_eq!(
+            headers[..5],
+            ["Resource ID", "Name", "Category", "Type", "Policies"]
+        );
         assert_eq!(rows[0][3], "Hosts");
         assert_eq!(rows[0][4], "EC2_Instances");
     }
@@ -1525,11 +1550,11 @@ mod tests {
             merged_row("Hosts", "EC2_Instances", &[("Region", "eu-west-1")]),
             merged_row("Kubernetes", "Pods", &[("Namespace", "kube-system")]),
         ]);
-        assert_eq!(headers[4..], ["Region", "Namespace"]);
-        assert_eq!(rows[0][5], "eu-west-1");
-        assert_eq!(rows[0][6], "");
-        assert_eq!(rows[1][5], "");
-        assert_eq!(rows[1][6], "kube-system");
+        assert_eq!(headers[5..], ["Region", "Namespace"]);
+        assert_eq!(rows[0][6], "eu-west-1");
+        assert_eq!(rows[0][7], "");
+        assert_eq!(rows[1][6], "");
+        assert_eq!(rows[1][7], "kube-system");
     }
 
     #[test]
@@ -1538,7 +1563,75 @@ mod tests {
         row.category = None;
         let (_, rows) = list_table(&[("p".to_string(), row)]);
         assert_eq!(rows[0][3], "-");
-        assert_eq!(rows[0][5], "eu");
+        assert_eq!(rows[0][6], "eu");
+    }
+
+    fn policy(name: &str, status: &str) -> HealthPolicyData {
+        HealthPolicyData {
+            id: Some("019f4b81-0350-7561-b0cb-4a6b64c73882".to_string()),
+            status: Some(status.to_string()),
+            name: Some(name.to_string()),
+        }
+    }
+
+    #[test]
+    fn health_policies_render_every_policy_with_its_status() {
+        let policies = [
+            policy("Deployment has unavailable replicas", "critical"),
+            policy("Pod CPU utilization high", "healthy"),
+        ];
+        assert_eq!(
+            join_or_dash(&format_health_policies(&policies)),
+            "Deployment has unavailable replicas (critical), Pod CPU utilization high (healthy)"
+        );
+    }
+
+    /// The API sends `""` for a policy its catalog does not resolve, which would
+    /// otherwise render as an empty pair of parentheses with nothing in front.
+    #[test]
+    fn an_unresolved_policy_name_renders_as_a_dash() {
+        assert_eq!(
+            format_health_policies(&[policy("", "healthy")]),
+            vec!["- (healthy)".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_resource_with_no_policies_renders_as_a_dash() {
+        assert_eq!(join_or_dash(&format_health_policies(&[])), "-");
+    }
+
+    #[test]
+    fn list_table_carries_the_policies_column() {
+        let mut row = typed_resource("Kubernetes", "Deployments", &[("Namespace", "shop")]);
+        row.health_policies = vec![policy("Deployment has unavailable replicas", "critical")];
+        let (headers, rows) = list_table(&[("p".to_string(), row)]);
+
+        assert_eq!(headers[4], "Policies");
+        assert_eq!(rows[0][5], "Deployment has unavailable replicas (critical)");
+    }
+
+    /// json and toon mirror the API, so an unresolved name stays the empty
+    /// string there. Only the table substitutes a dash.
+    #[test]
+    fn resource_json_keeps_the_policies_as_the_api_sent_them() {
+        let mut row = typed_resource("Kubernetes", "Deployments", &[]);
+        row.health_policies = vec![policy("", "pending")];
+        let v = resource_to_json(&row, false, "p");
+
+        assert_eq!(v["health_policies"][0]["name"], "");
+        assert_eq!(v["health_policies"][0]["status"], "pending");
+        assert_eq!(
+            v["health_policies"][0]["id"],
+            "019f4b81-0350-7561-b0cb-4a6b64c73882"
+        );
+    }
+
+    #[test]
+    fn resource_json_carries_an_empty_array_when_no_policy_applies() {
+        let row = typed_resource("Hosts", "EC2_Instances", &[]);
+        let v = resource_to_json(&row, false, "p");
+        assert_eq!(v["health_policies"], json!([]));
     }
 
     #[test]

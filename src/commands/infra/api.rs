@@ -74,6 +74,15 @@ pub struct ResourceData {
     pub category: Option<String>,
     #[serde(rename = "type")]
     pub type_name: Option<String>,
+    #[serde(default)]
+    pub health_policies: Vec<HealthPolicyData>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HealthPolicyData {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -348,6 +357,74 @@ mod tests {
             Some("us-east-1")
         );
         assert!(resp.resources[1].columns.is_empty());
+    }
+
+    #[test]
+    fn deserialize_resource_health_policies() {
+        let json = json!({
+            "resources": [{
+                "resourceId": "1001234:host_id=i-abc123",
+                "name": "web-server-1",
+                "healthPolicies": [
+                    { "id": "p-1", "status": "critical", "name": "Deployment has unavailable replicas" },
+                    { "id": "p-2", "status": "healthy", "name": "Pod CPU utilization high" },
+                    { "id": "p-3", "status": "pending", "name": "" }
+                ]
+            }],
+            "totalCount": 1
+        });
+
+        let resp: GetResourcesResponse = serde_json::from_value(json).unwrap();
+        let policies = &resp.resources[0].health_policies;
+        assert_eq!(policies.len(), 3);
+        assert_eq!(policies[0].id.as_deref(), Some("p-1"));
+        assert_eq!(policies[0].status.as_deref(), Some("critical"));
+        assert_eq!(
+            policies[0].name.as_deref(),
+            Some("Deployment has unavailable replicas")
+        );
+        assert_eq!(policies[2].status.as_deref(), Some("pending"));
+        // The catalog did not resolve this one; the API sends "" rather than omitting it.
+        assert_eq!(policies[2].name.as_deref(), Some(""));
+    }
+
+    /// The three statuses are what the API sends today. A fourth must reach the
+    /// user as itself rather than failing the row it arrived on - which is what
+    /// an enum with three variants would do.
+    #[test]
+    fn deserialize_resource_health_policy_with_an_unknown_status() {
+        let json = json!({
+            "resources": [{
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthPolicies": [{ "id": "p-1", "status": "degraded", "name": "New Policy" }]
+            }],
+            "totalCount": 1
+        });
+
+        let resp: GetResourcesResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            resp.resources[0].health_policies[0].status.as_deref(),
+            Some("degraded")
+        );
+    }
+
+    /// A resource no policy applies to, and a response from before the field
+    /// existed, must both read as "no policies" rather than as a parse failure.
+    #[test]
+    fn deserialize_resource_without_health_policies() {
+        let empty = json!({
+            "resources": [{ "resourceId": "id-1", "healthPolicies": [] }],
+            "totalCount": 1
+        });
+        let resp: GetResourcesResponse = serde_json::from_value(empty).unwrap();
+        assert!(resp.resources[0].health_policies.is_empty());
+
+        let absent = json!({
+            "resources": [{ "resourceId": "id-1" }],
+            "totalCount": 1
+        });
+        let resp: GetResourcesResponse = serde_json::from_value(absent).unwrap();
+        assert!(resp.resources[0].health_policies.is_empty());
     }
 
     #[test]

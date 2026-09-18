@@ -129,6 +129,123 @@ fn list_body() -> serde_json::Value {
     })
 }
 
+/// A row as the API sends it now: two policies, one of them unresolved by the
+/// policy catalog and so carrying an empty `name`.
+fn list_body_with_policies() -> serde_json::Value {
+    json!({
+        "resources": [
+            {
+                "resourceId": "4013226:host_id=i-077a1626590913a16",
+                "name": "prod-api-01",
+                "columns": { "Name": "prod-api-01", "Region": "eu-west-1" },
+                "category": "Hosts",
+                "type": "EC2_Instances",
+                "healthPolicies": [
+                    { "id": "p-1", "status": "critical", "name": "CPU utilization high" },
+                    { "id": "p-2", "status": "pending", "name": "" }
+                ]
+            }
+        ],
+        "totalCount": 1
+    })
+}
+
+/// Both list paths go through the same `resources_for` server side, so both
+/// carry `healthPolicies` and both must render it.
+#[tokio::test]
+async fn list_renders_health_policies_from_both_paths() {
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        let server = MockServer::start().await;
+
+        // Both paths POST to the same route; `nameFilter` in the body is what
+        // makes a request the legacy one.
+        Mock::given(method("POST"))
+            .and(path(BASE))
+            .and(body_json(
+                json!({ "category": "Hosts", "type": "EC2_Instances" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(list_body_with_policies()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path(BASE))
+            .and(body_json(json!({
+                "category": "Hosts",
+                "type": "EC2_Instances",
+                "nameFilter": "prod"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(list_body_with_policies()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+
+        run_list(
+            &targets,
+            Some("Hosts"),
+            Some("EC2_Instances"),
+            &[],
+            &[],
+            PageWindow {
+                start_row: None,
+                end_row: None,
+            },
+            output,
+        )
+        .await
+        .expect("policies must render on the filter path");
+
+        run_list_legacy(
+            &targets,
+            Some("Hosts"),
+            Some("EC2_Instances"),
+            Some("prod"),
+            &[],
+            PageWindow {
+                start_row: None,
+                end_row: None,
+            },
+            output,
+        )
+        .await
+        .expect("policies must render on the legacy path");
+    }
+}
+
+/// Rows from before the field existed, and rows no policy applies to, must both
+/// still render.
+#[tokio::test]
+async fn list_renders_a_row_without_health_policies() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(BASE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_list(
+        &targets,
+        Some("Hosts"),
+        Some("EC2_Instances"),
+        &[],
+        &[],
+        PageWindow {
+            start_row: None,
+            end_row: None,
+        },
+        OutputFormat::Text,
+    )
+    .await
+    .expect("a row without the field is not an error");
+}
+
 fn filters_body() -> serde_json::Value {
     json!({
         "filters": [

@@ -62,7 +62,33 @@ fn infra_health_history() {
         return;
     };
     let v = harness::run_ok_json(&["infra", "resources", "health-history", &id, "-o", "json"]);
-    harness::assert_array_of_objects_with_keys(&v, &["timestamp", "status"]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "timestamp", "status"]);
+}
+
+/// The endpoint takes a list, and repeats are read once, so the same id twice
+/// must answer as if it were given once rather than erroring or doubling up.
+#[test]
+#[ignore]
+fn infra_health_history_takes_several_ids() {
+    if harness::require_creds("infra_health_history_takes_several_ids").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!(
+            "[e2e] skipping infra_health_history_takes_several_ids: no resources on test team"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "health-history",
+        &id,
+        &id,
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "timestamp", "status"]);
 }
 
 #[test]

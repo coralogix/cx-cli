@@ -87,7 +87,8 @@ pub struct HealthPolicyData {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetHealthHistoryResponse {
+pub struct ResourceHealthHistory {
+    pub resource_id: Option<String>,
     #[serde(default)]
     pub health_history: Vec<HealthHistoryEntry>,
 }
@@ -143,6 +144,12 @@ pub struct BoolFilter {
 pub enum Op {
     And,
     Or,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceIdsBody<'p> {
+    resource_ids: &'p [&'p str],
 }
 
 #[derive(Debug, Serialize)]
@@ -227,13 +234,16 @@ impl<'a> InfraApi<'a> {
             .await
     }
 
-    /// Get the daily health status history for one resource, oldest first.
-    pub async fn health_history(&self, resource_id: &str) -> Result<GetHealthHistoryResponse> {
-        let path = format!(
-            "{BASE_PATH}/{}/health-history",
-            encode_resource_id(resource_id)
-        );
-        self.client.get(&path, &[]).await
+    /// Get the daily health status history for several resources.
+    /// Health history for each resource is sorted oldest first.
+    /// Ids the API cannot parse are left out and duplicates are read once.
+    pub async fn health_history(
+        &self,
+        resource_ids: &[&str],
+    ) -> Result<Vec<ResourceHealthHistory>> {
+        let path = format!("{BASE_PATH}/health-history");
+        let body = serde_json::to_value(ResourceIdsBody { resource_ids })?;
+        self.client.post(&path, &body).await
     }
 
     /// Get the raw resource document for one resource.
@@ -462,28 +472,70 @@ mod tests {
 
     #[test]
     fn deserialize_health_history_response() {
-        let json = json!({
-            "healthHistory": [
-                { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" },
-                { "timestamp": "2026-07-02T00:00:00Z", "status": "Critical" },
-                { "timestamp": "2026-07-03T00:00:00Z", "status": "Unmonitored" }
-            ]
-        });
+        let json = json!([
+            {
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthHistory": [
+                    { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" },
+                    { "timestamp": "2026-07-02T00:00:00Z", "status": "Critical" },
+                    { "timestamp": "2026-07-03T00:00:00Z", "status": "Unmonitored" }
+                ]
+            },
+            {
+                "resourceId": "1001234:host_id=i-def456",
+                "healthHistory": [
+                    { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }
+                ]
+            }
+        ]);
 
-        let resp: GetHealthHistoryResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.health_history.len(), 3);
+        let resp: Vec<ResourceHealthHistory> = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.len(), 2);
         assert_eq!(
-            resp.health_history[0].timestamp.as_deref(),
+            resp[0].resource_id.as_deref(),
+            Some("1001234:host_id=i-abc123")
+        );
+        assert_eq!(resp[0].health_history.len(), 3);
+        assert_eq!(
+            resp[0].health_history[0].timestamp.as_deref(),
             Some("2026-07-01T00:00:00Z")
         );
-        assert_eq!(resp.health_history[1].status.as_deref(), Some("Critical"));
+        assert_eq!(
+            resp[0].health_history[1].status.as_deref(),
+            Some("Critical")
+        );
+        assert_eq!(resp[1].health_history.len(), 1);
     }
 
+    /// A resource with no samples still gets an entry, and the whole answer can
+    /// be empty. Neither is an error.
     #[test]
     fn deserialize_empty_health_history_response() {
-        let json = json!({});
-        let resp: GetHealthHistoryResponse = serde_json::from_value(json).unwrap();
-        assert!(resp.health_history.is_empty());
+        let one_without_samples = json!([{ "resourceId": "id-1" }]);
+        let resp: Vec<ResourceHealthHistory> = serde_json::from_value(one_without_samples).unwrap();
+        assert!(resp[0].health_history.is_empty());
+
+        let nothing = json!([]);
+        let resp: Vec<ResourceHealthHistory> = serde_json::from_value(nothing).unwrap();
+        assert!(resp.is_empty());
+    }
+
+    /// The API declares `deny_unknown_fields` on this body, so the key has to be
+    /// exactly `resourceIds` or every request is a 400.
+    #[test]
+    fn serialize_resource_ids_body() {
+        let ids = ["1001234:host_id=i-abc123", "1001234:host_id=i-def456"];
+        let body = serde_json::to_value(ResourceIdsBody {
+            resource_ids: &ids[..],
+        })
+        .unwrap();
+
+        assert_eq!(
+            body,
+            json!({
+                "resourceIds": ["1001234:host_id=i-abc123", "1001234:host_id=i-def456"]
+            })
+        );
     }
 
     #[test]

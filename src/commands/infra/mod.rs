@@ -11,7 +11,7 @@ mod legacy;
 use api::{
     BoolFilter, CategoryType, FieldMatch, Filter, FilterDescriptor, GetResourcesResponse,
     HealthHistoryEntry, HealthPolicyData, InfraApi, ListResourcesParams, Op, ResourceData,
-    ResourceTypeMapping,
+    ResourceHealthHistory, ResourceTypeMapping,
 };
 
 use crate::config::OutputFormat;
@@ -20,6 +20,9 @@ use crate::render;
 
 /// JSON key for the source profile when merging multi-profile infra REST rows.
 const JSON_KEY_PROFILE: &str = "profile";
+
+/// Max limit of the API reads, so the CLI refuses a longer list.
+const MAX_RESOURCE_IDS: usize = 100;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PageWindow {
@@ -313,44 +316,51 @@ fn render_resources(
 /// profile tagging.
 pub async fn run_health_history(
     targets: &[Arc<ExecutionTarget>],
-    resource_id: &str,
+    resource_ids: &[String],
     output: OutputFormat,
 ) -> Result<()> {
-    let resource_id = require_non_empty(resource_id, "resource id")?;
+    let resource_ids = require_resource_ids(resource_ids)?;
     let target = single_target(targets, "health-history")?;
 
     eprintln!(
         "{}",
-        format!("Fetching health history for '{resource_id}'...").dimmed()
+        format!(
+            "Fetching health history for {} resource(s)...",
+            resource_ids.len()
+        )
+        .dimmed()
     );
 
-    let resp = InfraApi::new(&target.client)
-        .health_history(resource_id)
+    let results = InfraApi::new(&target.client)
+        .health_history(&resource_ids)
         .await
         .with_context(|| format!("profile '{}' failed", target.profile_name))?;
-    let history = resp.health_history;
+
+    report_missing_resources(resource_ids.len(), results.len());
 
     match output {
         OutputFormat::Json | OutputFormat::Toon => {
-            let rows: Vec<Value> = history.iter().map(health_entry_to_json).collect();
+            let rows: Vec<Value> = flat_map_history(&results, |resource, entry| {
+                let mut row = health_entry_to_json(entry);
+                row["resource_id"] = json!(resource);
+                row
+            });
             render_machine_rows(output, &rows)?;
         }
         OutputFormat::Text => {
-            if history.is_empty() {
+            let rows: Vec<Vec<String>> = flat_map_history(&results, |resource, entry| {
+                vec![
+                    target.profile_name.clone(),
+                    resource.to_string(),
+                    display_or_dash(entry.timestamp.as_deref()),
+                    display_or_dash(entry.status.as_deref()),
+                ]
+            });
+            if rows.is_empty() {
                 render::print_no_results("No health history found.");
                 return Ok(());
             }
-            let rows: Vec<Vec<String>> = history
-                .iter()
-                .map(|entry| {
-                    vec![
-                        target.profile_name.clone(),
-                        display_or_dash(entry.timestamp.as_deref()),
-                        display_or_dash(entry.status.as_deref()),
-                    ]
-                })
-                .collect();
-            render::render_table(&["Timestamp", "Status"], rows, false);
+            render::render_table(&["Resource", "Timestamp", "Status"], rows, false);
         }
     }
 
@@ -831,6 +841,56 @@ fn display_name(item: &ResourceData) -> Option<&str> {
         .map(|(_, value)| value.as_str())
         .filter(|s| !s.is_empty())
         .or(item.name.as_deref())
+}
+
+fn flat_map_history<T>(
+    results: &[ResourceHealthHistory],
+    mut row: impl FnMut(&str, &HealthHistoryEntry) -> T,
+) -> Vec<T> {
+    results
+        .iter()
+        .flat_map(|result| {
+            let resource = result.resource_id.as_deref().unwrap_or("-");
+            result
+                .health_history
+                .iter()
+                .map(move |entry| (resource, entry))
+        })
+        .map(|(resource, entry)| row(resource, entry))
+        .collect()
+}
+
+/// The API drops ids it cannot parse and reads duplicates once, so a short
+/// answer is normal. It is reported as a count because the `resourceIds` that come back
+/// are normalized, so the missing ones cannot be named reliably.
+fn report_missing_resources(asked: usize, answered: usize) {
+    if answered < asked {
+        eprintln!(
+            "{}",
+            format!(
+                "{} of {asked} resource(s) answered; the rest were not recognised or were repeats",
+                answered
+            )
+            .yellow()
+        );
+    }
+}
+
+fn require_resource_ids(resource_ids: &[String]) -> Result<Vec<&str>> {
+    if resource_ids.is_empty() {
+        bail!("at least one resource id is required");
+    }
+    if resource_ids.len() > MAX_RESOURCE_IDS {
+        bail!(
+            "{} resource ids given, but the API reads at most {MAX_RESOURCE_IDS} per request \
+             and drops the rest without saying so. Split the list and re-run.",
+            resource_ids.len()
+        );
+    }
+    resource_ids
+        .iter()
+        .map(|id| require_non_empty(id, "resource id"))
+        .collect()
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -1564,6 +1624,109 @@ mod tests {
         let (_, rows) = list_table(&[("p".to_string(), row)]);
         assert_eq!(rows[0][3], "-");
         assert_eq!(rows[0][6], "eu");
+    }
+
+    fn ids(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn require_resource_ids_trims_every_id() {
+        assert_eq!(
+            require_resource_ids(&ids(&[" id-1 ", "id-2"])).unwrap(),
+            vec!["id-1", "id-2"]
+        );
+    }
+
+    #[test]
+    fn require_resource_ids_rejects_an_empty_list() {
+        let err = require_resource_ids(&[]).unwrap_err();
+        assert!(err.to_string().contains("at least one resource id"));
+    }
+
+    #[test]
+    fn require_resource_ids_rejects_a_blank_id() {
+        let err = require_resource_ids(&ids(&["id-1", "   "])).unwrap_err();
+        assert!(err.to_string().contains("resource id must not be empty"));
+    }
+
+    /// Past the cap the API truncates without saying so, which would report a
+    /// partial answer as a complete one.
+    #[test]
+    fn require_resource_ids_rejects_more_than_the_api_reads() {
+        let at_cap: Vec<String> = (0..MAX_RESOURCE_IDS).map(|i| format!("id-{i}")).collect();
+        assert_eq!(
+            require_resource_ids(&at_cap).unwrap().len(),
+            MAX_RESOURCE_IDS
+        );
+
+        let over_cap: Vec<String> = (0..MAX_RESOURCE_IDS + 1)
+            .map(|i| format!("id-{i}"))
+            .collect();
+        let err = require_resource_ids(&over_cap).unwrap_err();
+        assert!(err.to_string().contains("at most 100"), "got: {err}");
+    }
+
+    fn history(resource_id: Option<&str>, samples: &[(&str, &str)]) -> ResourceHealthHistory {
+        ResourceHealthHistory {
+            resource_id: resource_id.map(String::from),
+            health_history: samples
+                .iter()
+                .map(|(timestamp, status)| HealthHistoryEntry {
+                    timestamp: Some(timestamp.to_string()),
+                    status: Some(status.to_string()),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn history_flattens_to_one_row_per_sample_naming_its_resource() {
+        let results = [
+            history(Some("id-1"), &[("2026-07-01T00:00:00Z", "Healthy")]),
+            history(
+                Some("id-2"),
+                &[
+                    ("2026-07-01T00:00:00Z", "Critical"),
+                    ("2026-07-02T00:00:00Z", "Healthy"),
+                ],
+            ),
+        ];
+
+        let rows = flat_map_history(&results, |resource, entry| {
+            (
+                resource.to_string(),
+                display_or_dash(entry.status.as_deref()),
+            )
+        });
+
+        assert_eq!(
+            rows,
+            vec![
+                ("id-1".to_string(), "Healthy".to_string()),
+                ("id-2".to_string(), "Critical".to_string()),
+                ("id-2".to_string(), "Healthy".to_string()),
+            ]
+        );
+    }
+
+    /// A resource the API answered for but has no samples on contributes no
+    /// rows, so it must not leave a blank row behind.
+    #[test]
+    fn history_skips_a_resource_without_samples() {
+        let results = [
+            history(Some("id-1"), &[]),
+            history(Some("id-2"), &[("2026-07-01T00:00:00Z", "Healthy")]),
+        ];
+        let rows = flat_map_history(&results, |resource, _| resource.to_string());
+        assert_eq!(rows, vec!["id-2".to_string()]);
+    }
+
+    #[test]
+    fn history_dashes_a_missing_resource_id() {
+        let results = [history(None, &[("2026-07-01T00:00:00Z", "Healthy")])];
+        let rows = flat_map_history(&results, |resource, _| resource.to_string());
+        assert_eq!(rows, vec!["-".to_string()]);
     }
 
     fn policy(name: &str, status: &str) -> HealthPolicyData {

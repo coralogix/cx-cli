@@ -106,6 +106,7 @@ pub struct HealthHistoryEntry {
 pub struct GetRawDataResponse {
     /// The raw resource document; `null` when the document is cleanly missing.
     pub raw_data: Option<Value>,
+    pub version_timestamp: Option<String>,
 }
 
 /// Scope and page window for [`InfraApi::list`]. Everything but the window
@@ -247,9 +248,17 @@ impl<'a> InfraApi<'a> {
     }
 
     /// Get the raw resource document for one resource.
-    pub async fn raw_data(&self, resource_id: &str) -> Result<GetRawDataResponse> {
+    ///
+    /// `timestamp` asks for the newest version at or before that instant.
+    /// The response names the version it actually is.
+    pub async fn raw_data(
+        &self,
+        resource_id: &str,
+        timestamp: Option<&str>,
+    ) -> Result<GetRawDataResponse> {
         let path = format!("{BASE_PATH}/{}/raw-data", encode_resource_id(resource_id));
-        self.client.get(&path, &[]).await
+        let query: Vec<(&str, &str)> = timestamp.map(|t| ("timestamp", t)).into_iter().collect();
+        self.client.get(&path, &query).await
     }
 }
 
@@ -541,19 +550,35 @@ mod tests {
     #[test]
     fn deserialize_raw_data_response() {
         let json = json!({
-            "rawData": { "host_id": "i-abc123", "tags": { "env": "prod" } }
+            "rawData": { "host_id": "i-abc123", "tags": { "env": "prod" } },
+            "versionTimestamp": "2026-09-03T13:26:58Z"
         });
         let resp: GetRawDataResponse = serde_json::from_value(json).unwrap();
         let doc = resp.raw_data.unwrap();
         assert_eq!(doc["host_id"], "i-abc123");
         assert_eq!(doc["tags"]["env"], "prod");
+        assert_eq!(
+            resp.version_timestamp.as_deref(),
+            Some("2026-09-03T13:26:58Z")
+        );
     }
 
     #[test]
     fn deserialize_null_raw_data_response() {
-        let json = json!({ "rawData": null });
+        let json = json!({ "rawData": null, "versionTimestamp": null });
         let resp: GetRawDataResponse = serde_json::from_value(json).unwrap();
         assert!(resp.raw_data.is_none());
+        assert!(resp.version_timestamp.is_none());
+    }
+
+    /// A document with no version attached is a different thing from no
+    /// document, so the two fields must stay independent.
+    #[test]
+    fn deserialize_raw_data_without_a_version() {
+        let json = json!({ "rawData": { "host_id": "i-abc123" } });
+        let resp: GetRawDataResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.raw_data.is_some());
+        assert!(resp.version_timestamp.is_none());
     }
 
     /// a `HashMap` would emit its keys in randomized iteration order - identical

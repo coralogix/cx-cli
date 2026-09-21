@@ -1174,8 +1174,10 @@ async fn raw_data_returns_document() {
         .and(path(format!(
             "{BASE}/1001234%3Ahost_id%3Di-abc123/raw-data"
         )))
+        .and(query_param_is_missing("timestamp"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "rawData": { "host_id": "i-abc123", "tags": { "env": "prod" } }
+            "rawData": { "host_id": "i-abc123", "tags": { "env": "prod" } },
+            "versionTimestamp": "2026-09-03T13:26:58Z"
         })))
         .expect(1)
         .mount(&server)
@@ -1183,9 +1185,112 @@ async fn raw_data_returns_document() {
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    run_raw_data(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
-        .await
-        .expect("run_raw_data should succeed");
+    run_raw_data(
+        &targets,
+        "1001234:host_id=i-abc123",
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_raw_data should succeed");
+}
+
+/// `--timestamp` accepts the same relative and ISO-8601 forms as `cx logs` and
+/// reaches the wire as an RFC 3339 instant.
+#[tokio::test]
+async fn raw_data_sends_the_timestamp_as_a_query_param() {
+    // An absolute instant is pinned exactly; `now-7d` can only be checked for
+    // shape, since it resolves against the clock.
+    for (given, expected) in [
+        (
+            "2026-09-06T00:00:00Z",
+            Some("2026-09-06T00:00:00.000000000Z"),
+        ),
+        // A version read off a response must reach the wire unchanged, or it
+        // pins the version before the one it names.
+        (
+            "2026-09-03T13:26:58.137128537Z",
+            Some("2026-09-03T13:26:58.137128537Z"),
+        ),
+        ("now-7d", None),
+    ] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(format!("{BASE}/plain-id/raw-data")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "rawData": { "spec": { "replicas": 3 } },
+                "versionTimestamp": "2026-09-03T13:26:58Z"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+
+        run_raw_data(&targets, "plain-id", Some(given), OutputFormat::Json)
+            .await
+            .unwrap_or_else(|e| panic!("--timestamp {given} should reach the wire: {e:#}"));
+
+        let sent = &server.received_requests().await.expect("requests")[0];
+        let sent = sent
+            .url
+            .query_pairs()
+            .find(|(k, _)| k == "timestamp")
+            .map(|(_, v)| v.to_string())
+            .unwrap_or_else(|| panic!("no timestamp param for {given}"));
+
+        match expected {
+            Some(exact) => assert_eq!(sent, exact),
+            None => assert!(sent.ends_with('Z'), "got: {sent}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn raw_data_rejects_an_unparseable_timestamp() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_raw_data(
+        &targets,
+        "plain-id",
+        Some("half past four"),
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("a bad timestamp must be refused before any request");
+}
+
+/// A document the API returns no version for is not the same as no document, so
+/// the two must stay tellable apart in the output.
+#[tokio::test]
+async fn raw_data_renders_a_document_without_a_version() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/plain-id/raw-data")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "rawData": { "spec": { "replicas": 3 } }
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_raw_data(&targets, "plain-id", None, output)
+            .await
+            .expect("a document without a version still renders");
+    }
 }
 
 #[tokio::test]
@@ -1195,16 +1300,21 @@ async fn raw_data_handles_null_document() {
     // A 200 with null rawData means "cleanly missing" - not an error.
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/plain-id/raw-data")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
-        .expect(1)
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "rawData": null, "versionTimestamp": null })),
+        )
+        .expect(3)
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    run_raw_data(&targets, "plain-id", OutputFormat::Json)
-        .await
-        .expect("null raw data should succeed");
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_raw_data(&targets, "plain-id", None, output)
+            .await
+            .expect("null raw data should succeed");
+    }
 }
 
 #[tokio::test]
@@ -1335,9 +1445,14 @@ async fn raw_data_rejects_multiple_profiles() {
         common::test_target("staging", &server.uri()),
     ];
 
-    let err = run_raw_data(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
-        .await
-        .expect_err("raw-data must reject multiple profiles");
+    let err = run_raw_data(
+        &targets,
+        "1001234:host_id=i-abc123",
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("raw-data must reject multiple profiles");
     let msg = format!("{err:#}");
     assert!(msg.contains("raw-data"), "got: {msg}");
     assert!(msg.contains("single profile"), "got: {msg}");

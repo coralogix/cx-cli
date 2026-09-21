@@ -2871,10 +2871,20 @@ At most 100 resource IDs per call.")]
     #[command(after_help = "\
 Examples:
   cx infra resources raw-data \"1001234:host_id=i-abc123\"
-  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json")]
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" --timestamp now-7d
+
+Output carries the document under `raw_data` and the version it actually is
+under `version_timestamp`.")]
     RawData {
         /// Resource ID, exactly as returned by `cx infra resources list`.
         resource_id: String,
+
+        /// Return the newest version at or before this time, rather than the
+        /// current one. Accepts `now-7d` or ISO-8601, resolved by the CLI to an
+        /// RFC 3339 instant at nanosecond precision.
+        #[arg(long)]
+        timestamp: Option<String>,
     },
 }
 
@@ -4752,8 +4762,17 @@ async fn main() -> Result<()> {
                         commands::infra::run_health_history(&targets, &resource_ids, output)
                             .await?;
                     }
-                    InfraResourcesCmd::RawData { resource_id } => {
-                        commands::infra::run_raw_data(&targets, &resource_id, output).await?;
+                    InfraResourcesCmd::RawData {
+                        resource_id,
+                        timestamp,
+                    } => {
+                        commands::infra::run_raw_data(
+                            &targets,
+                            &resource_id,
+                            timestamp.as_deref(),
+                            output,
+                        )
+                        .await?;
                     }
                 },
             },

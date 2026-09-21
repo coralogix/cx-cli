@@ -375,9 +375,13 @@ pub async fn run_health_history(
 pub async fn run_raw_data(
     targets: &[Arc<ExecutionTarget>],
     resource_id: &str,
+    timestamp: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
     let resource_id = require_non_empty(resource_id, "resource id")?;
+    let timestamp = timestamp
+        .map(|t| crate::time::parse_timestamp_nanos(require_non_empty(t, "--timestamp")?))
+        .transpose()?;
     let target = single_target(targets, "raw-data")?;
 
     eprintln!(
@@ -386,25 +390,31 @@ pub async fn run_raw_data(
     );
 
     let resp = InfraApi::new(&target.client)
-        .raw_data(resource_id)
+        .raw_data(resource_id, timestamp.as_deref())
         .await
         .with_context(|| format!("profile '{}' failed", target.profile_name))?;
+    let (raw_data, version_timestamp) = (resp.raw_data, resp.version_timestamp);
 
     // A 200 with null raw data means the document is cleanly missing, so note it
-    // on stderr and render an empty result rather than failing.
-    let results: Vec<Value> = match resp.raw_data {
-        Some(doc) => vec![doc],
-        None => {
-            eprintln!("{}", "no raw data for this resource".yellow());
-            Vec::new()
-        }
-    };
+    // on stderr and render an empty document rather than failing.
+    if raw_data.is_none() {
+        eprintln!("{}", "no raw data for this resource".yellow());
+    }
 
     match output {
-        OutputFormat::Json => render::render_json_auto(&results)?,
-        OutputFormat::Toon => render::render_toon(&results)?,
+        OutputFormat::Json | OutputFormat::Toon => {
+            let envelope = json!({
+                "version_timestamp": version_timestamp,
+                "raw_data": raw_data,
+            });
+            render_machine_envelope(output, &envelope)?;
+        }
         OutputFormat::Text => {
-            render::render_get_text(&results, false, "No raw data found.", None)?;
+            let results: Vec<Value> = raw_data.into_iter().collect();
+            let version = |_: &Value| {
+                println!("version: {}", display_or_dash(version_timestamp.as_deref()));
+            };
+            render::render_get_text(&results, false, "No raw data found.", Some(&version))?;
         }
     }
 
@@ -1624,6 +1634,53 @@ mod tests {
         let (_, rows) = list_table(&[("p".to_string(), row)]);
         assert_eq!(rows[0][3], "-");
         assert_eq!(rows[0][6], "eu");
+    }
+
+    /// `--timestamp` is resolved here, not by the API: the server parses with
+    /// `DateTime::parse_from_rfc3339` and would reject `now-7d` outright. This
+    /// pins that every form the CLI accepts leaves as something it accepts.
+    #[test]
+    fn every_accepted_timestamp_form_leaves_as_rfc_3339() {
+        for input in [
+            "now",
+            "now-7d",
+            "now - 3d",
+            "now-1h30m",
+            "now-90s",
+            "now-2w",
+            "2026-09-06T00:00:00Z",
+            "2026-09-06T02:00:00+02:00",
+            "2026-09-03T13:26:58.137128537Z",
+        ] {
+            let sent = crate::time::parse_timestamp_nanos(input)
+                .unwrap_or_else(|e| panic!("CLI should accept {input}: {e}"));
+            chrono::DateTime::parse_from_rfc3339(&sent)
+                .unwrap_or_else(|e| panic!("{input} left as {sent}, which the API rejects: {e}"));
+        }
+    }
+
+    /// The history is keyed to the nanosecond, so a `version_timestamp` read
+    /// from one response and fed back as `--timestamp` has to name that same
+    /// version rather than resolve to the one before it.
+    #[test]
+    fn a_version_timestamp_survives_being_fed_back() {
+        let from_the_api = "2026-09-03T13:26:58.137128537Z";
+        assert_eq!(
+            crate::time::parse_timestamp_nanos(from_the_api).unwrap(),
+            from_the_api
+        );
+    }
+
+    /// Forms the API would take but the CLI does not, so the error arrives
+    /// locally with a usable message rather than as a 400.
+    #[test]
+    fn timestamp_forms_the_cli_refuses() {
+        for input in ["now+1d", "1788442018137128537", "yesterday", "7d ago", ""] {
+            assert!(
+                crate::time::parse_timestamp_nanos(input).is_err(),
+                "{input} should be refused"
+            );
+        }
     }
 
     fn ids(values: &[&str]) -> Vec<String> {

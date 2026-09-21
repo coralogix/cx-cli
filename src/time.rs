@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 
 /// Parse a time expression into the exact UTC timestamp format expected by the
 /// Dataprime API (`2006-01-02T15:04:05.000Z`).
@@ -14,6 +14,12 @@ use chrono::{DateTime, Utc};
 /// `d`, `w` and compound forms like `1h30m`.
 pub fn parse_timestamp(input: &str) -> Result<String> {
     Ok(format_api_timestamp(parse_datetime(input)?))
+}
+
+/// Parse the same time expressions as [`parse_timestamp`], returning an RFC 3339
+/// instant at nanosecond precision.
+pub fn parse_timestamp_nanos(input: &str) -> Result<String> {
+    Ok(parse_datetime(input)?.to_rfc3339_opts(SecondsFormat::Nanos, true))
 }
 
 /// Parse the same time expressions as [`parse_timestamp`], returning a Unix
@@ -71,6 +77,48 @@ fn format_api_timestamp(dt: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nanos_keeps_every_sub_second_digit() {
+        assert_eq!(
+            parse_timestamp_nanos("2026-09-03T13:26:58.137128537Z").unwrap(),
+            "2026-09-03T13:26:58.137128537Z"
+        );
+    }
+
+    /// Nine digits always, so the string is one shape whatever the input.
+    #[test]
+    fn nanos_pads_a_whole_second() {
+        assert_eq!(
+            parse_timestamp_nanos("2026-09-06T00:00:00Z").unwrap(),
+            "2026-09-06T00:00:00.000000000Z"
+        );
+    }
+
+    #[test]
+    fn nanos_normalizes_an_offset_to_utc() {
+        assert_eq!(
+            parse_timestamp_nanos("2026-09-06T02:00:00+02:00").unwrap(),
+            "2026-09-06T00:00:00.000000000Z"
+        );
+    }
+
+    #[test]
+    fn nanos_accepts_the_relative_forms_too() {
+        let ts = parse_timestamp_nanos("now-7d").unwrap();
+        assert!(ts.ends_with('Z'), "got: {ts}");
+        chrono::DateTime::parse_from_rfc3339(&ts).expect("must stay RFC 3339");
+    }
+
+    /// The millisecond formatter keeps its behaviour: five other commands read
+    /// windows with it and none of them want nine digits.
+    #[test]
+    fn the_millisecond_formatter_is_unchanged() {
+        assert_eq!(
+            parse_timestamp("2026-09-03T13:26:58.137128537Z").unwrap(),
+            "2026-09-03T13:26:58.137Z"
+        );
+    }
 
     #[test]
     fn now_produces_a_timestamp() {

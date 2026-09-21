@@ -101,9 +101,41 @@ fn infra_raw_data() {
         eprintln!("[e2e] skipping infra_raw_data: no resources on test team");
         return;
     };
-    // The document shape is source-specific, so only verify exit 0 + valid JSON.
+    // The document shape is source-specific, so only verify exit 0 + the
+    // envelope's own keys.
     let stdout = harness::run_ok(&["infra", "resources", "raw-data", &id, "-o", "json"]);
-    harness::parse_json(&stdout).expect("raw-data should emit valid JSON");
+    let v = harness::parse_json(&stdout).expect("raw-data should emit valid JSON");
+    assert!(v.get("raw_data").is_some(), "no raw_data key: {v}");
+    assert!(
+        v.get("version_timestamp").is_some(),
+        "no version_timestamp key: {v}"
+    );
+}
+
+/// The as-of query returns the newest version at or before the instant, so a
+/// far-past timestamp is a valid ask that may legitimately find nothing.
+#[test]
+#[ignore]
+fn infra_raw_data_at_a_timestamp() {
+    if harness::require_creds("infra_raw_data_at_a_timestamp").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!("[e2e] skipping infra_raw_data_at_a_timestamp: no resources on test team");
+        return;
+    };
+    let stdout = harness::run_ok(&[
+        "infra",
+        "resources",
+        "raw-data",
+        &id,
+        "--timestamp",
+        "now-1d",
+        "-o",
+        "json",
+    ]);
+    let v = harness::parse_json(&stdout).expect("raw-data --timestamp should emit valid JSON");
+    assert!(v.get("raw_data").is_some(), "no raw_data key: {v}");
 }
 
 /// Discover a (category, type) pair from `infra resources types`. Cached so

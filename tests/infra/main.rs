@@ -1055,48 +1055,115 @@ async fn list_rejects_invalid_scope_before_any_request() {
     assert_eq!(server.received_requests().await.unwrap().len(), 0);
 }
 
+/// Ids travel in the body now, so nothing is percent-encoded into a path and
+/// the route carries no id segment.
 #[tokio::test]
-async fn health_history_percent_encodes_resource_id() {
+async fn health_history_posts_every_id_in_the_body() {
     let server = MockServer::start().await;
 
-    // `:` and `=` in the resource id must reach the server percent-encoded.
-    Mock::given(method("GET"))
-        .and(path(format!(
-            "{BASE}/1001234%3Ahost_id%3Di-abc123/health-history"
-        )))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "healthHistory": [
-                { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" },
-                { "timestamp": "2026-07-02T00:00:00Z", "status": "Critical" }
-            ]
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .and(body_json(json!({
+            "resourceIds": ["1001234:host_id=i-abc123", "1001234:host_id=i-def456"]
         })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthHistory": [
+                    { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" },
+                    { "timestamp": "2026-07-02T00:00:00Z", "status": "Critical" }
+                ]
+            },
+            {
+                "resourceId": "1001234:host_id=i-def456",
+                "healthHistory": [
+                    { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }
+                ]
+            }
+        ])))
         .expect(1)
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids = vec![
+        "1001234:host_id=i-abc123".to_string(),
+        "1001234:host_id=i-def456".to_string(),
+    ];
 
-    run_health_history(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
+    run_health_history(&targets, &resource_ids, OutputFormat::Json)
         .await
-        .expect("run_health_history should hit the encoded path");
+        .expect("health-history should post the whole id list");
+}
+
+/// The API drops ids it cannot parse, so a short answer must still render the
+/// resources it did answer for rather than failing the call.
+#[tokio::test]
+async fn health_history_renders_a_shorter_answer_than_it_asked_for() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthHistory": [{ "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }]
+            }
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids = vec![
+        "1001234:host_id=i-abc123".to_string(),
+        "nonsense".to_string(),
+    ];
+
+    run_health_history(&targets, &resource_ids, OutputFormat::Text)
+        .await
+        .expect("a partial answer is not an error");
 }
 
 #[tokio::test]
 async fn health_history_handles_empty_history() {
     let server = MockServer::start().await;
 
-    Mock::given(method("GET"))
-        .and(path(format!("{BASE}/plain-id/health-history")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "healthHistory": [] })))
-        .expect(1)
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .expect(3)
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    run_health_history(&targets, "plain-id", OutputFormat::Json)
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_health_history(&targets, &["plain-id".to_string()], output)
+            .await
+            .expect("empty health history should succeed");
+    }
+}
+
+/// The cap is the API's, and past it the API truncates silently, so the refusal
+/// has to happen before any request goes out.
+#[tokio::test]
+async fn health_history_refuses_more_ids_than_the_api_reads() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids: Vec<String> = (0..101).map(|i| format!("1001234:host_id=i-{i}")).collect();
+
+    let err = run_health_history(&targets, &resource_ids, OutputFormat::Json)
         .await
-        .expect("empty health history should succeed");
+        .expect_err("101 ids must be refused");
+    assert!(format!("{err:#}").contains("at most 100"), "got: {err:#}");
 }
 
 #[tokio::test]
@@ -1226,8 +1293,8 @@ async fn all_output_formats_render() {
 async fn health_history_rejects_multiple_profiles() {
     let server = MockServer::start().await;
 
-    Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "healthHistory": [] })))
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
         .expect(0)
         .mount(&server)
         .await;
@@ -1237,9 +1304,13 @@ async fn health_history_rejects_multiple_profiles() {
         common::test_target("staging", &server.uri()),
     ];
 
-    let err = run_health_history(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
-        .await
-        .expect_err("health-history must reject multiple profiles");
+    let err = run_health_history(
+        &targets,
+        &["1001234:host_id=i-abc123".to_string()],
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("health-history must reject multiple profiles");
     let msg = format!("{err:#}");
     assert!(msg.contains("health-history"), "got: {msg}");
     assert!(msg.contains("single profile"), "got: {msg}");

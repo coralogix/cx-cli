@@ -2856,13 +2856,16 @@ Discover what can be filtered with `cx infra resources filters`.")]
         #[arg(long)]
         end_row: Option<i64>,
     },
-    /// Show the daily health status history for a resource.
+    /// Show the daily health status history for one or more resources.
     #[command(after_help = "\
 Examples:
-  cx infra resources health-history \"1001234:host_id=i-abc123\"")]
+  cx infra resources health-history \"1001234:host_id=i-abc\" \"1001234:host_id=i-def\"
+
+At most 100 resource IDs per call.")]
     HealthHistory {
-        /// Resource ID, exactly as returned by `cx infra resources list`.
-        resource_id: String,
+        /// Resource IDs, exactly as returned by `cx infra resources list`.
+        #[arg(num_args = 1.., required = true)]
+        resource_ids: Vec<String>,
     },
     /// Fetch the raw resource document as JSON.
     #[command(after_help = "\
@@ -4745,8 +4748,8 @@ async fn main() -> Result<()> {
                             .await?;
                         }
                     }
-                    InfraResourcesCmd::HealthHistory { resource_id } => {
-                        commands::infra::run_health_history(&targets, &resource_id, output)
+                    InfraResourcesCmd::HealthHistory { resource_ids } => {
+                        commands::infra::run_health_history(&targets, &resource_ids, output)
                             .await?;
                     }
                     InfraResourcesCmd::RawData { resource_id } => {

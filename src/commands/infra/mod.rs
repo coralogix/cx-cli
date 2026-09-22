@@ -817,6 +817,7 @@ fn display_name(item: &ResourceData) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn require_non_empty_trims_and_accepts_values() {
@@ -1538,6 +1539,47 @@ mod tests {
         let (_, rows) = list_table(&[("p".to_string(), row)]);
         assert_eq!(rows[0][3], "-");
         assert_eq!(rows[0][5], "eu");
+    }
+
+    #[test]
+    fn a_json_row_carries_the_scope_and_the_columns() {
+        let item = ResourceData {
+            resource_id: Some("4013226:host_id=i-077a".to_string()),
+            name: Some("prod-api-01".to_string()),
+            columns: BTreeMap::from([
+                ("Name".to_string(), "prod-api-01".to_string()),
+                ("Region".to_string(), "eu-west-1".to_string()),
+            ]),
+            category: Some("Hosts".to_string()),
+            type_name: Some("EC2_Instances".to_string()),
+        };
+
+        assert_eq!(
+            resource_to_json(&item, false, "prod"),
+            json!({
+                "resource_id": "4013226:host_id=i-077a",
+                "name": "prod-api-01",
+                "category": "Hosts",
+                "type": "EC2_Instances",
+                "columns": { "Name": "prod-api-01", "Region": "eu-west-1" },
+            })
+        );
+    }
+
+    #[test]
+    fn a_json_row_is_tagged_with_its_profile_only_when_asked() {
+        let item = ResourceData {
+            resource_id: Some("id".to_string()),
+            name: Some("n".to_string()),
+            columns: BTreeMap::new(),
+            category: Some("Hosts".to_string()),
+            type_name: Some("EC2_Instances".to_string()),
+        };
+
+        assert_eq!(resource_to_json(&item, true, "prod")["profile"], "prod");
+        assert!(resource_to_json(&item, false, "prod")
+            .get("profile")
+            .is_none());
     }
 
     fn counts(entries: &[(&str, i64, usize)]) -> Vec<ProfileCounts> {

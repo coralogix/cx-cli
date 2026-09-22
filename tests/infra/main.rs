@@ -819,35 +819,6 @@ async fn a_mixed_type_result_renders_in_text_mode() {
 }
 
 #[tokio::test]
-async fn json_output_carries_the_category_and_type() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("POST"))
-        .and(path(BASE))
-        .respond_with(ResponseTemplate::new(200).set_body_json(list_body()))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-
-    run_list(
-        &targets,
-        Some("Hosts"),
-        Some("EC2_Instances"),
-        &[],
-        &[],
-        PageWindow {
-            start_row: None,
-            end_row: None,
-        },
-        OutputFormat::Json,
-    )
-    .await
-    .expect("run_list should render JSON");
-}
-
-#[tokio::test]
 async fn a_repeated_attribute_in_one_group_is_refused_before_any_request() {
     let server = MockServer::start().await;
     let targets = vec![common::test_target("test-profile", &server.uri())];
@@ -1089,11 +1060,44 @@ async fn all_output_formats_render() {
             .mount(&server)
             .await;
 
+        Mock::given(method("GET"))
+            .and(path(format!("{BASE}/filters")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(filters_body()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path(BASE))
+            .respond_with(ResponseTemplate::new(200).set_body_json(list_body()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
         let targets = vec![common::test_target("test-profile", &server.uri())];
 
         run_types(&targets, format)
             .await
             .unwrap_or_else(|e| panic!("run_types should render {format:?}: {e:#}"));
+
+        run_filters(&targets, Some("Hosts"), Some("EC2_Instances"), format)
+            .await
+            .unwrap_or_else(|e| panic!("run_filters should render {format:?}: {e:#}"));
+
+        run_list(
+            &targets,
+            Some("Hosts"),
+            Some("EC2_Instances"),
+            &[],
+            &[],
+            PageWindow {
+                start_row: None,
+                end_row: None,
+            },
+            format,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("run_list should render {format:?}: {e:#}"));
     }
 }
 

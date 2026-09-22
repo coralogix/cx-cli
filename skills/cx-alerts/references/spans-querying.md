@@ -300,3 +300,7 @@ cx spans "filter \$d.traceID == 'abc123' | groupby \$l.serviceName aggregate cou
 ```bash
 cx spans "filter \$l.serviceName == 'api'" --start now-24h --limit 1000 -o toon
 ```
+
+## Console links
+
+`cx spans` does not print a UI URL. Do not add an Explore link unless the user asked for one. If they did, say the CLI has no link for this query and point them at Explore's **URL Builder** — never construct one yourself, and never use the legacy `#/query-new/...` route. See **Console links** in `cx-telemetry-querying`.

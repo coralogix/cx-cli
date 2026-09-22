@@ -95,8 +95,9 @@ and the full command set are available with no extra setup. Pass `--disable-olly
 to create the first profile with Olly switched off, and change either later in
 [`config.toml`](#global-config-cxconfigtoml).
 
-To re-authenticate an existing OAuth profile, run `cx profiles add <name>` again
-for that name.
+To re-authenticate an existing OAuth profile by hand, run `cx profiles add <name>`
+again for that name. On a terminal, `cx` also offers that sign-in automatically
+when a command finds the session expired.
 
 If using an API key, it must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys). [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work.
 
@@ -153,7 +154,8 @@ OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
 - Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend - either inline in the profile TOML (`file`, the default) or in the OS keyring (`os_store`).
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
-- If the refresh token is also expired, `cx` exits with an actionable message:
+- If the refresh token is missing or the identity provider rejects it (HTTP 400 or 401), and both stdin and stdout are terminals (and `cx` is not running under a coding agent), the command opens the same browser sign-in as `cx profiles add`. A network failure or HTTP 5xx leaves the refresh token in place and does not open a browser. The new tokens are saved and the command continues only when `GET /identity/whoami` reports the same team this profile last used. When a console link has already stored the team name, that message uses the name and the id; otherwise it names the team id. A different team is not saved, and the command stops. A `--region` override applies to that command only and is not written back to the profile. A refresh-token rotation is still saved. A browser sign-in performed under `--region` is kept for that command only, on both the profile file and the OS keyring.
+- Otherwise `cx` exits with an actionable message:
 
   ```
   Run cx profiles add <name> to re-authenticate.

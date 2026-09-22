@@ -76,6 +76,11 @@ pub async fn resolve_team_id(client: &CxClient) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow!("/identity/whoami returned no team_id"))
 }
 
+/// Best-effort `GET /identity/whoami`. `None` on any failure.
+pub async fn lookup_whoami(client: &CxClient) -> Option<Whoami> {
+    client.get(WHOAMI_BASE, &[]).await.ok()
+}
+
 /// Resolve the team's web console base URL used to build "View in
 /// Coralogix" console links, via `GET /identity/whoami`. This is the
 /// default automatic resolution path, used whenever a profile hasn't set an
@@ -87,7 +92,7 @@ pub async fn resolve_team_id(client: &CxClient) -> anyhow::Result<String> {
 /// `None` rather than an error, since a console link is a "nice to have" -
 /// it must never cause an otherwise-successful create/edit command to fail.
 pub async fn resolve_team_url(client: &CxClient) -> Option<String> {
-    let whoami: Whoami = client.get(WHOAMI_BASE, &[]).await.ok()?;
+    let whoami = lookup_whoami(client).await?;
     let url = whoami.team_url?;
     let trimmed = url.trim_end_matches('/');
     if trimmed.is_empty() {

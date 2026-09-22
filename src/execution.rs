@@ -117,10 +117,23 @@ impl ExecutionTarget {
                     }
                 }
                 // 3. Cold cache (or overridden credentials): resolve live.
-                let resolved = identity::resolve_team_url(&self.client).await;
+                let whoami = identity::lookup_whoami(&self.client).await;
+                let resolved = whoami.as_ref().and_then(|w| {
+                    let url = w.team_url.as_deref()?.trim_end_matches('/');
+                    if url.is_empty() {
+                        None
+                    } else {
+                        Some(url.to_string())
+                    }
+                });
                 if !self.cfg.credentials_overridden {
-                    if let Some(url) = &resolved {
-                        crate::config::cache_console_url(&self.profile_name, url);
+                    if let Some(w) = &whoami {
+                        crate::config::cache_team_identity(
+                            &self.profile_name,
+                            w.team_id,
+                            w.team_name.as_deref(),
+                            w.team_url.as_deref(),
+                        );
                     }
                 }
                 resolved

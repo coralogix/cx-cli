@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[cfg(unix)]
@@ -378,6 +379,15 @@ pub struct Profile {
     /// When `cached_console_url` was last resolved. Used to expire the cache.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_console_url_at: Option<DateTime<Utc>>,
+    /// Team id from the last successful `GET /identity/whoami` for this profile.
+    /// Used to reject an OAuth re-login that comes back as a different team.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_team_id: Option<i64>,
+    /// Display name from that same whoami response. `cx profiles add` asks the
+    /// user to pick a team by name, so the re-login hint prefers this over
+    /// [`Self::cached_team_id`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_team_name: Option<String>,
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -496,6 +506,123 @@ pub fn load_profile(name: &str) -> Result<Profile> {
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 
+/// Browser re-login is for a person at a terminal. Stdout must be a terminal
+/// too: `cx ... -o json | jq` keeps stdin attached but must not open a browser
+/// or write login progress into the JSON stream. A coding agent keeps the error
+/// instead of blocking on a browser for five minutes.
+fn interactive_reauth_allowed() -> bool {
+    std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+        && !crate::safety::is_agent_mode()
+}
+
+fn normalize_team_url(url: &str) -> &str {
+    url.trim().trim_end_matches('/')
+}
+
+/// `Some` when this sign-in is a different team than the profile last used.
+/// `None` when it matches, or when the profile has no recorded team yet.
+fn reauth_team_conflict(
+    profile_name: &str,
+    profile: &Profile,
+    whoami: &crate::identity::Whoami,
+) -> Option<String> {
+    let signed_in = whoami.team_name.as_deref().unwrap_or("unknown");
+    let not_saved = |original: &str| {
+        format!(
+            "Tokens were not saved. Run `cx profiles add {profile_name}` and select {original}."
+        )
+    };
+    if let Some(previous_id) = profile.cached_team_id {
+        let original = team_to_select(profile, &format!("team id {previous_id}"));
+        let recovery = not_saved(&original);
+        return match whoami.team_id {
+            Some(id) if id == previous_id => None,
+            Some(id) => Some(format!(
+                "Signed in to team '{signed_in}' (id {id}), but profile '{profile_name}' was last used with {original}.\n{recovery}"
+            )),
+            None => Some(format!(
+                "Sign-in did not report a team id, so it was not saved for profile '{profile_name}'.\n{recovery}"
+            )),
+        };
+    }
+    let previous_url = profile.cached_console_url.as_deref()?;
+    let previous_url = normalize_team_url(previous_url);
+    let recovery = not_saved(&team_to_select(profile, previous_url));
+    match whoami
+        .team_url
+        .as_deref()
+        .map(normalize_team_url)
+        .filter(|url| !url.is_empty())
+    {
+        Some(url) if url == previous_url => None,
+        Some(url) => Some(format!(
+            "Signed in to team '{signed_in}' ({url}), but profile '{profile_name}' was last used with {previous_url}.\n{recovery}"
+        )),
+        None => Some(format!(
+            "Sign-in did not report a team, so it was not saved for profile '{profile_name}'.\n{recovery}"
+        )),
+    }
+}
+
+/// Label for the team `cx profiles add` should reopen. The browser picker
+/// lists names; the id (or console URL) is only the fallback when this
+/// profile was cached before the name was stored.
+fn cached_display_name(profile: &Profile) -> Option<&str> {
+    profile
+        .cached_team_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+}
+
+fn team_to_select(profile: &Profile, fallback: &str) -> String {
+    match cached_display_name(profile) {
+        Some(name) => match profile.cached_team_id {
+            Some(id) => format!("team '{name}' (id {id})"),
+            None => format!("team '{name}'"),
+        },
+        None => fallback.to_string(),
+    }
+}
+
+/// `true` when the profile gained a team id, name, or console URL.
+fn remember_signed_in_team(profile: &mut Profile, whoami: &crate::identity::Whoami) -> bool {
+    let mut changed = false;
+    if let Some(id) = whoami.team_id {
+        if profile.cached_team_id != Some(id) {
+            profile.cached_team_id = Some(id);
+            changed = true;
+        }
+    }
+    if let Some(name) = whoami
+        .team_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
+        if profile.cached_team_name.as_deref() != Some(name) {
+            profile.cached_team_name = Some(name.to_string());
+            changed = true;
+        }
+    }
+    if let Some(url) = whoami
+        .team_url
+        .as_deref()
+        .map(normalize_team_url)
+        .filter(|url| !url.is_empty())
+    {
+        if profile.cached_console_url.as_deref() != Some(url) {
+            profile.cached_console_url = Some(url.to_string());
+        }
+        // The TTL is what skips the next whoami. An unchanged URL still has
+        // to refresh it, or a lapsed cache stays cold forever.
+        profile.cached_console_url_at = Some(Utc::now());
+        changed = true;
+    }
+    changed
+}
+
 /// Resolve a single named profile, respecting optional CLI overrides.
 ///
 /// Resolution order for the bearer token:
@@ -537,6 +664,11 @@ async fn resolve_single(
     }
 
     let mut profile = load_profile(profile_name)?;
+    // `--region` is for this invocation only. The profile object is what
+    // later gets saved, so remember the on-disk region and put it back
+    // before any write.
+    let stored_region = profile.region.clone();
+    let region_overridden = region_override.is_some();
 
     if let Some(region) = region_override {
         profile.region = region.parse()?;
@@ -586,18 +718,80 @@ async fn resolve_single(
                     )
                 })?;
             let storage = profile.credential_storage;
-            let (bearer, refreshed) = oauth::resolve_token(
+            let resolved = oauth::resolve_token(
                 profile_name,
                 &base_url,
                 &client_id,
                 storage,
                 profile.oauth_tokens.as_ref(),
             )
-            .await?;
+            .await;
+            let (bearer, refreshed, persist_profile) = match resolved {
+                Ok((bearer, refreshed)) => {
+                    let persist = refreshed.is_some();
+                    (bearer, refreshed, persist)
+                }
+                Err(error) if oauth::is_reauth_required(&error) && interactive_reauth_allowed() => {
+                    // The refresh token is missing or rejected. Sign in once in
+                    // the browser, keep the tokens only when they are for the
+                    // same team, and continue this command.
+                    eprintln!(
+                        "OAuth session for profile '{profile_name}' expired. Sign in to continue."
+                    );
+                    let tokens = oauth::browser_login(&base_url, &client_id).await?;
+                    let client = crate::api_client::CxClient::new(
+                        profile.region.api_endpoint(),
+                        &tokens.access_token,
+                    )?;
+                    let whoami = crate::identity::verify_identity(&client).await.context(
+                        "Could not confirm which team this sign-in belongs to, so the new tokens were not saved.",
+                    )?;
+                    // A `--region` override talks to a different endpoint for
+                    // this command. Its team must not be written onto the
+                    // profile, and neither must the overridden region.
+                    if !region_overridden {
+                        if let Some(conflict) =
+                            reauth_team_conflict(profile_name, &profile, &whoami)
+                        {
+                            anyhow::bail!("{conflict}");
+                        }
+                        remember_signed_in_team(&mut profile, &whoami);
+                    }
+                    let team = whoami.team_name.as_deref().unwrap_or("this team");
+                    eprintln!("Signed in to team '{team}'. Continuing.");
+                    // A browser login under `--region` is for this command's
+                    // endpoint. Keep those tokens in memory on both backends.
+                    // A silent refresh still persists, so a rotated refresh
+                    // token is not discarded.
+                    let (bearer, refreshed) = if region_overridden {
+                        (tokens.access_token, None)
+                    } else {
+                        match storage {
+                            CredentialStorage::OsStore => {
+                                oauth::store_tokens_keyring(profile_name, &tokens)?;
+                                (tokens.access_token, None)
+                            }
+                            CredentialStorage::File => {
+                                let stored = oauth::tokens_to_stored(&tokens);
+                                let access = stored.access_token.clone();
+                                (access, Some(stored))
+                            }
+                        }
+                    };
+                    (bearer, refreshed, !region_overridden)
+                }
+                Err(error) => return Err(error),
+            };
             if let Some(new_tokens) = refreshed {
                 // File-storage profile: persist refreshed tokens back to disk.
                 profile.oauth_tokens = Some(new_tokens);
-                save_profile(profile_name, &profile)?;
+            }
+            if persist_profile {
+                // Save tokens (and, after a same-team sign-in, team identity)
+                // without writing a one-shot `--region` into the profile.
+                let mut to_save = profile.clone();
+                to_save.region = stored_region;
+                save_profile(profile_name, &to_save)?;
             }
             bearer
         }
@@ -693,12 +887,45 @@ pub fn load_cached_console_url(profile_name: &str) -> Option<String> {
 /// unwritable config dir) is ignored, since a console link is a "nice to have"
 /// that must never fail an otherwise-successful command.
 pub fn cache_console_url(profile_name: &str, url: &str) {
+    cache_team_identity(profile_name, None, None, Some(url));
+}
+
+/// Persist the team from `GET /identity/whoami` so a later OAuth re-login can
+/// refuse a different team. Best-effort, same as [`cache_console_url`].
+pub fn cache_team_identity(
+    profile_name: &str,
+    team_id: Option<i64>,
+    team_name: Option<&str>,
+    url: Option<&str>,
+) {
     let Ok(mut profile) = load_profile(profile_name) else {
         return;
     };
-    profile.cached_console_url = Some(url.to_string());
-    profile.cached_console_url_at = Some(Utc::now());
-    let _ = save_profile(profile_name, &profile);
+    let mut changed = false;
+    if let Some(id) = team_id {
+        if profile.cached_team_id != Some(id) {
+            profile.cached_team_id = Some(id);
+            changed = true;
+        }
+    }
+    if let Some(name) = team_name.map(str::trim).filter(|name| !name.is_empty()) {
+        if profile.cached_team_name.as_deref() != Some(name) {
+            profile.cached_team_name = Some(name.to_string());
+            changed = true;
+        }
+    }
+    if let Some(url) = url.map(normalize_team_url).filter(|url| !url.is_empty()) {
+        if profile.cached_console_url.as_deref() != Some(url) {
+            profile.cached_console_url = Some(url.to_string());
+        }
+        // The TTL is what skips the next whoami. An unchanged URL still has
+        // to refresh it, or a lapsed cache stays cold forever.
+        profile.cached_console_url_at = Some(Utc::now());
+        changed = true;
+    }
+    if changed {
+        let _ = save_profile(profile_name, &profile);
+    }
 }
 
 // ── Managed completion helpers ────────────────────────────────────────────────
@@ -990,6 +1217,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -1023,6 +1252,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -1051,6 +1282,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
         };
         let toml = toml::to_string_pretty(&profile).unwrap();
         let restored: Profile = toml::from_str(&toml).unwrap();
@@ -1143,6 +1376,8 @@ api_key = "mykey"
                 console_url: None,
                 cached_console_url: None,
                 cached_console_url_at: None,
+                cached_team_id: None,
+                cached_team_name: None,
             };
             save_profile(name, &profile).unwrap();
         }
@@ -1183,6 +1418,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
         };
         save_profile("default", &profile).unwrap();
 
@@ -1209,6 +1446,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1236,6 +1475,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1263,6 +1504,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
         };
         save_profile(name, &profile).unwrap();
 
@@ -1301,6 +1544,8 @@ api_key = "mykey"
             console_url: None,
             cached_console_url: Some("https://cached.app.eu2.coralogix.com".to_string()),
             cached_console_url_at: cached_at,
+            cached_team_id: None,
+            cached_team_name: None,
         }
     }
 
@@ -1346,5 +1591,82 @@ api_key = "mykey"
         );
 
         let _ = std::fs::remove_file(profile_file(name).unwrap());
+    }
+
+    fn whoami(id: Option<i64>, name: &str, url: Option<&str>) -> crate::identity::Whoami {
+        crate::identity::Whoami {
+            team_id: id,
+            team_name: Some(name.to_string()),
+            user_name: None,
+            team_url: url.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn reauth_accepts_the_same_team_id() {
+        let mut profile = profile_with_cache(None);
+        profile.cached_team_id = Some(12);
+        let signed_in = whoami(Some(12), "c4c", Some("https://other.example"));
+        assert!(reauth_team_conflict("default", &profile, &signed_in).is_none());
+    }
+
+    #[test]
+    fn reauth_rejects_a_different_team_id() {
+        let mut profile = profile_with_cache(None);
+        profile.cached_team_id = Some(12);
+        let signed_in = whoami(Some(99), "other", Some("https://other.example"));
+        let msg = reauth_team_conflict("default", &profile, &signed_in).unwrap();
+        assert!(msg.contains("id 99"), "{msg}");
+        assert!(msg.contains("team id 12"), "{msg}");
+        assert!(
+            msg.contains("Run `cx profiles add default` and select team id 12."),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn reauth_recovery_hint_uses_the_cached_team_name() {
+        let mut profile = profile_with_cache(None);
+        profile.cached_team_id = Some(12);
+        profile.cached_team_name = Some("c4c".to_string());
+        let signed_in = whoami(Some(99), "other", Some("https://other.example"));
+        let msg = reauth_team_conflict("default", &profile, &signed_in).unwrap();
+        assert!(
+            msg.contains("Run `cx profiles add default` and select team 'c4c' (id 12)."),
+            "{msg}"
+        );
+        assert!(msg.contains("last used with team 'c4c' (id 12)"), "{msg}");
+    }
+
+    #[test]
+    fn remember_signed_in_team_refreshes_console_url_ttl_when_url_is_unchanged() {
+        let stale = Utc::now() - Duration::days(CONSOLE_URL_CACHE_TTL_DAYS + 1);
+        let mut profile = profile_with_cache(Some(stale));
+        let signed_in = whoami(Some(1), "c4c", Some("https://cached.app.eu2.coralogix.com"));
+        assert!(remember_signed_in_team(&mut profile, &signed_in));
+        let refreshed_at = profile.cached_console_url_at.expect("ttl refreshed");
+        assert!(refreshed_at > stale);
+    }
+
+    #[test]
+    fn reauth_rejects_a_different_team_url_when_no_id_is_cached() {
+        let profile = profile_with_cache(None);
+        let signed_in = whoami(
+            Some(2),
+            "other",
+            Some("https://other.app.eu2.coralogix.com"),
+        );
+        let msg = reauth_team_conflict("default", &profile, &signed_in).unwrap();
+        assert!(msg.contains("other.app.eu2.coralogix.com"), "{msg}");
+        assert!(msg.contains("cached.app.eu2.coralogix.com"), "{msg}");
+    }
+
+    #[test]
+    fn reauth_allows_sign_in_when_no_team_was_recorded() {
+        let mut profile = profile_with_cache(None);
+        profile.cached_console_url = None;
+        profile.cached_team_id = None;
+        let signed_in = whoami(Some(2), "c4c", Some("https://c4c.app.eu2.coralogix.com"));
+        assert!(reauth_team_conflict("default", &profile, &signed_in).is_none());
     }
 }

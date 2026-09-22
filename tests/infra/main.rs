@@ -6,7 +6,8 @@ use wiremock::matchers::{body_json, method, path, query_param, query_param_is_mi
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::infra::{
-    run_filters, run_health_history, run_list, run_list_legacy, run_raw_data, run_types, PageWindow,
+    run_config_changes, run_config_diff, run_filters, run_health_history, run_list,
+    run_list_legacy, run_raw_data, run_types, PageWindow,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -1314,6 +1315,207 @@ async fn raw_data_handles_null_document() {
         run_raw_data(&targets, "plain-id", None, output)
             .await
             .expect("null raw data should succeed");
+    }
+}
+
+fn ids(values: &[&str]) -> Vec<String> {
+    values.iter().map(|v| v.to_string()).collect()
+}
+
+/// Both endpoints take the same body, so a caller sweeps then narrows with the
+/// same shape. `deny_unknown_fields` server side makes the exact keys load-bearing.
+#[tokio::test]
+async fn config_commands_post_the_same_body_shape() {
+    for suffix in ["summary", "diff"] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path(format!("{BASE}/configuration/{suffix}")))
+            .and(body_json(json!({
+                "from": "2026-09-06T11:00:00.000000000Z",
+                "to": "2026-09-06T13:00:00.000000000Z",
+                "resourceIds": ["7000098:a=frontend", "7000098:a=cart"]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+        let resource_ids = ids(&["7000098:a=frontend", "7000098:a=cart"]);
+        let from = "2026-09-06T11:00:00Z";
+        let to = Some("2026-09-06T13:00:00Z");
+
+        if suffix == "summary" {
+            run_config_changes(&targets, &resource_ids, from, to, OutputFormat::Json).await
+        } else {
+            run_config_diff(&targets, &resource_ids, from, to, OutputFormat::Json).await
+        }
+        .unwrap_or_else(|e| panic!("{suffix} should post the shared body: {e:#}"));
+    }
+}
+
+#[tokio::test]
+async fn config_changes_renders_results() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/configuration/summary")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [
+                { "resourceId": "7000098:a=frontend", "source": "OTEL", "outcome": "changed",
+                  "lastChange": "2026-09-06T12:43:20Z", "changeCount": 7 },
+                { "resourceId": "7000098:a=cart", "source": "OTEL", "outcome": "created",
+                  "lastChange": "2026-09-06T11:10:00Z", "changeCount": 1 }
+            ]
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_config_changes(
+            &targets,
+            &ids(&["7000098:a=frontend"]),
+            "now-1d",
+            None,
+            output,
+        )
+        .await
+        .expect("summary results should render");
+    }
+}
+
+/// An empty list is the "nothing changed" answer, since a resource that did not
+/// change is absent rather than listed.
+#[tokio::test]
+async fn config_changes_renders_an_empty_result() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/configuration/summary")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_config_changes(
+            &targets,
+            &ids(&["7000098:a=frontend"]),
+            "now-1d",
+            None,
+            output,
+        )
+        .await
+        .expect("no changes is a result, not an error");
+    }
+}
+
+#[tokio::test]
+async fn config_diff_renders_every_outcome() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/configuration/diff")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [
+                { "resourceId": "7000098:a=frontend", "source": "OTEL", "outcome": "changed",
+                  "comparedFrom": "2026-09-05T09:20:00Z", "comparedTo": "2026-09-06T11:59:01Z",
+                  "changes": [
+                      { "field": "spec.replicas", "before": 3, "after": 10 },
+                      { "field": "spec.sidecar", "before": null, "after": { "image": "x" } }
+                  ] },
+                { "resourceId": "7000098:a=cart", "source": "OTEL", "outcome": "unchanged",
+                  "comparedFrom": null, "comparedTo": null, "changes": [] },
+                { "resourceId": "7000098:a=api", "source": "OTEL",
+                  "outcome": "priorStateUnavailable",
+                  "comparedFrom": null, "comparedTo": "2026-09-06T11:59:01Z", "changes": [] }
+            ]
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_config_diff(
+            &targets,
+            &ids(&["7000098:a=frontend"]),
+            "now-1d",
+            None,
+            output,
+        )
+        .await
+        .expect("every outcome should render");
+    }
+}
+
+#[tokio::test]
+async fn config_commands_reject_bad_input_before_any_request() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let one = ids(&["7000098:a=frontend"]);
+    let over_cap: Vec<String> = (0..101).map(|i| format!("7000098:a=r{i}")).collect();
+
+    // Inverted window, unparseable time, and more ids than the API reads.
+    run_config_changes(&targets, &one, "now-1d", Some("now-7d"), OutputFormat::Json)
+        .await
+        .expect_err("an inverted window must be refused");
+    run_config_diff(&targets, &one, "half past four", None, OutputFormat::Json)
+        .await
+        .expect_err("an unparseable --from must be refused");
+    run_config_changes(&targets, &over_cap, "now-1d", None, OutputFormat::Json)
+        .await
+        .expect_err("101 ids must be refused");
+}
+
+/// A resource id is scoped to one team, so these cannot fan out either.
+#[tokio::test]
+async fn config_commands_reject_multiple_profiles() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![
+        common::test_target("prod", &server.uri()),
+        common::test_target("staging", &server.uri()),
+    ];
+    let one = ids(&["7000098:a=frontend"]);
+
+    for (name, err) in [
+        (
+            "config-changes",
+            run_config_changes(&targets, &one, "now-1d", None, OutputFormat::Json)
+                .await
+                .expect_err("config-changes must reject multiple profiles"),
+        ),
+        (
+            "config-diff",
+            run_config_diff(&targets, &one, "now-1d", None, OutputFormat::Json)
+                .await
+                .expect_err("config-diff must reject multiple profiles"),
+        ),
+    ] {
+        let msg = format!("{err:#}");
+        assert!(msg.contains(name), "got: {msg}");
+        assert!(msg.contains("single profile"), "got: {msg}");
     }
 }
 

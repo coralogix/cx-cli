@@ -138,6 +138,62 @@ fn infra_raw_data_at_a_timestamp() {
     assert!(v.get("raw_data").is_some(), "no raw_data key: {v}");
 }
 
+/// A sweep over a real resource. An empty result is a valid answer: it means
+/// nothing changed in the window, so only exit 0 and the row shape are checked.
+#[test]
+#[ignore]
+fn infra_config_changes() {
+    if harness::require_creds("infra_config_changes").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!("[e2e] skipping infra_config_changes: no resources on test team");
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "config-changes",
+        "--resource-id",
+        &id,
+        "--from",
+        "now-7d",
+        "-o",
+        "json",
+    ]);
+    let rows = v.as_array().expect("config-changes should emit an array");
+    for row in rows {
+        assert!(row.get("resource_id").is_some(), "no resource_id: {row}");
+        assert!(row.get("outcome").is_some(), "no outcome: {row}");
+    }
+}
+
+/// The diff answers for every resource asked about, including unchanged ones,
+/// so this one does expect rows.
+#[test]
+#[ignore]
+fn infra_config_diff() {
+    if harness::require_creds("infra_config_diff").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!("[e2e] skipping infra_config_diff: no resources on test team");
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "config-diff",
+        "--resource-id",
+        &id,
+        "--from",
+        "now-7d",
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "outcome", "changes"]);
+}
+
 /// Discover a (category, type) pair from `infra resources types`. Cached so
 /// multiple tests don't each pay for the call.
 fn discover_category_type() -> Option<(String, String)> {

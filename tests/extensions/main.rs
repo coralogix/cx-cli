@@ -2,7 +2,7 @@
 mod common;
 
 use serde_json::json;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::extensions::{run_deployed, run_list};
@@ -20,6 +20,7 @@ async fn list_extensions_from_mock() {
 
     Mock::given(method("POST"))
         .and(path("/mgmt/openapi/5/integrations/extensions/v1"))
+        .and(body_json(json!({})))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)

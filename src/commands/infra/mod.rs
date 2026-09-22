@@ -9,8 +9,9 @@ pub mod api;
 mod legacy;
 
 use api::{
-    BoolFilter, CategoryType, FieldMatch, Filter, FilterDescriptor, GetResourcesResponse,
-    HealthHistoryEntry, HealthPolicyData, InfraApi, ListResourcesParams, Op, ResourceData,
+    BoolFilter, CategoryType, ConfigChangesParams, FieldChangeData, FieldMatch, Filter,
+    FilterDescriptor, GetResourcesResponse, HealthHistoryEntry, HealthPolicyData, InfraApi,
+    ListResourcesParams, Op, ResourceChangeData, ResourceData, ResourceDiffData,
     ResourceHealthHistory, ResourceTypeMapping,
 };
 
@@ -421,7 +422,214 @@ pub async fn run_raw_data(
     Ok(())
 }
 
+/// `cx infra resources config-changes` - which of these resources changed over
+/// the window, most recent first. Single-profile by construction.
+pub async fn run_config_changes(
+    targets: &[Arc<ExecutionTarget>],
+    resource_ids: &[String],
+    from: &str,
+    to: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let (resource_ids, from, to) = change_window(resource_ids, from, to)?;
+    let target = single_target(targets, "config-changes")?;
+
+    eprintln!(
+        "{}",
+        format!(
+            "Checking {} resource(s) for configuration changes...",
+            resource_ids.len()
+        )
+        .dimmed()
+    );
+
+    let params = ConfigChangesParams {
+        from: &from,
+        to: &to,
+        resource_ids: &resource_ids,
+    };
+    let resp = InfraApi::new(&target.client)
+        .config_changes(&params)
+        .await
+        .with_context(|| format!("profile '{}' failed", target.profile_name))?;
+    let results = resp.results;
+
+    match output {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let rows: Vec<Value> = results.iter().map(change_to_json).collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if results.is_empty() {
+                render::print_no_results("No configuration changes in this window.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = results
+                .iter()
+                .map(|r| {
+                    vec![
+                        target.profile_name.clone(),
+                        display_or_dash(r.resource_id.as_deref()),
+                        display_or_dash(r.source.as_deref()),
+                        display_or_dash(r.outcome.as_deref()),
+                        display_or_dash(r.last_change.as_deref()),
+                        r.change_count
+                            .map_or_else(|| "-".to_string(), |c| c.to_string()),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["Resource", "Source", "Outcome", "Last Change", "Changes"],
+                rows,
+                false,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// `cx infra resources config-diff` - what changed, field by field. Single-profile by construction.
+pub async fn run_config_diff(
+    targets: &[Arc<ExecutionTarget>],
+    resource_ids: &[String],
+    from: &str,
+    to: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let (resource_ids, from, to) = change_window(resource_ids, from, to)?;
+    let target = single_target(targets, "config-diff")?;
+
+    eprintln!(
+        "{}",
+        format!(
+            "Comparing configurations for {} resource(s)...",
+            resource_ids.len()
+        )
+        .dimmed()
+    );
+
+    let params = ConfigChangesParams {
+        from: &from,
+        to: &to,
+        resource_ids: &resource_ids,
+    };
+    let resp = InfraApi::new(&target.client)
+        .config_diff(&params)
+        .await
+        .with_context(|| format!("profile '{}' failed", target.profile_name))?;
+    let results = resp.results;
+
+    match output {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let rows: Vec<Value> = results.iter().map(diff_to_json).collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if results.is_empty() {
+                render::print_no_results("No configurations to compare in this window.");
+                return Ok(());
+            }
+            let rows = diff_table(&results, &target.profile_name);
+            render::render_table(
+                &["Resource", "Source", "Outcome", "Field", "Before", "After"],
+                rows,
+                false,
+            );
+        }
+    }
+
+    Ok(())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Validates the resources and window the two configuration-change endpoints
+/// share. `to` defaults to now.
+fn change_window<'i>(
+    resource_ids: &'i [String],
+    from: &str,
+    to: Option<&str>,
+) -> Result<(Vec<&'i str>, String, String)> {
+    let resource_ids = require_resource_ids(resource_ids)?;
+    let from = crate::time::parse_timestamp_nanos(require_non_empty(from, "--from")?)?;
+    let to = match to {
+        Some(to) => crate::time::parse_timestamp_nanos(require_non_empty(to, "--to")?)?,
+        None => crate::time::parse_timestamp_nanos("now")?,
+    };
+
+    // The API refuses this too
+    if to < from {
+        bail!("--to ({to}) is earlier than --from ({from})");
+    }
+    Ok((resource_ids, from, to))
+}
+
+/// One table row per field change, with the resource repeated down the group.
+fn diff_table(results: &[ResourceDiffData], profile: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    for result in results {
+        let head = [
+            profile.to_string(),
+            display_or_dash(result.resource_id.as_deref()),
+            display_or_dash(result.source.as_deref()),
+            display_or_dash(result.outcome.as_deref()),
+        ];
+        if result.changes.is_empty() {
+            let mut row = head.to_vec();
+            row.extend(["-".to_string(), "-".to_string(), "-".to_string()]);
+            rows.push(row);
+            continue;
+        }
+        for change in &result.changes {
+            let mut row = head.to_vec();
+            row.push(display_or_dash(change.field.as_deref()));
+            row.push(render_change_value(&change.before));
+            row.push(render_change_value(&change.after));
+            rows.push(row);
+        }
+    }
+    rows
+}
+
+/// JSON `null` prints as `null` rather than a dash, because a field set to null
+/// and a field that is absent are different changes.
+fn render_change_value(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn change_to_json(item: &ResourceChangeData) -> Value {
+    json!({
+        "resource_id": item.resource_id,
+        "source": item.source,
+        "outcome": item.outcome,
+        "last_change": item.last_change,
+        "change_count": item.change_count,
+    })
+}
+
+fn diff_to_json(item: &ResourceDiffData) -> Value {
+    let changes: Vec<Value> = item.changes.iter().map(field_change_to_json).collect();
+    json!({
+        "resource_id": item.resource_id,
+        "source": item.source,
+        "outcome": item.outcome,
+        "compared_from": item.compared_from,
+        "compared_to": item.compared_to,
+        "changes": changes,
+    })
+}
+
+fn field_change_to_json(item: &FieldChangeData) -> Value {
+    json!({
+        "field": item.field,
+        "before": item.before,
+        "after": item.after,
+    })
+}
 
 /// Renders merged JSON rows for the two machine formats.
 ///
@@ -1784,6 +1992,128 @@ mod tests {
         let results = [history(None, &[("2026-07-01T00:00:00Z", "Healthy")])];
         let rows = flat_map_history(&results, |resource, _| resource.to_string());
         assert_eq!(rows, vec!["-".to_string()]);
+    }
+
+    fn change(field: &str, before: Value, after: Value) -> FieldChangeData {
+        FieldChangeData {
+            field: Some(field.to_string()),
+            before,
+            after,
+        }
+    }
+
+    fn diff(outcome: &str, changes: Vec<FieldChangeData>) -> ResourceDiffData {
+        ResourceDiffData {
+            resource_id: Some("7000098:a=frontend".to_string()),
+            source: Some("OTEL".to_string()),
+            outcome: Some(outcome.to_string()),
+            compared_from: None,
+            compared_to: None,
+            changes,
+        }
+    }
+
+    #[test]
+    fn diff_table_repeats_the_resource_down_its_changes() {
+        let results = [diff(
+            "changed",
+            vec![
+                change("spec.replicas", json!(3), json!(10)),
+                change("spec.image", json!("shop:1.4.0"), json!("shop:1.5.0")),
+            ],
+        )];
+        let rows = diff_table(&results, "p");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0][1], "7000098:a=frontend");
+        assert_eq!(rows[1][1], "7000098:a=frontend");
+        assert_eq!(rows[0][4], "spec.replicas");
+        assert_eq!(rows[1][4], "spec.image");
+    }
+
+    /// `unchanged` and `created` are answers about a resource. Dropping them
+    /// would report on fewer resources than the API replied about.
+    #[test]
+    fn diff_table_keeps_an_outcome_that_carries_no_changes() {
+        let rows = diff_table(&[diff("unchanged", vec![])], "p");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0][3], "unchanged");
+        assert_eq!(rows[0][4..], ["-", "-", "-"]);
+    }
+
+    /// Strings print bare so a table stays readable; everything else keeps its
+    /// JSON form so a number is not confused with the string of that number.
+    #[test]
+    fn change_values_render_by_type() {
+        assert_eq!(render_change_value(&json!("shop:1.5.0")), "shop:1.5.0");
+        assert_eq!(render_change_value(&json!(10)), "10");
+        assert_eq!(render_change_value(&json!(true)), "true");
+        assert_eq!(
+            render_change_value(&json!({ "image": "x" })),
+            r#"{"image":"x"}"#
+        );
+    }
+
+    /// A field set to null and a field that is absent are different changes, so
+    /// null must not render as the dash that means "missing".
+    #[test]
+    fn a_null_change_value_renders_as_null() {
+        assert_eq!(render_change_value(&Value::Null), "null");
+    }
+
+    #[test]
+    fn diff_json_keeps_the_raw_types_of_both_sides() {
+        let results = diff(
+            "changed",
+            vec![
+                change("spec.replicas", json!(3), json!(10)),
+                change("spec.paused", json!(false), json!(true)),
+            ],
+        );
+        let v = diff_to_json(&results);
+
+        assert_eq!(v["changes"][0]["before"], json!(3));
+        assert_eq!(v["changes"][0]["after"], json!(10));
+        assert_eq!(v["changes"][1]["before"], json!(false));
+        assert_eq!(v["outcome"], "changed");
+    }
+
+    #[test]
+    fn change_window_defaults_to_now_and_keeps_nanoseconds() {
+        let given = ids(&["id-1"]);
+        let (kept, from, to) =
+            change_window(&given, "2026-09-06T11:00:00.137128537Z", None).unwrap();
+
+        assert_eq!(kept, vec!["id-1"]);
+        assert_eq!(from, "2026-09-06T11:00:00.137128537Z");
+        assert!(to.ends_with('Z'), "got: {to}");
+        assert!(to > from, "an unset --to should resolve to now");
+    }
+
+    /// The API refuses this too; catching it here names the flags instead of
+    /// spending a request to be told.
+    #[test]
+    fn change_window_rejects_an_inverted_window() {
+        let err = change_window(&ids(&["id-1"]), "now-1d", Some("now-7d")).unwrap_err();
+        assert!(err.to_string().contains("--to"), "got: {err}");
+        assert!(err.to_string().contains("--from"), "got: {err}");
+    }
+
+    #[test]
+    fn change_window_accepts_a_window_of_zero_width() {
+        let at = "2026-09-06T11:00:00Z";
+        assert!(change_window(&ids(&["id-1"]), at, Some(at)).is_ok());
+    }
+
+    #[test]
+    fn change_window_rejects_a_bad_time_and_an_over_long_id_list() {
+        assert!(change_window(&ids(&["id-1"]), "half past four", None).is_err());
+
+        let over_cap: Vec<String> = (0..MAX_RESOURCE_IDS + 1)
+            .map(|i| format!("id-{i}"))
+            .collect();
+        let err = change_window(&over_cap, "now-1d", None).unwrap_err();
+        assert!(err.to_string().contains("at most 100"), "got: {err}");
     }
 
     fn policy(name: &str, status: &str) -> HealthPolicyData {

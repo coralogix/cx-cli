@@ -109,8 +109,52 @@ pub struct GetRawDataResponse {
     pub version_timestamp: Option<String>,
 }
 
-/// Scope and page window for [`InfraApi::list`]. Everything but the window
-/// travels in the request body.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummarizeConfigChangesResponse {
+    #[serde(default)]
+    pub results: Vec<ResourceChangeData>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceChangeData {
+    pub resource_id: Option<String>,
+    pub source: Option<String>,
+    pub outcome: Option<String>,
+    pub last_change: Option<String>,
+    pub change_count: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffConfigChangesResponse {
+    #[serde(default)]
+    pub results: Vec<ResourceDiffData>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceDiffData {
+    pub resource_id: Option<String>,
+    pub source: Option<String>,
+    pub outcome: Option<String>,
+    pub compared_from: Option<String>,
+    pub compared_to: Option<String>,
+    #[serde(default)]
+    pub changes: Vec<FieldChangeData>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FieldChangeData {
+    pub field: Option<String>,
+    /// Raw JSON, so numbers and booleans survive rather than becoming strings.
+    #[serde(default)]
+    pub before: Value,
+    #[serde(default)]
+    pub after: Value,
+}
+
 pub struct ListResourcesParams<'p> {
     pub category: Option<&'p str>,
     pub resource_type: Option<&'p str>,
@@ -155,6 +199,14 @@ struct ResourceIdsBody<'p> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ConfigChangesBody<'p> {
+    from: &'p str,
+    to: &'p str,
+    resource_ids: &'p [&'p str],
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ListResourcesBody<'p> {
     #[serde(skip_serializing_if = "Option::is_none")]
     category: Option<&'p str>,
@@ -178,6 +230,22 @@ const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
 /// pass ids exactly as returned by `list`.
 pub fn encode_resource_id(resource_id: &str) -> String {
     utf8_percent_encode(resource_id, PATH_SEGMENT_ENCODE_SET).to_string()
+}
+
+pub struct ConfigChangesParams<'p> {
+    pub from: &'p str,
+    pub to: &'p str,
+    pub resource_ids: &'p [&'p str],
+}
+
+impl ConfigChangesParams<'_> {
+    fn to_body(&self) -> Result<Value> {
+        Ok(serde_json::to_value(ConfigChangesBody {
+            from: self.from,
+            to: self.to,
+            resource_ids: self.resource_ids,
+        })?)
+    }
 }
 
 pub struct InfraApi<'a> {
@@ -245,6 +313,26 @@ impl<'a> InfraApi<'a> {
         let path = format!("{BASE_PATH}/health-history");
         let body = serde_json::to_value(ResourceIdsBody { resource_ids })?;
         self.client.post(&path, &body).await
+    }
+
+    /// Which of these resources changed over the window, most recent first.
+    /// A resource that did not change is absent from the answer.
+    pub async fn config_changes(
+        &self,
+        params: &ConfigChangesParams<'_>,
+    ) -> Result<SummarizeConfigChangesResponse> {
+        let path = format!("{BASE_PATH}/configuration/summary");
+        self.client.post(&path, &params.to_body()?).await
+    }
+
+    /// What changed in each resource's configuration over the window, field by
+    /// field.
+    pub async fn config_diff(
+        &self,
+        params: &ConfigChangesParams<'_>,
+    ) -> Result<DiffConfigChangesResponse> {
+        let path = format!("{BASE_PATH}/configuration/diff");
+        self.client.post(&path, &params.to_body()?).await
     }
 
     /// Get the raw resource document for one resource.
@@ -609,6 +697,123 @@ mod tests {
         assert_eq!(
             serde_json::to_string(columns).unwrap(),
             r#"{"availability_zone":"us-east-1a","instance_type":"m5.large","region":"us-east-1","state":"running"}"#
+        );
+    }
+
+    #[test]
+    fn deserialize_summarize_config_changes_response() {
+        let json = json!({
+            "results": [
+                { "resourceId": "7000098:a=frontend", "source": "OTEL",
+                  "outcome": "changed", "lastChange": "2026-09-06T12:43:20Z", "changeCount": 7 },
+                { "resourceId": "7000098:a=cart", "source": "OTEL",
+                  "outcome": "created", "lastChange": "2026-09-06T11:10:00Z", "changeCount": 1 }
+            ]
+        });
+
+        let resp: SummarizeConfigChangesResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.results.len(), 2);
+        assert_eq!(resp.results[0].outcome.as_deref(), Some("changed"));
+        assert_eq!(resp.results[0].change_count, Some(7));
+        assert_eq!(resp.results[1].outcome.as_deref(), Some("created"));
+    }
+
+    /// A resource that did not change is absent, so an empty list is the normal
+    /// "nothing changed" answer rather than a failure.
+    #[test]
+    fn deserialize_empty_summarize_response() {
+        let resp: SummarizeConfigChangesResponse = serde_json::from_value(json!({})).unwrap();
+        assert!(resp.results.is_empty());
+    }
+
+    #[test]
+    fn deserialize_diff_config_changes_response() {
+        let json = json!({
+            "results": [{
+                "resourceId": "7000098:a=frontend",
+                "source": "OTEL",
+                "outcome": "changed",
+                "comparedFrom": "2026-09-05T09:20:00Z",
+                "comparedTo": "2026-09-06T11:59:01Z",
+                "changes": [
+                    { "field": "spec.replicas", "before": 3, "after": 10 },
+                    { "field": "spec.containers[app].image",
+                      "before": "shop:1.4.0", "after": "shop:1.5.0" },
+                    { "field": "spec.paused", "before": false, "after": true }
+                ]
+            }]
+        });
+
+        let resp: DiffConfigChangesResponse = serde_json::from_value(json).unwrap();
+        let diff = &resp.results[0];
+        assert_eq!(diff.compared_from.as_deref(), Some("2026-09-05T09:20:00Z"));
+        assert_eq!(diff.changes.len(), 3);
+
+        // Raw JSON, so a number stays a number and a bool stays a bool.
+        assert_eq!(diff.changes[0].before, json!(3));
+        assert_eq!(diff.changes[0].after, json!(10));
+        assert_eq!(diff.changes[1].after, json!("shop:1.5.0"));
+        assert_eq!(diff.changes[2].before, json!(false));
+    }
+
+    /// `comparedFrom` / `comparedTo` are null where there is no such version,
+    /// and an outcome can carry no changes at all.
+    #[test]
+    fn deserialize_diff_without_a_comparison() {
+        let json = json!({
+            "results": [{
+                "resourceId": "7000098:a=cart",
+                "source": "OTEL",
+                "outcome": "created",
+                "comparedFrom": null,
+                "comparedTo": "2026-09-06T11:59:01Z",
+                "changes": []
+            }]
+        });
+
+        let resp: DiffConfigChangesResponse = serde_json::from_value(json).unwrap();
+        let diff = &resp.results[0];
+        assert!(diff.compared_from.is_none());
+        assert!(diff.changes.is_empty());
+        assert_eq!(diff.outcome.as_deref(), Some("created"));
+    }
+
+    /// A field set to JSON null is a real value, not a missing one, so an added
+    /// or removed field must survive rather than deserialize into nothing.
+    #[test]
+    fn deserialize_field_change_with_a_null_side() {
+        let json = json!({
+            "results": [{
+                "resourceId": "7000098:a=frontend",
+                "outcome": "changed",
+                "changes": [{ "field": "spec.sidecar", "before": null, "after": { "image": "x" } }]
+            }]
+        });
+
+        let resp: DiffConfigChangesResponse = serde_json::from_value(json).unwrap();
+        let change = &resp.results[0].changes[0];
+        assert_eq!(change.before, Value::Null);
+        assert_eq!(change.after, json!({ "image": "x" }));
+    }
+
+    /// The API declares `deny_unknown_fields`, so all three keys have to be
+    /// spelled exactly this way or every request is a 400.
+    #[test]
+    fn serialize_config_changes_body() {
+        let ids = ["7000098:a=frontend", "7000098:a=cart"];
+        let params = ConfigChangesParams {
+            from: "2026-09-06T11:00:00.000000000Z",
+            to: "2026-09-06T13:00:00.000000000Z",
+            resource_ids: &ids[..],
+        };
+
+        assert_eq!(
+            params.to_body().unwrap(),
+            json!({
+                "from": "2026-09-06T11:00:00.000000000Z",
+                "to": "2026-09-06T13:00:00.000000000Z",
+                "resourceIds": ["7000098:a=frontend", "7000098:a=cart"]
+            })
         );
     }
 

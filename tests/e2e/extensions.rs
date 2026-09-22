@@ -6,8 +6,9 @@ fn extensions_list() {
     if harness::require_creds("extensions_list").is_none() {
         return;
     }
+    // The public catalog can be empty. Hidden extensions stay out of this list.
     let v = harness::run_ok_json(&["integrations", "extensions", "list", "-o", "json"]);
-    harness::assert_nonempty_array_of_objects_with_keys(&v, &["id", "name"]);
+    harness::assert_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
 #[test]

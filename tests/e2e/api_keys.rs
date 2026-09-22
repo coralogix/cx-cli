@@ -18,6 +18,11 @@ fn api_keys_get() {
     if harness::require_creds("api_keys_get").is_none() {
         return;
     }
+    // GET is denied without data-ingest-api-keys:Manage, a write permission.
+    if std::env::var_os("CX_E2E_INCLUDE_WRITES").is_none() {
+        eprintln!("[e2e] skipping api_keys_get: requires data-ingest-api-keys:Manage");
+        return;
+    }
     let id = match discover_api_key_id() {
         Some(id) => id,
         None => {

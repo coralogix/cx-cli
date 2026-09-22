@@ -25,7 +25,16 @@ fn integrations_get() {
         }
     };
     let v = harness::run_ok_json(&["integrations", "get", &id, "-o", "json"]);
-    harness::assert_get_response(&v, &["id"]);
+    // `get` returns the catalog entry plus deployments. Update and test read
+    // the id from this path, so the assertion has to follow it.
+    let got = v
+        .pointer("/integrationDetail/integration/id")
+        .and_then(|value| value.as_str());
+    assert_eq!(
+        got,
+        Some(id.as_str()),
+        "integration get id at integrationDetail.integration.id"
+    );
 }
 
 fn discover_integration_id() -> Option<String> {

@@ -224,7 +224,7 @@ impl OllyApi {
             "agent_to_agent_mode": agent_to_agent_mode
         });
         self.client
-            .post_with_headers(&path, &body, &[INTERACTION_SOURCE_HEADER])
+            .post_with_headers(&path, None, &body, &[INTERACTION_SOURCE_HEADER])
             .await
     }
 

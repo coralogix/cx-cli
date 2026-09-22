@@ -125,5 +125,191 @@ fn discover_resource_id() -> Option<String> {
         .clone()
 }
 
+#[test]
+#[ignore]
+fn infra_filters() {
+    if harness::require_creds("infra_filters").is_none() {
+        return;
+    }
+    let v = harness::run_ok_json(&["infra", "resources", "filters", "-o", "json"]);
+    harness::assert_array_of_objects_with_keys(&v, &["name", "kind", "wildcard", "types"]);
+}
+
+#[test]
+#[ignore]
+fn infra_filters_scoped_to_one_type() {
+    if harness::require_creds("infra_filters_scoped").is_none() {
+        return;
+    }
+    let Some((category, resource_type)) = discover_category_type() else {
+        eprintln!(
+            "[e2e] skipping infra_filters_scoped_to_one_type: no resource types on test team"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "filters",
+        "--category",
+        &category,
+        "--type",
+        &resource_type,
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["name", "kind", "wildcard"]);
+}
+
+#[test]
+#[ignore]
+fn infra_list_with_one_filter() {
+    if harness::require_creds("infra_list_with_one_filter").is_none() {
+        return;
+    }
+    let Some((attribute, value)) = discover_closed_set_filter() else {
+        eprintln!(
+            "[e2e] skipping infra_list_with_one_filter: no closed-set attribute on test team"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "list",
+        "--match-all",
+        &format!("{attribute}={value}"),
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["total_count", "returned_count", "resources"]);
+}
+
+#[test]
+#[ignore]
+fn infra_list_with_a_nested_filter() {
+    if harness::require_creds("infra_list_with_a_nested_filter").is_none() {
+        return;
+    }
+    let Some([(first, first_value), (second, second_value), (third, third_value)]) =
+        discover_closed_set_filters()
+    else {
+        eprintln!(
+            "[e2e] skipping infra_list_with_a_nested_filter: need three closed-set attributes"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "list",
+        "--match-all",
+        &format!("{first}={first_value}"),
+        "--match-any",
+        &format!("{second}={second_value}"),
+        "--match-any",
+        &format!("{third}={third_value}"),
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["total_count", "returned_count", "resources"]);
+}
+
+#[test]
+#[ignore]
+fn infra_list_rows_carry_their_classification() {
+    if harness::require_creds("infra_list_rows_carry_classification").is_none() {
+        return;
+    }
+    let Some((category, resource_type)) = discover_category_type() else {
+        eprintln!("[e2e] skipping infra_list_rows_carry_their_classification: no resource types");
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "list",
+        "--category",
+        &category,
+        "--type",
+        &resource_type,
+        "-o",
+        "json",
+    ]);
+    let rows = v["resources"].as_array().cloned().unwrap_or_default();
+    if rows.is_empty() {
+        eprintln!("[e2e] skipping the row assertions: {category}/{resource_type} is empty");
+        return;
+    }
+    for row in &rows {
+        assert_eq!(
+            row.get("category").and_then(|c| c.as_str()),
+            Some(category.as_str()),
+            "a pinned request still returns the category on every row, got: {row}"
+        );
+        assert_eq!(
+            row.get("type").and_then(|t| t.as_str()),
+            Some(resource_type.as_str()),
+            "a pinned request still returns the type on every row, got: {row}"
+        );
+    }
+}
+
+/// Three distinct attributes, so a nested filter can name one per flag - an
+/// attribute repeated across the two groups is refused.
+fn discover_closed_set_filters() -> Option<[(String, String); 3]> {
+    static CACHE: OnceLock<Option<[(String, String); 3]>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            harness::require_creds("infra_discover_filters_for_nesting")?;
+            let stdout = harness::run_ok(&["infra", "resources", "filters", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            let mut found: Vec<(String, String)> = Vec::new();
+            for item in v.as_array()? {
+                let Some(name) = item.get("name").and_then(|n| n.as_str()) else {
+                    continue;
+                };
+                let Some(value) = item
+                    .get("values")
+                    .and_then(|v| v.as_array())
+                    .and_then(|v| v.first())
+                    .and_then(|v| v.as_str())
+                else {
+                    continue;
+                };
+                if found.iter().any(|(seen, _)| seen == name) {
+                    continue;
+                }
+                found.push((name.to_string(), value.to_string()));
+                if found.len() == 3 {
+                    return Some([found[0].clone(), found[1].clone(), found[2].clone()]);
+                }
+            }
+            None
+        })
+        .clone()
+}
+
+fn discover_closed_set_filter() -> Option<(String, String)> {
+    static CACHE: OnceLock<Option<(String, String)>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            harness::require_creds("infra_discover_filters")?;
+            let stdout = harness::run_ok(&["infra", "resources", "filters", "-o", "json"]);
+            let v = harness::parse_json(&stdout)?;
+            v.as_array()?.iter().find_map(|item| {
+                let name = item.get("name")?.as_str()?.to_string();
+                let value = item
+                    .get("values")?
+                    .as_array()?
+                    .first()?
+                    .as_str()?
+                    .to_string();
+                Some((name, value))
+            })
+        })
+        .clone()
+}
+
 // `infra` has no mutating subcommands, so there is nothing deliberately
 // uncovered here - all four read-only subcommands are exercised above.

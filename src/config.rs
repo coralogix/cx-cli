@@ -363,7 +363,7 @@ pub struct Profile {
     /// automatically.
     ///
     /// When unset, the CLI resolves this automatically via
-    /// `GET /identity/whoami` (see `identity::resolve_team_url`). If that
+    /// `GET /identity/whoami` (see `identity::lookup_whoami`). If that
     /// lookup fails or returns no usable URL, no console link is printed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_url: Option<String>,
@@ -373,7 +373,7 @@ pub struct Profile {
     /// Coralogix" link. Like `oauth_tokens`, this is written by `cx`, not the
     /// user, and is ignored whenever an explicit `console_url` override is set.
     /// Expired after [`CONSOLE_URL_CACHE_TTL_DAYS`]; see
-    /// [`load_cached_console_url`] / [`cache_console_url`].
+    /// [`load_cached_console_url`] / [`cache_team_identity`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_console_url: Option<String>,
     /// When `cached_console_url` was last resolved. Used to expire the cache.
@@ -586,7 +586,8 @@ fn team_to_select(profile: &Profile, fallback: &str) -> String {
     }
 }
 
-/// `true` when the profile gained a team id, name, or console URL.
+/// `true` when the profile changed and is worth persisting. That includes a
+/// pure TTL refresh of an unchanged console URL, not only new values.
 fn remember_signed_in_team(profile: &mut Profile, whoami: &crate::identity::Whoami) -> bool {
     let mut changed = false;
     if let Some(id) = whoami.team_id {
@@ -879,51 +880,19 @@ pub fn load_cached_console_url(profile_name: &str) -> Option<String> {
     }
 }
 
-/// Persist a freshly-resolved team console base URL into the profile file so
-/// future invocations can skip the `GET /identity/whoami` round-trip.
+/// Persist the team from `GET /identity/whoami` into the profile file, so
+/// future invocations can skip the round-trip when printing console links and
+/// a later OAuth re-login can refuse a different team.
 ///
 /// Best-effort and silent, mirroring the OAuth-token write-back in
 /// `resolve_single`: any failure (no profile file - e.g. env-only mode - or an
-/// unwritable config dir) is ignored, since a console link is a "nice to have"
+/// unwritable config dir) is ignored, since the cache is a "nice to have"
 /// that must never fail an otherwise-successful command.
-pub fn cache_console_url(profile_name: &str, url: &str) {
-    cache_team_identity(profile_name, None, None, Some(url));
-}
-
-/// Persist the team from `GET /identity/whoami` so a later OAuth re-login can
-/// refuse a different team. Best-effort, same as [`cache_console_url`].
-pub fn cache_team_identity(
-    profile_name: &str,
-    team_id: Option<i64>,
-    team_name: Option<&str>,
-    url: Option<&str>,
-) {
+pub fn cache_team_identity(profile_name: &str, whoami: &crate::identity::Whoami) {
     let Ok(mut profile) = load_profile(profile_name) else {
         return;
     };
-    let mut changed = false;
-    if let Some(id) = team_id {
-        if profile.cached_team_id != Some(id) {
-            profile.cached_team_id = Some(id);
-            changed = true;
-        }
-    }
-    if let Some(name) = team_name.map(str::trim).filter(|name| !name.is_empty()) {
-        if profile.cached_team_name.as_deref() != Some(name) {
-            profile.cached_team_name = Some(name.to_string());
-            changed = true;
-        }
-    }
-    if let Some(url) = url.map(normalize_team_url).filter(|url| !url.is_empty()) {
-        if profile.cached_console_url.as_deref() != Some(url) {
-            profile.cached_console_url = Some(url.to_string());
-        }
-        // The TTL is what skips the next whoami. An unchanged URL still has
-        // to refresh it, or a lapsed cache stays cold forever.
-        profile.cached_console_url_at = Some(Utc::now());
-        changed = true;
-    }
-    if changed {
+    if remember_signed_in_team(&mut profile, whoami) {
         let _ = save_profile(profile_name, &profile);
     }
 }
@@ -1551,12 +1520,15 @@ api_key = "mykey"
 
     #[test]
     #[ignore = "requires write access to ~/.cx; run with `cargo test -- --ignored`"]
-    fn cache_console_url_round_trips() {
+    fn cache_team_identity_round_trips() {
         let name = "cx_inttest_console_cache_roundtrip";
-        // Seed a profile so cache_console_url has a file to write into.
+        // Seed a profile so cache_team_identity has a file to write into.
         save_profile(name, &profile_with_cache(None)).unwrap();
 
-        cache_console_url(name, "https://fresh.app.eu2.coralogix.com");
+        cache_team_identity(
+            name,
+            &whoami(Some(12), "c4c", Some("https://fresh.app.eu2.coralogix.com")),
+        );
         assert_eq!(
             load_cached_console_url(name),
             Some("https://fresh.app.eu2.coralogix.com".to_string())

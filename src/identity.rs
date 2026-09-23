@@ -14,8 +14,8 @@ pub struct Whoami {
     pub team_name: Option<String>,
     pub user_name: Option<String>,
     /// The team's web console base URL, e.g.
-    /// `"https://my-team.app.eu2.coralogix.com"`. Used as-is (see
-    /// [`resolve_team_url`]) to build "View in Coralogix" console links.
+    /// `"https://my-team.app.eu2.coralogix.com"`. Used to build "View in
+    /// Coralogix" console links (see `ExecutionTarget::console_base`).
     #[serde(default)]
     pub team_url: Option<String>,
 }
@@ -81,27 +81,6 @@ pub async fn lookup_whoami(client: &CxClient) -> Option<Whoami> {
     client.get(WHOAMI_BASE, &[]).await.ok()
 }
 
-/// Resolve the team's web console base URL used to build "View in
-/// Coralogix" console links, via `GET /identity/whoami`. This is the
-/// default automatic resolution path, used whenever a profile hasn't set an
-/// explicit `console_url` override (see `docs/configuration.md#console-links`).
-///
-/// Returns `whoami.team_url` verbatim, with any trailing slash trimmed.
-///
-/// Best-effort: any failure (network, auth, missing/empty field) returns
-/// `None` rather than an error, since a console link is a "nice to have" -
-/// it must never cause an otherwise-successful create/edit command to fail.
-pub async fn resolve_team_url(client: &CxClient) -> Option<String> {
-    let whoami = lookup_whoami(client).await?;
-    let url = whoami.team_url?;
-    let trimmed = url.trim_end_matches('/');
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,7 +124,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_team_url_returns_team_url_verbatim() {
+    async fn lookup_whoami_returns_whoami_on_success() {
         install_rustls_provider();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -159,47 +138,12 @@ mod tests {
             .await;
 
         let client = CxClient::new(server.uri(), "test-key").unwrap();
+        let whoami = lookup_whoami(&client).await.expect("whoami should succeed");
+        assert_eq!(whoami.team_id, Some(1));
         assert_eq!(
-            resolve_team_url(&client).await,
-            Some("https://c4c.app.eu2.coralogix.com".to_string())
+            whoami.team_url.as_deref(),
+            Some("https://c4c.app.eu2.coralogix.com")
         );
-    }
-
-    #[tokio::test]
-    async fn resolve_team_url_trims_trailing_slash() {
-        install_rustls_provider();
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/identity/whoami"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "team_id": 1,
-                "team_url": "https://c4c.app.eu2.coralogix.com/"
-            })))
-            .mount(&server)
-            .await;
-
-        let client = CxClient::new(server.uri(), "test-key").unwrap();
-        assert_eq!(
-            resolve_team_url(&client).await,
-            Some("https://c4c.app.eu2.coralogix.com".to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn resolve_team_url_none_when_team_url_absent() {
-        install_rustls_provider();
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/identity/whoami"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "team_id": 1,
-                "team_name": "C4C"
-            })))
-            .mount(&server)
-            .await;
-
-        let client = CxClient::new(server.uri(), "test-key").unwrap();
-        assert_eq!(resolve_team_url(&client).await, None);
     }
 
     #[tokio::test]
@@ -268,7 +212,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_team_url_none_when_whoami_fails() {
+    async fn lookup_whoami_none_when_whoami_fails() {
         install_rustls_provider();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -278,6 +222,6 @@ mod tests {
             .await;
 
         let client = CxClient::new(server.uri(), "test-key").unwrap();
-        assert_eq!(resolve_team_url(&client).await, None);
+        assert!(lookup_whoami(&client).await.is_none());
     }
 }

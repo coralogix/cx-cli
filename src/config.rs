@@ -520,35 +520,63 @@ fn normalize_team_url(url: &str) -> &str {
     url.trim().trim_end_matches('/')
 }
 
+/// A browser sign-in that landed in a different team than the profile last
+/// used. Split into parts so the interactive path can print the explanation,
+/// ask about a retry naming `select`, and reserve `recovery` for giving up.
+struct TeamConflict {
+    /// What mismatched, e.g. "Signed in to team 'other' (id 99), but profile
+    /// 'default' was last used with team 'c4c' (id 12)."
+    explanation: String,
+    /// The team the retry (or `cx profiles add`) should pick, as a display
+    /// label: "team 'c4c' (id 12)", "team id 12", or a console URL.
+    select: String,
+    /// The give-up instruction: tokens were not saved, re-run `cx profiles
+    /// add` and pick `select`.
+    recovery: String,
+}
+
+impl std::fmt::Display for TeamConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}\n{}", self.explanation, self.recovery)
+    }
+}
+
 /// `Some` when this sign-in is a different team than the profile last used.
 /// `None` when it matches, or when the profile has no recorded team yet.
 fn reauth_team_conflict(
     profile_name: &str,
     profile: &Profile,
     whoami: &crate::identity::Whoami,
-) -> Option<String> {
+) -> Option<TeamConflict> {
     let signed_in = whoami.team_name.as_deref().unwrap_or("unknown");
-    let not_saved = |original: &str| {
-        format!(
-            "Tokens were not saved. Run `cx profiles add {profile_name}` and select {original}."
-        )
+    let conflict = |explanation: String, select: String| TeamConflict {
+        explanation,
+        recovery: format!(
+            "Tokens were not saved. Run `cx profiles add {profile_name}` and select {select}."
+        ),
+        select,
     };
     if let Some(previous_id) = profile.cached_team_id {
         let original = team_to_select(profile, &format!("team id {previous_id}"));
-        let recovery = not_saved(&original);
         return match whoami.team_id {
             Some(id) if id == previous_id => None,
-            Some(id) => Some(format!(
-                "Signed in to team '{signed_in}' (id {id}), but profile '{profile_name}' was last used with {original}.\n{recovery}"
+            Some(id) => Some(conflict(
+                format!(
+                    "Signed in to team '{signed_in}' (id {id}), but profile '{profile_name}' was last used with {original}."
+                ),
+                original,
             )),
-            None => Some(format!(
-                "Sign-in did not report a team id, so it was not saved for profile '{profile_name}'.\n{recovery}"
+            None => Some(conflict(
+                format!(
+                    "Sign-in did not report a team id, so it was not saved for profile '{profile_name}'."
+                ),
+                original,
             )),
         };
     }
     let previous_url = profile.cached_console_url.as_deref()?;
     let previous_url = normalize_team_url(previous_url);
-    let recovery = not_saved(&team_to_select(profile, previous_url));
+    let select = team_to_select(profile, previous_url);
     match whoami
         .team_url
         .as_deref()
@@ -556,11 +584,17 @@ fn reauth_team_conflict(
         .filter(|url| !url.is_empty())
     {
         Some(url) if url == previous_url => None,
-        Some(url) => Some(format!(
-            "Signed in to team '{signed_in}' ({url}), but profile '{profile_name}' was last used with {previous_url}.\n{recovery}"
+        Some(url) => Some(conflict(
+            format!(
+                "Signed in to team '{signed_in}' ({url}), but profile '{profile_name}' was last used with {previous_url}."
+            ),
+            select,
         )),
-        None => Some(format!(
-            "Sign-in did not report a team, so it was not saved for profile '{profile_name}'.\n{recovery}"
+        None => Some(conflict(
+            format!(
+                "Sign-in did not report a team, so it was not saved for profile '{profile_name}'."
+            ),
+            select,
         )),
     }
 }
@@ -733,29 +767,52 @@ async fn resolve_single(
                     (bearer, refreshed, persist)
                 }
                 Err(error) if oauth::is_reauth_required(&error) && interactive_reauth_allowed() => {
-                    // The refresh token is missing or rejected. Sign in once in
-                    // the browser, keep the tokens only when they are for the
-                    // same team, and continue this command.
+                    // The refresh token is missing or rejected. Sign in in the
+                    // browser, keep the tokens only when they are for the same
+                    // team, and continue this command. A wrong-team sign-in
+                    // offers another browser round instead of stopping at
+                    // "run cx profiles add".
                     eprintln!(
                         "OAuth session for profile '{profile_name}' expired. Sign in to continue."
                     );
-                    let tokens = oauth::browser_login(&base_url, &client_id).await?;
-                    let client = crate::api_client::CxClient::new(
-                        profile.region.api_endpoint(),
-                        &tokens.access_token,
-                    )?;
-                    let whoami = crate::identity::verify_identity(&client).await.context(
-                        "Could not confirm which team this sign-in belongs to, so the new tokens were not saved.",
-                    )?;
-                    // A `--region` override talks to a different endpoint for
-                    // this command. Its team must not be written onto the
-                    // profile, and neither must the overridden region.
-                    if !region_overridden {
-                        if let Some(conflict) =
-                            reauth_team_conflict(profile_name, &profile, &whoami)
-                        {
-                            anyhow::bail!("{conflict}");
+                    let mut force_account_selection = false;
+                    let (tokens, whoami) = loop {
+                        let tokens =
+                            oauth::browser_login(&base_url, &client_id, force_account_selection)
+                                .await?;
+                        let client = crate::api_client::CxClient::new(
+                            profile.region.api_endpoint(),
+                            &tokens.access_token,
+                        )?;
+                        let whoami = crate::identity::verify_identity(&client).await.context(
+                            "Could not confirm which team this sign-in belongs to, so the new tokens were not saved.",
+                        )?;
+                        // A `--region` override talks to a different endpoint
+                        // for this command. Its team must not be checked
+                        // against or written onto the profile.
+                        if region_overridden {
+                            break (tokens, whoami);
                         }
+                        let Some(conflict) = reauth_team_conflict(profile_name, &profile, &whoami)
+                        else {
+                            break (tokens, whoami);
+                        };
+                        eprintln!("{}", conflict.explanation);
+                        let retry = inquire::Confirm::new(&format!(
+                            "Sign in again and select {}?",
+                            conflict.select
+                        ))
+                        .with_default(true)
+                        .prompt()
+                        .unwrap_or(false);
+                        if !retry {
+                            anyhow::bail!("{}", conflict.recovery);
+                        }
+                        // The browser still holds the wrong team's SSO
+                        // session; ask the IdP to show the picker again.
+                        force_account_selection = true;
+                    };
+                    if !region_overridden {
                         remember_signed_in_team(&mut profile, &whoami);
                     }
                     let team = whoami.team_name.as_deref().unwrap_or("this team");
@@ -1587,7 +1644,9 @@ api_key = "mykey"
         let mut profile = profile_with_cache(None);
         profile.cached_team_id = Some(12);
         let signed_in = whoami(Some(99), "other", Some("https://other.example"));
-        let msg = reauth_team_conflict("default", &profile, &signed_in).unwrap();
+        let msg = reauth_team_conflict("default", &profile, &signed_in)
+            .unwrap()
+            .to_string();
         assert!(msg.contains("id 99"), "{msg}");
         assert!(msg.contains("team id 12"), "{msg}");
         assert!(
@@ -1597,12 +1656,42 @@ api_key = "mykey"
     }
 
     #[test]
+    fn reauth_conflict_separates_explanation_retry_label_and_recovery() {
+        let mut profile = profile_with_cache(None);
+        profile.cached_team_id = Some(12);
+        profile.cached_team_name = Some("c4c".to_string());
+        let signed_in = whoami(Some(99), "other", Some("https://other.example"));
+        let conflict = reauth_team_conflict("default", &profile, &signed_in).unwrap();
+        assert!(
+            conflict
+                .explanation
+                .contains("last used with team 'c4c' (id 12)"),
+            "{}",
+            conflict.explanation
+        );
+        assert!(
+            !conflict.explanation.contains("Tokens were not saved"),
+            "the explanation is printed before the retry prompt and must not \
+             claim the flow already gave up: {}",
+            conflict.explanation
+        );
+        assert_eq!(conflict.select, "team 'c4c' (id 12)");
+        assert!(
+            conflict.recovery.starts_with("Tokens were not saved."),
+            "{}",
+            conflict.recovery
+        );
+    }
+
+    #[test]
     fn reauth_recovery_hint_uses_the_cached_team_name() {
         let mut profile = profile_with_cache(None);
         profile.cached_team_id = Some(12);
         profile.cached_team_name = Some("c4c".to_string());
         let signed_in = whoami(Some(99), "other", Some("https://other.example"));
-        let msg = reauth_team_conflict("default", &profile, &signed_in).unwrap();
+        let msg = reauth_team_conflict("default", &profile, &signed_in)
+            .unwrap()
+            .to_string();
         assert!(
             msg.contains("Run `cx profiles add default` and select team 'c4c' (id 12)."),
             "{msg}"
@@ -1628,7 +1717,9 @@ api_key = "mykey"
             "other",
             Some("https://other.app.eu2.coralogix.com"),
         );
-        let msg = reauth_team_conflict("default", &profile, &signed_in).unwrap();
+        let msg = reauth_team_conflict("default", &profile, &signed_in)
+            .unwrap()
+            .to_string();
         assert!(msg.contains("other.app.eu2.coralogix.com"), "{msg}");
         assert!(msg.contains("cached.app.eu2.coralogix.com"), "{msg}");
     }

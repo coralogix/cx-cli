@@ -491,7 +491,16 @@ async fn do_token_refresh(
 /// 4. Opens the browser at the authorisation URL
 /// 5. Waits for the callback, validates `state`, extracts the code
 /// 6. Exchanges the code for tokens and returns them
-pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenResponse> {
+///
+/// `force_account_selection` adds `prompt=select_account` to the
+/// authorisation URL. Pass it on a retry after a wrong-team sign-in: the
+/// browser still holds the wrong team's SSO session, which would otherwise
+/// complete silently into the same team without showing the picker.
+pub async fn browser_login(
+    base_url: &str,
+    client_id: &str,
+    force_account_selection: bool,
+) -> Result<TokenResponse> {
     let oidc = fetch_openid_config(base_url).await?;
     let (verifier, challenge) = generate_pkce();
 
@@ -508,7 +517,7 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
     let redirect_uri = format!("http://localhost:{port}/callback");
 
     let scopes = SCOPES.join(" ");
-    let auth_url = format!(
+    let mut auth_url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
         oidc.authorization_endpoint,
         urlencode(client_id),
@@ -517,6 +526,9 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
         challenge,
         state,
     );
+    if force_account_selection {
+        auth_url.push_str("&prompt=select_account");
+    }
 
     // Always print the URL: when the browser can't be opened (headless run,
     // or cx driven by a coding agent), it is the user's only way in — the

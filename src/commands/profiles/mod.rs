@@ -808,7 +808,7 @@ async fn configure_oauth(
 
     // ── Browser login ──────────────────────────────────────────────────────────
     println!();
-    let tokens = oauth::browser_login(&base_url, &client_id).await?;
+    let tokens = oauth::browser_login(&base_url, &client_id, false).await?;
     println!("Login successful!");
 
     // Quick setup and non-interactive runs store tokens in the profile file,

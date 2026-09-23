@@ -36,11 +36,56 @@ pub struct ListExtensionsResponse {
     pub extensions: Vec<Extension>,
 }
 
+// The deployed endpoint returns a different shape than the catalog: items
+// have no name/deployed/updated, but carry deployment scope and a summary
+// of deployed item counts.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployedExtension {
+    #[serde(default, deserialize_with = "string_or_number")]
+    pub id: Option<String>,
+    pub version: Option<String>,
+    #[serde(default)]
+    pub applications: Vec<String>,
+    #[serde(default)]
+    pub subsystems: Vec<String>,
+    #[serde(default)]
+    pub item_ids: Vec<String>,
+    pub summary: Option<Value>,
+}
+
+impl DeployedExtension {
+    /// Total number of deployed items, summed from
+    /// `summary.deployedItemCounts`; falls back to the length of `itemIds`
+    /// when the summary is absent.
+    pub fn deployed_item_count(&self) -> Option<u64> {
+        let from_summary = self
+            .summary
+            .as_ref()
+            .and_then(|s| s.get("deployedItemCounts"))
+            .and_then(Value::as_object)
+            .map(|counts| {
+                counts
+                    .values()
+                    .filter_map(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
+                    .sum()
+            });
+        match from_summary {
+            Some(n) => Some(n),
+            None if !self.item_ids.is_empty() => Some(self.item_ids.len() as u64),
+            None => None,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListDeployedExtensionsResponse {
     #[serde(default)]
-    pub deployed_extensions: Vec<Extension>,
+    pub deployed_extensions: Vec<DeployedExtension>,
 }
 
 // --- API ---
@@ -110,9 +155,52 @@ mod tests {
 
     #[test]
     fn deserialize_deployed_response() {
-        let json = json!({ "deployedExtensions": [] });
+        // Realistic payload shape for GET .../extensions/v1/deployed: items
+        // carry id/version/scope/summary but no name/deployed/updated.
+        let json = json!({
+            "deployedExtensions": [
+                {
+                    "id": "K8sObservability",
+                    "version": "1.0.3",
+                    "applications": ["prod-eu", "staging"],
+                    "subsystems": ["kube-system"],
+                    "itemIds": ["alert-1", "dash-1", "dash-2"],
+                    "summary": {
+                        "deployedItemCounts": { "alerts": 1, "grafanaDashboards": 2 }
+                    }
+                },
+                { "id": "CoralogixSystem", "version": "0.2.1" }
+            ]
+        });
         let resp: ListDeployedExtensionsResponse = serde_json::from_value(json).unwrap();
-        assert!(resp.deployed_extensions.is_empty());
+        assert_eq!(resp.deployed_extensions.len(), 2);
+
+        let full = &resp.deployed_extensions[0];
+        assert_eq!(full.id.as_deref(), Some("K8sObservability"));
+        assert_eq!(full.version.as_deref(), Some("1.0.3"));
+        assert_eq!(full.applications, vec!["prod-eu", "staging"]);
+        assert_eq!(full.subsystems, vec!["kube-system"]);
+        assert_eq!(full.deployed_item_count(), Some(3));
+
+        let sparse = &resp.deployed_extensions[1];
+        assert_eq!(sparse.id.as_deref(), Some("CoralogixSystem"));
+        assert!(sparse.applications.is_empty());
+        assert_eq!(sparse.deployed_item_count(), None);
+    }
+
+    #[test]
+    fn deployed_item_count_handles_string_counts_and_item_ids_fallback() {
+        // Proto int64 fields can serialize as JSON strings.
+        let json = json!({
+            "id": "Ext",
+            "summary": { "deployedItemCounts": { "alerts": "4", "savedViews": 1 } }
+        });
+        let ext: DeployedExtension = serde_json::from_value(json).unwrap();
+        assert_eq!(ext.deployed_item_count(), Some(5));
+
+        let json = json!({ "id": "Ext", "itemIds": ["a", "b"] });
+        let ext: DeployedExtension = serde_json::from_value(json).unwrap();
+        assert_eq!(ext.deployed_item_count(), Some(2));
     }
 
     #[test]

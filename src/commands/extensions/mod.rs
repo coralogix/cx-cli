@@ -1,5 +1,6 @@
 pub mod api;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -10,7 +11,7 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use api::{Extension, ExtensionsApi};
+use api::{DeployedExtension, Extension, ExtensionsApi};
 
 fn extension_to_json(ext: &Extension, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
@@ -158,19 +159,61 @@ pub async fn run_get(
     Ok(())
 }
 
+fn deployed_extension_to_json(
+    ext: &DeployedExtension,
+    name: Option<&str>,
+    include_profile: bool,
+    profile: &str,
+) -> Value {
+    let mut v = json!({
+        "id": ext.id,
+        "name": name,
+        "version": ext.version,
+        "applications": ext.applications,
+        "subsystems": ext.subsystems,
+        "deployed_items": ext.deployed_item_count(),
+    });
+    if include_profile {
+        if let Value::Object(ref mut m) = v {
+            m.insert("profile".to_string(), Value::String(profile.to_string()));
+        }
+    }
+    v
+}
+
+fn list_display(items: &[String]) -> String {
+    if items.is_empty() {
+        "-".to_string()
+    } else {
+        items.join(", ")
+    }
+}
+
 pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching deployed extensions...".dimmed());
     let include_profile = targets.len() > 1;
 
     let per_profile = fan_out(targets, |t| async move {
         let api = ExtensionsApi::new(&t.client);
-        Ok(api.list_deployed().await?)
+        let deployed = api.list_deployed().await?;
+        // The deployed endpoint returns ids but no human-readable names;
+        // resolve them from the catalog, best-effort. A catalog failure
+        // must not fail the command.
+        let names: HashMap<String, String> = match api.list_all().await {
+            Ok(catalog) => catalog
+                .extensions
+                .into_iter()
+                .filter_map(|e| Some((e.id?, e.name?)))
+                .collect(),
+            Err(_) => HashMap::new(),
+        };
+        Ok((deployed, names))
     })
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
-    let mut all_items: Vec<(String, Extension)> = Vec::new();
-    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+    let mut all_items: Vec<(String, DeployedExtension, Option<String>)> = Vec::new();
+    for (profile, (resp, names)) in report_errors_and_collect_successes(per_profile)? {
         // Print the extensions/integrations page link to stderr once per
         // profile. Skip when there are no extensions, since there's
         // nothing to view.
@@ -181,9 +224,10 @@ pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat
             .await;
         }
         for ext in resp.deployed_extensions {
-            let val = extension_to_json(&ext, include_profile, &profile);
+            let name = ext.id.as_ref().and_then(|id| names.get(id)).cloned();
+            let val = deployed_extension_to_json(&ext, name.as_deref(), include_profile, &profile);
             all_json.push(val);
-            all_items.push((profile.clone(), ext));
+            all_items.push((profile.clone(), ext, name));
         }
     }
 
@@ -201,19 +245,29 @@ pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat
             }
             let rows: Vec<Vec<String>> = all_items
                 .iter()
-                .map(|(profile, ext)| {
+                .map(|(profile, ext, name)| {
                     vec![
                         profile.clone(),
                         ext.id.clone().unwrap_or_default(),
-                        ext.name.clone().unwrap_or_default(),
+                        name.clone().unwrap_or_else(|| "-".to_string()),
                         ext.version.clone().unwrap_or_default(),
-                        render::bool_display(ext.deployed),
-                        ext.updated.clone().unwrap_or_default(),
+                        list_display(&ext.applications),
+                        list_display(&ext.subsystems),
+                        ext.deployed_item_count()
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|| "-".to_string()),
                     ]
                 })
                 .collect();
             render::render_table(
-                &["ID", "Name", "Version", "Deployed", "Updated"],
+                &[
+                    "ID",
+                    "Name",
+                    "Version",
+                    "Applications",
+                    "Subsystems",
+                    "Items",
+                ],
                 rows,
                 include_profile,
             );

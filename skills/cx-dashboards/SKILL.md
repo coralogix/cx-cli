@@ -9,7 +9,7 @@ description: >
   deploy, update, replace, or modify a Coralogix dashboard, monitoring dashboard,
   or observability dashboard for a service, app, or pipeline.
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # Create Coralogix Dashboard
@@ -59,6 +59,8 @@ cx dashboards get <dashboard-id> -o json > dashboard.json
 # Edit dashboard.json (change name, modify widgets, etc.)
 cx dashboards replace --from-file dashboard.json
 ```
+
+`replace` overwrites the whole dashboard with no conflict check, so run `get` right before `replace` and change only what the user asked for in the fetched JSON. Edits made since an older copy was fetched are silently lost.
 
 To duplicate a dashboard as a new copy:
 
@@ -207,12 +209,10 @@ Every PromQL and DataPrime query in the draft has to successfully run through `c
 ### Frequent vs Archive (what / when / where in JSON)
 
 **What**:
-- **Frequent** (`TIER_FREQUENT_SEARCH`): hot tier for fast search on recent logs/spans.
-- **Archive** (`TIER_ARCHIVE`): cold tier for older logs/spans (long-term).
+- **Frequent Search** (`TIER_FREQUENT_SEARCH`, widget `DATA_MODE_TYPE_HIGH_UNSPECIFIED`): only the data routed to the high-priority tier.
+- **Archive** (`TIER_ARCHIVE`, widget `DATA_MODE_TYPE_ARCHIVE`, "Monitoring" in the UI): the archived tier.
 
-**When to choose**:
-- Choose **Frequent** for on-call and recent investigations (hours/days).
-- Choose **Archive** for long lookbacks (weeks/months) or when the time range is beyond hot retention.
+**When to choose**: set each logs/spans/DataPrime widget's `dataModeType` to the tier its data actually lives in, and verify with the matching `--tier`. A widget on Frequent Search renders empty for data that only exists in Archive. Ask the user if unsure which tier holds a source.
 
 The two languages are verified against different windows:
 

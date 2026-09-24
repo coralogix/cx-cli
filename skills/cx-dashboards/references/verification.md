@@ -57,16 +57,12 @@ The dashboard runtime requires the `source …` prefix inside the widget JSON (s
 
 Verify against a **fixed short window** (`now-15m` → `now`), not the dashboard's `$RANGE`. The goal here is syntax / field / pipeline validation — proving the query parses and references real fields. The dashboard runs against `${__range}` itself at render time; we don't need to re-prove data presence on the dashboard's window during the build. A short window is faster, cheaper, and a clean fail signal (a query that fails on `now-15m` is broken regardless of range).
 
-Choose the tier to verify:
+Verify against the same tier the widget's `dataModeType` reads, and always pass `--tier` explicitly: omitted, it resolves to the profile's `default_tier`, which is Archive when unset.
 
-- `--tier frequent` (default): hot storage, fast, recent data.
-- `--tier archive`: cold/long-term storage, older data.
+- `--tier frequent` ↔ `DATA_MODE_TYPE_HIGH_UNSPECIFIED`: Frequent Search, the high-priority tier only.
+- `--tier archive` ↔ `DATA_MODE_TYPE_ARCHIVE`: Archive, "Monitoring" in the UI.
 
-Use **Frequent Search** unless you have a reason to validate against Archive. Switch to **Archive** when:
-
-- The dashboard is intended for long lookbacks (weekly/monthly trends, retrospectives).
-- Frequent Search returns empty for known-good queries because the time range is beyond hot retention.
-- The user explicitly says “this dashboard should work on archived data.”
+An empty `now-15m` result is not evidence of the wrong tier, because a low-volume source is often just quiet. Change `dataModeType` only on positive evidence: over a longer lookback (`--start now-24h`, or the dashboard's range) the widget's tier stays empty while the other tier returns rows, or `cx tco list` shows the source's policy routes it away from the widget's tier. Fix the widget's `dataModeType` to match, not just the verification flag. If neither check settles it, ask the user.
 
 **Log-backed widgets:**
 

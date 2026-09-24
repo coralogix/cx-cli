@@ -660,3 +660,45 @@ fn add_second_profile_without_set_default_keeps_existing_default() {
         "default profile must stay 'first', got: {config}"
     );
 }
+
+#[test]
+fn expired_oauth_profile_prints_resolution_error_once() {
+    let tmp = temp_home();
+    let profiles_dir = tmp.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(
+        profiles_dir.join("oauth-expired.toml"),
+        r#"
+auth = "o_auth"
+credential_storage = "file"
+region = "eu2"
+
+[oauth_tokens]
+access_token = "expired"
+expiry = 1
+"#,
+    )
+    .unwrap();
+
+    let output = cx(&tmp)
+        .env_remove("CX_REGION")
+        .env_remove("CX_PROFILE")
+        .args(["-p", "oauth-expired", "logs", "source logs | limit 1"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "should fail, stderr: {stderr}");
+    assert_eq!(
+        stderr.matches("OAuth session expired").count(),
+        1,
+        "resolution error must be printed once: {stderr}"
+    );
+    assert!(
+        stderr.contains("cx profiles add oauth-expired"),
+        "stderr should name the profile to re-authenticate: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Error:") && !stderr.contains("set up credentials"),
+        "stderr must not repeat the error or add a second instruction: {stderr}"
+    );
+}

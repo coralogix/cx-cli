@@ -195,17 +195,28 @@ pub async fn run_deployed(targets: &[Arc<ExecutionTarget>], output: OutputFormat
 
     let per_profile = fan_out(targets, |t| async move {
         let api = ExtensionsApi::new(&t.client);
-        let deployed = api.list_deployed().await?;
         // The deployed endpoint returns ids but no human-readable names;
         // resolve them from the catalog, best-effort. A catalog failure
         // must not fail the command.
-        let names: HashMap<String, String> = match api.list_all().await {
+        let (deployed_res, catalog_res) = tokio::join!(api.list_deployed(), api.list_all());
+        let deployed = deployed_res?;
+        let names: HashMap<String, String> = match catalog_res {
             Ok(catalog) => catalog
                 .extensions
                 .into_iter()
                 .filter_map(|e| Some((e.id?, e.name?)))
                 .collect(),
-            Err(_) => HashMap::new(),
+            Err(e) => {
+                eprintln!(
+                    "{}",
+                    format!(
+                        "Warning: could not resolve extension names for profile '{}': {e}",
+                        t.profile_name
+                    )
+                    .dimmed()
+                );
+                HashMap::new()
+            }
         };
         Ok((deployed, names))
     })

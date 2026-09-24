@@ -57,16 +57,12 @@ The dashboard runtime requires the `source …` prefix inside the widget JSON (s
 
 Verify against a **fixed short window** (`now-15m` → `now`), not the dashboard's `$RANGE`. The goal here is syntax / field / pipeline validation — proving the query parses and references real fields. The dashboard runs against `${__range}` itself at render time; we don't need to re-prove data presence on the dashboard's window during the build. A short window is faster, cheaper, and a clean fail signal (a query that fails on `now-15m` is broken regardless of range).
 
-Choose the tier to verify:
+Verify against the same tier the widget's `dataModeType` reads:
 
-- `--tier frequent` (default): hot storage, fast, recent data.
-- `--tier archive`: cold/long-term storage, older data.
+- `--tier frequent` (default) ↔ `DATA_MODE_TYPE_HIGH_UNSPECIFIED`: Frequent Search, the high-priority tier only.
+- `--tier archive` ↔ `DATA_MODE_TYPE_ARCHIVE`: Archive, "Monitoring" in the UI.
 
-Use **Frequent Search** unless you have a reason to validate against Archive. Switch to **Archive** when:
-
-- The dashboard is intended for long lookbacks (weekly/monthly trends, retrospectives).
-- Frequent Search returns empty for known-good queries because the time range is beyond hot retention.
-- The user explicitly says “this dashboard should work on archived data.”
+If a known-good query comes back empty on the widget's tier, the data usually lives in the other one. Fix the widget's `dataModeType` to match, not just the verification flag, and ask the user if unsure which tier holds the source.
 
 **Log-backed widgets:**
 

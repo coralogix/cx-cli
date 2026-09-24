@@ -92,7 +92,7 @@ To update a dashboard that already exists (instead of creating a new one), use t
    cx dashboards replace --from-file dashboard.json --yes
    ```
 
-This is a full replacement - the entire dashboard definition is overwritten. The `id` field in the JSON determines which dashboard is updated.
+This is a full replacement - the entire dashboard definition is overwritten, with no conflict check. The `id` field in the JSON determines which dashboard is updated. Run step 1 right before step 3 and change only what the user asked for, so edits made in the meantime aren't silently lost.
 
 Use replace when:
 - The user asks to update, modify, or iterate on an existing dashboard.

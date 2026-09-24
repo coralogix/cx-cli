@@ -330,10 +330,10 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 
 | Value | When |
 |---|---|
-| `DATA_MODE_TYPE_HIGH_UNSPECIFIED` | default — frequent (hot) search tier |
-| `DATA_MODE_TYPE_ARCHIVE` | archive (cold) tier — for long lookbacks or when the user requests archive |
+| `DATA_MODE_TYPE_HIGH_UNSPECIFIED` | Frequent Search — the high-priority tier only |
+| `DATA_MODE_TYPE_ARCHIVE` | Archive ("Monitoring" in the UI) — the archived tier |
 
-The templates above ship with `DATA_MODE_TYPE_HIGH_UNSPECIFIED`. When the user wants archive, replace `DATA_MODE_TYPE_HIGH_UNSPECIFIED` → `DATA_MODE_TYPE_ARCHIVE` on **every** widget before deploy (not just the dashboard root).
+The templates above ship with `DATA_MODE_TYPE_HIGH_UNSPECIFIED` as a placeholder, not a safe default. On **every** logs/spans/DataPrime widget (not just the dashboard root), set it to the tier the queried data lives in; a widget on the wrong tier renders empty. Metrics widgets are not tiered.
 
 ---
 

@@ -9,8 +9,10 @@ pub mod api;
 mod legacy;
 
 use api::{
-    BoolFilter, CategoryType, FieldMatch, Filter, FilterDescriptor, GetResourcesResponse,
-    HealthHistoryEntry, InfraApi, ListResourcesParams, Op, ResourceData, ResourceTypeMapping,
+    BoolFilter, CategoryType, ConfigChangesParams, FieldChangeData, FieldMatch, Filter,
+    FilterDescriptor, GetResourcesResponse, HealthHistoryEntry, HealthPolicyData, InfraApi,
+    ListResourcesParams, Op, ResourceChangeData, ResourceData, ResourceDiffData,
+    ResourceHealthHistory, ResourceTypeMapping,
 };
 
 use crate::config::OutputFormat;
@@ -19,6 +21,9 @@ use crate::render;
 
 /// JSON key for the source profile when merging multi-profile infra REST rows.
 const JSON_KEY_PROFILE: &str = "profile";
+
+/// Max limit of the API reads, so the CLI refuses a longer list.
+const MAX_RESOURCE_IDS: usize = 100;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PageWindow {
@@ -312,44 +317,40 @@ fn render_resources(
 /// profile tagging.
 pub async fn run_health_history(
     targets: &[Arc<ExecutionTarget>],
-    resource_id: &str,
+    resource_ids: &[String],
     output: OutputFormat,
 ) -> Result<()> {
-    let resource_id = require_non_empty(resource_id, "resource id")?;
+    let resource_ids = require_resource_ids(resource_ids)?;
     let target = single_target(targets, "health-history")?;
 
     eprintln!(
         "{}",
-        format!("Fetching health history for '{resource_id}'...").dimmed()
+        format!(
+            "Fetching health history for {} resource(s)...",
+            resource_ids.len()
+        )
+        .dimmed()
     );
 
-    let resp = InfraApi::new(&target.client)
-        .health_history(resource_id)
+    let results = InfraApi::new(&target.client)
+        .health_history(&resource_ids)
         .await
         .with_context(|| format!("profile '{}' failed", target.profile_name))?;
-    let history = resp.health_history;
+
+    report_missing_resources(resource_ids.len(), results.len());
 
     match output {
         OutputFormat::Json | OutputFormat::Toon => {
-            let rows: Vec<Value> = history.iter().map(health_entry_to_json).collect();
+            let rows: Vec<Value> = results.iter().map(history_to_json).collect();
             render_machine_rows(output, &rows)?;
         }
         OutputFormat::Text => {
-            if history.is_empty() {
+            if results.is_empty() {
                 render::print_no_results("No health history found.");
                 return Ok(());
             }
-            let rows: Vec<Vec<String>> = history
-                .iter()
-                .map(|entry| {
-                    vec![
-                        target.profile_name.clone(),
-                        display_or_dash(entry.timestamp.as_deref()),
-                        display_or_dash(entry.status.as_deref()),
-                    ]
-                })
-                .collect();
-            render::render_table(&["Timestamp", "Status"], rows, false);
+            let rows = history_table(&results, &target.profile_name);
+            render::render_table(&["Resource", "Timestamp", "Status"], rows, false);
         }
     }
 
@@ -364,9 +365,13 @@ pub async fn run_health_history(
 pub async fn run_raw_data(
     targets: &[Arc<ExecutionTarget>],
     resource_id: &str,
+    timestamp: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
     let resource_id = require_non_empty(resource_id, "resource id")?;
+    let timestamp = timestamp
+        .map(|t| crate::time::parse_timestamp_nanos(require_non_empty(t, "--timestamp")?))
+        .transpose()?;
     let target = single_target(targets, "raw-data")?;
 
     eprintln!(
@@ -375,25 +380,151 @@ pub async fn run_raw_data(
     );
 
     let resp = InfraApi::new(&target.client)
-        .raw_data(resource_id)
+        .raw_data(resource_id, timestamp.as_deref())
         .await
         .with_context(|| format!("profile '{}' failed", target.profile_name))?;
+    let (raw_data, version_timestamp) = (resp.raw_data, resp.version_timestamp);
 
     // A 200 with null raw data means the document is cleanly missing, so note it
-    // on stderr and render an empty result rather than failing.
-    let results: Vec<Value> = match resp.raw_data {
-        Some(doc) => vec![doc],
-        None => {
-            eprintln!("{}", "no raw data for this resource".yellow());
-            Vec::new()
-        }
-    };
+    // on stderr and render an empty document rather than failing.
+    if raw_data.is_none() {
+        eprintln!("{}", "no raw data for this resource".yellow());
+    }
 
     match output {
-        OutputFormat::Json => render::render_json_auto(&results)?,
-        OutputFormat::Toon => render::render_toon(&results)?,
+        OutputFormat::Json | OutputFormat::Toon => {
+            let envelope = json!({
+                "version_timestamp": version_timestamp,
+                "raw_data": raw_data,
+            });
+            render_machine_envelope(output, &envelope)?;
+        }
         OutputFormat::Text => {
-            render::render_get_text(&results, false, "No raw data found.", None)?;
+            let results: Vec<Value> = raw_data.into_iter().collect();
+            let version = |_: &Value| {
+                println!("version: {}", display_or_dash(version_timestamp.as_deref()));
+            };
+            render::render_get_text(&results, false, "No raw data found.", Some(&version))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// `cx infra resources config-changes` - which of these resources changed over
+/// the window, most recent first. Single-profile by construction.
+pub async fn run_config_changes(
+    targets: &[Arc<ExecutionTarget>],
+    resource_ids: &[String],
+    from: &str,
+    to: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let (resource_ids, from, to) = change_window(resource_ids, from, to)?;
+    let target = single_target(targets, "config-changes")?;
+
+    eprintln!(
+        "{}",
+        format!(
+            "Checking {} resource(s) for configuration changes...",
+            resource_ids.len()
+        )
+        .dimmed()
+    );
+
+    let params = ConfigChangesParams {
+        from: &from,
+        to: &to,
+        resource_ids: &resource_ids,
+    };
+    let resp = InfraApi::new(&target.client)
+        .config_changes(&params)
+        .await
+        .with_context(|| format!("profile '{}' failed", target.profile_name))?;
+    let results = resp.results;
+
+    match output {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let rows: Vec<Value> = results.iter().map(change_to_json).collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if results.is_empty() {
+                render::print_no_results("No configuration changes in this window.");
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = results
+                .iter()
+                .map(|r| {
+                    vec![
+                        target.profile_name.clone(),
+                        display_or_dash(r.resource_id.as_deref()),
+                        display_or_dash(r.source.as_deref()),
+                        display_or_dash(r.outcome.as_deref()),
+                        display_or_dash(r.last_change.as_deref()),
+                        r.change_count
+                            .map_or_else(|| "-".to_string(), |c| c.to_string()),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &["Resource", "Source", "Outcome", "Last Change", "Changes"],
+                rows,
+                false,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// `cx infra resources config-diff` - what changed, field by field. Single-profile by construction.
+pub async fn run_config_diff(
+    targets: &[Arc<ExecutionTarget>],
+    resource_ids: &[String],
+    from: &str,
+    to: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let (resource_ids, from, to) = change_window(resource_ids, from, to)?;
+    let target = single_target(targets, "config-diff")?;
+
+    eprintln!(
+        "{}",
+        format!(
+            "Comparing configurations for {} resource(s)...",
+            resource_ids.len()
+        )
+        .dimmed()
+    );
+
+    let params = ConfigChangesParams {
+        from: &from,
+        to: &to,
+        resource_ids: &resource_ids,
+    };
+    let resp = InfraApi::new(&target.client)
+        .config_diff(&params)
+        .await
+        .with_context(|| format!("profile '{}' failed", target.profile_name))?;
+    let results = resp.results;
+
+    match output {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let rows: Vec<Value> = results.iter().map(diff_to_json).collect();
+            render_machine_rows(output, &rows)?;
+        }
+        OutputFormat::Text => {
+            if results.is_empty() {
+                render::print_no_results("No configurations to compare in this window.");
+                return Ok(());
+            }
+            let rows = diff_table(&results, &target.profile_name);
+            render::render_table(
+                &["Resource", "Source", "Outcome", "Field", "Before", "After"],
+                rows,
+                false,
+            );
         }
     }
 
@@ -401,6 +532,93 @@ pub async fn run_raw_data(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Validates the resources and window the two configuration-change endpoints
+/// share. `to` defaults to now.
+fn change_window<'i>(
+    resource_ids: &'i [String],
+    from: &str,
+    to: Option<&str>,
+) -> Result<(Vec<&'i str>, String, String)> {
+    let resource_ids = require_resource_ids(resource_ids)?;
+    let from = crate::time::parse_timestamp_nanos(require_non_empty(from, "--from")?)?;
+    let to = match to {
+        Some(to) => crate::time::parse_timestamp_nanos(require_non_empty(to, "--to")?)?,
+        None => crate::time::parse_timestamp_nanos("now")?,
+    };
+
+    // The API refuses this too
+    if to < from {
+        bail!("--to ({to}) is earlier than --from ({from})");
+    }
+    Ok((resource_ids, from, to))
+}
+
+/// One table row per field change, with the resource repeated down the group.
+fn diff_table(results: &[ResourceDiffData], profile: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    for result in results {
+        let head = [
+            profile.to_string(),
+            display_or_dash(result.resource_id.as_deref()),
+            display_or_dash(result.source.as_deref()),
+            display_or_dash(result.outcome.as_deref()),
+        ];
+        if result.changes.is_empty() {
+            let mut row = head.to_vec();
+            row.extend(["-".to_string(), "-".to_string(), "-".to_string()]);
+            rows.push(row);
+            continue;
+        }
+        for change in &result.changes {
+            let mut row = head.to_vec();
+            row.push(display_or_dash(change.field.as_deref()));
+            row.push(render_change_value(&change.before));
+            row.push(render_change_value(&change.after));
+            rows.push(row);
+        }
+    }
+    rows
+}
+
+/// JSON `null` prints as `null` rather than a dash, because a field set to null
+/// and a field that is absent are different changes.
+fn render_change_value(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn change_to_json(item: &ResourceChangeData) -> Value {
+    json!({
+        "resource_id": item.resource_id,
+        "source": item.source,
+        "outcome": item.outcome,
+        "last_change": item.last_change,
+        "change_count": item.change_count,
+    })
+}
+
+fn diff_to_json(item: &ResourceDiffData) -> Value {
+    let changes: Vec<Value> = item.changes.iter().map(field_change_to_json).collect();
+    json!({
+        "resource_id": item.resource_id,
+        "source": item.source,
+        "outcome": item.outcome,
+        "compared_from": item.compared_from,
+        "compared_to": item.compared_to,
+        "changes": changes,
+    })
+}
+
+fn field_change_to_json(item: &FieldChangeData) -> Value {
+    json!({
+        "field": item.field,
+        "before": item.before,
+        "after": item.after,
+    })
+}
 
 /// Renders merged JSON rows for the two machine formats.
 ///
@@ -695,6 +913,19 @@ fn format_type_pairs(types: &[CategoryType]) -> Vec<String> {
         .collect()
 }
 
+fn format_health_policies(policies: &[HealthPolicyData]) -> Vec<String> {
+    policies
+        .iter()
+        .map(|p| {
+            format!(
+                "{} ({})",
+                display_or_dash(p.name.as_deref()),
+                display_or_dash(p.status.as_deref())
+            )
+        })
+        .collect()
+}
+
 fn join_or_dash(values: &[String]) -> String {
     if values.is_empty() {
         "-".to_string()
@@ -705,11 +936,17 @@ fn join_or_dash(values: &[String]) -> String {
 
 /// Builds one resource row as JSON for `json` / `toon` output after fan-out.
 fn resource_to_json(item: &ResourceData, include_profile: bool, profile: &str) -> Value {
+    let policies: Vec<Value> = item
+        .health_policies
+        .iter()
+        .map(|p| json!({ "id": p.id, "name": p.name, "status": p.status }))
+        .collect();
     let v = json!({
         "resource_id": item.resource_id,
         "name": item.name,
         "category": item.category,
         "type": item.type_name,
+        "health_policies": policies,
         "columns": item.columns,
     });
     tag_profile(v, include_profile, profile)
@@ -741,6 +978,18 @@ fn health_entry_to_json(item: &HealthHistoryEntry) -> Value {
     })
 }
 
+fn history_to_json(item: &ResourceHealthHistory) -> Value {
+    let history: Vec<Value> = item
+        .health_history
+        .iter()
+        .map(health_entry_to_json)
+        .collect();
+    json!({
+        "resource_id": item.resource_id,
+        "health_history": history,
+    })
+}
+
 /// Builds one resource-type row as JSON for `json` / `toon` output after fan-out.
 fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profile: &str) -> Value {
     let v = json!({
@@ -759,7 +1008,7 @@ fn list_table(merged: &[(String, ResourceData)]) -> (Vec<String>, Vec<Vec<String
     let resources: Vec<&ResourceData> = merged.iter().map(|(_, r)| r).collect();
     let columns = union_of_columns(&resources);
 
-    let headers: Vec<String> = ["Resource ID", "Name", "Category", "Type"]
+    let headers: Vec<String> = ["Resource ID", "Name", "Category", "Type", "Policies"]
         .into_iter()
         .map(String::from)
         .chain(columns.iter().cloned())
@@ -774,6 +1023,7 @@ fn list_table(merged: &[(String, ResourceData)]) -> (Vec<String>, Vec<Vec<String
                 display_or_dash(display_name(r)),
                 display_or_dash(r.category.as_deref()),
                 display_or_dash(r.type_name.as_deref()),
+                join_or_dash(&format_health_policies(&r.health_policies)),
             ];
             row.extend(
                 columns
@@ -810,6 +1060,65 @@ fn display_name(item: &ResourceData) -> Option<&str> {
         .map(|(_, value)| value.as_str())
         .filter(|s| !s.is_empty())
         .or(item.name.as_deref())
+}
+
+/// One table row per sample, and a row of dashes for a resource with none.
+fn history_table(results: &[ResourceHealthHistory], profile: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    for result in results {
+        let resource = display_or_dash(result.resource_id.as_deref());
+        if result.health_history.is_empty() {
+            rows.push(vec![
+                profile.to_string(),
+                resource,
+                "-".to_string(),
+                "-".to_string(),
+            ]);
+            continue;
+        }
+        for entry in &result.health_history {
+            rows.push(vec![
+                profile.to_string(),
+                resource.clone(),
+                display_or_dash(entry.timestamp.as_deref()),
+                display_or_dash(entry.status.as_deref()),
+            ]);
+        }
+    }
+    rows
+}
+
+/// The API drops ids it cannot parse and reads duplicates once, so a short
+/// answer is normal. It is reported as a count because the `resourceIds` that come back
+/// are normalized, so the missing ones cannot be named reliably.
+fn report_missing_resources(asked: usize, answered: usize) {
+    if answered < asked {
+        eprintln!(
+            "{}",
+            format!(
+                "{} of {asked} resource(s) answered; the rest were not recognised or were repeats",
+                answered
+            )
+            .yellow()
+        );
+    }
+}
+
+fn require_resource_ids(resource_ids: &[String]) -> Result<Vec<&str>> {
+    if resource_ids.is_empty() {
+        bail!("at least one resource id is required");
+    }
+    if resource_ids.len() > MAX_RESOURCE_IDS {
+        bail!(
+            "{} resource ids given, but the API reads at most {MAX_RESOURCE_IDS} per request \
+             and drops the rest without saying so. Split the list and re-run.",
+            resource_ids.len()
+        );
+    }
+    resource_ids
+        .iter()
+        .map(|id| require_non_empty(id, "resource id"))
+        .collect()
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -1405,6 +1714,7 @@ mod tests {
                 .collect(),
             category: Some("Hosts".to_string()),
             type_name: Some("EC2_Instances".to_string()),
+            health_policies: Vec::new(),
         }
     }
 
@@ -1503,7 +1813,10 @@ mod tests {
             "EC2_Instances",
             &[("Region", "eu-west-1")],
         )]);
-        assert_eq!(headers[..4], ["Resource ID", "Name", "Category", "Type"]);
+        assert_eq!(
+            headers[..5],
+            ["Resource ID", "Name", "Category", "Type", "Policies"]
+        );
         assert_eq!(rows[0][3], "Hosts");
         assert_eq!(rows[0][4], "EC2_Instances");
     }
@@ -1525,11 +1838,11 @@ mod tests {
             merged_row("Hosts", "EC2_Instances", &[("Region", "eu-west-1")]),
             merged_row("Kubernetes", "Pods", &[("Namespace", "kube-system")]),
         ]);
-        assert_eq!(headers[4..], ["Region", "Namespace"]);
-        assert_eq!(rows[0][5], "eu-west-1");
-        assert_eq!(rows[0][6], "");
-        assert_eq!(rows[1][5], "");
-        assert_eq!(rows[1][6], "kube-system");
+        assert_eq!(headers[5..], ["Region", "Namespace"]);
+        assert_eq!(rows[0][6], "eu-west-1");
+        assert_eq!(rows[0][7], "");
+        assert_eq!(rows[1][6], "");
+        assert_eq!(rows[1][7], "kube-system");
     }
 
     #[test]
@@ -1538,7 +1851,369 @@ mod tests {
         row.category = None;
         let (_, rows) = list_table(&[("p".to_string(), row)]);
         assert_eq!(rows[0][3], "-");
-        assert_eq!(rows[0][5], "eu");
+        assert_eq!(rows[0][6], "eu");
+    }
+
+    /// `--timestamp` is resolved here, not by the API: the server parses with
+    /// `DateTime::parse_from_rfc3339` and would reject `now-7d` outright. This
+    /// pins that every form the CLI accepts leaves as something it accepts.
+    #[test]
+    fn every_accepted_timestamp_form_leaves_as_rfc_3339() {
+        for input in [
+            "now",
+            "now-7d",
+            "now - 3d",
+            "now-1h30m",
+            "now-90s",
+            "now-2w",
+            "2026-09-06T00:00:00Z",
+            "2026-09-06T02:00:00+02:00",
+            "2026-09-03T13:26:58.137128537Z",
+        ] {
+            let sent = crate::time::parse_timestamp_nanos(input)
+                .unwrap_or_else(|e| panic!("CLI should accept {input}: {e}"));
+            chrono::DateTime::parse_from_rfc3339(&sent)
+                .unwrap_or_else(|e| panic!("{input} left as {sent}, which the API rejects: {e}"));
+        }
+    }
+
+    /// The history is keyed to the nanosecond, so a `version_timestamp` read
+    /// from one response and fed back as `--timestamp` has to name that same
+    /// version rather than resolve to the one before it.
+    #[test]
+    fn a_version_timestamp_survives_being_fed_back() {
+        let from_the_api = "2026-09-03T13:26:58.137128537Z";
+        assert_eq!(
+            crate::time::parse_timestamp_nanos(from_the_api).unwrap(),
+            from_the_api
+        );
+    }
+
+    /// Forms the API would take but the CLI does not, so the error arrives
+    /// locally with a usable message rather than as a 400.
+    #[test]
+    fn timestamp_forms_the_cli_refuses() {
+        for input in ["now+1d", "1788442018137128537", "yesterday", "7d ago", ""] {
+            assert!(
+                crate::time::parse_timestamp_nanos(input).is_err(),
+                "{input} should be refused"
+            );
+        }
+    }
+
+    fn ids(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn require_resource_ids_trims_every_id() {
+        assert_eq!(
+            require_resource_ids(&ids(&[" id-1 ", "id-2"])).unwrap(),
+            vec!["id-1", "id-2"]
+        );
+    }
+
+    #[test]
+    fn require_resource_ids_rejects_an_empty_list() {
+        let err = require_resource_ids(&[]).unwrap_err();
+        assert!(err.to_string().contains("at least one resource id"));
+    }
+
+    #[test]
+    fn require_resource_ids_rejects_a_blank_id() {
+        let err = require_resource_ids(&ids(&["id-1", "   "])).unwrap_err();
+        assert!(err.to_string().contains("resource id must not be empty"));
+    }
+
+    /// Past the cap the API truncates without saying so, which would report a
+    /// partial answer as a complete one.
+    #[test]
+    fn require_resource_ids_rejects_more_than_the_api_reads() {
+        let at_cap: Vec<String> = (0..MAX_RESOURCE_IDS).map(|i| format!("id-{i}")).collect();
+        assert_eq!(
+            require_resource_ids(&at_cap).unwrap().len(),
+            MAX_RESOURCE_IDS
+        );
+
+        let over_cap: Vec<String> = (0..MAX_RESOURCE_IDS + 1)
+            .map(|i| format!("id-{i}"))
+            .collect();
+        let err = require_resource_ids(&over_cap).unwrap_err();
+        assert!(err.to_string().contains("at most 100"), "got: {err}");
+    }
+
+    fn history(resource_id: Option<&str>, samples: &[(&str, &str)]) -> ResourceHealthHistory {
+        ResourceHealthHistory {
+            resource_id: resource_id.map(String::from),
+            health_history: samples
+                .iter()
+                .map(|(timestamp, status)| HealthHistoryEntry {
+                    timestamp: Some(timestamp.to_string()),
+                    status: Some(status.to_string()),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn history_table_has_one_row_per_sample_naming_its_resource() {
+        let results = [
+            history(Some("id-1"), &[("2026-07-01T00:00:00Z", "Healthy")]),
+            history(
+                Some("id-2"),
+                &[
+                    ("2026-07-01T00:00:00Z", "Critical"),
+                    ("2026-07-02T00:00:00Z", "Healthy"),
+                ],
+            ),
+        ];
+
+        assert_eq!(
+            history_table(&results, "p"),
+            vec![
+                vec!["p", "id-1", "2026-07-01T00:00:00Z", "Healthy"],
+                vec!["p", "id-2", "2026-07-01T00:00:00Z", "Critical"],
+                vec!["p", "id-2", "2026-07-02T00:00:00Z", "Healthy"],
+            ]
+        );
+    }
+
+    #[test]
+    fn history_table_keeps_a_resource_without_samples() {
+        let results = [
+            history(Some("id-1"), &[]),
+            history(Some("id-2"), &[("2026-07-01T00:00:00Z", "Healthy")]),
+        ];
+
+        assert_eq!(
+            history_table(&results, "p"),
+            vec![
+                vec!["p", "id-1", "-", "-"],
+                vec!["p", "id-2", "2026-07-01T00:00:00Z", "Healthy"],
+            ]
+        );
+    }
+
+    #[test]
+    fn history_table_dashes_a_missing_resource_id() {
+        let results = [history(None, &[("2026-07-01T00:00:00Z", "Healthy")])];
+        assert_eq!(history_table(&results, "p")[0][1], "-");
+    }
+
+    #[test]
+    fn history_json_keeps_one_entry_per_resource() {
+        let results = [
+            history(Some("id-1"), &[("2026-07-01T00:00:00Z", "Healthy")]),
+            history(Some("id-2"), &[]),
+        ];
+        let rows: Vec<Value> = results.iter().map(history_to_json).collect();
+
+        assert_eq!(
+            rows,
+            vec![
+                json!({
+                    "resource_id": "id-1",
+                    "health_history": [{ "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }]
+                }),
+                json!({ "resource_id": "id-2", "health_history": [] }),
+            ]
+        );
+    }
+
+    #[test]
+    fn history_json_keeps_a_missing_resource_id_as_null() {
+        let v = history_to_json(&history(None, &[]));
+        assert_eq!(v["resource_id"], Value::Null);
+    }
+
+    fn change(field: &str, before: Value, after: Value) -> FieldChangeData {
+        FieldChangeData {
+            field: Some(field.to_string()),
+            before,
+            after,
+        }
+    }
+
+    fn diff(outcome: &str, changes: Vec<FieldChangeData>) -> ResourceDiffData {
+        ResourceDiffData {
+            resource_id: Some("7000098:a=frontend".to_string()),
+            source: Some("OTEL".to_string()),
+            outcome: Some(outcome.to_string()),
+            compared_from: None,
+            compared_to: None,
+            changes,
+        }
+    }
+
+    #[test]
+    fn diff_table_repeats_the_resource_down_its_changes() {
+        let results = [diff(
+            "changed",
+            vec![
+                change("spec.replicas", json!(3), json!(10)),
+                change("spec.image", json!("shop:1.4.0"), json!("shop:1.5.0")),
+            ],
+        )];
+        let rows = diff_table(&results, "p");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0][1], "7000098:a=frontend");
+        assert_eq!(rows[1][1], "7000098:a=frontend");
+        assert_eq!(rows[0][4], "spec.replicas");
+        assert_eq!(rows[1][4], "spec.image");
+    }
+
+    /// `unchanged` and `created` are answers about a resource. Dropping them
+    /// would report on fewer resources than the API replied about.
+    #[test]
+    fn diff_table_keeps_an_outcome_that_carries_no_changes() {
+        let rows = diff_table(&[diff("unchanged", vec![])], "p");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0][3], "unchanged");
+        assert_eq!(rows[0][4..], ["-", "-", "-"]);
+    }
+
+    /// Strings print bare so a table stays readable; everything else keeps its
+    /// JSON form so a number is not confused with the string of that number.
+    #[test]
+    fn change_values_render_by_type() {
+        assert_eq!(render_change_value(&json!("shop:1.5.0")), "shop:1.5.0");
+        assert_eq!(render_change_value(&json!(10)), "10");
+        assert_eq!(render_change_value(&json!(true)), "true");
+        assert_eq!(
+            render_change_value(&json!({ "image": "x" })),
+            r#"{"image":"x"}"#
+        );
+    }
+
+    /// A field set to null and a field that is absent are different changes, so
+    /// null must not render as the dash that means "missing".
+    #[test]
+    fn a_null_change_value_renders_as_null() {
+        assert_eq!(render_change_value(&Value::Null), "null");
+    }
+
+    #[test]
+    fn diff_json_keeps_the_raw_types_of_both_sides() {
+        let results = diff(
+            "changed",
+            vec![
+                change("spec.replicas", json!(3), json!(10)),
+                change("spec.paused", json!(false), json!(true)),
+            ],
+        );
+        let v = diff_to_json(&results);
+
+        assert_eq!(v["changes"][0]["before"], json!(3));
+        assert_eq!(v["changes"][0]["after"], json!(10));
+        assert_eq!(v["changes"][1]["before"], json!(false));
+        assert_eq!(v["outcome"], "changed");
+    }
+
+    #[test]
+    fn change_window_defaults_to_now_and_keeps_nanoseconds() {
+        let given = ids(&["id-1"]);
+        let (kept, from, to) =
+            change_window(&given, "2026-09-06T11:00:00.137128537Z", None).unwrap();
+
+        assert_eq!(kept, vec!["id-1"]);
+        assert_eq!(from, "2026-09-06T11:00:00.137128537Z");
+        assert!(to.ends_with('Z'), "got: {to}");
+        assert!(to > from, "an unset --to should resolve to now");
+    }
+
+    /// The API refuses this too; catching it here names the flags instead of
+    /// spending a request to be told.
+    #[test]
+    fn change_window_rejects_an_inverted_window() {
+        let err = change_window(&ids(&["id-1"]), "now-1d", Some("now-7d")).unwrap_err();
+        assert!(err.to_string().contains("--to"), "got: {err}");
+        assert!(err.to_string().contains("--from"), "got: {err}");
+    }
+
+    #[test]
+    fn change_window_accepts_a_window_of_zero_width() {
+        let at = "2026-09-06T11:00:00Z";
+        assert!(change_window(&ids(&["id-1"]), at, Some(at)).is_ok());
+    }
+
+    #[test]
+    fn change_window_rejects_a_bad_time_and_an_over_long_id_list() {
+        assert!(change_window(&ids(&["id-1"]), "half past four", None).is_err());
+
+        let over_cap: Vec<String> = (0..MAX_RESOURCE_IDS + 1)
+            .map(|i| format!("id-{i}"))
+            .collect();
+        let err = change_window(&over_cap, "now-1d", None).unwrap_err();
+        assert!(err.to_string().contains("at most 100"), "got: {err}");
+    }
+
+    fn policy(name: &str, status: &str) -> HealthPolicyData {
+        HealthPolicyData {
+            id: Some("019f4b81-0350-7561-b0cb-4a6b64c73882".to_string()),
+            status: Some(status.to_string()),
+            name: Some(name.to_string()),
+        }
+    }
+
+    #[test]
+    fn health_policies_render_every_policy_with_its_status() {
+        let policies = [
+            policy("Deployment has unavailable replicas", "critical"),
+            policy("Pod CPU utilization high", "healthy"),
+        ];
+        assert_eq!(
+            join_or_dash(&format_health_policies(&policies)),
+            "Deployment has unavailable replicas (critical), Pod CPU utilization high (healthy)"
+        );
+    }
+
+    /// The API sends `""` for a policy its catalog does not resolve, which would
+    /// otherwise render as an empty pair of parentheses with nothing in front.
+    #[test]
+    fn an_unresolved_policy_name_renders_as_a_dash() {
+        assert_eq!(
+            format_health_policies(&[policy("", "healthy")]),
+            vec!["- (healthy)".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_resource_with_no_policies_renders_as_a_dash() {
+        assert_eq!(join_or_dash(&format_health_policies(&[])), "-");
+    }
+
+    #[test]
+    fn list_table_carries_the_policies_column() {
+        let mut row = typed_resource("Kubernetes", "Deployments", &[("Namespace", "shop")]);
+        row.health_policies = vec![policy("Deployment has unavailable replicas", "critical")];
+        let (headers, rows) = list_table(&[("p".to_string(), row)]);
+
+        assert_eq!(headers[4], "Policies");
+        assert_eq!(rows[0][5], "Deployment has unavailable replicas (critical)");
+    }
+
+    /// json and toon mirror the API, so an unresolved name stays the empty
+    /// string there. Only the table substitutes a dash.
+    #[test]
+    fn resource_json_keeps_the_policies_as_the_api_sent_them() {
+        let mut row = typed_resource("Kubernetes", "Deployments", &[]);
+        row.health_policies = vec![policy("", "pending")];
+        let v = resource_to_json(&row, false, "p");
+
+        assert_eq!(v["health_policies"][0]["name"], "");
+        assert_eq!(v["health_policies"][0]["status"], "pending");
+        assert_eq!(
+            v["health_policies"][0]["id"],
+            "019f4b81-0350-7561-b0cb-4a6b64c73882"
+        );
+    }
+
+    #[test]
+    fn resource_json_carries_an_empty_array_when_no_policy_applies() {
+        let row = typed_resource("Hosts", "EC2_Instances", &[]);
+        let v = resource_to_json(&row, false, "p");
+        assert_eq!(v["health_policies"], json!([]));
     }
 
     #[test]
@@ -1552,6 +2227,7 @@ mod tests {
             ]),
             category: Some("Hosts".to_string()),
             type_name: Some("EC2_Instances".to_string()),
+            health_policies: Vec::new(),
         };
 
         assert_eq!(
@@ -1561,6 +2237,7 @@ mod tests {
                 "name": "prod-api-01",
                 "category": "Hosts",
                 "type": "EC2_Instances",
+                "health_policies": [],
                 "columns": { "Name": "prod-api-01", "Region": "eu-west-1" },
             })
         );
@@ -1574,6 +2251,7 @@ mod tests {
             columns: BTreeMap::new(),
             category: Some("Hosts".to_string()),
             type_name: Some("EC2_Instances".to_string()),
+            health_policies: Vec::new(),
         };
 
         assert_eq!(resource_to_json(&item, true, "prod")["profile"], "prod");

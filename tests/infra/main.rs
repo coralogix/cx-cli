@@ -6,7 +6,8 @@ use wiremock::matchers::{body_json, method, path, query_param, query_param_is_mi
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::infra::{
-    run_filters, run_health_history, run_list, run_list_legacy, run_raw_data, run_types, PageWindow,
+    run_config_changes, run_config_diff, run_filters, run_health_history, run_list,
+    run_list_legacy, run_raw_data, run_types, PageWindow,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -127,6 +128,123 @@ fn list_body() -> serde_json::Value {
         ],
         "totalCount": 1
     })
+}
+
+/// A row as the API sends it now: two policies, one of them unresolved by the
+/// policy catalog and so carrying an empty `name`.
+fn list_body_with_policies() -> serde_json::Value {
+    json!({
+        "resources": [
+            {
+                "resourceId": "4013226:host_id=i-077a1626590913a16",
+                "name": "prod-api-01",
+                "columns": { "Name": "prod-api-01", "Region": "eu-west-1" },
+                "category": "Hosts",
+                "type": "EC2_Instances",
+                "healthPolicies": [
+                    { "id": "p-1", "status": "critical", "name": "CPU utilization high" },
+                    { "id": "p-2", "status": "pending", "name": "" }
+                ]
+            }
+        ],
+        "totalCount": 1
+    })
+}
+
+/// Both list paths go through the same `resources_for` server side, so both
+/// carry `healthPolicies` and both must render it.
+#[tokio::test]
+async fn list_renders_health_policies_from_both_paths() {
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        let server = MockServer::start().await;
+
+        // Both paths POST to the same route; `nameFilter` in the body is what
+        // makes a request the legacy one.
+        Mock::given(method("POST"))
+            .and(path(BASE))
+            .and(body_json(
+                json!({ "category": "Hosts", "type": "EC2_Instances" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(list_body_with_policies()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path(BASE))
+            .and(body_json(json!({
+                "category": "Hosts",
+                "type": "EC2_Instances",
+                "nameFilter": "prod"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(list_body_with_policies()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+
+        run_list(
+            &targets,
+            Some("Hosts"),
+            Some("EC2_Instances"),
+            &[],
+            &[],
+            PageWindow {
+                start_row: None,
+                end_row: None,
+            },
+            output,
+        )
+        .await
+        .expect("policies must render on the filter path");
+
+        run_list_legacy(
+            &targets,
+            Some("Hosts"),
+            Some("EC2_Instances"),
+            Some("prod"),
+            &[],
+            PageWindow {
+                start_row: None,
+                end_row: None,
+            },
+            output,
+        )
+        .await
+        .expect("policies must render on the legacy path");
+    }
+}
+
+/// Rows from before the field existed, and rows no policy applies to, must both
+/// still render.
+#[tokio::test]
+async fn list_renders_a_row_without_health_policies() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(BASE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(list_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_list(
+        &targets,
+        Some("Hosts"),
+        Some("EC2_Instances"),
+        &[],
+        &[],
+        PageWindow {
+            start_row: None,
+            end_row: None,
+        },
+        OutputFormat::Text,
+    )
+    .await
+    .expect("a row without the field is not an error");
 }
 
 fn filters_body() -> serde_json::Value {
@@ -938,48 +1056,146 @@ async fn list_rejects_invalid_scope_before_any_request() {
     assert_eq!(server.received_requests().await.unwrap().len(), 0);
 }
 
+/// Ids travel in the body now, so nothing is percent-encoded into a path and
+/// the route carries no id segment.
 #[tokio::test]
-async fn health_history_percent_encodes_resource_id() {
+async fn health_history_posts_every_id_in_the_body() {
     let server = MockServer::start().await;
 
-    // `:` and `=` in the resource id must reach the server percent-encoded.
-    Mock::given(method("GET"))
-        .and(path(format!(
-            "{BASE}/1001234%3Ahost_id%3Di-abc123/health-history"
-        )))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "healthHistory": [
-                { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" },
-                { "timestamp": "2026-07-02T00:00:00Z", "status": "Critical" }
-            ]
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .and(body_json(json!({
+            "resourceIds": ["1001234:host_id=i-abc123", "1001234:host_id=i-def456"]
         })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthHistory": [
+                    { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" },
+                    { "timestamp": "2026-07-02T00:00:00Z", "status": "Critical" }
+                ]
+            },
+            {
+                "resourceId": "1001234:host_id=i-def456",
+                "healthHistory": [
+                    { "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }
+                ]
+            }
+        ])))
         .expect(1)
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids = vec![
+        "1001234:host_id=i-abc123".to_string(),
+        "1001234:host_id=i-def456".to_string(),
+    ];
 
-    run_health_history(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
+    run_health_history(&targets, &resource_ids, OutputFormat::Json)
         .await
-        .expect("run_health_history should hit the encoded path");
+        .expect("health-history should post the whole id list");
+}
+
+/// The API drops ids it cannot parse, so a short answer must still render the
+/// resources it did answer for rather than failing the call.
+#[tokio::test]
+async fn health_history_renders_a_shorter_answer_than_it_asked_for() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthHistory": [{ "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }]
+            }
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids = vec![
+        "1001234:host_id=i-abc123".to_string(),
+        "nonsense".to_string(),
+    ];
+
+    run_health_history(&targets, &resource_ids, OutputFormat::Text)
+        .await
+        .expect("a partial answer is not an error");
+}
+
+/// A resource the API answered for with no samples is still part of the answer.
+#[tokio::test]
+async fn health_history_renders_a_resource_without_samples() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthHistory": [{ "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }]
+            },
+            { "resourceId": "1001234:host_id=i-def456", "healthHistory": [] }
+        ])))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids = vec![
+        "1001234:host_id=i-abc123".to_string(),
+        "1001234:host_id=i-def456".to_string(),
+    ];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_health_history(&targets, &resource_ids, output)
+            .await
+            .expect("a resource without samples is not an error");
+    }
 }
 
 #[tokio::test]
 async fn health_history_handles_empty_history() {
     let server = MockServer::start().await;
 
-    Mock::given(method("GET"))
-        .and(path(format!("{BASE}/plain-id/health-history")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "healthHistory": [] })))
-        .expect(1)
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .expect(3)
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    run_health_history(&targets, "plain-id", OutputFormat::Json)
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_health_history(&targets, &["plain-id".to_string()], output)
+            .await
+            .expect("empty health history should succeed");
+    }
+}
+
+/// The cap is the API's, and past it the API truncates silently, so the refusal
+/// has to happen before any request goes out.
+#[tokio::test]
+async fn health_history_refuses_more_ids_than_the_api_reads() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids: Vec<String> = (0..101).map(|i| format!("1001234:host_id=i-{i}")).collect();
+
+    let err = run_health_history(&targets, &resource_ids, OutputFormat::Json)
         .await
-        .expect("empty health history should succeed");
+        .expect_err("101 ids must be refused");
+    assert!(format!("{err:#}").contains("at most 100"), "got: {err:#}");
 }
 
 #[tokio::test]
@@ -990,8 +1206,10 @@ async fn raw_data_returns_document() {
         .and(path(format!(
             "{BASE}/1001234%3Ahost_id%3Di-abc123/raw-data"
         )))
+        .and(query_param_is_missing("timestamp"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "rawData": { "host_id": "i-abc123", "tags": { "env": "prod" } }
+            "rawData": { "host_id": "i-abc123", "tags": { "env": "prod" } },
+            "versionTimestamp": "2026-09-03T13:26:58Z"
         })))
         .expect(1)
         .mount(&server)
@@ -999,9 +1217,112 @@ async fn raw_data_returns_document() {
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    run_raw_data(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
-        .await
-        .expect("run_raw_data should succeed");
+    run_raw_data(
+        &targets,
+        "1001234:host_id=i-abc123",
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_raw_data should succeed");
+}
+
+/// `--timestamp` accepts the same relative and ISO-8601 forms as `cx logs` and
+/// reaches the wire as an RFC 3339 instant.
+#[tokio::test]
+async fn raw_data_sends_the_timestamp_as_a_query_param() {
+    // An absolute instant is pinned exactly; `now-7d` can only be checked for
+    // shape, since it resolves against the clock.
+    for (given, expected) in [
+        (
+            "2026-09-06T00:00:00Z",
+            Some("2026-09-06T00:00:00.000000000Z"),
+        ),
+        // A version read off a response must reach the wire unchanged, or it
+        // pins the version before the one it names.
+        (
+            "2026-09-03T13:26:58.137128537Z",
+            Some("2026-09-03T13:26:58.137128537Z"),
+        ),
+        ("now-7d", None),
+    ] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(format!("{BASE}/plain-id/raw-data")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "rawData": { "spec": { "replicas": 3 } },
+                "versionTimestamp": "2026-09-03T13:26:58Z"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+
+        run_raw_data(&targets, "plain-id", Some(given), OutputFormat::Json)
+            .await
+            .unwrap_or_else(|e| panic!("--timestamp {given} should reach the wire: {e:#}"));
+
+        let sent = &server.received_requests().await.expect("requests")[0];
+        let sent = sent
+            .url
+            .query_pairs()
+            .find(|(k, _)| k == "timestamp")
+            .map(|(_, v)| v.to_string())
+            .unwrap_or_else(|| panic!("no timestamp param for {given}"));
+
+        match expected {
+            Some(exact) => assert_eq!(sent, exact),
+            None => assert!(sent.ends_with('Z'), "got: {sent}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn raw_data_rejects_an_unparseable_timestamp() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_raw_data(
+        &targets,
+        "plain-id",
+        Some("half past four"),
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("a bad timestamp must be refused before any request");
+}
+
+/// A document the API returns no version for is not the same as no document, so
+/// the two must stay tellable apart in the output.
+#[tokio::test]
+async fn raw_data_renders_a_document_without_a_version() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/plain-id/raw-data")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "rawData": { "spec": { "replicas": 3 } }
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_raw_data(&targets, "plain-id", None, output)
+            .await
+            .expect("a document without a version still renders");
+    }
 }
 
 #[tokio::test]
@@ -1011,16 +1332,222 @@ async fn raw_data_handles_null_document() {
     // A 200 with null rawData means "cleanly missing" - not an error.
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/plain-id/raw-data")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
-        .expect(1)
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "rawData": null, "versionTimestamp": null })),
+        )
+        .expect(3)
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    run_raw_data(&targets, "plain-id", OutputFormat::Json)
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_raw_data(&targets, "plain-id", None, output)
+            .await
+            .expect("null raw data should succeed");
+    }
+}
+
+fn ids(values: &[&str]) -> Vec<String> {
+    values.iter().map(|v| v.to_string()).collect()
+}
+
+/// Both endpoints take the same body, so a caller sweeps then narrows with the
+/// same shape. `deny_unknown_fields` server side makes the exact keys load-bearing.
+#[tokio::test]
+async fn config_commands_post_the_same_body_shape() {
+    for suffix in ["summary", "diff"] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path(format!("{BASE}/configuration/{suffix}")))
+            .and(body_json(json!({
+                "from": "2026-09-06T11:00:00.000000000Z",
+                "to": "2026-09-06T13:00:00.000000000Z",
+                "resourceIds": ["7000098:a=frontend", "7000098:a=cart"]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+        let resource_ids = ids(&["7000098:a=frontend", "7000098:a=cart"]);
+        let from = "2026-09-06T11:00:00Z";
+        let to = Some("2026-09-06T13:00:00Z");
+
+        if suffix == "summary" {
+            run_config_changes(&targets, &resource_ids, from, to, OutputFormat::Json).await
+        } else {
+            run_config_diff(&targets, &resource_ids, from, to, OutputFormat::Json).await
+        }
+        .unwrap_or_else(|e| panic!("{suffix} should post the shared body: {e:#}"));
+    }
+}
+
+#[tokio::test]
+async fn config_changes_renders_results() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/configuration/summary")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [
+                { "resourceId": "7000098:a=frontend", "source": "OTEL", "outcome": "changed",
+                  "lastChange": "2026-09-06T12:43:20Z", "changeCount": 7 },
+                { "resourceId": "7000098:a=cart", "source": "OTEL", "outcome": "created",
+                  "lastChange": "2026-09-06T11:10:00Z", "changeCount": 1 }
+            ]
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_config_changes(
+            &targets,
+            &ids(&["7000098:a=frontend"]),
+            "now-1d",
+            None,
+            output,
+        )
         .await
-        .expect("null raw data should succeed");
+        .expect("summary results should render");
+    }
+}
+
+/// An empty list is the "nothing changed" answer, since a resource that did not
+/// change is absent rather than listed.
+#[tokio::test]
+async fn config_changes_renders_an_empty_result() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/configuration/summary")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_config_changes(
+            &targets,
+            &ids(&["7000098:a=frontend"]),
+            "now-1d",
+            None,
+            output,
+        )
+        .await
+        .expect("no changes is a result, not an error");
+    }
+}
+
+#[tokio::test]
+async fn config_diff_renders_every_outcome() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/configuration/diff")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [
+                { "resourceId": "7000098:a=frontend", "source": "OTEL", "outcome": "changed",
+                  "comparedFrom": "2026-09-05T09:20:00Z", "comparedTo": "2026-09-06T11:59:01Z",
+                  "changes": [
+                      { "field": "spec.replicas", "before": 3, "after": 10 },
+                      { "field": "spec.sidecar", "before": null, "after": { "image": "x" } }
+                  ] },
+                { "resourceId": "7000098:a=cart", "source": "OTEL", "outcome": "unchanged",
+                  "comparedFrom": null, "comparedTo": null, "changes": [] },
+                { "resourceId": "7000098:a=api", "source": "OTEL",
+                  "outcome": "priorStateUnavailable",
+                  "comparedFrom": null, "comparedTo": "2026-09-06T11:59:01Z", "changes": [] }
+            ]
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_config_diff(
+            &targets,
+            &ids(&["7000098:a=frontend"]),
+            "now-1d",
+            None,
+            output,
+        )
+        .await
+        .expect("every outcome should render");
+    }
+}
+
+#[tokio::test]
+async fn config_commands_reject_bad_input_before_any_request() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let one = ids(&["7000098:a=frontend"]);
+    let over_cap: Vec<String> = (0..101).map(|i| format!("7000098:a=r{i}")).collect();
+
+    // Inverted window, unparseable time, and more ids than the API reads.
+    run_config_changes(&targets, &one, "now-1d", Some("now-7d"), OutputFormat::Json)
+        .await
+        .expect_err("an inverted window must be refused");
+    run_config_diff(&targets, &one, "half past four", None, OutputFormat::Json)
+        .await
+        .expect_err("an unparseable --from must be refused");
+    run_config_changes(&targets, &over_cap, "now-1d", None, OutputFormat::Json)
+        .await
+        .expect_err("101 ids must be refused");
+}
+
+/// A resource id is scoped to one team, so these cannot fan out either.
+#[tokio::test]
+async fn config_commands_reject_multiple_profiles() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![
+        common::test_target("prod", &server.uri()),
+        common::test_target("staging", &server.uri()),
+    ];
+    let one = ids(&["7000098:a=frontend"]);
+
+    for (name, err) in [
+        (
+            "config-changes",
+            run_config_changes(&targets, &one, "now-1d", None, OutputFormat::Json)
+                .await
+                .expect_err("config-changes must reject multiple profiles"),
+        ),
+        (
+            "config-diff",
+            run_config_diff(&targets, &one, "now-1d", None, OutputFormat::Json)
+                .await
+                .expect_err("config-diff must reject multiple profiles"),
+        ),
+    ] {
+        let msg = format!("{err:#}");
+        assert!(msg.contains(name), "got: {msg}");
+        assert!(msg.contains("single profile"), "got: {msg}");
+    }
 }
 
 #[tokio::test]
@@ -1109,8 +1636,8 @@ async fn all_output_formats_render() {
 async fn health_history_rejects_multiple_profiles() {
     let server = MockServer::start().await;
 
-    Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "healthHistory": [] })))
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
         .expect(0)
         .mount(&server)
         .await;
@@ -1120,9 +1647,13 @@ async fn health_history_rejects_multiple_profiles() {
         common::test_target("staging", &server.uri()),
     ];
 
-    let err = run_health_history(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
-        .await
-        .expect_err("health-history must reject multiple profiles");
+    let err = run_health_history(
+        &targets,
+        &["1001234:host_id=i-abc123".to_string()],
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("health-history must reject multiple profiles");
     let msg = format!("{err:#}");
     assert!(msg.contains("health-history"), "got: {msg}");
     assert!(msg.contains("single profile"), "got: {msg}");
@@ -1147,9 +1678,14 @@ async fn raw_data_rejects_multiple_profiles() {
         common::test_target("staging", &server.uri()),
     ];
 
-    let err = run_raw_data(&targets, "1001234:host_id=i-abc123", OutputFormat::Json)
-        .await
-        .expect_err("raw-data must reject multiple profiles");
+    let err = run_raw_data(
+        &targets,
+        "1001234:host_id=i-abc123",
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("raw-data must reject multiple profiles");
     let msg = format!("{err:#}");
     assert!(msg.contains("raw-data"), "got: {msg}");
     assert!(msg.contains("single profile"), "got: {msg}");

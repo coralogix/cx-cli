@@ -2195,6 +2195,7 @@ mod tests {
             ]),
             category: Some("Hosts".to_string()),
             type_name: Some("EC2_Instances".to_string()),
+            health_policies: Vec::new(),
         };
 
         assert_eq!(
@@ -2204,6 +2205,7 @@ mod tests {
                 "name": "prod-api-01",
                 "category": "Hosts",
                 "type": "EC2_Instances",
+                "health_policies": [],
                 "columns": { "Name": "prod-api-01", "Region": "eu-west-1" },
             })
         );
@@ -2217,6 +2219,7 @@ mod tests {
             columns: BTreeMap::new(),
             category: Some("Hosts".to_string()),
             type_name: Some("EC2_Instances".to_string()),
+            health_policies: Vec::new(),
         };
 
         assert_eq!(resource_to_json(&item, true, "prod")["profile"], "prod");

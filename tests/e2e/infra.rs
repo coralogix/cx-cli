@@ -62,7 +62,7 @@ fn infra_health_history() {
         return;
     };
     let v = harness::run_ok_json(&["infra", "resources", "health-history", &id, "-o", "json"]);
-    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "timestamp", "status"]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "health_history"]);
 }
 
 /// The endpoint takes a list, and repeats are read once, so the same id twice
@@ -88,7 +88,7 @@ fn infra_health_history_takes_several_ids() {
         "-o",
         "json",
     ]);
-    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "timestamp", "status"]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "health_history"]);
 }
 
 #[test]

@@ -10,33 +10,43 @@ description: >
   "get raw resource data", "infrastructure inventory", "find resources by name",
   "filter resources by service or environment", "unhealthy resources",
   "critical hosts in a region", "what can I filter resources by",
-  "resources in this cluster or namespace", or wants to explore
-  infrastructure resources and their data.
+  "resources in this cluster or namespace",
+  "which resources changed recently", "what changed in this resource",
+  "configuration drift", "did anything change before the incident",
+  "diff this resource's config", "what was this config last week",
+  "why is this resource critical", "which health policy is failing",
+  or wants to explore infrastructure resources and their data.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Infrastructure Resources Skill
 
 Use this skill to discover and inspect **infrastructure resources** — what exists, whether it
-is healthy, and what its raw data contains.
+is healthy, what its raw data contains, and what changed in its configuration.
 
 ## CLI Commands
 
-| Command | Purpose | Key flags |
-|---|---|---|
-| `cx infra resources types` | List available resource types (category/type pairs) | - |
-| `cx infra resources list` | List resources, narrowed by any filterable attribute | all optional: `--match-all NAME=VALUE`, `--match-any NAME=VALUE`, `--category`, `--type`, `--start-row`, `--end-row` |
-| `cx infra resources filters` | List the attributes resources can be filtered by, with their accepted values | `--category`, `--type` |
-| `cx infra resources health-history <resource-id>` | Daily health samples for one resource, oldest first | - |
-| `cx infra resources raw-data <resource-id>` | Raw resource document as JSON | - |
+| Command                                              | Purpose                                                                      | Key flags                                                                                                            |
+|------------------------------------------------------|------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| `cx infra resources types`                           | List available resource types (category/type pairs)                          | -                                                                                                                    |
+| `cx infra resources list`                            | List resources, narrowed by any filterable attribute                         | all optional: `--match-all NAME=VALUE`, `--match-any NAME=VALUE`, `--category`, `--type`, `--start-row`, `--end-row` |
+| `cx infra resources filters`                         | List the attributes resources can be filtered by, with their accepted values | `--category`, `--type`                                                                                               |
+| `cx infra resources health-history <resource-id>...` | Daily health samples per resource, oldest first; takes up to 100 ids         | -                                                                                                                    |
+| `cx infra resources raw-data <resource-id>`          | Raw resource document as JSON, current or as of a past instant               | `--timestamp`                                                                                                        |
+| `cx infra resources config-changes`                  | Which of these resources changed configuration over a window; up to 100 ids  | `--resource-id` (repeatable, required), `--from` (required), `--to`                                                  |
+| `cx infra resources config-diff`                     | What changed, field by field, over a window; up to 100 ids                   | `--resource-id` (repeatable, required), `--from` (required), `--to`                                                  |
 
 - All commands are **read-only** and support `-o json` / `-o toon` for
   structured output.
 - **Multi-profile fan-out applies to `types`, `filters` and `list` only.** Repeat
-  `-p <profile>` on those to compare fleets across accounts. `health-history` and
-  `raw-data` take a resource id, which is scoped to one team, so they **reject**
-  more than one `-p` — run them once per profile instead.
+  `-p <profile>` on those to compare fleets across accounts. `health-history`,
+  `raw-data`, `config-changes` and `config-diff` take resource ids, which are
+  scoped to one team, so they **reject** more than one `-p` — run them once per
+  profile instead.
+- **`health-history`, `config-changes` and `config-diff` cap at 100 ids per
+  call.** The API silently drops the surplus ids and answers as though they were
+- never asked about. Split the list into batches of 100 and run each.
 - **Filtering takes two flags.** Every `--match-all` must match; at least one
   `--match-any` must match; the two groups combine with **AND**. So
   `--match-all OS=linux --match-any Health=Critical --match-any Region=eu-west-1`
@@ -46,8 +56,7 @@ is healthy, and what its raw data contains.
   `--match-any Region=eu-west-1,us-east-2`. In `--match-all` every one must
   match, which is how to narrow on two substrings at once:
   `--match-all 'Name=*alert*,*processing*'` finds the names holding both. An
-  attribute that carries a single value cannot equal two of them, so for
-  **either value**, reach for `--match-any`.
+  attribute that carries a single value cannot equal two of them, so for **either value**, reach for `--match-any`.
 - **An attribute belongs to exactly one flag.** Repeating it within a flag, or
   naming it in both, is refused — list its values after the comma instead.
 - **Nothing is required except one narrowing input.** `--category` and `--type`
@@ -78,10 +87,10 @@ is healthy, and what its raw data contains.
   `--match-all` or `--match-any`. Use `--scope` to narrow by `service`,
   `environment` or `team`; use the filter flags for everything else —
   `--match-all 'Name=*web*'` is the same query as `--name-filter web`.
-- Pagination: `--start-row` / `--end-row` define a row window (`--end-row` is
-  **exclusive**); the default is the first 100 rows, and omitting only `--end-row`
-  gives 100 rows from `--start-row`. Page through large fleets in windows
-  (0-100, 100-200, …). **`list` never pages for you** — fleets can run to hundreds
+- Pagination: `--start-row` / `--end-row` define a row window (`--end-row` is **exclusive**); the default is the first
+  100 rows, and omitting only `--end-row`
+  gives 100 rows from `--start-row`. Page through large fleets in windows (0-100, 100-200, …). **`list` never pages for
+  you** — fleets can run to hundreds
   of thousands of resources, so it returns one window and reports the total.
 - **The window cannot reach past row 10,000.** The API rejects any request whose
   `start-row + rows` exceeds 10,000, so paging cannot enumerate a fleet larger
@@ -94,6 +103,11 @@ is healthy, and what its raw data contains.
   over the rows: keep paging while `start_row + returned_count < total_count`, and
   if it exceeds what you can page to, narrow the query rather than trusting a
   partial answer.
+- **`list` rows carry `health_policies`.** Each entry is `{id, name, status}`,
+  with `status` one of `healthy`, `critical` or `pending` (applied but not yet
+  evaluated). This is the answer to "why is this resource critical" — read it off
+  the row rather than going to `raw-data`. **Policy statuses are lowercase; health-history statuses are capitalised**
+  (`Healthy`/`Critical`/`Unmonitored`). They are different vocabularies.
 - Pass resource IDs **exactly as returned by `list`** (quote them — they contain
   `:` and `=`); the CLI percent-encodes them for you.
 
@@ -122,15 +136,63 @@ nothing more.
      --match-all Health=Critical -o json
    ```
 
-3. **Inspect one resource** using a `resource_id` from step 2. Statuses are
-   `Healthy`, `Critical`, or `Unmonitored`, one sample per day, oldest first:
+3. **Inspect the resources** using `resource_id`s from step 2. Statuses are
+   `Healthy`, `Critical`, or `Unmonitored`, one sample per day, oldest first.
+   Pass every id step 2 turned up in one call rather than looping:
 
    ```bash
-   cx infra resources health-history "1001234:host_id=i-abc123" -o json
+   cx infra resources health-history "1001234:host_id=i-abc" "1001234:host_id=i-def" -o json
    ```
 
    `raw-data` is the **alternative** to this step, not a follow-on — use it
-   instead when you need source-specific detail rather than health.
+   instead when you need source-specific detail rather than health. To ask what *changed* rather than what is, go to the
+   configuration workflow below.
+
+## Configuration Change Workflow
+
+Answering "which resources changed before the incident, and what changed in
+them" is two calls, in this order. Both take the same request shape, so the
+second is the first with a narrower id list.
+
+1. **Sweep** — which of these resources changed at all. A resource that did not
+   change is **absent** from the output, so the row count is the number that
+   changed:
+
+   ```bash
+   cx infra resources config-changes \
+     --resource-id "1001234:host_id=i-abc" --resource-id "1001234:host_id=i-def" \
+     --from now-24h -o json
+   ```
+
+   **At most 100 ids per sweep.** A default `list` window is 100 rows, so one
+   page feeds exactly one sweep.
+
+2. **Narrow** — what changed in the ones the sweep returned:
+
+   ```bash
+   cx infra resources config-diff --resource-id "1001234:host_id=i-abc" \
+     --from now-24h -o json | jq '.[] | {resource_id, outcome, changes}'
+   ```
+
+`config-diff` answers for **every** resource asked about, including unchanged
+ones, so read `outcome` before reading `changes`:
+
+| `outcome`               | meaning                                                            |
+|-------------------------|--------------------------------------------------------------------|
+| `changed`               | both versions exist and differ                                     |
+| `unchanged`             | nothing differs, including no events at all                        |
+| `created`               | the resource first appeared inside the window                      |
+| `priorStateUnavailable` | it changed, but its previous version predates the 14-day look-back |
+| `comparisonUnavailable` | versions exist on both sides, but one would not decode             |
+
+`priorStateUnavailable` is a real answer, not a failure: the change happened,
+the previous version is just too old to compare against. Do not retry it with a
+wider window. The 14-day look-back is fixed and a wider `--from` cannot reach
+past it.
+
+**To diff a single change**, narrow the window around it. `--from` and `--to`
+resolve to the versions either side, so a tight window isolates one change
+without a separate command.
 
 ## Examples
 
@@ -187,12 +249,24 @@ cx infra resources list --category Hosts --type EC2_Instances \
   --start-row 100 --end-row 200 -o json
 ```
 
+### Why a resource is critical
+
+```bash
+# The failing policy is on the row already — no second call needed
+cx infra resources list --match-all Health=Critical -o json \
+  | jq '.resources[] | {name, failing: [.health_policies[] | select(.status == "critical") | .name]}'
+```
+
 ### Find when a resource went critical
 
 ```bash
 # health-history returns a bare array, so no .resources here
 cx infra resources health-history "1001234:host_id=i-abc123" -o json \
   | jq '[.[] | select(.status == "Critical")]'
+
+# Several resources in one call; every row names the resource it belongs to
+cx infra resources health-history "1001234:host_id=i-abc" "1001234:host_id=i-def" -o json \
+  | jq 'group_by(.resource_id)[] | {resource: .[0].resource_id, critical: [.[] | select(.status == "Critical") | .timestamp]}'
 ```
 
 ### Read the raw resource document
@@ -200,7 +274,42 @@ cx infra resources health-history "1001234:host_id=i-abc123" -o json \
 ```bash
 # Source-specific detail: tags, instance metadata, configuration
 cx infra resources raw-data "1001234:host_id=i-abc123" -o json
+
+# The document itself is under .raw_data
+cx infra resources raw-data "1001234:host_id=i-abc123" -o json | jq '.raw_data'
 ```
+
+### Read a configuration as it stood in the past
+
+```bash
+cx infra resources raw-data "1001234:host_id=i-abc123" --timestamp now-7d -o json \
+  | jq '{version: .version_timestamp, config: .raw_data}'
+```
+
+`--timestamp` takes `now-7d` or ISO-8601 and returns the newest version **at or
+before** that instant, so what comes back is rarely the instant asked for —
+always read `version_timestamp` to learn which version is in hand. It is `null`
+when the document carries no version, which is not the same as there being no
+document. A `version_timestamp` can be passed straight back as `--timestamp` to
+pin that same version.
+
+### What changed in the last day
+
+```bash
+# Sweep: only the resources that changed come back
+cx infra resources config-changes --resource-id "1001234:host_id=i-abc" \
+  --from now-24h -o json | jq '.[] | {resource_id, outcome, change_count}'
+
+# Narrow: field-level changes, before and after
+cx infra resources config-diff --resource-id "1001234:host_id=i-abc" \
+  --from now-24h -o json \
+  | jq '.[] | select(.outcome == "changed") | .changes[] | {field, before, after}'
+```
+
+`before` and `after` are raw JSON, so a number stays a number and a boolean
+stays a boolean. A JSON `null` on one side means the field was added or removed;
+it is a value, not a missing one. An added or removed subtree is reported as one
+entry rather than one per leaf, so a new sidecar reads as a single change.
 
 ## Key Principles
 
@@ -208,27 +317,41 @@ cx infra resources raw-data "1001234:host_id=i-abc123" -o json
   value; start from `cx infra resources filters`, which lists both.
 - **Quote resource IDs and pass them verbatim** — they embed `:`, `|`, and `=`;
   the CLI handles URL encoding.
-- **A missing raw document is not an error** — `raw-data` exits 0 and emits an
-  *empty result* on **stdout**: `[]` in `json`, `[0]:` in `agents`, and
-  `No raw data found.` in text. Only the note `no raw data for this resource` goes
-  to stderr. Parse the empty stdout result as a cleanly absent document, not a
-  failure — and do not expect stdout to be blank.
+- **A missing raw document is not an error** — `raw-data` exits 0. In `json` and
+  `toon` the envelope still comes back, with `raw_data` and `version_timestamp`
+  both `null`; text prints `No raw data found.`. Only the note
+  `no raw data for this resource` goes to stderr. Read a null `raw_data` as a
+  cleanly absent document, not a failure — and do not expect stdout to be blank.
+- **An empty sweep is an answer** — `config-changes` omits resources that did not
+  change, so no rows means nothing changed in that window. Do not retry or widen
+  the window on the assumption the call failed.
+- **`config-changes` over-reports on cloud and agent types.** The 16 Kubernetes
+  types carry a keepalive fingerprint, so a reported change is a real one. The 7
+  cloud and agent types emit an update every collection cycle until a pipeline
+  change lands, so they can appear as changed when nothing did. Confirm those
+  with `config-diff`, which compares the configurations rather than counting
+  events, before reporting a change to the user.
+- **A shorter answer than the id list is normal** — the API drops ids it cannot
+  parse and reads repeats once, so `health-history` can answer for fewer
+  resources than were asked about. The shortfall is reported on **stderr** as a
+  count, not by naming the ids: the `resource_id` that comes back is a normalized
+  form and will not always string-match what was sent.
 - **Use `-o json` with `jq`** for filtering; use `-o toon` for token-efficient
   output in agent contexts.
 - **The row window applies per profile** — a multi-profile `list` adds a
   `counts_by_profile` breakdown, so page each profile against its own
   `total_count`, not the aggregate.
-- **A resource id never crosses profiles** — it embeds the team id
-  (`1001234:host_id=…`), so an id from one account cannot resolve in another. When
+- **A resource id never crosses profiles** — it embeds the team id (`1001234:host_id=…`), so an id from one account
+  cannot resolve in another. When
   a multi-profile `list` turns up something worth inspecting, note its `profile`
   field and query that single profile for its health or raw data.
 - **Infra health is its own concept** — the `Healthy`/`Critical`/`Unmonitored`
   statuses are computed by the infrastructure domain and are not the same as
   Service Catalog health. Correlate them with telemetry signals;
   do not treat them as interchangeable.
-- **`resource_id` never leaves this skill** — pass it only to `health-history`
-  and `raw-data`. For every other command, pivot on the resource `name` or the
-  `Service` attribute value.
+- **`resource_id` never leaves this skill** — pass it only to `health-history`,
+  `raw-data`, `config-changes` and `config-diff`. For every other command, pivot
+  on the resource `name` or the `Service` attribute value.
 
 ## Related Skills
 

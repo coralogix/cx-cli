@@ -341,26 +341,15 @@ pub async fn run_health_history(
 
     match output {
         OutputFormat::Json | OutputFormat::Toon => {
-            let rows: Vec<Value> = flat_map_history(&results, |resource, entry| {
-                let mut row = health_entry_to_json(entry);
-                row["resource_id"] = json!(resource);
-                row
-            });
+            let rows: Vec<Value> = results.iter().map(history_to_json).collect();
             render_machine_rows(output, &rows)?;
         }
         OutputFormat::Text => {
-            let rows: Vec<Vec<String>> = flat_map_history(&results, |resource, entry| {
-                vec![
-                    target.profile_name.clone(),
-                    resource.to_string(),
-                    display_or_dash(entry.timestamp.as_deref()),
-                    display_or_dash(entry.status.as_deref()),
-                ]
-            });
-            if rows.is_empty() {
+            if results.is_empty() {
                 render::print_no_results("No health history found.");
                 return Ok(());
             }
+            let rows = history_table(&results, &target.profile_name);
             render::render_table(&["Resource", "Timestamp", "Status"], rows, false);
         }
     }
@@ -989,6 +978,18 @@ fn health_entry_to_json(item: &HealthHistoryEntry) -> Value {
     })
 }
 
+fn history_to_json(item: &ResourceHealthHistory) -> Value {
+    let history: Vec<Value> = item
+        .health_history
+        .iter()
+        .map(health_entry_to_json)
+        .collect();
+    json!({
+        "resource_id": item.resource_id,
+        "health_history": history,
+    })
+}
+
 /// Builds one resource-type row as JSON for `json` / `toon` output after fan-out.
 fn type_mapping_to_json(item: &ResourceTypeMapping, include_profile: bool, profile: &str) -> Value {
     let v = json!({
@@ -1061,21 +1062,30 @@ fn display_name(item: &ResourceData) -> Option<&str> {
         .or(item.name.as_deref())
 }
 
-fn flat_map_history<T>(
-    results: &[ResourceHealthHistory],
-    mut row: impl FnMut(&str, &HealthHistoryEntry) -> T,
-) -> Vec<T> {
-    results
-        .iter()
-        .flat_map(|result| {
-            let resource = result.resource_id.as_deref().unwrap_or("-");
-            result
-                .health_history
-                .iter()
-                .map(move |entry| (resource, entry))
-        })
-        .map(|(resource, entry)| row(resource, entry))
-        .collect()
+/// One table row per sample, and a row of dashes for a resource with none.
+fn history_table(results: &[ResourceHealthHistory], profile: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    for result in results {
+        let resource = display_or_dash(result.resource_id.as_deref());
+        if result.health_history.is_empty() {
+            rows.push(vec![
+                profile.to_string(),
+                resource,
+                "-".to_string(),
+                "-".to_string(),
+            ]);
+            continue;
+        }
+        for entry in &result.health_history {
+            rows.push(vec![
+                profile.to_string(),
+                resource.clone(),
+                display_or_dash(entry.timestamp.as_deref()),
+                display_or_dash(entry.status.as_deref()),
+            ]);
+        }
+    }
+    rows
 }
 
 /// The API drops ids it cannot parse and reads duplicates once, so a short
@@ -1946,7 +1956,7 @@ mod tests {
     }
 
     #[test]
-    fn history_flattens_to_one_row_per_sample_naming_its_resource() {
+    fn history_table_has_one_row_per_sample_naming_its_resource() {
         let results = [
             history(Some("id-1"), &[("2026-07-01T00:00:00Z", "Healthy")]),
             history(
@@ -1958,40 +1968,62 @@ mod tests {
             ),
         ];
 
-        let rows = flat_map_history(&results, |resource, entry| {
-            (
-                resource.to_string(),
-                display_or_dash(entry.status.as_deref()),
-            )
-        });
-
         assert_eq!(
-            rows,
+            history_table(&results, "p"),
             vec![
-                ("id-1".to_string(), "Healthy".to_string()),
-                ("id-2".to_string(), "Critical".to_string()),
-                ("id-2".to_string(), "Healthy".to_string()),
+                vec!["p", "id-1", "2026-07-01T00:00:00Z", "Healthy"],
+                vec!["p", "id-2", "2026-07-01T00:00:00Z", "Critical"],
+                vec!["p", "id-2", "2026-07-02T00:00:00Z", "Healthy"],
             ]
         );
     }
 
-    /// A resource the API answered for but has no samples on contributes no
-    /// rows, so it must not leave a blank row behind.
     #[test]
-    fn history_skips_a_resource_without_samples() {
+    fn history_table_keeps_a_resource_without_samples() {
         let results = [
             history(Some("id-1"), &[]),
             history(Some("id-2"), &[("2026-07-01T00:00:00Z", "Healthy")]),
         ];
-        let rows = flat_map_history(&results, |resource, _| resource.to_string());
-        assert_eq!(rows, vec!["id-2".to_string()]);
+
+        assert_eq!(
+            history_table(&results, "p"),
+            vec![
+                vec!["p", "id-1", "-", "-"],
+                vec!["p", "id-2", "2026-07-01T00:00:00Z", "Healthy"],
+            ]
+        );
     }
 
     #[test]
-    fn history_dashes_a_missing_resource_id() {
+    fn history_table_dashes_a_missing_resource_id() {
         let results = [history(None, &[("2026-07-01T00:00:00Z", "Healthy")])];
-        let rows = flat_map_history(&results, |resource, _| resource.to_string());
-        assert_eq!(rows, vec!["-".to_string()]);
+        assert_eq!(history_table(&results, "p")[0][1], "-");
+    }
+
+    #[test]
+    fn history_json_keeps_one_entry_per_resource() {
+        let results = [
+            history(Some("id-1"), &[("2026-07-01T00:00:00Z", "Healthy")]),
+            history(Some("id-2"), &[]),
+        ];
+        let rows: Vec<Value> = results.iter().map(history_to_json).collect();
+
+        assert_eq!(
+            rows,
+            vec![
+                json!({
+                    "resource_id": "id-1",
+                    "health_history": [{ "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }]
+                }),
+                json!({ "resource_id": "id-2", "health_history": [] }),
+            ]
+        );
+    }
+
+    #[test]
+    fn history_json_keeps_a_missing_resource_id_as_null() {
+        let v = history_to_json(&history(None, &[]));
+        assert_eq!(v["resource_id"], Value::Null);
     }
 
     fn change(field: &str, before: Value, after: Value) -> FieldChangeData {

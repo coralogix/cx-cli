@@ -1126,6 +1126,37 @@ async fn health_history_renders_a_shorter_answer_than_it_asked_for() {
         .expect("a partial answer is not an error");
 }
 
+/// A resource the API answered for with no samples is still part of the answer.
+#[tokio::test]
+async fn health_history_renders_a_resource_without_samples() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/health-history")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {
+                "resourceId": "1001234:host_id=i-abc123",
+                "healthHistory": [{ "timestamp": "2026-07-01T00:00:00Z", "status": "Healthy" }]
+            },
+            { "resourceId": "1001234:host_id=i-def456", "healthHistory": [] }
+        ])))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let resource_ids = vec![
+        "1001234:host_id=i-abc123".to_string(),
+        "1001234:host_id=i-def456".to_string(),
+    ];
+
+    for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
+        run_health_history(&targets, &resource_ids, output)
+            .await
+            .expect("a resource without samples is not an error");
+    }
+}
+
 #[tokio::test]
 async fn health_history_handles_empty_history() {
     let server = MockServer::start().await;

@@ -183,7 +183,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx metrics` | `cx-telemetry-querying` | Covered (loads `metrics-querying.md` + `promql-guidelines.md`) |
 | `cx dataprime` | `cx-telemetry-querying` | Covered (loads `dataprime-reference.md`) |
 | `cx docs` | `coralogix-docs` | Covered |
-| `cx logs` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
+| `cx dataprime query` (RUM, `source rum.events`) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx alerts` | `cx-alerts` | Covered |

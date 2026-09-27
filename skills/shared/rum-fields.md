@@ -1,6 +1,6 @@
 # RUM Field Reference
 
-All fields are under `$d.*` in the `rum.events` dataset (`source rum.events`), with no `cx_rum` prefix - e.g. `$d.event_context.type`.
+All fields are under `$d.*` in the `rum.events` dataset (`cx dataprime query --source rum.events`), with no `cx_rum` prefix - e.g. `$d.event_context.type`.
 
 ## Table of Contents
 

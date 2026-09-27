@@ -178,7 +178,7 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 
 **Approach:**
 1. This is clearly a RUM question - load `references/rum-querying.md` + `references/rum-fields.md` + `references/dataprime-reference.md`
-2. Query web vitals and page load times with `cx dataprime query 'source rum.events | ...'`
+2. Query web vitals and page load times with `cx dataprime query --source rum.events '...'`
 3. If RUM shows backend calls are slow, pivot to spans references for the API calls
 
 ### Example 4: Error Investigation (Logs + Traces)

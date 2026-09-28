@@ -48,6 +48,93 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Convert supported CLI input formats into the Integration Service metadata shape.
+///
+/// `cx integrations get <key>` returns the integration catalog entry together with its
+/// registered deployments. Select the requested deployment from that response so users can
+/// pass the fetched JSON directly to `update` or `test`.
+fn integration_metadata(body: &Value, deployment_id: &str) -> Result<Value> {
+    if let Some(metadata) = body.get("metadata") {
+        return Ok(metadata.clone());
+    }
+
+    if body.get("integrationKey").is_some() {
+        let mut metadata = body.clone();
+        if let Some(parameters) = metadata.get("parameters").cloned() {
+            let Some(object) = metadata.as_object_mut() else {
+                unreachable!("a JSON value with integrationKey must be an object");
+            };
+            object.remove("parameters");
+            object.insert(
+                "integrationParameters".to_string(),
+                json!({ "parameters": parameters }),
+            );
+        }
+        return Ok(metadata);
+    }
+
+    let integration_key = body
+        .pointer("/integrationDetail/integration/id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "integration JSON must contain `integrationKey`, `metadata`, or \
+             `integrationDetail.integration.id`"
+            )
+        })?;
+    let deployment = body
+        .pointer("/integrationDetail/default/registered")
+        .and_then(Value::as_array)
+        .and_then(|deployments| {
+            deployments.iter().find(|deployment| {
+                deployment.get("id").and_then(Value::as_str) == Some(deployment_id)
+            })
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!("deployment `{deployment_id}` was not found in the integration JSON")
+        })?;
+    let version = deployment
+        .get("definitionVersion")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            anyhow::anyhow!("deployment `{deployment_id}` is missing `definitionVersion`")
+        })?;
+    let parameters = deployment
+        .get("parameters")
+        .ok_or_else(|| anyhow::anyhow!("deployment `{deployment_id}` is missing `parameters`"))?;
+
+    Ok(json!({
+        "integrationKey": integration_key,
+        "integrationParameters": { "parameters": parameters },
+        "version": version,
+    }))
+}
+
+fn test_request(body: &Value, deployment_id: Option<&str>) -> Result<Value> {
+    if body.get("integrationData").is_some() && body.get("integrationId").is_some() {
+        let mut request = body.clone();
+        if let Some(deployment_id) = deployment_id {
+            request["integrationId"] = Value::String(deployment_id.to_string());
+        }
+        return Ok(request);
+    }
+
+    let deployment_id = deployment_id
+        .or_else(|| body.get("integrationId").and_then(Value::as_str))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "`cx integrations test` requires `--id <deployed-integration-id>` unless \
+             the JSON contains both `integrationId` and `integrationData`"
+            )
+        })?;
+    let metadata = integration_metadata(body, deployment_id)?;
+
+    Ok(json!({
+        "integrationId": deployment_id,
+        "integrationData": metadata,
+    }))
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching integrations...".dimmed());
     let include_profile = targets.len() > 1;
@@ -219,15 +306,18 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    let request = json!({
+        "id": id,
+        "metadata": integration_metadata(&body, id)?,
+    });
     eprintln!("{}", format!("Updating integration {id}...").dimmed());
     let id = id.to_string();
 
     let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
-        let id = id.clone();
+        let request = request.clone();
         async move {
             let api = IntegrationsApi::new(&t.client);
-            Ok(api.update(&id, &body).await?)
+            Ok(api.update(&request).await?)
         }
     })
     .await;
@@ -388,17 +478,19 @@ pub async fn run_deployed(
 
 pub async fn run_test(
     targets: &[Arc<ExecutionTarget>],
+    id: Option<&str>,
     from_file: &str,
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    let request = test_request(&body, id)?;
     eprintln!("{}", "Testing integration...".dimmed());
 
     let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
+        let request = request.clone();
         async move {
             let api = IntegrationsApi::new(&t.client);
-            Ok(api.test(&body).await?)
+            Ok(api.test(&request).await?)
         }
     })
     .await;

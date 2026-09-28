@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tabled::{Table, Tabled};
+use tabled::builder::Builder;
 use toon_format::encode_default as toon_encode;
 
 pub mod api;
@@ -48,17 +48,6 @@ pub enum DataprimeFilter {
     All,
     Commands,
     Functions,
-}
-
-/// Row structure for the list table output.
-#[derive(Tabled)]
-struct ListRow {
-    #[tabled(rename = "Name")]
-    name: String,
-    #[tabled(rename = "Type")]
-    kind: String,
-    #[tabled(rename = "Description")]
-    description: String,
 }
 
 /// Load the DataPrime documentation from the bundle embedded at build time (`assets/dataprime_docs.yaml`).
@@ -161,16 +150,16 @@ pub fn run_list(
                 return Ok(());
             }
 
-            let rows: Vec<ListRow> = items
-                .iter()
-                .map(|(name, kind, entry)| ListRow {
-                    name: name.clone(),
-                    kind: kind.clone(),
-                    description: truncate(&first_sentence(&entry.description), 60),
-                })
-                .collect();
-
-            let table = Table::new(rows).to_string();
+            let mut builder = Builder::default();
+            builder.push_record(["Name", "Type", "Description"]);
+            for (name, kind, entry) in &items {
+                builder.push_record([
+                    name.clone(),
+                    kind.clone(),
+                    truncate(&first_sentence(&entry.description), 60),
+                ]);
+            }
+            let table = builder.build().to_string();
             println!("{table}");
             println!(
                 "\n{} items ({} commands, {} functions)",

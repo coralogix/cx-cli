@@ -15,7 +15,6 @@ use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
 use coralogix_cli::execution::build_targets;
-use coralogix_cli::request_metadata::RequestMetadata;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
 use coralogix_cli::update_check;
@@ -30,6 +29,22 @@ fn complete_profile_names(current: &OsStr) -> Vec<CompletionCandidate> {
         .filter(|name| name.starts_with(prefix))
         .map(CompletionCandidate::new)
         .collect()
+}
+
+/// Value parser for `cx init --install-completions <shell>`. Restricts the
+/// choice to the shells the guided flow can install to a known default path
+/// (zsh, bash, fish); other shells need an explicit path, available via the
+/// interactive picker's "Other" option or `cx completions install --path`.
+fn parse_completions_shell(value: &str) -> Result<Shell, String> {
+    match value {
+        "zsh" => Ok(Shell::Zsh),
+        "bash" => Ok(Shell::Bash),
+        "fish" => Ok(Shell::Fish),
+        other => Err(format!(
+            "unsupported shell '{other}' (choose zsh, bash, or fish; \
+             for other shells use `cx completions install <shell> --path ...`)"
+        )),
+    }
 }
 
 /// How `search-fields` searches: by semantic description or by value content.
@@ -108,7 +123,9 @@ pub enum SearchByValueDataset {
   \x1b[1molly\x1b[0m               Interact with the AI assistant
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
+  \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
   \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
 struct Cli {
@@ -141,6 +158,15 @@ struct Cli {
         help_heading = "Global Options"
     )]
     region: Option<String>,
+
+    /// HTTP request timeout in seconds.
+    #[arg(
+        long = "http-timeout",
+        global = true,
+        env = "CX_HTTP_TIMEOUT",
+        help_heading = "Global Options"
+    )]
+    http_timeout: Option<u64>,
 
     /// Output format: text, json, or toon. Overrides the default set in config.
     #[arg(long, short = 'o', global = true, help_heading = "Global Options")]
@@ -221,8 +247,99 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum SkillsCmd {
+    /// Install or update the cx agent skills bundle via the `skills` npx installer.
+    ///
+    /// By default this asks one question (install scope) and then runs the
+    /// installer fully non-interactively with agent auto-detection. Re-running
+    /// updates already-installed skills to the latest published bundle.
+    /// Requires Node.js (npx).
+    #[command(after_help = "\
+Examples:
+  cx skills install                     # asks global vs local, then installs
+  cx skills install --global            # no questions asked (also updates in place)
+  cx skills install --local --agent claude-code
+  cx skills install --interactive       # walk the installer's full flow")]
+    Install {
+        /// Install skills globally (~/), available in every project.
+        #[arg(long, conflicts_with_all = ["local", "interactive"])]
+        global: bool,
+
+        /// Install skills locally (./), for this project only.
+        #[arg(long, conflicts_with = "interactive")]
+        local: bool,
+
+        /// Target specific agents (passed through to the installer's -a;
+        /// overrides its auto-detection). Repeatable.
+        #[arg(long = "agent", value_name = "NAME", conflicts_with = "interactive")]
+        agents: Vec<String>,
+
+        /// Walk the skills installer's full interactive flow (skill/agent
+        /// selection, scope, install method) instead of the default
+        /// non-interactive install.
+        #[arg(long)]
+        interactive: bool,
+    },
+}
+
+#[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
+    /// One-step onboarding: configure a profile and install the cx agent skills.
+    ///
+    /// Interactive by default (OAuth browser login); pass `--api-key` (or set
+    /// CX_API_KEY) to authenticate with an API key instead. With `--url` and
+    /// an API key the profile step is prompt-free; add `--global-skills`/
+    /// `--local-skills` (or `--no-skills`) to also answer the skills-scope
+    /// question and get a fully
+    /// prompt-free run for CI and coding agents — without a scope flag, a run
+    /// with no terminal skips the skills install with a warning. `--oauth`
+    /// works without a terminal too: the sign-in URL is printed for you (or an
+    /// agent's user) to approve in a browser, then the command waits for the
+    /// approval — handy when no API key is on hand, but because it needs a
+    /// browser it is not suited to fully headless CI (use `--api-key` there).
+    /// Idempotent: if a profile already exists the profile step is skipped
+    /// (reconfigure with `cx profiles add --force`).
+    #[command(after_help = "\
+Examples:
+  cx init                                              # interactive walkthrough
+  cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global-skills
+  cx init --oauth --url https://myteam.app.eu2.coralogix.com
+  cx init --no-skills                                  # skip the agent-skills install")]
+    Init {
+        /// Coralogix URL to derive the region from (e.g. your browser URL).
+        /// Unrecognized URLs are used as a custom API endpoint (BYOC / private link).
+        #[arg(long)]
+        url: Option<String>,
+        /// Force OAuth browser login, ignoring any supplied API key
+        /// (--api-key / CX_API_KEY). Without a key, OAuth is used anyway.
+        /// No terminal required: the sign-in URL is printed and the command
+        /// waits while it is approved in a browser, so an agent can onboard
+        /// with OAuth by surfacing the URL to its user.
+        #[arg(long)]
+        oauth: bool,
+        /// Skip the agent-skills install step (installed by default).
+        #[arg(long, conflicts_with_all = ["global_skills", "local_skills", "agents"])]
+        no_skills: bool,
+        /// Install skills globally (~/), available in every project.
+        #[arg(long, conflicts_with = "local_skills")]
+        global_skills: bool,
+        /// Install skills locally (./), for this project only.
+        #[arg(long)]
+        local_skills: bool,
+        /// Target specific agents for the skills install (passed through to the
+        /// installer's -a; overrides its auto-detection). Repeatable.
+        #[arg(long = "agent", value_name = "NAME")]
+        agents: Vec<String>,
+        /// Install shell completions for the given shell (zsh, bash, or fish)
+        /// without prompting. Omit to be asked interactively (a picker with a
+        /// "don't install" default); a non-interactive run then skips the step.
+        /// Ignored when completions are already installed - use
+        /// `cx completions install <shell>` to add a shell or reinstall.
+        #[arg(long, value_name = "SHELL", value_parser = parse_completions_shell)]
+        install_completions: Option<Shell>,
+    },
+
     /// Manage profiles (list, add, delete, set-default).
     Profiles {
         #[command(subcommand)]
@@ -237,6 +354,15 @@ enum Commands {
 
     /// Remove stale cx_results* files (older than 30 minutes) from the temp directory.
     Cleanup,
+
+    /// Install or update the cx agent skills for coding agents (Claude Code, Cursor, Codex, ...).
+    ///
+    /// Re-run `cx skills install` anytime to update already-installed skills
+    /// to the latest published bundle.
+    Skills {
+        #[command(subcommand)]
+        cmd: SkillsCmd,
+    },
 
     /// Query logs using DataPrime syntax.
     #[command(after_help = "\
@@ -634,14 +760,56 @@ impl Commands {
 enum ProfilesCmd {
     /// List all configured profiles.
     List,
-    /// Add or reconfigure a profile interactively.
+    /// Add or reconfigure a profile.
+    ///
+    /// Values supplied via flags/env are never prompted for. On a terminal,
+    /// missing values are prompted interactively. Without a terminal (or when
+    /// both an API key and a region/URL are supplied), nothing is prompted:
+    /// missing required values are errors, and existing profiles are only
+    /// overwritten with --force.
+    #[command(after_help = "\
+Examples:
+  cx profiles add                                        # fully interactive
+  cx profiles add prod --region eu2                      # region answered, rest prompted
+  cx profiles add --oauth --region eu2                   # straight to browser login
+  cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
+  CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite")]
     Add {
-        /// Profile name to configure (prompted if not provided).
+        /// Profile name to configure (prompted if not provided; defaults to
+        /// "default" when running non-interactively).
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: Option<String>,
+        /// Profile name to configure (alternative to the positional NAME).
+        /// Named --name to stay clear of the global --profile selector.
+        #[arg(long = "name", conflicts_with = "name", value_name = "NAME")]
+        name_flag: Option<String>,
+        /// Coralogix URL to derive the region from (e.g. your browser URL).
+        /// Unrecognized URLs are used as a custom API endpoint (BYOC / private link).
+        #[arg(long, conflicts_with = "region")]
+        url: Option<String>,
+        /// Region short-name (us1, us2, us3, eu1, eu2, ap1, ap2, ap3). Alternative to --url.
+        #[arg(long)]
+        region: Option<String>,
+        /// API key (Team Key or Personal Key). Also read from CX_API_KEY.
+        #[arg(long, env = "CX_API_KEY", hide_env_values = true, value_name = "KEY")]
+        api_key: Option<String>,
+        /// Use OAuth browser login, skipping the auth-method prompt. Takes
+        /// precedence over --api-key / CX_API_KEY. Prints the sign-in URL, so
+        /// it also works without a terminal (requires --url or --region there).
+        #[arg(long)]
+        oauth: bool,
+        /// Overwrite an existing profile without prompting.
+        #[arg(long)]
+        force: bool,
         /// Set this profile as the default without prompting.
         #[arg(long)]
         set_default: bool,
+        /// When creating the first profile, disable the Olly AI assistant
+        /// (`cx olly ask`). Olly is enabled by default; this opts out. Only
+        /// affects first-profile setup, where the global Olly setting is
+        /// written. No prompt either way.
+        #[arg(long)]
+        disable_olly: bool,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -764,7 +932,7 @@ Examples:
         #[arg(long, default_value = "gpt-5.2")]
         model: String,
 
-        /// Timeout in seconds for response.
+        /// Maximum seconds to wait for an Olly response.
         #[arg(long, default_value_t = 900)]
         timeout: u32,
 
@@ -1802,6 +1970,9 @@ enum IntegrationsCmd {
     },
     /// Test an integration configuration.
     Test {
+        /// Deployed integration ID. Required unless the JSON contains integrationId and integrationData.
+        #[arg(long)]
+        id: Option<String>,
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
@@ -2612,7 +2783,8 @@ enum InfraCmd {
     #[command(after_help = "\
 Examples:
   cx infra resources types
-  cx infra resources list --category Hosts --type EC2_Instances --scope environment=prod
+  cx infra resources filters --category Hosts
+  cx infra resources list --category Hosts --type EC2_Instances
   cx infra resources health-history \"1001234:host_id=i-abc123\"
   cx infra resources raw-data \"1001234:host_id=i-abc123\"")]
     Resources {
@@ -2625,29 +2797,73 @@ Examples:
 enum InfraResourcesCmd {
     /// List the available resource types (category/type pairs).
     Types,
-    /// List resources of a given category and type.
+    /// List the attributes resources can be filtered by.
+    #[command(after_help = "\
+Examples:
+  cx infra resources filters
+  cx infra resources filters --category Hosts
+  cx infra resources filters --category Hosts --type EC2_Instances")]
+    Filters {
+        /// Limit to one category (discover with `cx infra resources types`).
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Limit to one resource type within the category.
+        #[arg(long)]
+        r#type: Option<String>,
+    },
+    /// List resources, optionally narrowed by category, type or attribute filters.
     #[command(after_help = "\
 Examples:
   cx infra resources list --category Hosts --type EC2_Instances
-  cx infra resources list --category Hosts --type EC2_Instances --name-filter web
-  cx infra resources list --category Hosts --type EC2_Instances --scope service=checkout --scope environment=prod
-  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200")]
+  cx infra resources list --match-all Health=Critical
+  cx infra resources list --match-all Region=eu-west-1 --match-all Health=Critical
+  cx infra resources list --match-any Name=coredns --match-any Namespace=kube-system
+  cx infra resources list --match-all OS=linux --match-any Health=Critical --match-any Region=eu-west-1
+  cx infra resources list --match-any Region=eu-west-1,us-east-2
+  cx infra resources list --match-all 'Name=*alert*,*processing*'
+  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200
+
+Discover what can be filtered with `cx infra resources filters`.")]
     List {
         /// Resource category (discover with `cx infra resources types`).
         #[arg(long)]
-        category: String,
+        category: Option<String>,
 
         /// Resource type within the category (discover with `cx infra resources types`).
         #[arg(long)]
-        r#type: String,
+        r#type: Option<String>,
 
-        /// Filter resources by name.
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. Every one must
+        /// match, and commas require every listed value. Discover names with
+        /// `cx infra resources filters`.
         #[arg(long)]
+        match_all: Vec<String>,
+
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. At least one
+        /// must match, and commas accept any listed value. Combined with
+        /// --match-all by AND.
+        #[arg(long)]
+        match_any: Vec<String>,
+
+        /// Filter resources by name. Legacy: needs --category and --type, and
+        /// cannot be combined with --match-all or --match-any.
+        #[arg(
+            long,
+            requires_all = ["category", "type"],
+            conflicts_with_all = ["match_all", "match_any"]
+        )]
         name_filter: Option<String>,
 
         /// Scope filter as key=value; repeatable across different keys, at most
         /// once per key. Keys: service, environment, team. Multiple keys AND together.
-        #[arg(long)]
+        /// Legacy: needs --category and --type, and cannot be combined with
+        /// --match-all or --match-any.
+        #[arg(
+            long,
+            requires_all = ["category", "type"],
+            conflicts_with_all = ["match_all", "match_any"]
+        )]
         scope: Vec<String>,
 
         /// First row of the page window (0-based; default 0).
@@ -2817,8 +3033,29 @@ async fn main() -> Result<()> {
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name, set_default } => {
-                commands::profiles::run_add(name, set_default).await
+            ProfilesCmd::Add {
+                name,
+                name_flag,
+                url,
+                region,
+                api_key,
+                oauth,
+                force,
+                set_default,
+                disable_olly,
+            } => {
+                commands::profiles::run_add(commands::profiles::AddArgs {
+                    name: name.or(name_flag),
+                    url,
+                    region,
+                    api_key,
+                    oauth,
+                    force,
+                    set_default,
+                    disable_olly,
+                    quick: false,
+                })
+                .await
             }
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
@@ -2851,7 +3088,12 @@ async fn main() -> Result<()> {
         let top = safety::get_top_level_subcommand_name(&matches);
         let is_local = matches!(
             top.as_deref(),
-            Some("profiles") | Some("cleanup") | Some("completions") | Some("docs")
+            Some("profiles")
+                | Some("cleanup")
+                | Some("completions")
+                | Some("docs")
+                | Some("skills")
+                | Some("init")
         );
         if !is_local {
             if let Some(leaf) = safety::get_leaf_subcommand_name(&matches) {
@@ -2886,8 +3128,29 @@ async fn main() -> Result<()> {
     if let Commands::Profiles { cmd } = cli.command {
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
-            ProfilesCmd::Add { name, set_default } => {
-                commands::profiles::run_add(name, set_default).await
+            ProfilesCmd::Add {
+                name,
+                name_flag,
+                url,
+                region,
+                api_key,
+                oauth,
+                force,
+                set_default,
+                disable_olly,
+            } => {
+                commands::profiles::run_add(commands::profiles::AddArgs {
+                    name: name.or(name_flag),
+                    url,
+                    region,
+                    api_key,
+                    oauth,
+                    force,
+                    set_default,
+                    disable_olly,
+                    quick: false,
+                })
+                .await
             }
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
@@ -2917,6 +3180,72 @@ async fn main() -> Result<()> {
         return result;
     }
 
+    // Init chains profile setup + skills install locally - no API credentials
+    // up front (the profile step acquires them). Handled before credential
+    // resolution, like profiles/skills.
+    if let Commands::Init {
+        url,
+        oauth,
+        no_skills,
+        global_skills,
+        local_skills,
+        agents,
+        install_completions,
+    } = cli.command
+    {
+        let scope = if global_skills {
+            Some(commands::skills::SkillsScope::Global)
+        } else if local_skills {
+            Some(commands::skills::SkillsScope::Local)
+        } else {
+            None
+        };
+        let result = commands::init::run_init(commands::init::InitArgs {
+            url,
+            region: cli.region,
+            api_key: cli.api_key,
+            oauth,
+            install_skills: !no_skills,
+            agents,
+            scope,
+            install_completions,
+        })
+        .await;
+        update_check::maybe_print_notice(OutputFormat::Text);
+        return result;
+    }
+
+    // Skills install shells out to npx locally - no API credentials.
+    if let Commands::Skills { cmd } = cli.command {
+        let SkillsCmd::Install {
+            global,
+            local,
+            agents,
+            interactive,
+        } = cmd;
+        let result = if interactive {
+            commands::skills::run_advanced_install()
+        } else {
+            let scope = if global {
+                Some(commands::skills::SkillsScope::Global)
+            } else if local {
+                Some(commands::skills::SkillsScope::Local)
+            } else {
+                None
+            };
+            // The explicit command always (re)installs to update, so the
+            // outcome is uninteresting here — only init branches on it.
+            commands::skills::run_install(commands::skills::InstallOptions {
+                scope,
+                agents,
+                skip_if_installed: false,
+            })
+            .map(|_| ())
+        };
+        update_check::maybe_print_notice(OutputFormat::Text);
+        return result;
+    }
+
     // Schema command doesn't need API credentials - outputs command tree as JSON.
     // The _meta.update block is already embedded in the JSON output for toon mode;
     // the stderr notice covers TTY human users (or plain text for toon mode).
@@ -2934,7 +3263,7 @@ async fn main() -> Result<()> {
                 commands::completions::run_generate(shell, &mut Cli::command())
             }
             CompletionsCmd::Install { shell, path } => {
-                commands::completions::run_install(shell, path, &mut Cli::command())
+                commands::completions::run_install(shell, path)
             }
             CompletionsCmd::Refresh => commands::completions::run_refresh(Cli::command),
         };
@@ -3002,15 +3331,35 @@ async fn main() -> Result<()> {
     {
         Ok(configs) => configs,
         Err(error) => {
+            // First-run guidance: when nothing is configured at all (no profile
+            // on disk and no env-only credentials), don't dump the underlying
+            // config-resolution error. Point the user at the single guided entry
+            // point instead. The onboarding commands that *fix* this state
+            // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
+            // never reach here, so they can't be short-circuited by this branch.
+            if config::list_profile_names()
+                .map(|names| names.is_empty())
+                .unwrap_or(false)
+            {
+                eprintln!("No Coralogix profile is configured.");
+                eprintln!("Run `cx init` to set up a profile and get started.");
+                // Exit here instead of returning the error: propagating it
+                // would dump the anyhow config-resolution chain (with a second,
+                // contradicting `cx profiles add` instruction) after the
+                // guidance. The two lines above are the entire first-run story.
+                std::process::exit(1);
+            }
             eprintln!("Configuration error: {error}");
             eprintln!("Run `cx profiles add` to set up credentials.");
-            let result = Err(error);
-            return result;
+            return Err(error);
         }
     };
 
-    let request_metadata = RequestMetadata::from_invocation(&matches, output, &configs, yes);
-    let targets = build_targets(configs, request_metadata, no_console_link)?;
+    let targets = build_targets(
+        configs,
+        no_console_link,
+        cli.http_timeout.map(std::time::Duration::from_secs),
+    )?;
     let agent_mode = safety::is_agent_mode();
 
     // Wrap the dispatch in an async block so we can capture its Result and
@@ -3018,7 +3367,9 @@ async fn main() -> Result<()> {
     let cmd_result = async {
         match cli.command {
             Commands::Profiles { .. } => unreachable!("handled by ProfilesCli above"),
+            Commands::Init { .. } => unreachable!("handled above"),
             Commands::Cleanup => unreachable!("handled above"),
+            Commands::Skills { .. } => unreachable!("handled above"),
             Commands::Schema => unreachable!("handled above"),
             Commands::Completions { .. } => unreachable!("handled above"),
             Commands::Docs { .. } => unreachable!("handled above"),
@@ -3780,9 +4131,15 @@ async fn main() -> Result<()> {
                     confirm_destructive(&format!("Delete integration '{id}'?"), yes, agent_mode)?;
                     commands::integrations::run_delete(&targets, &id).await?;
                 }
-                IntegrationsCmd::Test { from_file } => {
+                IntegrationsCmd::Test { id, from_file } => {
                     confirm_destructive("Test integration?", yes, agent_mode)?;
-                    commands::integrations::run_test(&targets, &from_file, output).await?;
+                    commands::integrations::run_test(
+                        &targets,
+                        id.as_deref(),
+                        &from_file,
+                        output,
+                    )
+                    .await?;
                 }
                 IntegrationsCmd::Template => {
                     commands::integrations::run_template(&targets, output).await?;
@@ -4364,25 +4721,48 @@ async fn main() -> Result<()> {
                     InfraResourcesCmd::Types => {
                         commands::infra::run_types(&targets, output).await?;
                     }
+                    InfraResourcesCmd::Filters { category, r#type } => {
+                        commands::infra::run_filters(
+                            &targets,
+                            category.as_deref(),
+                            r#type.as_deref(),
+                            output,
+                        )
+                        .await?;
+                    }
                     InfraResourcesCmd::List {
                         category,
                         r#type,
+                        match_all,
+                        match_any,
                         name_filter,
                         scope,
                         start_row,
                         end_row,
                     } => {
-                        commands::infra::run_list(
-                            &targets,
-                            &category,
-                            &r#type,
-                            name_filter.as_deref(),
-                            &scope,
-                            start_row,
-                            end_row,
-                            output,
-                        )
-                        .await?;
+                        if name_filter.is_some() || !scope.is_empty() {
+                            commands::infra::run_list_legacy(
+                                &targets,
+                                category.as_deref(),
+                                r#type.as_deref(),
+                                name_filter.as_deref(),
+                                &scope,
+                                commands::infra::PageWindow { start_row, end_row },
+                                output,
+                            )
+                            .await?;
+                        } else {
+                            commands::infra::run_list(
+                                &targets,
+                                category.as_deref(),
+                                r#type.as_deref(),
+                                &match_all,
+                                &match_any,
+                                commands::infra::PageWindow { start_row, end_row },
+                                output,
+                            )
+                            .await?;
+                        }
                     }
                     InfraResourcesCmd::HealthHistory { resource_id } => {
                         commands::infra::run_health_history(&targets, &resource_id, output)
@@ -4545,4 +4925,41 @@ async fn main() -> Result<()> {
     }
 
     cmd_result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_completions_shell_accepts_supported_shells() {
+        assert_eq!(parse_completions_shell("zsh").unwrap(), Shell::Zsh);
+        assert_eq!(parse_completions_shell("bash").unwrap(), Shell::Bash);
+        assert_eq!(parse_completions_shell("fish").unwrap(), Shell::Fish);
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_elvish() {
+        // Elvish is a valid clap_complete Shell variant but cx has no adapter
+        // for it, so the `cx init --install-completions` flag must reject it
+        // up front rather than fail later at registration time.
+        let err = parse_completions_shell("elvish").unwrap_err();
+        assert!(err.contains("elvish"), "error should name the bad shell");
+        assert!(
+            err.contains("zsh") && err.contains("bash") && err.contains("fish"),
+            "error should list the supported shells"
+        );
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_powershell_without_path() {
+        // PowerShell has no default install path, so it isn't offered by the
+        // flag (the interactive picker's "Other" + explicit path covers it).
+        assert!(parse_completions_shell("powershell").is_err());
+    }
+
+    #[test]
+    fn parse_completions_shell_rejects_garbage() {
+        assert!(parse_completions_shell("not-a-shell").is_err());
+    }
 }

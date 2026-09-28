@@ -33,6 +33,20 @@ fn center_pad(content_width: usize, total_width: usize) -> String {
     " ".repeat((total_width - content_width) / 2)
 }
 
+/// The `--help` CX logo, gradient-colored, with no centering, tagline, or
+/// separator. Public so other commands (e.g. `cx init`'s success banner) can
+/// print the same art left-aligned. Callers add their own leading/trailing
+/// blank lines.
+pub fn render_logo() -> String {
+    let total = LOGO_LINES.len();
+    LOGO_LINES
+        .iter()
+        .enumerate()
+        .map(|(i, line)| gradient_line(line, i, total))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn should_show() -> bool {
     std::io::stdout().is_terminal()
         && std::env::var("NO_COLOR").is_err()

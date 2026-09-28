@@ -4,6 +4,7 @@ mod common;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 use assert_cmd::Command as AssertCommand;
 use serde_json::json;
@@ -50,6 +51,67 @@ fn cx_olly(home: &std::path::Path) -> AssertCommand {
     cmd.env_remove("CX_REGION");
     cmd.env_remove("CX_PROFILE");
     cmd
+}
+
+#[tokio::test]
+async fn artifacts_list_honors_http_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/olly/artifacts/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_secs(2))
+                .set_body_json(json!([])),
+        )
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let output = cx_olly(&home)
+        .args(["--http-timeout", "1", "olly", "artifacts", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    assert!(!output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("HTTP request timed out"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn ask_uses_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/existing-chat/interactions/"))
+        .and(body_partial_json(json!({"timeout_seconds": 42})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-1",
+            "chat_id": "existing-chat",
+            "status": "COMPLETED",
+            "responses": []
+        })))
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    cx_olly(&home)
+        .args([
+            "olly",
+            "ask",
+            "What alerts fired today?",
+            "--chat-id",
+            "existing-chat",
+            "--timeout",
+            "42",
+        ])
+        .assert()
+        .success();
 }
 
 #[tokio::test]

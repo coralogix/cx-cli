@@ -54,14 +54,9 @@ fn ai_center_custom_evaluations_list() {
     harness::assert_array(&v);
 }
 
-#[test]
-#[ignore]
-fn ai_center_model_pricing_get() {
-    if harness::require_creds("ai_center_model_pricing_get").is_none() {
-        return;
-    }
-    harness::run_ok_json(&["ai-center", "model-pricing", "get", "-o", "json"]);
-}
+// `model-pricing get` is not covered. The gateway requires
+// `ai-custom-model-pricing:Manage` even for the read, and this suite stays
+// read-only.
 
 /// Discover an application id from `applications list -o json`. Cached so multiple
 /// tests don't each pay for the list call; returns `None` when the team has no AI apps.

@@ -1,38 +1,40 @@
 # RUM Querying Reference
 
-Query and analyze Coralogix Real User Monitoring data using the `cx logs` command with DataPrime syntax.
+Query and analyze Coralogix Real User Monitoring data using `cx dataprime query --source rum.events`.
 
 > **DataPrime syntax:** See `dataprime-reference.md` for the full query language reference.
-> **Log querying basics:** See `logs-querying.md` for field discovery, wildfind policy, and general log query patterns.
 > **Complete RUM field catalog:** See `rum-fields.md`.
 
 ## Understanding RUM in Coralogix
 
-RUM captures real user interactions from browsers and mobile apps - errors, performance metrics, network requests, web vitals, and user interactions. **RUM data is stored as regular logs** in the `cx_rum` subsystem, queried with the same `cx logs` command and DataPrime syntax used for any other logs.
+RUM captures real user interactions from browsers and mobile apps - errors, performance metrics, network requests, web vitals, and user interactions. **RUM data is stored in its own `rum.events` dataset**, not in logs. Query it with `cx dataprime query --source rum.events` and read the RUM payload flat under `$d.*`.
 
 This means:
-- **Metadata (`$m.*`)** and **labels (`$l.*`)** work the same as regular logs - you can filter on timestamp, severity, etc.
-- **User data (`$d.cx_rum.*`)** contains all RUM-specific fields - event types, errors, sessions, web vitals, interactions, and more. See **[rum-fields.md](rum-fields.md)** for the complete field catalog.
-- **Session replay and session flows are not available** - only individual RUM log events can be queried.
+- **Always pass `--source rum.events`** to `cx dataprime query`. The flag is required: a `source rum.events` command inside the query is not enough on its own. Do **not** use `cx logs` - it queries `source logs`, where RUM events do not live.
+- **User data (`$d.*`)** contains all RUM-specific fields - event types, errors, sessions, web vitals, interactions, and more. Fields sit directly under `$d` (`$d.event_context.type`), with no `cx_rum` prefix. See **[rum-fields.md](rum-fields.md)** for the complete field catalog.
+- **Do not filter by `$l.subsystemname`** - the `rum.events` dataset has no `cx_rum` subsystem label.
+- **Never fall back to `source logs` or `cx_rum`.** If `--source rum.events` returns no rows for the time range, report that no RUM data was found (optionally suggest widening the range); do not re-query logs.
+- **Session replay and session flows are not available** - only individual RUM events can be queried.
 
 ---
 
 ## CLI Command
 
 ```bash
-cx logs '<dataprime_query>'
+cx dataprime query --source rum.events '<dataprime_query>'
 ```
 
-The `source logs` prefix is automatically injected if the query doesn't already include a `source` command.
+Wrap the query in **single quotes** so the shell does not expand `$d`, and use double quotes for string literals inside it.
 
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--source` | none | **Required for RUM** - always `--source rum.events`; the command returns 400 without it |
 | `--start` | `now-1h` | Start time (ISO 8601 or relative, e.g. `now-7d`) |
 | `--end` | `now` | End time |
 | `--limit` | `100` | Maximum number of results |
-| `--tier` | `frequent` | Storage tier: `frequent` or `archive` |
+| `--tier` | profile's `default_tier`, else `archive` | Storage tier: `frequent` or `archive` |
 | `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
 
 **Note:** Use `--start now-7d` (or wider) for web vitals and page performance queries. Short time ranges produce unreliable percentiles - low-traffic pages have too few data points.
@@ -41,26 +43,32 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 
 ## RUM Data Model
 
-### Identifying RUM Logs
+### Discovering Field Paths
 
-Every RUM query must include `$l.subsystemname == 'cx_rum'`.
+Most fields are listed in `rum-fields.md`. `cx search-fields` does **not** cover RUM - it supports only logs and spans. For a field that is not listed:
+- **You have a literal value** (e.g. an app name or label value the user quoted) - run `cx dataprime query --source rum.events 'wildfind "<literal>"' -o json`, then read the matching `$d.*` keypath off a returned record and use that path in the real query.
+- **You only have a concept** (no example value) - sample with `cx dataprime query --source rum.events 'limit 10' -o json` and inspect a record for the right keypath.
+
+Use `distinct $d.<path>` only *after* the path is known, to enumerate its values - it cannot discover a path you do not already have.
+
+### Application Filtering
 
 Application filtering in RUM uses dedicated fields - `$l.applicationname` does not map to the RUM application name:
 
 ```bash
 # RUM application name
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.version_metadata.app_name == 'my-app'"
+cx dataprime query --source rum.events 'filter $d.version_metadata.app_name == "my-app"'
 
 # Micro-frontend app label
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.labels.mfeApp == 'my-app'"
+cx dataprime query --source rum.events 'filter $d.labels.mfeApp == "my-app"'
 
 # WRONG - $l.applicationname is not the RUM application name
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$l.applicationname == 'my-app'"
+cx dataprime query --source rum.events 'filter $l.applicationname == "my-app"'
 ```
 
 ### Event Types
 
-Filter by `$d.cx_rum.event_context.type`:
+Filter by `$d.event_context.type`:
 
 | Type | Description |
 |------|-------------|
@@ -78,7 +86,7 @@ Filter by `$d.cx_rum.event_context.type`:
 
 ### Key Fields
 
-All RUM fields live under `$d.cx_rum.*`. The most commonly used:
+All RUM fields live under `$d.*`. The most commonly used:
 
 | Context | Key Fields | Used For |
 |---------|-----------|----------|
@@ -100,7 +108,7 @@ RUM errors can come from multiple event types (`error`, `network-request`, `cust
 The `rum_template_id` field groups similar error events into distinct issues - always group by it when analyzing errors, and filter out nulls:
 
 ```bash
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5 && \$d.cx_rum.rum_template_id != null | groupby \$d.cx_rum.rum_template_id aggregate count() as error_count, any_value(\$d.cx_rum.version_metadata.app_name) as app_name, any_value(\$d.cx_rum.event_context.type) as event_type, any_value(\$d.cx_rum.error_context.error_message) as error_message, any_value(\$d.cx_rum.network_request_context.method) as method, any_value(\$d.cx_rum.network_request_context.fragments) as url_fragments, any_value(\$d.cx_rum.network_request_context.status_code) as status_code, any_value(\$d.cx_rum.custom_log_context.message) as custom_log_message, distinct_count(\$d.cx_rum.session_context.user_id) as affected_users | orderby error_count desc" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.severity:num == 5 && $d.rum_template_id != null | groupby $d.rum_template_id aggregate count() as error_count, any_value($d.version_metadata.app_name) as app_name, any_value($d.event_context.type) as event_type, any_value($d.error_context.error_message) as error_message, any_value($d.network_request_context.method) as method, any_value($d.network_request_context.fragments) as url_fragments, any_value($d.network_request_context.status_code) as status_code, any_value($d.custom_log_context.message) as custom_log_message, distinct_count($d.session_context.user_id) as affected_users | orderby error_count desc' --start now-7d
 ```
 
 Include `any_value()` for descriptive fields from all error types - irrelevant fields will be null. When composing error descriptions from grouped results, the relevant fields depend on the event type:
@@ -114,22 +122,25 @@ Include `any_value()` for descriptive fields from all error types - irrelevant f
 
 ```bash
 # All RUM errors in the last 7 days
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.severity:num == 5' --start now-7d
+
+# Errors per application
+cx dataprime query --source rum.events 'filter $d.event_context.severity:num == 5 | groupby $d.version_metadata.app_name aggregate count() as error_count, distinct_count($d.rum_template_id) as distinct_issues, distinct_count($d.session_context.user_id) as affected_users | orderby error_count desc' --start now-7d
 
 # Network request errors
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5 && \$d.cx_rum.event_context.type == 'network-request' | groupby \$d.cx_rum.rum_template_id aggregate count() as error_count, any_value(\$d.cx_rum.network_request_context.method) as method, any_value(\$d.cx_rum.network_request_context.fragments) as fragments, any_value(\$d.cx_rum.network_request_context.status_code) as status_code | orderby error_count desc" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.severity:num == 5 && $d.event_context.type == "network-request" | groupby $d.rum_template_id aggregate count() as error_count, any_value($d.version_metadata.app_name) as app_name, any_value($d.network_request_context.method) as method, any_value($d.network_request_context.fragments) as fragments, any_value($d.network_request_context.status_code) as status_code | orderby error_count desc' --start now-7d
 
 # Slow loading pages (LT p75)
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'web-vitals' && \$d.cx_rum.web_vitals_context.name == 'LT' | groupby \$d.cx_rum.page_context.page_fragments aggregate distinct_count(\$d.cx_rum.session_context.user_id:string) as users, percentile(0.75, \$d.cx_rum.web_vitals_context.value) as LT_p75_ms | orderby users desc" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.type == "web-vitals" && $d.web_vitals_context.name == "LT" | groupby $d.page_context.page_fragments aggregate distinct_count($d.session_context.user_id:string) as users, percentile(0.75, $d.web_vitals_context.value) as LT_p75_ms | orderby users desc' --start now-7d
 
 # User interactions on a page
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'user-interaction' && \$d.cx_rum.page_context.page_fragments ~ '/some/page' && \$d.cx_rum.interaction_context.target_element_inner_text != null && \$d.cx_rum.interaction_context.target_element_inner_text != '' | groupby \$d.cx_rum.interaction_context.target_element_inner_text aggregate count() as click_count, distinct_count(\$d.cx_rum.session_context.user_id) as unique_users | orderby click_count desc" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.type == "user-interaction" && $d.page_context.page_fragments ~ "/some/page" && $d.interaction_context.target_element_inner_text != null && $d.interaction_context.target_element_inner_text != "" | groupby $d.interaction_context.target_element_inner_text aggregate count() as click_count, distinct_count($d.session_context.user_id) as unique_users | orderby click_count desc' --start now-7d
 
 # Affected users per error
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.severity:num == 5 && \$d.cx_rum.rum_template_id != null | groupby \$d.cx_rum.rum_template_id aggregate distinct_count(\$d.cx_rum.session_context.user_id) as affected_users, count() as error_count, any_value(\$d.cx_rum.error_context.error_message) as error_message | orderby affected_users desc" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.severity:num == 5 && $d.rum_template_id != null | groupby $d.rum_template_id aggregate distinct_count($d.session_context.user_id) as affected_users, count() as error_count, any_value($d.error_context.error_message) as error_message | orderby affected_users desc' --start now-7d
 
 # LCP by page
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'web-vitals' && \$d.cx_rum.web_vitals_context.name == 'LCP' | groupby \$d.cx_rum.page_context.page_fragments aggregate percentile(0.75, \$d.cx_rum.web_vitals_context.value) as LCP_p75_ms, count() as samples | orderby LCP_p75_ms desc" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.type == "web-vitals" && $d.web_vitals_context.name == "LCP" | groupby $d.page_context.page_fragments aggregate percentile(0.75, $d.web_vitals_context.value) as LCP_p75_ms, count() as samples | orderby LCP_p75_ms desc' --start now-7d
 ```
 
 ---
@@ -138,14 +149,14 @@ cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type =
 
 ### Web Vitals
 
-Web vitals use `percentile(0.75, ...)` for p75 values - `avg` is skewed by outliers. Use `$d.cx_rum.web_vitals_context.value` without `:num` cast.
+Web vitals use `percentile(0.75, ...)` for p75 values - `avg` is skewed by outliers. Use `$d.web_vitals_context.value` without `:num` cast.
 
 Only query the specific vitals the user asks about. For "loading times" query `LT`, for "LCP" query `LCP`. Include all vitals only when the user explicitly asks for a full overview.
 
 For multiple vitals in one query, use conditional `if()` inside percentile:
 
 ```bash
-cx logs "filter \$l.subsystemname == 'cx_rum' && \$d.cx_rum.event_context.type == 'web-vitals' | groupby \$d.cx_rum.page_context.page_fragments aggregate percentile(0.75, if(\$d.cx_rum.web_vitals_context.name == 'LT', \$d.cx_rum.web_vitals_context.value)) as LT_p75, percentile(0.75, if(\$d.cx_rum.web_vitals_context.name == 'LCP', \$d.cx_rum.web_vitals_context.value)) as LCP_p75" --start now-7d
+cx dataprime query --source rum.events 'filter $d.event_context.type == "web-vitals" | groupby $d.page_context.page_fragments aggregate percentile(0.75, if($d.web_vitals_context.name == "LT", $d.web_vitals_context.value)) as LT_p75, percentile(0.75, if($d.web_vitals_context.name == "LCP", $d.web_vitals_context.value)) as LCP_p75' --start now-7d
 ```
 
 ### User Interactions
@@ -156,11 +167,11 @@ Do not group by `target_element` (HTML tag like DIV, SPAN) or `target_selector` 
 
 ### Network Requests
 
-Filter network requests by event type `$d.cx_rum.event_context.type == 'network-request'`. For failed requests, combine with `event_context.severity:num == 5`. Compose descriptions as `"<method> <fragments> (status <status_code>)"`.
+Filter network requests by event type `$d.event_context.type == "network-request"`. For failed requests, combine with `event_context.severity:num == 5`. Compose descriptions as `"<method> <fragments> (status <status_code>)"`.
 
 ### Page Performance
 
-Use the `LT` (Load Time) web vital for page loading time questions. Group by `$d.cx_rum.page_context.page_fragments` (not `page_url`), and include user count for context with `distinct_count($d.cx_rum.session_context.user_id:string) as users`.
+Use the `LT` (Load Time) web vital for page loading time questions. Group by `$d.page_context.page_fragments` (not `page_url`), and include user count for context with `distinct_count($d.session_context.user_id:string) as users`.
 
 ---
 
@@ -169,8 +180,8 @@ Use the `LT` (Load Time) web vital for page loading time questions. Group by `$d
 If a query returns no results, change **one thing at a time**. Keep the query window as **narrow** as possible and widen it deliberately — start from the window you already have rather than jumping to a huge range:
 
 1. **Relax filters**: remove the most restrictive condition
-2. **Verify field names**: run a sample query with `-o json` to inspect actual fields
+2. **Verify field names**: run `cx dataprime query --source rum.events 'limit 10' -o json` to inspect actual fields
 3. **Extend the time range**: widen gradually from your current window (e.g. `now-24h` → `now-7d` → `now-30d`)
-4. **Try archive tier**: for older data, add `--tier archive` and widen the window to cover the period you're after
+4. **Try the other tier**: add `--tier frequent` or `--tier archive`, whichever the query did not use
 
-**Note:** Filtering by `cx_rum` fields will show **only RUM/frontend logs** and hide backend logs. This is expected when analyzing RUM data.
+If `cx dataprime query --source rum.events 'limit 10'` returns nothing across a wide window, the account has no RUM data for that period - report that instead of searching `source logs`.

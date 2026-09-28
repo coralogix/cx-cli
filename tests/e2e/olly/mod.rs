@@ -6,6 +6,11 @@ fn olly_ask_basic() {
     if harness::require_creds("olly_ask_basic").is_none() {
         return;
     }
+    // ask creates a chat and needs olly:SendMessage.
+    if std::env::var_os("CX_E2E_INCLUDE_WRITES").is_none() {
+        eprintln!("[e2e] skipping olly_ask_basic: requires olly:SendMessage");
+        return;
+    }
     // Send a simple message and verify we get a response
     // Note: This creates a new chat each time - keep messages simple to avoid long responses
     let v = harness::run_ok_json(&["olly", "ask", "Say hello in one word", "-o", "json"]);
@@ -27,6 +32,11 @@ fn olly_ask_basic() {
 #[ignore]
 fn olly_ask_text_output() {
     if harness::require_creds("olly_ask_text_output").is_none() {
+        return;
+    }
+    // ask creates a chat and needs olly:SendMessage.
+    if std::env::var_os("CX_E2E_INCLUDE_WRITES").is_none() {
+        eprintln!("[e2e] skipping olly_ask_text_output: requires olly:SendMessage");
         return;
     }
     // Verify text output mode works (default)

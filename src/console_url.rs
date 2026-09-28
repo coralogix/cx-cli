@@ -245,31 +245,50 @@ pub fn iam_ip_access_url(base: &str) -> String {
 }
 
 /// Build the console URL for the AI Center application catalog page:
-/// `{base}/ai-center/application-catalog`.
+/// `{base}/ai-center/ai-apps/application-catalog`.
 pub fn ai_center_applications_url(base: &str) -> String {
-    format!("{}/ai-center/application-catalog", trim_base(base))
+    format!("{}/ai-center/ai-apps/application-catalog", trim_base(base))
 }
 
 /// Build the console URL for a single AI Center application:
-/// `{base}/ai-center/application/drilldown?application={app}&subsystem={sub}`.
+/// `{base}/ai-center/ai-apps/application-catalog/application-drilldown?application={app}&subsystem={sub}`.
 ///
 /// The application is identified by the `application` and `subsystem` query
 /// params (there is no path-param route for a single application in the
 /// console) - see `CXAiApplicationQueryParams` in
 /// `libs/ai-center/root/src/lib/utils.ts`.
 pub fn ai_center_application_url(base: &str, application: &str, subsystem: &str) -> String {
-    let app: String = form_urlencoded::byte_serialize(application.as_bytes()).collect();
-    let sub: String = form_urlencoded::byte_serialize(subsystem.as_bytes()).collect();
     format!(
-        "{}/ai-center/application/drilldown?application={app}&subsystem={sub}",
-        trim_base(base)
+        "{}/ai-center/ai-apps/application-catalog/application-drilldown?{}",
+        trim_base(base),
+        ai_center_application_query(application, subsystem)
     )
 }
 
 /// Build the console URL for the AI Center evaluation (policy) catalog page:
-/// `{base}/ai-center/eval-catalog`.
+/// `{base}/ai-center/ai-apps/policy-catalog`.
 pub fn ai_center_evaluations_url(base: &str) -> String {
-    format!("{}/ai-center/eval-catalog", trim_base(base))
+    format!("{}/ai-center/ai-apps/policy-catalog", trim_base(base))
+}
+
+/// Build the console URL for one application's evaluation catalog:
+/// `{base}/ai-center/ai-apps/application-catalog/eval-catalog?application={app}&subsystem={sub}`.
+pub fn ai_center_application_evaluations_url(
+    base: &str,
+    application: &str,
+    subsystem: &str,
+) -> String {
+    format!(
+        "{}/ai-center/ai-apps/application-catalog/eval-catalog?{}",
+        trim_base(base),
+        ai_center_application_query(application, subsystem)
+    )
+}
+
+fn ai_center_application_query(application: &str, subsystem: &str) -> String {
+    let app: String = form_urlencoded::byte_serialize(application.as_bytes()).collect();
+    let sub: String = form_urlencoded::byte_serialize(subsystem.as_bytes()).collect();
+    format!("application={app}&subsystem={sub}")
 }
 
 /// Build the console URL for the Olly AI assistant page: `{base}/olly`.
@@ -708,7 +727,7 @@ mod tests {
     fn ai_center_applications_url_is_static() {
         assert_eq!(
             ai_center_applications_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/ai-center/application-catalog"
+            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog"
         );
     }
 
@@ -716,7 +735,7 @@ mod tests {
     fn ai_center_application_url_uses_query_params() {
         assert_eq!(
             ai_center_application_url("https://c4c.app.eu2.coralogix.com", "checkout", "payments"),
-            "https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=checkout&subsystem=payments"
+            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/application-drilldown?application=checkout&subsystem=payments"
         );
     }
 
@@ -724,7 +743,7 @@ mod tests {
     fn ai_center_application_url_percent_encodes_params() {
         assert_eq!(
             ai_center_application_url("https://c4c.app.eu2.coralogix.com", "my app", "sub & sys"),
-            "https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=my+app&subsystem=sub+%26+sys"
+            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/application-drilldown?application=my+app&subsystem=sub+%26+sys"
         );
     }
 
@@ -732,7 +751,7 @@ mod tests {
     fn ai_center_application_url_trims_trailing_slash_on_base() {
         assert_eq!(
             ai_center_application_url("https://c4c.app.eu2.coralogix.com/", "checkout", "payments"),
-            "https://c4c.app.eu2.coralogix.com/ai-center/application/drilldown?application=checkout&subsystem=payments"
+            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/application-drilldown?application=checkout&subsystem=payments"
         );
     }
 
@@ -740,7 +759,19 @@ mod tests {
     fn ai_center_evaluations_url_is_static() {
         assert_eq!(
             ai_center_evaluations_url("https://c4c.app.eu2.coralogix.com"),
-            "https://c4c.app.eu2.coralogix.com/ai-center/eval-catalog"
+            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/policy-catalog"
+        );
+    }
+
+    #[test]
+    fn ai_center_application_evaluations_url_uses_query_params() {
+        assert_eq!(
+            ai_center_application_evaluations_url(
+                "https://c4c.app.eu2.coralogix.com/",
+                "my app",
+                "sub & sys"
+            ),
+            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/eval-catalog?application=my+app&subsystem=sub+%26+sys"
         );
     }
 

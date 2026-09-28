@@ -138,7 +138,7 @@ cx infra resources config-diff --resource-id "1001234:host_id=i-abc" --from now-
 | `changed`               | the versions before and inside the window differ                     |
 | `unchanged`             | they don't differ, or nothing happened inside the window             |
 | `created`               | the resource first appeared inside the window                        |
-| `priorStateUnavailable` | it changed, but no version exists in the 14 days before. Not a failure, and a wider `--from` won't help |
+| `priorStateUnavailable` | it changed, but no version exists in the 14 days before `--from`. Not a failure. Move `--from` earlier to reach an older version |
 | `comparisonUnavailable` | both versions exist, but one could not be read                       |
 
 - `before` and `after` are raw JSON. `null` means the field was added or

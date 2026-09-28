@@ -337,7 +337,11 @@ pub async fn run_health_history(
         .await
         .with_context(|| format!("profile '{}' failed", target.profile_name))?;
 
-    report_missing_resources(resource_ids.len(), results.len());
+    report_missing_resources(
+        resource_ids.len(),
+        results.len(),
+        "the rest were not recognised or were repeats",
+    );
 
     match output {
         OutputFormat::Json | OutputFormat::Toon => {
@@ -508,6 +512,12 @@ pub async fn run_config_diff(
         .await
         .with_context(|| format!("profile '{}' failed", target.profile_name))?;
     let results = resp.results;
+
+    report_missing_resources(
+        resource_ids.len(),
+        distinct_resources(&results),
+        "the rest were not recognised, were repeats, or have no history around this window",
+    );
 
     match output {
         OutputFormat::Json | OutputFormat::Toon => {
@@ -1091,17 +1101,21 @@ fn history_table(results: &[ResourceHealthHistory], profile: &str) -> Vec<Vec<St
 /// The API drops ids it cannot parse and reads duplicates once, so a short
 /// answer is normal. It is reported as a count because the `resourceIds` that come back
 /// are normalized, so the missing ones cannot be named reliably.
-fn report_missing_resources(asked: usize, answered: usize) {
+fn report_missing_resources(asked: usize, answered: usize, reasons: &str) {
     if answered < asked {
         eprintln!(
             "{}",
-            format!(
-                "{} of {asked} resource(s) answered; the rest were not recognised or were repeats",
-                answered
-            )
-            .yellow()
+            format!("{answered} of {asked} resource(s) answered; {reasons}").yellow()
         );
     }
+}
+
+fn distinct_resources(results: &[ResourceDiffData]) -> usize {
+    results
+        .iter()
+        .filter_map(|r| r.resource_id.as_deref())
+        .collect::<std::collections::HashSet<_>>()
+        .len()
 }
 
 fn require_resource_ids(resource_ids: &[String]) -> Result<Vec<&str>> {
@@ -2043,6 +2057,24 @@ mod tests {
             compared_to: None,
             changes,
         }
+    }
+
+    #[test]
+    fn distinct_resources_counts_a_resource_with_two_sources_once() {
+        let mut other_source = diff("unchanged", vec![]);
+        other_source.source = Some("AWS".to_string());
+        let mut other_resource = diff("unchanged", vec![]);
+        other_resource.resource_id = Some("7000098:a=backend".to_string());
+        let mut unnamed = diff("unchanged", vec![]);
+        unnamed.resource_id = None;
+
+        let results = [
+            diff("changed", vec![]),
+            other_source,
+            other_resource,
+            unnamed,
+        ];
+        assert_eq!(distinct_resources(&results), 2);
     }
 
     #[test]

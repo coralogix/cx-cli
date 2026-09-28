@@ -617,8 +617,8 @@ mod tests {
         assert!(resp.is_empty());
     }
 
-    /// The API declares `deny_unknown_fields` on this body, so the key has to be
-    /// exactly `resourceIds` or every request is a 400.
+    /// `resourceIds` is required on this body, so a misspelled key leaves it
+    /// missing and every request is a 400.
     #[test]
     fn serialize_resource_ids_body() {
         let ids = ["1001234:host_id=i-abc123", "1001234:host_id=i-def456"];

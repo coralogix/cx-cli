@@ -130,6 +130,29 @@ For other shells, see [Shell completions](configuration.md#shell-completions). F
 pre-built binaries, Nix, and source builds, see
 [Installation reference](configuration.md#installation-reference).
 
+## From the terminal to the UI
+
+Some investigations finish in a browser. When a command succeeds on something
+that has a page in Coralogix, `cx` prints a link to it:
+
+```bash
+cx dashboards create --from-file dashboard.json
+# View in Coralogix: https://my-team.app.eu2.coralogix.com/dashboards/zeoaYDOv35Jl0ZKEsZBZp
+```
+
+Commands that act on a single entity link to that entity. List and settings
+commands link to the shared page instead, printed once per profile rather than
+once per row, and an empty result prints no link at all.
+
+The line goes to stderr, so `-o json` and `-o toon` output is unchanged and
+anything parsing it never sees the link. There is nothing to set up: `cx`
+resolves your console URL on first use and caches it in the profile.
+
+To switch it off, use `--no-console-link` for a single run,
+`CX_NO_CONSOLE_LINK` for a shell session or CI job, or `no_console_link = true`
+in `~/.cx/config.toml`. For the resolution order and the cache, see
+[Console links](configuration.md#console-links).
+
 ## First queries
 
 Once `cx init` is done, these cover the shapes you'll use most.

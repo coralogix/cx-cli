@@ -16,6 +16,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 
 - Query any signal-logs, metrics, spans, and RUM data-with DataPrime or PromQL, and render results as tables, raw JSON, or a token-efficient format for AI agents.
 - Manage the full Coralogix stack from one binary: 33 commands across 11 domains, covering alerts, cases, notifications, IAM, SLOs, dashboards, data pipeline rules, TCO policies, and more.
+- Hand off to the UI mid-investigation: after a successful command on an alert, dashboard, case, or settings page, `cx` prints a `View in Coralogix` link straight to that page. It goes to stderr, so `json` and `toon` output stays clean for scripts and agents.
 - Set everything up in one command-`cx init` configures a profile and installs the agent skills in a single guided run, so there is no way to end up with a CLI your agent can't use.
 - Run the same command across multiple profiles or regions in a single invocation with multi-profile fan-out.
 - Give your AI agent a single entry point to production observability: `cx schema` dumps the entire command tree as JSON so agents can self-discover capabilities without manual documentation.

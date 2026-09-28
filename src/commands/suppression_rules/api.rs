@@ -104,38 +104,6 @@ impl<'a> AlertSchedulersApi<'a> {
     }
 }
 
-/// How an input id relates to the rules that actually exist.
-#[derive(Debug, PartialEq)]
-pub enum RuleIdKind {
-    Addressable,
-    /// Carries the matching rule's `unique_identifier`.
-    VersionId(String),
-    Unknown,
-}
-
-/// `Addressable` wins if an id matches both fields.
-pub fn classify_rule_id_in(resp: &GetBulkAlertSchedulerRuleResponse, input: &str) -> RuleIdKind {
-    let mut version_match: Option<String> = None;
-    for rule in resp
-        .alert_scheduler_rules
-        .iter()
-        .filter_map(|e| e.alert_scheduler_rule.as_ref())
-    {
-        if rule.unique_identifier.as_deref() == Some(input) {
-            return RuleIdKind::Addressable;
-        }
-        if rule.id.as_deref() == Some(input) {
-            version_match = rule.unique_identifier.clone();
-        }
-    }
-    version_match.map_or(RuleIdKind::Unknown, RuleIdKind::VersionId)
-}
-
-/// Costs one `list` call; the only way to map a version id to its rule.
-pub async fn classify_rule_id(api: &AlertSchedulersApi<'_>, input: &str) -> Result<RuleIdKind> {
-    Ok(classify_rule_id_in(&api.list().await?, input))
-}
-
 // --- Tests ---
 
 #[cfg(test)]
@@ -270,35 +238,5 @@ mod tests {
             Some("50fb552b-c042-4a8c-8186-fd488d452fc9")
         );
         assert_ne!(rule.unique_identifier, rule.id);
-    }
-
-    #[test]
-    fn classify_recognises_a_unique_identifier_as_addressable() {
-        let resp: GetBulkAlertSchedulerRuleResponse =
-            serde_json::from_value(list_response_fixture()).unwrap();
-        assert_eq!(
-            classify_rule_id_in(&resp, "38c4a964-a237-41ea-9b02-87af3d734571"),
-            RuleIdKind::Addressable
-        );
-    }
-
-    #[test]
-    fn classify_maps_a_version_id_to_its_unique_identifier() {
-        let resp: GetBulkAlertSchedulerRuleResponse =
-            serde_json::from_value(list_response_fixture()).unwrap();
-        assert_eq!(
-            classify_rule_id_in(&resp, "04b68179-b051-4c2c-a684-ef3a4fb0f80f"),
-            RuleIdKind::VersionId("38c4a964-a237-41ea-9b02-87af3d734571".to_string())
-        );
-    }
-
-    #[test]
-    fn classify_reports_an_unknown_id() {
-        let resp: GetBulkAlertSchedulerRuleResponse =
-            serde_json::from_value(list_response_fixture()).unwrap();
-        assert_eq!(
-            classify_rule_id_in(&resp, "ffffffff-ffff-ffff-ffff-ffffffffffff"),
-            RuleIdKind::Unknown
-        );
     }
 }

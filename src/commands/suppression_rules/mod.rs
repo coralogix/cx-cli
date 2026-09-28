@@ -8,10 +8,9 @@ use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
-use crate::error::CxError;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use api::{classify_rule_id, AlertSchedulerRule, AlertSchedulersApi, RuleIdKind};
+use api::{AlertSchedulerRule, AlertSchedulersApi};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -56,25 +55,6 @@ fn read_json_body(from_file: &str, entity_name: &str) -> Result<Value> {
         bail!("{entity_name} JSON must be a JSON object");
     }
     Ok(body)
-}
-
-/// Falls back to `id` so a body keyed by the version id can still be diagnosed.
-fn update_body_identifier(body: &Value) -> Option<&str> {
-    let rule = body.get("alertSchedulerRule").unwrap_or(body);
-    rule.get("uniqueIdentifier")
-        .and_then(|v| v.as_str())
-        .or_else(|| rule.get("id").and_then(|v| v.as_str()))
-}
-
-fn warn_version_id_autocorrected(input: &str, unique_identifier: &str) {
-    eprintln!(
-        "{}",
-        format!(
-            "Note: '{input}' is a rule version id, not its stable id. Using uniqueIdentifier \
-             '{unique_identifier}' instead - the version id changes on every update."
-        )
-        .yellow()
-    );
 }
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
@@ -155,33 +135,20 @@ pub async fn run_get(
 
     let per_profile = fan_out(targets, |t| {
         let id = id.clone();
-        async move {
-            let api = AlertSchedulersApi::new(&t.client);
-            if let Some(val) = api.get(&id).await? {
-                return Ok(Some((val, id)));
-            }
-            // A miss may be a version id; resolve it and retry.
-            match classify_rule_id(&api, &id).await? {
-                RuleIdKind::VersionId(uid) => {
-                    warn_version_id_autocorrected(&id, &uid);
-                    Ok(api.get(&uid).await?.map(|val| (val, uid)))
-                }
-                _ => Ok(None),
-            }
-        }
+        async move { Ok(AlertSchedulersApi::new(&t.client).get(&id).await?) }
     })
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, found) in report_errors_and_collect_successes(per_profile)? {
-        let Some((mut val, resolved_id)) = found else {
+        let Some(mut val) = found else {
             continue;
         };
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
         crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-            crate::console_url::suppression_rule_url(b, &resolved_id)
+            crate::console_url::suppression_rule_url(b, rule_id)
         })
         .await;
         all_results.push(val);
@@ -257,7 +224,6 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_json_body(from_file, "alert scheduler rule")?;
-    let identifier = update_body_identifier(&body).map(str::to_string);
 
     eprintln!("{}", "Updating alert scheduler rule...".dimmed());
 
@@ -265,34 +231,7 @@ pub async fn run_update(
 
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
-        let identifier = identifier.clone();
-        async move {
-            let api = AlertSchedulersApi::new(&t.client);
-            let err = match api.update(&body).await {
-                Ok(resp) => return Ok(resp),
-                Err(
-                    e @ CxError::Api {
-                        status: 400 | 404, ..
-                    },
-                ) => e,
-                Err(e) => return Err(e.into()),
-            };
-            // On rejection, check whether the body named a version id.
-            let Some(identifier) = identifier.as_deref() else {
-                return Err(err.into());
-            };
-            match classify_rule_id(&api, identifier).await? {
-                RuleIdKind::Addressable => Err(err.into()),
-                RuleIdKind::VersionId(uid) => bail!(
-                    "The update body identifies the rule by '{identifier}', which is a rule \
-                     version id (not addressable). Use uniqueIdentifier '{uid}' instead."
-                ),
-                RuleIdKind::Unknown => bail!(
-                    "No suppression rule found matching id '{identifier}'. Run \
-                     `cx alerts suppression-rules list` to find its uniqueIdentifier. ({err})"
-                ),
-            }
-        }
+        async move { Ok(AlertSchedulersApi::new(&t.client).update(&body).await?) }
     })
     .await;
 
@@ -338,35 +277,21 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], rule_id: &str) -> Resu
         async move {
             let api = AlertSchedulersApi::new(&t.client);
             if api.delete(&id).await? {
-                return Ok(id);
-            }
-            // A miss may be a version id; resolve it and retry.
-            let not_found = || {
-                anyhow::anyhow!(
-                    "No suppression rule found with ID '{id}'. This must be the rule's \
-                     uniqueIdentifier, not its version id - run \
-                     `cx alerts suppression-rules list` to find it."
+                Ok(())
+            } else {
+                bail!(
+                    "No suppression rule found with ID '{id}'. Run \
+                     `cx alerts suppression-rules list` to find its uniqueIdentifier."
                 )
-            };
-            match classify_rule_id(&api, &id).await? {
-                RuleIdKind::VersionId(uid) => {
-                    warn_version_id_autocorrected(&id, &uid);
-                    if api.delete(&uid).await? {
-                        Ok(uid)
-                    } else {
-                        Err(not_found())
-                    }
-                }
-                _ => Err(not_found()),
             }
         }
     })
     .await;
 
-    for (profile, target) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, ()) in report_errors_and_collect_successes(per_profile)? {
         eprintln!(
             "{}",
-            format!("Deleted rule {target} in profile '{profile}'.").green()
+            format!("Deleted rule {rule_id} in profile '{profile}'.").green()
         );
     }
 

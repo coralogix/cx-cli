@@ -1,4 +1,4 @@
-//! Integration tests for `cx alerts suppression-rules`, mainly version-id auto-correction.
+//! Integration tests for `cx alerts suppression-rules`.
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -41,10 +41,6 @@ fn list_body() -> serde_json::Value {
             }
         ]
     })
-}
-
-fn empty_list_body() -> serde_json::Value {
-    json!({ "alertSchedulerRules": [] })
 }
 
 fn write_body_to_temp(name: &str, body: &serde_json::Value) -> std::path::PathBuf {
@@ -128,7 +124,6 @@ async fn list_tolerates_an_empty_collection() {
 async fn get_by_unique_identifier_succeeds() {
     let server = MockServer::start().await;
     mock_get(&server, UNIQUE_ID, rule_body(), 1).await;
-    mock_list(&server, list_body(), 0).await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_get(&targets, UNIQUE_ID, OutputFormat::Json)
@@ -137,23 +132,9 @@ async fn get_by_unique_identifier_succeeds() {
 }
 
 #[tokio::test]
-async fn get_by_version_id_autocorrects() {
-    let server = MockServer::start().await;
-    mock_get_not_found(&server, VERSION_ID, 1).await;
-    mock_list(&server, list_body(), 1).await;
-    mock_get(&server, UNIQUE_ID, rule_body(), 1).await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_get(&targets, VERSION_ID, OutputFormat::Json)
-        .await
-        .expect("get should auto-correct a version id and succeed");
-}
-
-#[tokio::test]
 async fn get_unknown_id_stays_a_miss() {
     let server = MockServer::start().await;
     mock_get_not_found(&server, UNKNOWN_ID, 1).await;
-    mock_list(&server, empty_list_body(), 1).await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_get(&targets, UNKNOWN_ID, OutputFormat::Json)
@@ -170,7 +151,6 @@ async fn get_surfaces_non_404_errors() {
         .expect(1)
         .mount(&server)
         .await;
-    mock_list(&server, list_body(), 0).await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     let err = run_get(&targets, UNIQUE_ID, OutputFormat::Json)
@@ -186,7 +166,6 @@ async fn get_surfaces_non_404_errors() {
 async fn delete_by_unique_identifier_issues_the_delete() {
     let server = MockServer::start().await;
     mock_get(&server, UNIQUE_ID, rule_body(), 0).await;
-    mock_list(&server, list_body(), 0).await;
     mock_delete(
         &server,
         UNIQUE_ID,
@@ -202,29 +181,9 @@ async fn delete_by_unique_identifier_issues_the_delete() {
 }
 
 #[tokio::test]
-async fn delete_by_version_id_autocorrects() {
-    let server = MockServer::start().await;
-    mock_delete(&server, VERSION_ID, not_found(), 1).await;
-    mock_list(&server, list_body(), 1).await;
-    mock_delete(
-        &server,
-        UNIQUE_ID,
-        ResponseTemplate::new(200).set_body_json(json!({})),
-        1,
-    )
-    .await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_delete(&targets, VERSION_ID)
-        .await
-        .expect("delete should auto-correct a version id and succeed");
-}
-
-#[tokio::test]
 async fn delete_unknown_id_errors_with_guidance() {
     let server = MockServer::start().await;
     mock_delete(&server, UNKNOWN_ID, not_found(), 1).await;
-    mock_list(&server, empty_list_body(), 1).await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     let err = run_delete(&targets, UNKNOWN_ID)
@@ -245,7 +204,6 @@ async fn delete_unknown_id_errors_with_guidance() {
 #[tokio::test]
 async fn update_by_unique_identifier_succeeds() {
     let server = MockServer::start().await;
-    mock_list(&server, list_body(), 0).await;
     mock_put(
         &server,
         ResponseTemplate::new(200).set_body_json(rule_body()),
@@ -263,37 +221,7 @@ async fn update_by_unique_identifier_succeeds() {
 }
 
 #[tokio::test]
-async fn update_by_version_id_names_the_id_to_use() {
-    let server = MockServer::start().await;
-    mock_put(
-        &server,
-        ResponseTemplate::new(400).set_body_json(json!({ "message": "Invalid UUID format" })),
-        1,
-    )
-    .await;
-    mock_list(&server, list_body(), 1).await;
-
-    let body = json!({ "alertSchedulerRule": { "uniqueIdentifier": VERSION_ID, "name": "x" } });
-    let file = write_body_to_temp("update-version-id", &body);
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    let err = run_update(&targets, file.to_str().unwrap(), OutputFormat::Json)
-        .await
-        .expect_err("an update keyed by a version id must fail");
-
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("version id"),
-        "error should call out the version id: {msg}"
-    );
-    assert!(
-        msg.contains(UNIQUE_ID),
-        "error should name the addressable id to use: {msg}"
-    );
-}
-
-#[tokio::test]
-async fn update_rejected_for_another_reason_keeps_the_api_error() {
+async fn update_rejection_surfaces_the_api_error() {
     let server = MockServer::start().await;
     mock_put(
         &server,
@@ -301,7 +229,6 @@ async fn update_rejected_for_another_reason_keeps_the_api_error() {
         1,
     )
     .await;
-    mock_list(&server, list_body(), 1).await;
 
     let body = json!({ "alertSchedulerRule": { "uniqueIdentifier": UNIQUE_ID, "name": "x" } });
     let file = write_body_to_temp("update-bad-body", &body);
@@ -315,9 +242,5 @@ async fn update_rejected_for_another_reason_keeps_the_api_error() {
     assert!(
         msg.contains("schedule is required"),
         "error should be the backend's own: {msg}"
-    );
-    assert!(
-        !msg.contains("version id"),
-        "error must not blame the id: {msg}"
     );
 }

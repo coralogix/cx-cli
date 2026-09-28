@@ -1403,9 +1403,8 @@ The rule must be wrapped in an 'alertSchedulerRule' object.")]
     },
     /// Update a suppression rule from a JSON definition file [requires --yes].
     #[command(after_help = "\
-The rule must be wrapped in an 'alertSchedulerRule' object and must identify
-itself by 'uniqueIdentifier'. Setting it to the rule version id ('id') is
-rejected; cx then names the uniqueIdentifier to use instead.")]
+The rule must be wrapped in an 'alertSchedulerRule' object and identify
+itself by 'uniqueIdentifier'.")]
     Update {
         /// Path to JSON file with the updated rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]

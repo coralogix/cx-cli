@@ -193,14 +193,38 @@ Manage alert suppression rules that mute alerts during maintenance windows or kn
 | `cx alerts suppression-rules update --from-file` | Update a suppression rule |
 | `cx alerts suppression-rules delete <id>` | Delete a suppression rule |
 
+A rule has two IDs: `unique_identifier` is its stable, addressable ID (use it for get/update/delete), while `id` is the rule version ID that changes on every update.
+
+### Request body shape
+
+`create` and `update` take the rule wrapped in an `alertSchedulerRule` object.
+
+```json
+{
+  "alertSchedulerRule": {
+    "uniqueIdentifier": "<rule-id>",
+    "name": "maintenance-window",
+    "filter": { "whatExpression": "source logs | filter true", "alertUniqueIds": { "value": [] } },
+    "schedule": {
+      "scheduleOperation": "SCHEDULE_OPERATION_MUTE",
+      "oneTime": { "timeframe": { "startTime": "2026-08-10T19:30:00", "endTime": "2026-08-10T20:30:00", "timezone": "UTC" } }
+    }
+  }
+}
+```
+
 ```bash
-# List suppression rules
+# List suppression rules - the ID column is the unique_identifier
 cx alerts suppression-rules list -o json
 
-# Create from template
-cx alerts suppression-rules get <existing-id> -o json > suppression-rule.json
-# Edit suppression-rule.json
+# Inspect one rule
+cx alerts suppression-rules get <unique-identifier> -o json
+
+# Create from a definition file (must use the alertSchedulerRule wrapper)
 cx alerts suppression-rules create --from-file suppression-rule.json
+
+# Delete
+cx alerts suppression-rules delete <unique-identifier> --yes
 ```
 
 ## Key Principles

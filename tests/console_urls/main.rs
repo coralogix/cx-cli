@@ -2996,7 +2996,7 @@ async fn ai_center_evaluations_list_scoped_prints_app_console_link() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/eval-catalog?application=checkout&subsystem=payments"
+            "View in Coralogix: https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/policy-configuration?application=checkout&subsystem=payments"
         ),
         "stderr did not contain the console link: {stderr}"
     );

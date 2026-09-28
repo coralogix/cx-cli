@@ -271,15 +271,15 @@ pub fn ai_center_evaluations_url(base: &str) -> String {
     format!("{}/ai-center/ai-apps/policy-catalog", trim_base(base))
 }
 
-/// Build the console URL for one application's evaluation catalog:
-/// `{base}/ai-center/ai-apps/application-catalog/eval-catalog?application={app}&subsystem={sub}`.
+/// Build the console URL for one application's configured evaluations:
+/// `{base}/ai-center/ai-apps/application-catalog/policy-configuration?application={app}&subsystem={sub}`.
 pub fn ai_center_application_evaluations_url(
     base: &str,
     application: &str,
     subsystem: &str,
 ) -> String {
     format!(
-        "{}/ai-center/ai-apps/application-catalog/eval-catalog?{}",
+        "{}/ai-center/ai-apps/application-catalog/policy-configuration?{}",
         trim_base(base),
         ai_center_application_query(application, subsystem)
     )
@@ -771,7 +771,7 @@ mod tests {
                 "my app",
                 "sub & sys"
             ),
-            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/eval-catalog?application=my+app&subsystem=sub+%26+sys"
+            "https://c4c.app.eu2.coralogix.com/ai-center/ai-apps/application-catalog/policy-configuration?application=my+app&subsystem=sub+%26+sys"
         );
     }
 

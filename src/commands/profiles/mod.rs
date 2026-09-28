@@ -736,6 +736,8 @@ fn build_profile_non_interactive(
         console_url: None,
         cached_console_url: None,
         cached_console_url_at: None,
+        cached_team_id: None,
+        cached_team_name: None,
     };
     Ok((profile, "profile file"))
 }
@@ -806,7 +808,7 @@ async fn configure_oauth(
 
     // ── Browser login ──────────────────────────────────────────────────────────
     println!();
-    let tokens = oauth::browser_login(&base_url, &client_id).await?;
+    let tokens = oauth::browser_login(&base_url, &client_id, false).await?;
     println!("Login successful!");
 
     // Quick setup and non-interactive runs store tokens in the profile file,
@@ -852,6 +854,8 @@ async fn configure_oauth(
         console_url: None,
         cached_console_url: None,
         cached_console_url_at: None,
+        cached_team_id: None,
+        cached_team_name: None,
     };
 
     Ok((profile, storage_desc))
@@ -934,6 +938,8 @@ fn configure_api_key(
                 console_url: None,
                 cached_console_url: None,
                 cached_console_url_at: None,
+                cached_team_id: None,
+                cached_team_name: None,
             };
             (profile, "OS credential store")
         }
@@ -954,6 +960,8 @@ fn configure_api_key(
                 console_url: None,
                 cached_console_url: None,
                 cached_console_url_at: None,
+                cached_team_id: None,
+                cached_team_name: None,
             };
             (profile, "profile file")
         }

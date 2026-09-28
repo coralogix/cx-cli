@@ -3330,9 +3330,14 @@ async fn main() -> Result<()> {
                 // guidance. The two lines above are the entire first-run story.
                 std::process::exit(1);
             }
-            eprintln!("Configuration error: {error}");
-            eprintln!("Run `cx profiles add` to set up credentials.");
-            return Err(error);
+            // The error already names the fix (for example `cx profiles add
+            // <name>`). Exit here instead of returning it: propagating it
+            // would print the same message a second time as `Error: ...`,
+            // and a generic `cx profiles add` line would sit beside the
+            // specific instruction already in the error. `{:?}` keeps a
+            // single copy of the cause chain (parse errors, and so on).
+            eprintln!("Configuration error: {error:?}");
+            std::process::exit(1);
         }
     };
 

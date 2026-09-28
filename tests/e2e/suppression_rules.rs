@@ -1,12 +1,6 @@
 use crate::harness;
 
-/// Guards the FORGE-710 regression against the live API.
-///
-/// The bug that motivated this test was invisible to a key-presence check:
-/// `list` returned the right *number* of rows with every value deserialized to
-/// `null`, and exited 0. So assert the values are actually populated, and that
-/// each row carries both IDs as distinct values - conflating them is what broke
-/// console links, `get`, `update` and `delete`.
+/// Asserts values are populated, not just present (FORGE-710 rendered all-null rows).
 #[test]
 #[ignore]
 fn suppression_rules_list() {
@@ -29,7 +23,6 @@ fn suppression_rules_list() {
             name.is_string(),
             "row {i} has a null name - the list envelope is not being unwrapped: {row}"
         );
-        // Both IDs are reported, and they are genuinely different values.
         if let Some(version) = row.get("id").and_then(|v| v.as_str()) {
             assert_ne!(
                 Some(version),
@@ -41,8 +34,7 @@ fn suppression_rules_list() {
     }
 }
 
-/// `get` must resolve the id that `list` hands out. Before FORGE-710 `list`
-/// surfaced the rule *version* id, which `get` answers with an empty body.
+/// `get` must resolve the id that `list` hands out.
 #[test]
 #[ignore]
 fn suppression_rules_get_resolves_the_id_list_reports() {
@@ -70,13 +62,10 @@ fn suppression_rules_get_resolves_the_id_list_reports() {
     );
 }
 
-/// A well-formed id that no rule carries. Shaped like a v4 UUID so the backend
-/// treats it as an unknown rule rather than a malformed one.
+/// Valid UUID shape so the backend treats it as unknown, not malformed.
 const UNKNOWN_RULE_ID: &str = "00000000-0000-4000-8000-000000000000";
 
-/// Since CX-57145 the backend answers an unknown id with 404. `get` must turn
-/// that into an empty result, not a raw "API request failed (404)" -
-/// `run_ok_json` fails on either a non-zero exit or an API error on stderr.
+/// A 404 must become an empty result, not a raw API error.
 #[test]
 #[ignore]
 fn suppression_rules_get_unknown_id_is_an_empty_result() {
@@ -97,10 +86,7 @@ fn suppression_rules_get_unknown_id_is_an_empty_result() {
     );
 }
 
-/// The live check of the CX-57145 contract `delete` now relies on: an unknown
-/// id must fail, not report a deletion. Before the fix the backend answered
-/// 200 here without deleting anything. The id matches no rule, so nothing is
-/// deleted either way, but it is still a write call and gated like the rest.
+/// An unknown id must fail, not report a deletion. Gated as a write call.
 #[test]
 #[ignore]
 fn suppression_rules_delete_unknown_id_fails() {

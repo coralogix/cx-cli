@@ -70,13 +70,8 @@ pub fn alerts_url(base: &str) -> String {
 /// Build the console URL for a suppression rule's editor:
 /// `{base}/suppression-rules?edit={urlencoded id}&meta=edit`.
 ///
-/// `id` must be the rule's `uniqueIdentifier` (the stable id), not its version
-/// `id`: `suppression-rules.component.ts` resolves the `edit` param via
-/// `state.rules.find(rule => rule?.uniqueIdentifier === id)`, so the version id
-/// never matches and the page quietly drops the param. The companion
-/// `&meta=edit` opens the editor in edit mode - the console always writes the
-/// pair together (`updateEditorWithRoute`); without it the editor opens titled
-/// "New Suppression Rule" with a "Create Rule" button.
+/// `id` must be the `uniqueIdentifier` (a version id gets a "rule not found" toast);
+/// without `&meta=edit` the editor opens in create mode.
 pub fn suppression_rule_url(base: &str, id: &str) -> String {
     let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
     format!(

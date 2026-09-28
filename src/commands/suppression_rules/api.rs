@@ -7,22 +7,12 @@ use crate::api_client::CxClient;
 
 // --- Response types ---
 
-/// A suppression rule, as returned by the alert-scheduler API.
-///
-/// Note the two distinct IDs. Per `alert_scheduler_rule.proto`, `id` is the
-/// rule *version* id (it changes on every update) while `unique_identifier`
-/// is the rule's own stable id. `unique_identifier` is the one every route
-/// takes: `GET`/`DELETE .../v1/{id}`, the `uniqueIdentifier` key in a `PUT`
-/// body, and the console's `?edit=` parameter (the suppression-rules page
-/// resolves it via `rules.find(r => r?.uniqueIdentifier === id)`). Passing
-/// the version id instead gets a 404 from `GET`/`DELETE`, the same as any
-/// unknown id, so keep the two apart.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertSchedulerRule {
-    /// The rule's stable id. Use this for get/update/delete and console links.
+    /// Stable id; the one every route and console link takes.
     pub unique_identifier: Option<String>,
-    /// The rule *version* id - changes on every update. Not addressable.
+    /// Version id; changes on every update and isn't addressable.
     pub id: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
@@ -33,10 +23,7 @@ pub struct AlertSchedulerRule {
     pub updated_at: Option<String>,
 }
 
-/// One entry in a list response. The list endpoint wraps each rule in its own
-/// object alongside the rule's upcoming activation windows, so items are
-/// `{"alertSchedulerRule": {...}, "nextActiveTimeframes": [...]}` rather than
-/// bare rules.
+/// List items wrap the rule: `{"alertSchedulerRule": {...}, "nextActiveTimeframes": [...]}`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertSchedulerRuleEntry {
@@ -84,11 +71,7 @@ impl<'a> AlertSchedulersApi<'a> {
         self.client.get(SCHEDULERS_BASE, &[]).await
     }
 
-    /// Fetch one rule by its `unique_identifier`, or `None` if no rule has it.
-    ///
-    /// The endpoint answers 404 for an id it doesn't know - including a
-    /// valid-looking rule *version* id. Before CX-57145 it answered 200 `{}`
-    /// instead, so an empty body is treated as a miss too.
+    /// `None` on 404 or an empty body (pre-CX-57145 backends answer 200 `{}`).
     pub async fn get(&self, id: &str) -> Result<Option<Value>> {
         let path = format!("{SCHEDULERS_BASE}/{id}");
         match self.client.get::<Value>(&path, &[]).await {
@@ -106,11 +89,7 @@ impl<'a> AlertSchedulersApi<'a> {
         self.client.put(SCHEDULERS_BASE, body).await
     }
 
-    /// Delete one rule by its `unique_identifier`. Returns `false` if no rule
-    /// has that id.
-    ///
-    /// The endpoint answers 404 for an unknown id, a rule *version* id
-    /// included. Before CX-57145 it answered 200 without deleting anything.
+    /// `false` if no rule has this `unique_identifier` (404).
     pub async fn delete(&self, id: &str) -> Result<bool> {
         let path = format!("{SCHEDULERS_BASE}/{id}");
         match self
@@ -125,10 +104,7 @@ impl<'a> AlertSchedulersApi<'a> {
     }
 }
 
-/// Whether a `GET` response body actually carries a rule.
-///
-/// Before CX-57145 the endpoint answered an unknown id with 200 `{}` rather
-/// than a 404; [`AlertSchedulersApi::get`] still treats that body as a miss.
+/// Whether a `GET` body actually carries a rule.
 pub fn rule_found(val: &Value) -> bool {
     val.get("alertSchedulerRule")
         .is_some_and(|r| r.is_object() && r.as_object().is_some_and(|m| !m.is_empty()))
@@ -137,19 +113,13 @@ pub fn rule_found(val: &Value) -> bool {
 /// How an input id relates to the rules that actually exist.
 #[derive(Debug, PartialEq)]
 pub enum RuleIdKind {
-    /// Matches a rule's `unique_identifier` - addressable as-is.
     Addressable,
-    /// Matches a rule's *version* `id`; carries the addressable `unique_identifier`.
+    /// Carries the matching rule's `unique_identifier`.
     VersionId(String),
-    /// Matches no rule under either field.
     Unknown,
 }
 
-/// Classify an id against an already-fetched rule list.
-///
-/// `Addressable` wins over `VersionId` if (pathologically) an id matches both a
-/// rule's `unique_identifier` and another rule's version `id`, since the
-/// addressable interpretation is the one every route accepts.
+/// `Addressable` wins if an id matches both fields.
 pub fn classify_rule_id_in(resp: &GetBulkAlertSchedulerRuleResponse, input: &str) -> RuleIdKind {
     let mut version_match: Option<String> = None;
     for rule in resp
@@ -167,11 +137,7 @@ pub fn classify_rule_id_in(resp: &GetBulkAlertSchedulerRuleResponse, input: &str
     version_match.map_or(RuleIdKind::Unknown, RuleIdKind::VersionId)
 }
 
-/// Classify `input` against the live rule set. Costs one `list` call.
-///
-/// `get`/`delete` answer 404 alike for an unknown id and a rule *version* id,
-/// and the two share a format, so listing every rule and matching on both id
-/// fields is the only way to map a version id to its `unique_identifier`.
+/// Costs one `list` call; the only way to map a version id to its rule.
 pub async fn classify_rule_id(api: &AlertSchedulersApi<'_>, input: &str) -> Result<RuleIdKind> {
     Ok(classify_rule_id_in(&api.list().await?, input))
 }
@@ -183,9 +149,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// The list endpoint's real shape: rules are wrapped one level deeper than
-    /// the envelope key suggests, and each carries both IDs. Captured from a
-    /// live `GET /mgmt/openapi/5/alerts/suppression-rules/v1`.
+    /// Captured from a live list response.
     fn list_response_fixture() -> Value {
         json!({
             "alertSchedulerRules": [
@@ -236,10 +200,6 @@ mod tests {
         assert_eq!(rule.created_at.as_deref(), Some("2026-08-10T18:17:04.000Z"));
     }
 
-    /// The regression this module exists for: a rule's two IDs are different
-    /// values, and the addressable one is `uniqueIdentifier`. Modelling only
-    /// `id` produced console links that never resolved and deletes that
-    /// silently did nothing.
     #[test]
     fn list_response_keeps_the_two_ids_apart() {
         let resp: GetBulkAlertSchedulerRuleResponse =
@@ -260,10 +220,7 @@ mod tests {
         assert_ne!(rule.unique_identifier, rule.id);
     }
 
-    /// Regression guard for the bug that made every listed field render as
-    /// null: the old model expected `alertSchedulerRules` to hold bare rules,
-    /// so serde matched nothing and quietly produced `None` everywhere while
-    /// still exiting 0.
+    /// Treating entries as bare rules silently yielded all-null fields.
     #[test]
     fn list_entries_are_not_bare_rules() {
         let resp: GetBulkAlertSchedulerRuleResponse =
@@ -302,8 +259,6 @@ mod tests {
         assert_eq!(rule.name.as_deref(), Some("New Rule"));
     }
 
-    /// An update mints a fresh version id while `uniqueIdentifier` stays put -
-    /// which is exactly why the console link has to be built from the latter.
     #[test]
     fn deserialize_update_response_keeps_unique_identifier_stable() {
         let json = json!({
@@ -334,8 +289,6 @@ mod tests {
         assert!(rule_found(&json));
     }
 
-    /// The miss case as the endpoint answered it before CX-57145: 200 `{}`
-    /// for an unknown id (or a version id) rather than a 404.
     #[test]
     fn rule_found_rejects_an_empty_get_response() {
         assert!(!rule_found(&json!({})));
@@ -353,8 +306,6 @@ mod tests {
         );
     }
 
-    /// The point of the feature: a version id resolves to the rule's addressable
-    /// `unique_identifier` so callers can auto-correct.
     #[test]
     fn classify_maps_a_version_id_to_its_unique_identifier() {
         let resp: GetBulkAlertSchedulerRuleResponse =

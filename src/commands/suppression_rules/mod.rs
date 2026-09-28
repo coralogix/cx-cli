@@ -15,9 +15,6 @@ use api::{classify_rule_id, AlertSchedulerRule, AlertSchedulersApi, RuleIdKind};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Both IDs are surfaced under the API's own names. `unique_identifier` is the
-/// addressable one (get/update/delete/console link); `id` is the version id and
-/// is included only because the API reports it. See `api::AlertSchedulerRule`.
 fn rule_to_json(rule: &AlertSchedulerRule, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
         "unique_identifier": rule.unique_identifier,
@@ -61,12 +58,7 @@ fn read_json_body(from_file: &str, entity_name: &str) -> Result<Value> {
     Ok(body)
 }
 
-/// The identifier an update body uses to name its rule, if any.
-///
-/// Accepts either a top-level body or one nested under `alertSchedulerRule`,
-/// preferring `uniqueIdentifier` (the addressable id) and falling back to `id`
-/// (the version id) so a body keyed by the wrong field is still classified
-/// rather than sent blindly.
+/// Falls back to `id` so a body keyed by the version id can still be diagnosed.
 fn update_body_identifier(body: &Value) -> Option<&str> {
     let rule = body.get("alertSchedulerRule").unwrap_or(body);
     rule.get("uniqueIdentifier")
@@ -74,12 +66,6 @@ fn update_body_identifier(body: &Value) -> Option<&str> {
         .or_else(|| rule.get("id").and_then(|v| v.as_str()))
 }
 
-/// Warn that an input id was a rule version id and we auto-corrected it.
-///
-/// `get`/`delete` take a rule id and 404 on the version id, so when
-/// [`classify_rule_id`] resolves the version id to its stable
-/// `unique_identifier` we tell the user rather than switching ids behind
-/// their back.
 fn warn_version_id_autocorrected(input: &str, unique_identifier: &str) {
     eprintln!(
         "{}",
@@ -107,17 +93,12 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertSchedulerRule)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        // Echo the suppression-rules page once per profile, the way
-        // `alerts list` echoes the alerts page. Skipped when the profile
-        // returned nothing, since there'd be nothing to look at.
         if !resp.alert_scheduler_rules.is_empty() {
             crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::suppression_rules_url(b)
             })
             .await;
         }
-        // List items are wrapped: {"alertSchedulerRule": {...},
-        // "nextActiveTimeframes": [...]}. Unwrap to the rule itself.
         for rule in resp
             .alert_scheduler_rules
             .into_iter()
@@ -145,8 +126,6 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                 .map(|(profile, rule)| {
                     vec![
                         profile.clone(),
-                        // The addressable id - the version id has no use to a
-                        // human reading a table, so it's left to json/agents.
                         rule.unique_identifier.clone().unwrap_or_default(),
                         rule.name.clone().unwrap_or_default(),
                         render::bool_display(rule.enabled),
@@ -181,17 +160,12 @@ pub async fn run_get(
             if let Some(val) = api.get(&id).await? {
                 return Ok(Some((val, id)));
             }
-            // A miss might just be a version id. One extra `list` call tells us,
-            // and if so we re-fetch by the addressable id and carry it back so
-            // the console link points at the rule the user actually got.
+            // A miss may be a version id; resolve it and retry.
             match classify_rule_id(&api, &id).await? {
                 RuleIdKind::VersionId(uid) => {
                     warn_version_id_autocorrected(&id, &uid);
                     Ok(api.get(&uid).await?.map(|val| (val, uid)))
                 }
-                // Not a version id - a miss for the "Rule not found." path.
-                // (`Addressable` is unreachable after a `get` miss unless the
-                // rule was created in between.)
                 _ => Ok(None),
             }
         }
@@ -200,15 +174,12 @@ pub async fn run_get(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, found) in report_errors_and_collect_successes(per_profile)? {
-        // Misses are dropped here and fall through to "Rule not found.".
         let Some((mut val, resolved_id)) = found else {
             continue;
         };
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
-        // `resolved_id` is the rule's unique_identifier - the fetch only
-        // succeeded because it was - so it's what the console link needs.
         crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::suppression_rule_url(b, &resolved_id)
         })
@@ -255,8 +226,6 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
-            // Report the addressable id, not the version id - this is the
-            // value the user feeds back into get/update/delete.
             let id = rule.unique_identifier.as_deref();
             render::print_created("Created", "rule", Some(name), id, &profile);
             if let Some(id) = id {
@@ -308,10 +277,7 @@ pub async fn run_update(
                 ) => e,
                 Err(e) => return Err(e.into()),
             };
-            // The backend keys updates off `uniqueIdentifier` and rejects a
-            // version id, but it can't say which rule the version id belongs
-            // to. One `list` call can, so once the PUT is rejected, check
-            // whether the body named the wrong id and point at the right one.
+            // On rejection, check whether the body named a version id.
             let Some(identifier) = identifier.as_deref() else {
                 return Err(err.into());
             };
@@ -374,9 +340,7 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], rule_id: &str) -> Resu
             if api.delete(&id).await? {
                 return Ok(id);
             }
-            // The miss might be a version id - one extra `list` call maps it to
-            // the addressable id so we can delete the rule the user meant
-            // instead of failing on a technicality.
+            // A miss may be a version id; resolve it and retry.
             let not_found = || {
                 anyhow::anyhow!(
                     "No suppression rule found with ID '{id}'. This must be the rule's \

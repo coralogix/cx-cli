@@ -71,11 +71,11 @@ impl<'a> AlertSchedulersApi<'a> {
         self.client.get(SCHEDULERS_BASE, &[]).await
     }
 
-    /// `None` on 404 or an empty body (pre-CX-57145 backends answer 200 `{}`).
+    /// `None` if no rule has this `unique_identifier` (404).
     pub async fn get(&self, id: &str) -> Result<Option<Value>> {
         let path = format!("{SCHEDULERS_BASE}/{id}");
         match self.client.get::<Value>(&path, &[]).await {
-            Ok(val) => Ok(rule_found(&val).then_some(val)),
+            Ok(val) => Ok(Some(val)),
             Err(CxError::Api { status: 404, .. }) => Ok(None),
             Err(e) => Err(e),
         }
@@ -102,12 +102,6 @@ impl<'a> AlertSchedulersApi<'a> {
             Err(e) => Err(e),
         }
     }
-}
-
-/// Whether a `GET` body actually carries a rule.
-pub fn rule_found(val: &Value) -> bool {
-    val.get("alertSchedulerRule")
-        .is_some_and(|r| r.is_object() && r.as_object().is_some_and(|m| !m.is_empty()))
 }
 
 /// How an input id relates to the rules that actually exist.
@@ -276,24 +270,6 @@ mod tests {
             Some("50fb552b-c042-4a8c-8186-fd488d452fc9")
         );
         assert_ne!(rule.unique_identifier, rule.id);
-    }
-
-    #[test]
-    fn rule_found_accepts_a_populated_get_response() {
-        let json = json!({
-            "alertSchedulerRule": {
-                "uniqueIdentifier": "38c4a964-a237-41ea-9b02-87af3d734571",
-                "name": "Maintenance Window"
-            }
-        });
-        assert!(rule_found(&json));
-    }
-
-    #[test]
-    fn rule_found_rejects_an_empty_get_response() {
-        assert!(!rule_found(&json!({})));
-        assert!(!rule_found(&json!({"alertSchedulerRule": {}})));
-        assert!(!rule_found(&json!({"alertSchedulerRule": null})));
     }
 
     #[test]

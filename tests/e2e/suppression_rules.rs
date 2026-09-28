@@ -109,8 +109,7 @@ fn suppression_rules_delete_unknown_id_fails() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !output.status.success(),
-        "deleting an unknown id reported success - is the backend 404 (CX-57145) live? \
-         stderr: {stderr}"
+        "deleting an unknown id reported success, stderr: {stderr}"
     );
     assert!(
         stderr.contains("No suppression rule found"),

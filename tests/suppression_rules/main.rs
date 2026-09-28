@@ -161,19 +161,6 @@ async fn get_unknown_id_stays_a_miss() {
         .expect("a miss is still a successful call");
 }
 
-/// Pre-CX-57145 backends answer a miss with 200 `{}`.
-#[tokio::test]
-async fn get_treats_an_empty_body_as_a_miss() {
-    let server = MockServer::start().await;
-    mock_get(&server, UNKNOWN_ID, json!({}), 1).await;
-    mock_list(&server, empty_list_body(), 1).await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_get(&targets, UNKNOWN_ID, OutputFormat::Json)
-        .await
-        .expect("a miss is still a successful call");
-}
-
 #[tokio::test]
 async fn get_surfaces_non_404_errors() {
     let server = MockServer::start().await;

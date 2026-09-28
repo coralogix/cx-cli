@@ -140,9 +140,10 @@ cx dashboards create --from-file dashboard.json
 # View in Coralogix: https://my-team.app.eu2.coralogix.com/dashboards/zeoaYDOv35Jl0ZKEsZBZp
 ```
 
-Commands that act on a single entity link to that entity. List and settings
-commands link to the shared page instead, printed once per profile rather than
-once per row, and an empty result prints no link at all.
+A command that acts on a single resource links to that resource's page. A list
+or settings command links once to the page that holds the whole collection,
+however many rows it returned, and prints nothing when the result is empty. A
+run that targets several profiles at once prints one link per profile.
 
 The line goes to stderr, so `-o json` and `-o toon` output is unchanged and
 anything parsing it never sees the link. There is nothing to set up: `cx`

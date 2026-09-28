@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error::Result;
+use crate::error::{CxError, Result};
 
 use crate::api_client::CxClient;
 
@@ -15,8 +15,8 @@ use crate::api_client::CxClient;
 /// takes: `GET`/`DELETE .../v1/{id}`, the `uniqueIdentifier` key in a `PUT`
 /// body, and the console's `?edit=` parameter (the suppression-rules page
 /// resolves it via `rules.find(r => r?.uniqueIdentifier === id)`). Passing
-/// the version id instead is not an error - `GET` returns `{}` and `DELETE`
-/// returns 200 without deleting anything - so keep the two apart.
+/// the version id instead gets a 404 from `GET`/`DELETE`, the same as any
+/// unknown id, so keep the two apart.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertSchedulerRule {
@@ -84,14 +84,18 @@ impl<'a> AlertSchedulersApi<'a> {
         self.client.get(SCHEDULERS_BASE, &[]).await
     }
 
-    /// Fetch one rule by its `unique_identifier`.
+    /// Fetch one rule by its `unique_identifier`, or `None` if no rule has it.
     ///
-    /// The endpoint answers 200 with an empty object `{}` for an id it doesn't
-    /// know - including a valid-looking rule *version* id - rather than 404.
-    /// Use [`rule_found`] on the result instead of relying on the status code.
-    pub async fn get(&self, id: &str) -> Result<Value> {
+    /// The endpoint answers 404 for an id it doesn't know - including a
+    /// valid-looking rule *version* id. Before CX-57145 it answered 200 `{}`
+    /// instead, so an empty body is treated as a miss too.
+    pub async fn get(&self, id: &str) -> Result<Option<Value>> {
         let path = format!("{SCHEDULERS_BASE}/{id}");
-        self.client.get(&path, &[]).await
+        match self.client.get::<Value>(&path, &[]).await {
+            Ok(val) => Ok(rule_found(&val).then_some(val)),
+            Err(CxError::Api { status: 404, .. }) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn create(&self, body: &Value) -> Result<CreateAlertSchedulerRuleResponse> {
@@ -102,21 +106,29 @@ impl<'a> AlertSchedulersApi<'a> {
         self.client.put(SCHEDULERS_BASE, body).await
     }
 
-    /// Delete one rule by its `unique_identifier`.
+    /// Delete one rule by its `unique_identifier`. Returns `false` if no rule
+    /// has that id.
     ///
-    /// Answers 200 with `{}` whether or not anything was deleted, so callers
-    /// must confirm the rule exists via [`AlertSchedulersApi::get`] first or a
-    /// no-op reads as success.
-    pub async fn delete(&self, id: &str) -> Result<DeleteAlertSchedulerRuleResponse> {
+    /// The endpoint answers 404 for an unknown id, a rule *version* id
+    /// included. Before CX-57145 it answered 200 without deleting anything.
+    pub async fn delete(&self, id: &str) -> Result<bool> {
         let path = format!("{SCHEDULERS_BASE}/{id}");
-        self.client.delete(&path).await
+        match self
+            .client
+            .delete::<DeleteAlertSchedulerRuleResponse>(&path)
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(CxError::Api { status: 404, .. }) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 }
 
-/// Whether a [`AlertSchedulersApi::get`] response actually carries a rule.
+/// Whether a `GET` response body actually carries a rule.
 ///
-/// The endpoint returns `{}` rather than a 404 for an unknown id, so an
-/// `Ok(value)` on its own says nothing about whether the rule exists.
+/// Before CX-57145 the endpoint answered an unknown id with 200 `{}` rather
+/// than a 404; [`AlertSchedulersApi::get`] still treats that body as a miss.
 pub fn rule_found(val: &Value) -> bool {
     val.get("alertSchedulerRule")
         .is_some_and(|r| r.is_object() && r.as_object().is_some_and(|m| !m.is_empty()))
@@ -157,9 +169,9 @@ pub fn classify_rule_id_in(resp: &GetBulkAlertSchedulerRuleResponse, input: &str
 
 /// Classify `input` against the live rule set. Costs one `list` call.
 ///
-/// Because `get`/`delete` answer 200 for an unknown or version id rather than
-/// erroring, listing every rule and matching on both id fields is the only way
-/// to tell an addressable `unique_identifier` from a rule *version* id.
+/// `get`/`delete` answer 404 alike for an unknown id and a rule *version* id,
+/// and the two share a format, so listing every rule and matching on both id
+/// fields is the only way to map a version id to its `unique_identifier`.
 pub async fn classify_rule_id(api: &AlertSchedulersApi<'_>, input: &str) -> Result<RuleIdKind> {
     Ok(classify_rule_id_in(&api.list().await?, input))
 }
@@ -322,8 +334,8 @@ mod tests {
         assert!(rule_found(&json));
     }
 
-    /// The miss case: an unknown id (or a version id) answers 200 `{}`, not a
-    /// 404, so the status code alone can't tell a hit from a miss.
+    /// The miss case as the endpoint answered it before CX-57145: 200 `{}`
+    /// for an unknown id (or a version id) rather than a 404.
     #[test]
     fn rule_found_rejects_an_empty_get_response() {
         assert!(!rule_found(&json!({})));

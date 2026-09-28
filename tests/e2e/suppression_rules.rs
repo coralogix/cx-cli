@@ -69,3 +69,65 @@ fn suppression_rules_get_resolves_the_id_list_reports() {
         "get returned a different rule than the one requested: {got}"
     );
 }
+
+/// A well-formed id that no rule carries. Shaped like a v4 UUID so the backend
+/// treats it as an unknown rule rather than a malformed one.
+const UNKNOWN_RULE_ID: &str = "00000000-0000-4000-8000-000000000000";
+
+/// Since CX-57145 the backend answers an unknown id with 404. `get` must turn
+/// that into an empty result, not a raw "API request failed (404)" -
+/// `run_ok_json` fails on either a non-zero exit or an API error on stderr.
+#[test]
+#[ignore]
+fn suppression_rules_get_unknown_id_is_an_empty_result() {
+    if harness::require_creds("suppression_rules_get_unknown_id_is_an_empty_result").is_none() {
+        return;
+    }
+    let v = harness::run_ok_json(&[
+        "alerts",
+        "suppression-rules",
+        "get",
+        UNKNOWN_RULE_ID,
+        "-o",
+        "json",
+    ]);
+    assert!(
+        harness::assert_array(&v).is_empty(),
+        "get of an unknown id returned a rule: {v}"
+    );
+}
+
+/// The live check of the CX-57145 contract `delete` now relies on: an unknown
+/// id must fail, not report a deletion. Before the fix the backend answered
+/// 200 here without deleting anything. The id matches no rule, so nothing is
+/// deleted either way, but it is still a write call and gated like the rest.
+#[test]
+#[ignore]
+fn suppression_rules_delete_unknown_id_fails() {
+    if std::env::var_os("CX_E2E_INCLUDE_WRITES").is_none() {
+        return;
+    }
+    if harness::require_creds("suppression_rules_delete_unknown_id_fails").is_none() {
+        return;
+    }
+    let output = harness::cx()
+        .args([
+            "alerts",
+            "suppression-rules",
+            "delete",
+            UNKNOWN_RULE_ID,
+            "--yes",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "deleting an unknown id reported success - is the backend 404 (CX-57145) live? \
+         stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("No suppression rule found"),
+        "expected the not-found guidance, stderr: {stderr}"
+    );
+}

@@ -1,13 +1,13 @@
 //! Integration tests for `cx alerts suppression-rules` (FORGE-710).
 //!
 //! The group's defining hazard is that a rule has two IDs - `uniqueIdentifier`
-//! (stable, addressable) and `id` (the rule version id) - and the API fails
-//! *silently* when they're confused: an unknown id gets 200 `{}` from GET and
-//! a 200 no-op from DELETE, never a 404. These tests pin the behaviour that
-//! turns those silent misses into visible ones, including the version-id
-//! auto-correction: `get`/`delete` fall back to a `list` lookup and, when the
-//! input turns out to be a version id, operate on the real `uniqueIdentifier`
-//! instead; `update` detects the same mistake and errors before the PUT.
+//! (stable, addressable) and `id` (the rule version id) - that share a format.
+//! GET/DELETE answer 404 for a version id exactly as for an unknown id (since
+//! CX-57145; before it they answered a silent 200). These tests pin the
+//! version-id auto-correction built on that 404: `get`/`delete` fall back to a
+//! `list` lookup and, when the input turns out to be a version id, operate on
+//! the real `uniqueIdentifier` instead; a rejected `update` gets the same
+//! lookup so its error names the id to use.
 //!
 //! Console-link coverage for the group lives in `tests/console_urls/main.rs`.
 
@@ -75,6 +75,38 @@ async fn mock_get(server: &MockServer, id: &str, body: serde_json::Value, times:
         .await;
 }
 
+/// The backend's answer to an id no rule carries - a version id included.
+fn not_found() -> ResponseTemplate {
+    ResponseTemplate::new(404).set_body_json(json!({ "message": "Rule not found" }))
+}
+
+async fn mock_get_not_found(server: &MockServer, id: &str, times: u64) {
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/{id}")))
+        .respond_with(not_found())
+        .expect(times)
+        .mount(server)
+        .await;
+}
+
+async fn mock_delete(server: &MockServer, id: &str, response: ResponseTemplate, times: u64) {
+    Mock::given(method("DELETE"))
+        .and(path(format!("{BASE}/{id}")))
+        .respond_with(response)
+        .expect(times)
+        .mount(server)
+        .await;
+}
+
+async fn mock_put(server: &MockServer, response: ResponseTemplate, times: u64) {
+    Mock::given(method("PUT"))
+        .and(path(BASE))
+        .respond_with(response)
+        .expect(times)
+        .mount(server)
+        .await;
+}
+
 async fn mock_list(server: &MockServer, body: serde_json::Value, times: u64) {
     Mock::given(method("GET"))
         .and(path(BASE))
@@ -122,12 +154,12 @@ async fn get_by_unique_identifier_succeeds() {
         .expect("get should succeed");
 }
 
-/// Passing the version id lands on the empty `{}` first, then the fallback
-/// `list` lookup identifies it and `get` re-fetches by the real id.
+/// Passing the version id gets a 404 first, then the fallback `list` lookup
+/// identifies it and `get` re-fetches by the real id.
 #[tokio::test]
 async fn get_by_version_id_autocorrects() {
     let server = MockServer::start().await;
-    mock_get(&server, VERSION_ID, json!({}), 1).await;
+    mock_get_not_found(&server, VERSION_ID, 1).await;
     mock_list(&server, list_body(), 1).await;
     mock_get(&server, UNIQUE_ID, rule_body(), 1).await;
 
@@ -137,10 +169,24 @@ async fn get_by_version_id_autocorrects() {
         .expect("get should auto-correct a version id and succeed");
 }
 
-/// A genuinely unknown id misses on the GET and finds nothing in the list, so
-/// it stays a miss (the "Rule not found." path) rather than erroring the call.
+/// A genuinely unknown id 404s on the GET and finds nothing in the list, so it
+/// stays a miss (the "Rule not found." path) rather than surfacing a raw 404.
 #[tokio::test]
 async fn get_unknown_id_stays_a_miss() {
+    let server = MockServer::start().await;
+    mock_get_not_found(&server, UNKNOWN_ID, 1).await;
+    mock_list(&server, empty_list_body(), 1).await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    run_get(&targets, UNKNOWN_ID, OutputFormat::Json)
+        .await
+        .expect("a miss is still a successful call");
+}
+
+/// Before CX-57145 a miss came back as 200 `{}`. It must still read as a miss,
+/// not render as a rule.
+#[tokio::test]
+async fn get_treats_an_empty_body_as_a_miss() {
     let server = MockServer::start().await;
     mock_get(&server, UNKNOWN_ID, json!({}), 1).await;
     mock_list(&server, empty_list_body(), 1).await;
@@ -151,17 +197,42 @@ async fn get_unknown_id_stays_a_miss() {
         .expect("a miss is still a successful call");
 }
 
+/// Only a 404 means "no such rule". Any other failure must surface as-is
+/// rather than kick off the version-id lookup.
 #[tokio::test]
-async fn delete_by_unique_identifier_issues_the_delete() {
+async fn get_surfaces_non_404_errors() {
     let server = MockServer::start().await;
-    mock_get(&server, UNIQUE_ID, rule_body(), 1).await;
-    mock_list(&server, list_body(), 0).await;
-    Mock::given(method("DELETE"))
+    Mock::given(method("GET"))
         .and(path(format!("{BASE}/{UNIQUE_ID}")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({ "message": "boom" })))
         .expect(1)
         .mount(&server)
         .await;
+    mock_list(&server, list_body(), 0).await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let err = run_get(&targets, UNIQUE_ID, OutputFormat::Json)
+        .await
+        .expect_err("a 500 must not be swallowed as a miss");
+    assert!(
+        format!("{err:#}").contains("500"),
+        "error should carry the status: {err:#}"
+    );
+}
+
+/// A hit needs nothing but the DELETE itself - no pre-flight GET, no list.
+#[tokio::test]
+async fn delete_by_unique_identifier_issues_the_delete() {
+    let server = MockServer::start().await;
+    mock_get(&server, UNIQUE_ID, rule_body(), 0).await;
+    mock_list(&server, list_body(), 0).await;
+    mock_delete(
+        &server,
+        UNIQUE_ID,
+        ResponseTemplate::new(200).set_body_json(json!({})),
+        1,
+    )
+    .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_delete(&targets, UNIQUE_ID)
@@ -169,26 +240,20 @@ async fn delete_by_unique_identifier_issues_the_delete() {
         .expect("delete should succeed");
 }
 
-/// Deleting by the version id auto-corrects: the pre-flight GET misses, the
-/// list lookup maps it to the real id, and the DELETE goes to *that* id. The
-/// version-id DELETE path must never be hit.
+/// Deleting by the version id auto-corrects: the DELETE 404s, the list lookup
+/// maps the version id to the real one, and a second DELETE goes to *that* id.
 #[tokio::test]
 async fn delete_by_version_id_autocorrects() {
     let server = MockServer::start().await;
-    mock_get(&server, VERSION_ID, json!({}), 1).await;
+    mock_delete(&server, VERSION_ID, not_found(), 1).await;
     mock_list(&server, list_body(), 1).await;
-    Mock::given(method("DELETE"))
-        .and(path(format!("{BASE}/{UNIQUE_ID}")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path(format!("{BASE}/{VERSION_ID}")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-        .expect(0)
-        .mount(&server)
-        .await;
+    mock_delete(
+        &server,
+        UNIQUE_ID,
+        ResponseTemplate::new(200).set_body_json(json!({})),
+        1,
+    )
+    .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_delete(&targets, VERSION_ID)
@@ -196,19 +261,13 @@ async fn delete_by_version_id_autocorrects() {
         .expect("delete should auto-correct a version id and succeed");
 }
 
-/// A delete keyed by an id no rule carries must error rather than report a
-/// 200 no-op as success, and must not send the DELETE at all.
+/// A delete keyed by an id no rule carries must error with a pointer at the
+/// right id field rather than surface a bare 404.
 #[tokio::test]
-async fn delete_unknown_id_errors_instead_of_silently_no_opping() {
+async fn delete_unknown_id_errors_with_guidance() {
     let server = MockServer::start().await;
-    mock_get(&server, UNKNOWN_ID, json!({}), 1).await;
+    mock_delete(&server, UNKNOWN_ID, not_found(), 1).await;
     mock_list(&server, empty_list_body(), 1).await;
-    Mock::given(method("DELETE"))
-        .and(path(format!("{BASE}/{UNKNOWN_ID}")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-        .expect(0)
-        .mount(&server)
-        .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     let err = run_delete(&targets, UNKNOWN_ID)
@@ -226,16 +285,17 @@ async fn delete_unknown_id_errors_instead_of_silently_no_opping() {
     );
 }
 
+/// A good update is just the PUT - the list lookup only runs on a rejection.
 #[tokio::test]
 async fn update_by_unique_identifier_succeeds() {
     let server = MockServer::start().await;
-    mock_list(&server, list_body(), 1).await;
-    Mock::given(method("PUT"))
-        .and(path(BASE))
-        .respond_with(ResponseTemplate::new(200).set_body_json(rule_body()))
-        .expect(1)
-        .mount(&server)
-        .await;
+    mock_list(&server, list_body(), 0).await;
+    mock_put(
+        &server,
+        ResponseTemplate::new(200).set_body_json(rule_body()),
+        1,
+    )
+    .await;
 
     let body = json!({ "alertSchedulerRule": { "uniqueIdentifier": UNIQUE_ID, "name": "x" } });
     let file = write_body_to_temp("update-ok", &body);
@@ -246,19 +306,19 @@ async fn update_by_unique_identifier_succeeds() {
         .expect("update by uniqueIdentifier should succeed");
 }
 
-/// An update body that names the rule by its version id is caught by the list
-/// lookup and errored before the PUT, turning the backend's field-less
-/// "400 Invalid UUID format" into an actionable message.
+/// An update body that names the rule by its version id is rejected by the
+/// backend; the list lookup then turns that into a message naming the
+/// addressable id to use.
 #[tokio::test]
-async fn update_by_version_id_errors_before_sending() {
+async fn update_by_version_id_names_the_id_to_use() {
     let server = MockServer::start().await;
+    mock_put(
+        &server,
+        ResponseTemplate::new(400).set_body_json(json!({ "message": "Invalid UUID format" })),
+        1,
+    )
+    .await;
     mock_list(&server, list_body(), 1).await;
-    Mock::given(method("PUT"))
-        .and(path(BASE))
-        .respond_with(ResponseTemplate::new(200).set_body_json(rule_body()))
-        .expect(0)
-        .mount(&server)
-        .await;
 
     let body = json!({ "alertSchedulerRule": { "uniqueIdentifier": VERSION_ID, "name": "x" } });
     let file = write_body_to_temp("update-version-id", &body);
@@ -266,7 +326,7 @@ async fn update_by_version_id_errors_before_sending() {
     let targets = vec![common::test_target("test-profile", &server.uri())];
     let err = run_update(&targets, file.to_str().unwrap(), OutputFormat::Json)
         .await
-        .expect_err("an update keyed by a version id must not be sent");
+        .expect_err("an update keyed by a version id must fail");
 
     let msg = format!("{err:#}");
     assert!(
@@ -276,5 +336,37 @@ async fn update_by_version_id_errors_before_sending() {
     assert!(
         msg.contains(UNIQUE_ID),
         "error should name the addressable id to use: {msg}"
+    );
+}
+
+/// A rejection that isn't about the id (the body names a real rule) must come
+/// back as the backend's own error, not a misleading id diagnosis.
+#[tokio::test]
+async fn update_rejected_for_another_reason_keeps_the_api_error() {
+    let server = MockServer::start().await;
+    mock_put(
+        &server,
+        ResponseTemplate::new(400).set_body_json(json!({ "message": "schedule is required" })),
+        1,
+    )
+    .await;
+    mock_list(&server, list_body(), 1).await;
+
+    let body = json!({ "alertSchedulerRule": { "uniqueIdentifier": UNIQUE_ID, "name": "x" } });
+    let file = write_body_to_temp("update-bad-body", &body);
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let err = run_update(&targets, file.to_str().unwrap(), OutputFormat::Json)
+        .await
+        .expect_err("a rejected update must fail");
+
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("schedule is required"),
+        "error should be the backend's own: {msg}"
+    );
+    assert!(
+        !msg.contains("version id"),
+        "error must not blame the id: {msg}"
     );
 }

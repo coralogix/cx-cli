@@ -25,6 +25,9 @@ const JSON_KEY_PROFILE: &str = "profile";
 /// Max limit of the API reads, so the CLI refuses a longer list.
 const MAX_RESOURCE_IDS: usize = 100;
 
+/// Values longer than this that the API joined with ", " are broken one item per line.
+const WRAP_LIST_LENGTH: usize = 60;
+
 #[derive(Debug, Clone, Copy)]
 pub struct PageWindow {
     pub start_row: Option<i64>,
@@ -202,12 +205,7 @@ pub async fn run_list(
     })
     .await;
 
-    render_resources(
-        per_profile,
-        targets.len() > 1,
-        resource_type.is_some(),
-        output,
-    )
+    render_resources(per_profile, targets.len() > 1, output)
 }
 
 /// `cx infra resources list` - the deprecated name and scope filters, which
@@ -251,13 +249,12 @@ pub async fn run_list_legacy(
     })
     .await;
 
-    render_resources(per_profile, targets.len() > 1, true, output)
+    render_resources(per_profile, targets.len() > 1, output)
 }
 
 fn render_resources(
     per_profile: Vec<(String, Result<GetResourcesResponse>)>,
     include_profile: bool,
-    type_pinned: bool,
     output: OutputFormat,
 ) -> Result<()> {
     let mut counts: Vec<ProfileCounts> = Vec::new();
@@ -288,21 +285,11 @@ fn render_resources(
                 render::print_no_results("No resources found.");
                 return Ok(());
             }
-            let (headers, rows) = list_table(&merged);
-            let header_refs: Vec<&str> = headers.iter().map(String::as_str).collect();
-            render::render_table(&header_refs, rows, include_profile);
+            print!("{}", resource_blocks(&merged, include_profile));
             eprintln!(
                 "{}",
                 format_count_summary(merged.len(), total_count, &counts, include_profile).dimmed()
             );
-            if !type_pinned {
-                eprintln!(
-                    "{}",
-                    "Columns are the union of the matched types; a blank cell means the resource \
-                     does not carry that column. Narrow with --type for one type's set."
-                        .dimmed()
-                );
-            }
         }
     }
 
@@ -1014,49 +1001,66 @@ fn display_or_dash(value: Option<&str>) -> String {
     value.filter(|s| !s.is_empty()).unwrap_or("-").to_string()
 }
 
-fn list_table(merged: &[(String, ResourceData)]) -> (Vec<String>, Vec<Vec<String>>) {
-    let resources: Vec<&ResourceData> = merged.iter().map(|(_, r)| r).collect();
-    let columns = union_of_columns(&resources);
-
-    let headers: Vec<String> = ["Resource ID", "Name", "Category", "Type", "Policies"]
-        .into_iter()
-        .map(String::from)
-        .chain(columns.iter().cloned())
-        .collect();
-
-    let rows: Vec<Vec<String>> = merged
+/// One block per resource, a field per line. Resources carry dozens of columns and the
+/// set grows with the type, so a table cannot fit them across any terminal.
+fn resource_blocks(merged: &[(String, ResourceData)], include_profile: bool) -> String {
+    merged
         .iter()
-        .map(|(profile, r)| {
-            let mut row = vec![
-                profile.clone(),
-                display_or_dash(r.resource_id.as_deref()),
-                display_or_dash(display_name(r)),
-                display_or_dash(r.category.as_deref()),
-                display_or_dash(r.type_name.as_deref()),
-                join_or_dash(&format_health_policies(&r.health_policies)),
-            ];
-            row.extend(
-                columns
-                    .iter()
-                    .map(|column| r.columns.get(column).cloned().unwrap_or_default()),
-            );
-            row
-        })
-        .collect();
-
-    (headers, rows)
+        .map(|(profile, r)| resource_block(r, include_profile.then_some(profile.as_str())))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn union_of_columns(resources: &[&ResourceData]) -> Vec<String> {
-    let mut columns: Vec<String> = Vec::new();
-    for resource in resources {
-        for name in resource.columns.keys() {
-            if !name.eq_ignore_ascii_case("name") && !columns.contains(name) {
-                columns.push(name.clone());
-            }
+fn resource_block(r: &ResourceData, profile: Option<&str>) -> String {
+    let mut fields: Vec<(&str, Vec<String>)> = Vec::new();
+    if let Some(profile) = profile {
+        fields.push(("Profile", vec![profile.to_string()]));
+    }
+    fields.push((
+        "Resource ID",
+        vec![display_or_dash(r.resource_id.as_deref())],
+    ));
+    fields.push((
+        "Type",
+        vec![format!(
+            "{} / {}",
+            display_or_dash(r.category.as_deref()),
+            display_or_dash(r.type_name.as_deref())
+        )],
+    ));
+    let policies = format_health_policies(&r.health_policies);
+    fields.push((
+        "Policies",
+        if policies.is_empty() {
+            vec!["-".to_string()]
+        } else {
+            policies
+        },
+    ));
+    fields.extend(
+        r.columns
+            .iter()
+            .filter(|(name, _)| !name.eq_ignore_ascii_case("name"))
+            .map(|(name, value)| (name.as_str(), split_long_list(value))),
+    );
+
+    let width = fields.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
+    let mut out = format!("{}\n", display_or_dash(display_name(r)).bold());
+    for (key, lines) in &fields {
+        for (i, line) in lines.iter().enumerate() {
+            let key = if i == 0 { *key } else { "" };
+            out.push_str(&format!("  {key:<width$}  {line}\n"));
         }
     }
-    columns
+    out
+}
+
+fn split_long_list(value: &str) -> Vec<String> {
+    if value.len() > WRAP_LIST_LENGTH && value.contains(", ") {
+        value.split(", ").map(String::from).collect()
+    } else {
+        vec![value.to_string()]
+    }
 }
 
 /// The name the API matches `--name-filter` against.
@@ -1769,103 +1773,90 @@ mod tests {
         r
     }
 
+    fn block_lines(r: &ResourceData, profile: Option<&str>) -> Vec<String> {
+        resource_block(r, profile)
+            .lines()
+            .skip(1)
+            .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect()
+    }
+
     #[test]
-    fn union_of_columns_sorts_each_row_then_appends_new_names() {
-        let a = typed_resource(
-            "Hosts",
-            "EC2_Instances",
-            &[("Region", "eu"), ("OS", "Linux")],
-        );
-        let b = typed_resource("Kubernetes", "Pods", &[("Namespace", "kube-system")]);
+    fn resource_block_leads_with_id_type_and_policies() {
+        let r = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu-west-1")]);
         assert_eq!(
-            union_of_columns(&[&a, &b]),
-            vec![
-                "OS".to_string(),
-                "Region".to_string(),
-                "Namespace".to_string()
+            block_lines(&r, None),
+            [
+                "Resource ID 4013226:host_id=i-077a1626590913a16",
+                "Type Hosts / EC2_Instances",
+                "Policies -",
+                "Region eu-west-1"
             ]
         );
     }
 
     #[test]
-    fn union_of_columns_leaves_name_to_its_own_column() {
-        let r = typed_resource(
-            "Hosts",
-            "EC2_Instances",
-            &[("Name", "web-01"), ("Region", "eu")],
-        );
-        assert_eq!(union_of_columns(&[&r]), vec!["Region".to_string()]);
+    fn resource_block_names_the_profile_only_when_asked() {
+        let r = typed_resource("Hosts", "EC2_Instances", &[]);
+        assert_eq!(block_lines(&r, Some("prod"))[0], "Profile prod");
+        assert!(!resource_block(&r, None).contains("Profile"));
     }
 
     #[test]
-    fn union_of_columns_does_not_repeat_a_shared_column() {
-        let a = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu")]);
-        let b = typed_resource("Hosts", "Azure_VMs", &[("Region", "westeu")]);
-        assert_eq!(union_of_columns(&[&a, &b]), vec!["Region".to_string()]);
+    fn resource_block_shows_only_the_columns_the_resource_carries() {
+        let host = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu")]);
+        let pod = typed_resource("Kubernetes", "Pods", &[("Namespace", "kube-system")]);
+        let out = resource_blocks(&[("p".into(), host), ("p".into(), pod)], false);
+        let (first, second) = out.split_once("\n\n").unwrap();
+        assert!(first.contains("Region") && !first.contains("Namespace"));
+        assert!(second.contains("Namespace") && !second.contains("Region"));
     }
 
     #[test]
-    fn union_of_columns_is_empty_without_rows() {
-        assert!(union_of_columns(&[]).is_empty());
-    }
-
-    fn merged_row(
-        category: &str,
-        type_name: &str,
-        columns: &[(&str, &str)],
-    ) -> (String, ResourceData) {
-        (
-            "p".to_string(),
-            typed_resource(category, type_name, columns),
-        )
+    fn resource_block_keeps_name_as_the_heading_not_a_field() {
+        let r = typed_resource("Hosts", "EC2_Instances", &[("Name", "web-01")]);
+        let out = resource_block(&r, None);
+        assert!(out.lines().next().unwrap().contains("web-01"));
+        assert!(!block_lines(&r, None).iter().any(|l| l.starts_with("Name")));
     }
 
     #[test]
-    fn list_table_always_carries_the_classification_columns() {
-        let (headers, rows) = list_table(&[merged_row(
-            "Hosts",
-            "EC2_Instances",
-            &[("Region", "eu-west-1")],
-        )]);
+    fn resource_block_dashes_a_missing_classification() {
+        let mut r = typed_resource("Hosts", "EC2_Instances", &[]);
+        r.category = None;
+        assert_eq!(block_lines(&r, None)[1], "Type - / EC2_Instances");
+    }
+
+    #[test]
+    fn resource_block_puts_each_policy_on_its_own_line() {
+        let mut r = typed_resource("Kubernetes", "Deployments", &[]);
+        r.health_policies = vec![
+            policy("Pod CPU utilization high", "healthy"),
+            policy("Pod memory utilization high", "critical"),
+        ];
+        let lines = block_lines(&r, None);
+        assert_eq!(lines[2], "Policies Pod CPU utilization high (healthy)");
+        assert_eq!(lines[3], "Pod memory utilization high (critical)");
+    }
+
+    #[test]
+    fn split_long_list_breaks_only_long_comma_lists() {
         assert_eq!(
-            headers[..5],
-            ["Resource ID", "Name", "Category", "Type", "Policies"]
+            split_long_list("1 running, 2 pending"),
+            ["1 running, 2 pending"]
         );
-        assert_eq!(rows[0][3], "Hosts");
-        assert_eq!(rows[0][4], "EC2_Instances");
-    }
-
-    #[test]
-    fn list_table_has_one_shape_whatever_the_row_mix() {
-        let one_type = list_table(&[merged_row("Hosts", "EC2_Instances", &[("Region", "eu")])]).0;
-        let mixed = list_table(&[
-            merged_row("Hosts", "EC2_Instances", &[("Region", "eu")]),
-            merged_row("Hosts", "Azure_VMs", &[("Region", "westeu")]),
-        ])
-        .0;
-        assert_eq!(one_type, mixed);
-    }
-
-    #[test]
-    fn list_table_leaves_a_missing_column_blank() {
-        let (headers, rows) = list_table(&[
-            merged_row("Hosts", "EC2_Instances", &[("Region", "eu-west-1")]),
-            merged_row("Kubernetes", "Pods", &[("Namespace", "kube-system")]),
-        ]);
-        assert_eq!(headers[5..], ["Region", "Namespace"]);
-        assert_eq!(rows[0][6], "eu-west-1");
-        assert_eq!(rows[0][7], "");
-        assert_eq!(rows[1][6], "");
-        assert_eq!(rows[1][7], "kube-system");
-    }
-
-    #[test]
-    fn list_table_dashes_a_missing_fixed_column() {
-        let mut row = typed_resource("Hosts", "EC2_Instances", &[("Region", "eu")]);
-        row.category = None;
-        let (_, rows) = list_table(&[("p".to_string(), row)]);
-        assert_eq!(rows[0][3], "-");
-        assert_eq!(rows[0][6], "eu");
+        let long =
+            "app.kubernetes.io/name=shop, app.kubernetes.io/instance=shop-prod, team=checkout";
+        assert_eq!(
+            split_long_list(long),
+            [
+                "app.kubernetes.io/name=shop",
+                "app.kubernetes.io/instance=shop-prod",
+                "team=checkout"
+            ]
+        );
+        let unbroken = "x".repeat(WRAP_LIST_LENGTH + 1);
+        assert_eq!(split_long_list(&unbroken), std::slice::from_ref(&unbroken));
     }
 
     /// `--timestamp` is resolved here, not by the API: the server parses with
@@ -2213,16 +2204,6 @@ mod tests {
     #[test]
     fn a_resource_with_no_policies_renders_as_a_dash() {
         assert_eq!(join_or_dash(&format_health_policies(&[])), "-");
-    }
-
-    #[test]
-    fn list_table_carries_the_policies_column() {
-        let mut row = typed_resource("Kubernetes", "Deployments", &[("Namespace", "shop")]);
-        row.health_policies = vec![policy("Deployment has unavailable replicas", "critical")];
-        let (headers, rows) = list_table(&[("p".to_string(), row)]);
-
-        assert_eq!(headers[4], "Policies");
-        assert_eq!(rows[0][5], "Deployment has unavailable replicas (critical)");
     }
 
     /// json and toon mirror the API, so an unresolved name stays the empty

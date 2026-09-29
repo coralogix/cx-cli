@@ -516,12 +516,7 @@ pub async fn run_config_diff(
                 render::print_no_results("No configurations to compare in this window.");
                 return Ok(());
             }
-            let rows = diff_table(&results, &target.profile_name);
-            render::render_table(
-                &["Resource", "Source", "Outcome", "Field", "Before", "After"],
-                rows,
-                false,
-            );
+            print!("{}", diff_blocks(&results, true));
         }
     }
 
@@ -551,40 +546,242 @@ fn change_window<'i>(
     Ok((resource_ids, from, to))
 }
 
-/// One table row per field change, with the resource repeated down the group.
-fn diff_table(results: &[ResourceDiffData], profile: &str) -> Vec<Vec<String>> {
-    let mut rows = Vec::new();
-    for result in results {
-        let head = [
-            profile.to_string(),
-            display_or_dash(result.resource_id.as_deref()),
-            display_or_dash(result.source.as_deref()),
-            display_or_dash(result.outcome.as_deref()),
-        ];
-        if result.changes.is_empty() {
-            let mut row = head.to_vec();
-            row.extend(["-".to_string(), "-".to_string(), "-".to_string()]);
-            rows.push(row);
-            continue;
-        }
-        for change in &result.changes {
-            let mut row = head.to_vec();
-            row.push(display_or_dash(change.field.as_deref()));
-            row.push(render_change_value(&change.before));
-            row.push(render_change_value(&change.after));
-            rows.push(row);
-        }
-    }
-    rows
+/// One block per resource and source: a header, then the changed fields as a tree of
+/// their paths with the before and after values under each. Paths nest deep
+/// and values can be whole subtrees, so a table cannot fit them across any terminal.
+fn diff_blocks(results: &[ResourceDiffData], paint: bool) -> String {
+    results
+        .iter()
+        .map(|r| diff_block(r, paint))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-/// JSON `null` prints as `null` rather than a dash, because a field set to null
-/// and a field that is absent are different changes.
-fn render_change_value(value: &Value) -> String {
+fn diff_block(result: &ResourceDiffData, paint: bool) -> String {
+    let heading = display_or_dash(result.resource_id.as_deref());
+    let mut out = format!(
+        "{}\n",
+        if paint {
+            heading.bold().to_string()
+        } else {
+            heading
+        }
+    );
+
+    let compared = match (&result.compared_from, &result.compared_to) {
+        (None, None) => "-".to_string(),
+        (from, to) => format!(
+            "{} → {}",
+            from.as_deref().map_or("-".to_string(), trim_fraction),
+            to.as_deref().map_or("-".to_string(), trim_fraction)
+        ),
+    };
+    let mut fields = vec![
+        ("Source", display_or_dash(result.source.as_deref())),
+        ("Outcome", display_or_dash(result.outcome.as_deref())),
+        ("Compared", compared),
+    ];
+    if !result.changes.is_empty() {
+        fields.push(("Changes", result.changes.len().to_string()));
+    }
+    for (key, value) in fields {
+        out.push_str(&format!("  {key:<8}  {value}\n"));
+    }
+
+    if !result.changes.is_empty() {
+        out.push('\n');
+        push_tree(&mut out, &path_tree(&result.changes), 2, paint);
+    }
+    out
+}
+
+/// Drops the sub-second digits the API sends, which only widen the header.
+fn trim_fraction(ts: &str) -> String {
+    match (ts.find('T'), ts.find('.')) {
+        (Some(t), Some(dot)) if dot > t && ts.ends_with('Z') => format!("{}Z", &ts[..dot]),
+        _ => ts.to_string(),
+    }
+}
+
+#[derive(Default)]
+struct PathNode<'c> {
+    label: String,
+    change: Option<&'c FieldChangeData>,
+    children: Vec<PathNode<'c>>,
+}
+
+/// Groups the changes by path, in the order the API sent them, and collapses every run
+/// of single-child segments into one label so a lone deep change stays shallow.
+fn path_tree(changes: &[FieldChangeData]) -> Vec<PathNode<'_>> {
+    let mut root = PathNode::default();
+    for change in changes {
+        let mut node = &mut root;
+        for segment in path_segments(change.field.as_deref().unwrap_or_default()) {
+            let i = match node.children.iter().position(|c| c.label == segment) {
+                Some(i) => i,
+                None => {
+                    node.children.push(PathNode {
+                        label: segment,
+                        ..PathNode::default()
+                    });
+                    node.children.len() - 1
+                }
+            };
+            node = &mut node.children[i];
+        }
+        node.change = Some(change);
+    }
+    root.children.into_iter().map(collapse).collect()
+}
+
+fn collapse(mut node: PathNode<'_>) -> PathNode<'_> {
+    while node.change.is_none() && node.children.len() == 1 {
+        let child = node.children.remove(0);
+        let separator = if child.label.starts_with('[') {
+            ""
+        } else {
+            "."
+        };
+        node.label = format!("{}{separator}{}", node.label, child.label);
+        node.change = child.change;
+        node.children = child.children;
+    }
+    node.children = node.children.into_iter().map(collapse).collect();
+    node
+}
+
+/// Splits a field path on `.` and on `[...]` keys. A key keeps its brackets and any dots
+/// inside it, as in `labels[app.kubernetes.io/name]`.
+fn path_segments(field: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0usize;
+    for ch in field.chars() {
+        match ch {
+            '[' => {
+                if depth == 0 && !current.is_empty() {
+                    segments.push(std::mem::take(&mut current));
+                }
+                depth += 1;
+                current.push(ch);
+            }
+            ']' if depth > 0 => {
+                current.push(ch);
+                depth -= 1;
+                if depth == 0 {
+                    segments.push(std::mem::take(&mut current));
+                }
+            }
+            '.' if depth == 0 => {
+                if !current.is_empty() {
+                    segments.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        segments.push(current);
+    }
+    if segments.is_empty() {
+        segments.push("-".to_string());
+    }
+    segments
+}
+
+fn push_tree(out: &mut String, nodes: &[PathNode<'_>], indent: usize, paint: bool) {
+    for node in nodes {
+        out.push_str(&format!("{:indent$}{}\n", "", node.label));
+        if let Some(change) = node.change {
+            push_side(out, &change.before, '-', indent + 2, paint);
+            push_side(out, &change.after, '+', indent + 2, paint);
+        }
+        push_tree(out, &node.children, indent + 2, paint);
+    }
+}
+
+/// `null` is the side of an added or removed field, so it prints nothing and the
+/// other side alone shows which it was.
+fn push_side(out: &mut String, value: &Value, mark: char, indent: usize, paint: bool) {
+    if value.is_null() {
+        return;
+    }
+    for line in yaml_lines(value) {
+        let line = format!("{mark} {line}");
+        let line = match (paint, mark) {
+            (false, _) => line,
+            (true, '-') => line.red().to_string(),
+            (true, _) => line.green().to_string(),
+        };
+        out.push_str(&format!("{:indent$}{line}\n", ""));
+    }
+}
+
+/// A value as block-style YAML lines, two spaces per level.
+fn yaml_lines(value: &Value) -> Vec<String> {
     match value {
+        Value::Object(map) if !map.is_empty() => map
+            .iter()
+            .flat_map(|(key, v)| yaml_entry(&format!("{key}:"), v))
+            .collect(),
+        Value::Array(items) if !items.is_empty() => {
+            items.iter().flat_map(|v| yaml_entry("-", v)).collect()
+        }
+        scalar => vec![yaml_scalar(scalar)],
+    }
+}
+
+/// `key:` or `-` and its value: inline for a scalar, on the dash line for the first key
+/// of a map in a list, and indented below otherwise.
+fn yaml_entry(lead: &str, value: &Value) -> Vec<String> {
+    let nested = yaml_lines(value);
+    let is_container = match value {
+        Value::Object(m) => !m.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        _ => false,
+    };
+    if !is_container {
+        return vec![format!("{lead} {}", nested[0])];
+    }
+    if lead == "-" && value.is_object() {
+        return nested
+            .into_iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if i == 0 {
+                    format!("- {line}")
+                } else {
+                    format!("  {line}")
+                }
+            })
+            .collect();
+    }
+    std::iter::once(lead.to_string())
+        .chain(nested.into_iter().map(|line| format!("  {line}")))
+        .collect()
+}
+
+/// Strings print bare unless YAML would read them as something else, so a number is
+/// not confused with the string of that number.
+fn yaml_scalar(value: &Value) -> String {
+    match value {
+        Value::String(s) if yaml_needs_quotes(s) => value.to_string(),
         Value::String(s) => s.clone(),
+        Value::Object(_) => "{}".to_string(),
+        Value::Array(_) => "[]".to_string(),
         other => other.to_string(),
     }
+}
+
+fn yaml_needs_quotes(s: &str) -> bool {
+    s.is_empty()
+        || s != s.trim()
+        || s.contains('\n')
+        || s.contains(": ")
+        || s.contains(" #")
+        || matches!(s, "true" | "false" | "null" | "~")
+        || s.parse::<f64>().is_ok()
+        || s.starts_with(|c: char| "-?:,[]{}#&*!|>'\"%@`".contains(c))
 }
 
 fn change_to_json(item: &ResourceChangeData) -> Value {
@@ -2069,51 +2266,121 @@ mod tests {
     }
 
     #[test]
-    fn diff_table_repeats_the_resource_down_its_changes() {
-        let results = [diff(
+    fn path_segments_split_on_dots_and_bracket_keys() {
+        assert_eq!(
+            path_segments("spec.containers[app].volumeMounts[kube-api]"),
+            ["spec", "containers", "[app]", "volumeMounts", "[kube-api]"]
+        );
+        assert_eq!(
+            path_segments("metadata.labels[app.kubernetes.io/name]"),
+            ["metadata", "labels", "[app.kubernetes.io/name]"]
+        );
+        assert_eq!(path_segments(""), ["-"]);
+    }
+
+    #[test]
+    fn diff_block_groups_siblings_and_collapses_lone_chains() {
+        let result = diff(
             "changed",
             vec![
+                change("metadata.uid", json!("a"), json!("b")),
+                change("metadata.managedFields[0].time", json!("t1"), json!("t2")),
                 change("spec.replicas", json!(3), json!(10)),
-                change("spec.image", json!("shop:1.4.0"), json!("shop:1.5.0")),
             ],
-        )];
-        let rows = diff_table(&results, "p");
+        );
+        let tree = diff_block(&result, false);
+        let (_, tree) = tree.split_once("\n\n").unwrap();
+        assert_eq!(
+            tree,
+            "  metadata\n\
+             \x20   uid\n\
+             \x20     - a\n\
+             \x20     + b\n\
+             \x20   managedFields[0].time\n\
+             \x20     - t1\n\
+             \x20     + t2\n\
+             \x20 spec.replicas\n\
+             \x20   - 3\n\
+             \x20   + 10\n"
+        );
+    }
 
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0][1], "7000098:a=frontend");
-        assert_eq!(rows[1][1], "7000098:a=frontend");
-        assert_eq!(rows[0][4], "spec.replicas");
-        assert_eq!(rows[1][4], "spec.image");
+    #[test]
+    fn diff_block_heads_with_the_resource_and_window() {
+        let mut result = diff("changed", vec![change("spec.replicas", json!(3), json!(4))]);
+        result.compared_from = Some("2026-09-24T10:22:52.644094231Z".to_string());
+        result.compared_to = Some("2026-09-27T13:03:15.926855850Z".to_string());
+        let out = diff_block(&result, false);
+        let header: Vec<&str> = out.lines().take(5).collect();
+        assert_eq!(
+            header,
+            [
+                "7000098:a=frontend",
+                "  Source    OTEL",
+                "  Outcome   changed",
+                "  Compared  2026-09-24T10:22:52Z → 2026-09-27T13:03:15Z",
+                "  Changes   1",
+            ]
+        );
     }
 
     /// `unchanged` and `created` are answers about a resource. Dropping them
     /// would report on fewer resources than the API replied about.
     #[test]
-    fn diff_table_keeps_an_outcome_that_carries_no_changes() {
-        let rows = diff_table(&[diff("unchanged", vec![])], "p");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0][3], "unchanged");
-        assert_eq!(rows[0][4..], ["-", "-", "-"]);
-    }
-
-    /// Strings print bare so a table stays readable; everything else keeps its
-    /// JSON form so a number is not confused with the string of that number.
-    #[test]
-    fn change_values_render_by_type() {
-        assert_eq!(render_change_value(&json!("shop:1.5.0")), "shop:1.5.0");
-        assert_eq!(render_change_value(&json!(10)), "10");
-        assert_eq!(render_change_value(&json!(true)), "true");
+    fn diff_block_keeps_an_outcome_that_carries_no_changes() {
+        let out = diff_blocks(&[diff("unchanged", vec![])], false);
         assert_eq!(
-            render_change_value(&json!({ "image": "x" })),
-            r#"{"image":"x"}"#
+            out,
+            "7000098:a=frontend\n  Source    OTEL\n  Outcome   unchanged\n  Compared  -\n"
         );
     }
 
-    /// A field set to null and a field that is absent are different changes, so
-    /// null must not render as the dash that means "missing".
     #[test]
-    fn a_null_change_value_renders_as_null() {
-        assert_eq!(render_change_value(&Value::Null), "null");
+    fn an_added_subtree_prints_as_yaml_on_the_after_side_only() {
+        let added = json!({
+            "name": "token",
+            "projected": { "defaultMode": 420, "sources": [{ "path": "token" }, "raw"] }
+        });
+        let result = diff(
+            "changed",
+            vec![change("spec.volumes[token]", Value::Null, added)],
+        );
+        let out = diff_block(&result, false);
+        let (_, tree) = out.split_once("\n\n").unwrap();
+        assert_eq!(
+            tree,
+            "  spec.volumes[token]\n\
+             \x20   + name: token\n\
+             \x20   + projected:\n\
+             \x20   +   defaultMode: 420\n\
+             \x20   +   sources:\n\
+             \x20   +     - path: token\n\
+             \x20   +     - raw\n"
+        );
+    }
+
+    #[test]
+    fn a_removed_field_prints_on_the_before_side_only() {
+        let result = diff(
+            "changed",
+            vec![change("spec.paused", json!(true), Value::Null)],
+        );
+        assert!(diff_block(&result, false).ends_with("  spec.paused\n    - true\n"));
+    }
+
+    /// Strings print bare; anything YAML would read as another type is quoted, so
+    /// a number is not confused with the string of that number.
+    #[test]
+    fn yaml_scalars_quote_only_what_would_read_as_another_type() {
+        assert_eq!(yaml_scalar(&json!("shop:1.5.0")), "shop:1.5.0");
+        assert_eq!(yaml_scalar(&json!(10)), "10");
+        assert_eq!(yaml_scalar(&json!("10")), r#""10""#);
+        assert_eq!(yaml_scalar(&json!(true)), "true");
+        assert_eq!(yaml_scalar(&json!("true")), r#""true""#);
+        assert_eq!(yaml_scalar(&json!("")), r#""""#);
+        assert_eq!(yaml_scalar(&json!("a: b")), r#""a: b""#);
+        assert_eq!(yaml_scalar(&json!({})), "{}");
+        assert_eq!(yaml_scalar(&json!([])), "[]");
     }
 
     #[test]

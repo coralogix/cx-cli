@@ -68,6 +68,7 @@ pub async fn run_ask(
             let response = interaction_to_json(&interaction, &chat_id);
             render::render_json(&[response])?;
         }
+        OutputFormat::Yaml => {
         OutputFormat::Toon => {
             let response = interaction_to_json(&interaction, &chat_id);
             let toon = toon_encode(&[response])
@@ -149,6 +150,7 @@ pub async fn run_artifacts_get(
         OutputFormat::Json => {
             render_artifact_json(&artifact, &processed)?;
         }
+        OutputFormat::Yaml => {
         OutputFormat::Toon => {
             render_artifact_agents(&artifact, &processed, max_direct, temp_dir)?;
         }
@@ -218,6 +220,39 @@ fn render_artifact_json(artifact: &api::Artifact, processed: &ProcessedContent) 
         }
     };
     render::render_json(&[response])
+}
+
+fn render_artifact_yaml(artifact: &api::Artifact, processed: &ProcessedContent) -> Result<()> {
+    let response = match processed {
+        ProcessedContent::Json(json_array) => {
+            json!({
+                "id": artifact.id,
+                "filename": artifact.filename,
+                "content_type": artifact.content_type,
+                "size": artifact.size,
+                "content": json_array,
+            })
+        }
+        ProcessedContent::Text { path } => {
+            json!({
+                "id": artifact.id,
+                "filename": artifact.filename,
+                "content_type": artifact.content_type,
+                "size": artifact.size,
+                "file": path.display().to_string(),
+            })
+        }
+        ProcessedContent::None => {
+            json!({
+                "id": artifact.id,
+                "filename": artifact.filename,
+                "content_type": artifact.content_type,
+                "size": artifact.size,
+                "content": null,
+            })
+        }
+    };
+    render::render_yaml(&[response])
 }
 
 fn render_artifact_agents(
@@ -330,6 +365,7 @@ pub async fn run_artifacts_list(
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             render::render_json(&response)?;
         }
+        OutputFormat::Yaml => {
         OutputFormat::Toon => {
             let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
             let toon =

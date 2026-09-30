@@ -62,7 +62,33 @@ fn infra_health_history() {
         return;
     };
     let v = harness::run_ok_json(&["infra", "resources", "health-history", &id, "-o", "json"]);
-    harness::assert_array_of_objects_with_keys(&v, &["timestamp", "status"]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "health_history"]);
+}
+
+/// The endpoint takes a list, and repeats are read once, so the same id twice
+/// must answer as if it were given once rather than erroring or doubling up.
+#[test]
+#[ignore]
+fn infra_health_history_takes_several_ids() {
+    if harness::require_creds("infra_health_history_takes_several_ids").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!(
+            "[e2e] skipping infra_health_history_takes_several_ids: no resources on test team"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "health-history",
+        &id,
+        &id,
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "health_history"]);
 }
 
 #[test]
@@ -75,9 +101,97 @@ fn infra_raw_data() {
         eprintln!("[e2e] skipping infra_raw_data: no resources on test team");
         return;
     };
-    // The document shape is source-specific, so only verify exit 0 + valid JSON.
+    // The document shape is source-specific, so only verify exit 0 + the
+    // envelope's own keys.
     let stdout = harness::run_ok(&["infra", "resources", "raw-data", &id, "-o", "json"]);
-    harness::parse_json(&stdout).expect("raw-data should emit valid JSON");
+    let v = harness::parse_json(&stdout).expect("raw-data should emit valid JSON");
+    assert!(v.get("raw_data").is_some(), "no raw_data key: {v}");
+    assert!(
+        v.get("version_timestamp").is_some(),
+        "no version_timestamp key: {v}"
+    );
+}
+
+/// The as-of query returns the newest version at or before the instant, so a
+/// far-past timestamp is a valid ask that may legitimately find nothing.
+#[test]
+#[ignore]
+fn infra_raw_data_at_a_timestamp() {
+    if harness::require_creds("infra_raw_data_at_a_timestamp").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!("[e2e] skipping infra_raw_data_at_a_timestamp: no resources on test team");
+        return;
+    };
+    let stdout = harness::run_ok(&[
+        "infra",
+        "resources",
+        "raw-data",
+        &id,
+        "--timestamp",
+        "now-1d",
+        "-o",
+        "json",
+    ]);
+    let v = harness::parse_json(&stdout).expect("raw-data --timestamp should emit valid JSON");
+    assert!(v.get("raw_data").is_some(), "no raw_data key: {v}");
+}
+
+/// A sweep over a real resource. An empty result is a valid answer: it means
+/// nothing changed in the window, so only exit 0 and the row shape are checked.
+#[test]
+#[ignore]
+fn infra_config_changes() {
+    if harness::require_creds("infra_config_changes").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!("[e2e] skipping infra_config_changes: no resources on test team");
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "config-changes",
+        "--resource-id",
+        &id,
+        "--from",
+        "now-7d",
+        "-o",
+        "json",
+    ]);
+    let rows = v.as_array().expect("config-changes should emit an array");
+    for row in rows {
+        assert!(row.get("resource_id").is_some(), "no resource_id: {row}");
+        assert!(row.get("outcome").is_some(), "no outcome: {row}");
+    }
+}
+
+/// The diff answers for every resource asked about, including unchanged ones,
+/// so this one does expect rows.
+#[test]
+#[ignore]
+fn infra_config_diff() {
+    if harness::require_creds("infra_config_diff").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!("[e2e] skipping infra_config_diff: no resources on test team");
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "config-diff",
+        "--resource-id",
+        &id,
+        "--from",
+        "now-7d",
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "outcome", "changes"]);
 }
 
 /// Discover a (category, type) pair from `infra resources types`. Cached so

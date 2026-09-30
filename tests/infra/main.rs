@@ -12,6 +12,31 @@ use coralogix_cli::commands::infra::{
 use coralogix_cli::config::OutputFormat;
 
 const BASE: &str = "/mgmt/api/infrastructure/resources/v1";
+const ENABLEMENT: &str = "/mgmt/api/infrastructure/enablement/v1";
+
+async fn mount_enablement(server: &MockServer, response: ResponseTemplate, calls: u64) {
+    Mock::given(method("GET"))
+        .and(path(ENABLEMENT))
+        .respond_with(response)
+        .expect(calls)
+        .mount(server)
+        .await;
+}
+
+fn enabled(enabled: bool) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({ "enabled": enabled }))
+}
+
+/// A mock server whose team has infrastructure monitoring enabled.
+async fn enabled_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(ENABLEMENT))
+        .respond_with(enabled(true))
+        .mount(&server)
+        .await;
+    server
+}
 
 fn types_body() -> serde_json::Value {
     json!({
@@ -27,7 +52,7 @@ fn types_body() -> serde_json::Value {
 
 #[tokio::test]
 async fn types_returns_mappings_from_mock() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/types")))
@@ -45,8 +70,8 @@ async fn types_returns_mappings_from_mock() {
 
 #[tokio::test]
 async fn types_merges_multiple_profiles() {
-    let server_a = MockServer::start().await;
-    let server_b = MockServer::start().await;
+    let server_a = enabled_server().await;
+    let server_b = enabled_server().await;
 
     for server in [&server_a, &server_b] {
         Mock::given(method("GET"))
@@ -69,8 +94,8 @@ async fn types_merges_multiple_profiles() {
 
 #[tokio::test]
 async fn types_tolerates_one_failing_profile() {
-    let server_ok = MockServer::start().await;
-    let server_err = MockServer::start().await;
+    let server_ok = enabled_server().await;
+    let server_err = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/types")))
@@ -100,7 +125,7 @@ async fn types_tolerates_one_failing_profile() {
 
 #[tokio::test]
 async fn types_errors_when_all_profiles_fail() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/types")))
@@ -156,7 +181,7 @@ fn list_body_with_policies() -> serde_json::Value {
 #[tokio::test]
 async fn list_renders_health_policies_from_both_paths() {
     for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
-        let server = MockServer::start().await;
+        let server = enabled_server().await;
 
         // Both paths POST to the same route; `nameFilter` in the body is what
         // makes a request the legacy one.
@@ -220,7 +245,7 @@ async fn list_renders_health_policies_from_both_paths() {
 /// still render.
 #[tokio::test]
 async fn list_renders_a_row_without_health_policies() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -263,7 +288,7 @@ fn filters_body() -> serde_json::Value {
 
 #[tokio::test]
 async fn filters_sends_both_query_params() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/filters")))
@@ -288,7 +313,7 @@ async fn filters_sends_both_query_params() {
 
 #[tokio::test]
 async fn filters_omits_absent_query_params() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/filters")))
@@ -317,7 +342,7 @@ async fn filters_omits_absent_query_params() {
 
 #[tokio::test]
 async fn filters_accepts_a_category_without_a_type() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/filters")))
@@ -337,7 +362,7 @@ async fn filters_accepts_a_category_without_a_type() {
 
 #[tokio::test]
 async fn filters_renders_an_empty_list_as_text() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/filters")))
@@ -355,8 +380,8 @@ async fn filters_renders_an_empty_list_as_text() {
 
 #[tokio::test]
 async fn filters_merges_multiple_profiles() {
-    let server_a = MockServer::start().await;
-    let server_b = MockServer::start().await;
+    let server_a = enabled_server().await;
+    let server_b = enabled_server().await;
 
     for server in [&server_a, &server_b] {
         Mock::given(method("GET"))
@@ -379,7 +404,7 @@ async fn filters_merges_multiple_profiles() {
 
 #[tokio::test]
 async fn filters_rejects_a_blank_category_before_any_request() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
@@ -395,7 +420,7 @@ async fn filters_rejects_a_blank_category_before_any_request() {
 
 #[tokio::test]
 async fn a_legacy_request_splits_between_body_and_query_string() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -439,7 +464,7 @@ async fn a_legacy_request_splits_between_body_and_query_string() {
 
 #[tokio::test]
 async fn match_all_flags_post_an_and_of_every_attribute() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -479,7 +504,7 @@ async fn match_all_flags_post_an_and_of_every_attribute() {
 
 #[tokio::test]
 async fn match_any_flags_post_an_or_across_attributes() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -517,7 +542,7 @@ async fn match_any_flags_post_an_or_across_attributes() {
 
 #[tokio::test]
 async fn the_two_groups_and_with_each_other() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -559,7 +584,7 @@ async fn the_two_groups_and_with_each_other() {
 
 #[tokio::test]
 async fn a_comma_ands_the_values_of_one_match_all() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -594,7 +619,7 @@ async fn a_comma_ands_the_values_of_one_match_all() {
 
 #[tokio::test]
 async fn a_comma_ors_the_values_of_one_match_any() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -626,7 +651,7 @@ async fn a_comma_ors_the_values_of_one_match_any() {
 
 #[tokio::test]
 async fn one_attribute_in_both_groups_is_refused_before_any_request() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
     let err = run_list(
@@ -654,7 +679,7 @@ async fn one_attribute_in_both_groups_is_refused_before_any_request() {
 
 #[tokio::test]
 async fn one_attribute_posts_a_bare_match() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -686,7 +711,7 @@ async fn one_attribute_posts_a_bare_match() {
 
 #[tokio::test]
 async fn a_filtered_request_keeps_paging_on_the_query_string() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -717,7 +742,7 @@ async fn a_filtered_request_keeps_paging_on_the_query_string() {
 
 #[tokio::test]
 async fn a_legacy_name_filter_travels_verbatim() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -751,7 +776,7 @@ async fn a_legacy_name_filter_travels_verbatim() {
 
 #[tokio::test]
 async fn a_scope_flag_stays_on_the_query_string() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -785,7 +810,7 @@ async fn a_scope_flag_stays_on_the_query_string() {
 
 #[tokio::test]
 async fn a_request_naming_nothing_is_refused_before_any_request() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
     let err = run_list(
@@ -813,7 +838,7 @@ async fn a_request_naming_nothing_is_refused_before_any_request() {
 
 #[tokio::test]
 async fn a_legacy_body_never_carries_a_filter() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -847,8 +872,8 @@ async fn a_legacy_body_never_carries_a_filter() {
 
 #[tokio::test]
 async fn a_filtered_list_fans_out_across_profiles() {
-    let server_a = MockServer::start().await;
-    let server_b = MockServer::start().await;
+    let server_a = enabled_server().await;
+    let server_b = enabled_server().await;
 
     for server in [&server_a, &server_b] {
         Mock::given(method("POST"))
@@ -891,7 +916,7 @@ async fn a_filtered_list_fans_out_across_profiles() {
 
 #[tokio::test]
 async fn a_mixed_type_result_renders_in_text_mode() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -938,7 +963,7 @@ async fn a_mixed_type_result_renders_in_text_mode() {
 
 #[tokio::test]
 async fn a_repeated_attribute_in_one_group_is_refused_before_any_request() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
     let err = run_list(
@@ -970,7 +995,7 @@ async fn a_repeated_attribute_in_one_group_is_refused_before_any_request() {
 
 #[tokio::test]
 async fn a_filter_flag_without_an_equals_is_refused() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
     let targets = vec![common::test_target("test-profile", &server.uri())];
 
     let err = run_list(
@@ -993,7 +1018,7 @@ async fn a_filter_flag_without_an_equals_is_refused() {
 
 #[tokio::test]
 async fn a_classification_only_request_posts_no_filter() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(BASE))
@@ -1031,7 +1056,7 @@ async fn a_classification_only_request_posts_no_filter() {
 
 #[tokio::test]
 async fn list_rejects_invalid_scope_before_any_request() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
     // No mocks mounted: an invalid --scope must fail client-side without HTTP.
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
@@ -1060,7 +1085,7 @@ async fn list_rejects_invalid_scope_before_any_request() {
 /// the route carries no id segment.
 #[tokio::test]
 async fn health_history_posts_every_id_in_the_body() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/health-history")))
@@ -1101,7 +1126,7 @@ async fn health_history_posts_every_id_in_the_body() {
 /// resources it did answer for rather than failing the call.
 #[tokio::test]
 async fn health_history_renders_a_shorter_answer_than_it_asked_for() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/health-history")))
@@ -1129,7 +1154,7 @@ async fn health_history_renders_a_shorter_answer_than_it_asked_for() {
 /// A resource the API answered for with no samples is still part of the answer.
 #[tokio::test]
 async fn health_history_renders_a_resource_without_samples() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/health-history")))
@@ -1159,7 +1184,7 @@ async fn health_history_renders_a_resource_without_samples() {
 
 #[tokio::test]
 async fn health_history_handles_empty_history() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/health-history")))
@@ -1181,7 +1206,7 @@ async fn health_history_handles_empty_history() {
 /// has to happen before any request goes out.
 #[tokio::test]
 async fn health_history_refuses_more_ids_than_the_api_reads() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
@@ -1200,7 +1225,7 @@ async fn health_history_refuses_more_ids_than_the_api_reads() {
 
 #[tokio::test]
 async fn raw_data_returns_document() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!(
@@ -1246,7 +1271,7 @@ async fn raw_data_sends_the_timestamp_as_a_query_param() {
         ),
         ("now-7d", None),
     ] {
-        let server = MockServer::start().await;
+        let server = enabled_server().await;
 
         Mock::given(method("GET"))
             .and(path(format!("{BASE}/plain-id/raw-data")))
@@ -1264,8 +1289,10 @@ async fn raw_data_sends_the_timestamp_as_a_query_param() {
             .await
             .unwrap_or_else(|e| panic!("--timestamp {given} should reach the wire: {e:#}"));
 
-        let sent = &server.received_requests().await.expect("requests")[0];
-        let sent = sent
+        let requests = server.received_requests().await.expect("requests");
+        let sent = requests
+            .last()
+            .expect("the raw-data request")
             .url
             .query_pairs()
             .find(|(k, _)| k == "timestamp")
@@ -1281,7 +1308,7 @@ async fn raw_data_sends_the_timestamp_as_a_query_param() {
 
 #[tokio::test]
 async fn raw_data_rejects_an_unparseable_timestamp() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
@@ -1305,7 +1332,7 @@ async fn raw_data_rejects_an_unparseable_timestamp() {
 /// the two must stay tellable apart in the output.
 #[tokio::test]
 async fn raw_data_renders_a_document_without_a_version() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/plain-id/raw-data")))
@@ -1327,7 +1354,7 @@ async fn raw_data_renders_a_document_without_a_version() {
 
 #[tokio::test]
 async fn raw_data_handles_null_document() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     // A 200 with null rawData means "cleanly missing" - not an error.
     Mock::given(method("GET"))
@@ -1358,7 +1385,7 @@ fn ids(values: &[&str]) -> Vec<String> {
 #[tokio::test]
 async fn config_commands_post_the_same_body_shape() {
     for suffix in ["summary", "diff"] {
-        let server = MockServer::start().await;
+        let server = enabled_server().await;
 
         Mock::given(method("POST"))
             .and(path(format!("{BASE}/configuration/{suffix}")))
@@ -1388,7 +1415,7 @@ async fn config_commands_post_the_same_body_shape() {
 
 #[tokio::test]
 async fn config_changes_renders_results() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/configuration/summary")))
@@ -1423,7 +1450,7 @@ async fn config_changes_renders_results() {
 /// change is absent rather than listed.
 #[tokio::test]
 async fn config_changes_renders_an_empty_result() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/configuration/summary")))
@@ -1449,7 +1476,7 @@ async fn config_changes_renders_an_empty_result() {
 
 #[tokio::test]
 async fn config_diff_renders_every_outcome() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/configuration/diff")))
@@ -1489,7 +1516,7 @@ async fn config_diff_renders_every_outcome() {
 
 #[tokio::test]
 async fn config_commands_reject_bad_input_before_any_request() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
@@ -1516,7 +1543,7 @@ async fn config_commands_reject_bad_input_before_any_request() {
 /// A resource id is scoped to one team, so these cannot fan out either.
 #[tokio::test]
 async fn config_commands_reject_multiple_profiles() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "results": [] })))
@@ -1552,7 +1579,7 @@ async fn config_commands_reject_multiple_profiles() {
 
 #[tokio::test]
 async fn api_error_body_surfaces_in_message() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/types")))
@@ -1578,7 +1605,7 @@ async fn api_error_body_surfaces_in_message() {
 #[tokio::test]
 async fn all_output_formats_render() {
     for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Toon] {
-        let server = MockServer::start().await;
+        let server = enabled_server().await;
 
         Mock::given(method("GET"))
             .and(path(format!("{BASE}/types")))
@@ -1634,7 +1661,7 @@ async fn all_output_formats_render() {
 /// came from. The command must refuse before issuing any request.
 #[tokio::test]
 async fn health_history_rejects_multiple_profiles() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
@@ -1665,7 +1692,7 @@ async fn health_history_rejects_multiple_profiles() {
 
 #[tokio::test]
 async fn raw_data_rejects_multiple_profiles() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
@@ -1695,7 +1722,7 @@ async fn raw_data_rejects_multiple_profiles() {
 /// is a supported use - the guard must not leak into them.
 #[tokio::test]
 async fn types_and_list_still_fan_out_across_profiles() {
-    let server = MockServer::start().await;
+    let server = enabled_server().await;
 
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/types")))
@@ -1736,4 +1763,162 @@ async fn types_and_list_still_fan_out_across_profiles() {
     )
     .await
     .expect("list should fan out");
+}
+
+// ── Enablement ────────────────────────────────────────────────────────────────
+
+fn mock_types(calls: u64) -> Mock {
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/types")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(types_body()))
+        .expect(calls)
+}
+
+#[tokio::test]
+async fn a_disabled_team_is_refused_before_the_command_runs() {
+    let server = MockServer::start().await;
+    mount_enablement(&server, enabled(false), 1).await;
+    mock_types(0).mount(&server).await;
+
+    let targets = vec![common::test_target("prod", &server.uri())];
+    let err = run_types(&targets, OutputFormat::Json)
+        .await
+        .expect_err("a disabled team must be refused");
+
+    assert_eq!(
+        format!("{err:#}"),
+        "profile 'prod' failed: Infrastructure monitoring is not enabled for this team"
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_enablement_fails_the_profile() {
+    let server = MockServer::start().await;
+    mount_enablement(
+        &server,
+        ResponseTemplate::new(503).set_body_json(json!({
+            "error": "Infrastructure availability cannot be determined right now"
+        })),
+        1,
+    )
+    .await;
+    mock_types(0).mount(&server).await;
+
+    let targets = vec![common::test_target("prod", &server.uri())];
+    let err = run_types(&targets, OutputFormat::Json)
+        .await
+        .expect_err("an unknown enablement must not pass");
+
+    assert!(format!("{err:#}").contains("503"), "{err:#}");
+}
+
+#[tokio::test]
+async fn a_fan_out_skips_disabled_and_unknown_profiles() {
+    let server_on = MockServer::start().await;
+    let server_off = MockServer::start().await;
+    let server_unknown = MockServer::start().await;
+    mount_enablement(&server_on, enabled(true), 1).await;
+    mount_enablement(&server_off, enabled(false), 1).await;
+    mount_enablement(&server_unknown, ResponseTemplate::new(503), 1).await;
+    mock_types(1).mount(&server_on).await;
+    mock_types(0).mount(&server_off).await;
+    mock_types(0).mount(&server_unknown).await;
+
+    let targets = vec![
+        common::test_target("prod", &server_on.uri()),
+        common::test_target("staging", &server_off.uri()),
+        common::test_target("dev", &server_unknown.uri()),
+    ];
+    run_types(&targets, OutputFormat::Json)
+        .await
+        .expect("the enabled profile still answers");
+}
+
+#[tokio::test]
+async fn a_resource_id_command_refuses_a_disabled_team() {
+    let server = MockServer::start().await;
+    mount_enablement(&server, enabled(false), 1).await;
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/plain-id/raw-data")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("prod", &server.uri())];
+    let err = run_raw_data(&targets, "plain-id", None, OutputFormat::Json)
+        .await
+        .expect_err("a disabled team must be refused");
+
+    assert_eq!(
+        format!("{err:#}"),
+        "profile 'prod' failed: Infrastructure monitoring is not enabled for this team"
+    );
+}
+
+#[tokio::test]
+async fn a_resource_id_command_refuses_two_profiles_before_the_enablement_check() {
+    let server_on = MockServer::start().await;
+    let server_off = MockServer::start().await;
+    mount_enablement(&server_on, enabled(true), 0).await;
+    mount_enablement(&server_off, enabled(false), 0).await;
+
+    let targets = vec![
+        common::test_target("prod", &server_on.uri()),
+        common::test_target("staging", &server_off.uri()),
+    ];
+    let err = run_raw_data(&targets, "plain-id", None, OutputFormat::Json)
+        .await
+        .expect_err("two profiles must be refused");
+
+    assert!(format!("{err:#}").contains("single profile"), "{err:#}");
+}
+
+#[tokio::test]
+async fn input_errors_come_before_the_enablement_check() {
+    let server = MockServer::start().await;
+    mount_enablement(&server, enabled(true), 0).await;
+
+    let targets = vec![common::test_target("prod", &server.uri())];
+    let one = ids(&["7000098:a=frontend"]);
+    let over_cap: Vec<String> = (0..101).map(|i| format!("7000098:a=r{i}")).collect();
+    let window = PageWindow {
+        start_row: None,
+        end_row: None,
+    };
+
+    run_filters(&targets, Some("  "), None, OutputFormat::Json)
+        .await
+        .expect_err("a blank --category must be refused");
+    run_list(&targets, None, None, &[], &[], window, OutputFormat::Json)
+        .await
+        .expect_err("nothing to narrow by must be refused");
+    run_list_legacy(
+        &targets,
+        Some("Hosts"),
+        Some("EC2_Instances"),
+        None,
+        &["bogus=x".to_string()],
+        window,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("an unknown scope key must be refused");
+    run_health_history(&targets, &over_cap, OutputFormat::Json)
+        .await
+        .expect_err("101 ids must be refused");
+    run_raw_data(
+        &targets,
+        "7000098:a=frontend",
+        Some("half past four"),
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("a bad timestamp must be refused");
+    run_config_changes(&targets, &one, "now-1d", Some("now-7d"), OutputFormat::Json)
+        .await
+        .expect_err("an inverted window must be refused");
+    run_config_diff(&targets, &one, "half past four", None, OutputFormat::Json)
+        .await
+        .expect_err("an unparseable --from must be refused");
 }

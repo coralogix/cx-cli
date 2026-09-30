@@ -34,6 +34,15 @@ pub struct PageWindow {
     pub end_row: Option<i64>,
 }
 
+// ── Enablement ────────────────────────────────────────────────────────────────
+
+async fn check_enabled(api: &InfraApi<'_>) -> Result<()> {
+    if !api.enablement().await?.enabled {
+        bail!("Infrastructure monitoring is not enabled for this team");
+    }
+    Ok(())
+}
+
 // ── Subcommand runners ────────────────────────────────────────────────────────
 
 /// `cx infra resources types` - list the available resource type mappings.
@@ -44,6 +53,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
 
     let per_profile = fan_out(targets, |target| async move {
         let api = InfraApi::new(&target.client);
+        check_enabled(&api).await?;
         Ok(api.available_types().await?)
     })
     .await;
@@ -111,6 +121,7 @@ pub async fn run_filters(
 
     let per_profile = fan_out(targets, |target| async move {
         let api = InfraApi::new(&target.client);
+        check_enabled(&api).await?;
         Ok(api.filters(category, resource_type).await?)
     })
     .await;
@@ -193,6 +204,7 @@ pub async fn run_list(
         let filter = &filter;
         async move {
             let api = InfraApi::new(&target.client);
+            check_enabled(&api).await?;
             let params = ListResourcesParams {
                 category: category.as_deref(),
                 resource_type: resource_type.as_deref(),
@@ -236,6 +248,7 @@ pub async fn run_list_legacy(
         let name_filter = name_filter.map(String::from);
         let scope_filters = scope_filters.clone();
         async move {
+            check_enabled(&InfraApi::new(&target.client)).await?;
             let params = legacy::LegacyListParams {
                 category: &category,
                 resource_type: &resource_type,
@@ -308,7 +321,7 @@ pub async fn run_health_history(
     output: OutputFormat,
 ) -> Result<()> {
     let resource_ids = require_resource_ids(resource_ids)?;
-    let target = single_target(targets, "health-history")?;
+    let target = single_target(targets, "health-history").await?;
 
     eprintln!(
         "{}",
@@ -363,7 +376,7 @@ pub async fn run_raw_data(
     let timestamp = timestamp
         .map(|t| crate::time::parse_timestamp_nanos(require_non_empty(t, "--timestamp")?))
         .transpose()?;
-    let target = single_target(targets, "raw-data")?;
+    let target = single_target(targets, "raw-data").await?;
 
     eprintln!(
         "{}",
@@ -412,7 +425,7 @@ pub async fn run_config_changes(
     output: OutputFormat,
 ) -> Result<()> {
     let (resource_ids, from, to) = change_window(resource_ids, from, to)?;
-    let target = single_target(targets, "config-changes")?;
+    let target = single_target(targets, "config-changes").await?;
 
     eprintln!(
         "{}",
@@ -478,7 +491,7 @@ pub async fn run_config_diff(
     output: OutputFormat,
 ) -> Result<()> {
     let (resource_ids, from, to) = change_window(resource_ids, from, to)?;
-    let target = single_target(targets, "config-diff")?;
+    let target = single_target(targets, "config-diff").await?;
 
     eprintln!(
         "{}",
@@ -943,12 +956,18 @@ fn require_non_empty<'v>(value: &'v str, field_name: &str) -> Result<&'v str> {
 /// resolved in one profile cannot exist in another.
 /// Fanning out would query every profile with an id that only one of
 /// them can answer, so refuse it outright.
-fn single_target<'t>(
+/// Errors when that one profile's team has infrastructure monitoring disabled.
+async fn single_target<'t>(
     targets: &'t [Arc<ExecutionTarget>],
     subcommand: &str,
 ) -> Result<&'t ExecutionTarget> {
     match targets {
-        [target] => Ok(target),
+        [target] => {
+            check_enabled(&InfraApi::new(&target.client))
+                .await
+                .with_context(|| format!("profile '{}' failed", target.profile_name))?;
+            Ok(target)
+        }
         [] => bail!("no profile resolved for `cx infra resources {subcommand}`"),
         _ => bail!(
             "`cx infra resources {subcommand}` accepts a single profile, but {} were given; \

@@ -8,8 +8,14 @@ use crate::api_client::CxClient;
 use crate::error::Result;
 
 pub(super) const BASE_PATH: &str = "/mgmt/api/infrastructure/resources/v1";
+const ENABLEMENT_PATH: &str = "/mgmt/api/infrastructure/enablement/v1";
 
 // ── Response types ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct GetEnablementResponse {
+    pub enabled: bool,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -257,6 +263,10 @@ impl<'a> InfraApi<'a> {
         Self { client }
     }
 
+    pub async fn enablement(&self) -> Result<GetEnablementResponse> {
+        self.client.get(ENABLEMENT_PATH, &[]).await
+    }
+
     /// List the available resource type mappings (category/type pairs).
     pub async fn available_types(&self) -> Result<GetAvailableResourceTypesResponse> {
         let path = format!("{BASE_PATH}/types");
@@ -410,6 +420,16 @@ mod tests {
             first.category_type.as_ref().unwrap().type_name.as_deref(),
             Some("EC2_Instances")
         );
+    }
+
+    #[test]
+    fn deserialize_enablement_response() {
+        let enabled: GetEnablementResponse =
+            serde_json::from_value(json!({ "enabled": true })).unwrap();
+        assert!(enabled.enabled);
+        let disabled: GetEnablementResponse =
+            serde_json::from_value(json!({ "enabled": false })).unwrap();
+        assert!(!disabled.enabled);
     }
 
     #[test]

@@ -19,6 +19,7 @@ const WRITE_VERBS: &[&str] = &[
     "disable",
     "enable",
     "overwrite",
+    "refresh",
     "remove",
     "reorder",
     "replace",

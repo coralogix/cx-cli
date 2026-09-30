@@ -148,6 +148,228 @@ fn set_default_already_default_is_noop() {
     );
 }
 
+// ── profiles refresh ─────────────────────────────────────────────────────────
+// The browser handshake itself can't be driven from a test, but every
+// pre-flight branch fails before `browser_login` is reached, so all of them
+// are checked here without opening a browser.
+
+fn seed_oauth_profile(home: &std::path::Path, name: &str, extra: &str) {
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let profile_toml = format!(
+        "auth = \"o_auth\"\n\
+         credential_storage = \"file\"\n\
+         {extra}"
+    );
+    fs::write(profiles_dir.join(format!("{name}.toml")), profile_toml).unwrap();
+}
+
+#[test]
+fn refresh_nonexistent_profile_fails() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "ghost"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not found"),
+        "should report profile not found, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_api_key_profile_is_rejected() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "static");
+
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "static"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("API key authentication"),
+        "should explain that API keys don't expire, stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("cx profiles add static"),
+        "should point at `profiles add` to change credentials, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_custom_region_without_client_id_fails() {
+    let tmp = temp_home();
+    seed_oauth_profile(
+        &tmp,
+        "custom",
+        "region = \"https://api.myenv.coralogix.com\"\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "custom"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No OAuth client ID configured"),
+        "should report the missing client ID, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_leaves_profile_untouched_on_failure() {
+    let tmp = temp_home();
+    let original = "auth = \"o_auth\"\n\
+                    credential_storage = \"file\"\n\
+                    region = \"stg1\"\n\
+                    label = \"staging\"\n\
+                    default_tier = \"frequent\"\n";
+    let profiles_dir = tmp.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(profiles_dir.join("staging.toml"), original).unwrap();
+
+    // stg1 has no built-in OAuth client ID, so this fails pre-flight.
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "staging"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+
+    let after = fs::read_to_string(profiles_dir.join("staging.toml")).unwrap();
+    assert_eq!(
+        after, original,
+        "a failed refresh must not rewrite the profile"
+    );
+}
+
+// ── profiles refresh under --read-only ───────────────────────────────────────
+// `profiles` is exempt from read-only gating because its subcommands touch
+// local config rather than tenant data. `refresh` is the exception: it runs a
+// browser login and persists a new credential set, so it must be blocked
+// before it opens anything.
+
+#[test]
+fn refresh_is_blocked_by_read_only_env_var() {
+    let tmp = temp_home();
+    seed_oauth_profile(&tmp, "prod", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .env("CX_READ_ONLY", "1")
+        .args(["profiles", "refresh", "prod"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("read-only mode"),
+        "refresh should be blocked in read-only mode, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_is_blocked_by_read_only_flag_before_the_subcommand() {
+    // `cx --read-only profiles ...` misses the early `profiles` parser and
+    // falls through to the main `Cli`, so it is a separate code path.
+    let tmp = temp_home();
+    seed_oauth_profile(&tmp, "prod", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .args(["--read-only", "profiles", "refresh", "prod"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("read-only mode"),
+        "refresh should be blocked by --read-only, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_is_blocked_by_read_only_in_config() {
+    let tmp = temp_home();
+    seed_config(&tmp, "read_only = true\n");
+    seed_oauth_profile(&tmp, "prod", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "prod"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("read-only mode"),
+        "refresh should be blocked by read_only in config.toml, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn read_only_does_not_block_the_rest_of_profiles() {
+    // Guard against the gate widening into the other profiles subcommands,
+    // which stay exempt.
+    let tmp = temp_home();
+    seed_profile(&tmp, "prod");
+
+    let output = cx(&tmp)
+        .env("CX_READ_ONLY", "1")
+        .args(["profiles", "list"])
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        output.status.success(),
+        "profiles list must still work in read-only mode, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+// ── re-authentication hint on stderr ─────────────────────────────────────────
+
+#[test]
+fn expired_oauth_profile_is_not_also_told_to_run_profiles_add() {
+    // An OAuth profile with no stored tokens fails in `oauth::resolve_token`
+    // with its own `cx profiles refresh` instruction. The generic
+    // "Run `cx profiles add` to set up credentials." fallback must not be
+    // printed underneath it - two contradictory instructions on one stderr is
+    // what `profiles refresh` exists to fix.
+    let tmp = temp_home();
+    seed_oauth_profile(&tmp, "expired", "region = \"eu2\"\n");
+
+    let output = cx(&tmp)
+        .args(["-p", "expired", "alerts", "list"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cx profiles refresh expired"),
+        "should point at `profiles refresh`, stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("cx profiles add"),
+        "should not also suggest `profiles add`, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_appears_in_profiles_help() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "--help"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("refresh"),
+        "refresh should be listed as a profiles subcommand, got: {stdout}"
+    );
+}
+
 // ── profiles list ────────────────────────────────────────────────────────────
 
 #[test]

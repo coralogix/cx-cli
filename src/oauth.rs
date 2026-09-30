@@ -557,26 +557,62 @@ pub fn tokens_to_stored(tokens: &TokenResponse) -> StoredOAuthTokens {
     }
 }
 
+/// Every keyring key [`store_tokens_keyring`] may write.
+///
+/// Named here so [`replace_tokens_keyring`] can clear the previous token set
+/// without touching the API keys that share the same keyring entry.
+const OAUTH_KEYRING_KEYS: &[&str] = &[
+    "oauth_access_token",
+    "oauth_refresh_token",
+    "oauth_id_token",
+    "oauth_token_expiry",
+];
+
+/// The keyring key/value pairs representing `tokens`.
+///
+/// Only the fields the IdP actually returned are included. In particular the
+/// expiry is omitted when the server sends no `expires_in`: `resolve_token`
+/// then falls back to parsing the JWT `exp` claim, whereas a sentinel `0`
+/// would make every cached token look permanently expired.
+fn keyring_entries(tokens: &TokenResponse) -> Vec<(&'static str, String)> {
+    let mut entries = vec![("oauth_access_token", tokens.access_token.clone())];
+    if let Some(ref rt) = tokens.refresh_token {
+        entries.push(("oauth_refresh_token", rt.clone()));
+    }
+    if let Some(ref it) = tokens.id_token {
+        entries.push(("oauth_id_token", it.clone()));
+    }
+    if let Some(exp_in) = tokens.expires_in {
+        entries.push(("oauth_token_expiry", (unix_now_secs() + exp_in).to_string()));
+    }
+    entries
+}
+
+/// Replace the whole OAuth token set for `profile` in the OS keyring.
+///
+/// Where [`store_tokens_keyring`] merges in only the fields the IdP returned -
+/// correct for a silent refresh, which often returns no new refresh token -
+/// this drops the previous `oauth_*` set first, so a stale refresh or id token
+/// cannot outlive a fresh browser login. Use it only after a full re-login.
+///
+/// The clear and the write are one checked keyring operation: a failure leaves
+/// the previous token set intact rather than deleting a working session and
+/// erroring out with nothing to replace it.
+pub fn replace_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()> {
+    keyring_store::replace_secrets(profile, OAUTH_KEYRING_KEYS, &keyring_entries(tokens))
+}
+
 /// Persist an OAuth token set to the OS keyring for `profile`.
 ///
 /// Stores: `oauth_access_token`, `oauth_refresh_token`, `oauth_id_token`,
 /// `oauth_token_expiry` (Unix timestamp, computed from `expires_in`).
+///
+/// Merges rather than replaces: `resolve_token`'s silent refresh calls this and
+/// the IdP commonly returns no new refresh token, so any key the response omits
+/// must keep its existing value. [`replace_tokens_keyring`] is the counterpart
+/// for a full browser re-login, where the old set should not survive.
 pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()> {
-    keyring_store::store_secret(profile, "oauth_access_token", &tokens.access_token)?;
-    if let Some(ref rt) = tokens.refresh_token {
-        keyring_store::store_secret(profile, "oauth_refresh_token", rt)?;
-    }
-    if let Some(ref it) = tokens.id_token {
-        keyring_store::store_secret(profile, "oauth_id_token", it)?;
-    }
-    // Only store the expiry timestamp when the server provides `expires_in`.
-    // When absent, `resolve_token` falls back to parsing the JWT `exp` claim directly.
-    // Storing a sentinel `0` would make every cached token appear permanently expired.
-    if let Some(exp_in) = tokens.expires_in {
-        let expiry = unix_now_secs() + exp_in;
-        keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
-    }
-    Ok(())
+    keyring_store::replace_secrets(profile, &[], &keyring_entries(tokens))
 }
 
 fn cached_token_is_valid(token: &str, expiry: Option<u64>) -> bool {
@@ -619,7 +655,7 @@ pub async fn resolve_token(
             let t = file_tokens.ok_or_else(|| {
                 anyhow::anyhow!(
                     "OAuth tokens missing for profile '{profile_name}'.\n\
-                     Run `cx profiles add {profile_name}` to re-authenticate."
+                     Run `cx profiles refresh {profile_name}` to re-authenticate."
                 )
             })?;
             (
@@ -639,7 +675,7 @@ pub async fn resolve_token(
     let refresh_token = cached_refresh.ok_or_else(|| {
         anyhow::anyhow!(
             "OAuth session expired for profile '{profile_name}'.\n\
-             Run `cx profiles add {profile_name}` to re-authenticate."
+             Run `cx profiles refresh {profile_name}` to re-authenticate."
         )
     })?;
 
@@ -654,7 +690,7 @@ pub async fn resolve_token(
         .with_context(|| {
             format!(
                 "OAuth token refresh failed for profile '{profile_name}'.\n\
-                 Run `cx profiles add {profile_name}` to re-authenticate."
+                 Run `cx profiles refresh {profile_name}` to re-authenticate."
             )
         })?;
 

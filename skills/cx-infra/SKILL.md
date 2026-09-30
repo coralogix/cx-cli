@@ -22,6 +22,9 @@ metadata:
 All commands live under `cx infra resources` and are read-only. Run
 `cx infra resources <command> --help` for flags.
 
+"Infrastructure monitoring is not enabled for this team" means the team has no
+infrastructure data. Stop and say so. Do not retry or change filters.
+
 | Command          | Answers                                                        |
 |------------------|----------------------------------------------------------------|
 | `types`          | which `(category, type)` pairs exist                           |

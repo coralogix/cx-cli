@@ -23,15 +23,15 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 
 ### Workflow
 
-| Skill | Description |
-|---|---|
-| `cx-cost-optimization` | Analyze and reduce Coralogix data costs - usage analysis, TCO policies, retention, archive |
-| `cx-cases` | Manage Coralogix Cases - list, inspect, assign/acknowledge/resolve/close, set priority overrides |
-| `cx-slos` | Manage SLO definitions - list, inspect, check error budgets, create/update/delete |
-| `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
-| `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
-| `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
-| `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications |
+| Skill | Description                                                                                                                                                                        |
+|---|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cx-cost-optimization` | Analyze and reduce Coralogix data costs - usage analysis, TCO policies, retention, archive                                                                                         |
+| `cx-cases` | Manage Coralogix Cases - list, inspect, assign/acknowledge/resolve/close, set priority overrides, read parent-child links and case provenance |
+| `cx-slos` | Manage SLO definitions - list, inspect, check error budgets, create/update/delete                                                                                                  |
+| `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules                                                                                            |
+| `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access                                                                                                             |
+| `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations                                                                                                             |
+| `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications                                                                                            |
 
 ## Requirements
 

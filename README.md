@@ -42,6 +42,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the ownership model,
 PR review process, and step-by-step guides for adding commands and skills.
 
-## License
+## License and Terms
 
 Apache-2.0
+Use of the Coralogix services through this CLI is governed by the Coralogix Master Subscription Terms , or your separate written agreement with Coralogix where applicable, including when you use it to other products and services that you make available to you,or your own customers and end users, except to the extent a specific component or dependency is covered by a different license as indicated in that component's LICENSE file.

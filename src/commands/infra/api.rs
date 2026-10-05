@@ -14,7 +14,8 @@ const ENABLEMENT_PATH: &str = "/mgmt/api/infrastructure/enablement/v1";
 
 #[derive(Debug, Deserialize)]
 pub struct GetEnablementResponse {
-    pub enabled: bool,
+    /// `enabled` is optional so a body without the flag deserializes as "unknown"
+    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -316,6 +317,7 @@ impl<'a> InfraApi<'a> {
     /// Get the daily health status history for several resources.
     /// Health history for each resource is sorted oldest first.
     /// Ids the API cannot parse are left out and duplicates are read once.
+    /// Unlike the other endpoints, the API answers with a bare array, not an envelope.
     pub async fn health_history(
         &self,
         resource_ids: &[&str],
@@ -426,10 +428,14 @@ mod tests {
     fn deserialize_enablement_response() {
         let enabled: GetEnablementResponse =
             serde_json::from_value(json!({ "enabled": true })).unwrap();
-        assert!(enabled.enabled);
+        assert_eq!(enabled.enabled, Some(true));
         let disabled: GetEnablementResponse =
             serde_json::from_value(json!({ "enabled": false })).unwrap();
-        assert!(!disabled.enabled);
+        assert_eq!(disabled.enabled, Some(false));
+        // An empty body (what the client substitutes for a blank response) is
+        // "unknown", not "disabled".
+        let unknown: GetEnablementResponse = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(unknown.enabled, None);
     }
 
     #[test]

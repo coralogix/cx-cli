@@ -1791,29 +1791,51 @@ async fn a_disabled_team_is_refused_before_the_command_runs() {
     );
 }
 
+/// The check fails open: only an explicit `enabled: false` blocks. An error
+/// from the enablement endpoint itself (a narrowly-scoped key, an older gateway,
+/// a transient 5xx) warns and lets the real request decide.
 #[tokio::test]
-async fn an_unknown_enablement_fails_the_profile() {
-    let server = MockServer::start().await;
-    mount_enablement(
-        &server,
-        ResponseTemplate::new(503).set_body_json(json!({
-            "error": "Infrastructure availability cannot be determined right now"
-        })),
-        1,
-    )
-    .await;
-    mock_types(0).mount(&server).await;
+async fn an_enablement_error_warns_and_continues() {
+    for status in [403u16, 404, 503] {
+        let server = MockServer::start().await;
+        mount_enablement(
+            &server,
+            ResponseTemplate::new(status).set_body_json(json!({
+                "error": "Infrastructure availability cannot be determined right now"
+            })),
+            1,
+        )
+        .await;
+        mock_types(1).mount(&server).await;
 
-    let targets = vec![common::test_target("prod", &server.uri())];
-    let err = run_types(&targets, OutputFormat::Json)
-        .await
-        .expect_err("an unknown enablement must not pass");
-
-    assert!(format!("{err:#}").contains("503"), "{err:#}");
+        let targets = vec![common::test_target("prod", &server.uri())];
+        run_types(&targets, OutputFormat::Json)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("a {status} from the enablement check must not block: {e:#}")
+            });
+    }
 }
 
 #[tokio::test]
-async fn a_fan_out_skips_disabled_and_unknown_profiles() {
+async fn an_enablement_body_without_the_flag_warns_and_continues() {
+    let server = MockServer::start().await;
+    mount_enablement(
+        &server,
+        ResponseTemplate::new(200).set_body_json(json!({})),
+        1,
+    )
+    .await;
+    mock_types(1).mount(&server).await;
+
+    let targets = vec![common::test_target("prod", &server.uri())];
+    run_types(&targets, OutputFormat::Json)
+        .await
+        .expect("a body without `enabled` is unknown, not disabled");
+}
+
+#[tokio::test]
+async fn a_fan_out_skips_only_explicitly_disabled_profiles() {
     let server_on = MockServer::start().await;
     let server_off = MockServer::start().await;
     let server_unknown = MockServer::start().await;
@@ -1822,7 +1844,7 @@ async fn a_fan_out_skips_disabled_and_unknown_profiles() {
     mount_enablement(&server_unknown, ResponseTemplate::new(503), 1).await;
     mock_types(1).mount(&server_on).await;
     mock_types(0).mount(&server_off).await;
-    mock_types(0).mount(&server_unknown).await;
+    mock_types(1).mount(&server_unknown).await;
 
     let targets = vec![
         common::test_target("prod", &server_on.uri()),
@@ -1831,7 +1853,7 @@ async fn a_fan_out_skips_disabled_and_unknown_profiles() {
     ];
     run_types(&targets, OutputFormat::Json)
         .await
-        .expect("the enabled profile still answers");
+        .expect("the enabled and the unknown profiles still answer");
 }
 
 #[tokio::test]
@@ -1854,6 +1876,23 @@ async fn a_resource_id_command_refuses_a_disabled_team() {
         format!("{err:#}"),
         "profile 'prod' failed: Infrastructure monitoring is not enabled for this team"
     );
+}
+
+#[tokio::test]
+async fn a_resource_id_command_continues_past_an_enablement_error() {
+    let server = MockServer::start().await;
+    mount_enablement(&server, ResponseTemplate::new(403), 1).await;
+    Mock::given(method("GET"))
+        .and(path(format!("{BASE}/plain-id/raw-data")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "rawData": null })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("prod", &server.uri())];
+    run_raw_data(&targets, "plain-id", None, OutputFormat::Json)
+        .await
+        .expect("a 403 from the enablement check must not block");
 }
 
 #[tokio::test]

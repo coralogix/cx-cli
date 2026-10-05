@@ -10,9 +10,9 @@ mod legacy;
 
 use api::{
     BoolFilter, CategoryType, ConfigChangesParams, FieldChangeData, FieldMatch, Filter,
-    FilterDescriptor, GetResourcesResponse, HealthHistoryEntry, HealthPolicyData, InfraApi,
-    ListResourcesParams, Op, ResourceChangeData, ResourceData, ResourceDiffData,
-    ResourceHealthHistory, ResourceTypeMapping,
+    FilterDescriptor, GetEnablementResponse, GetResourcesResponse, HealthHistoryEntry,
+    HealthPolicyData, InfraApi, ListResourcesParams, Op, ResourceChangeData, ResourceData,
+    ResourceDiffData, ResourceHealthHistory, ResourceTypeMapping,
 };
 
 use crate::config::OutputFormat;
@@ -36,10 +36,29 @@ pub struct PageWindow {
 
 // ── Enablement ────────────────────────────────────────────────────────────────
 
-async fn check_enabled(api: &InfraApi<'_>) -> Result<()> {
-    if !api.enablement().await?.enabled {
-        bail!("Infrastructure monitoring is not enabled for this team");
-    }
+/// Only an explicit `enabled: false` blocks. When the check itself cannot
+/// answer the command continues with a warning on stderr.
+async fn check_enabled(api: &InfraApi<'_>, profile_name: &str) -> Result<()> {
+    let reason = match api.enablement().await {
+        Ok(GetEnablementResponse {
+            enabled: Some(true),
+        }) => return Ok(()),
+        Ok(GetEnablementResponse {
+            enabled: Some(false),
+        }) => bail!("Infrastructure monitoring is not enabled for this team"),
+        Ok(GetEnablementResponse { enabled: None }) => {
+            "the response has no `enabled` field".to_string()
+        }
+        Err(e) => e.to_string(),
+    };
+    eprintln!(
+        "{}",
+        format!(
+            "warning: profile '{profile_name}': could not verify that infrastructure \
+             monitoring is enabled ({reason}); continuing"
+        )
+        .yellow()
+    );
     Ok(())
 }
 
@@ -53,7 +72,7 @@ pub async fn run_types(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -
 
     let per_profile = fan_out(targets, |target| async move {
         let api = InfraApi::new(&target.client);
-        check_enabled(&api).await?;
+        check_enabled(&api, &target.profile_name).await?;
         Ok(api.available_types().await?)
     })
     .await;
@@ -121,7 +140,7 @@ pub async fn run_filters(
 
     let per_profile = fan_out(targets, |target| async move {
         let api = InfraApi::new(&target.client);
-        check_enabled(&api).await?;
+        check_enabled(&api, &target.profile_name).await?;
         Ok(api.filters(category, resource_type).await?)
     })
     .await;
@@ -204,7 +223,7 @@ pub async fn run_list(
         let filter = &filter;
         async move {
             let api = InfraApi::new(&target.client);
-            check_enabled(&api).await?;
+            check_enabled(&api, &target.profile_name).await?;
             let params = ListResourcesParams {
                 category: category.as_deref(),
                 resource_type: resource_type.as_deref(),
@@ -248,7 +267,7 @@ pub async fn run_list_legacy(
         let name_filter = name_filter.map(String::from);
         let scope_filters = scope_filters.clone();
         async move {
-            check_enabled(&InfraApi::new(&target.client)).await?;
+            check_enabled(&InfraApi::new(&target.client), &target.profile_name).await?;
             let params = legacy::LegacyListParams {
                 category: &category,
                 resource_type: &resource_type,
@@ -963,7 +982,7 @@ async fn single_target<'t>(
 ) -> Result<&'t ExecutionTarget> {
     match targets {
         [target] => {
-            check_enabled(&InfraApi::new(&target.client))
+            check_enabled(&InfraApi::new(&target.client), &target.profile_name)
                 .await
                 .with_context(|| format!("profile '{}' failed", target.profile_name))?;
             Ok(target)

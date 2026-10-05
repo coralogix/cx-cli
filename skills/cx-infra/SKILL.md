@@ -25,6 +25,10 @@ All commands live under `cx infra resources` and are read-only. Run
 "Infrastructure monitoring is not enabled for this team" means the team has no
 infrastructure data. Stop and say so. Do not retry or change filters.
 
+A stderr line starting `warning: ... could not verify that infrastructure
+monitoring is enabled` is informational: the enablement check itself failed and
+the command still ran.
+
 | Command          | Answers                                                        |
 |------------------|----------------------------------------------------------------|
 | `types`          | which `(category, type)` pairs exist                           |

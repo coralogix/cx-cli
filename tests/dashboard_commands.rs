@@ -169,14 +169,17 @@ async fn dashboard_catalog_toon_output_succeeds() {
 async fn dashboard_get_returns_result() {
     let server = MockServer::start().await;
 
+    let dash_id = "nPl9zg5A61iJ75CtN2FDB";
     let body = json!({
-        "id": "dash-001",
+        "id": dash_id,
         "name": "API Overview",
         "layout": {"sections": []}
     });
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/dash-001"))
+        .and(path(format!(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/{dash_id}"
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -185,7 +188,7 @@ async fn dashboard_get_returns_result() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    dashboards::run_get(&targets, "dash-001", OutputFormat::Json)
+    dashboards::run_get(&targets, dash_id, OutputFormat::Json)
         .await
         .expect("get should succeed");
 }
@@ -194,8 +197,11 @@ async fn dashboard_get_returns_result() {
 async fn dashboard_get_404_returns_error() {
     let server = MockServer::start().await;
 
+    let missing_id = "zzzzzzzzzzzzzzzzzzzzz";
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/nonexistent"))
+        .and(path(format!(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/{missing_id}"
+        )))
         .respond_with(
             ResponseTemplate::new(404).set_body_json(json!({"message": "Dashboard not found"})),
         )
@@ -206,8 +212,22 @@ async fn dashboard_get_404_returns_error() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    let result = dashboards::run_get(&targets, "nonexistent", OutputFormat::Json).await;
+    let result = dashboards::run_get(&targets, missing_id, OutputFormat::Json).await;
     assert!(result.is_err(), "404 should return Err for get");
+}
+
+#[tokio::test]
+async fn dashboard_get_folder_id_returns_error_without_http() {
+    let target = common::test_target("test-profile", "http://127.0.0.1:1");
+    let targets = vec![target];
+    let err = dashboards::run_get(
+        &targets,
+        "6d4aac44-0f7e-46e6-9f51-2454af16fd0f",
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("folder UUID must not be sent to get");
+    assert!(err.to_string().contains("not a dashboard id"), "{}", err);
 }
 
 #[tokio::test]
@@ -223,15 +243,20 @@ async fn dashboard_get_multi_profile_includes_profile_field() {
     let server_a = MockServer::start().await;
     let server_b = MockServer::start().await;
 
-    let body = json!({"id": "dash-001", "name": "Shared", "layout": {}});
+    let dash_id = "nPl9zg5A61iJ75CtN2FDB";
+    let body = json!({"id": dash_id, "name": "Shared", "layout": {}});
 
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/dash-001"))
+        .and(path(format!(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/{dash_id}"
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .mount(&server_a)
         .await;
     Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/dash-001"))
+        .and(path(format!(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/{dash_id}"
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .mount(&server_b)
         .await;
@@ -241,7 +266,7 @@ async fn dashboard_get_multi_profile_includes_profile_field() {
         common::test_target("profile-b", &server_b.uri()),
     ];
 
-    dashboards::run_get(&targets, "dash-001", OutputFormat::Json)
+    dashboards::run_get(&targets, dash_id, OutputFormat::Json)
         .await
         .expect("multi-profile get should succeed");
 }

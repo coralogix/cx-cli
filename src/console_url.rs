@@ -67,6 +67,25 @@ pub fn alerts_url(base: &str) -> String {
     format!("{}/alerts", trim_base(base))
 }
 
+/// Build the console URL for a suppression rule's editor:
+/// `{base}/suppression-rules?edit={urlencoded id}&meta=edit`.
+///
+/// `id` must be the `uniqueIdentifier` (a version id gets a "rule not found" toast);
+/// without `&meta=edit` the editor opens in create mode.
+pub fn suppression_rule_url(base: &str, id: &str) -> String {
+    let encoded: String = form_urlencoded::byte_serialize(id.as_bytes()).collect();
+    format!(
+        "{}/suppression-rules?edit={encoded}&meta=edit",
+        trim_base(base)
+    )
+}
+
+/// Build the console URL for the suppression-rules list page:
+/// `{base}/suppression-rules`.
+pub fn suppression_rules_url(base: &str) -> String {
+    format!("{}/suppression-rules", trim_base(base))
+}
+
 /// Build the console URL for a case: `{base}/cases?id={urlencoded id}`.
 ///
 /// No public doc names the exact query parameter, but this is confirmed

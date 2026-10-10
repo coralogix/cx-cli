@@ -775,11 +775,22 @@ async fn resolve_single(
                     eprintln!(
                         "OAuth session for profile '{profile_name}' expired. Sign in to continue."
                     );
-                    let mut force_account_selection = false;
+                    // Ask the consent page to show only the team this
+                    // profile last used, preselected, so the re-login lands
+                    // back in it. A `--region` override is for another
+                    // endpoint, so its sign-in is not narrowed to this
+                    // profile's team.
+                    let mut login = oauth::LoginOptions {
+                        force_account_selection: false,
+                        team_id: if region_overridden {
+                            None
+                        } else {
+                            profile.cached_team_id
+                        },
+                    };
                     let (tokens, whoami) = loop {
                         let tokens =
-                            oauth::browser_login(&base_url, &client_id, force_account_selection)
-                                .await?;
+                            oauth::browser_login(&base_url, &client_id, login.clone()).await?;
                         let client = crate::api_client::CxClient::new(
                             profile.region.api_endpoint(),
                             &tokens.access_token,
@@ -810,7 +821,7 @@ async fn resolve_single(
                         }
                         // The browser still holds the wrong team's SSO
                         // session; ask the IdP to show the picker again.
-                        force_account_selection = true;
+                        login.force_account_selection = true;
                     };
                     if !region_overridden {
                         remember_signed_in_team(&mut profile, &whoami);

@@ -483,6 +483,57 @@ async fn do_token_refresh(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/// Options that shape the consent page a [`browser_login`] opens.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LoginOptions {
+    /// Adds `prompt=select_account` to the authorisation URL. Pass it on a
+    /// retry after a wrong-team sign-in: the browser still holds the wrong
+    /// team's SSO session, which would otherwise complete silently into the
+    /// same team without showing the picker.
+    pub force_account_selection: bool,
+    /// Restricts the consent page to this team and preselects it, via the
+    /// `cx_team_ids` query parameter the authorize page accepts. Set it to the
+    /// team a profile last used so an expired-session re-login lands back in
+    /// that team instead of whichever team the user clicks first. The page
+    /// shows "Team not available" when the signed-in user is not a member;
+    /// it never widens to the full list. Unknown to the IdP for clients with
+    /// `cx_teams:all_user_teams`, where it is ignored.
+    pub team_id: Option<i64>,
+}
+
+/// Assemble the `/authorize` URL for one sign-in attempt.
+///
+/// `challenge` and `state` are already URL-safe base64; everything else is
+/// form-encoded here.
+fn build_authorization_url(
+    authorization_endpoint: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    challenge: &str,
+    state: &str,
+    options: &LoginOptions,
+) -> String {
+    let scopes = SCOPES.join(" ");
+    let mut auth_url = format!(
+        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
+        authorization_endpoint,
+        urlencode(client_id),
+        urlencode(redirect_uri),
+        urlencode(&scopes),
+        challenge,
+        state,
+    );
+    if options.force_account_selection {
+        auth_url.push_str("&prompt=select_account");
+    }
+    if let Some(team_id) = options.team_id {
+        // One key, comma-separated ids: STS forwards unknown params through a
+        // single-valued map, so a repeated key would keep only one value.
+        auth_url.push_str(&format!("&cx_team_ids={team_id}"));
+    }
+    auth_url
+}
+
 /// Run the full interactive browser-based OAuth sign-in flow.
 ///
 /// 1. Fetches the OpenID Connect discovery document from `{base_url}/oauth/.well-known/…`
@@ -492,14 +543,11 @@ async fn do_token_refresh(
 /// 5. Waits for the callback, validates `state`, extracts the code
 /// 6. Exchanges the code for tokens and returns them
 ///
-/// `force_account_selection` adds `prompt=select_account` to the
-/// authorisation URL. Pass it on a retry after a wrong-team sign-in: the
-/// browser still holds the wrong team's SSO session, which would otherwise
-/// complete silently into the same team without showing the picker.
+/// See [`LoginOptions`] for the knobs that shape the consent page.
 pub async fn browser_login(
     base_url: &str,
     client_id: &str,
-    force_account_selection: bool,
+    options: LoginOptions,
 ) -> Result<TokenResponse> {
     let oidc = fetch_openid_config(base_url).await?;
     let (verifier, challenge) = generate_pkce();
@@ -516,19 +564,14 @@ pub async fn browser_login(
     let (listeners, port) = bind_callback_listener()?;
     let redirect_uri = format!("http://localhost:{port}/callback");
 
-    let scopes = SCOPES.join(" ");
-    let mut auth_url = format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
-        oidc.authorization_endpoint,
-        urlencode(client_id),
-        urlencode(&redirect_uri),
-        urlencode(&scopes),
-        challenge,
-        state,
+    let auth_url = build_authorization_url(
+        &oidc.authorization_endpoint,
+        client_id,
+        &redirect_uri,
+        &challenge,
+        &state,
+        &options,
     );
-    if force_account_selection {
-        auth_url.push_str("&prompt=select_account");
-    }
 
     // Always print the URL: when the browser can't be opened (headless run,
     // or cx driven by a coding agent), it is the user's only way in — the
@@ -969,5 +1012,65 @@ mod tests {
         );
         assert!(!is_refresh_rejected(&err));
         assert!(!is_reauth_required(&err));
+    }
+
+    #[test]
+    fn authorization_url_has_no_optional_params_by_default() {
+        let url = build_authorization_url(
+            "https://example.com/oauth/authorize",
+            "cli-client",
+            "http://localhost:21783/callback",
+            "CHALLENGE",
+            "STATE",
+            &LoginOptions::default(),
+        );
+        assert_eq!(
+            url,
+            "https://example.com/oauth/authorize?response_type=code&client_id=cli-client\
+             &redirect_uri=http%3A%2F%2Flocalhost%3A21783%2Fcallback\
+             &scope=openid+profile+email+offline_access\
+             &code_challenge=CHALLENGE&code_challenge_method=S256&state=STATE"
+        );
+        assert!(!url.contains("prompt="));
+        assert!(!url.contains("cx_team_ids="));
+    }
+
+    #[test]
+    fn authorization_url_restricts_to_the_profile_team() {
+        let url = build_authorization_url(
+            "https://example.com/oauth/authorize",
+            "cli-client",
+            "http://localhost:21783/callback",
+            "CHALLENGE",
+            "STATE",
+            &LoginOptions {
+                force_account_selection: false,
+                team_id: Some(53623),
+            },
+        );
+        assert!(
+            url.ends_with("&state=STATE&cx_team_ids=53623"),
+            "got: {url}"
+        );
+        assert!(!url.contains("prompt="));
+    }
+
+    #[test]
+    fn authorization_url_combines_account_picker_and_team_restriction() {
+        let url = build_authorization_url(
+            "https://example.com/oauth/authorize",
+            "cli-client",
+            "http://localhost:21783/callback",
+            "CHALLENGE",
+            "STATE",
+            &LoginOptions {
+                force_account_selection: true,
+                team_id: Some(7),
+            },
+        );
+        assert!(
+            url.ends_with("&state=STATE&prompt=select_account&cx_team_ids=7"),
+            "got: {url}"
+        );
     }
 }

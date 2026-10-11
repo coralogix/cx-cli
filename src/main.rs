@@ -2767,7 +2767,8 @@ Examples:
   cx infra resources filters --category Hosts
   cx infra resources list --category Hosts --type EC2_Instances
   cx infra resources health-history \"1001234:host_id=i-abc123\"
-  cx infra resources raw-data \"1001234:host_id=i-abc123\"")]
+  cx infra resources raw-data \"1001234:host_id=i-abc123\"
+  cx infra resources config-changes --resource-id \"1001234:host_id=i-abc123\" --from now-24h")]
     Resources {
         #[command(subcommand)]
         cmd: InfraResourcesCmd,
@@ -2856,22 +2857,79 @@ Discover what can be filtered with `cx infra resources filters`.")]
         #[arg(long)]
         end_row: Option<i64>,
     },
-    /// Show the daily health status history for a resource.
+    /// Show the daily health status history for one or more resources.
     #[command(after_help = "\
 Examples:
-  cx infra resources health-history \"1001234:host_id=i-abc123\"")]
+  cx infra resources health-history \"1001234:host_id=i-abc\" \"1001234:host_id=i-def\"
+
+At most 100 resource IDs per call.")]
     HealthHistory {
-        /// Resource ID, exactly as returned by `cx infra resources list`.
-        resource_id: String,
+        /// Resource IDs, exactly as returned by `cx infra resources list`.
+        #[arg(num_args = 1.., required = true)]
+        resource_ids: Vec<String>,
+    },
+    /// Show which resources changed configuration over a window.
+    #[command(after_help = "\
+Examples:
+  cx infra resources config-changes --resource-id \"1001234:host_id=i-abc\" --from now-24h
+  cx infra resources config-changes --resource-id \"1001234:host_id=i-abc\" \
+--resource-id \"1001234:host_id=i-def\" --from now-7d --to now-1d
+
+A resource that did not change is absent from the output. One row per resource and source:
+a resource reported by two collectors has two independent histories. At most 100 resource IDs.")]
+    ConfigChanges {
+        #[arg(long = "resource-id", num_args = 1.., required = true)]
+        resource_ids: Vec<String>,
+
+        /// Start of the window. Accepts `now-24h` or ISO-8601.
+        #[arg(long)]
+        from: String,
+
+        /// End of the window (default: now). Accepts `now-1d` or ISO-8601.
+        #[arg(long)]
+        to: Option<String>,
+    },
+    /// Compare resource configurations across a window, field by field.
+    #[command(after_help = "\
+Examples:
+  cx infra resources config-diff --resource-id \"1001234:host_id=i-abc\" --from now-24h
+  cx infra resources config-diff --resource-id \"1001234:host_id=i-abc\" --from now-7d --to now-1d
+
+Outcomes: changed, unchanged, created, priorStateUnavailable, comparisonUnavailable.
+At most 100 resource IDs.
+
+Narrow the window around a single change and --from/--to resolve to the
+versions either side of it.")]
+    ConfigDiff {
+        #[arg(long = "resource-id", num_args = 1.., required = true)]
+        resource_ids: Vec<String>,
+
+        /// Start of the window. Accepts `now-24h` or ISO-8601.
+        #[arg(long)]
+        from: String,
+
+        /// End of the window (default: now). Accepts `now-1d` or ISO-8601.
+        #[arg(long)]
+        to: Option<String>,
     },
     /// Fetch the raw resource document as JSON.
     #[command(after_help = "\
 Examples:
   cx infra resources raw-data \"1001234:host_id=i-abc123\"
-  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json")]
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" --timestamp now-7d
+
+Output carries the document under `raw_data` and the version it actually is
+under `version_timestamp`.")]
     RawData {
         /// Resource ID, exactly as returned by `cx infra resources list`.
         resource_id: String,
+
+        /// Return the newest version at or before this time, rather than the
+        /// current one. Accepts `now-7d` or ISO-8601, resolved by the CLI to an
+        /// RFC 3339 instant at nanosecond precision.
+        #[arg(long)]
+        timestamp: Option<String>,
     },
 }
 
@@ -4745,12 +4803,49 @@ async fn main() -> Result<()> {
                             .await?;
                         }
                     }
-                    InfraResourcesCmd::HealthHistory { resource_id } => {
-                        commands::infra::run_health_history(&targets, &resource_id, output)
+                    InfraResourcesCmd::HealthHistory { resource_ids } => {
+                        commands::infra::run_health_history(&targets, &resource_ids, output)
                             .await?;
                     }
-                    InfraResourcesCmd::RawData { resource_id } => {
-                        commands::infra::run_raw_data(&targets, &resource_id, output).await?;
+                    InfraResourcesCmd::ConfigChanges {
+                        resource_ids,
+                        from,
+                        to,
+                    } => {
+                        commands::infra::run_config_changes(
+                            &targets,
+                            &resource_ids,
+                            &from,
+                            to.as_deref(),
+                            output,
+                        )
+                        .await?;
+                    }
+                    InfraResourcesCmd::ConfigDiff {
+                        resource_ids,
+                        from,
+                        to,
+                    } => {
+                        commands::infra::run_config_diff(
+                            &targets,
+                            &resource_ids,
+                            &from,
+                            to.as_deref(),
+                            output,
+                        )
+                        .await?;
+                    }
+                    InfraResourcesCmd::RawData {
+                        resource_id,
+                        timestamp,
+                    } => {
+                        commands::infra::run_raw_data(
+                            &targets,
+                            &resource_id,
+                            timestamp.as_deref(),
+                            output,
+                        )
+                        .await?;
                     }
                 },
             },

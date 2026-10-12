@@ -163,11 +163,12 @@ Write a markdown plan the user can approve before JSON generation:
 | Single headline number (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
 | Breakdown across ≤8 categories | `pieChart` |
 | Change over time (rate, latency, count per bucket) | `lineChart` |
-| Query over logs, spans or DataPrime; top-N and listings | `dynamic`, visualization per the shape table (never legacy `dataTable`) |
+| Top-N tables and listings, from any query (PromQL `topk` included) | `dynamic` with a `table` visualization (never legacy `dataTable`) |
+| Query over logs, spans or DataPrime | `dynamic`, visualization per the shape table |
 
 Don't use other widget types unless the user asks.
 
-**Logs, spans and DataPrime widgets are `dynamic`, and visualized.** Never emit the legacy `dataTable` widget. Use `definition.dynamic` and set its `visualization` to the chart the query's shape calls for; `table` is right only for raw rows the user wants to read. Alias every column in the query and map the visualization to the aliases. Shape-to-visualization table and templates: `references/widget-templates.md` → *Widget: dynamic*.
+**Logs, spans and DataPrime widgets are `dynamic`, and visualized.** Never emit the legacy `dataTable` widget, for any query: a PromQL top-N table is a `dynamic` widget with a `metrics` query and a `table` visualization. Use `definition.dynamic` and set its `visualization` to the chart the query's shape calls for; `table` is right only for raw rows the user wants to read. Alias every column in the query and map the visualization to the aliases. Shape-to-visualization table and templates: `references/widget-templates.md` → *Widget: dynamic*.
 
 Wait for the user to approve or adjust the plan before emitting JSON.
 

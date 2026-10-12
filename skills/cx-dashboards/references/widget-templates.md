@@ -104,16 +104,7 @@ Gauge `min` and `max` must be numeric and `min < max`. This API constraint appli
 "thresholdType": "THRESHOLD_TYPE_ABSOLUTE"
 ```
 
-**For DataPrime-driven count (e.g. error log count):** swap `metrics.promqlQuery` for `dataprime.dataprimeQuery`:
-
-```json
-"query": {
-  "dataprime": {
-    "dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | agg count()"},
-    "filters": []
-  }
-}
-```
+**For a DataPrime-driven count (e.g. error log count):** don't put DataPrime in a typed `gauge`. Use a `dynamic` widget with a `stat` visualization ("One row, one number" under *Widget: dynamic*).
 
 ---
 
@@ -218,8 +209,8 @@ The widget for tables and for charts over a logs, spans or DataPrime query. A `d
 |---|---|
 | One row, one number | `stat`, or `gauge` when there is a known good/bad range |
 | One number per category, not a top-N list | `verticalBars` or `horizontalBars` (long labels); `pieChart` only when the values add up to a whole (counts, never latencies, percentiles or rates) |
-| One number per time bucket | `timeSeriesLines` (`timeSeriesBars` for counts per bucket) |
-| Series per time bucket per category | `timeSeriesLines` with `categoryFields` set |
+| One number per time bucket | `timeSeriesLinesMulti` (`timeSeriesBars` for counts per bucket) |
+| Series per time bucket per category | `timeSeriesLinesMulti` with `categoryFields` set |
 | Raw log or span rows; top-N lists (`topk`, `top`, any ranked listing) | `table` |
 
 A top-N result is one number per category, so it also fits the bar and pie rows. It is still a `table`: set `visualization: {"table": ...}` explicitly rather than leaving the choice open. A pie of a top-N is wrong (the slices are not parts of a whole), and for latencies or rates it is meaningless.
@@ -264,7 +255,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
 }
 ```
 
-**One number per time bucket** (error count over time):
+**One number per time bucket** (error count over time). The field mapping sits in `queryDisplaySettings[]`, keyed by the query definition's `id` (`<query-uuid>`, the same value in both places). The single-query `timeSeriesLines` is deprecated:
 
 ```json
 {
@@ -274,11 +265,11 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
     "dynamic": {
       "queryDefinitions": [
         {
-          "id": "<uuid>",
+          "id": "<query-uuid>",
           "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby roundTime($m.timestamp, 5m) as bucket aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
         }
       ],
-      "visualization": {"timeSeriesLines": {"temporalField": {"keypath": ["bucket"], "scope": "DATASET_SCOPE_USER_DATA"}, "valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}}
+      "visualization": {"timeSeriesLinesMulti": {"queryDisplaySettings": [{"queryId": "<query-uuid>", "temporalField": {"keypath": ["bucket"], "scope": "DATASET_SCOPE_USER_DATA"}, "valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}]}}
     }
   }
 }
@@ -318,7 +309,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
           "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
         }
       ],
-      "visualization": {"stat": {"valueField": {"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}}}
+      "visualization": {"stat": {"valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}}
     }
   }
 }

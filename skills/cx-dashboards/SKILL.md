@@ -160,7 +160,7 @@ Write a markdown plan the user can approve before JSON generation:
 
 | Signal | Widget type |
 |---|---|
-| Single headline number (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
+| Single headline number from a metrics query (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
 | Breakdown across ≤8 categories | `pieChart` |
 | Change over time (rate, latency, count per bucket) | `lineChart` |
 | Top-N tables and listings, from any query (PromQL `topk` included) | `dynamic` with a `table` visualization (never legacy `dataTable`) |
@@ -247,7 +247,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 - [ ] Each widget has a unique `id.value` and a `definition` with exactly one of `gauge` / `pieChart` / `lineChart` / `dynamic`.
 - [ ] Every gauge has numeric `min` and `max`, and `min < max`.
 - [ ] Success-rate gauges use `thresholdType: "THRESHOLD_TYPE_ABSOLUTE"` with green at high values; error/DLQ gauges use red at high values.
-- [ ] "Total" / "stat" widgets are encoded as `gauge`, not as a stat type.
+- [ ] Metrics "Total" / "stat" widgets are encoded as `gauge`. A logs, spans or DataPrime total is a `dynamic` widget with a `stat` visualization.
 - [ ] Top-level `filters` includes each slicing dimension from Phase 2.
 - [ ] All IDs are freshly generated UUIDs, unique within the document.
 

@@ -205,9 +205,9 @@ Use for anything over time (rates, latencies, counts per bucket).
 
 ---
 
-## Widget: dataTable
+## Widget: dynamic table
 
-Use for top-N tables and raw log listings.
+Use for top-N tables and raw row listings. Always `dynamic` with a `table` visualization; never the legacy `dataTable` widget. Do not use a `dataprime` query here: back the table with `metrics`, `logs` or `spans`.
 
 **Metrics-backed table** (e.g. top accounts by count):
 
@@ -216,53 +216,67 @@ Use for top-N tables and raw log listings.
   "id": {"value": "<uuid>"},
   "title": "Top Accounts by Message Count",
   "definition": {
-    "dataTable": {
-      "query": {
-        "metrics": {
-          "promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"},
-          "filters": [],
-          "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT",
-          "promqlQueryType": "PROM_QL_QUERY_TYPE_INSTANT"
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": {"value": "<uuid>"},
+          "query": {
+            "metrics": {
+              "promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"},
+              "promqlQueryType": "PROM_QL_QUERY_TYPE_INSTANT",
+              "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT"
+            }
+          }
         }
-      },
-      "resultsPerPage": 10,
-      "rowStyle": "ROW_STYLE_UNSPECIFIED",
-      "columns": [
-        {"field": "account_id"},
-        {"field": "#value"}
       ],
-      "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"
+      "visualization": {
+        "table": {
+          "columns": [
+            {"field": {"keypath": ["account_id"], "scope": "DATASET_SCOPE_LABEL"}},
+            {"field": {"keypath": ["#value"], "scope": "DATASET_SCOPE_USER_DATA"}}
+          ]
+        }
+      }
     }
   }
 }
 ```
 
-**DataPrime-backed table** (e.g. last errors):
+**Logs-backed table** (e.g. last errors, Lucene query):
 
 ```json
 {
   "id": {"value": "<uuid>"},
   "title": "Last errors",
   "definition": {
-    "dataTable": {
-      "query": {
-        "dataprime": {
-          "dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc"},
-          "filters": []
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": {"value": "<uuid>"},
+          "query": {
+            "logs": {
+              "luceneQuery": {"value": "coralogix.metadata.severity:(Error OR Critical)"},
+              "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"
+            }
+          }
         }
-      },
-      "resultsPerPage": 100,
-      "rowStyle": "ROW_STYLE_ONE_LINE",
-      "columns": [
-        {"field": "$m.severity",  "width": 121},
-        {"field": "$m.timestamp", "width": 190},
-        {"field": "$d",           "width": 600}
       ],
-      "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"
+      "visualization": {
+        "table": {
+          "columns": [
+            {"field": {"keypath": ["timestamp"], "scope": "DATASET_SCOPE_METADATA"}},
+            {"field": {"keypath": ["severity"], "scope": "DATASET_SCOPE_METADATA"}},
+            {"field": {"keypath": ["logRecord", "body"], "scope": "DATASET_SCOPE_USER_DATA"}}
+          ],
+          "settings": {"rowStyle": "ROW_STYLE_ONE_LINE"}
+        }
+      }
     }
   }
 }
 ```
+
+`DATA_MODE_TYPE_HIGH_UNSPECIFIED` above is a placeholder: set `dataModeType` to the tier the data lives in (see "Data mode" below). Metrics widgets are not tiered.
 
 ---
 
@@ -326,7 +340,7 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 
 ## Tier (`dataModeType`) quick-reference
 
-`dataModeType` lives **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dataTable.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`). It controls which storage tier the widget reads from at render time.
+`dataModeType` lives **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dynamic.queryDefinitions[].query.logs.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`). It controls which storage tier the widget reads from at render time.
 
 | Value | When |
 |---|---|

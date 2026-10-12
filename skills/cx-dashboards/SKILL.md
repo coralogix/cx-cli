@@ -9,7 +9,7 @@ description: >
   deploy, update, replace, or modify a Coralogix dashboard, monitoring dashboard,
   or observability dashboard for a service, app, or pipeline.
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # Create Coralogix Dashboard
@@ -163,9 +163,11 @@ Write a markdown plan the user can approve before JSON generation:
 | Single headline number (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
 | Breakdown across ≤8 categories | `pieChart` |
 | Change over time (rate, latency, count per bucket) | `lineChart` |
-| Top-N tables, last errors, per-entity listings | `dataTable` |
+| Top-N tables, last errors, per-entity listings | `dynamic` with a `table` visualization (never legacy `dataTable`) |
 
 Don't use other widget types unless the user asks.
+
+**Tables are always `dynamic`.** Never emit the legacy `dataTable` widget: it is a static table that the web app no longer creates. Use `definition.dynamic` with `visualization: {"table": {...}}`. Back the table with a PromQL (`metrics`) or `logs`/`spans` (Lucene) query. Do not put DataPrime in a dynamic table's query; for an aggregate that needs DataPrime, use a chart widget instead. See `references/widget-templates.md` → *Widget: dynamic table*.
 
 Wait for the user to approve or adjust the plan before emitting JSON.
 
@@ -231,7 +233,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 
 ### Query syntax (dashboard-specific)
 - [ ] Every PromQL range vector in a metrics widget uses `[${__range}]` - never `[$__range]`, never `[5m]` (unless the panel is intentionally a sliding window).
-- [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dataTable). Omitted for `lineChart`.
+- [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dynamic table). Omitted for `lineChart`.
 - [ ] DataPrime log queries use `$d.message` / `$l.applicationname` / unquoted severity enums (full rules: [`references/dataprime-reference.md`](references/dataprime-reference.md)).
 - [ ] Every DataPrime widget query starts with `source logs` or `source spans` (dashboard widgets require the source prefix; Phase 5 verification strips it before handing the pipeline to `cx logs` / `cx spans`).
 - [ ] Success-rate denominators wrapped in `clamp_min(..., 1)`.
@@ -241,7 +243,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 ### Structure
 - [ ] Each section has `id.value`, `rows`, and `options.custom`.
 - [ ] Each row has `id.value`, `appearance.height`, and `widgets`.
-- [ ] Each widget has a unique `id.value` and a `definition` with exactly one of `gauge` / `pieChart` / `lineChart` / `dataTable`.
+- [ ] Each widget has a unique `id.value` and a `definition` with exactly one of `gauge` / `pieChart` / `lineChart` / `dynamic`.
 - [ ] Every gauge has numeric `min` and `max`, and `min < max`.
 - [ ] Success-rate gauges use `thresholdType: "THRESHOLD_TYPE_ABSOLUTE"` with green at high values; error/DLQ gauges use red at high values.
 - [ ] "Total" / "stat" widgets are encoded as `gauge`, not as a stat type.

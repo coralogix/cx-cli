@@ -219,7 +219,7 @@ Use for top-N tables and raw row listings. Always `dynamic` with a `table` visua
     "dynamic": {
       "queryDefinitions": [
         {
-          "id": {"value": "<uuid>"},
+          "id": "<uuid>",
           "query": {
             "metrics": {
               "promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"},
@@ -252,7 +252,7 @@ Use for top-N tables and raw row listings. Always `dynamic` with a `table` visua
     "dynamic": {
       "queryDefinitions": [
         {
-          "id": {"value": "<uuid>"},
+          "id": "<uuid>",
           "query": {
             "logs": {
               "luceneQuery": {"value": "coralogix.metadata.severity:(Error OR Critical)"},
@@ -275,6 +275,8 @@ Use for top-N tables and raw row listings. Always `dynamic` with a `table` visua
   }
 }
 ```
+
+A `queryDefinitions[].id` is a plain string, unlike widget and row ids, which are `{"value": ...}`.
 
 `DATA_MODE_TYPE_HIGH_UNSPECIFIED` above is a placeholder: set `dataModeType` to the tier the data lives in (see "Data mode" below). Metrics widgets are not tiered.
 

@@ -217,10 +217,12 @@ The widget for tables and for charts over a logs, spans or DataPrime query. A `d
 | Query returns | `visualization` |
 |---|---|
 | One row, one number | `stat`, or `gauge` when there is a known good/bad range |
-| One number per category | `verticalBars`, `horizontalBars` (long labels), or `pieChart` (part of a whole) |
+| One number per category, not a top-N list | `verticalBars` or `horizontalBars` (long labels); `pieChart` only when the values add up to a whole (counts, never latencies, percentiles or rates) |
 | One number per time bucket | `timeSeriesLines` (`timeSeriesBars` for counts per bucket) |
 | Series per time bucket per category | `timeSeriesLines` with `categoryFields` set |
-| Raw log or span rows, top-N listings | `table` |
+| Raw log or span rows; top-N lists (`topk`, `top`, any ranked listing) | `table` |
+
+A top-N result is one number per category, so it also fits the bar and pie rows. It is still a `table`: set `visualization: {"table": ...}` explicitly rather than leaving the choice open. A pie of a top-N is wrong (the slices are not parts of a whole), and for latencies or rates it is meaningless.
 
 **Raw rows** (e.g. last errors):
 
@@ -282,18 +284,18 @@ The widget for tables and for charts over a logs, spans or DataPrime query. A `d
 }
 ```
 
-**One number per category** (top services by errors):
+**One number per category** (errors by service):
 
 ```json
 {
   "id": {"value": "<uuid>"},
-  "title": "Top services by errors",
+  "title": "Errors by service",
   "definition": {
     "dynamic": {
       "queryDefinitions": [
         {
           "id": "<uuid>",
-          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby $l.subsystemname as service aggregate count() as error_count | top 10 service by error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby $l.subsystemname as service aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
         }
       ],
       "visualization": {"horizontalBars": {"categoryFields": [{"keypath": ["service"], "scope": "DATASET_SCOPE_USER_DATA"}], "valueField": {"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}}}

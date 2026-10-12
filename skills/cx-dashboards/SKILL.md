@@ -163,11 +163,11 @@ Write a markdown plan the user can approve before JSON generation:
 | Single headline number (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
 | Breakdown across ≤8 categories | `pieChart` |
 | Change over time (rate, latency, count per bucket) | `lineChart` |
-| Top-N tables, last errors, per-entity listings | `dynamic` with a `table` visualization (never legacy `dataTable`) |
+| Query over logs, spans or DataPrime; top-N and listings | `dynamic`, visualization per the shape table (never legacy `dataTable`) |
 
 Don't use other widget types unless the user asks.
 
-**Tables are always `dynamic`.** Never emit the legacy `dataTable` widget: it is a static table that the web app no longer creates. Use `definition.dynamic` with `visualization: {"table": {...}}`. Back the table with a PromQL (`metrics`) or `logs`/`spans` (Lucene) query. Do not put DataPrime in a dynamic table's query; for an aggregate that needs DataPrime, use a chart widget instead. See `references/widget-templates.md` → *Widget: dynamic table*.
+**Logs, spans and DataPrime widgets are `dynamic`, and visualized.** Never emit the legacy `dataTable` widget. Use `definition.dynamic` and set its `visualization` to the chart the query's shape calls for; `table` is right only for raw rows the user wants to read. Alias every column in the query and map the visualization to the aliases. Shape-to-visualization table and templates: `references/widget-templates.md` → *Widget: dynamic*.
 
 Wait for the user to approve or adjust the plan before emitting JSON.
 

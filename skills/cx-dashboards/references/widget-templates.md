@@ -205,9 +205,42 @@ Use for anything over time (rates, latencies, counts per bucket).
 
 ---
 
-## Widget: dynamic table
+## Widget: dynamic
 
-Use for top-N tables and raw row listings. Always `dynamic` with a `table` visualization; never the legacy `dataTable` widget. Do not use a `dataprime` query here: back the table with `metrics`, `logs` or `spans`.
+The widget for tables and for charts over a logs, spans or DataPrime query. A `dynamic` widget has one or more `queryDefinitions` and a `visualization` that says how to draw the result. Never emit the legacy `dataTable` widget.
+
+- **Set `visualization` to the chart the data calls for.** A `table` visualization is the neutral default and is right only for raw rows the user wants to read. Do not ship a wall of tables.
+- **A visualization maps the query's output columns.** Alias every projection and aggregation in the query (`aggregate count() as error_count`) and reference the alias in the visualization's fields.
+- **A `queryDefinitions[].id` is a plain string**, unlike widget and row ids, which are `{"value": ...}`.
+- **Set `dataModeType`** on logs, spans and DataPrime queries to the tier the data lives in (see "Data mode" below). `DATA_MODE_TYPE_HIGH_UNSPECIFIED` in these templates is a placeholder. Metrics queries are not tiered.
+
+| Query returns | `visualization` |
+|---|---|
+| One row, one number | `stat`, or `gauge` when there is a known good/bad range |
+| One number per category | `verticalBars`, `horizontalBars` (long labels), or `pieChart` (part of a whole) |
+| One number per time bucket | `timeSeriesLines` (`timeSeriesBars` for counts per bucket) |
+| Series per time bucket per category | `timeSeriesLines` with `categoryFields` set |
+| Raw log or span rows, top-N listings | `table` |
+
+**Raw rows** (e.g. last errors):
+
+```json
+{
+  "id": {"value": "<uuid>"},
+  "title": "Last errors",
+  "definition": {
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<uuid>",
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+        }
+      ],
+      "visualization": {"table": {"columns": [{"field": {"keypath": ["timestamp"], "scope": "DATASET_SCOPE_METADATA"}}, {"field": {"keypath": ["severity"], "scope": "DATASET_SCOPE_METADATA"}}, {"field": {"keypath": ["logRecord", "body"], "scope": "DATASET_SCOPE_USER_DATA"}}], "settings": {"rowStyle": "ROW_STYLE_ONE_LINE"}}}
+    }
+  }
+}
+```
 
 **Metrics-backed table** (e.g. top accounts by count):
 
@@ -220,65 +253,74 @@ Use for top-N tables and raw row listings. Always `dynamic` with a `table` visua
       "queryDefinitions": [
         {
           "id": "<uuid>",
-          "query": {
-            "metrics": {
-              "promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"},
-              "promqlQueryType": "PROM_QL_QUERY_TYPE_INSTANT",
-              "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT"
-            }
-          }
+          "query": {"metrics": {"promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"}, "promqlQueryType": "PROM_QL_QUERY_TYPE_INSTANT", "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT"}}
         }
       ],
-      "visualization": {
-        "table": {
-          "columns": [
-            {"field": {"keypath": ["account_id"], "scope": "DATASET_SCOPE_LABEL"}},
-            {"field": {"keypath": ["#value"], "scope": "DATASET_SCOPE_USER_DATA"}}
-          ]
-        }
-      }
+      "visualization": {"table": {"columns": [{"field": {"keypath": ["account_id"], "scope": "DATASET_SCOPE_LABEL"}}, {"field": {"keypath": ["#value"], "scope": "DATASET_SCOPE_USER_DATA"}}]}}
     }
   }
 }
 ```
 
-**Logs-backed table** (e.g. last errors, Lucene query):
+**One number per time bucket** (error count over time):
 
 ```json
 {
   "id": {"value": "<uuid>"},
-  "title": "Last errors",
+  "title": "Errors over time",
   "definition": {
     "dynamic": {
       "queryDefinitions": [
         {
           "id": "<uuid>",
-          "query": {
-            "logs": {
-              "luceneQuery": {"value": "coralogix.metadata.severity:(Error OR Critical)"},
-              "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"
-            }
-          }
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby roundTime($m.timestamp, 5m) as bucket aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
         }
       ],
-      "visualization": {
-        "table": {
-          "columns": [
-            {"field": {"keypath": ["timestamp"], "scope": "DATASET_SCOPE_METADATA"}},
-            {"field": {"keypath": ["severity"], "scope": "DATASET_SCOPE_METADATA"}},
-            {"field": {"keypath": ["logRecord", "body"], "scope": "DATASET_SCOPE_USER_DATA"}}
-          ],
-          "settings": {"rowStyle": "ROW_STYLE_ONE_LINE"}
-        }
-      }
+      "visualization": {"timeSeriesLines": {"temporalField": {"keypath": ["bucket"], "scope": "DATASET_SCOPE_USER_DATA"}, "valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}}
     }
   }
 }
 ```
 
-A `queryDefinitions[].id` is a plain string, unlike widget and row ids, which are `{"value": ...}`.
+**One number per category** (top services by errors):
 
-`DATA_MODE_TYPE_HIGH_UNSPECIFIED` above is a placeholder: set `dataModeType` to the tier the data lives in (see "Data mode" below). Metrics widgets are not tiered.
+```json
+{
+  "id": {"value": "<uuid>"},
+  "title": "Top services by errors",
+  "definition": {
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<uuid>",
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby $l.subsystemname as service aggregate count() as error_count | top 10 service by error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+        }
+      ],
+      "visualization": {"horizontalBars": {"categoryFields": [{"keypath": ["service"], "scope": "DATASET_SCOPE_USER_DATA"}], "valueField": {"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}}}
+    }
+  }
+}
+```
+
+**One row, one number** (total errors):
+
+```json
+{
+  "id": {"value": "<uuid>"},
+  "title": "Total errors",
+  "definition": {
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<uuid>",
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+        }
+      ],
+      "visualization": {"stat": {"valueField": {"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}}}
+    }
+  }
+}
+```
 
 ---
 
@@ -342,7 +384,7 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 
 ## Tier (`dataModeType`) quick-reference
 
-`dataModeType` lives **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dynamic.queryDefinitions[].query.logs.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`). It controls which storage tier the widget reads from at render time.
+`dataModeType` lives **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dynamic.queryDefinitions[].query.<logs|spans|dataprime>.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`). It controls which storage tier the widget reads from at render time.
 
 | Value | When |
 |---|---|

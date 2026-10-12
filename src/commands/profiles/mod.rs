@@ -598,6 +598,62 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     Ok(())
 }
 
+// ── Refresh ───────────────────────────────────────────────────────────────────
+
+/// Re-run the OAuth browser login for an existing profile.
+///
+/// Only the stored token set is replaced - region, label, credential storage,
+/// output format, and default tier are read from the existing profile and
+/// written back untouched. Nothing is prompted for.
+pub async fn run_refresh(profile_name: String) -> Result<()> {
+    if !profile_file(&profile_name)?.exists() {
+        anyhow::bail!("Profile '{profile_name}' not found.");
+    }
+
+    let mut profile = load_profile(&profile_name)?;
+
+    if profile.auth != AuthKind::OAuth {
+        anyhow::bail!(
+            "Profile '{profile_name}' uses API key authentication, which does not expire.\n\
+             Run `cx profiles add {profile_name}` to change its credentials."
+        );
+    }
+
+    let (base_url, client_id) = profile.oauth_endpoint(&profile_name)?;
+
+    println!(
+        "Re-authenticating profile '{profile_name}' (region: {})\n",
+        profile.region
+    );
+    let tokens = oauth::browser_login(&base_url, &client_id).await?;
+    println!("Login successful!");
+
+    let storage_desc = match profile.credential_storage {
+        CredentialStorage::OsStore => {
+            // Full replacement, not a merge: `store_tokens_keyring` writes only
+            // the fields the IdP returned, so a stale refresh or id token from
+            // the previous session could otherwise survive a re-login. The
+            // clear and the write are a single checked keyring operation, so a
+            // failure here leaves the old token set in place rather than
+            // wiping a working session it cannot replace. API keys in the same
+            // entry are preserved.
+            oauth::replace_tokens_keyring(&profile_name, &tokens)?;
+            // Drop any inline tokens left over from a previous `file` setup.
+            profile.oauth_tokens = None;
+            "OS credential store"
+        }
+        CredentialStorage::File => {
+            profile.oauth_tokens = Some(oauth::tokens_to_stored(&tokens));
+            "profile file"
+        }
+    };
+
+    save_profile(&profile_name, &profile)?;
+
+    println!("OAuth tokens for '{profile_name}' refreshed in {storage_desc}.");
+    Ok(())
+}
+
 /// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
 ///
 /// Best-effort and silent: gated to known regions, and any failure is swallowed

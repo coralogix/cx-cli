@@ -99,6 +99,11 @@ about - additional profiles, profile labels, API-key auth, OS-keyring credential
 storage, and a non-default output format. See
 [Advanced configuration](configuration.md).
 
+OAuth access tokens are refreshed silently on every invocation. When the session
+has expired entirely, `cx profiles refresh <name>` re-runs the browser login for
+that profile and replaces only its tokens - every other setting is left
+untouched, and there are no prompts.
+
 ### 3. Ask it something
 
 The answer is the confirmation. If your agent comes back with your data, it is
@@ -263,7 +268,7 @@ These need no API credentials and are exempt from the risky-command confirmation
 | Command | Purpose |
 |---|---|
 | `cx init` | One-step onboarding: configure a profile and install the agent skills |
-| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx profiles` | Manage profiles: `list`, `add`, `refresh`, `delete`, `set-default` |
 | `cx skills` | Install or update the cx agent skills for coding agents: `install` |
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |

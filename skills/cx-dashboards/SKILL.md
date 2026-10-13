@@ -9,7 +9,7 @@ description: >
   deploy, update, replace, or modify a Coralogix dashboard, monitoring dashboard,
   or observability dashboard for a service, app, or pipeline.
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # Create Coralogix Dashboard
@@ -160,12 +160,15 @@ Write a markdown plan the user can approve before JSON generation:
 
 | Signal | Widget type |
 |---|---|
-| Single headline number (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
-| Breakdown across ≤8 categories | `pieChart` |
-| Change over time (rate, latency, count per bucket) | `lineChart` |
-| Top-N tables, last errors, per-entity listings | `dataTable` |
+| Single headline number from a metrics query (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
+| Breakdown across ≤8 categories from a metrics query | `pieChart` |
+| Change over time from a metrics query (rate, latency, count per bucket) | `lineChart` |
+| Top-N tables and listings, from any query (PromQL `topk` included) | `dynamic` with a `table` visualization (never legacy `dataTable`) |
+| Query over logs, spans or DataPrime | `dynamic`, visualization per the shape table |
 
 Don't use other widget types unless the user asks.
+
+**Logs, spans and DataPrime widgets are `dynamic`, and visualized.** Never emit the legacy `dataTable` widget, for any query: a PromQL top-N table is a `dynamic` widget with a `metrics` query and a `table` visualization. Use `definition.dynamic` and set its `visualization` to the chart the query's shape calls for; `table` is right only for raw rows the user wants to read. Alias every column in the query and map the visualization to the aliases. Shape-to-visualization table and templates: `references/widget-templates.md` → *Widget: dynamic*.
 
 Wait for the user to approve or adjust the plan before emitting JSON.
 
@@ -231,8 +234,8 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 
 ### Query syntax (dashboard-specific)
 - [ ] Every PromQL range vector in a metrics widget uses `[${__range}]` - never `[$__range]`, never `[5m]` (unless the panel is intentionally a sliding window).
-- [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dataTable). Omitted for `lineChart`.
-- [ ] DataPrime log queries use `$d.message` / `$l.applicationname` / unquoted severity enums (full rules: [`references/dataprime-reference.md`](references/dataprime-reference.md)).
+- [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dynamic table). Omitted for `lineChart`.
+- [ ] DataPrime log queries use `$d.<field>` / `$l.applicationname` / unquoted severity enums (full rules: [`references/dataprime-reference.md`](references/dataprime-reference.md)).
 - [ ] Every DataPrime widget query starts with `source logs` or `source spans` (dashboard widgets require the source prefix; Phase 5 verification strips it before handing the pipeline to `cx logs` / `cx spans`).
 - [ ] Success-rate denominators wrapped in `clamp_min(..., 1)`.
 - [ ] Histogram queries use the correct suffix (`_sum`, `_count`, `_bucket`).
@@ -241,12 +244,13 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 ### Structure
 - [ ] Each section has `id.value`, `rows`, and `options.custom`.
 - [ ] Each row has `id.value`, `appearance.height`, and `widgets`.
-- [ ] Each widget has a unique `id.value` and a `definition` with exactly one of `gauge` / `pieChart` / `lineChart` / `dataTable`.
+- [ ] Each widget has a unique `id.value` and a `definition` with exactly one of `gauge` / `pieChart` / `lineChart` / `dynamic`.
 - [ ] Every gauge has numeric `min` and `max`, and `min < max`.
 - [ ] Success-rate gauges use `thresholdType: "THRESHOLD_TYPE_ABSOLUTE"` with green at high values; error/DLQ gauges use red at high values.
-- [ ] "Total" / "stat" widgets are encoded as `gauge`, not as a stat type.
+- [ ] Metrics "Total" / "stat" widgets are encoded as `gauge`. A logs, spans or DataPrime total is a `dynamic` widget with a `stat` visualization.
 - [ ] Top-level `filters` includes each slicing dimension from Phase 2.
 - [ ] All IDs are freshly generated UUIDs, unique within the document.
+- [ ] Every `queryDisplaySettings[].queryId` equals the `id` of a `queryDefinitions[]` entry in the same widget. `cx dashboards check` accepts a mismatch, and the widget then renders empty.
 
 ### Content
 - [ ] Dashboard name is descriptive (`"<Service> - <Purpose>"`).

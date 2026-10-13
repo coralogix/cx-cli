@@ -8,7 +8,7 @@ For query-language rules:
 - Full DataPrime syntax: `cx-dataprime` skill → `skills/cx-dataprime/references/dataprime-reference.md`.
 - Full PromQL reference: `cx-metrics-query` skill → `skills/cx-metrics-query/references/promql-guidelines.md`.
 
-> A "stat" widget in Coralogix docs is actually emitted as `gauge` in the JSON. There is no separate stat type.
+> For metrics, a "stat" widget in Coralogix docs is emitted as a typed `gauge` in the JSON; there is no typed stat widget. For logs, spans or DataPrime, a stat is a `dynamic` widget with a `stat` visualization (see *Widget: dynamic*).
 
 > Every query below must pass live verification via `cx metrics query` / `cx logs` / `cx spans` before deploy - see SKILL.md Phase 5.
 
@@ -47,9 +47,9 @@ A row always looks like:
 
 ---
 
-## Widget: gauge (also used for "stat"/total)
+## Widget: gauge (metrics "stat"/total)
 
-Use for headline numbers: counts, percentages, success rates.
+Use for headline numbers from a metrics query: counts, percentages, success rates.
 
 Gauge `min` and `max` must be numeric and `min < max`. This API constraint applies even when `thresholdType` is `THRESHOLD_TYPE_ABSOLUTE`; use a real range such as `0..100` for percentages, a known capacity/limit when available, or a max above the highest threshold.
 
@@ -104,22 +104,13 @@ Gauge `min` and `max` must be numeric and `min < max`. This API constraint appli
 "thresholdType": "THRESHOLD_TYPE_ABSOLUTE"
 ```
 
-**For DataPrime-driven count (e.g. error log count):** swap `metrics.promqlQuery` for `dataprime.dataprimeQuery`:
-
-```json
-"query": {
-  "dataprime": {
-    "dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | agg count()"},
-    "filters": []
-  }
-}
-```
+**For a DataPrime-driven count (e.g. error log count):** don't put DataPrime in a typed `gauge`. Use a `dynamic` widget with a `stat` visualization ("One row, one number" under *Widget: dynamic*).
 
 ---
 
 ## Widget: pieChart
 
-Use for small-cardinality breakdowns (≤8 slices).
+Use for small-cardinality breakdowns (≤8 slices) from a metrics query.
 
 ```json
 {
@@ -159,7 +150,7 @@ Use for small-cardinality breakdowns (≤8 slices).
 
 ## Widget: lineChart
 
-Use for anything over time (rates, latencies, counts per bucket).
+Use for anything over time from a metrics query (rates, latencies, counts per bucket).
 
 ```json
 {
@@ -205,60 +196,120 @@ Use for anything over time (rates, latencies, counts per bucket).
 
 ---
 
-## Widget: dataTable
+## Widget: dynamic
 
-Use for top-N tables and raw log listings.
+The widget for tables and for charts over a logs, spans or DataPrime query. A `dynamic` widget has one or more `queryDefinitions` and a `visualization` that says how to draw the result. Never emit the legacy `dataTable` widget.
 
-**Metrics-backed table** (e.g. top accounts by count):
+- **Set `visualization` to the chart the data calls for.** A `table` visualization is the neutral default and is right only for raw rows the user wants to read. Do not ship a wall of tables.
+- **A visualization maps the query's output columns.** Alias every projection and aggregation in the query (`aggregate count() as error_count`) and reference the alias in the visualization's fields.
+- **A `queryDefinitions[].id` is a plain string**, unlike widget and row ids, which are `{"value": ...}`.
+- **Set `dataModeType`** on logs, spans and DataPrime queries to the tier the data lives in (see "Data mode" below). `DATA_MODE_TYPE_HIGH_UNSPECIFIED` in these templates is a placeholder. Metrics queries are not tiered.
 
-```json
-{
-  "id": {"value": "<uuid>"},
-  "title": "Top Accounts by Message Count",
-  "definition": {
-    "dataTable": {
-      "query": {
-        "metrics": {
-          "promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"},
-          "filters": [],
-          "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT",
-          "promqlQueryType": "PROM_QL_QUERY_TYPE_INSTANT"
-        }
-      },
-      "resultsPerPage": 10,
-      "rowStyle": "ROW_STYLE_UNSPECIFIED",
-      "columns": [
-        {"field": "account_id"},
-        {"field": "#value"}
-      ],
-      "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"
-    }
-  }
-}
-```
+| Query returns | `visualization` |
+|---|---|
+| One row, one number | `stat`, or `gauge` when there is a known good/bad range |
+| One number per category, not a top-N list | `verticalBars` or `horizontalBars` (long labels); `pieChart` only when the values add up to a whole (counts, never latencies, percentiles or rates) |
+| One number per time bucket | `timeSeriesLinesMulti` (`timeSeriesBars` for counts per bucket) |
+| Series per time bucket per category | `timeSeriesLinesMulti` with `categoryFields` set |
+| Raw log or span rows; top-N lists (`topk`, `top`, any ranked listing) | `table` |
 
-**DataPrime-backed table** (e.g. last errors):
+A top-N result is one number per category, so it also fits the bar and pie rows. It is still a `table`: set `visualization: {"table": ...}` explicitly rather than leaving the choice open. A pie of a top-N is wrong (the slices are not parts of a whole), and for latencies or rates it is meaningless.
+
+**Raw rows** (e.g. last errors). Show the log text as `$d as body`, the whole user data. Don't pick one field such as `$d.message`: the field name differs per team, and a missing field renders as `null`:
 
 ```json
 {
   "id": {"value": "<uuid>"},
   "title": "Last errors",
   "definition": {
-    "dataTable": {
-      "query": {
-        "dataprime": {
-          "dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc"},
-          "filters": []
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<uuid>",
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc | choose $m.timestamp as timestamp, $m.severity as severity, $l.subsystemname as service, $d as body"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
         }
-      },
-      "resultsPerPage": 100,
-      "rowStyle": "ROW_STYLE_ONE_LINE",
-      "columns": [
-        {"field": "$m.severity",  "width": 121},
-        {"field": "$m.timestamp", "width": 190},
-        {"field": "$d",           "width": 600}
       ],
-      "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"
+      "visualization": {"table": {"columns": [{"field": {"keypath": ["timestamp"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["severity"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["service"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["body"], "scope": "DATASET_SCOPE_USER_DATA"}}], "settings": {"rowStyle": "ROW_STYLE_ONE_LINE"}}}
+    }
+  }
+}
+```
+
+**Metrics-backed table** (e.g. top accounts by count). Every column of a PromQL result is `DATASET_SCOPE_USER_DATA`, labels included, and the value column is `value` (not the legacy `#value`). A column that does not match is silently dropped, and if none match the table ignores the stored order:
+
+```json
+{
+  "id": {"value": "<uuid>"},
+  "title": "Top Accounts by Message Count",
+  "definition": {
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<uuid>",
+          "query": {"metrics": {"promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"}, "promqlQueryType": "PROM_QL_QUERY_TYPE_INSTANT", "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT"}}
+        }
+      ],
+      "visualization": {"table": {"columns": [{"field": {"keypath": ["account_id"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["value"], "scope": "DATASET_SCOPE_USER_DATA"}}]}}
+    }
+  }
+}
+```
+
+**One number per time bucket** (error count over time). The field mapping sits in `queryDisplaySettings[]`, keyed by the query definition's `id` (`<query-uuid>`, the same value in both places). The single-query `timeSeriesLines` is deprecated:
+
+```json
+{
+  "id": {"value": "<uuid>"},
+  "title": "Errors over time",
+  "definition": {
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<query-uuid>",
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby roundTime($m.timestamp, 5m) as bucket aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+        }
+      ],
+      "visualization": {"timeSeriesLinesMulti": {"queryDisplaySettings": [{"queryId": "<query-uuid>", "temporalField": {"keypath": ["bucket"], "scope": "DATASET_SCOPE_USER_DATA"}, "valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}]}}
+    }
+  }
+}
+```
+
+**One number per category** (errors by service):
+
+```json
+{
+  "id": {"value": "<uuid>"},
+  "title": "Errors by service",
+  "definition": {
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<uuid>",
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby $l.subsystemname as service aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+        }
+      ],
+      "visualization": {"horizontalBars": {"categoryFields": [{"keypath": ["service"], "scope": "DATASET_SCOPE_USER_DATA"}], "valueField": {"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}}}
+    }
+  }
+}
+```
+
+**One row, one number** (total errors):
+
+```json
+{
+  "id": {"value": "<uuid>"},
+  "title": "Total errors",
+  "definition": {
+    "dynamic": {
+      "queryDefinitions": [
+        {
+          "id": "<uuid>",
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+        }
+      ],
+      "visualization": {"stat": {"valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}}
     }
   }
 }
@@ -326,7 +377,7 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 
 ## Tier (`dataModeType`) quick-reference
 
-`dataModeType` lives **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dataTable.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`). It controls which storage tier the widget reads from at render time.
+`dataModeType` lives **per widget** under the widget's definition (e.g. `definition.gauge.dataModeType`, `definition.dynamic.queryDefinitions[].query.<logs|spans|dataprime>.dataModeType`, `definition.lineChart.queryDefinitions[].dataModeType`). It controls which storage tier the widget reads from at render time.
 
 | Value | When |
 |---|---|

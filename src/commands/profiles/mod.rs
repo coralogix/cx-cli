@@ -74,17 +74,31 @@ const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
 /// Storage backend choices presented to the user. The first element is the
 /// label shown in the prompt; the second is the variant it maps to. Order
-/// matters: the first entry is the default cursor position.
+/// matters: the first entry is the default cursor on builds that have a
+/// keyring backend. Linux musl builds have none, so the cursor starts on `file`.
 const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] = &[
-    ("file", CredentialStorage::File),
     ("os-store (encrypted)", CredentialStorage::OsStore),
+    ("file", CredentialStorage::File),
 ];
+
+/// Cursor index for [`select_credential_storage`]. `os-store` is the default
+/// wherever a keyring backend is compiled in.
+fn credential_storage_starting_cursor() -> usize {
+    if cfg!(all(target_os = "linux", target_env = "musl")) {
+        CREDENTIAL_STORAGE_OPTIONS
+            .iter()
+            .position(|(_, storage)| *storage == CredentialStorage::File)
+            .unwrap_or(0)
+    } else {
+        0
+    }
+}
 
 fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
     let labels: Vec<&str> = CREDENTIAL_STORAGE_OPTIONS.iter().map(|(l, _)| *l).collect();
     let chosen = Select::new(prompt, labels)
         .with_help_message(help_message)
-        .with_starting_cursor(0)
+        .with_starting_cursor(credential_storage_starting_cursor())
         .prompt()?;
     Ok(CREDENTIAL_STORAGE_OPTIONS
         .iter()
@@ -423,12 +437,12 @@ pub struct AddArgs {
     /// when creating the first profile (that is when the global Olly setting is
     /// written). No prompt either way.
     pub disable_olly: bool,
-    /// Quick setup: on a terminal, skip the optional prompts (credential
-    /// storage, default output format, label) and apply sensible defaults
-    /// (file storage, JSON output, no label). The essential prompts — region,
-    /// browser login, and the first-profile safety questions — are unaffected.
-    /// Used by `cx init`'s guided flow; `cx profiles add` leaves it `false` and
-    /// keeps its full prompt set.
+    /// Quick setup: on a terminal, skip the optional prompts (default output
+    /// format, label) and apply sensible defaults (JSON output, no label).
+    /// Credential storage is still asked, with the OS store preselected.
+    /// Non-interactive runs store secrets in the profile file. Used by
+    /// `cx init`'s guided flow; `cx profiles add` leaves it `false` and keeps
+    /// its full prompt set.
     pub quick: bool,
 }
 
@@ -809,13 +823,14 @@ async fn configure_oauth(
     let tokens = oauth::browser_login(&base_url, &client_id).await?;
     println!("Login successful!");
 
-    // Quick setup and non-interactive runs store tokens in the profile file,
-    // matching the non-interactive API-key path (the OS store may itself prompt).
-    let credential_storage = if interactive && !quick {
+    // Interactive runs (including `cx init`) ask, with the OS store preselected.
+    // Non-interactive runs store tokens in the profile file so a script never
+    // blocks on a keychain dialog.
+    let credential_storage = if interactive {
         select_credential_storage(
             "Where should OAuth tokens be stored?",
-            "'file' stores tokens in the profile config (0600 perms). \
-             'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
+            "'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager). \
+             'file' stores tokens in the profile config (0600 perms).",
         )?
     } else {
         CredentialStorage::File
@@ -906,16 +921,12 @@ fn configure_api_key(
             .filter(|s| !s.is_empty())
     };
 
-    // Quick setup pins file storage without asking.
-    let credential_storage = if quick {
-        CredentialStorage::File
-    } else {
-        select_credential_storage(
-            "Where should API keys be stored?",
-            "'file' stores in profile config (0600 perms). \
-             'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager).",
-        )?
-    };
+    // Reached only on a terminal, including `cx init`. The OS store is preselected.
+    let credential_storage = select_credential_storage(
+        "Where should API keys be stored?",
+        "'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager). \
+         'file' stores in profile config (0600 perms).",
+    )?;
 
     let (profile, storage_desc) = match credential_storage {
         CredentialStorage::OsStore => {
@@ -980,6 +991,16 @@ mod tests {
                  not preselect it",
                 variant.as_str(),
             );
+        }
+    }
+
+    #[test]
+    fn credential_storage_default_is_os_store_when_keyring_is_available() {
+        let (_, storage) = CREDENTIAL_STORAGE_OPTIONS[credential_storage_starting_cursor()];
+        if cfg!(all(target_os = "linux", target_env = "musl")) {
+            assert_eq!(storage, CredentialStorage::File);
+        } else {
+            assert_eq!(storage, CredentialStorage::OsStore);
         }
     }
 

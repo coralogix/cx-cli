@@ -37,11 +37,13 @@ remains `~/.cx/`.
 ## Profiles
 
 `cx init` creates your first profile as part of setup — see the
-[Quick start](quickstart.md) for that walkthrough. This page covers what it wrote,
-and everything `init` deliberately does not ask about.
+[Quick start](quickstart.md) for that walkthrough. This page covers what it wrote.
 
-`cx init` defaults these rather than prompting: profile name `default`, `file`
-credential storage, no label, and `json` as the profile's default output format.
+`cx init` asks where to store the secret and preselects `os-store`. It defaults
+these rather than prompting: profile name `default`, no label, and `json` as the
+profile's default output format. A prompt-free run (no terminal) still writes
+`file`.
+
 Set `default_output_format` in the profile TOML (or pass `-o text`) if you would
 rather read the output by eye than hand it to an agent.
 
@@ -85,7 +87,7 @@ At the prompts, in order:
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
 5. **Label** — an optional tag to group or identify profiles (e.g. `production`).
-6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `file` (default) saves credentials in the profile TOML with `0600` permissions; `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux).
+6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `os-store` (preselected) uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). `file` saves credentials in the profile TOML with `0600` permissions.
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
@@ -151,7 +153,7 @@ For environments with no profile file at all, see
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend - either inline in the profile TOML (`file`, the default) or in the OS keyring (`os_store`).
+- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend. The prompt preselects the OS keyring (`os_store`). `file` writes them inline in the profile TOML, and that is also what a prompt-free run uses.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
 - If the refresh token is also expired, `cx` exits with an actionable message:
 
@@ -303,7 +305,7 @@ See [TOON output format](toon-output.md) for the `toon` format specification.
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` (the default) the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent.
+Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. The setup prompt preselects `"os_store"`. A profile that omits the key is read as `"file"`.
 
 ### Common fields
 
@@ -323,7 +325,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 | `oauth_base_url` | Rarely | Overrides the base URL for OpenID discovery. Defaults to `region.api_endpoint()`. |
 | `oauth_tokens` | `credential_storage = "file"` | Cached access/refresh/id tokens and expiry. Absent when tokens live in the OS keyring. |
 
-### Example: OAuth profile (known region, file storage - default)
+### Example: OAuth profile (known region, file storage)
 
 ```toml
 auth = "oauth"

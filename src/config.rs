@@ -392,6 +392,7 @@ pub struct ResolvedConfig {
     /// Default storage tier for DataPrime queries, resolved from the profile
     /// config. Falls back to `Archive` when the profile does not specify one.
     pub default_tier: crate::Tier,
+    pub verbose: bool,
     /// Explicit console base URL override from `Profile::console_url`, with
     /// any trailing slash trimmed. Takes precedence over the automatic
     /// `GET /identity/whoami`-based resolution.
@@ -520,6 +521,7 @@ async fn resolve_single(
     profile_name: &str,
     api_key_override: Option<&str>,
     region_override: Option<&str>,
+    verbose: bool,
 ) -> Result<ResolvedConfig> {
     if !profile_file(profile_name)?.exists() {
         if let (Some(key), Some(region)) = (api_key_override, region_override) {
@@ -530,6 +532,7 @@ async fn resolve_single(
                 api_key: key.to_string(),
                 auth_kind: AuthKind::ApiKey,
                 default_tier: crate::Tier::Archive,
+                verbose,
                 console_url: None,
                 credentials_overridden: true,
             });
@@ -609,6 +612,7 @@ async fn resolve_single(
         api_key: bearer,
         auth_kind,
         default_tier: profile.default_tier.unwrap_or(crate::Tier::Archive),
+        verbose,
         console_url: profile
             .console_url
             .as_deref()
@@ -624,10 +628,11 @@ pub async fn resolve(
     profile_override: Option<&str>,
     api_key_override: Option<&str>,
     region_override: Option<&str>,
+    verbose: bool,
 ) -> Result<ResolvedConfig> {
     let config = load_config()?;
     let name = profile_override.unwrap_or(&config.default_profile);
-    resolve_single(name, api_key_override, region_override).await
+    resolve_single(name, api_key_override, region_override, verbose).await
 }
 
 /// Resolve one or more named profiles into a list of `ResolvedConfig` values.
@@ -639,16 +644,17 @@ pub async fn resolve_all(
     profiles: &[String],
     api_key_override: Option<&str>,
     region_override: Option<&str>,
+    verbose: bool,
 ) -> Result<Vec<ResolvedConfig>> {
     if profiles.is_empty() {
         let cfg = load_config()?;
         return Ok(vec![
-            resolve_single(&cfg.default_profile, api_key_override, region_override).await?,
+            resolve_single(&cfg.default_profile, api_key_override, region_override, verbose).await?,
         ]);
     }
     let mut results = Vec::with_capacity(profiles.len());
     for name in profiles {
-        results.push(resolve_single(name, api_key_override, region_override).await?);
+        results.push(resolve_single(name, api_key_override, region_override, verbose).await?);
     }
     Ok(results)
 }

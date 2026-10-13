@@ -235,7 +235,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
 }
 ```
 
-**Metrics-backed table** (e.g. top accounts by count):
+**Metrics-backed table** (e.g. top accounts by count). Every column of a PromQL result is `DATASET_SCOPE_USER_DATA`, labels included, and the value column is `value` (not the legacy `#value`). A column that does not match is silently dropped, and if none match the table ignores the stored order:
 
 ```json
 {
@@ -249,7 +249,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
           "query": {"metrics": {"promqlQuery": {"value": "sum by (account_id) (increase(foo_total[${__range}]))"}, "promqlQueryType": "PROM_QL_QUERY_TYPE_INSTANT", "editorMode": "METRICS_QUERY_EDITOR_MODE_TEXT"}}
         }
       ],
-      "visualization": {"table": {"columns": [{"field": {"keypath": ["account_id"], "scope": "DATASET_SCOPE_LABEL"}}, {"field": {"keypath": ["#value"], "scope": "DATASET_SCOPE_USER_DATA"}}]}}
+      "visualization": {"table": {"columns": [{"field": {"keypath": ["account_id"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["value"], "scope": "DATASET_SCOPE_USER_DATA"}}]}}
     }
   }
 }

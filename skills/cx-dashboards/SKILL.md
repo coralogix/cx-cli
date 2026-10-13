@@ -161,8 +161,8 @@ Write a markdown plan the user can approve before JSON generation:
 | Signal | Widget type |
 |---|---|
 | Single headline number from a metrics query (count, % success, totals) | `gauge` (Coralogix calls this "stat") |
-| Breakdown across ≤8 categories | `pieChart` |
-| Change over time (rate, latency, count per bucket) | `lineChart` |
+| Breakdown across ≤8 categories from a metrics query | `pieChart` |
+| Change over time from a metrics query (rate, latency, count per bucket) | `lineChart` |
 | Top-N tables and listings, from any query (PromQL `topk` included) | `dynamic` with a `table` visualization (never legacy `dataTable`) |
 | Query over logs, spans or DataPrime | `dynamic`, visualization per the shape table |
 
@@ -235,7 +235,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 ### Query syntax (dashboard-specific)
 - [ ] Every PromQL range vector in a metrics widget uses `[${__range}]` - never `[$__range]`, never `[5m]` (unless the panel is intentionally a sliding window).
 - [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for single-value widgets (gauge, pieChart, dynamic table). Omitted for `lineChart`.
-- [ ] DataPrime log queries use `$d.message` / `$l.applicationname` / unquoted severity enums (full rules: [`references/dataprime-reference.md`](references/dataprime-reference.md)).
+- [ ] DataPrime log queries use `$d.<field>` / `$l.applicationname` / unquoted severity enums (full rules: [`references/dataprime-reference.md`](references/dataprime-reference.md)).
 - [ ] Every DataPrime widget query starts with `source logs` or `source spans` (dashboard widgets require the source prefix; Phase 5 verification strips it before handing the pipeline to `cx logs` / `cx spans`).
 - [ ] Success-rate denominators wrapped in `clamp_min(..., 1)`.
 - [ ] Histogram queries use the correct suffix (`_sum`, `_count`, `_bucket`).

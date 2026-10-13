@@ -110,7 +110,7 @@ Gauge `min` and `max` must be numeric and `min < max`. This API constraint appli
 
 ## Widget: pieChart
 
-Use for small-cardinality breakdowns (≤8 slices).
+Use for small-cardinality breakdowns (≤8 slices) from a metrics query.
 
 ```json
 {
@@ -150,7 +150,7 @@ Use for small-cardinality breakdowns (≤8 slices).
 
 ## Widget: lineChart
 
-Use for anything over time (rates, latencies, counts per bucket).
+Use for anything over time from a metrics query (rates, latencies, counts per bucket).
 
 ```json
 {

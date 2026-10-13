@@ -226,10 +226,10 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
       "queryDefinitions": [
         {
           "id": "<uuid>",
-          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc | choose $m.timestamp as timestamp, $m.severity as severity, $l.subsystemname as service, $d as body"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
         }
       ],
-      "visualization": {"table": {"columns": [{"field": {"keypath": ["timestamp"], "scope": "DATASET_SCOPE_METADATA"}}, {"field": {"keypath": ["severity"], "scope": "DATASET_SCOPE_METADATA"}}, {"field": {"keypath": ["logRecord", "body"], "scope": "DATASET_SCOPE_USER_DATA"}}], "settings": {"rowStyle": "ROW_STYLE_ONE_LINE"}}}
+      "visualization": {"table": {"columns": [{"field": {"keypath": ["timestamp"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["severity"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["service"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["body"], "scope": "DATASET_SCOPE_USER_DATA"}}], "settings": {"rowStyle": "ROW_STYLE_ONE_LINE"}}}
     }
   }
 }

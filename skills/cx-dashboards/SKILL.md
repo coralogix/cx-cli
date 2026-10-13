@@ -250,6 +250,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 - [ ] Metrics "Total" / "stat" widgets are encoded as `gauge`. A logs, spans or DataPrime total is a `dynamic` widget with a `stat` visualization.
 - [ ] Top-level `filters` includes each slicing dimension from Phase 2.
 - [ ] All IDs are freshly generated UUIDs, unique within the document.
+- [ ] Every `queryDisplaySettings[].queryId` equals the `id` of a `queryDefinitions[]` entry in the same widget. `cx dashboards check` accepts a mismatch, and the widget then renders empty.
 
 ### Content
 - [ ] Dashboard name is descriptive (`"<Service> - <Purpose>"`).

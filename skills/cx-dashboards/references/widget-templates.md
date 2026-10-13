@@ -215,7 +215,7 @@ The widget for tables and for charts over a logs, spans or DataPrime query. A `d
 
 A top-N result is one number per category, so it also fits the bar and pie rows. It is still a `table`: set `visualization: {"table": ...}` explicitly rather than leaving the choice open. A pie of a top-N is wrong (the slices are not parts of a whole), and for latencies or rates it is meaningless.
 
-**Raw rows** (e.g. last errors):
+**Raw rows** (e.g. last errors). Show the log text as `$d as body`, the whole user data. Don't pick one field such as `$d.message`: the field name differs per team, and a missing field renders as `null`:
 
 ```json
 {

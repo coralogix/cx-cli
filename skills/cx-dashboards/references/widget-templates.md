@@ -8,7 +8,7 @@ For query-language rules:
 - Full DataPrime syntax: `cx-dataprime` skill → `skills/cx-dataprime/references/dataprime-reference.md`.
 - Full PromQL reference: `cx-metrics-query` skill → `skills/cx-metrics-query/references/promql-guidelines.md`.
 
-> A "stat" widget in Coralogix docs is actually emitted as `gauge` in the JSON. There is no separate stat type.
+> For metrics, a "stat" widget in Coralogix docs is emitted as a typed `gauge` in the JSON; there is no typed stat widget. For logs, spans or DataPrime, a stat is a `dynamic` widget with a `stat` visualization (see *Widget: dynamic*).
 
 > Every query below must pass live verification via `cx metrics query` / `cx logs` / `cx spans` before deploy - see SKILL.md Phase 5.
 
@@ -47,9 +47,9 @@ A row always looks like:
 
 ---
 
-## Widget: gauge (also used for "stat"/total)
+## Widget: gauge (metrics "stat"/total)
 
-Use for headline numbers: counts, percentages, success rates.
+Use for headline numbers from a metrics query: counts, percentages, success rates.
 
 Gauge `min` and `max` must be numeric and `min < max`. This API constraint applies even when `thresholdType` is `THRESHOLD_TYPE_ABSOLUTE`; use a real range such as `0..100` for percentages, a known capacity/limit when available, or a max above the highest threshold.
 

@@ -51,9 +51,10 @@ fn dashboards_delete_nonexistent() {
     }
     // Attempting to delete a non-existent dashboard - the CLI should at least
     // parse the command and attempt the API call (we don't assert success since
-    // the resource won't exist).
+    // the resource won't exist). Id must be 21 characters so local validation
+    // does not reject it before the "Deleting..." status line.
     let output = harness::cx()
-        .args(["dashboards", "delete", "nonexistent-id-000", "--yes"])
+        .args(["dashboards", "delete", "zzzzzzzzzzzzzzzzzzzzz", "--yes"])
         .output()
         .expect("failed to execute cx");
     let stderr = String::from_utf8_lossy(&output.stderr);

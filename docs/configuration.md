@@ -371,7 +371,9 @@ region = "eu1"
 label = "production"
 ```
 
-The API key is stored in the OS keyring under service `cx-cli`, profile name as the account.
+Secrets are stored in separate OS-keyring entries scoped to the profile. This
+keeps OAuth token sets compatible with Windows Credential Manager's per-entry
+size limit.
 
 ### Example: API key profile (file, legacy)
 

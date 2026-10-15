@@ -13,9 +13,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-  APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-  APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
 permissions:
   contents: write
@@ -80,7 +77,7 @@ jobs:
 
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 88f49ff79e777bef6d3564531636ee4d3cc2f8d2
 
       - name: Build (cross)
         if: matrix.cross
@@ -92,6 +89,10 @@ jobs:
 
       - name: Check Apple signing configuration
         if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           if [ -z "$APPLE_CERTIFICATE_P12_BASE64" ] ||
              [ -z "$APPLE_CERTIFICATE_PASSWORD" ] ||
@@ -102,6 +103,9 @@ jobs:
 
       - name: Import Apple signing certificate
         if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/cx-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
@@ -129,6 +133,8 @@ jobs:
 
       - name: Sign macOS binary
         if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           BINARY="target/${{ matrix.target }}/release/cx"
           codesign \

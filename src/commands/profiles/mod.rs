@@ -630,9 +630,7 @@ pub async fn run_refresh(profile_name: String) -> Result<()> {
             "Profile '{profile_name}' not found. Run `cx profiles add {profile_name}` to set it up."
         );
     }
-    let team = crate::config::refresh_oauth_profile(&profile_name).await?;
-    println!("Signed in to team '{team}'. Profile '{profile_name}' is ready.");
-    Ok(())
+    crate::config::refresh_oauth_profile(&profile_name).await
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────

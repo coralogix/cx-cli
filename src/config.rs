@@ -748,8 +748,8 @@ fn keep_signed_in_tokens(
 
 /// `cx profiles refresh <name>`: sign an OAuth profile in again without
 /// reconfiguring it. Region, storage, output format and label stay as they
-/// are; only the tokens (and the cached team) change. Returns the team name.
-pub async fn refresh_oauth_profile(profile_name: &str) -> Result<String> {
+/// are; only the tokens (and the cached team) change.
+pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
     let mut profile = load_profile(profile_name)?;
     if profile.auth != AuthKind::OAuth {
         anyhow::bail!(
@@ -763,7 +763,9 @@ pub async fn refresh_oauth_profile(profile_name: &str) -> Result<String> {
     remember_signed_in_team(&mut profile, &whoami);
     keep_signed_in_tokens(profile_name, &mut profile, &tokens)?;
     save_profile(profile_name, &profile)?;
-    Ok(whoami.team_name.unwrap_or_else(|| "this team".to_string()))
+    let team = whoami.team_name.as_deref().unwrap_or("this team");
+    println!("Signed in to team '{team}'. Profile '{profile_name}' is ready.");
+    Ok(())
 }
 
 /// Resolve a single named profile, respecting optional CLI overrides.

@@ -5,7 +5,20 @@ Everything needed is on this page and in the CLI's own `--help` output.
 
 ## 1. Install
 
-Ask the user which install method they prefer:
+**If `cx` is already installed** (`cx --version` succeeds), upgrade it instead
+of skipping this step — older versions can't complete setup. Use the method it
+was installed with (a `cx` under the Homebrew prefix came from Homebrew):
+
+```bash
+brew upgrade coralogix/tap/cx                  # Homebrew
+curl -fsSL https://get.coralogix.dev/cli | sh  # install script: re-run it
+```
+
+Then continue to step 2 — **always run `cx init`, even when `cx` is already
+configured**: it keeps the existing profile and links this setup to the
+user's Coralogix account.
+
+Otherwise, ask the user which install method they prefer:
 
 **Homebrew** (macOS):
 

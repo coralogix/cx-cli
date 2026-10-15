@@ -600,9 +600,12 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
 /// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
 ///
-/// Best-effort and silent: gated to known regions, and any failure is swallowed
-/// so it never affects the outcome of `cx profiles add`.
-async fn report_onboarding(name: &str) {
+/// Best-effort: gated to known regions, and any failure is swallowed so it
+/// never affects the outcome of `cx profiles add` / `cx init`. The one failure
+/// worth surfacing is a 403: the service only accepts user identities, so a
+/// team-API-key profile can never be recorded and the in-app "waiting for
+/// connection" screen would hang without telling anyone why.
+pub(crate) async fn report_onboarding(name: &str) {
     let Ok(cfg) = crate::config::resolve(Some(name), None, None).await else {
         return;
     };
@@ -615,11 +618,29 @@ async fn report_onboarding(name: &str) {
     // Bound the request: the shared client carries no request timeout, so a
     // gateway that accepts the connection but stalls the response would
     // otherwise hang setup. A stall is swallowed like any other failure.
-    let _ = tokio::time::timeout(
+    let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         api::report_onboarded(&client),
     )
     .await;
+    if let Ok(Err(error)) = result {
+        if is_permission_error(&error) {
+            eprintln!(
+                "note: profile '{name}' signs in with an API key, so this setup isn't linked \
+                 to your Coralogix user. To link it, sign in as yourself with \
+                 `cx profiles add {name} --oauth --force`."
+            );
+        }
+    }
+}
+
+/// Whether an onboarding-report failure is the service's 403 for a non-user
+/// (team API key / service token) identity.
+fn is_permission_error(error: &anyhow::Error) -> bool {
+    matches!(
+        error.downcast_ref::<crate::error::CxError>(),
+        Some(crate::error::CxError::Permission(_))
+    )
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -966,6 +987,21 @@ fn configure_api_key(
 mod tests {
     use super::*;
     use clap::ValueEnum;
+
+    /// Only the service's 403 (non-user identity) earns the API-key note; any
+    /// other onboarding failure stays silent.
+    #[test]
+    fn only_a_403_is_a_permission_error() {
+        let forbidden = anyhow::Error::from(crate::error::CxError::Permission("no".into()));
+        assert!(is_permission_error(&forbidden));
+
+        let not_found = anyhow::Error::from(crate::error::CxError::Api {
+            status: 404,
+            message: "not deployed".into(),
+        });
+        assert!(!is_permission_error(&not_found));
+        assert!(!is_permission_error(&anyhow::anyhow!("network down")));
+    }
 
     /// The interactive picker seeds its cursor by matching `OutputFormat::as_str()`
     /// against `OUTPUT_FORMATS`. If a canonical variant string is missing from the

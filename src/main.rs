@@ -811,6 +811,17 @@ Examples:
         #[arg(long)]
         disable_olly: bool,
     },
+    /// Sign an OAuth profile in again, keeping its settings.
+    ///
+    /// Opens the browser sign-in with the profile's team preselected and saves
+    /// the new tokens only when the sign-in is for that same team. Region,
+    /// credential storage, output format and label are not changed. To change
+    /// those, use `cx profiles add <name>`.
+    Refresh {
+        /// Profile name to sign in again.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+    },
     /// Delete a profile and its stored credentials.
     Delete {
         /// Profile name to delete.
@@ -3038,6 +3049,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3133,6 +3145,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };

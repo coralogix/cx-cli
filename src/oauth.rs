@@ -678,7 +678,7 @@ impl std::fmt::Display for ReauthRequired {
         write!(
             f,
             "{detail} for profile '{profile_name}'.\n\
-             Run `cx profiles add {profile_name}` to re-authenticate."
+             Run `cx profiles refresh {profile_name}` to sign in again."
         )
     }
 }

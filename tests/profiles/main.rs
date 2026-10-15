@@ -694,11 +694,65 @@ expiry = 1
         "resolution error must be printed once: {stderr}"
     );
     assert!(
-        stderr.contains("cx profiles add oauth-expired"),
+        stderr.contains("cx profiles refresh oauth-expired"),
         "stderr should name the profile to re-authenticate: {stderr}"
     );
     assert!(
         !stderr.contains("Error:") && !stderr.contains("set up credentials"),
         "stderr must not repeat the error or add a second instruction: {stderr}"
+    );
+}
+
+// ── Refresh ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn refresh_is_listed_in_profiles_help() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "--help"])
+        .output()
+        .expect("failed to run cx");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "help should succeed: {stdout}");
+    assert!(
+        stdout.contains("refresh") && stdout.contains("Sign an OAuth profile in again"),
+        "profiles help should list refresh: {stdout}"
+    );
+}
+
+#[test]
+fn refresh_missing_profile_points_to_add() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "nope"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "should fail, stderr: {stderr}");
+    assert!(
+        stderr.contains("Profile 'nope' not found") && stderr.contains("cx profiles add nope"),
+        "stderr should say the profile is missing and how to create it: {stderr}"
+    );
+}
+
+#[test]
+fn refresh_api_key_profile_is_rejected_and_left_unchanged() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "keyed");
+    let before = load_profile_toml(&tmp, "keyed");
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "keyed"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "should fail, stderr: {stderr}");
+    assert!(
+        stderr.contains("uses an API key") && stderr.contains("cx profiles add keyed"),
+        "stderr should explain there is no sign-in to refresh: {stderr}"
+    );
+    assert_eq!(
+        load_profile_toml(&tmp, "keyed"),
+        before,
+        "an API-key profile must not be rewritten"
     );
 }

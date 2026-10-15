@@ -527,11 +527,11 @@ struct TeamConflict {
     /// What mismatched, e.g. "Signed in to team 'other' (id 99), but profile
     /// 'default' was last used with team 'c4c' (id 12)."
     explanation: String,
-    /// The team the retry (or `cx profiles add`) should pick, as a display
+    /// The team the retry (or `cx profiles refresh`) should pick, as a display
     /// label: "team 'c4c' (id 12)", "team id 12", or a console URL.
     select: String,
     /// The give-up instruction: tokens were not saved, re-run `cx profiles
-    /// add` and pick `select`.
+    /// refresh` and pick `select`.
     recovery: String,
 }
 
@@ -552,7 +552,7 @@ fn reauth_team_conflict(
     let conflict = |explanation: String, select: String| TeamConflict {
         explanation,
         recovery: format!(
-            "Tokens were not saved. Run `cx profiles add {profile_name}` and select {select}."
+            "Tokens were not saved. Run `cx profiles refresh {profile_name}` and select {select}."
         ),
         select,
     };
@@ -599,7 +599,7 @@ fn reauth_team_conflict(
     }
 }
 
-/// Label for the team `cx profiles add` should reopen. The browser picker
+/// Label for the team a re-login (or `cx profiles refresh`) should pick. The browser picker
 /// lists names; the id (or console URL) is only the fallback when this
 /// profile was cached before the name was stored.
 fn cached_display_name(profile: &Profile) -> Option<&str> {
@@ -656,6 +656,114 @@ fn remember_signed_in_team(profile: &mut Profile, whoami: &crate::identity::Whoa
         changed = true;
     }
     changed
+}
+
+/// The OAuth server and client ID an OAuth profile signs in with.
+fn oauth_login_target(profile_name: &str, profile: &Profile) -> Result<(String, String)> {
+    let region_name = profile.region.to_string();
+    let base_url = profile
+        .oauth_base_url
+        .clone()
+        .unwrap_or_else(|| profile.region.api_endpoint().to_string());
+    let client_id = profile
+        .oauth_client_id
+        .clone()
+        .or_else(|| oauth::client_id_for_region(&region_name).map(str::to_string))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No OAuth client ID configured for profile '{profile_name}' \
+                 (region: {region_name}).\n\
+                 Run `cx profiles add {profile_name}` to reconfigure."
+            )
+        })?;
+    Ok((base_url, client_id))
+}
+
+/// Browser sign-in for an existing OAuth profile. The consent page shows only
+/// the team this profile last used, preselected. A sign-in to a different team
+/// is refused, and the user is offered another browser round. With
+/// `region_overridden`, the sign-in is for another endpoint, so it is neither
+/// narrowed to nor checked against this profile's team.
+async fn sign_in_to_profile_team(
+    profile_name: &str,
+    profile: &Profile,
+    base_url: &str,
+    client_id: &str,
+    region_overridden: bool,
+) -> Result<(oauth::TokenResponse, crate::identity::Whoami)> {
+    let mut login = oauth::LoginOptions {
+        force_account_selection: false,
+        team_id: if region_overridden {
+            None
+        } else {
+            profile.cached_team_id
+        },
+    };
+    loop {
+        let tokens = oauth::browser_login(base_url, client_id, login.clone()).await?;
+        let client =
+            crate::api_client::CxClient::new(profile.region.api_endpoint(), &tokens.access_token)?;
+        let whoami = crate::identity::verify_identity(&client).await.context(
+            "Could not confirm which team this sign-in belongs to, so the new tokens were not saved.",
+        )?;
+        if region_overridden {
+            return Ok((tokens, whoami));
+        }
+        let Some(conflict) = reauth_team_conflict(profile_name, profile, &whoami) else {
+            return Ok((tokens, whoami));
+        };
+        eprintln!("{}", conflict.explanation);
+        let retry =
+            inquire::Confirm::new(&format!("Sign in again and select {}?", conflict.select))
+                .with_default(true)
+                .prompt()
+                .unwrap_or(false);
+        if !retry {
+            anyhow::bail!("{}", conflict.recovery);
+        }
+        // The browser still holds the wrong team's SSO session; ask the IdP
+        // to show the picker again.
+        login.force_account_selection = true;
+    }
+}
+
+/// Store new sign-in tokens on the profile's credential backend and return the
+/// access token. The OS keyring is written here; for file storage the tokens
+/// go on `profile`, and the caller saves the profile.
+fn keep_signed_in_tokens(
+    profile_name: &str,
+    profile: &mut Profile,
+    tokens: &oauth::TokenResponse,
+) -> Result<String> {
+    match profile.credential_storage {
+        CredentialStorage::OsStore => {
+            oauth::store_tokens_keyring(profile_name, tokens)?;
+        }
+        CredentialStorage::File => {
+            profile.oauth_tokens = Some(oauth::tokens_to_stored(tokens));
+        }
+    }
+    Ok(tokens.access_token.clone())
+}
+
+/// `cx profiles refresh <name>`: sign an OAuth profile in again without
+/// reconfiguring it. Region, storage, output format and label stay as they
+/// are; only the tokens (and the cached team) change. Returns the team name.
+pub async fn refresh_oauth_profile(profile_name: &str) -> Result<String> {
+    let mut profile = load_profile(profile_name)?;
+    if profile.auth != AuthKind::OAuth {
+        anyhow::bail!(
+            "Profile '{profile_name}' uses an API key, so there is no sign-in to refresh.\n\
+             Run `cx profiles add {profile_name}` to change its credentials."
+        );
+    }
+    let (base_url, client_id) = oauth_login_target(profile_name, &profile)?;
+    let (tokens, whoami) =
+        sign_in_to_profile_team(profile_name, &profile, &base_url, &client_id, false).await?;
+    remember_signed_in_team(&mut profile, &whoami);
+    keep_signed_in_tokens(profile_name, &mut profile, &tokens)?;
+    save_profile(profile_name, &profile)?;
+    Ok(whoami.team_name.unwrap_or_else(|| "this team".to_string()))
 }
 
 /// Resolve a single named profile, respecting optional CLI overrides.
@@ -736,22 +844,7 @@ async fn resolve_single(
         }
         AuthKind::OAuth => {
             debug_assert!(api_key_override.is_none());
-            let region_name = profile.region.to_string();
-            let base_url = profile
-                .oauth_base_url
-                .clone()
-                .unwrap_or_else(|| profile.region.api_endpoint().to_string());
-            let client_id = profile
-                .oauth_client_id
-                .clone()
-                .or_else(|| oauth::client_id_for_region(&region_name).map(str::to_string))
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "No OAuth client ID configured for profile '{profile_name}' \
-                         (region: {region_name}).\n\
-                         Run `cx profiles add {profile_name}` to reconfigure."
-                    )
-                })?;
+            let (base_url, client_id) = oauth_login_target(profile_name, &profile)?;
             let storage = profile.credential_storage;
             let resolved = oauth::resolve_token(
                 profile_name,
@@ -771,83 +864,31 @@ async fn resolve_single(
                     // browser, keep the tokens only when they are for the same
                     // team, and continue this command. A wrong-team sign-in
                     // offers another browser round instead of stopping at
-                    // "run cx profiles add".
+                    // "run cx profiles refresh".
                     eprintln!(
                         "OAuth session for profile '{profile_name}' expired. Sign in to continue."
                     );
-                    // Ask the consent page to show only the team this
-                    // profile last used, preselected, so the re-login lands
-                    // back in it. A `--region` override is for another
-                    // endpoint, so its sign-in is not narrowed to this
-                    // profile's team.
-                    let mut login = oauth::LoginOptions {
-                        force_account_selection: false,
-                        team_id: if region_overridden {
-                            None
-                        } else {
-                            profile.cached_team_id
-                        },
-                    };
-                    let (tokens, whoami) = loop {
-                        let tokens =
-                            oauth::browser_login(&base_url, &client_id, login.clone()).await?;
-                        let client = crate::api_client::CxClient::new(
-                            profile.region.api_endpoint(),
-                            &tokens.access_token,
-                        )?;
-                        let whoami = crate::identity::verify_identity(&client).await.context(
-                            "Could not confirm which team this sign-in belongs to, so the new tokens were not saved.",
-                        )?;
-                        // A `--region` override talks to a different endpoint
-                        // for this command. Its team must not be checked
-                        // against or written onto the profile.
-                        if region_overridden {
-                            break (tokens, whoami);
-                        }
-                        let Some(conflict) = reauth_team_conflict(profile_name, &profile, &whoami)
-                        else {
-                            break (tokens, whoami);
-                        };
-                        eprintln!("{}", conflict.explanation);
-                        let retry = inquire::Confirm::new(&format!(
-                            "Sign in again and select {}?",
-                            conflict.select
-                        ))
-                        .with_default(true)
-                        .prompt()
-                        .unwrap_or(false);
-                        if !retry {
-                            anyhow::bail!("{}", conflict.recovery);
-                        }
-                        // The browser still holds the wrong team's SSO
-                        // session; ask the IdP to show the picker again.
-                        login.force_account_selection = true;
-                    };
-                    if !region_overridden {
-                        remember_signed_in_team(&mut profile, &whoami);
-                    }
+                    let (tokens, whoami) = sign_in_to_profile_team(
+                        profile_name,
+                        &profile,
+                        &base_url,
+                        &client_id,
+                        region_overridden,
+                    )
+                    .await?;
                     let team = whoami.team_name.as_deref().unwrap_or("this team");
                     eprintln!("Signed in to team '{team}'. Continuing.");
                     // A browser login under `--region` is for this command's
                     // endpoint. Keep those tokens in memory on both backends.
                     // A silent refresh still persists, so a rotated refresh
                     // token is not discarded.
-                    let (bearer, refreshed) = if region_overridden {
-                        (tokens.access_token, None)
+                    let bearer = if region_overridden {
+                        tokens.access_token
                     } else {
-                        match storage {
-                            CredentialStorage::OsStore => {
-                                oauth::store_tokens_keyring(profile_name, &tokens)?;
-                                (tokens.access_token, None)
-                            }
-                            CredentialStorage::File => {
-                                let stored = oauth::tokens_to_stored(&tokens);
-                                let access = stored.access_token.clone();
-                                (access, Some(stored))
-                            }
-                        }
+                        remember_signed_in_team(&mut profile, &whoami);
+                        keep_signed_in_tokens(profile_name, &mut profile, &tokens)?
                     };
-                    (bearer, refreshed, !region_overridden)
+                    (bearer, None, !region_overridden)
                 }
                 Err(error) => return Err(error),
             };
@@ -1661,7 +1702,7 @@ api_key = "mykey"
         assert!(msg.contains("id 99"), "{msg}");
         assert!(msg.contains("team id 12"), "{msg}");
         assert!(
-            msg.contains("Run `cx profiles add default` and select team id 12."),
+            msg.contains("Run `cx profiles refresh default` and select team id 12."),
             "{msg}"
         );
     }
@@ -1704,7 +1745,7 @@ api_key = "mykey"
             .unwrap()
             .to_string();
         assert!(
-            msg.contains("Run `cx profiles add default` and select team 'c4c' (id 12)."),
+            msg.contains("Run `cx profiles refresh default` and select team 'c4c' (id 12)."),
             "{msg}"
         );
         assert!(msg.contains("last used with team 'c4c' (id 12)"), "{msg}");

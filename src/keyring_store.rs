@@ -3,69 +3,112 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 
 const SERVICE_NAME: &str = "cx-cli";
+const SECRET_NAMES: &[&str] = &[
+    "api_key",
+    "oauth_access_token",
+    "oauth_refresh_token",
+    "oauth_id_token",
+    "oauth_token_expiry",
+];
 
-/// All secrets for a profile, stored as a single JSON blob in one keyring entry.
+/// Legacy keyring layout: all secrets for a profile in one JSON blob.
+///
+/// This is retained only to read and remove credentials written by older
+/// versions. Windows Credential Manager limits a credential blob to 2,560
+/// bytes, which is not enough for a complete OAuth token set.
 type SecretMap = HashMap<String, String>;
 
-fn load_map(profile: &str) -> Result<Option<SecretMap>> {
-    let entry =
-        keyring::Entry::new(SERVICE_NAME, profile).context("Failed to create keyring entry")?;
+fn legacy_entry(profile: &str) -> Result<keyring::Entry> {
+    keyring::Entry::new(SERVICE_NAME, profile).context("Failed to create legacy keyring entry")
+}
+
+fn secret_entry(profile: &str, key_name: &str) -> Result<keyring::Entry> {
+    let service = format!("{SERVICE_NAME}:{profile}");
+    keyring::Entry::new(&service, key_name).context("Failed to create keyring entry")
+}
+
+fn load_legacy_map(profile: &str) -> Result<Option<SecretMap>> {
+    let entry = legacy_entry(profile)?;
     match entry.get_password() {
         Ok(json) => {
             let map: SecretMap =
-                serde_json::from_str(&json).context("Failed to parse keyring secrets")?;
+                serde_json::from_str(&json).context("Failed to parse legacy keyring secrets")?;
             Ok(Some(map))
         }
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(anyhow::anyhow!("Failed to read from keyring: {e}")),
+        Err(e) => Err(anyhow::anyhow!("Failed to read legacy keyring: {e}")),
     }
 }
 
-fn save_map(profile: &str, map: &SecretMap) -> Result<()> {
-    let entry =
-        keyring::Entry::new(SERVICE_NAME, profile).context("Failed to create keyring entry")?;
+fn remove_legacy_secret(profile: &str, key_name: &str) {
+    let Ok(Some(mut map)) = load_legacy_map(profile) else {
+        return;
+    };
+    map.remove(key_name);
+
+    let Ok(entry) = legacy_entry(profile) else {
+        return;
+    };
     if map.is_empty() {
-        match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(e) => eprintln!("Warning: failed to delete keyring entry for {profile}: {e}"),
-        }
-    } else {
-        let json = serde_json::to_string(map).context("Failed to serialize keyring secrets")?;
-        entry
-            .set_password(&json)
-            .context("Failed to store secrets in keyring")?;
+        let _ = entry.delete_credential();
+    } else if let Ok(json) = serde_json::to_string(&map) {
+        let _ = entry.set_password(&json);
     }
-    Ok(())
 }
 
-/// Store a secret in the system keyring.
+/// Store a secret in its own system-keyring entry.
+///
+/// Keeping values separate avoids Windows Credential Manager's 2,560-byte
+/// credential-blob limit for OAuth token sets.
 pub fn store_secret(profile: &str, key_name: &str, secret: &str) -> Result<()> {
-    let mut map = load_map(profile)?.unwrap_or_default();
-    map.insert(key_name.to_string(), secret.to_string());
-    save_map(profile, &map)
+    secret_entry(profile, key_name)?
+        .set_password(secret)
+        .with_context(|| format!("Failed to store '{key_name}' in keyring"))
 }
 
 /// Retrieve a secret from the system keyring.
-/// Returns `None` if the entry or key does not exist.
+///
+/// Falls back to the legacy combined entry so profiles created by older
+/// versions continue to work. Returns `None` if the entry or key does not exist.
 pub fn get_secret(profile: &str, key_name: &str) -> Result<Option<String>> {
-    Ok(load_map(profile)?.and_then(|m| m.get(key_name).cloned()))
+    let entry = secret_entry(profile, key_name)?;
+    match entry.get_password() {
+        Ok(secret) => Ok(Some(secret)),
+        Err(keyring::Error::NoEntry) => {
+            Ok(load_legacy_map(profile)?.and_then(|map| map.get(key_name).cloned()))
+        }
+        Err(e) => Err(anyhow::anyhow!(
+            "Failed to read '{key_name}' from keyring: {e}"
+        )),
+    }
 }
 
 /// Delete a secret from the system keyring. Best-effort - does not fail if missing.
 pub fn delete_secret(profile: &str, key_name: &str) {
-    let Ok(Some(mut map)) = load_map(profile) else {
-        return;
-    };
-    map.remove(key_name);
-    let _ = save_map(profile, &map);
+    if let Ok(entry) = secret_entry(profile, key_name) {
+        let _ = entry.delete_credential();
+    }
+    remove_legacy_secret(profile, key_name);
 }
 
 /// Delete all secrets for a profile. Best-effort.
 pub fn delete_profile(profile: &str) {
-    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, profile) {
+    if let Ok(entry) = legacy_entry(profile) {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(e) => eprintln!("Warning: failed to delete keyring entry for {profile}: {e}"),
+            Err(e) => {
+                eprintln!("Warning: failed to delete legacy keyring entry for {profile}: {e}")
+            }
+        }
+    }
+    for key_name in SECRET_NAMES {
+        if let Ok(entry) = secret_entry(profile, key_name) {
+            match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => {}
+                Err(e) => eprintln!(
+                    "Warning: failed to delete keyring secret '{key_name}' for {profile}: {e}"
+                ),
+            }
         }
     }
 }
@@ -104,18 +147,27 @@ mod tests {
 
     #[test]
     #[ignore = "requires system keyring access"]
-    fn multiple_keys_single_entry() {
+    fn multiple_secrets_are_stored_separately() {
         let profile = "cx_keyring_test_multikey";
         store_secret(profile, "api_key", "key-1").unwrap();
-        store_secret(profile, "openai_api_key", "key-2").unwrap();
+        store_secret(profile, "oauth_access_token", "token-2").unwrap();
         assert_eq!(
             get_secret(profile, "api_key").unwrap(),
             Some("key-1".to_string())
         );
         assert_eq!(
-            get_secret(profile, "openai_api_key").unwrap(),
-            Some("key-2".to_string())
+            get_secret(profile, "oauth_access_token").unwrap(),
+            Some("token-2".to_string())
         );
         delete_profile(profile);
+    }
+
+    #[test]
+    fn known_secret_names_cover_every_profile_secret() {
+        assert!(SECRET_NAMES.contains(&"api_key"));
+        assert!(SECRET_NAMES.contains(&"oauth_access_token"));
+        assert!(SECRET_NAMES.contains(&"oauth_refresh_token"));
+        assert!(SECRET_NAMES.contains(&"oauth_id_token"));
+        assert!(SECRET_NAMES.contains(&"oauth_token_expiry"));
     }
 }

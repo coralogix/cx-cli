@@ -87,7 +87,7 @@ At the prompts, in order:
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
 5. **Label** — an optional tag to group or identify profiles (e.g. `production`).
-6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `os-store` (preselected) uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). `file` saves credentials in the profile TOML with `0600` permissions.
+6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `os-store` (preselected) uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). `file` saves credentials in the profile TOML with `0600` permissions. If the OS store is unavailable (for example Linux without a Secret Service), setup falls back to `file` automatically.
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
@@ -265,7 +265,7 @@ Credentials stored in the OS keyring use the following backends:
 | Linux (glibc) | D-Bus Secret Service (GNOME Keyring, KWallet) |
 | Linux (musl) | No keyring backend - fall back to file-based storage |
 
-The default install script and release binaries are built for musl on Linux, so keyring support is only available when you build from source against glibc. Script-installed Linux users must use file-based credential storage.
+The default install script and release binaries are built for musl on Linux, so keyring support is only available when you build from source against glibc. When the OS store is missing or fails at setup time, `cx` falls back to file-based credential storage automatically.
 
 ## Global config (`~/.cx/config.toml`)
 

@@ -203,6 +203,7 @@ struct ProfilesCli {
 #[derive(Subcommand)]
 enum ProfilesTopLevel {
     /// Manage profiles (list, add, delete, set-default).
+    #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -341,6 +342,7 @@ Examples:
     },
 
     /// Manage profiles (list, add, delete, set-default).
+    #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -3084,7 +3086,10 @@ async fn main() -> Result<()> {
 
     // Check if this is a profiles command - use separate parser without global API flags.
     // Only works when `profiles` is the first arg (no global flags before it).
-    if std::env::args().nth(1).as_deref() == Some("profiles") {
+    if matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("profiles" | "profile")
+    ) {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;

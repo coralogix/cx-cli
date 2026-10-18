@@ -579,6 +579,33 @@ pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()>
     Ok(())
 }
 
+/// Result of resolving an OAuth bearer token.
+///
+/// When `os_store_fallback_reason` is set, the caller must persist
+/// `refreshed_tokens` in the profile file and switch the profile's credential
+/// storage to `file`.
+#[derive(Debug)]
+pub struct TokenResolution {
+    pub bearer: String,
+    pub refreshed_tokens: Option<StoredOAuthTokens>,
+    pub os_store_fallback_reason: Option<String>,
+}
+
+fn os_store_refresh_result(tokens: &TokenResponse, store_result: Result<()>) -> TokenResolution {
+    match store_result {
+        Ok(()) => TokenResolution {
+            bearer: tokens.access_token.clone(),
+            refreshed_tokens: None,
+            os_store_fallback_reason: None,
+        },
+        Err(err) => TokenResolution {
+            bearer: tokens.access_token.clone(),
+            refreshed_tokens: Some(tokens_to_stored(tokens)),
+            os_store_fallback_reason: Some(format!("{err:#}")),
+        },
+    }
+}
+
 fn cached_token_is_valid(token: &str, expiry: Option<u64>) -> bool {
     if let Some(exp) = expiry {
         exp > unix_now_secs() + 30
@@ -595,10 +622,10 @@ fn cached_token_is_valid(token: &str, expiry: Option<u64>) -> bool {
 /// if it is still valid (≥ 30 s remaining). Otherwise, uses the cached refresh
 /// token to obtain a fresh token set.
 ///
-/// For `OsStore`, the keyring is updated in place and the returned
-/// `Option<StoredOAuthTokens>` is always `None`. For `File`, the caller is
-/// responsible for persisting the returned `Some(StoredOAuthTokens)` to the
-/// profile TOML when a refresh occurred.
+/// For `OsStore`, the keyring is updated in place. If that write fails, the
+/// returned [`TokenResolution`] asks the caller to migrate the profile to file
+/// storage and persist the refreshed token set. For `File`, the caller
+/// persists the returned token set when a refresh occurred.
 ///
 /// Errors with an actionable message when re-authentication is required.
 pub async fn resolve_token(
@@ -607,7 +634,7 @@ pub async fn resolve_token(
     client_id: &str,
     storage: CredentialStorage,
     file_tokens: Option<&StoredOAuthTokens>,
-) -> Result<(String, Option<StoredOAuthTokens>)> {
+) -> Result<TokenResolution> {
     let (cached_access, cached_expiry, cached_refresh) = match storage {
         CredentialStorage::OsStore => (
             keyring_store::get_secret(profile_name, "oauth_access_token")?,
@@ -632,7 +659,11 @@ pub async fn resolve_token(
 
     if let Some(ref token) = cached_access {
         if cached_token_is_valid(token, cached_expiry) {
-            return Ok((token.clone(), None));
+            return Ok(TokenResolution {
+                bearer: token.clone(),
+                refreshed_tokens: None,
+                os_store_fallback_reason: None,
+            });
         }
     }
 
@@ -659,13 +690,17 @@ pub async fn resolve_token(
         })?;
 
     match storage {
-        CredentialStorage::OsStore => {
-            store_tokens_keyring(profile_name, &tokens)?;
-            Ok((tokens.access_token, None))
-        }
+        CredentialStorage::OsStore => Ok(os_store_refresh_result(
+            &tokens,
+            store_tokens_keyring(profile_name, &tokens),
+        )),
         CredentialStorage::File => {
             let stored = tokens_to_stored(&tokens);
-            Ok((tokens.access_token, Some(stored)))
+            Ok(TokenResolution {
+                bearer: tokens.access_token,
+                refreshed_tokens: Some(stored),
+                os_store_fallback_reason: None,
+            })
         }
     }
 }
@@ -757,6 +792,28 @@ mod tests {
     }
 
     #[test]
+    fn os_store_refresh_falls_back_to_file_storage() {
+        let tokens = sample_token_response(Some(3600), Some("refresh-1"));
+        let resolved = os_store_refresh_result(
+            &tokens,
+            Err(anyhow::anyhow!("credential blob exceeds the limit")),
+        );
+
+        assert_eq!(resolved.bearer, tokens.access_token);
+        assert_eq!(
+            resolved
+                .refreshed_tokens
+                .as_ref()
+                .and_then(|stored| stored.refresh_token.as_deref()),
+            Some("refresh-1")
+        );
+        assert!(resolved
+            .os_store_fallback_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("credential blob exceeds the limit")));
+    }
+
+    #[test]
     fn cached_token_is_valid_uses_expiry_when_present() {
         let now = unix_now_secs();
         // 5 minutes left -> valid.
@@ -798,7 +855,7 @@ mod tests {
             expiry: Some(unix_now_secs() + 600),
         };
         // base_url is never contacted because the cached token is valid.
-        let (bearer, refreshed) = resolve_token(
+        let resolved = resolve_token(
             "myprofile",
             "https://example.invalid",
             "client-id",
@@ -807,8 +864,9 @@ mod tests {
         )
         .await
         .expect("cached path must not hit the network");
-        assert_eq!(bearer, "still-good");
-        assert!(refreshed.is_none());
+        assert_eq!(resolved.bearer, "still-good");
+        assert!(resolved.refreshed_tokens.is_none());
+        assert!(resolved.os_store_fallback_reason.is_none());
     }
 
     #[tokio::test]

@@ -62,7 +62,10 @@ fn write_config(home: &std::path::Path, default_profile: &str) {
     fs::create_dir_all(&cx_dir).unwrap();
     fs::write(
         cx_dir.join("config.toml"),
-        format!("default_profile = \"{default_profile}\"\n"),
+        format!(
+            "default_profile = \"{default_profile}\"\ncredential_migration_version = \"{}\"\n",
+            env!("CARGO_PKG_VERSION")
+        ),
     )
     .unwrap();
 }
@@ -73,7 +76,10 @@ fn write_config_no_console_link(home: &std::path::Path, default_profile: &str) {
     fs::create_dir_all(&cx_dir).unwrap();
     fs::write(
         cx_dir.join("config.toml"),
-        format!("default_profile = \"{default_profile}\"\nno_console_link = true\n"),
+        format!(
+            "default_profile = \"{default_profile}\"\nno_console_link = true\ncredential_migration_version = \"{}\"\n",
+            env!("CARGO_PKG_VERSION")
+        ),
     )
     .unwrap();
 }

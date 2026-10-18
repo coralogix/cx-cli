@@ -33,7 +33,10 @@ region = "{region}"
 fn write_config(home: &std::path::Path, default_profile: &str) {
     let cx_dir = home.join(".cx");
     fs::create_dir_all(&cx_dir).unwrap();
-    let content = format!("default_profile = \"{default_profile}\"\n");
+    let content = format!(
+        "default_profile = \"{default_profile}\"\ncredential_migration_version = \"{}\"\n",
+        env!("CARGO_PKG_VERSION")
+    );
     fs::write(cx_dir.join("config.toml"), content).unwrap();
 }
 

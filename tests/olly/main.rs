@@ -39,7 +39,10 @@ region = "{base_url}"
     fs::write(profiles_dir.join("default.toml"), content).unwrap();
     fs::write(
         home.join(".cx").join("config.toml"),
-        "default_profile = \"default\"\n",
+        format!(
+            "default_profile = \"default\"\ncredential_migration_version = \"{}\"\n",
+            env!("CARGO_PKG_VERSION")
+        ),
     )
     .unwrap();
 }

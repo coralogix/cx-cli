@@ -110,8 +110,25 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/cx-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
           CERTIFICATE_PATH="$RUNNER_TEMP/cx-signing.p12"
+          CERTIFICATE_PEM="$RUNNER_TEMP/cx-signing-cert.pem"
+          trap 'rm -f "$CERTIFICATE_PATH" "$CERTIFICATE_PEM"' EXIT
 
           echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
+          if ! openssl pkcs12 \
+            -in "$CERTIFICATE_PATH" \
+            -clcerts \
+            -nokeys \
+            -passin env:APPLE_CERTIFICATE_PASSWORD \
+            -out "$CERTIFICATE_PEM"; then
+            echo "::error::Unable to read the Apple signing certificate."
+            exit 1
+          fi
+          if ! openssl x509 -in "$CERTIFICATE_PEM" -noout -checkend 0; then
+            echo "::error::Apple signing certificate has expired. Renew it and update the GitHub Actions secrets before releasing."
+            exit 1
+          fi
+          openssl x509 -in "$CERTIFICATE_PEM" -noout -subject -enddate
+
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -129,7 +146,6 @@ jobs:
           {
             echo "APPLE_SIGNING_KEYCHAIN=$KEYCHAIN_PATH"
           } >> "$GITHUB_ENV"
-          rm -f "$CERTIFICATE_PATH"
 
       - name: Sign macOS binary
         if: runner.os == 'macOS'

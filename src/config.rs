@@ -605,13 +605,13 @@ async fn resolve_single(
                     profile.credential_storage = CredentialStorage::File;
                 }
                 save_profile(profile_name, &profile)?;
-                if let Some(reason) = os_store_fallback_reason {
+                if os_store_fallback_reason.is_some() {
                     // Save the file-backed profile before removing any old or
                     // partially written keyring entries.
                     keyring_store::delete_profile(profile_name);
                     eprintln!(
                         "Warning: failed to store refreshed OAuth tokens in the OS credential \
-                         store ({reason}); migrated profile '{profile_name}' to file storage."
+                         store; migrated profile '{profile_name}' to file storage."
                     );
                 }
             }

@@ -586,7 +586,11 @@ async fn resolve_single(
                     )
                 })?;
             let storage = profile.credential_storage;
-            let (bearer, refreshed) = oauth::resolve_token(
+            let oauth::TokenResolution {
+                bearer,
+                refreshed_tokens,
+                os_store_fallback_reason,
+            } = oauth::resolve_token(
                 profile_name,
                 &base_url,
                 &client_id,
@@ -594,10 +598,22 @@ async fn resolve_single(
                 profile.oauth_tokens.as_ref(),
             )
             .await?;
-            if let Some(new_tokens) = refreshed {
-                // File-storage profile: persist refreshed tokens back to disk.
+            if let Some(new_tokens) = refreshed_tokens {
+                let migrated_from_os_store = os_store_fallback_reason.is_some();
                 profile.oauth_tokens = Some(new_tokens);
+                if migrated_from_os_store {
+                    profile.credential_storage = CredentialStorage::File;
+                }
                 save_profile(profile_name, &profile)?;
+                if let Some(reason) = os_store_fallback_reason {
+                    // Save the file-backed profile before removing any old or
+                    // partially written keyring entries.
+                    keyring_store::delete_profile(profile_name);
+                    eprintln!(
+                        "Warning: failed to store refreshed OAuth tokens in the OS credential \
+                         store ({reason}); migrated profile '{profile_name}' to file storage."
+                    );
+                }
             }
             bearer
         }

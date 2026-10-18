@@ -72,10 +72,16 @@ enum RegionChoice {
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
+/// Storage backend choices presented to the user. Linux musl builds have no
+/// keyring backend, so `file` is their only safe option.
+#[cfg(all(target_os = "linux", target_env = "musl"))]
+const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] =
+    &[("file", CredentialStorage::File)];
+
 /// Storage backend choices presented to the user. The first element is the
 /// label shown in the prompt; the second is the variant it maps to. Order
-/// matters: the first entry is the default cursor on builds that have a
-/// keyring backend. Linux musl builds have none, so the cursor starts on `file`.
+/// matters: `os-store` is the default cursor where a keyring backend exists.
+#[cfg(not(all(target_os = "linux", target_env = "musl")))]
 const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] = &[
     ("os-store (encrypted)", CredentialStorage::OsStore),
     ("file", CredentialStorage::File),
@@ -84,13 +90,21 @@ const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] = &[
 /// Cursor index for [`select_credential_storage`]. `os-store` is the default
 /// wherever a keyring backend is compiled in.
 fn credential_storage_starting_cursor() -> usize {
+    CREDENTIAL_STORAGE_OPTIONS
+        .iter()
+        .position(|(_, storage)| *storage == CredentialStorage::OsStore)
+        .unwrap_or(0)
+}
+
+fn credential_storage_help_message(file_description: &str) -> String {
     if cfg!(all(target_os = "linux", target_env = "musl")) {
-        CREDENTIAL_STORAGE_OPTIONS
-            .iter()
-            .position(|(_, storage)| *storage == CredentialStorage::File)
-            .unwrap_or(0)
+        format!("Linux musl builds do not have an OS credential store. 'file' {file_description}")
     } else {
-        0
+        format!(
+            "'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager, \
+             Linux Secret Service). 'file' {file_description} Falls back to file if the OS store \
+             is unavailable."
+        )
     }
 }
 
@@ -852,12 +866,9 @@ async fn configure_oauth(
     // blocks on a keychain dialog. If the OS store is selected but unavailable
     // (common on Linux without Secret Service), we fall back to file.
     let credential_storage = if interactive {
-        select_credential_storage(
-            "Where should OAuth tokens be stored?",
-            "'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager, \
-             Linux Secret Service). 'file' stores tokens in the profile config (0600 perms). \
-             Falls back to file if the OS store is unavailable.",
-        )?
+        let help_message =
+            credential_storage_help_message("stores tokens in the profile config (0600 perms).");
+        select_credential_storage("Where should OAuth tokens be stored?", &help_message)?
     } else {
         CredentialStorage::File
     };
@@ -953,12 +964,10 @@ fn configure_api_key(
 
     // Reached only on a terminal, including `cx init`. The OS store is preselected.
     // If the store is unavailable, fall back to file so Linux clients keep working.
-    let credential_storage = select_credential_storage(
-        "Where should API keys be stored?",
-        "'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager, \
-         Linux Secret Service). 'file' stores in profile config (0600 perms). \
-         Falls back to file if the OS store is unavailable.",
-    )?;
+    let help_message =
+        credential_storage_help_message("stores credentials in the profile config (0600 perms).");
+    let credential_storage =
+        select_credential_storage("Where should API keys be stored?", &help_message)?;
 
     let (credential_storage, api_key, storage_desc) = match credential_storage {
         CredentialStorage::OsStore => os_store_or_file_fallback(
@@ -1020,6 +1029,7 @@ mod tests {
         let (_, storage) = CREDENTIAL_STORAGE_OPTIONS[credential_storage_starting_cursor()];
         if cfg!(all(target_os = "linux", target_env = "musl")) {
             assert_eq!(storage, CredentialStorage::File);
+            assert_eq!(CREDENTIAL_STORAGE_OPTIONS.len(), 1);
         } else {
             assert_eq!(storage, CredentialStorage::OsStore);
         }

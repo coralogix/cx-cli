@@ -58,8 +58,9 @@ fn remove_legacy_secret(profile: &str, key_name: &str) {
 
 /// Store a secret in its own system-keyring entry.
 ///
-/// Keeping values separate avoids Windows Credential Manager's 2,560-byte
-/// credential-blob limit for OAuth token sets.
+/// Each Windows Credential Manager entry is limited to roughly 1,280 UTF-16
+/// characters. OAuth persistence falls back to file storage when a value
+/// exceeds that limit.
 pub fn store_secret(profile: &str, key_name: &str, secret: &str) -> Result<()> {
     secret_entry(profile, key_name)?
         .set_password(secret)

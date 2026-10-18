@@ -598,13 +598,24 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 /// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
 /// `None` reports the default profile.
 ///
-/// Best-effort and silent: any failure is swallowed so it never affects the
-/// outcome of `cx profiles add` / `cx init`. See [`crate::onboarding`].
+/// Best-effort: any failure is swallowed so it never affects the outcome of
+/// `cx profiles add` / `cx init`. See [`crate::onboarding`]. The one failure
+/// worth surfacing is a 403: the service only accepts user identities, so a
+/// team-API-key profile can never be recorded and the in-app "waiting for
+/// connection" screen would hang without telling anyone why.
 pub async fn report_onboarding(name: Option<&str>) {
     let Ok(cfg) = crate::config::resolve(name, None, None).await else {
         return;
     };
-    crate::onboarding::report(&cfg.profile_name, &cfg.endpoint, &cfg.api_key).await;
+    let profile = &cfg.profile_name;
+    let outcome = crate::onboarding::report(profile, &cfg.endpoint, &cfg.api_key).await;
+    if outcome == Some(crate::onboarding::Outcome::Forbidden) {
+        eprintln!(
+            "note: profile '{profile}' signs in with an API key, so this setup isn't linked \
+             to your Coralogix user. To link it, sign in as yourself with \
+             `cx profiles add {profile} --oauth --force`."
+        );
+    }
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────

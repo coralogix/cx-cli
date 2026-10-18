@@ -45,14 +45,44 @@ pub async fn report_onboarded(client: &CxClient) -> Result<()> {
     Ok(())
 }
 
-/// Report `profile` now, whether or not it already went through. Silent and
-/// best-effort: never affects the calling command.
-pub async fn report(profile: &str, endpoint: &str, api_key: &str) {
-    if let Some(settled) = send(endpoint, api_key).await {
-        let mut state = ReportState::load();
-        state.set(profile, settled);
-        state.save();
+/// How a report ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The service recorded the user.
+    Reported,
+    /// `403`: a non-user identity (e.g. a team API key) the service will never
+    /// accept.
+    Forbidden,
+    /// Anything else (service not yet deployed to the region, network error,
+    /// timeout) — retried on the next command.
+    Failed,
+}
+
+impl Outcome {
+    fn from_result(result: &Result<()>) -> Self {
+        match result {
+            Ok(()) => Self::Reported,
+            Err(CxError::Permission(_)) => Self::Forbidden,
+            Err(_) => Self::Failed,
+        }
     }
+
+    /// Whether the profile needs no further reports. A `403` settles too —
+    /// otherwise every command would retry it.
+    fn is_settled(self) -> bool {
+        self != Self::Failed
+    }
+}
+
+/// Report `profile` now, whether or not it already went through. Best-effort:
+/// never fails the calling command. `None` when skipped (custom / BYOC
+/// endpoint).
+pub async fn report(profile: &str, endpoint: &str, api_key: &str) -> Option<Outcome> {
+    let outcome = send(endpoint, api_key).await?;
+    let mut state = ReportState::load();
+    state.set(profile, outcome.is_settled());
+    state.save();
+    Some(outcome)
 }
 
 /// Report every target whose profile hasn't gone through yet. Silent and
@@ -70,41 +100,33 @@ pub async fn report_pending(targets: Vec<Arc<ExecutionTarget>>) {
     }
 
     let outcomes = join_all(pending.iter().map(|t| async {
-        let settled = send(&t.cfg.endpoint, &t.cfg.api_key).await;
-        (t.profile_name.as_str(), settled)
+        let outcome = send(&t.cfg.endpoint, &t.cfg.api_key).await;
+        (t.profile_name.as_str(), outcome)
     }))
     .await;
 
     // One load-modify-save, so concurrent reports don't overwrite each other.
     let mut state = ReportState::load();
-    for (profile, settled) in outcomes {
-        if let Some(settled) = settled {
-            state.set(profile, settled);
+    for (profile, outcome) in outcomes {
+        if let Some(outcome) = outcome {
+            state.set(profile, outcome.is_settled());
         }
     }
     state.save();
 }
 
-/// Send one report. `None` when skipped (custom / BYOC endpoints may not route
-/// the onboarding service), otherwise whether it settled the profile.
-async fn send(endpoint: &str, api_key: &str) -> Option<bool> {
+/// Send one report. `None` when skipped: custom / BYOC endpoints may not route
+/// the onboarding service.
+async fn send(endpoint: &str, api_key: &str) -> Option<Outcome> {
     if matches!(region_from_url(endpoint), RegionMatch::Unresolved) {
         return None;
     }
     let client = CxClient::new(endpoint, api_key).ok()?;
-    let settled = match tokio::time::timeout(REPORT_TIMEOUT, report_onboarded(&client)).await {
-        Ok(result) => is_settled(&result),
-        Err(_) => false,
+    let outcome = match tokio::time::timeout(REPORT_TIMEOUT, report_onboarded(&client)).await {
+        Ok(result) => Outcome::from_result(&result),
+        Err(_) => Outcome::Failed,
     };
-    Some(settled)
-}
-
-/// Whether a report outcome is final. A `403` means a non-user token (e.g. a
-/// team key) the service will never accept, so it settles too — otherwise
-/// every command would retry it. Anything else (service not yet deployed to
-/// the region, network error) is retried on the next command.
-fn is_settled(result: &Result<()>) -> bool {
-    matches!(result, Ok(()) | Err(CxError::Permission(_)))
+    Some(outcome)
 }
 
 /// Profiles whose report has settled.
@@ -188,26 +210,34 @@ mod tests {
         report_with_status(204).await.expect("204 should be Ok");
     }
 
+    async fn outcome_for(status: u16) -> Outcome {
+        Outcome::from_result(&report_with_status(status).await)
+    }
+
     #[tokio::test]
-    async fn a_204_settles_the_profile() {
-        assert!(is_settled(&report_with_status(204).await));
+    async fn a_204_is_reported_and_settles_the_profile() {
+        let outcome = outcome_for(204).await;
+        assert_eq!(outcome, Outcome::Reported);
+        assert!(outcome.is_settled());
     }
 
     /// A non-user token (team key) is rejected with 403 and will never pass.
     #[tokio::test]
-    async fn a_403_settles_the_profile() {
-        assert!(is_settled(&report_with_status(403).await));
+    async fn a_403_is_forbidden_and_settles_the_profile() {
+        let outcome = outcome_for(403).await;
+        assert_eq!(outcome, Outcome::Forbidden);
+        assert!(outcome.is_settled());
     }
 
     /// The service not being deployed to a region surfaces as a 404 — retried.
     #[tokio::test]
     async fn a_404_leaves_the_profile_pending() {
-        assert!(!is_settled(&report_with_status(404).await));
+        assert!(!outcome_for(404).await.is_settled());
     }
 
     #[tokio::test]
     async fn a_5xx_leaves_the_profile_pending() {
-        assert!(!is_settled(&report_with_status(503).await));
+        assert!(!outcome_for(503).await.is_settled());
     }
 
     #[test]

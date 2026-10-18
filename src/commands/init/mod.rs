@@ -91,7 +91,8 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     // Idempotent: skip profile setup when the user already has one. A fresh run
     // creates the first (and thus default) profile — no name / set-default
     // prompts to worry about.
-    if list_profile_names()?.is_empty() {
+    let had_profile = !list_profile_names()?.is_empty();
+    if !had_profile {
         // Auth: quick mode (bare `cx init`, no key) defaults to OAuth without
         // asking the auth-method question; an explicit key uses the API-key
         // path; `--oauth` forces OAuth regardless.
@@ -114,9 +115,6 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         .await?;
     } else {
         println!("A Coralogix profile is already configured - skipping profile setup.");
-        // `profiles::run_add` reports onboarding on a fresh setup; a re-run must
-        // too, or the web app's CLI-connect dialog never sees the user connect.
-        profiles::report_onboarding(None).await;
     }
 
     // ── Step 2: verify credentials ────────────────────────────────────────────────
@@ -133,6 +131,15 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     // Custom / BYOC endpoints skip the probe (returns `false`) — see
     // `verify_credentials` — since they may not expose the whoami route.
     let verified = verify_credentials().await?;
+
+    // Record the user as onboarded even when the profile already existed: the
+    // in-app setup screen waits for this report, and a user who had cx set up
+    // before still runs `cx init` from the copied prompt. A freshly created
+    // profile was already reported by `profiles::run_add`. After the
+    // credential check, so bad credentials don't send a doomed report.
+    if had_profile {
+        profiles::report_onboarding(None).await;
+    }
 
     // ── Step 3: skills ──────────────────────────────────────────────────────────
     // Idempotent, like the profile step: if cx skills are already installed,

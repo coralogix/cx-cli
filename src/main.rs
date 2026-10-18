@@ -3095,6 +3095,11 @@ async fn main() -> Result<()> {
     // enough that the fetch always completes in time.
     let _update_task = tokio::spawn(update_check::fetch_if_stale());
 
+    // Move credentials created by older versions out of profile files whenever
+    // the platform offers an OS credential store. Failures are intentionally
+    // silent and leave the file-backed profile unchanged.
+    config::migrate_file_credentials_to_os_store();
+
     // Check if this is a profiles command - use separate parser without global API flags.
     // Only works when `profiles` is the first arg (no global flags before it).
     if matches!(

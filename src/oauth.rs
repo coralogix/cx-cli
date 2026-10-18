@@ -640,6 +640,22 @@ pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()>
     Ok(())
 }
 
+/// Persist file-backed OAuth tokens to the OS keyring without recalculating
+/// their existing expiry timestamp.
+pub fn store_stored_tokens_keyring(profile: &str, tokens: &StoredOAuthTokens) -> Result<()> {
+    keyring_store::store_secret(profile, "oauth_access_token", &tokens.access_token)?;
+    if let Some(ref token) = tokens.refresh_token {
+        keyring_store::store_secret(profile, "oauth_refresh_token", token)?;
+    }
+    if let Some(ref token) = tokens.id_token {
+        keyring_store::store_secret(profile, "oauth_id_token", token)?;
+    }
+    if let Some(expiry) = tokens.expiry {
+        keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
+    }
+    Ok(())
+}
+
 /// Result of resolving an OAuth bearer token.
 ///
 /// When `os_store_fallback_reason` is set, the caller must persist

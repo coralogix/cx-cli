@@ -93,11 +93,17 @@ jobs:
           APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: |
           if [ -z "$APPLE_CERTIFICATE_P12_BASE64" ] ||
              [ -z "$APPLE_CERTIFICATE_PASSWORD" ] ||
-             [ -z "$APPLE_SIGNING_IDENTITY" ]; then
-            echo "::error::macOS release signing requires APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, and APPLE_SIGNING_IDENTITY GitHub Actions secrets."
+             [ -z "$APPLE_SIGNING_IDENTITY" ] ||
+             [ -z "$APPLE_NOTARY_KEY_BASE64" ] ||
+             [ -z "$APPLE_NOTARY_KEY_ID" ] ||
+             [ -z "$APPLE_NOTARY_ISSUER_ID" ]; then
+            echo "::error::macOS release signing and notarization require APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_NOTARY_KEY_BASE64, APPLE_NOTARY_KEY_ID, and APPLE_NOTARY_ISSUER_ID GitHub Actions secrets."
             exit 1
           fi
 
@@ -161,6 +167,26 @@ jobs:
             --timestamp \
             "$BINARY"
           codesign --verify --strict --verbose=2 "$BINARY"
+
+      - name: Notarize macOS binary
+        if: runner.os == 'macOS'
+        env:
+          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          BINARY="target/${{ matrix.target }}/release/cx"
+          NOTARY_KEY="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          NOTARY_ARCHIVE="$RUNNER_TEMP/cx-${{ matrix.target }}-notarization.zip"
+          trap 'rm -f "$NOTARY_KEY" "$NOTARY_ARCHIVE"' EXIT
+
+          echo "$APPLE_NOTARY_KEY_BASE64" | base64 -D -o "$NOTARY_KEY"
+          ditto -c -k --keepParent "$BINARY" "$NOTARY_ARCHIVE"
+          xcrun notarytool submit "$NOTARY_ARCHIVE" \
+            --key "$NOTARY_KEY" \
+            --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER_ID" \
+            --wait
 
       - name: Package (unix)
         if: runner.os != 'Windows'

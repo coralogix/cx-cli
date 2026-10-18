@@ -232,6 +232,11 @@ pub struct Config {
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub managed_completions: Vec<ManagedCompletion>,
+
+    /// cx version that last attempted to migrate file-backed credentials to the
+    /// OS credential store. Internal migration state, not user configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_migration_version: Option<String>,
 }
 
 fn default_profile() -> String {
@@ -262,6 +267,7 @@ impl Default for Config {
             read_only: false,
             no_console_link: false,
             managed_completions: vec![],
+            credential_migration_version: None,
         }
     }
 }
@@ -504,6 +510,76 @@ pub fn load_profile(name: &str) -> Result<Profile> {
         format!("Profile '{name}' not found. Run `cx profiles add` to set it up.")
     })?;
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
+}
+
+/// Best-effort migration of all file-backed credentials to the OS credential
+/// store. Runs once for each installed cx version. A profile is rewritten only
+/// after every one of its secrets is stored successfully, so an unavailable
+/// keyring leaves the existing file intact.
+///
+/// Linux musl builds intentionally retain file storage because they have no OS
+/// credential-store backend.
+pub fn migrate_file_credentials_to_os_store() {
+    if cfg!(all(target_os = "linux", target_env = "musl")) {
+        return;
+    }
+
+    const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+    let Ok(mut config) = load_config() else {
+        return;
+    };
+    if config.credential_migration_version.as_deref() == Some(CURRENT_VERSION) {
+        return;
+    }
+
+    let Ok(names) = list_profile_names() else {
+        return;
+    };
+
+    for name in names {
+        let Ok(mut profile) = load_profile(&name) else {
+            continue;
+        };
+        if profile.credential_storage != CredentialStorage::File {
+            continue;
+        }
+        let has_file_credentials = match profile.auth {
+            AuthKind::ApiKey => profile.api_key.is_some(),
+            AuthKind::OAuth => profile.oauth_tokens.is_some(),
+        };
+        if !has_file_credentials {
+            continue;
+        }
+
+        // Avoid retaining stale fields from an earlier OS-store attempt. A
+        // failed write is cleaned up below, while the profile file remains the
+        // source of truth.
+        keyring_store::delete_profile(&name);
+        let migrated = match profile.auth {
+            AuthKind::ApiKey => match profile.api_key.as_deref() {
+                Some(key) => keyring_store::store_secret(&name, "api_key", key),
+                None => continue,
+            },
+            AuthKind::OAuth => match profile.oauth_tokens.as_ref() {
+                Some(tokens) => oauth::store_stored_tokens_keyring(&name, tokens),
+                None => continue,
+            },
+        };
+        if migrated.is_err() {
+            keyring_store::delete_profile(&name);
+            continue;
+        }
+
+        profile.credential_storage = CredentialStorage::OsStore;
+        profile.api_key = None;
+        profile.oauth_tokens = None;
+        let _ = save_profile(&name, &profile);
+    }
+
+    // Record the attempt even if the OS store was unavailable. The next cx
+    // upgrade retries file-backed profiles with its new version.
+    config.credential_migration_version = Some(CURRENT_VERSION.to_string());
+    let _ = save_config(&config);
 }
 
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal

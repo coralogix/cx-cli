@@ -3,7 +3,6 @@ use std::io::IsTerminal;
 use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
-use crate::api_client::CxClient;
 use crate::config::{
     has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
     save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
@@ -11,8 +10,6 @@ use crate::config::{
 use crate::keyring_store;
 use crate::oauth;
 use crate::region::{region_from_url, RegionMatch};
-
-mod api;
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 
@@ -601,26 +598,13 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 /// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
 /// `None` reports the default profile.
 ///
-/// Best-effort and silent: gated to known regions, and any failure is swallowed
-/// so it never affects the outcome of `cx profiles add` / `cx init`.
+/// Best-effort and silent: any failure is swallowed so it never affects the
+/// outcome of `cx profiles add` / `cx init`. See [`crate::onboarding`].
 pub async fn report_onboarding(name: Option<&str>) {
     let Ok(cfg) = crate::config::resolve(name, None, None).await else {
         return;
     };
-    if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
-        return;
-    }
-    let Ok(client) = CxClient::new(&cfg.endpoint, &cfg.api_key) else {
-        return;
-    };
-    // Bound the request: the shared client carries no request timeout, so a
-    // gateway that accepts the connection but stalls the response would
-    // otherwise hang setup. A stall is swallowed like any other failure.
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        api::report_onboarded(&client),
-    )
-    .await;
+    crate::onboarding::report(&cfg.profile_name, &cfg.endpoint, &cfg.api_key).await;
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────

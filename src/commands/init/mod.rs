@@ -114,6 +114,9 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         .await?;
     } else {
         println!("A Coralogix profile is already configured - skipping profile setup.");
+        // `profiles::run_add` reports onboarding on a fresh setup; a re-run must
+        // too, or the web app's CLI-connect dialog never sees the user connect.
+        profiles::report_onboarding(None).await;
     }
 
     // ── Step 2: verify credentials ────────────────────────────────────────────────

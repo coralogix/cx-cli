@@ -587,7 +587,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
     // Record the onboarded user. Best-effort and silent — see
     // `report_onboarding`.
-    report_onboarding(&name).await;
+    report_onboarding(Some(&name)).await;
 
     let cx_dir = crate::config::config_dir()?;
     println!(
@@ -599,11 +599,12 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 }
 
 /// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
+/// `None` reports the default profile.
 ///
 /// Best-effort and silent: gated to known regions, and any failure is swallowed
-/// so it never affects the outcome of `cx profiles add`.
-async fn report_onboarding(name: &str) {
-    let Ok(cfg) = crate::config::resolve(Some(name), None, None).await else {
+/// so it never affects the outcome of `cx profiles add` / `cx init`.
+pub async fn report_onboarding(name: Option<&str>) {
+    let Ok(cfg) = crate::config::resolve(name, None, None).await else {
         return;
     };
     if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {

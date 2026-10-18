@@ -5,7 +5,12 @@ Everything needed is on this page and in the CLI's own `--help` output.
 
 ## 1. Install
 
-Ask the user which install method they prefer:
+If `cx --version` already works, skip to step 2. Still run `cx init` and the
+verify step even when `cx` is already installed and configured: `cx init` is
+safe to re-run (it skips whatever is already set up) and lets Coralogix see the
+CLI is connected.
+
+Otherwise, ask the user which install method they prefer:
 
 **Homebrew** (macOS):
 

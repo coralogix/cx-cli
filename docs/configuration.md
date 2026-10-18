@@ -63,6 +63,7 @@ Run `cx init` to set up a profile and get started.
 |---|---|
 | `cx profiles list` | List every configured profile and show which one is the default. |
 | `cx profiles add [NAME]` | Create or reconfigure a profile (see below). |
+| `cx profiles refresh <NAME>` | Sign an OAuth profile in again. Keeps its region and settings; only the tokens change. |
 | `cx profiles set-default <NAME>` | Make an existing profile the default, so commands without `-p` use it. |
 | `cx profiles delete <NAME>` | Delete a profile and its stored credentials. Asks for confirmation; `-f`/`--force` skips it. |
 
@@ -98,8 +99,9 @@ and the full command set are available with no extra setup. Pass `--disable-olly
 to create the first profile with Olly switched off, and change either later in
 [`config.toml`](#global-config-cxconfigtoml).
 
-To re-authenticate an existing OAuth profile, run `cx profiles add <name>` again
-for that name.
+When an OAuth session expires, the next command on a terminal opens the sign-in
+page for the same team, then continues. To sign in again yourself, run
+`cx profiles refresh <name>`. It keeps the profile's settings.
 
 If using an API key, it must be a [Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys) or [Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys). [Send-Your-Data](https://coralogix.com/docs/user-guides/account-management/api-keys/send-your-data-api-key/) / ingress keys will not work.
 
@@ -156,10 +158,11 @@ OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
 - Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend. The prompt preselects the OS keyring (`os_store`) when a keyring backend is available; on Linux musl builds `file` is the only storage option. `file` writes them inline in the profile TOML, and that is also what a prompt-free run uses.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
-- If the refresh token is also expired, `cx` exits with an actionable message:
+- If the session needs re-authentication, running a command opens the sign-in page showing only the profile's team, then continues. If the sign-in still comes back for a different team (for example, the first re-login of a profile that has not recorded its team yet), `cx` discards it, leaves the profile unchanged, and offers to reopen the sign-in page.
+- This happens only on an interactive terminal. When output is piped or `cx` runs under a coding agent, it exits with an actionable message instead:
 
   ```
-  Run cx profiles add <name> to re-authenticate.
+  Run cx profiles refresh <name> to sign in again.
   ```
 
 #### Custom or non-standard environments (BYOC / private-link)
@@ -615,7 +618,7 @@ Only files previously installed by `cx completions install` are updated.
 
 ### Profile-name completion
 
-Profile names discovered in `~/.cx/profiles/*.toml` are offered as tab-completion candidates for the `-p`/`--profile` flag and for the `profiles add`, `profiles delete`, and `profiles set-default` subcommands.
+Profile names discovered in `~/.cx/profiles/*.toml` are offered as tab-completion candidates for the `-p`/`--profile` flag and for the `profiles add`, `profiles refresh`, `profiles delete`, and `profiles set-default` subcommands.
 
 When using static completions installed with `cx completions install`, profile names are captured at installation time. After adding or deleting a profile, `cx` will print a reminder to run `cx completions refresh`, which regenerates every file registered in `managed_completions`.
 

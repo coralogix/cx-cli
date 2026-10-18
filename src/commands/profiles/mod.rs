@@ -674,6 +674,17 @@ async fn report_onboarding(name: &str) {
     .await;
 }
 
+// ── Refresh ───────────────────────────────────────────────────────────────────
+
+pub async fn run_refresh(profile_name: String) -> Result<()> {
+    if !profile_file(&profile_name)?.exists() {
+        anyhow::bail!(
+            "Profile '{profile_name}' not found. Run `cx profiles add {profile_name}` to set it up."
+        );
+    }
+    crate::config::refresh_oauth_profile(&profile_name).await
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 pub fn run_delete(profile_name: String, force: bool) -> Result<()> {
@@ -788,6 +799,8 @@ fn build_profile_non_interactive(
         console_url: None,
         cached_console_url: None,
         cached_console_url_at: None,
+        cached_team_id: None,
+        cached_team_name: None,
     };
     Ok((profile, "profile file"))
 }
@@ -858,7 +871,8 @@ async fn configure_oauth(
 
     // ── Browser login ──────────────────────────────────────────────────────────
     println!();
-    let tokens = oauth::browser_login(&base_url, &client_id).await?;
+    let tokens =
+        oauth::browser_login(&base_url, &client_id, oauth::LoginOptions::default()).await?;
     println!("Login successful!");
 
     // Interactive runs (including `cx init`) ask, with the OS store preselected.
@@ -908,6 +922,8 @@ async fn configure_oauth(
         console_url: None,
         cached_console_url: None,
         cached_console_url_at: None,
+        cached_team_id: None,
+        cached_team_name: None,
     };
 
     Ok((profile, storage_desc))
@@ -998,6 +1014,8 @@ fn configure_api_key(
         console_url: None,
         cached_console_url: None,
         cached_console_url_at: None,
+        cached_team_id: None,
+        cached_team_name: None,
     };
 
     Ok((profile, storage_desc))

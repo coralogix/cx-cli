@@ -5,10 +5,14 @@ Everything needed is on this page and in the CLI's own `--help` output.
 
 ## 1. Install
 
-If `cx --version` already works, skip to step 2. Still run `cx init` and the
-verify step even when `cx` is already installed and configured: `cx init` is
-safe to re-run (it skips whatever is already set up) and lets Coralogix see the
-CLI is connected.
+**If `cx` is already installed** (`cx --version` succeeds), upgrade it instead
+of skipping this step — older versions can't complete setup. Use the method it
+was installed with (a `cx` under the Homebrew prefix came from Homebrew):
+
+```bash
+brew upgrade coralogix/tap/cx                  # Homebrew
+curl -fsSL https://get.coralogix.dev/cli | sh  # install script: re-run it
+```
 
 Otherwise, ask the user which install method they prefer:
 
@@ -53,15 +57,45 @@ user three questions (skip any already answered):
    - **No** (omit the flag): without a terminal the step is skipped; mention
      they can install later with `cx completions install <shell>`.
 
-Then run:
+Then check whether the user already has a profile:
+
+```bash
+cx profiles list
+```
+
+**If it prints `No profiles configured`**, run:
 
 ```bash
 cx init --oauth --url <coralogix-url> <scope-flag> [--install-completions <shell>]
 ```
 
 `--oauth` opens a browser window for the user to log in, so there is no API
-key to collect. Run `cx init --help` for the other options supported by the
-installed version (API-key login, non-interactive flags for CI).
+key to collect.
+
+**If it lists any profile**, run these two commands instead. Don't skip setup
+because a profile exists: `cx init` alone keeps the existing profile and
+doesn't link this setup to the user's account.
+
+```bash
+cx profiles add <team> --oauth --url <coralogix-url> --force --set-default < /dev/null
+cx init <scope-flag> [--install-completions <shell>]
+```
+
+- `<team>` is the first label of the URL's host, e.g. `myteam` for
+  `https://myteam.app.eu2.coralogix.com`. Naming the profile after the team
+  leaves the user's other profiles untouched; `--force` only replaces an
+  earlier profile for the same team.
+- `--oauth` opens a browser window for the user to log in.
+  `< /dev/null` keeps it from stopping at interactive prompts.
+- `--set-default` makes it the default profile. If the user wants to keep
+  their current default, drop the flag — but `cx init` then checks that
+  existing default profile's credentials instead.
+- `cx init` then installs the agent skills and shell completions; it keeps the
+  profile you just created.
+
+Run `cx init --help` and `cx profiles add --help` for the other options
+supported by the installed version (API-key login, non-interactive flags for
+CI).
 
 ## 3. Verify
 

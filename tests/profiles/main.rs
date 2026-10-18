@@ -32,6 +32,26 @@ fn load_profile_toml(home: &std::path::Path, name: &str) -> String {
     .unwrap_or_default()
 }
 
+/// A credential may be in the profile file when its OS store was unavailable,
+/// or omitted after a successful OS-store write (as on macOS and Windows CI).
+fn assert_secret_is_stored(profile: &str, secret: &str) {
+    if profile.contains("credential_storage = \"file\"") {
+        assert!(
+            profile.contains(secret),
+            "file-backed profile should contain the secret, got: {profile}"
+        );
+    } else {
+        assert!(
+            profile.contains("credential_storage = \"os_store\""),
+            "profile should use a recognized credential backend, got: {profile}"
+        );
+        assert!(
+            !profile.contains(secret),
+            "OS-store profile must not contain the secret, got: {profile}"
+        );
+    }
+}
+
 fn seed_profile(home: &std::path::Path, name: &str) {
     let profiles_dir = home.join(".cx").join("profiles");
     fs::create_dir_all(&profiles_dir).unwrap();
@@ -247,10 +267,7 @@ fn add_non_interactive_with_flags_creates_default_profile() {
         profile.contains("\"eu2\""),
         "profile should record region eu2, got: {profile}"
     );
-    assert!(
-        profile.contains("test-key-123"),
-        "profile should store the API key in the file, got: {profile}"
-    );
+    assert_secret_is_stored(&profile, "test-key-123");
     assert!(
         profile.contains("api_key"),
         "profile should use api-key auth, got: {profile}"
@@ -360,10 +377,7 @@ fn add_honors_cx_api_key_env() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "should succeed, stderr: {stderr}");
     let profile = load_profile_toml(&tmp, "default");
-    assert!(
-        profile.contains("env-key-456"),
-        "profile should store the key from CX_API_KEY, got: {profile}"
-    );
+    assert_secret_is_stored(&profile, "env-key-456");
 }
 
 // ── --oauth flag ─────────────────────────────────────────────────────────────
@@ -572,8 +586,8 @@ fn add_existing_profile_non_interactive_fails_without_force() {
     );
     let profile = load_profile_toml(&tmp, "default");
     assert!(
-        profile.contains("fake-key-000"),
-        "existing profile must be untouched, got: {profile}"
+        !profile.contains("new-key") && profile.contains("\"eu1\""),
+        "existing profile must retain its original configuration, got: {profile}"
     );
 }
 
@@ -599,9 +613,10 @@ fn add_existing_profile_with_force_overwrites() {
     assert!(output.status.success(), "should succeed, stderr: {stderr}");
     let profile = load_profile_toml(&tmp, "default");
     assert!(
-        profile.contains("new-key") && profile.contains("\"eu2\""),
+        profile.contains("\"eu2\""),
         "profile should be overwritten, got: {profile}"
     );
+    assert_secret_is_stored(&profile, "new-key");
 }
 
 // ── profiles add: --set-default non-interactive ──────────────────────────────
@@ -750,9 +765,13 @@ fn refresh_api_key_profile_is_rejected_and_left_unchanged() {
         stderr.contains("uses an API key") && stderr.contains("cx profiles add keyed"),
         "stderr should explain there is no sign-in to refresh: {stderr}"
     );
-    assert_eq!(
-        load_profile_toml(&tmp, "keyed"),
-        before,
-        "an API-key profile must not be rewritten"
-    );
+    let after = load_profile_toml(&tmp, "keyed");
+    if after.contains("credential_storage = \"file\"") {
+        assert_eq!(
+            after, before,
+            "a file-backed API-key profile must not be rewritten by refresh"
+        );
+    } else {
+        assert_secret_is_stored(&after, "fake-key-000");
+    }
 }

@@ -182,11 +182,18 @@ jobs:
 
           echo "$APPLE_NOTARY_KEY_BASE64" | base64 -D -o "$NOTARY_KEY"
           ditto -c -k --keepParent "$BINARY" "$NOTARY_ARCHIVE"
-          xcrun notarytool submit "$NOTARY_ARCHIVE" \
+          NOTARY_RESULT="$(xcrun notarytool submit "$NOTARY_ARCHIVE" \
             --key "$NOTARY_KEY" \
             --key-id "$APPLE_NOTARY_KEY_ID" \
             --issuer "$APPLE_NOTARY_ISSUER_ID" \
-            --wait
+            --wait \
+            --output-format json)"
+          NOTARY_STATUS="$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("status", ""))' <<< "$NOTARY_RESULT")"
+          if [ "$NOTARY_STATUS" != "Accepted" ]; then
+            echo "::error::Apple notarization returned status '$NOTARY_STATUS'."
+            echo "$NOTARY_RESULT"
+            exit 1
+          fi
 
       - name: Package (unix)
         if: runner.os != 'Windows'

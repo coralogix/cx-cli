@@ -115,6 +115,16 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         .await?;
     } else {
         println!("A Coralogix profile is already configured - skipping profile setup.");
+        // The profile flags only apply to a fresh setup. Say so, rather than
+        // silently verifying and reporting the existing default profile — the
+        // caller may have meant to sign in to a different team.
+        if url.is_some() || region.is_some() || api_key.is_some() || oauth {
+            eprintln!(
+                "note: --url / --region / --api-key / --oauth are ignored because a profile \
+                 already exists. To set up another team, run \
+                 `cx profiles add <name> --oauth --url <url> --set-default` first."
+            );
+        }
     }
 
     // ── Step 2: verify credentials ────────────────────────────────────────────────

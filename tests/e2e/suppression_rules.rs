@@ -23,15 +23,18 @@ fn suppression_rules_list() {
             name.is_string(),
             "row {i} has a null name - the list envelope is not being unwrapped: {row}"
         );
-        if let Some(version) = row.get("id").and_then(|v| v.as_str()) {
-            assert_ne!(
-                Some(version),
-                unique.as_str(),
-                "row {i} reports the same value for both IDs, so the fixture can no longer \
-                 distinguish them: {row}"
-            );
-        }
     }
+
+    // Never-updated rules legitimately share both IDs, so only require one that differs.
+    let distinguishes = rows.iter().any(|row| {
+        let version = row.get("id").and_then(|v| v.as_str());
+        version.is_some() && version != row.get("unique_identifier").and_then(|v| v.as_str())
+    });
+    assert!(
+        rows.is_empty() || distinguishes,
+        "every row reports the same value for both IDs, so the fixture can no longer \
+         distinguish them"
+    );
 }
 
 /// `get` must resolve the id that `list` hands out.

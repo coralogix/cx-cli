@@ -814,6 +814,17 @@ Examples:
         #[arg(long)]
         disable_olly: bool,
     },
+    /// Sign an OAuth profile in again, keeping its settings.
+    ///
+    /// Opens the browser sign-in with the profile's team preselected and saves
+    /// the new tokens only when the sign-in is for that same team. Region,
+    /// credential storage, output format and label are not changed. To change
+    /// those, use `cx profiles add <name>`.
+    Refresh {
+        /// Profile name to sign in again.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+    },
     /// Delete a profile and its stored credentials.
     Delete {
         /// Profile name to delete.
@@ -3120,6 +3131,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3215,6 +3227,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3412,9 +3425,14 @@ async fn main() -> Result<()> {
                 // guidance. The two lines above are the entire first-run story.
                 std::process::exit(1);
             }
-            eprintln!("Configuration error: {error}");
-            eprintln!("Run `cx profiles add` to set up credentials.");
-            return Err(error);
+            // The error already names the fix (for example `cx profiles add
+            // <name>`). Exit here instead of returning it: propagating it
+            // would print the same message a second time as `Error: ...`,
+            // and a generic `cx profiles add` line would sit beside the
+            // specific instruction already in the error. `{:?}` keeps a
+            // single copy of the cause chain (parse errors, and so on).
+            eprintln!("Configuration error: {error:?}");
+            std::process::exit(1);
         }
     };
 

@@ -16,10 +16,10 @@
 //! `cx profiles add`:
 //!
 //! * **Quick (interactive)** — bare `cx init` on a terminal. Guided prompts:
-//!   OAuth browser login (no auth-method question) and a region prompt.
-//!   Credential storage, output format, and label are defaulted
-//!   (file / JSON / none) rather than asked; Olly is enabled on the first
-//!   profile without asking.
+//!   OAuth browser login (no auth-method question), a region prompt, and where
+//!   to store the secret (OS keychain preselected; `file` is the other choice).
+//!   Output format and label are defaulted (JSON / none) rather than asked;
+//!   Olly is enabled on the first profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or
 //!   there is no terminal). The flags make the *profile* step prompt-free; the
 //!   skills step still asks its scope question unless `--global-skills`/

@@ -76,7 +76,7 @@ impl ExecutionTarget {
     ///    invocations - and, crucially, agents making many sequential calls -
     ///    the extra `/identity/whoami` round-trip.
     /// 3. Otherwise, the team's console URL resolved automatically via
-    ///    `GET /identity/whoami` (see `identity::resolve_team_url`), then
+    ///    `GET /identity/whoami` (see `identity::lookup_whoami`), then
     ///    persisted to the profile cache for next time. This is the default on
     ///    a cold cache: most teams don't need to configure anything at all to
     ///    get console links.
@@ -117,10 +117,18 @@ impl ExecutionTarget {
                     }
                 }
                 // 3. Cold cache (or overridden credentials): resolve live.
-                let resolved = identity::resolve_team_url(&self.client).await;
+                let whoami = identity::lookup_whoami(&self.client).await;
+                let resolved = whoami.as_ref().and_then(|w| {
+                    let url = w.team_url.as_deref()?.trim_end_matches('/');
+                    if url.is_empty() {
+                        None
+                    } else {
+                        Some(url.to_string())
+                    }
+                });
                 if !self.cfg.credentials_overridden {
-                    if let Some(url) = &resolved {
-                        crate::config::cache_console_url(&self.profile_name, url);
+                    if let Some(w) = &whoami {
+                        crate::config::cache_team_identity(&self.profile_name, w);
                     }
                 }
                 resolved

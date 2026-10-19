@@ -105,12 +105,13 @@ async fn init_writes_profile_then_installs_skills() {
         .assert()
         .success();
 
-    // Step 1: profile written with the quick-setup defaults (file + json).
+    // Step 1: prompt-free setup writes the key into the profile file and
+    // pins JSON output. Interactive `cx init` asks and preselects os-store.
     let toml = fs::read_to_string(profile_path(&home, "default")).unwrap();
     assert!(toml.contains("auth = \"api_key\""), "profile: {toml}");
     assert!(
         toml.contains("credential_storage = \"file\""),
-        "quick setup pins file storage: {toml}"
+        "prompt-free setup stores the key in the profile file: {toml}"
     );
     assert!(
         toml.contains("default_output_format = \"json\""),

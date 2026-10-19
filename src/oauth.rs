@@ -236,7 +236,7 @@ fn wait_for_callback_blocking(
     listeners: Vec<TcpListener>,
     expected_state: String,
 ) -> Result<String> {
-    println!("Waiting for browser callback...");
+    eprintln!("Waiting for browser callback...");
     for listener in &listeners {
         listener
             .set_nonblocking(true)
@@ -468,6 +468,12 @@ async fn do_token_refresh(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        // 400/401 mean the refresh token was rejected. A 5xx or a transport
+        // error leaves the refresh token usable, so those must not force a
+        // browser login.
+        if matches!(status.as_u16(), 400 | 401) {
+            return Err(RefreshRejected { status, body }.into());
+        }
         bail!("Token refresh failed ({status}): {body}");
     }
     resp.json::<TokenResponse>()
@@ -477,6 +483,57 @@ async fn do_token_refresh(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/// Options that shape the consent page a [`browser_login`] opens.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LoginOptions {
+    /// Adds `prompt=select_account` to the authorisation URL. Pass it on a
+    /// retry after a wrong-team sign-in: the browser still holds the wrong
+    /// team's SSO session, which would otherwise complete silently into the
+    /// same team without showing the picker.
+    pub force_account_selection: bool,
+    /// Restricts the consent page to this team and preselects it, via the
+    /// `cx_team_ids` query parameter the authorize page accepts. Set it to the
+    /// team a profile last used so an expired-session re-login lands back in
+    /// that team instead of whichever team the user clicks first. The page
+    /// shows "Team not available" when the signed-in user is not a member;
+    /// it never widens to the full list. Unknown to the IdP for clients with
+    /// `cx_teams:all_user_teams`, where it is ignored.
+    pub team_id: Option<i64>,
+}
+
+/// Assemble the `/authorize` URL for one sign-in attempt.
+///
+/// `challenge` and `state` are already URL-safe base64; everything else is
+/// form-encoded here.
+fn build_authorization_url(
+    authorization_endpoint: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    challenge: &str,
+    state: &str,
+    options: &LoginOptions,
+) -> String {
+    let scopes = SCOPES.join(" ");
+    let mut auth_url = format!(
+        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
+        authorization_endpoint,
+        urlencode(client_id),
+        urlencode(redirect_uri),
+        urlencode(&scopes),
+        challenge,
+        state,
+    );
+    if options.force_account_selection {
+        auth_url.push_str("&prompt=select_account");
+    }
+    if let Some(team_id) = options.team_id {
+        // One key, comma-separated ids: STS forwards unknown params through a
+        // single-valued map, so a repeated key would keep only one value.
+        auth_url.push_str(&format!("&cx_team_ids={team_id}"));
+    }
+    auth_url
+}
+
 /// Run the full interactive browser-based OAuth sign-in flow.
 ///
 /// 1. Fetches the OpenID Connect discovery document from `{base_url}/oauth/.well-known/…`
@@ -485,7 +542,13 @@ async fn do_token_refresh(
 /// 4. Opens the browser at the authorisation URL
 /// 5. Waits for the callback, validates `state`, extracts the code
 /// 6. Exchanges the code for tokens and returns them
-pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenResponse> {
+///
+/// See [`LoginOptions`] for the knobs that shape the consent page.
+pub async fn browser_login(
+    base_url: &str,
+    client_id: &str,
+    options: LoginOptions,
+) -> Result<TokenResponse> {
     let oidc = fetch_openid_config(base_url).await?;
     let (verifier, challenge) = generate_pkce();
 
@@ -501,23 +564,21 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
     let (listeners, port) = bind_callback_listener()?;
     let redirect_uri = format!("http://localhost:{port}/callback");
 
-    let scopes = SCOPES.join(" ");
-    let auth_url = format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
-        oidc.authorization_endpoint,
-        urlencode(client_id),
-        urlencode(&redirect_uri),
-        urlencode(&scopes),
-        challenge,
-        state,
+    let auth_url = build_authorization_url(
+        &oidc.authorization_endpoint,
+        client_id,
+        &redirect_uri,
+        &challenge,
+        &state,
+        &options,
     );
 
     // Always print the URL: when the browser can't be opened (headless run,
     // or cx driven by a coding agent), it is the user's only way in — the
     // agent relays it and the callback still lands on localhost.
-    println!("Sign in by visiting:\n  {auth_url}");
+    eprintln!("Sign in by visiting:\n  {auth_url}");
     if open::that(&auth_url).is_ok() {
-        println!("(opened in your default browser)");
+        eprintln!("(opened in your default browser)");
     }
 
     // Run the blocking TCP listener on a dedicated thread so it does not
@@ -530,7 +591,7 @@ pub async fn browser_login(base_url: &str, client_id: &str) -> Result<TokenRespo
     .context("OAuth login timed out after 5 minutes")?
     .context("OAuth callback task failed")??;
 
-    println!("Authorization code received, exchanging for tokens...");
+    eprintln!("Authorization code received, exchanging for tokens...");
 
     exchange_code(
         &oidc.token_endpoint,
@@ -579,6 +640,33 @@ pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()>
     Ok(())
 }
 
+/// Result of resolving an OAuth bearer token.
+///
+/// When `os_store_fallback_reason` is set, the caller must persist
+/// `refreshed_tokens` in the profile file and switch the profile's credential
+/// storage to `file`.
+#[derive(Debug)]
+pub struct TokenResolution {
+    pub bearer: String,
+    pub refreshed_tokens: Option<StoredOAuthTokens>,
+    pub os_store_fallback_reason: Option<String>,
+}
+
+fn os_store_refresh_result(tokens: &TokenResponse, store_result: Result<()>) -> TokenResolution {
+    match store_result {
+        Ok(()) => TokenResolution {
+            bearer: tokens.access_token.clone(),
+            refreshed_tokens: None,
+            os_store_fallback_reason: None,
+        },
+        Err(err) => TokenResolution {
+            bearer: tokens.access_token.clone(),
+            refreshed_tokens: Some(tokens_to_stored(tokens)),
+            os_store_fallback_reason: Some(format!("{err:#}")),
+        },
+    }
+}
+
 fn cached_token_is_valid(token: &str, expiry: Option<u64>) -> bool {
     if let Some(exp) = expiry {
         exp > unix_now_secs() + 30
@@ -589,25 +677,117 @@ fn cached_token_is_valid(token: &str, expiry: Option<u64>) -> bool {
     }
 }
 
+/// Why a stored OAuth session cannot be refreshed and the user must sign in again.
+#[derive(Debug)]
+enum ReauthKind {
+    TokensMissing,
+    SessionExpired,
+    RefreshFailed,
+}
+
+#[derive(Debug)]
+struct ReauthRequired {
+    profile_name: String,
+    kind: ReauthKind,
+    /// Present when a refresh was attempted and the IdP rejected it. Kept as
+    /// the error source so the response body is still printed.
+    source: Option<anyhow::Error>,
+}
+
+impl std::fmt::Display for ReauthRequired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let profile_name = &self.profile_name;
+        let detail = match self.kind {
+            ReauthKind::TokensMissing => "OAuth tokens missing",
+            ReauthKind::SessionExpired => "OAuth session expired",
+            ReauthKind::RefreshFailed => "OAuth token refresh failed",
+        };
+        write!(
+            f,
+            "{detail} for profile '{profile_name}'.\n\
+             Run `cx profiles refresh {profile_name}` to sign in again."
+        )
+    }
+}
+
+impl std::error::Error for ReauthRequired {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(AsRef::as_ref)
+    }
+}
+
+/// The IdP rejected the refresh token (HTTP 400 or 401). Transport failures
+/// and 5xx responses are ordinary errors and must not start a browser login.
+#[derive(Debug)]
+struct RefreshRejected {
+    status: reqwest::StatusCode,
+    body: String,
+}
+
+impl std::fmt::Display for RefreshRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Token refresh failed ({}): {}", self.status, self.body)
+    }
+}
+
+impl std::error::Error for RefreshRejected {}
+
+fn is_refresh_rejected(err: &anyhow::Error) -> bool {
+    err.chain()
+        .any(|cause| cause.downcast_ref::<RefreshRejected>().is_some())
+}
+
+fn reauth_required(profile_name: &str, kind: ReauthKind) -> anyhow::Error {
+    ReauthRequired {
+        profile_name: profile_name.to_string(),
+        kind,
+        source: None,
+    }
+    .into()
+}
+
+fn reauth_required_with_source(
+    profile_name: &str,
+    kind: ReauthKind,
+    source: anyhow::Error,
+) -> anyhow::Error {
+    ReauthRequired {
+        profile_name: profile_name.to_string(),
+        kind,
+        source: Some(source),
+    }
+    .into()
+}
+
+/// True when `err` means the stored session is dead and browser sign-in is the
+/// only recovery. Network failures while a refresh token is still present are
+/// not included.
+pub fn is_reauth_required(err: &anyhow::Error) -> bool {
+    err.chain()
+        .any(|cause| cause.downcast_ref::<ReauthRequired>().is_some())
+}
+
 /// Resolve a usable bearer token for an OAuth profile.
 ///
 /// Reads the cached access token from the chosen storage backend and returns it
 /// if it is still valid (≥ 30 s remaining). Otherwise, uses the cached refresh
 /// token to obtain a fresh token set.
 ///
-/// For `OsStore`, the keyring is updated in place and the returned
-/// `Option<StoredOAuthTokens>` is always `None`. For `File`, the caller is
-/// responsible for persisting the returned `Some(StoredOAuthTokens)` to the
-/// profile TOML when a refresh occurred.
+/// For `OsStore`, the keyring is updated in place. If that write fails, the
+/// returned [`TokenResolution`] asks the caller to migrate the profile to file
+/// storage and persist the refreshed token set. For `File`, the caller
+/// persists the returned token set when a refresh occurred.
 ///
-/// Errors with an actionable message when re-authentication is required.
+/// When the session cannot be refreshed, the error satisfies
+/// [`is_reauth_required`]. Callers on an interactive terminal may run
+/// [`browser_login`] instead of surfacing it.
 pub async fn resolve_token(
     profile_name: &str,
     base_url: &str,
     client_id: &str,
     storage: CredentialStorage,
     file_tokens: Option<&StoredOAuthTokens>,
-) -> Result<(String, Option<StoredOAuthTokens>)> {
+) -> Result<TokenResolution> {
     let (cached_access, cached_expiry, cached_refresh) = match storage {
         CredentialStorage::OsStore => (
             keyring_store::get_secret(profile_name, "oauth_access_token")?,
@@ -616,12 +796,8 @@ pub async fn resolve_token(
             keyring_store::get_secret(profile_name, "oauth_refresh_token")?,
         ),
         CredentialStorage::File => {
-            let t = file_tokens.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "OAuth tokens missing for profile '{profile_name}'.\n\
-                     Run `cx profiles add {profile_name}` to re-authenticate."
-                )
-            })?;
+            let t = file_tokens
+                .ok_or_else(|| reauth_required(profile_name, ReauthKind::TokensMissing))?;
             (
                 Some(t.access_token.clone()),
                 t.expiry,
@@ -632,16 +808,16 @@ pub async fn resolve_token(
 
     if let Some(ref token) = cached_access {
         if cached_token_is_valid(token, cached_expiry) {
-            return Ok((token.clone(), None));
+            return Ok(TokenResolution {
+                bearer: token.clone(),
+                refreshed_tokens: None,
+                os_store_fallback_reason: None,
+            });
         }
     }
 
-    let refresh_token = cached_refresh.ok_or_else(|| {
-        anyhow::anyhow!(
-            "OAuth session expired for profile '{profile_name}'.\n\
-             Run `cx profiles add {profile_name}` to re-authenticate."
-        )
-    })?;
+    let refresh_token =
+        cached_refresh.ok_or_else(|| reauth_required(profile_name, ReauthKind::SessionExpired))?;
 
     let oidc = fetch_openid_config(base_url).await.with_context(|| {
         format!(
@@ -649,23 +825,34 @@ pub async fn resolve_token(
         )
     })?;
 
-    let tokens = do_token_refresh(&oidc.token_endpoint, client_id, &refresh_token)
-        .await
-        .with_context(|| {
-            format!(
-                "OAuth token refresh failed for profile '{profile_name}'.\n\
-                 Run `cx profiles add {profile_name}` to re-authenticate."
-            )
-        })?;
+    let tokens = match do_token_refresh(&oidc.token_endpoint, client_id, &refresh_token).await {
+        Ok(tokens) => tokens,
+        Err(err) if is_refresh_rejected(&err) => {
+            return Err(reauth_required_with_source(
+                profile_name,
+                ReauthKind::RefreshFailed,
+                err,
+            ));
+        }
+        Err(err) => {
+            return Err(err.context(format!(
+                "Failed to refresh OAuth token for profile '{profile_name}'."
+            )));
+        }
+    };
 
     match storage {
-        CredentialStorage::OsStore => {
-            store_tokens_keyring(profile_name, &tokens)?;
-            Ok((tokens.access_token, None))
-        }
+        CredentialStorage::OsStore => Ok(os_store_refresh_result(
+            &tokens,
+            store_tokens_keyring(profile_name, &tokens),
+        )),
         CredentialStorage::File => {
             let stored = tokens_to_stored(&tokens);
-            Ok((tokens.access_token, Some(stored)))
+            Ok(TokenResolution {
+                bearer: tokens.access_token,
+                refreshed_tokens: Some(stored),
+                os_store_fallback_reason: None,
+            })
         }
     }
 }
@@ -757,6 +944,28 @@ mod tests {
     }
 
     #[test]
+    fn os_store_refresh_falls_back_to_file_storage() {
+        let tokens = sample_token_response(Some(3600), Some("refresh-1"));
+        let resolved = os_store_refresh_result(
+            &tokens,
+            Err(anyhow::anyhow!("credential blob exceeds the limit")),
+        );
+
+        assert_eq!(resolved.bearer, tokens.access_token);
+        assert_eq!(
+            resolved
+                .refreshed_tokens
+                .as_ref()
+                .and_then(|stored| stored.refresh_token.as_deref()),
+            Some("refresh-1")
+        );
+        assert!(resolved
+            .os_store_fallback_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("credential blob exceeds the limit")));
+    }
+
+    #[test]
     fn cached_token_is_valid_uses_expiry_when_present() {
         let now = unix_now_secs();
         // 5 minutes left -> valid.
@@ -787,6 +996,7 @@ mod tests {
         let msg = format!("{err:#}");
         assert!(msg.contains("OAuth tokens missing"), "got: {msg}");
         assert!(msg.contains("myprofile"), "got: {msg}");
+        assert!(is_reauth_required(&err));
     }
 
     #[tokio::test]
@@ -798,7 +1008,7 @@ mod tests {
             expiry: Some(unix_now_secs() + 600),
         };
         // base_url is never contacted because the cached token is valid.
-        let (bearer, refreshed) = resolve_token(
+        let resolved = resolve_token(
             "myprofile",
             "https://example.invalid",
             "client-id",
@@ -807,8 +1017,9 @@ mod tests {
         )
         .await
         .expect("cached path must not hit the network");
-        assert_eq!(bearer, "still-good");
-        assert!(refreshed.is_none());
+        assert_eq!(resolved.bearer, "still-good");
+        assert!(resolved.refreshed_tokens.is_none());
+        assert!(resolved.os_store_fallback_reason.is_none());
     }
 
     #[tokio::test]
@@ -830,5 +1041,94 @@ mod tests {
         .expect_err("expired access + no refresh token must error");
         let msg = format!("{err:#}");
         assert!(msg.contains("OAuth session expired"), "got: {msg}");
+        assert!(is_reauth_required(&err));
+    }
+
+    #[test]
+    fn refresh_rejection_requires_reauth() {
+        let err = reauth_required_with_source(
+            "myprofile",
+            ReauthKind::RefreshFailed,
+            RefreshRejected {
+                status: reqwest::StatusCode::BAD_REQUEST,
+                body: "invalid_grant".to_string(),
+            }
+            .into(),
+        );
+        let msg = format!("{err:?}");
+        assert!(msg.contains("OAuth token refresh failed"), "got: {msg}");
+        assert!(msg.contains("invalid_grant"), "got: {msg}");
+        assert!(is_reauth_required(&err));
+        assert!(is_refresh_rejected(&err));
+    }
+
+    #[test]
+    fn refresh_server_error_does_not_require_reauth() {
+        let err = anyhow::anyhow!(
+            "Failed to refresh OAuth token for profile 'myprofile'.\n\
+             Token refresh failed (503): unavailable"
+        );
+        assert!(!is_refresh_rejected(&err));
+        assert!(!is_reauth_required(&err));
+    }
+
+    #[test]
+    fn authorization_url_has_no_optional_params_by_default() {
+        let url = build_authorization_url(
+            "https://example.com/oauth/authorize",
+            "cli-client",
+            "http://localhost:21783/callback",
+            "CHALLENGE",
+            "STATE",
+            &LoginOptions::default(),
+        );
+        assert_eq!(
+            url,
+            "https://example.com/oauth/authorize?response_type=code&client_id=cli-client\
+             &redirect_uri=http%3A%2F%2Flocalhost%3A21783%2Fcallback\
+             &scope=openid+profile+email+offline_access\
+             &code_challenge=CHALLENGE&code_challenge_method=S256&state=STATE"
+        );
+        assert!(!url.contains("prompt="));
+        assert!(!url.contains("cx_team_ids="));
+    }
+
+    #[test]
+    fn authorization_url_restricts_to_the_profile_team() {
+        let url = build_authorization_url(
+            "https://example.com/oauth/authorize",
+            "cli-client",
+            "http://localhost:21783/callback",
+            "CHALLENGE",
+            "STATE",
+            &LoginOptions {
+                force_account_selection: false,
+                team_id: Some(53623),
+            },
+        );
+        assert!(
+            url.ends_with("&state=STATE&cx_team_ids=53623"),
+            "got: {url}"
+        );
+        assert!(!url.contains("prompt="));
+    }
+
+    #[test]
+    fn authorization_url_combines_account_picker_and_team_restriction() {
+        let url = build_authorization_url(
+            "https://example.com/oauth/authorize",
+            "cli-client",
+            "http://localhost:21783/callback",
+            "CHALLENGE",
+            "STATE",
+            &LoginOptions {
+                force_account_selection: true,
+                team_id: Some(7),
+            },
+        );
+        assert!(
+            url.ends_with("&state=STATE&prompt=select_account&cx_team_ids=7"),
+            "got: {url}"
+        );
     }
 }

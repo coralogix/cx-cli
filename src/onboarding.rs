@@ -34,7 +34,7 @@ const ONBOARDING_BASE: &str = "/api/v2/onboarding";
 /// Bound on a report: the shared client carries no request timeout, so a
 /// gateway that accepts the connection but stalls the response would
 /// otherwise hang the command. A stall is swallowed like any other failure.
-const REPORT_TIMEOUT: Duration = Duration::from_secs(5);
+const REPORT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Record the calling user as onboarded via `POST /api/v2/onboarding`.
 ///

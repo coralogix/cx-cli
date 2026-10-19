@@ -607,9 +607,14 @@ pub async fn report_onboarding(name: Option<&str>) {
     let Ok(cfg) = crate::config::resolve(name, None, None).await else {
         return;
     };
-    let profile = &cfg.profile_name;
-    let outcome = crate::onboarding::report(profile, &cfg.endpoint, &cfg.api_key).await;
+    let outcome = crate::onboarding::report(&cfg.profile_name, &cfg.endpoint, &cfg.api_key).await;
     if outcome == Some(crate::onboarding::Outcome::Forbidden) {
+        // Name the profile from the arguments / config file, not from `cfg`,
+        // which also carries the API key.
+        let profile = match name {
+            Some(name) => name.to_string(),
+            None => load_config().unwrap_or_default().default_profile,
+        };
         eprintln!(
             "note: profile '{profile}' signs in with an API key, so this setup isn't linked \
              to your Coralogix user. To link it, sign in as yourself with \

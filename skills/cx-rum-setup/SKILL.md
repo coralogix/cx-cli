@@ -45,22 +45,30 @@ Inspect the user's repo before anything else. Signals overlap (React Native apps
 | 1 | `pubspec.yaml` | Flutter SDK - ignore its `ios/` / `android/` folders |
 | 2 | `package.json` with `react-native` (or `expo`) | React Native SDK - ignore `react` and native folders |
 | 3 | `package.json` with `next` | Next.js (browser SDK, client-only init) |
-| 4 | `package.json` with `react`, `vue`, `@angular/core`, `svelte`, or no framework | Browser SDK (`@coralogix/browser`) |
+| 4 | `package.json` with a browser signal - `react-dom`, `vue`, `@angular/core`, `svelte`, a browser bundler (`vite`, `webpack`, `parcel`), or an `index.html` entry | Browser SDK (`@coralogix/browser`) |
 | 5 | `Podfile` / `Package.swift` / `*.xcodeproj` | iOS SDK |
 | 6 | `build.gradle(.kts)` with Android plugin | Android SDK |
 
-### 2. Get a RUM API key
+A `package.json` alone (Node backend, tooling) is **not** a browser app. If nothing matches, tell the user no supported client app was found instead of guessing.
+
+### 2. Pick the profile - before any key operation
+
+The key and the SDK domain must come from **one profile**, so settle it before touching keys. The active profile is `-p <name>` if given, else `$CX_PROFILE` if set, else the `DEFAULT` row of `cx profiles list` - don't just read the `DEFAULT` row. If there are several profiles and none was named, **ask the user which team the app belongs to now**, then pass `-p <name>` to every `cx iam` and `cx dataprime` call that follows.
+
+`coralogixDomain` is that profile's `REGION` in upper case: `EU1`, `EU2`, `US1`, `US2`, `US3`, `AP1`, `AP2`, `AP3`.
+
+### 3. Get a RUM API key
 
 RUM keys are **public by design** - they ship inside client code. Create it with the **`SendRUMData` preset** - the same key the UI's RUM flow creates. That preset grants exactly one permission, `rum-ingress:SendData`, and is standalone: never add other presets or permissions. (Granting `rum-ingress:SendData` directly also works but shows as a `CUSTOM` key in the UI, so prefer the preset.) In Settings → API Keys a RUM key shows type "Send Your Data" with preset `SendRUMData`. Do **not** pick the `SendData` preset - it grants logs/metrics/spans ingest but not RUM, and makes the key secret, not public.
 
 **Reuse first.** Check for an existing RUM key:
 
 ```bash
-cx iam api-keys list -o json
-cx iam api-keys send-data-keys -o json
+cx iam api-keys list -p <profile> -o json
+cx iam api-keys send-data-keys -p <profile> -o json
 ```
 
-These listings don't include permissions, so treat every row as a **candidate only** - never reuse a key based on its name. For each candidate run `cx iam api-keys get <id> -o json` and reuse it only if `keyInfo.keyPermissions` has `SendRUMData` as its only preset and no other permissions (or `rum-ingress:SendData` as its only permission). The value is in `keyInfo.value` (returned for unhashed keys - a hashed key can't be reused, create a new one).
+These listings don't include permissions, so treat every row as a **candidate only** - never reuse a key based on its name. For each candidate run `cx iam api-keys get <id> -p <profile> -o json` and reuse it only if it is **active** (`keyInfo.active: true`) **and** `keyInfo.keyPermissions` has `SendRUMData` as its only preset and no other permissions (or `rum-ingress:SendData` as its only permission). Skip inactive keys - the SDK can't send with them. The value is in `keyInfo.value` (returned for unhashed keys - a hashed key can't be reused, create a new one).
 
 **Create one if none exists.** This is a write - describe it to the user and get approval before passing `--yes` (same rules as `cx-platform-admin`).
 
@@ -73,19 +81,19 @@ cat > rum-key.json <<'EOF'
   "hashed": false
 }
 EOF
-cx iam api-keys create --from-file rum-key.json --yes -o json
+cx iam api-keys create --from-file rum-key.json -p <profile> --yes -o json
 ```
 
-- `teamId`: read `cached_team_id` from the profile file `~/.cx/profiles/<profile>.toml` (written by `cx init`), or the `owner.teamId` of any key in `cx iam api-keys list -o json`, or ask the user.
+- `teamId`: read `cached_team_id` from the step-2 profile's file `~/.cx/profiles/<profile>.toml` (written by `cx init`), or the `owner.teamId` of any key in `cx iam api-keys list -o json`, or ask the user.
 - `Permission denied`: RUM keys are Send-Your-Data (data-ingest) keys, so they need the `DATA-INGEST-API-KEYS` permissions, not the team custom-key ones:
   - on `send-data-keys` → the role lacks `DATA-INGEST-API-KEYS:READCONFIG` (view keys);
   - on `get` or `create` → the role lacks `DATA-INGEST-API-KEYS:MANAGE` (`get` needs it too, since it returns the key value).
 
-  Don't retry with other payloads. Tell the user which permission is missing and ask them to get it, or to create the key in **Settings → API Keys** with only the `SendRUMData` preset (or have an admin do it), then continue from step 3 with the key value.
+  Don't retry with other payloads. Tell the user which permission is missing and ask them to get it, or to create the key in **Settings → API Keys** with only the `SendRUMData` preset (or have an admin do it), then continue from step 4 with the key value.
 - `hashed: false` keeps the key value retrievable later - fine for a public RUM key.
 - The response contains `value` - that is the `public_key` for the SDK.
 
-### 3. Fetch the current SDK docs
+### 4. Fetch the current SDK docs
 
 SDK package names, versions, and options change - fetch them instead of guessing (see `coralogix-docs`):
 
@@ -94,11 +102,9 @@ cx docs search "RUM SDK installation <platform>" --limit 5
 cx docs fetch <suffix-from-search>
 ```
 
-### 4. Install and initialize
+### 5. Install and initialize
 
-Use **one profile for both the key and the domain**. The active profile is `-p <name>` if given, else `$CX_PROFILE` if set, else the `DEFAULT` row of `cx profiles list` - don't just read the `DEFAULT` row. If there are several profiles and none was named, ask the user which team the app belongs to, then pass `-p <name>` to every `cx` call.
-
-`coralogixDomain` is that profile's `REGION` in upper case: `EU1`, `EU2`, `US1`, `US2`, `US3`, `AP1`, `AP2`, `AP3`.
+Use the profile and `coralogixDomain` from step 2.
 
 Browser example (confirm against the fetched docs):
 
@@ -126,13 +132,13 @@ Gotchas:
 - **`version`** should match the release - source maps and release comparison rely on it.
 - **Source maps** (optional) are uploaded with `coralogix-rum-cli` and need a *separate* team key with the `SourceMapping` preset (`source-mapping:ReadMapping` + `UploadMapping`) - never reuse the RUM key, and keep this one secret (CI only, not in client code). See `cx docs fetch user-guides/rum/cli/rum-cli.md` (search doesn't surface it).
 
-### 5. Verify data arrives (optional)
+### 6. Verify data arrives (optional)
 
 Setup is done once the key exists and `init` is in place - data only flows after the app runs and users hit it, and the SDK sends in batches. Give the user this query to run later, or run it now if they load the app:
 
 ```bash
 cx dataprime query --source rum.events \
-  "filter \$d.version_metadata.app_name == '<app-name>' | limit 10" -o json
+  "filter \$d.version_metadata.app_name == '<app-name>' | limit 10" -p <profile> -o json
 ```
 
 No rows? Check the browser network tab for requests to the RUM ingress endpoint. Ad blockers, a wrong `coralogixDomain`, or a key with extra permissions are the usual causes.

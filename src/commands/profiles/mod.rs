@@ -106,6 +106,13 @@ fn credential_storage_for_setup(interactive: bool) -> Result<CredentialStorage> 
     Ok(CredentialStorage::OsStore)
 }
 
+fn credential_storage_description(storage: CredentialStorage) -> &'static str {
+    match storage {
+        CredentialStorage::OsStore => "OS credential store",
+        CredentialStorage::File => "profile file",
+    }
+}
+
 /// Prompt for a region using the unified searchable select.
 ///
 /// The list filters as the user types, and pasting a Coralogix URL directly
@@ -514,7 +521,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     println!("Configuring profile '{name}'\n");
     let credential_storage = credential_storage_for_setup(interactive)?;
 
-    let (mut profile, storage_desc) = if oauth {
+    let (mut profile, _) = if oauth {
         // `--oauth` answers the auth-method question; go straight to the
         // browser login. A terminal is not required: the approval happens in
         // the browser, the login URL is printed for the user (or an agent) to
@@ -541,6 +548,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             configure_api_key(&name, None, region_choice, quick, credential_storage).await?
         }
     };
+    let storage_desc = credential_storage_description(profile.credential_storage);
 
     // ── Common: default output format (per-profile) ────────────────────────────
     // Quick setup pins JSON without asking. Non-interactive runs leave it unset,

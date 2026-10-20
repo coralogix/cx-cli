@@ -62,10 +62,10 @@ What it asks you:
 Everything else is defaulted rather than asked: profile name `default`, no
 label, and `json` as the profile's default output format (pass `-o text` for a
 run you want to read by eye, or set `default_output_format` in the profile).
-Credentials are
-stored in the OS credential store (macOS Keychain, Windows Credential Manager,
-or the Linux secret service) when available; otherwise they fall back to the
-profile TOML. Linux musl builds always use the profile TOML.
+Credentials are stored in macOS Keychain or Windows Credential Manager; setup
+returns an error if those stores are unavailable. Linux musl builds always use
+the profile TOML. On glibc Linux, interactive setup offers the OS credential
+store (the default) or the profile TOML.
 You also get [Olly](https://coralogix.com/docs/user-guides/olly/ask-olly/), Coralogix's AI assistant, and the
 full command set including `iam` and `archive` writes, all available from the
 start. To switch either off, set `olly_enabled` or `allow_risky_commands` to

@@ -39,11 +39,12 @@ remains `~/.cx/`.
 `cx init` creates your first profile as part of setup — see the
 [Quick start](quickstart.md) for that walkthrough. This page covers what it wrote.
 
-`cx init` automatically stores credentials in the OS keyring when one is
-available. If that fails, it falls back to the profile file; Linux musl builds
-always use file storage because they have no keyring backend. It defaults these
-rather than prompting: profile name `default`, no label, and `json` as the
-profile's default output format.
+`cx init` uses the OS credential store on macOS and Windows, and reports an
+error if it is unavailable. Linux musl builds always use file storage because
+they have no keyring backend. On glibc Linux, interactive setup offers OS
+credential storage (the default) or file storage. It defaults these rather than
+prompting: profile name `default`, no label, and `json` as the profile's default
+output format.
 
 Set `default_output_format` in the profile TOML (or pass `-o text`) if you would
 rather read the output by eye than hand it to an agent.
@@ -155,7 +156,7 @@ For environments with no profile file at all, see
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted in the OS keyring (`os_store`) when available. Linux musl builds use `file`; other platforms automatically fall back to `file` if the keyring is unavailable.
+- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted in the OS keyring (`os_store`) on macOS and Windows. Linux musl uses `file`; interactive glibc Linux setup lets you choose either backend, with the OS store selected by default.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
 - If the session needs re-authentication, running a command opens the sign-in page showing only the profile's team, then continues. If the sign-in still comes back for a different team (for example, the first re-login of a profile that has not recorded its team yet), `cx` discards it, leaves the profile unchanged, and offers to reopen the sign-in page.
 - This happens only on an interactive terminal. When output is piped or `cx` runs under a coding agent, it exits with an actionable message instead:
@@ -255,7 +256,9 @@ A static Coralogix API key. The key **must be one of the following types** - `cx
 - **[Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys)** - generated in the Coralogix UI under *Data Flow → API Keys → Team Keys*. Scoped to a team; typical choice for shared/CI usage.
 - **[Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys)** - generated in the Coralogix UI under the user menu (top-right) → *Personal Keys*. Scoped to your user account.
 
-The key is stored in the OS keyring when available, with an automatic profile-TOML fallback (permissions set to `0600` on Unix).
+macOS and Windows store the key in the OS keyring and return an error if it is
+unavailable. Linux musl stores it in the profile TOML (`0600` permissions on
+Unix); interactive glibc Linux setup lets you choose file storage explicitly.
 
 ## OS keyring backends
 
@@ -270,9 +273,10 @@ Credentials stored in the OS keyring use the following backends:
 
 The default install script and release binaries are built for musl on Linux, so
 `file` is their only credential-storage option. Keyring support is available
-only when building from source against glibc. On platforms with an OS-store
-option, `cx` falls back to file-based credential storage when that store fails
-at setup time.
+only when building from source against glibc. On glibc Linux, interactive setup
+offers both storage options and defaults to the OS store. Non-interactive setup
+uses the OS store and returns an actionable timeout/error if it is locked or
+unavailable; it never silently falls back to a file.
 
 ## Global config (`~/.cx/config.toml`)
 
@@ -312,7 +316,7 @@ See [TOON output format](toon-output.md) for the `toon` format specification.
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. `credential_storage` records where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. Setup automatically tries `"os_store"` first, falling back to `"file"` if unavailable; Linux musl always uses `"file"`. Existing file-backed credentials are migrated to the OS keyring once per `cx` upgrade when possible. A profile that omits the key is read as `"file"`.
+Each profile stores credentials and endpoint configuration. `credential_storage` records where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. macOS and Windows require `"os_store"` for new profiles and migrate existing file-backed profiles before use. Linux musl always uses `"file"`; glibc Linux lets interactive users choose and preserves existing profiles as configured. A profile that omits the key is read as `"file"`.
 
 ### Common fields
 

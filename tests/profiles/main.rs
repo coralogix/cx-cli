@@ -17,6 +17,7 @@ fn temp_home() -> PathBuf {
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
+    cmd.env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"));
     // `profiles add` reads CX_API_KEY; a key exported in the user's shell
     // must not be used in tests.
     cmd.env_remove("CX_API_KEY");
@@ -62,11 +63,23 @@ api_key = "fake-key-000"
 region = "eu1"
 "#;
     fs::write(profiles_dir.join(format!("{name}.toml")), profile_toml).unwrap();
+    if !home.join(".cx").join("config.toml").exists() {
+        seed_config(home, "");
+    }
 }
 
 fn seed_config(home: &std::path::Path, content: &str) {
     let cx_dir = home.join(".cx");
     fs::create_dir_all(&cx_dir).unwrap();
+    let migration = format!(
+        "credential_migration_version = \"{}\"\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    let content = if content.contains("credential_migration_version") {
+        content.to_string()
+    } else {
+        format!("{content}{migration}")
+    };
     fs::write(cx_dir.join("config.toml"), content).unwrap();
 }
 

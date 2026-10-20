@@ -1,3 +1,4 @@
+use std::fs::{File, OpenOptions};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
@@ -6,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use crate::keyring_store;
@@ -233,8 +235,8 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub managed_completions: Vec<ManagedCompletion>,
 
-    /// cx version that last attempted to migrate file-backed credentials to the
-    /// OS credential store. Internal migration state, not user configuration.
+    /// cx version that last migrated file-backed credentials on a platform
+    /// where the OS credential store is mandatory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_migration_version: Option<String>,
 }
@@ -512,34 +514,51 @@ pub fn load_profile(name: &str) -> Result<Profile> {
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 
-/// Best-effort migration of all file-backed credentials to the OS credential
-/// store. Runs once for each installed cx version. A profile is rewritten only
-/// after every one of its secrets is stored successfully, so an unavailable
-/// keyring leaves the existing file intact.
+/// An advisory, cross-process lock for one profile's file and credentials.
 ///
-/// Linux musl builds intentionally retain file storage because they have no OS
-/// credential-store backend.
-pub fn migrate_file_credentials_to_os_store() {
-    if cfg!(all(target_os = "linux", target_env = "musl")) {
-        return;
+/// The separate lock file lets all writers coordinate before the profile itself
+/// exists and prevents credential migration from overwriting a rotated OAuth
+/// refresh token.
+struct ProfileLock(File);
+
+impl Drop for ProfileLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.0);
+    }
+}
+
+fn lock_profile(name: &str) -> Result<ProfileLock> {
+    let dir = profiles_dir()?;
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{name}.toml.lock"));
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .with_context(|| format!("Failed to open profile lock {}", path.display()))?;
+    file.lock_exclusive()
+        .with_context(|| format!("Failed to lock profile '{name}'"))?;
+    Ok(ProfileLock(file))
+}
+
+/// Move legacy file-backed credentials to the OS credential store on macOS and
+/// Windows. Linux retains its chosen credential backend.
+pub fn migrate_file_credentials_to_os_store() -> Result<()> {
+    if !cfg!(any(target_os = "macos", target_os = "windows")) {
+        return Ok(());
     }
 
     const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-    let Ok(mut config) = load_config() else {
-        return;
-    };
+    let mut config = load_config()?;
     if config.credential_migration_version.as_deref() == Some(CURRENT_VERSION) {
-        return;
+        return Ok(());
     }
 
-    let Ok(names) = list_profile_names() else {
-        return;
-    };
-
-    for name in names {
-        let Ok(mut profile) = load_profile(&name) else {
-            continue;
-        };
+    for name in list_profile_names()? {
+        let _lock = lock_profile(&name)?;
+        let mut profile = load_profile(&name)?;
         if profile.credential_storage != CredentialStorage::File {
             continue;
         }
@@ -551,35 +570,37 @@ pub fn migrate_file_credentials_to_os_store() {
             continue;
         }
 
-        // Avoid retaining stale fields from an earlier OS-store attempt. A
-        // failed write is cleaned up below, while the profile file remains the
-        // source of truth.
+        // Preserve the file until every secret is stored successfully.
         keyring_store::delete_profile(&name);
         let migrated = match profile.auth {
-            AuthKind::ApiKey => match profile.api_key.as_deref() {
-                Some(key) => keyring_store::store_secret(&name, "api_key", key),
-                None => continue,
-            },
-            AuthKind::OAuth => match profile.oauth_tokens.as_ref() {
-                Some(tokens) => oauth::store_stored_tokens_keyring(&name, tokens),
-                None => continue,
-            },
+            AuthKind::ApiKey => keyring_store::store_secret(
+                &name,
+                "api_key",
+                profile.api_key.as_deref().expect("checked above"),
+            ),
+            AuthKind::OAuth => oauth::store_stored_tokens_keyring(
+                &name,
+                profile.oauth_tokens.as_ref().expect("checked above"),
+            ),
         };
-        if migrated.is_err() {
+        if let Err(err) = migrated {
             keyring_store::delete_profile(&name);
-            continue;
+            return Err(err).with_context(|| {
+                format!(
+                    "Failed to migrate profile '{name}' to the OS credential store. \
+                     Unlock the credential store and run cx again"
+                )
+            });
         }
 
         profile.credential_storage = CredentialStorage::OsStore;
         profile.api_key = None;
         profile.oauth_tokens = None;
-        let _ = save_profile(&name, &profile);
+        save_profile_unlocked(&name, &profile)?;
     }
 
-    // Record the attempt even if the OS store was unavailable. The next cx
-    // upgrade retries file-backed profiles with its new version.
     config.credential_migration_version = Some(CURRENT_VERSION.to_string());
-    let _ = save_config(&config);
+    save_config(&config)
 }
 
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal
@@ -804,27 +825,23 @@ async fn sign_in_to_profile_team(
 }
 
 /// Store new sign-in tokens on the profile's credential backend and return the
-/// access token. The OS keyring is written here; for file storage the tokens
-/// go on `profile`, and the caller saves the profile. If the keyring write
-/// fails, the profile moves to file storage so the sign-in is not lost.
-fn keep_signed_in_tokens(
+/// access token. The OS-keyring write is mandatory for OS-store profiles; file
+/// storage is used only when that backend was explicitly selected.
+async fn keep_signed_in_tokens(
     profile_name: &str,
     profile: &mut Profile,
     tokens: &oauth::TokenResponse,
 ) -> Result<String> {
     if profile.credential_storage == CredentialStorage::OsStore {
-        match oauth::store_tokens_keyring(profile_name, tokens) {
-            Ok(()) => return Ok(tokens.access_token.clone()),
-            Err(err) => {
-                // Clear any partial keyring writes from a failed multi-key store.
-                keyring_store::delete_profile(profile_name);
-                eprintln!(
-                    "Warning: failed to store OAuth tokens in the OS credential store ({err}); \
-                     migrated profile '{profile_name}' to file storage."
-                );
-                profile.credential_storage = CredentialStorage::File;
-            }
-        }
+        let profile_name = profile_name.to_string();
+        let tokens = tokens.clone();
+        let access_token = tokens.access_token.clone();
+        keyring_store::write_with_timeout(move || {
+            oauth::store_tokens_keyring(&profile_name, &tokens)
+                .context("Failed to store OAuth tokens in the OS credential store")
+        })
+        .await?;
+        return Ok(access_token);
     }
     profile.oauth_tokens = Some(oauth::tokens_to_stored(tokens));
     Ok(tokens.access_token.clone())
@@ -845,7 +862,7 @@ pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
     let (tokens, whoami) =
         sign_in_to_profile_team(profile_name, &profile, &base_url, &client_id, false).await?;
     remember_signed_in_team(&mut profile, &whoami);
-    keep_signed_in_tokens(profile_name, &mut profile, &tokens)?;
+    keep_signed_in_tokens(profile_name, &mut profile, &tokens).await?;
     save_profile(profile_name, &profile)?;
     let team = whoami.team_name.as_deref().unwrap_or("this team");
     println!("Signed in to team '{team}'. Profile '{profile_name}' is ready.");
@@ -940,14 +957,13 @@ async fn resolve_single(
                 profile.oauth_tokens.as_ref(),
             )
             .await;
-            let (bearer, refreshed, os_store_fallback_reason, persist_profile) = match resolved {
+            let (bearer, refreshed, persist_profile) = match resolved {
                 Ok(oauth::TokenResolution {
                     bearer,
                     refreshed_tokens,
-                    os_store_fallback_reason,
                 }) => {
                     let persist = refreshed_tokens.is_some();
-                    (bearer, refreshed_tokens, os_store_fallback_reason, persist)
+                    (bearer, refreshed_tokens, persist)
                 }
                 Err(error) if oauth::is_reauth_required(&error) && interactive_reauth_allowed() => {
                     // The refresh token is missing or rejected. Sign in in the
@@ -976,19 +992,15 @@ async fn resolve_single(
                         tokens.access_token
                     } else {
                         remember_signed_in_team(&mut profile, &whoami);
-                        keep_signed_in_tokens(profile_name, &mut profile, &tokens)?
+                        keep_signed_in_tokens(profile_name, &mut profile, &tokens).await?
                     };
-                    (bearer, None, None, !region_overridden)
+                    (bearer, None, !region_overridden)
                 }
                 Err(error) => return Err(error),
             };
             if let Some(new_tokens) = refreshed {
-                // File-storage profile, or an OS-store refresh that could not
-                // be written to the keyring: persist the tokens to disk.
+                // File-storage profiles persist their refreshed token set.
                 profile.oauth_tokens = Some(new_tokens);
-                if os_store_fallback_reason.is_some() {
-                    profile.credential_storage = CredentialStorage::File;
-                }
             }
             if persist_profile {
                 // Save tokens (and, after a same-team sign-in, team identity)
@@ -996,15 +1008,6 @@ async fn resolve_single(
                 let mut to_save = profile.clone();
                 to_save.region = stored_region;
                 save_profile(profile_name, &to_save)?;
-                if os_store_fallback_reason.is_some() {
-                    // Save the file-backed profile before removing any old or
-                    // partially written keyring entries.
-                    keyring_store::delete_profile(profile_name);
-                    eprintln!(
-                        "Warning: failed to store refreshed OAuth tokens in the OS credential \
-                         store; migrated profile '{profile_name}' to file storage."
-                    );
-                }
             }
             bearer
         }
@@ -1063,6 +1066,11 @@ pub async fn resolve_all(
 /// Write a profile to disk, creating directories as needed.
 /// Sets file permissions to 0600 on Unix to protect any inline secrets.
 pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
+    let _lock = lock_profile(name)?;
+    save_profile_unlocked(name, profile)
+}
+
+fn save_profile_unlocked(name: &str, profile: &Profile) -> Result<()> {
     let dir = profiles_dir()?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{name}.toml"));

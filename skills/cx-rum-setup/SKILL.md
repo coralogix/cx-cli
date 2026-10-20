@@ -89,7 +89,7 @@ cx iam api-keys create --from-file rum-key.json -p <profile> --yes -o json
   - on `send-data-keys` → the role lacks `DATA-INGEST-API-KEYS:READCONFIG` (view keys);
   - on `get` or `create` → the role lacks `DATA-INGEST-API-KEYS:MANAGE` (`get` needs it too, since it returns the key value).
 
-  Don't retry with other payloads. Tell the user which permission is missing and ask them to get it, or to create the key in **Settings → API Keys** with only the `SendRUMData` preset (or have an admin do it), then continue from step 4 with the key value.
+  Don't retry with other payloads. Tell the user which permission is missing and ask them to get it, or to create it in **Settings → API Keys** - key type **Send Your Data Key**, role preset **`SendRUMData`** only (or have an admin do it), then continue from step 4 with the key value.
 - `hashed: false` keeps the key value retrievable later - fine for a public RUM key.
 - The response contains `value` - that is the `public_key` for the SDK.
 
@@ -130,7 +130,7 @@ Gotchas:
 - **Next.js:** init only on the client - a `'use client'` component that calls `init` in `useEffect`, rendered from the root layout. Never in server components.
 - **Env vars:** keep the key in env config (`NEXT_PUBLIC_*`, `VITE_*`, `REACT_APP_*`), not hard-coded. It is public, but env config makes rotation easy.
 - **`version`** should match the release - source maps and release comparison rely on it.
-- **Source maps** (optional) are uploaded with `coralogix-rum-cli` and need a *separate* team key with the `SourceMapping` preset (`source-mapping:ReadMapping` + `UploadMapping`) - never reuse the RUM key, and keep this one secret (CI only, not in client code). See `cx docs fetch user-guides/rum/cli/rum-cli.md` (search doesn't surface it).
+- **Source maps** (optional) are uploaded with `coralogix-rum-cli` and need a *separate* key - in the UI, key type **Team Key** with role preset **`SourceMapping`** (`source-mapping:ReadMapping` + `UploadMapping`) - never reuse the RUM key, and keep this one secret (CI only, not in client code). See `cx docs fetch user-guides/rum/cli/rum-cli.md` (search doesn't surface it).
 
 ### 6. Verify data arrives (optional)
 

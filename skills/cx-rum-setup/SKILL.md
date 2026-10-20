@@ -51,7 +51,7 @@ Inspect the user's repo before anything else:
 
 ### 2. Get a RUM API key
 
-RUM keys are **public by design** - they ship inside client code. A RUM key carries exactly one permission, `rum-ingress:SendData`. The RUM preset is standalone: it cannot be combined with any other permission or preset, so never add anything else to the key.
+RUM keys are **public by design** - they ship inside client code. A RUM key carries exactly one permission, `rum-ingress:SendData`. The RUM preset is standalone: it cannot be combined with any other permission or preset, so never add anything else to the key. The equivalent preset is `SendRUMData` (`"presets": ["SendRUMData"]`, `"permissions": []`) - same result, use one or the other. Do **not** use the `SendData` ("Send Your Data") preset some RUM docs mention - it grants logs/metrics/spans ingest but not `rum-ingress:SendData`, and it makes the key secret, not public.
 
 **Reuse first.** Check for an existing RUM key:
 
@@ -77,7 +77,7 @@ cx iam api-keys create --from-file rum-key.json --yes -o json
 ```
 
 - `teamId`: read `cached_team_id` from the profile file `~/.cx/profiles/<profile>.toml` (written by `cx init`), or the `owner.teamId` of any key in `cx iam api-keys list -o json`, or ask the user.
-- `Permission denied` on `send-data-keys` or `create` means the user's role lacks team API-key management (`TEAM-CUSTOM-API-KEYS:MANAGE`). Don't retry with other payloads - ask the user to create the key in **Settings → API Keys** (RUM preset) or have an admin do it, then continue from step 3 with the key value.
+- `Permission denied` on `send-data-keys` or `create` means the user's role lacks team API-key management (`TEAM-CUSTOM-API-KEYS:MANAGE`). Don't retry with other payloads - ask the user to create the key in **Settings → API Keys** with only the `SendRUMData` preset or have an admin do it, then continue from step 3 with the key value.
 - `hashed: false` keeps the key value retrievable later - fine for a public RUM key.
 - The response contains `value` - that is the `public_key` for the SDK.
 
@@ -118,7 +118,7 @@ Gotchas:
 - **Next.js:** init only on the client - a `'use client'` component that calls `init` in `useEffect`, rendered from the root layout. Never in server components.
 - **Env vars:** keep the key in env config (`NEXT_PUBLIC_*`, `VITE_*`, `REACT_APP_*`), not hard-coded. It is public, but env config makes rotation easy.
 - **`version`** should match the release - source maps and release comparison rely on it.
-- **Source maps** (optional) need a *separate* key with the source-mapping preset - never reuse the RUM key. See `cx docs search "RUM source maps"`.
+- **Source maps** (optional) need a *separate* key with the `SourceMapping` preset - never reuse the RUM key. See `cx docs search "RUM source maps"`.
 
 ### 5. Verify data arrives (optional)
 

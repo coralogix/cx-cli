@@ -28,7 +28,7 @@ Use this skill to onboard an application to Coralogix Real User Monitoring (RUM)
 | `cx iam api-keys create --from-file <file>` | Create the RUM key (write - needs approval + `--yes`) |
 | `cx docs search <query>` / `cx docs fetch <suffix>` | Current SDK install and init docs per platform |
 | `cx dataprime query --source rum.events '<query>'` | Verify RUM events arrive |
-| `cx profiles list` | Find the profile's region for `coralogixDomain` |
+| `cx profiles list` | Profiles and regions - pick the active one for both key and `coralogixDomain` |
 
 All commands accept `-p <profile>` to target a specific team.
 
@@ -51,7 +51,7 @@ Inspect the user's repo before anything else:
 
 ### 2. Get a RUM API key
 
-RUM keys are **public by design** - they ship inside client code. A RUM key carries exactly one permission, `rum-ingress:SendData`. The RUM preset is standalone: it cannot be combined with any other permission or preset, so never add anything else to the key. The equivalent preset is `SendRUMData` (`"presets": ["SendRUMData"]`, `"permissions": []`) - same result, use one or the other. Do **not** use the `SendData` ("Send Your Data") preset some RUM docs mention - it grants logs/metrics/spans ingest but not `rum-ingress:SendData`, and it makes the key secret, not public.
+RUM keys are **public by design** - they ship inside client code. Create it with the **`SendRUMData` preset** - the same key the UI's RUM flow creates. That preset grants exactly one permission, `rum-ingress:SendData`, and is standalone: never add other presets or permissions. (Granting `rum-ingress:SendData` directly also works but shows as a `CUSTOM` key in the UI, so prefer the preset.) In Settings → API Keys a RUM key shows type "Send Your Data" with preset `SendRUMData`. Do **not** pick the `SendData` preset - it grants logs/metrics/spans ingest but not RUM, and makes the key secret, not public.
 
 **Reuse first.** Check for an existing RUM key:
 
@@ -60,7 +60,7 @@ cx iam api-keys list -o json
 cx iam api-keys send-data-keys -o json
 ```
 
-Look for a key whose permissions are only `rum-ingress:SendData` (or that is named for RUM). Use `cx iam api-keys get <id> -o json` to read its value.
+Look for a key whose only preset is `SendRUMData` (or whose only permission is `rum-ingress:SendData`). Use `cx iam api-keys get <id> -o json` to read its value.
 
 **Create one if none exists.** This is a write - describe it to the user and get approval before passing `--yes` (same rules as `cx-platform-admin`).
 
@@ -69,7 +69,7 @@ cat > rum-key.json <<'EOF'
 {
   "name": "<app-name> RUM",
   "owner": { "teamId": <team-id> },
-  "keyPermissions": { "presets": [], "permissions": ["rum-ingress:SendData"] },
+  "keyPermissions": { "presets": ["SendRUMData"], "permissions": [] },
   "hashed": false
 }
 EOF
@@ -92,7 +92,9 @@ cx docs fetch <suffix-from-search>
 
 ### 4. Install and initialize
 
-Pick the `coralogixDomain` from the profile's region (`cx profiles list`): `EU1`, `EU2`, `US1`, `US2`, `US3`, `AP1`, `AP2`, `AP3`.
+Use **one profile for both the key and the domain**. The active profile is `-p <name>` if given, else `$CX_PROFILE` if set, else the `DEFAULT` row of `cx profiles list` - don't just read the `DEFAULT` row. If there are several profiles and none was named, ask the user which team the app belongs to, then pass `-p <name>` to every `cx` call.
+
+`coralogixDomain` is that profile's `REGION` in upper case: `EU1`, `EU2`, `US1`, `US2`, `US3`, `AP1`, `AP2`, `AP3`.
 
 Browser example (confirm against the fetched docs):
 
@@ -126,7 +128,7 @@ Setup is done once the key exists and `init` is in place - data only flows after
 
 ```bash
 cx dataprime query --source rum.events \
-  'filter $d.version_metadata.app_name == "<app-name>" | limit 10' -o json
+  "filter \$d.version_metadata.app_name == '<app-name>' | limit 10" -o json
 ```
 
 No rows? Check the browser network tab for requests to the RUM ingress endpoint. Ad blockers, a wrong `coralogixDomain`, or a key with extra permissions are the usual causes.
@@ -135,7 +137,7 @@ No rows? Check the browser network tab for requests to the RUM ingress endpoint.
 
 ## Key Principles
 
-- **RUM key = `rum-ingress:SendData` only** - no presets, no extra permissions
+- **RUM key = `SendRUMData` preset only** - nothing else on the key
 - **Reuse before create**, and never pass `--yes` without user approval
 - **Fetch SDK docs per platform** with `cx docs` - don't hard-code versions or options from memory
 - **Client-side init only**, once, at the app entry point

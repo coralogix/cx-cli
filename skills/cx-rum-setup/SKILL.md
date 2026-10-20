@@ -22,15 +22,15 @@ Use this skill to onboard an application to Coralogix Real User Monitoring (RUM)
 
 | Command | Purpose |
 |---|---|
-| `cx iam api-keys list -o json` | Find an existing RUM key and the team ID |
-| `cx iam api-keys send-data-keys -o json` | List send-data keys (RUM keys included) |
-| `cx iam api-keys get <id> -o json` | Read a key's value |
+| `cx iam api-keys list -o json` | List candidate keys and the team ID (no permissions in output) |
+| `cx iam api-keys send-data-keys -o json` | List candidate send-data keys (no permissions in output) |
+| `cx iam api-keys get <id> -o json` | Read a key's permissions (`keyInfo.keyPermissions`) and value |
 | `cx iam api-keys create --from-file <file>` | Create the RUM key (write - needs approval + `--yes`) |
 | `cx docs search <query>` / `cx docs fetch <suffix>` | Current SDK install and init docs per platform |
 | `cx dataprime query --source rum.events '<query>'` | Verify RUM events arrive |
 | `cx profiles list` | Profiles and regions - pick the active one for both key and `coralogixDomain` |
 
-All commands accept `-p <profile>` to target a specific team.
+`cx iam` and `cx dataprime` take `-p <profile>` to target a specific team. `cx profiles` and `cx docs` are local commands - they take no `-p` (`cx profiles list -p ...` is an error).
 
 ---
 
@@ -38,16 +38,16 @@ All commands accept `-p <profile>` to target a specific team.
 
 ### 1. Detect the platform
 
-Inspect the user's repo before anything else:
+Inspect the user's repo before anything else. Signals overlap (React Native apps also list `react`; Flutter and React Native repos contain `ios/` and `android/` folders), so check **in this order and stop at the first match**:
 
-| Signal | Platform |
-|---|---|
-| `package.json` with `next` | Next.js (browser SDK, client-only init) |
-| `package.json` with `react`, `vue`, `@angular/core`, `svelte`, or no framework | Browser SDK (`@coralogix/browser`) |
-| `package.json` with `react-native` | React Native SDK |
-| `Podfile` / `Package.swift` / `*.xcodeproj` | iOS SDK |
-| `build.gradle(.kts)` with Android plugin | Android SDK |
-| `pubspec.yaml` | Flutter SDK |
+| # | Signal | Platform |
+|---|---|---|
+| 1 | `pubspec.yaml` | Flutter SDK - ignore its `ios/` / `android/` folders |
+| 2 | `package.json` with `react-native` (or `expo`) | React Native SDK - ignore `react` and native folders |
+| 3 | `package.json` with `next` | Next.js (browser SDK, client-only init) |
+| 4 | `package.json` with `react`, `vue`, `@angular/core`, `svelte`, or no framework | Browser SDK (`@coralogix/browser`) |
+| 5 | `Podfile` / `Package.swift` / `*.xcodeproj` | iOS SDK |
+| 6 | `build.gradle(.kts)` with Android plugin | Android SDK |
 
 ### 2. Get a RUM API key
 
@@ -60,7 +60,7 @@ cx iam api-keys list -o json
 cx iam api-keys send-data-keys -o json
 ```
 
-Look for a key whose only preset is `SendRUMData` (or whose only permission is `rum-ingress:SendData`). Use `cx iam api-keys get <id> -o json` to read its value.
+These listings don't include permissions, so treat every row as a **candidate only** - never reuse a key based on its name. For each candidate run `cx iam api-keys get <id> -o json` and reuse it only if `keyInfo.keyPermissions` has `SendRUMData` as its only preset and no other permissions (or `rum-ingress:SendData` as its only permission). The value is in `keyInfo.value` (returned for unhashed keys - a hashed key can't be reused, create a new one).
 
 **Create one if none exists.** This is a write - describe it to the user and get approval before passing `--yes` (same rules as `cx-platform-admin`).
 

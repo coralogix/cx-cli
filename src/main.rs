@@ -15,6 +15,7 @@ use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
 use coralogix_cli::execution::build_targets;
+use coralogix_cli::onboarding;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
 use coralogix_cli::update_check;
@@ -146,6 +147,8 @@ struct Cli {
         long,
         global = true,
         env = "CX_API_KEY",
+        // Never echo the key in `--help`; agents read help into their transcripts.
+        hide_env_values = true,
         help_heading = "Global Options"
     )]
     api_key: Option<String>,
@@ -3447,6 +3450,11 @@ async fn main() -> Result<()> {
     )?;
     let agent_mode = safety::is_agent_mode();
 
+    // Report onboarding for any profile whose report hasn't gone through yet
+    // (see `onboarding`); a no-op once settled. Runs alongside the command and
+    // is awaited below.
+    let onboarding_task = tokio::spawn(onboarding::report_pending(targets.clone()));
+
     // Wrap the dispatch in an async block so we can capture its Result and
     // always run the update notice afterwards (even on error).
     let cmd_result = async {
@@ -5036,6 +5044,9 @@ async fn main() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     }
     .await;
+
+    // Bounded by the report's own timeout; errors are already swallowed.
+    let _ = onboarding_task.await;
 
     // Print update notice after command output so it doesn't scroll off.
     // Using a separate result variable (rather than ?) ensures the notice

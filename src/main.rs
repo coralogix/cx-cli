@@ -146,6 +146,8 @@ struct Cli {
         long,
         global = true,
         env = "CX_API_KEY",
+        // Never echo the key in `--help`; agents read help into their transcripts.
+        hide_env_values = true,
         help_heading = "Global Options"
     )]
     api_key: Option<String>,

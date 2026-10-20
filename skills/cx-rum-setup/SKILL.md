@@ -77,7 +77,11 @@ cx iam api-keys create --from-file rum-key.json --yes -o json
 ```
 
 - `teamId`: read `cached_team_id` from the profile file `~/.cx/profiles/<profile>.toml` (written by `cx init`), or the `owner.teamId` of any key in `cx iam api-keys list -o json`, or ask the user.
-- `Permission denied` on `send-data-keys` or `create` means the user's role lacks team API-key management (`TEAM-CUSTOM-API-KEYS:MANAGE`). Don't retry with other payloads - ask the user to create the key in **Settings → API Keys** with only the `SendRUMData` preset or have an admin do it, then continue from step 3 with the key value.
+- `Permission denied`: RUM keys are Send-Your-Data (data-ingest) keys, so they need the `DATA-INGEST-API-KEYS` permissions, not the team custom-key ones:
+  - on `send-data-keys` → the role lacks `DATA-INGEST-API-KEYS:READCONFIG` (view keys);
+  - on `get` or `create` → the role lacks `DATA-INGEST-API-KEYS:MANAGE` (`get` needs it too, since it returns the key value).
+
+  Don't retry with other payloads. Tell the user which permission is missing and ask them to get it, or to create the key in **Settings → API Keys** with only the `SendRUMData` preset (or have an admin do it), then continue from step 3 with the key value.
 - `hashed: false` keeps the key value retrievable later - fine for a public RUM key.
 - The response contains `value` - that is the `public_key` for the SDK.
 

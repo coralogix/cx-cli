@@ -3098,11 +3098,6 @@ async fn main() -> Result<()> {
     // enough that the fetch always completes in time.
     let _update_task = tokio::spawn(update_check::fetch_if_stale());
 
-    // macOS and Windows move legacy file-backed credentials into their OS
-    // credential stores before resolving a profile. Linux preserves the
-    // selected storage backend.
-    config::migrate_file_credentials_to_os_store()?;
-
     // Check if this is a profiles command - use separate parser without global API flags.
     // Only works when `profiles` is the first arg (no global flags before it).
     if matches!(

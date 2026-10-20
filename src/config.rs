@@ -234,11 +234,6 @@ pub struct Config {
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub managed_completions: Vec<ManagedCompletion>,
-
-    /// cx version that last migrated file-backed credentials on a platform
-    /// where the OS credential store is mandatory.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub credential_migration_version: Option<String>,
 }
 
 fn default_profile() -> String {
@@ -269,7 +264,6 @@ impl Default for Config {
             read_only: false,
             no_console_link: false,
             managed_completions: vec![],
-            credential_migration_version: None,
         }
     }
 }
@@ -543,64 +537,53 @@ fn lock_profile(name: &str) -> Result<ProfileLock> {
     Ok(ProfileLock(file))
 }
 
-/// Move legacy file-backed credentials to the OS credential store on macOS and
-/// Windows. Linux retains its chosen credential backend.
-pub fn migrate_file_credentials_to_os_store() -> Result<()> {
+/// Move one selected legacy file-backed profile to the OS credential store on
+/// macOS and Windows. Linux retains its chosen credential backend.
+pub fn migrate_file_credentials_to_os_store(profile_name: &str) -> Result<()> {
     if !cfg!(any(target_os = "macos", target_os = "windows")) {
         return Ok(());
     }
 
-    const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-    let mut config = load_config()?;
-    if config.credential_migration_version.as_deref() == Some(CURRENT_VERSION) {
+    let _lock = lock_profile(profile_name)?;
+    let mut profile = load_profile(profile_name)?;
+    if profile.credential_storage != CredentialStorage::File {
+        return Ok(());
+    }
+    let has_file_credentials = match profile.auth {
+        AuthKind::ApiKey => profile.api_key.is_some(),
+        AuthKind::OAuth => profile.oauth_tokens.is_some(),
+    };
+    if !has_file_credentials {
         return Ok(());
     }
 
-    for name in list_profile_names()? {
-        let _lock = lock_profile(&name)?;
-        let mut profile = load_profile(&name)?;
-        if profile.credential_storage != CredentialStorage::File {
-            continue;
-        }
-        let has_file_credentials = match profile.auth {
-            AuthKind::ApiKey => profile.api_key.is_some(),
-            AuthKind::OAuth => profile.oauth_tokens.is_some(),
-        };
-        if !has_file_credentials {
-            continue;
-        }
-
-        // Preserve the file until every secret is stored successfully.
-        keyring_store::delete_profile(&name);
-        let migrated = match profile.auth {
-            AuthKind::ApiKey => keyring_store::store_secret(
-                &name,
-                "api_key",
-                profile.api_key.as_deref().expect("checked above"),
-            ),
-            AuthKind::OAuth => oauth::store_stored_tokens_keyring(
-                &name,
-                profile.oauth_tokens.as_ref().expect("checked above"),
-            ),
-        };
-        if let Err(err) = migrated {
-            keyring_store::delete_profile(&name);
-            return Err(err).with_context(|| {
-                format!(
-                    "Failed to migrate profile '{name}' to the OS credential store. \
-                     Unlock the credential store and run cx again"
-                )
-            });
-        }
-
-        profile.credential_storage = CredentialStorage::OsStore;
-        profile.api_key = None;
-        profile.oauth_tokens = None;
-        save_profile_unlocked(&name, &profile)?;
+    // Preserve the file until every secret is stored successfully.
+    keyring_store::delete_profile(profile_name);
+    let migrated = match profile.auth {
+        AuthKind::ApiKey => keyring_store::store_secret(
+            profile_name,
+            "api_key",
+            profile.api_key.as_deref().expect("checked above"),
+        ),
+        AuthKind::OAuth => oauth::store_stored_tokens_keyring(
+            profile_name,
+            profile.oauth_tokens.as_ref().expect("checked above"),
+        ),
+    };
+    if let Err(err) = migrated {
+        keyring_store::delete_profile(profile_name);
+        return Err(err).with_context(|| {
+            format!(
+                "Failed to migrate profile '{profile_name}' to the OS credential store. \
+                 Unlock the credential store and run cx again"
+            )
+        });
     }
 
-    config.credential_migration_version = Some(CURRENT_VERSION.to_string());
-    save_config(&config)
+    profile.credential_storage = CredentialStorage::OsStore;
+    profile.api_key = None;
+    profile.oauth_tokens = None;
+    save_profile_unlocked(profile_name, &profile)
 }
 
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal
@@ -851,6 +834,7 @@ async fn keep_signed_in_tokens(
 /// reconfiguring it. Region, storage, output format and label stay as they
 /// are; only the tokens (and the cached team) change.
 pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
+    migrate_file_credentials_to_os_store(profile_name)?;
     let mut profile = load_profile(profile_name)?;
     if profile.auth != AuthKind::OAuth {
         anyhow::bail!(
@@ -909,6 +893,7 @@ async fn resolve_single(
         }
     }
 
+    migrate_file_credentials_to_os_store(profile_name)?;
     let mut profile = load_profile(profile_name)?;
     // `--region` is for this invocation only. The profile object is what
     // later gets saved, so remember the on-disk region and put it back

@@ -316,7 +316,7 @@ See [TOON output format](toon-output.md) for the `toon` format specification.
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. `credential_storage` records where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. macOS and Windows require `"os_store"` for new profiles and migrate existing file-backed profiles before use. Linux musl always uses `"file"`; glibc Linux lets interactive users choose and preserves existing profiles as configured. A profile that omits the key is read as `"file"`.
+Each profile stores credentials and endpoint configuration. `credential_storage` records where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. macOS and Windows require `"os_store"` for new profiles and migrate an existing file-backed profile only when that profile is selected for use. Linux musl always uses `"file"`; glibc Linux lets interactive users choose and preserves existing profiles as configured. A profile that omits the key is read as `"file"`.
 
 ### Common fields
 

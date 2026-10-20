@@ -1,0 +1,149 @@
+---
+name: cx-rum-setup
+description: >
+  Use this skill when the user asks to "add RUM", "set up RUM", "install the RUM SDK",
+  "add Coralogix RUM to my app", "create a RUM API key", "RUM public key",
+  "init Coralogix RUM", "CoralogixRum.init", "add the browser SDK", "real user monitoring",
+  "frontend monitoring", "monitor my web app", "session replay", "track frontend errors",
+  "add RUM to React", "add RUM to Next.js", "add RUM to my mobile app",
+  or wants to instrument a browser or mobile application with Coralogix Real User Monitoring
+  end to end - RUM API key, SDK install, init code, and verifying data arrives.
+metadata:
+  version: "0.1.0"
+---
+
+# RUM Setup Skill
+
+Use this skill to onboard an application to Coralogix Real User Monitoring (RUM): get a RUM API key, install the platform SDK, add the `init` call, and verify events land in the `rum.events` dataset.
+
+---
+
+## CLI Commands
+
+| Command | Purpose |
+|---|---|
+| `cx iam api-keys list -o json` | Find an existing RUM key and the team ID |
+| `cx iam api-keys send-data-keys -o json` | List send-data keys (RUM keys included) |
+| `cx iam api-keys get <id> -o json` | Read a key's value |
+| `cx iam api-keys create --from-file <file>` | Create the RUM key (write - needs approval + `--yes`) |
+| `cx docs search <query>` / `cx docs fetch <suffix>` | Current SDK install and init docs per platform |
+| `cx dataprime query --source rum.events '<query>'` | Verify RUM events arrive |
+| `cx profiles list` | Find the profile's region for `coralogixDomain` |
+
+All commands accept `-p <profile>` to target a specific team.
+
+---
+
+## Workflow
+
+### 1. Detect the platform
+
+Inspect the user's repo before anything else:
+
+| Signal | Platform |
+|---|---|
+| `package.json` with `next` | Next.js (browser SDK, client-only init) |
+| `package.json` with `react`, `vue`, `@angular/core`, `svelte`, or no framework | Browser SDK (`@coralogix/browser`) |
+| `package.json` with `react-native` | React Native SDK |
+| `Podfile` / `Package.swift` / `*.xcodeproj` | iOS SDK |
+| `build.gradle(.kts)` with Android plugin | Android SDK |
+| `pubspec.yaml` | Flutter SDK |
+
+### 2. Get a RUM API key
+
+RUM keys are **public by design** - they ship inside client code. A RUM key carries exactly one permission, `rum-ingress:SendData`. The RUM preset is standalone: it cannot be combined with any other permission or preset, so never add anything else to the key.
+
+**Reuse first.** Check for an existing RUM key:
+
+```bash
+cx iam api-keys list -o json
+cx iam api-keys send-data-keys -o json
+```
+
+Look for a key whose permissions are only `rum-ingress:SendData` (or that is named for RUM). Use `cx iam api-keys get <id> -o json` to read its value.
+
+**Create one if none exists.** This is a write - describe it to the user and get approval before passing `--yes` (same rules as `cx-platform-admin`).
+
+```bash
+cat > rum-key.json <<'EOF'
+{
+  "name": "<app-name> RUM",
+  "owner": { "teamId": <team-id> },
+  "keyPermissions": { "presets": [], "permissions": ["rum-ingress:SendData"] },
+  "hashed": false
+}
+EOF
+cx iam api-keys create --from-file rum-key.json --yes -o json
+```
+
+- `teamId`: read the `owner.teamId` of any key in `cx iam api-keys list -o json`, or ask the user.
+- `hashed: false` keeps the key value retrievable later - fine for a public RUM key.
+- The response contains `value` - that is the `public_key` for the SDK.
+
+### 3. Fetch the current SDK docs
+
+SDK package names, versions, and options change - fetch them instead of guessing (see `coralogix-docs`):
+
+```bash
+cx docs search "RUM SDK installation <platform>" --limit 5
+cx docs fetch <suffix-from-search>
+```
+
+### 4. Install and initialize
+
+Pick the `coralogixDomain` from the profile's region (`cx profiles list`): `EU1`, `EU2`, `US1`, `US2`, `US3`, `AP1`, `AP2`, `AP3`.
+
+Browser example (confirm against the fetched docs):
+
+```bash
+npm install @coralogix/browser
+```
+
+```ts
+import { CoralogixRum } from '@coralogix/browser';
+
+CoralogixRum.init({
+  application: '<app-name>',
+  environment: 'production',
+  public_key: process.env.NEXT_PUBLIC_CX_RUM_KEY!, // or import.meta.env.VITE_CX_RUM_KEY
+  coralogixDomain: 'EU1',
+  version: '<app-version>',
+});
+```
+
+Gotchas:
+
+- **Init once, as early as possible** - the app entry point (`main.ts`, `index.tsx`, root layout).
+- **Next.js:** init only on the client - a `'use client'` component that calls `init` in `useEffect`, rendered from the root layout. Never in server components.
+- **Env vars:** keep the key in env config (`NEXT_PUBLIC_*`, `VITE_*`, `REACT_APP_*`), not hard-coded. It is public, but env config makes rotation easy.
+- **`version`** should match the release - source maps and release comparison rely on it.
+- **Source maps** (optional) need a *separate* key with the source-mapping preset - never reuse the RUM key. See `cx docs search "RUM source maps"`.
+
+### 5. Verify data arrives
+
+Ask the user to load the app and click around, then:
+
+```bash
+cx dataprime query --source rum.events \
+  'filter $d.version_metadata.app_name == "<app-name>" | limit 10' -o json
+```
+
+No rows? Check the browser network tab for requests to the RUM ingress endpoint. Ad blockers, a wrong `coralogixDomain`, or a key with extra permissions are the usual causes.
+
+---
+
+## Key Principles
+
+- **RUM key = `rum-ingress:SendData` only** - no presets, no extra permissions
+- **Reuse before create**, and never pass `--yes` without user approval
+- **Fetch SDK docs per platform** with `cx docs` - don't hard-code versions or options from memory
+- **Client-side init only**, once, at the app entry point
+- **Always verify** with a `rum.events` query before calling it done
+
+---
+
+## Related Skills
+
+- **`cx-platform-admin`** - general API key management
+- **`coralogix-docs`** - fetch platform-specific SDK docs
+- **`cx-telemetry-querying`** - query RUM data once it flows

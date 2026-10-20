@@ -3,7 +3,7 @@ name: cx-platform-admin
 description: >
   Use this skill when the user asks "who has access", "audit permissions",
   "check user roles", "list API keys", "review access controls",
-  "rotate API keys", "create API key", "delete expired keys", "send data keys",
+  "rotate API keys", "create API key", "RUM API key", "delete expired keys", "send data keys",
   "IP allowlist", "IP access restrictions",
   "check IP whitelist", "add user", "deactivate user", "manage team groups",
   "user permissions", "role-based access", "manage scopes", "system roles",
@@ -43,6 +43,8 @@ When running inside an AI agent (Claude Code, Cursor, Codex, etc.), cx automatic
 ## CLI Commands
 
 ### API Keys
+
+> For RUM (browser/mobile) keys and SDK setup, use the **`cx-rum-setup`** skill.
 
 | Command | Purpose |
 |---|---|
@@ -199,3 +201,4 @@ Safe key rotation workflow:
 ## Related Skills
 
 - **`cx-cost-optimization`** - review what API keys are used for and whether they're still needed
+- **`cx-rum-setup`** - create RUM API keys and wire the RUM SDK into an app

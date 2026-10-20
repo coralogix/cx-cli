@@ -120,9 +120,9 @@ Gotchas:
 - **`version`** should match the release - source maps and release comparison rely on it.
 - **Source maps** (optional) need a *separate* key with the source-mapping preset - never reuse the RUM key. See `cx docs search "RUM source maps"`.
 
-### 5. Verify data arrives
+### 5. Verify data arrives (optional)
 
-Ask the user to load the app and click around, then:
+Setup is done once the key exists and `init` is in place - data only flows after the app runs and users hit it, and the SDK sends in batches. Give the user this query to run later, or run it now if they load the app:
 
 ```bash
 cx dataprime query --source rum.events \
@@ -139,7 +139,7 @@ No rows? Check the browser network tab for requests to the RUM ingress endpoint.
 - **Reuse before create**, and never pass `--yes` without user approval
 - **Fetch SDK docs per platform** with `cx docs` - don't hard-code versions or options from memory
 - **Client-side init only**, once, at the app entry point
-- **Always verify** with a `rum.events` query before calling it done
+- **Done = key + init in place** - hand over the `rum.events` query for checking data later
 
 ---
 

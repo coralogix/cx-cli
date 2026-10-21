@@ -59,6 +59,8 @@ pub struct InitArgs {
     pub api_key: Option<String>,
     /// `--oauth`: force OAuth browser login even when an API key is available.
     pub oauth: bool,
+    /// `--signup`: create a new Coralogix account in the browser (implies OAuth).
+    pub signup: bool,
     /// Whether to run the skills install step (`--no-skills` turns it off).
     pub install_skills: bool,
     /// `--agent`: agents passed through to the skills installer.
@@ -81,6 +83,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         region,
         api_key,
         oauth,
+        signup,
         install_skills,
         agents,
         scope,
@@ -96,7 +99,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         // Auth: quick mode (bare `cx init`, no key) defaults to OAuth without
         // asking the auth-method question; an explicit key uses the API-key
         // path; `--oauth` forces OAuth regardless.
-        let oauth = oauth || api_key.is_none();
+        let oauth = oauth || signup || api_key.is_none();
 
         println!("Setting up your Coralogix profile...\n");
         profiles::run_add(profiles::AddArgs {
@@ -105,6 +108,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
             region,
             api_key,
             oauth,
+            signup,
             force: false,
             set_default: false,
             // `cx init` always enables Olly on the first profile - no opt-out.

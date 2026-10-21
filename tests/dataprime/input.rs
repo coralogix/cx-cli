@@ -83,4 +83,5 @@ fn build_body_all_metadata_fields_present() {
     assert_eq!(body["metadata"]["startDate"], "2026-01-01T00:00:00Z");
     assert_eq!(body["metadata"]["endDate"], "2026-01-02T00:00:00Z");
     assert_eq!(body["metadata"]["limit"], 50);
+    assert_eq!(body["metadata"]["strictFieldsValidation"], true);
 }

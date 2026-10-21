@@ -39,9 +39,12 @@ pub struct Trace {
 /// Generic query response used by `cx dataprime query` and the shared
 /// execute/merge/render pipeline.  Source-agnostic - no log- or span-specific
 /// fields.
+#[derive(Default)]
 pub struct QueryGenericResponse {
     pub raw_results: Vec<Value>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Value>,
+    pub query_id: Option<String>,
+    pub statistics: Option<Value>,
     pub is_aggregate: bool,
 }
 
@@ -49,11 +52,27 @@ pub struct QueryGenericResponse {
 
 pub struct DataprimeApi<'a> {
     client: &'a CxClient,
+    strict_fields_validation: bool,
+    warning_profile: Option<&'a str>,
 }
 
 impl<'a> DataprimeApi<'a> {
     pub fn new(client: &'a CxClient) -> Self {
-        Self { client }
+        Self {
+            client,
+            strict_fields_validation: true,
+            warning_profile: None,
+        }
+    }
+
+    pub fn with_strict_fields_validation(mut self, enabled: bool) -> Self {
+        self.strict_fields_validation = enabled;
+        self
+    }
+
+    pub fn with_warning_profile(mut self, profile: &'a str) -> Self {
+        self.warning_profile = Some(profile);
+        self
     }
 
     /// POST to `/api/v1/dataprime/query` and return the raw result rows from
@@ -70,13 +89,20 @@ impl<'a> DataprimeApi<'a> {
         limit: u32,
         tier: Tier,
         source: &str,
-    ) -> Result<(Vec<Value>, Vec<String>)> {
-        let body = build_dataprime_body(query, start_time, end_time, limit, tier, source);
+    ) -> Result<ParsedQueryResponse> {
+        let mut body = build_dataprime_body(query, start_time, end_time, limit, tier, source);
+        body["metadata"]["strictFieldsValidation"] = self.strict_fields_validation.into();
         let raw = self
             .client
             .post_raw("/api/v1/dataprime/query", &body)
             .await?;
-        parse_ndjson_response(&raw)
+        parse_ndjson_with_warnings(&raw, |warning| {
+            let mut envelope = json!({"warning": warning});
+            if let Some(profile) = self.warning_profile {
+                envelope["profile"] = profile.into();
+            }
+            eprintln!("{envelope}");
+        })
     }
 
     /// Execute a generic Dataprime query as-is, with no default source.
@@ -92,9 +118,10 @@ impl<'a> DataprimeApi<'a> {
         tier: Tier,
         source: &str,
     ) -> Result<QueryGenericResponse> {
-        let (rows, warnings) = self
+        let parsed = self
             .post_query(query, start_time, end_time, limit, tier, source)
             .await?;
+        let rows = parsed.rows;
         let aggregate = is_aggregation_query(query);
         let raw_results = if aggregate {
             rows.iter().map(normalize_aggregate_row).collect()
@@ -103,7 +130,9 @@ impl<'a> DataprimeApi<'a> {
         };
         Ok(QueryGenericResponse {
             raw_results,
-            warnings,
+            warnings: parsed.warnings,
+            query_id: parsed.query_id,
+            statistics: parsed.statistics,
             is_aggregate: aggregate,
         })
     }
@@ -128,43 +157,54 @@ pub fn build_dataprime_body(
             "startDate": start_time,
             "endDate": end_time,
             "defaultSource": source,
-            "limit": limit
+            "limit": limit,
+            "strictFieldsValidation": true
         }
     })
 }
 
 // ── NDJSON parsing ────────────────────────────────────────────────────────────
 
-/// Parse a raw NDJSON string from the Dataprime endpoint into result rows and
-/// warning messages.
+/// Query rows and complete API diagnostics from an NDJSON response.
 ///
 /// The Dataprime endpoint returns NDJSON:
 /// - line 1: `{"queryId": {...}}`
 /// - line 2+: `{"result": {"results": [...]}}` (one or more batches)
 /// - optional: `{"warning": {"compileWarning": {"warningMessage": "..."}}}` lines
-pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
-    let mut rows: Vec<Value> = Vec::new();
-    let mut warnings: Vec<String> = Vec::new();
+#[derive(Debug, Default)]
+pub struct ParsedQueryResponse {
+    pub rows: Vec<Value>,
+    pub warnings: Vec<Value>,
+    pub query_id: Option<String>,
+    pub statistics: Option<Value>,
+}
+
+pub fn parse_ndjson_response(raw: &str) -> Result<ParsedQueryResponse> {
+    parse_ndjson_with_warnings(raw, |_| {})
+}
+
+fn parse_ndjson_with_warnings(
+    raw: &str,
+    mut on_warning: impl FnMut(&Value),
+) -> Result<ParsedQueryResponse> {
+    let mut parsed = ParsedQueryResponse::default();
     for line in raw.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
         let value: Value = serde_json::from_str(line)?;
-        if value.get("queryId").is_some() {
-            continue;
+        if let Some(id) = value.pointer("/queryId/queryId").and_then(Value::as_str) {
+            parsed.query_id = Some(id.to_string());
         } else if let Some(batch) = value
             .get("result")
             .and_then(|r| r.get("results"))
             .and_then(|r| r.as_array())
         {
-            rows.extend(batch.iter().cloned());
-        } else if let Some(w) = value.get("warning").and_then(|v| v.as_object()) {
-            for inner in w.values() {
-                if let Some(msg) = inner.get("warningMessage").and_then(|m| m.as_str()) {
-                    warnings.push(msg.to_string());
-                }
-            }
+            parsed.rows.extend(batch.iter().cloned());
+        } else if let Some(warning) = value.get("warning") {
+            on_warning(warning);
+            parsed.warnings.push(warning.clone());
         } else if let Some(stats) = value.get("statistics") {
             // Every query - success or failure - ends with a statistics
             // envelope. `status` is the authoritative outcome: a query that
@@ -177,6 +217,7 @@ pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
                     "query did not complete successfully (status: {status}): {line}"
                 )));
             }
+            parsed.statistics = Some(stats.clone());
         } else if value.get("error").is_some() || value.get("errors").is_some() {
             // Explicit mid-stream error envelope: the engine can report a
             // failure in the response body after the 200 has been sent, rather
@@ -192,7 +233,7 @@ pub fn parse_ndjson_response(raw: &str) -> Result<(Vec<Value>, Vec<String>)> {
         // terminal `statistics` status handled above, and a real failure also
         // arrives as a non-COMPLETED status or an explicit error envelope.
     }
-    Ok((rows, warnings))
+    Ok(parsed)
 }
 
 // ── Aggregate-query detection ─────────────────────────────────────────────────
@@ -440,13 +481,55 @@ mod tests {
         )
     }
 
+    #[test]
+    fn preserves_all_warning_payloads_query_id_and_statistics() {
+        let warnings = vec![
+            json!({"compileWarning": {"warningMessage": "unknown field"}}),
+            json!({"timeRangeWarning": {"warningMessage": "adjusted", "startDate": "2026-01-01T00:00:00Z"}}),
+            json!({"numberOfResultsLimitWarning": {"numberOfResultsLimit": 100}}),
+            json!({"bytesScannedLimitWarning": {}}),
+            json!({"deprecationWarning": {"warningMessage": "deprecated"}}),
+            json!({"blocksLimitWarning": {}}),
+            json!({"aggregationBucketsLimitWarning": {"aggregationBucketsLimit": 1000}}),
+            json!({"archiveWarning": {"missingData": {}}}),
+            json!({"scrollTimeoutWarning": {}}),
+            json!({"fieldCountLimitWarning": {}}),
+            json!({"shuffleFileSizeLimitReachedWarning": {}}),
+            json!({"filesReadLimitWarning": {}}),
+            json!({"sidebarFilterCardinalityLimitWarning": {"fields": ["$d.name"], "cardinalityLimit": "100"}}),
+            json!({"futureWarning": {"nested": {"details": [1, 2]}}}),
+        ];
+        let statistics = json!({"status": "COMPLETED", "outputRowCount": "0", "storage": {"objectStore": {"bytesRead": "123"}}});
+        let mut lines = vec![json!({"queryId": {"queryId": "query-123"}}).to_string()];
+        lines.extend(warnings.iter().map(|w| json!({"warning": w}).to_string()));
+        lines.push(json!({"statistics": statistics}).to_string());
+        let parsed = parse_ndjson_response(&lines.join("\n")).unwrap();
+        assert_eq!(parsed.query_id.as_deref(), Some("query-123"));
+        assert_eq!(parsed.warnings, warnings);
+        assert_eq!(parsed.statistics, Some(statistics));
+    }
+
+    #[test]
+    fn emits_warnings_before_a_later_query_failure() {
+        for failure in [
+            json!({"error": {"message": "failed"}}),
+            json!({"statistics": {"status": "FAILED"}}),
+        ] {
+            let warning = json!({"archiveWarning": {"bucketAccessDenied": {}}});
+            let raw = format!("{}\n{}", json!({"warning": warning}), failure);
+            let mut emitted = Vec::new();
+            assert!(parse_ndjson_with_warnings(&raw, |w| emitted.push(w.clone())).is_err());
+            assert_eq!(emitted, vec![warning]);
+        }
+    }
+
     // ── parse_ndjson_response ─────────────────────────────────────────────────
 
     #[test]
-    fn ndjson_ignores_query_id_line() {
+    fn ndjson_query_id_does_not_become_a_result_row() {
         let raw = r#"{"queryId":{"queryId":"test-query-id"}}
 {"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}"#;
-        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        let ParsedQueryResponse { rows, warnings, .. } = parse_ndjson_response(raw).unwrap();
         assert_eq!(rows.len(), 1);
         assert!(warnings.is_empty());
     }
@@ -456,7 +539,7 @@ mod tests {
         let raw = r#"{"queryId":{"queryId":"test-query-id"}}
 {"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}
 {"statistics":{"status":"COMPLETED","outputRowCount":"1"}}"#;
-        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        let ParsedQueryResponse { rows, warnings, .. } = parse_ndjson_response(raw).unwrap();
         assert_eq!(rows.len(), 1);
         assert!(warnings.is_empty());
     }
@@ -467,7 +550,7 @@ mod tests {
         // COMPLETED statistics line and no `result` line at all.
         let raw = r#"{"queryId":{"queryId":"test-query-id"}}
 {"statistics":{"status":"COMPLETED","outputRowCount":"0"}}"#;
-        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        let ParsedQueryResponse { rows, warnings, .. } = parse_ndjson_response(raw).unwrap();
         assert!(rows.is_empty());
         assert!(warnings.is_empty());
     }
@@ -507,7 +590,7 @@ mod tests {
 {"progress":{"percent":50}}
 {"result":{"results":[{"metadata":[],"labels":[],"userData":"{}"}]}}
 {"statistics":{"status":"COMPLETED","outputRowCount":"1"}}"#;
-        let (rows, warnings) = parse_ndjson_response(raw).unwrap();
+        let ParsedQueryResponse { rows, warnings, .. } = parse_ndjson_response(raw).unwrap();
         assert_eq!(rows.len(), 1);
         assert!(warnings.is_empty());
     }

@@ -395,6 +395,9 @@ Examples:
         /// If neither is set, defaults to archive.
         #[arg(long)]
         tier: Option<Tier>,
+
+        #[command(flatten)]
+        query_options: commands::dataprime::QueryOptions,
     },
 
     /// Query metrics using PromQL.
@@ -430,6 +433,9 @@ Examples:
         /// If neither is set, defaults to archive.
         #[arg(long)]
         tier: Option<Tier>,
+
+        #[command(flatten)]
+        query_options: commands::dataprime::QueryOptions,
     },
 
     /// Manage and inspect dashboards.
@@ -924,6 +930,9 @@ Examples:
         /// If neither is set, defaults to archive.
         #[arg(long)]
         tier: Option<Tier>,
+
+        #[command(flatten)]
+        query_options: commands::dataprime::QueryOptions,
     },
 }
 
@@ -3473,8 +3482,9 @@ async fn main() -> Result<()> {
                     end,
                     limit,
                     tier,
+                    query_options,
                 } => {
-                    commands::dataprime::run_query(
+                    commands::dataprime::run_query_with_options(
                         &targets,
                         &query,
                         source.as_deref().unwrap_or(""),
@@ -3486,6 +3496,7 @@ async fn main() -> Result<()> {
                         max_direct,
                         &temp_dir,
                         None,
+                        query_options,
                     )
                     .await?;
                 }
@@ -3497,9 +3508,11 @@ async fn main() -> Result<()> {
                 end,
                 limit,
                 tier,
+                query_options,
             } => {
-                commands::logs::run(
-                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+                commands::dataprime::run_query_with_options(
+                    &targets, &query, "logs", &start, &end, limit, tier, output, max_direct, &temp_dir,
+                    Some(commands::logs::render_log_text), query_options,
                 )
                 .await?;
             }
@@ -3539,9 +3552,11 @@ async fn main() -> Result<()> {
                 end,
                 limit,
                 tier,
+                query_options,
             } => {
-                commands::spans::run(
-                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+                commands::dataprime::run_query_with_options(
+                    &targets, &query, "spans", &start, &end, limit, tier, output, max_direct, &temp_dir,
+                    Some(commands::spans::render_span_text), query_options,
                 )
                 .await?;
             }

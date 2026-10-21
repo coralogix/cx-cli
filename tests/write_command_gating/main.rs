@@ -13,7 +13,9 @@ fn temp_home() -> std::path::PathBuf {
 
 fn cx_agent(args: &[&str]) -> (bool, String) {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", temp_home());
+    let home = temp_home();
+    cmd.env("CX_HOME", &home);
+    cmd.env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"));
     cmd.env("CX_AGENT_MODE", "1");
     cmd.env_remove("CLAUDECODE");
     cmd.env_remove("CLAUDE_CODE");

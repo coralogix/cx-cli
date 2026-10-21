@@ -893,7 +893,12 @@ async fn resolve_single(
         }
     }
 
-    migrate_file_credentials_to_os_store(profile_name)?;
+    // An explicit API-key override must not modify the selected profile.
+    // In particular, it must not trigger credential migration before the
+    // overridden invocation is resolved.
+    if api_key_override.is_none() {
+        migrate_file_credentials_to_os_store(profile_name)?;
+    }
     let mut profile = load_profile(profile_name)?;
     // `--region` is for this invocation only. The profile object is what
     // later gets saved, so remember the on-disk region and put it back

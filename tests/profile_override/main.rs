@@ -43,6 +43,7 @@ fn write_config(home: &std::path::Path, default_profile: &str) {
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
+    cmd.env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"));
     cmd.env_remove("CX_API_KEY");
     cmd.env_remove("CX_REGION");
     cmd.env_remove("CX_PROFILE");

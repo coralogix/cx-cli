@@ -65,7 +65,7 @@ cx spans 'limit 10' --strict-fields-validation=false --extended-information -o j
 cx dataprime query 'source logs | limit 10' --extended-information -o json
 ```
 
-For one profile, the response is `{ "results": [...], "queryId": "...",
+For one profile, the extended JSON/TOON response is `{ "results": [...], "queryId": "...",
 "warnings": [...], "statistics": {...} }`. Missing query IDs/statistics are
 `null`; absent warnings are `[]`. Results keep their existing normalization.
 
@@ -73,7 +73,10 @@ For multiple profiles, the response is `{ "results": [...], "queries": [...] }`.
 Each query entry contains `profile`, `queryId`, `warnings`, and `statistics`;
 result rows retain their profile tags. IDs and statistics are not combined.
 
-Extended output uses JSON for text/JSON mode and TOON for TOON mode. It always
-stays on stdout, bypassing result spilling so query information is not lost.
+Text mode keeps the existing result rendering and appends a JSON diagnostics
+object after a blank line. For one profile, this object contains `queryId`,
+`warnings`, and `statistics`; for multiple profiles it contains `queries`.
+JSON mode returns the combined envelope; TOON mode encodes that envelope as TOON.
+Extended output stays on stdout, bypassing result spilling.
 Without the flag, the existing stdout format and spilling behavior are preserved.
 Query failures still return a nonzero exit code.

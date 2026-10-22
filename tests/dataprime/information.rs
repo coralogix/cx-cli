@@ -131,11 +131,20 @@ async fn extended_information_preserves_full_warnings_and_statistics_in_all_form
                 "{stdout}"
             );
         } else {
-            let value: Value = serde_json::from_str(&stdout).unwrap();
+            let value: Value = if format == "text" {
+                let (rows, information) = stdout.split_once("\n\n").unwrap();
+                assert_eq!(rows, "- [INFO] hello");
+                let information: Value = serde_json::from_str(information).unwrap();
+                assert!(information.get("results").is_none());
+                information
+            } else {
+                let value: Value = serde_json::from_str(&stdout).unwrap();
+                assert_eq!(value["results"][0]["userData"]["message"], "hello");
+                value
+            };
             assert_eq!(value["queryId"], "query-123");
             assert_eq!(value["warnings"], json!([warning]));
             assert_eq!(value["statistics"], statistics);
-            assert_eq!(value["results"][0]["userData"]["message"], "hello");
         }
         assert!(
             !stdout.contains("Results written to:"),
@@ -254,4 +263,109 @@ async fn raw_query_with_source_in_query_omits_unset_default_source() {
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["queryId"], "raw-query");
     assert_eq!(value["results"], json!([]));
+}
+
+#[tokio::test]
+async fn extended_text_preserves_result_rendering_across_commands_and_profiles() {
+    let warning = json!({"archiveWarning": {"missingData": {}}});
+    let statistics = json!({"status": "COMPLETED", "outputRowCount": "1", "futureField": {"a": 1}});
+    let cases = [
+        (
+            "limit 1",
+            json!({"message": "hello", "traceID": "trace-1", "spanID": "span-1"}),
+        ),
+        ("choose app", json!({"app": "api"})),
+        ("aggregate count() as total", json!({"total": 3})),
+    ];
+    for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
+        for (query, data) in &cases {
+            let ndjson = [
+                json!({"queryId": {"queryId": "query-123"}}),
+                json!({"warning": warning}),
+                json!({"result": {"results": [{
+                    "metadata": [
+                        {"key": "timestamp", "value": "2026-01-01T00:00:00Z"},
+                        {"key": "severity", "value": "5"},
+                        {"key": "duration", "value": "5000"}
+                    ],
+                    "labels": [
+                        {"key": "serviceName", "value": "gateway"},
+                        {"key": "operationName", "value": "GET /health"}
+                    ],
+                    "userData": data.to_string()
+                }]}}),
+                json!({"statistics": statistics}),
+            ]
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/api/v1/dataprime/query"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(&ndjson))
+                .mount(&server)
+                .await;
+            for profiles in [vec!["test"], vec!["prod", "staging"]] {
+                let mut args = command.clone();
+                args.extend([query, "-o", "text"]);
+                let plain = invoke(&server, &args, &profiles).await;
+                args.push("--extended-information");
+                let extended = invoke(&server, &args, &profiles).await;
+                assert!(
+                    plain.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&plain.stderr)
+                );
+                assert!(
+                    extended.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&extended.stderr)
+                );
+                let plain_rows = String::from_utf8(plain.stdout.clone()).unwrap();
+                let extended_stdout = String::from_utf8(extended.stdout.clone()).unwrap();
+                let prefix = format!("{plain_rows}\n");
+                let information: Value = serde_json::from_str(
+                    extended_stdout
+                        .strip_prefix(&prefix)
+                        .expect("text result rendering must be unchanged"),
+                )
+                .unwrap();
+                assert!(information.get("results").is_none());
+                if profiles.len() == 1 {
+                    assert_eq!(
+                        information,
+                        json!({
+                            "queryId": "query-123", "warnings": [warning], "statistics": statistics
+                        })
+                    );
+                } else {
+                    assert_eq!(
+                        information["queries"].as_array().unwrap().len(),
+                        profiles.len()
+                    );
+                    for (info, profile) in information["queries"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .zip(&profiles)
+                    {
+                        assert_eq!(info["profile"], *profile);
+                        assert_eq!(info["queryId"], "query-123");
+                        assert_eq!(info["warnings"], json!([warning]));
+                        assert_eq!(info["statistics"], statistics);
+                    }
+                }
+                for output in [&plain, &extended] {
+                    let emitted = stderr_warnings(output);
+                    assert_eq!(emitted.len(), profiles.len());
+                    for profile in &profiles {
+                        assert!(emitted
+                            .iter()
+                            .any(|w| w == &json!({"profile": profile, "warning": warning})));
+                    }
+                }
+            }
+        }
+    }
 }

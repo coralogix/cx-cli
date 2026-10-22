@@ -364,6 +364,19 @@ pub fn extended_response(merged: &MergedResults) -> Value {
     }
 }
 
+fn query_information(merged: &MergedResults) -> Value {
+    if merged.include_profile {
+        serde_json::json!({"queries": merged.queries})
+    } else {
+        let info = merged.queries.first();
+        serde_json::json!({
+            "queryId": info.and_then(|q| q.query_id.as_ref()),
+            "warnings": info.map(|q| q.warnings.as_slice()).unwrap_or_default(),
+            "statistics": info.and_then(|q| q.statistics.as_ref()),
+        })
+    }
+}
+
 /// Render merged results to stdout.
 ///
 /// JSON and Toon modes are handled generically. For Text mode, if a
@@ -491,6 +504,14 @@ pub async fn run_query_with_options(
     .await;
 
     let merged = merge_results(per_profile, include_profile, cases_warning.as_deref())?;
+    if options.extended_information && output == OutputFormat::Text {
+        render_results(&merged, output, max_direct, temp_dir, text_renderer)?;
+        println!(
+            "\n{}",
+            serde_json::to_string_pretty(&query_information(&merged))?
+        );
+        return Ok(());
+    }
     if options.extended_information {
         for warning in &merged.warnings {
             eprintln!("{warning}");

@@ -56,14 +56,17 @@ What it asks you:
 |---|---|
 | **Region / Coralogix URL** | **Don't know your region? You don't need to.** Paste the URL you use to reach Coralogix in the browser (e.g. `https://myteam.app.eu2.coralogix.com`) and `cx` works the region out for you. Pick it from the list instead if you do know it, or look yours up in the [Coralogix domain](https://coralogix.com/docs/user-guides/account-management/account-settings/coralogix-domain/) table. A URL `cx` doesn't recognise - a bring-your-own-cloud or private-link deployment - becomes a custom API endpoint instead of an error. |
 | **Sign in** | Opens your browser for [OAuth login](https://coralogix.com/docs/user-guides/account-management/user-management/oauth/). Approve the scopes and choose which team the CLI may access, then come back to the terminal. |
-| **Where should OAuth tokens be stored?** | `os-store` is preselected when an OS credential store is available and saves the tokens there (macOS Keychain, Windows Credential Manager, or the Linux secret service). On Linux musl builds, `file` is the only storage option and writes tokens into the profile TOML. A prompt-free `cx init` also keeps `file`. On platforms with an OS-store option, setup falls back to `file` if that store is unavailable. |
 | **Where to put the agent skills** | Local to this project (`./`) or global (`~/`). `cx` installs them for you and tells you how to update them later. |
 | **Install shell completions?** | Turns on `<Tab>` completion for `cx`. Pick `zsh`, `bash`, or `fish`, or keep the default and skip it. **Other** lets you name a shell and an install path yourself. Skipped without asking when completions are already installed. |
 
 Everything else is defaulted rather than asked: profile name `default`, no
-label, and `json` as the profile's default output format
-(pass `-o text` for a run you want to read by eye, or set `default_output_format`
-in the profile). You also get [Olly](https://coralogix.com/docs/user-guides/olly/ask-olly/), Coralogix's AI assistant, and the
+label, and `json` as the profile's default output format (pass `-o text` for a
+run you want to read by eye, or set `default_output_format` in the profile).
+Credentials are stored in macOS Keychain or Windows Credential Manager; setup
+returns an error if those stores are unavailable. Linux musl builds always use
+the profile TOML. On glibc Linux, interactive setup offers the OS credential
+store (the default) or the profile TOML.
+You also get [Olly](https://coralogix.com/docs/user-guides/olly/ask-olly/), Coralogix's AI assistant, and the
 full command set including `iam` and `archive` writes, all available from the
 start. To switch either off, set `olly_enabled` or `allow_risky_commands` to
 `false` in `~/.cx/config.toml`, or create your first profile with

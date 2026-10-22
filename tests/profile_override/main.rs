@@ -33,13 +33,17 @@ region = "{region}"
 fn write_config(home: &std::path::Path, default_profile: &str) {
     let cx_dir = home.join(".cx");
     fs::create_dir_all(&cx_dir).unwrap();
-    let content = format!("default_profile = \"{default_profile}\"\n");
+    let content = format!(
+        "default_profile = \"{default_profile}\"\ncredential_migration_version = \"{}\"\n",
+        env!("CARGO_PKG_VERSION")
+    );
     fs::write(cx_dir.join("config.toml"), content).unwrap();
 }
 
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
+    cmd.env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"));
     cmd.env_remove("CX_API_KEY");
     cmd.env_remove("CX_REGION");
     cmd.env_remove("CX_PROFILE");

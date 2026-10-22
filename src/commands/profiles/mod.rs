@@ -1,11 +1,12 @@
 use std::io::IsTerminal;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{
     has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
     save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
+    StoredOAuthTokens,
 };
 use crate::keyring_store;
 use crate::oauth;
@@ -69,76 +70,46 @@ enum RegionChoice {
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
-/// Storage backend choices presented to the user. Linux musl builds have no
-/// keyring backend, so `file` is their only safe option.
-#[cfg(all(target_os = "linux", target_env = "musl"))]
-const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] =
-    &[("file", CredentialStorage::File)];
-
-/// Storage backend choices presented to the user. The first element is the
-/// label shown in the prompt; the second is the variant it maps to. Order
-/// matters: `os-store` is the default cursor where a keyring backend exists.
-#[cfg(not(all(target_os = "linux", target_env = "musl")))]
-const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] = &[
-    ("os-store (encrypted)", CredentialStorage::OsStore),
-    ("file", CredentialStorage::File),
+#[cfg(all(target_os = "linux", not(target_env = "musl")))]
+const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &[
+    "OS credential store (recommended)",
+    "Profile file (less secure)",
 ];
 
-/// Cursor index for [`select_credential_storage`]. `os-store` is the default
-/// wherever a keyring backend is compiled in.
-fn credential_storage_starting_cursor() -> usize {
-    CREDENTIAL_STORAGE_OPTIONS
-        .iter()
-        .position(|(_, storage)| *storage == CredentialStorage::OsStore)
-        .unwrap_or(0)
-}
+fn credential_storage_for_setup(interactive: bool) -> Result<CredentialStorage> {
+    #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
+    let _ = interactive;
 
-fn credential_storage_help_message(file_description: &str) -> String {
-    if cfg!(all(target_os = "linux", target_env = "musl")) {
-        format!("Linux musl builds do not have an OS credential store. 'file' {file_description}")
-    } else {
-        format!(
-            "'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager, \
-             Linux Secret Service). 'file' {file_description} Falls back to file if the OS store \
-             is unavailable."
-        )
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    {
+        let _ = interactive;
+        return Ok(CredentialStorage::File);
     }
-}
 
-fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
-    let labels: Vec<&str> = CREDENTIAL_STORAGE_OPTIONS.iter().map(|(l, _)| *l).collect();
-    let chosen = Select::new(prompt, labels)
-        .with_help_message(help_message)
-        .with_starting_cursor(credential_storage_starting_cursor())
-        .prompt()?;
-    Ok(CREDENTIAL_STORAGE_OPTIONS
-        .iter()
-        .find(|(label, _)| *label == chosen)
-        .map(|(_, storage)| *storage)
-        .expect("inquire returns one of the labels we passed in"))
-}
-
-/// Persist to the OS credential store when possible; otherwise fall back to file.
-///
-/// Linux hosts without a Secret Service (and musl builds with no keyring backend)
-/// must still succeed — falling back keeps existing clients working.
-fn os_store_or_file_fallback<T>(
-    profile: &str,
-    store_result: Result<()>,
-    file_payload: T,
-    os_desc: &'static str,
-    file_desc: &'static str,
-) -> (CredentialStorage, Option<T>, &'static str) {
-    match store_result {
-        Ok(()) => (CredentialStorage::OsStore, None, os_desc),
-        Err(err) => {
-            // Clear any partial keyring writes from a failed multi-key store.
-            keyring_store::delete_profile(profile);
-            eprintln!(
-                "Warning: OS credential store unavailable ({err}); falling back to file storage."
-            );
-            (CredentialStorage::File, Some(file_payload), file_desc)
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+    {
+        if interactive {
+            let choice = Select::new("Credential storage:", CREDENTIAL_STORAGE_OPTIONS.to_vec())
+                .with_starting_cursor(0)
+                .with_help_message(
+                    "The OS credential store protects secrets from accidental file exposure.",
+                )
+                .prompt()?;
+            return Ok(if choice == CREDENTIAL_STORAGE_OPTIONS[0] {
+                CredentialStorage::OsStore
+            } else {
+                CredentialStorage::File
+            });
         }
+    }
+
+    Ok(CredentialStorage::OsStore)
+}
+
+fn credential_storage_description(storage: CredentialStorage) -> &'static str {
+    match storage {
+        CredentialStorage::OsStore => "OS credential store",
+        CredentialStorage::File => "profile file",
     }
 }
 
@@ -474,10 +445,9 @@ pub struct AddArgs {
     pub disable_olly: bool,
     /// Quick setup: on a terminal, skip the optional prompts (default output
     /// format, label) and apply sensible defaults (JSON output, no label).
-    /// Credential storage is still asked, with the OS store preselected.
-    /// Non-interactive runs store secrets in the profile file. Used by
-    /// `cx init`'s guided flow; `cx profiles add` leaves it `false` and keeps
-    /// its full prompt set.
+    /// Used by `cx init`'s guided flow; `cx profiles add` leaves it `false`
+    /// and keeps its full prompt set. Credential storage follows the
+    /// platform-specific policy selected during setup.
     pub quick: bool,
 }
 
@@ -549,18 +519,19 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     }
 
     println!("Configuring profile '{name}'\n");
+    let credential_storage = credential_storage_for_setup(interactive)?;
 
-    let (mut profile, storage_desc) = if oauth {
+    let (mut profile, _) = if oauth {
         // `--oauth` answers the auth-method question; go straight to the
         // browser login. A terminal is not required: the approval happens in
         // the browser, the login URL is printed for the user (or an agent) to
         // open, and the remaining questions fall back to defaults.
-        configure_oauth(&name, region_choice, interactive, quick).await?
+        configure_oauth(&name, region_choice, interactive, quick, credential_storage).await?
     } else if !interactive {
-        build_profile_non_interactive(&name, api_key, region_choice)?
+        build_profile_non_interactive(&name, api_key, region_choice, credential_storage).await?
     } else if api_key.is_some() {
         // An API key was supplied, so the auth-method question is answered.
-        configure_api_key(&name, api_key, region_choice, quick)?
+        configure_api_key(&name, api_key, region_choice, quick, credential_storage).await?
     } else {
         let auth_choice = Select::new("Authentication method:", AUTH_METHODS.to_vec())
             .with_starting_cursor(0) // OAuth is the default
@@ -572,11 +543,12 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             .prompt()?;
 
         if auth_choice.starts_with("OAuth") {
-            configure_oauth(&name, region_choice, interactive, quick).await?
+            configure_oauth(&name, region_choice, interactive, quick, credential_storage).await?
         } else {
-            configure_api_key(&name, None, region_choice, quick)?
+            configure_api_key(&name, None, region_choice, quick, credential_storage).await?
         }
     };
+    let storage_desc = credential_storage_description(profile.credential_storage);
 
     // ── Common: default output format (per-profile) ────────────────────────────
     // Quick setup pins JSON without asking. Non-interactive runs leave it unset,
@@ -758,14 +730,58 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
 
 // ── Non-interactive configure path ────────────────────────────────────────────
 
+async fn store_api_key(
+    profile: &str,
+    api_key: String,
+    storage: CredentialStorage,
+) -> Result<(Option<String>, &'static str)> {
+    match storage {
+        CredentialStorage::File => Ok((Some(api_key), "profile file")),
+        CredentialStorage::OsStore => {
+            let profile = profile.to_string();
+            keyring_store::write_with_timeout(move || {
+                keyring_store::delete_profile(&profile);
+                keyring_store::store_secret(&profile, "api_key", &api_key)
+                    .context("Failed to store API key in the OS credential store")
+            })
+            .await?;
+            Ok((None, "OS credential store"))
+        }
+    }
+}
+
+async fn store_oauth_tokens(
+    profile: &str,
+    tokens: oauth::TokenResponse,
+    storage: CredentialStorage,
+) -> Result<(Option<StoredOAuthTokens>, &'static str)> {
+    match storage {
+        CredentialStorage::File => Ok((
+            Some(oauth::tokens_to_stored(&tokens)),
+            "profile file (OAuth tokens)",
+        )),
+        CredentialStorage::OsStore => {
+            let profile = profile.to_string();
+            keyring_store::write_with_timeout(move || {
+                keyring_store::delete_profile(&profile);
+                oauth::store_tokens_keyring(&profile, &tokens)
+                    .context("Failed to store OAuth tokens in the OS credential store")
+            })
+            .await?;
+            Ok((None, "OS credential store (OAuth tokens)"))
+        }
+    }
+}
+
 /// Build an API-key profile from flags alone — no terminal involved. OAuth is
 /// unavailable here (it needs a browser), and consequential values are never
 /// invented: a missing API key or region is an error naming the exact flag to
-/// add. Credentials go to the profile file (the OS store may itself prompt).
-fn build_profile_non_interactive(
+/// add.
+async fn build_profile_non_interactive(
     name: &str,
     api_key: Option<String>,
     region_choice: Option<RegionChoice>,
+    credential_storage: CredentialStorage,
 ) -> Result<(Profile, &'static str)> {
     let mut missing = Vec::new();
     if region_choice.is_none() {
@@ -784,12 +800,11 @@ fn build_profile_non_interactive(
         RegionChoice::Custom { base_url } => Region::Custom(base_url),
     };
 
-    // Clean up any leftover keychain entries from a previous config.
-    keyring_store::delete_profile(name);
+    let (api_key, storage_desc) = store_api_key(name, api_key, credential_storage).await?;
     let profile = Profile {
         auth: AuthKind::ApiKey,
-        credential_storage: CredentialStorage::File,
-        api_key: Some(api_key),
+        credential_storage,
+        api_key,
         region,
         label: None,
         oauth_client_id: None,
@@ -803,7 +818,7 @@ fn build_profile_non_interactive(
         cached_team_id: None,
         cached_team_name: None,
     };
-    Ok((profile, "profile file"))
+    Ok((profile, storage_desc))
 }
 
 // ── OAuth configure path ──────────────────────────────────────────────────────
@@ -813,6 +828,7 @@ async fn configure_oauth(
     region_choice: Option<RegionChoice>,
     interactive: bool,
     quick: bool,
+    credential_storage: CredentialStorage,
 ) -> Result<(Profile, &'static str)> {
     // Region / environment selection: the --url/--region flags when supplied,
     // otherwise the searchable list (URL derivation, BYOC). The browser login
@@ -866,27 +882,11 @@ async fn configure_oauth(
         None
     };
 
-    // Clean up any existing keyring entries before writing new ones, regardless
-    // of which storage backend the user picks below.
-    keyring_store::delete_profile(name);
-
     // ── Browser login ──────────────────────────────────────────────────────────
     println!();
     let tokens =
         oauth::browser_login(&base_url, &client_id, oauth::LoginOptions::default()).await?;
     println!("Login successful!");
-
-    // Interactive runs (including `cx init`) ask, with the OS store preselected.
-    // Non-interactive runs store tokens in the profile file so a script never
-    // blocks on a keychain dialog. If the OS store is selected but unavailable
-    // (common on Linux without Secret Service), we fall back to file.
-    let credential_storage = if interactive {
-        let help_message =
-            credential_storage_help_message("stores tokens in the profile config (0600 perms).");
-        select_credential_storage("Where should OAuth tokens be stored?", &help_message)?
-    } else {
-        CredentialStorage::File
-    };
 
     // For custom environments, explicitly store the base URL so that token
     // refresh can reach the correct OIDC discovery endpoint even if the
@@ -894,20 +894,7 @@ async fn configure_oauth(
     // is derived from `region.api_endpoint()` at runtime and need not be stored.
     let oauth_base_url_for_profile = if is_custom { Some(base_url) } else { None };
 
-    let (credential_storage, oauth_tokens, storage_desc) = match credential_storage {
-        CredentialStorage::OsStore => os_store_or_file_fallback(
-            name,
-            oauth::store_tokens_keyring(name, &tokens),
-            oauth::tokens_to_stored(&tokens),
-            "OS credential store (OAuth tokens)",
-            "profile file (OAuth tokens)",
-        ),
-        CredentialStorage::File => (
-            CredentialStorage::File,
-            Some(oauth::tokens_to_stored(&tokens)),
-            "profile file (OAuth tokens)",
-        ),
-    };
+    let (oauth_tokens, storage_desc) = store_oauth_tokens(name, tokens, credential_storage).await?;
 
     let profile = Profile {
         auth: AuthKind::OAuth,
@@ -932,11 +919,12 @@ async fn configure_oauth(
 
 // ── API key configure path ────────────────────────────────────────────────────
 
-fn configure_api_key(
+async fn configure_api_key(
     name: &str,
     api_key: Option<String>,
     region_choice: Option<RegionChoice>,
     quick: bool,
+    credential_storage: CredentialStorage,
 ) -> Result<(Profile, &'static str)> {
     let api_key = match api_key {
         Some(key) => key,
@@ -979,27 +967,7 @@ fn configure_api_key(
             .filter(|s| !s.is_empty())
     };
 
-    // Reached only on a terminal, including `cx init`. The OS store is preselected.
-    // If the store is unavailable, fall back to file so Linux clients keep working.
-    let help_message =
-        credential_storage_help_message("stores credentials in the profile config (0600 perms).");
-    let credential_storage =
-        select_credential_storage("Where should API keys be stored?", &help_message)?;
-
-    let (credential_storage, api_key, storage_desc) = match credential_storage {
-        CredentialStorage::OsStore => os_store_or_file_fallback(
-            name,
-            keyring_store::store_secret(name, "api_key", &api_key),
-            api_key,
-            "OS credential store",
-            "profile file",
-        ),
-        CredentialStorage::File => {
-            // Clean up any leftover keychain entries from a previous config.
-            keyring_store::delete_profile(name);
-            (CredentialStorage::File, Some(api_key), "profile file")
-        }
-    };
+    let (api_key, storage_desc) = store_api_key(name, api_key, credential_storage).await?;
 
     let profile = Profile {
         auth: AuthKind::ApiKey,
@@ -1043,43 +1011,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn credential_storage_default_is_os_store_when_keyring_is_available() {
-        let (_, storage) = CREDENTIAL_STORAGE_OPTIONS[credential_storage_starting_cursor()];
-        if cfg!(all(target_os = "linux", target_env = "musl")) {
-            assert_eq!(storage, CredentialStorage::File);
-            assert_eq!(CREDENTIAL_STORAGE_OPTIONS.len(), 1);
-        } else {
-            assert_eq!(storage, CredentialStorage::OsStore);
-        }
+    #[tokio::test]
+    async fn os_store_write_succeeds_without_file_fallback() {
+        keyring_store::write_with_timeout(|| Ok(())).await.unwrap();
     }
 
-    #[test]
-    fn os_store_fallback_keeps_os_store_on_success() {
-        let (storage, payload, desc) = os_store_or_file_fallback(
-            "cx_test_os_store_ok",
-            Ok(()),
-            "secret",
-            "OS credential store",
-            "profile file",
-        );
-        assert_eq!(storage, CredentialStorage::OsStore);
-        assert_eq!(payload, None);
-        assert_eq!(desc, "OS credential store");
-    }
-
-    #[test]
-    fn os_store_fallback_uses_file_when_keyring_unavailable() {
-        let (storage, payload, desc) = os_store_or_file_fallback(
-            "cx_test_os_store_fallback",
-            Err(anyhow::anyhow!("no secret service")),
-            "secret",
-            "OS credential store",
-            "profile file",
-        );
-        assert_eq!(storage, CredentialStorage::File);
-        assert_eq!(payload.as_deref(), Some("secret"));
-        assert_eq!(desc, "profile file");
+    #[tokio::test]
+    async fn os_store_write_error_is_returned() {
+        let err = keyring_store::write_with_timeout(|| Err(anyhow::anyhow!("no secret service")))
+            .await
+            .expect_err("keyring error must not fall back to file storage");
+        assert!(err.to_string().contains("no secret service"));
     }
 
     /// The default cursor is a raw index into `PICKER_REGIONS`; if the list is

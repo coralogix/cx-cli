@@ -909,7 +909,7 @@ async fn configure_oauth(
         ),
     };
 
-    let profile = Profile {
+    let mut profile = Profile {
         auth: AuthKind::OAuth,
         credential_storage,
         api_key: None,
@@ -926,6 +926,17 @@ async fn configure_oauth(
         cached_team_id: None,
         cached_team_name: None,
     };
+
+    // Record the team picked in the browser now, so the first expired-session
+    // re-login already narrows the consent page to it. Best-effort: a failed
+    // lookup only means the team is learned later.
+    if let Ok(client) =
+        crate::api_client::CxClient::new(profile.region.api_endpoint(), &tokens.access_token)
+    {
+        if let Some(whoami) = crate::identity::lookup_whoami(&client).await {
+            crate::config::remember_signed_in_team(&mut profile, &whoami);
+        }
+    }
 
     Ok((profile, storage_desc))
 }

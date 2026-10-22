@@ -622,7 +622,10 @@ fn team_to_select(profile: &Profile, fallback: &str) -> String {
 
 /// `true` when the profile changed and is worth persisting. That includes a
 /// pure TTL refresh of an unchanged console URL, not only new values.
-fn remember_signed_in_team(profile: &mut Profile, whoami: &crate::identity::Whoami) -> bool {
+pub(crate) fn remember_signed_in_team(
+    profile: &mut Profile,
+    whoami: &crate::identity::Whoami,
+) -> bool {
     let mut changed = false;
     if let Some(id) = whoami.team_id {
         if profile.cached_team_id != Some(id) {
@@ -928,6 +931,19 @@ async fn resolve_single(
                         "Warning: failed to store refreshed OAuth tokens in the OS credential \
                          store; migrated profile '{profile_name}' to file storage."
                     );
+                }
+            }
+            // A profile that has not recorded its team (created before
+            // `cx profiles add` stored it) learns it while the token still
+            // works, so its first expired-session re-login is narrowed to
+            // that team. One whoami, only until it succeeds.
+            if profile.cached_team_id.is_none() && !region_overridden {
+                if let Ok(client) =
+                    crate::api_client::CxClient::new(profile.region.api_endpoint(), &bearer)
+                {
+                    if let Some(whoami) = crate::identity::lookup_whoami(&client).await {
+                        cache_team_identity(profile_name, &whoami);
+                    }
                 }
             }
             bearer

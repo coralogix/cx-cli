@@ -149,18 +149,21 @@ pub fn build_dataprime_body(
     tier: Tier,
     source: &str,
 ) -> Value {
-    json!({
+    let mut body = json!({
         "query": query,
         "metadata": {
             "tier": tier.as_api_str(),
             "syntax": "QUERY_SYNTAX_DATAPRIME",
             "startDate": start_time,
             "endDate": end_time,
-            "defaultSource": source,
             "limit": limit,
             "strictFieldsValidation": true
         }
-    })
+    });
+    if !source.is_empty() {
+        body["metadata"]["defaultSource"] = source.into();
+    }
+    body
 }
 
 // ── NDJSON parsing ────────────────────────────────────────────────────────────

@@ -216,3 +216,42 @@ async fn extended_information_keeps_profile_queries_separate_and_handles_absent_
         assert_eq!(query["warnings"], json!([]));
     }
 }
+
+#[tokio::test]
+async fn raw_query_with_source_in_query_omits_unset_default_source() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .and(|request: &wiremock::Request| {
+            let body: Value = request.body_json().unwrap();
+            body["metadata"].get("defaultSource").is_none()
+                && body["query"] == "source logs | limit 0"
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "{\"queryId\":{\"queryId\":\"raw-query\"}}\n{\"statistics\":{\"status\":\"COMPLETED\"}}",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let output = invoke(
+        &server,
+        &[
+            "dataprime",
+            "query",
+            "source logs | limit 0",
+            "--extended-information",
+            "-o",
+            "json",
+        ],
+        &["test"],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["queryId"], "raw-query");
+    assert_eq!(value["results"], json!([]));
+}

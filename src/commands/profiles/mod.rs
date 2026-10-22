@@ -3,7 +3,6 @@ use std::io::IsTerminal;
 use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
-use crate::api_client::CxClient;
 use crate::config::{
     has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
     save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
@@ -11,8 +10,6 @@ use crate::config::{
 use crate::keyring_store;
 use crate::oauth;
 use crate::region::{region_from_url, RegionMatch};
-
-mod api;
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 
@@ -639,7 +636,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 
     // Record the onboarded user. Best-effort and silent — see
     // `report_onboarding`.
-    report_onboarding(&name).await;
+    report_onboarding(Some(&name)).await;
 
     let cx_dir = crate::config::config_dir()?;
     println!(
@@ -651,27 +648,31 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
 }
 
 /// Records the profile's user as onboarded (`POST /api/v2/onboarding`).
+/// `None` reports the default profile.
 ///
-/// Best-effort and silent: gated to known regions, and any failure is swallowed
-/// so it never affects the outcome of `cx profiles add`.
-async fn report_onboarding(name: &str) {
-    let Ok(cfg) = crate::config::resolve(Some(name), None, None).await else {
+/// Best-effort: any failure is swallowed so it never affects the outcome of
+/// `cx profiles add` / `cx init`. See [`crate::onboarding`]. The one failure
+/// worth surfacing is a 403: the service only accepts user identities, so a
+/// team-API-key profile can never be recorded and the in-app "waiting for
+/// connection" screen would hang without telling anyone why.
+pub async fn report_onboarding(name: Option<&str>) {
+    let Ok(cfg) = crate::config::resolve(name, None, None).await else {
         return;
     };
-    if matches!(region_from_url(&cfg.endpoint), RegionMatch::Unresolved) {
-        return;
+    let outcome = crate::onboarding::report(&cfg.profile_name, &cfg.endpoint, &cfg.api_key).await;
+    if outcome == Some(crate::onboarding::Outcome::Forbidden) {
+        // Name the profile from the arguments / config file, not from `cfg`,
+        // which also carries the API key.
+        let profile = match name {
+            Some(name) => name.to_string(),
+            None => load_config().unwrap_or_default().default_profile,
+        };
+        eprintln!(
+            "note: profile '{profile}' signs in with an API key, so this setup isn't linked \
+             to your Coralogix user. To link it, sign in as yourself with \
+             `cx profiles add {profile} --oauth --force`."
+        );
     }
-    let Ok(client) = CxClient::new(&cfg.endpoint, &cfg.api_key) else {
-        return;
-    };
-    // Bound the request: the shared client carries no request timeout, so a
-    // gateway that accepts the connection but stalls the response would
-    // otherwise hang setup. A stall is swallowed like any other failure.
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        api::report_onboarded(&client),
-    )
-    .await;
 }
 
 // ── Refresh ───────────────────────────────────────────────────────────────────

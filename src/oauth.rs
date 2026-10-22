@@ -505,6 +505,21 @@ pub struct LoginOptions {
     pub signup: bool,
 }
 
+/// The sign-up hint names no command: `cx init` and `cx profiles add` both
+/// take `--signup`, and only the user's own command carries their region and
+/// profile name.
+fn timeout_message(options: &LoginOptions, timeout: Duration) -> String {
+    let minutes = timeout.as_secs() / 60;
+    if options.signup {
+        format!(
+            "OAuth sign-up timed out after {minutes} minutes. If you finished signing up, \
+             run the same command again without `--signup` to sign in with your new account."
+        )
+    } else {
+        format!("OAuth login timed out after {minutes} minutes")
+    }
+}
+
 /// How long [`browser_login`] waits for the browser to come back.
 fn callback_timeout(options: &LoginOptions) -> Duration {
     if options.signup {
@@ -605,17 +620,7 @@ pub async fn browser_login(
         tokio::task::spawn_blocking(move || wait_for_callback_blocking(listeners, state)),
     )
     .await
-    .with_context(|| {
-        let minutes = timeout.as_secs() / 60;
-        if options.signup {
-            format!(
-                "OAuth sign-up timed out after {minutes} minutes. If you finished signing up, \
-                 run `cx init --oauth` to sign in with your new account."
-            )
-        } else {
-            format!("OAuth login timed out after {minutes} minutes")
-        }
-    })?
+    .with_context(|| timeout_message(&options, timeout))?
     .context("OAuth callback task failed")??;
 
     eprintln!("Authorization code received, exchanging for tokens...");
@@ -1177,6 +1182,23 @@ mod tests {
         );
         assert!(url.ends_with("&state=STATE&prompt=create"), "got: {url}");
         assert!(!url.contains("select_account"));
+    }
+
+    #[test]
+    fn signup_timeout_tells_the_user_to_rerun_their_own_command() {
+        let message = timeout_message(
+            &LoginOptions {
+                signup: true,
+                ..LoginOptions::default()
+            },
+            Duration::from_secs(30 * 60),
+        );
+
+        assert!(
+            message.contains("same command again without `--signup`"),
+            "{message}"
+        );
+        assert!(!message.contains("cx init"), "{message}");
     }
 
     #[test]

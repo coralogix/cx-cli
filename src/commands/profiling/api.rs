@@ -13,6 +13,7 @@ const FILTER_KEYS_PATH: &str = "/profiles/filters/v1/keys";
 const FILTERS_PATH: &str = "/profiles/filters/v1";
 const METRICS_PATH: &str = "/profiles/metrics/v1";
 const FLAME_GRAPH_PATH: &str = "/profiles/flame-graph/v1";
+const MAX_FLAME_GRAPH_JSON_DEPTH: usize = 1000;
 
 pub const ENVIRONMENT_FILTER_KEY: &str = "deployment.environment.name";
 
@@ -375,6 +376,36 @@ impl<'a> ProfilingApi<'a> {
         body["filters"] = filters_body(query.filters);
         body["showKernel"] = json!(show_kernel);
         let text = self.client.post_raw(FLAME_GRAPH_PATH, &body).await?;
+        let mut depth = 0usize;
+        let mut max_depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        for byte in text.bytes() {
+            if in_string {
+                match byte {
+                    _ if escaped => escaped = false,
+                    b'\\' => escaped = true,
+                    b'"' => in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+            match byte {
+                b'"' => in_string = true,
+                b'{' | b'[' => {
+                    depth += 1;
+                    max_depth = max_depth.max(depth);
+                }
+                b'}' | b']' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        if max_depth > MAX_FLAME_GRAPH_JSON_DEPTH {
+            return Err(<serde_json::Error as serde::de::Error>::custom(format!(
+                "flame graph nests {max_depth} levels deep, more than the supported {MAX_FLAME_GRAPH_JSON_DEPTH}; narrow the time range or add filters"
+            ))
+            .into());
+        }
         let mut deserializer = serde_json::Deserializer::from_str(&text);
         deserializer.disable_recursion_limit();
         let response = FlameGraphResponse::deserialize(&mut deserializer)?;

@@ -445,9 +445,9 @@ pub struct AddArgs {
     pub disable_olly: bool,
     /// Quick setup: on a terminal, skip the optional prompts (default output
     /// format, label) and apply sensible defaults (JSON output, no label).
-    /// Credentials use the OS store when available, otherwise fall back to the
-    /// profile file. Used by `cx init`'s guided flow; `cx profiles add` leaves
-    /// it `false` and keeps its full prompt set.
+    /// Used by `cx init`'s guided flow; `cx profiles add` leaves it `false`
+    /// and keeps its full prompt set. Credential storage follows the
+    /// platform-specific policy selected during setup.
     pub quick: bool,
 }
 

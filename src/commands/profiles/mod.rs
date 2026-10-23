@@ -67,7 +67,7 @@ enum RegionChoice {
     Custom { base_url: String },
 }
 
-const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
+const OUTPUT_FORMATS: &[&str] = &["text", "json", "yaml", "toon"];
 
 /// Storage backend choices presented to the user. Linux musl builds have no
 /// keyring backend, so `file` is their only safe option.
@@ -584,6 +584,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     };
 
     // ── Common: default output format (per-profile) ────────────────────────────
+        "yaml" => OutputFormat::Yaml,
     // Quick setup pins JSON without asking. Non-interactive runs leave it unset,
     // falling back to the global default.
     if quick {

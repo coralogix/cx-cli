@@ -58,6 +58,7 @@ pub enum OutputFormat {
     Text,
     /// Raw JSON output.
     Json,
+    Yaml,
     /// Token-aware, AI-agent-optimised TOON output.
     ///
     /// `agents` is accepted as a deprecated alias for backward compatibility
@@ -72,6 +73,7 @@ impl OutputFormat {
         match self {
             OutputFormat::Text => "text",
             OutputFormat::Json => "json",
+            OutputFormat::Yaml => "yaml",
             OutputFormat::Toon => "toon",
         }
     }

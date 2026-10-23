@@ -8,6 +8,8 @@
 > [!WARNING]
 > **Security advisory**: On October 20, 2026, the private keys for 8 intermediate certificate authority (CA) certificates operated by eMudhra were compromised. Update cx-cli to **v0.1.28** or later to remove this exposure. Re-run the [install/update script](https://github.com/coralogix/cx-cli/blob/master/docs/quickstart.md#1-install-the-cli) or download it from the [release page](https://github.com/coralogix/cx-cli/releases/tag/v0.1.28). Coralogix endpoints don't use eMudhra or emSign certificates, so your connection to Coralogix is not affected.
 >
+> See the [eMudhra security advisory](https://coralogix.com/blog/coralogix-security-advisory-emudhra-certificate-update/) for full upgrade guidance and breaking-change details.
+>
 > Our support team is here to help. Reach us through the in-app chat (or [support@coralogix.com](mailto:support@coralogix.com)) and say: "I'm contacting you regarding the Security advisory eMudhra," then mention which component you'd like help upgrading.
 
 

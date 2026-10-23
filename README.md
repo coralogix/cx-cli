@@ -5,6 +5,12 @@
 [![Homebrew](https://img.shields.io/badge/homebrew-coralogix%2Ftap%2Fcx-blue)](https://github.com/coralogix/homebrew-tap)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
+> [!WARNING]
+> **Security advisory**: In October 2026, private keys for several eMudhra intermediate CA certificates were disclosed as compromised. Update cx-cli to **v0.1.28** or later to remove this exposure. Re-run the [install/update script](https://github.com/coralogix/cx-cli/blob/master/docs/quickstart.md#1-install-the-cli) or download it from the [release page](https://github.com/coralogix/cx-cli/releases/tag/v0.1.28). Coralogix-hosted endpoints are not affected.
+>
+> If you need help, contact [Coralogix Support](mailto:support@coralogix.com) or your account team and mention the eMudhra CA advisory and the affected component.
+
+
 The observability backbone for AI agents and engineering teams.<br/>
 Connect your agents to live logs, traces, metrics, dashboards, and alerts so they can investigate incidents, explain what changed, and reason about production with real operational context.
 

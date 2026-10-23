@@ -463,6 +463,9 @@ pub struct AddArgs {
     pub api_key: Option<String>,
     /// `--oauth`: use OAuth browser login, skipping the auth-method prompt.
     pub oauth: bool,
+    /// Sign up for a new Coralogix account during the OAuth login
+    /// (`prompt=create`). Only meaningful with `oauth`.
+    pub signup: bool,
     /// `--force`: overwrite an existing profile without prompting.
     pub force: bool,
     /// `--set-default`: set this profile as the default without prompting.
@@ -488,11 +491,13 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         region,
         api_key,
         oauth,
+        signup,
         force,
         set_default,
         disable_olly,
         quick,
     } = args;
+    let oauth = oauth || signup;
 
     // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
     // secret expanding to nothing) as missing, so it's prompted for or errors
@@ -555,7 +560,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         // browser login. A terminal is not required: the approval happens in
         // the browser, the login URL is printed for the user (or an agent) to
         // open, and the remaining questions fall back to defaults.
-        configure_oauth(&name, region_choice, interactive, quick).await?
+        configure_oauth(&name, region_choice, interactive, quick, signup).await?
     } else if !interactive {
         build_profile_non_interactive(&name, api_key, region_choice)?
     } else if api_key.is_some() {
@@ -572,7 +577,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             .prompt()?;
 
         if auth_choice.starts_with("OAuth") {
-            configure_oauth(&name, region_choice, interactive, quick).await?
+            configure_oauth(&name, region_choice, interactive, quick, signup).await?
         } else {
             configure_api_key(&name, None, region_choice, quick)?
         }
@@ -813,6 +818,7 @@ async fn configure_oauth(
     region_choice: Option<RegionChoice>,
     interactive: bool,
     quick: bool,
+    signup: bool,
 ) -> Result<(Profile, &'static str)> {
     // Region / environment selection: the --url/--region flags when supplied,
     // otherwise the searchable list (URL derivation, BYOC). The browser login
@@ -872,8 +878,11 @@ async fn configure_oauth(
 
     // ── Browser login ──────────────────────────────────────────────────────────
     println!();
-    let tokens =
-        oauth::browser_login(&base_url, &client_id, oauth::LoginOptions::default()).await?;
+    let login = oauth::LoginOptions {
+        signup,
+        ..oauth::LoginOptions::default()
+    };
+    let tokens = oauth::browser_login(&base_url, &client_id, login).await?;
     println!("Login successful!");
 
     // Interactive runs (including `cx init`) ask, with the OS store preselected.

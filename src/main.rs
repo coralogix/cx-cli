@@ -309,6 +309,7 @@ Examples:
   cx init                                              # interactive walkthrough
   cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global-skills
   cx init --oauth --url https://myteam.app.eu2.coralogix.com
+  cx init --signup --region eu2                        # new to Coralogix: create an account
   cx init --no-skills                                  # skip the agent-skills install")]
     Init {
         /// Coralogix URL to derive the region from (e.g. your browser URL).
@@ -322,6 +323,12 @@ Examples:
         /// with OAuth by surfacing the URL to its user.
         #[arg(long)]
         oauth: bool,
+        /// No Coralogix account yet? Sign up in the browser instead of signing
+        /// in (implies --oauth): create the account and a team, and this
+        /// profile is set up with it. Waits up to 30 minutes, since signup
+        /// includes confirming your email.
+        #[arg(long)]
+        signup: bool,
         /// Skip the agent-skills install step (installed by default).
         #[arg(long, conflicts_with_all = ["global_skills", "local_skills", "agents"])]
         no_skills: bool,
@@ -809,6 +816,10 @@ Examples:
         /// it also works without a terminal (requires --url or --region there).
         #[arg(long)]
         oauth: bool,
+        /// No Coralogix account yet? Sign up in the browser instead of signing
+        /// in (implies --oauth). Waits up to 30 minutes for email confirmation.
+        #[arg(long)]
+        signup: bool,
         /// Overwrite an existing profile without prompting.
         #[arg(long)]
         force: bool,
@@ -3125,6 +3136,7 @@ async fn main() -> Result<()> {
                 region,
                 api_key,
                 oauth,
+                signup,
                 force,
                 set_default,
                 disable_olly,
@@ -3135,6 +3147,7 @@ async fn main() -> Result<()> {
                     region,
                     api_key,
                     oauth,
+                    signup,
                     force,
                     set_default,
                     disable_olly,
@@ -3221,6 +3234,7 @@ async fn main() -> Result<()> {
                 region,
                 api_key,
                 oauth,
+                signup,
                 force,
                 set_default,
                 disable_olly,
@@ -3231,6 +3245,7 @@ async fn main() -> Result<()> {
                     region,
                     api_key,
                     oauth,
+                    signup,
                     force,
                     set_default,
                     disable_olly,
@@ -3273,6 +3288,7 @@ async fn main() -> Result<()> {
     if let Commands::Init {
         url,
         oauth,
+        signup,
         no_skills,
         global_skills,
         local_skills,
@@ -3292,6 +3308,7 @@ async fn main() -> Result<()> {
             region: cli.region,
             api_key: cli.api_key,
             oauth,
+            signup,
             install_skills: !no_skills,
             agents,
             scope,

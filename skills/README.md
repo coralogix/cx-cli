@@ -31,6 +31,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
+| `cx-rum-setup` | Add RUM to a browser or mobile app - RUM API key, SDK install and init, verify events arrive |
 | `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications |
 
 ## Requirements
@@ -153,5 +154,6 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "How can we reduce our Coralogix costs?"
 - "Help me triage this case"
 - "Set up parsing rules for our new service"
+- "Add Coralogix RUM to my React app"
 - "Who has access to production?"
 - "Configure Slack notifications for critical alerts"

@@ -349,22 +349,23 @@ async fn metadata_posts_service_name_and_renders_every_format() {
 }
 
 #[tokio::test]
-async fn metadata_errors_on_missing_profile_types() {
-    let server = MockServer::start().await;
+async fn metadata_treats_empty_response_as_no_profiling_data() {
+    for body in [json!({}), json!({ "service": {} })] {
+        let server = MockServer::start().await;
 
-    Mock::given(method("POST"))
-        .and(path(METADATA_PATH))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "service": {} })))
-        .expect(1)
-        .mount(&server)
-        .await;
+        Mock::given(method("POST"))
+            .and(path(METADATA_PATH))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .expect(1)
+            .mount(&server)
+            .await;
 
-    let targets = vec![common::test_target("test-profile", &server.uri())];
+        let targets = vec![common::test_target("test-profile", &server.uri())];
 
-    let err = run_metadata(&targets, "checkout", "now-1h", "now", OutputFormat::Json)
-        .await
-        .expect_err("empty metadata should be an error");
-    assert!(format!("{err:#}").contains("missing service profile types"));
+        run_metadata(&targets, "checkout", "now-1h", "now", OutputFormat::Json)
+            .await
+            .expect("empty metadata should mean no profiling data, not an error");
+    }
 }
 
 #[tokio::test]
@@ -614,6 +615,51 @@ async fn flame_graph_parses_trees_deeper_than_the_json_nesting_limit() {
     )
     .await
     .expect("a 200-deep flame graph should parse");
+}
+
+#[test]
+fn flame_graph_at_the_supported_depth_fits_a_1mb_main_thread() {
+    let body = serde_json::to_string(&flame_graph_body(499)).expect("body should serialize");
+    std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime should build")
+                .block_on(async {
+                    let server = MockServer::start().await;
+
+                    Mock::given(method("POST"))
+                        .and(path(FLAME_GRAPH_PATH))
+                        .respond_with(
+                            ResponseTemplate::new(200).set_body_raw(body, "application/json"),
+                        )
+                        .expect(2)
+                        .mount(&server)
+                        .await;
+
+                    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+                    for format in [OutputFormat::Text, OutputFormat::Json] {
+                        run_flame_graph(
+                            &targets,
+                            "checkout",
+                            "cpu",
+                            "now-1h",
+                            "now",
+                            &[],
+                            flame_graph_options(),
+                            format,
+                        )
+                        .await
+                        .unwrap_or_else(|e| panic!("a 499-deep flame graph should render: {e:#}"));
+                    }
+                });
+        })
+        .expect("test thread should start")
+        .join()
+        .expect("a 499-deep flame graph should not overflow a 1 MB stack");
 }
 
 #[tokio::test]

@@ -367,51 +367,50 @@ impl<'a> ProfilingApi<'a> {
         self.client.post(METRICS_PATH, &body).await
     }
 
-    pub async fn flame_graph(
-        &self,
-        query: &ServiceQuery<'_>,
-        show_kernel: bool,
-    ) -> Result<FlameGraphResponse> {
+    pub async fn flame_graph(&self, query: &ServiceQuery<'_>, show_kernel: bool) -> Result<String> {
         let mut body = service_query_body(query);
         body["filters"] = filters_body(query.filters);
         body["showKernel"] = json!(show_kernel);
-        let text = self.client.post_raw(FLAME_GRAPH_PATH, &body).await?;
-        let mut depth = 0usize;
-        let mut max_depth = 0usize;
-        let mut in_string = false;
-        let mut escaped = false;
-        for byte in text.bytes() {
-            if in_string {
-                match byte {
-                    _ if escaped => escaped = false,
-                    b'\\' => escaped = true,
-                    b'"' => in_string = false,
-                    _ => {}
-                }
-                continue;
-            }
+        self.client.post_raw(FLAME_GRAPH_PATH, &body).await
+    }
+}
+
+pub fn parse_flame_graph(text: &str) -> Result<FlameGraphResponse> {
+    let mut depth = 0usize;
+    let mut max_depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for byte in text.bytes() {
+        if in_string {
             match byte {
-                b'"' => in_string = true,
-                b'{' | b'[' => {
-                    depth += 1;
-                    max_depth = max_depth.max(depth);
-                }
-                b'}' | b']' => depth = depth.saturating_sub(1),
+                _ if escaped => escaped = false,
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
                 _ => {}
             }
+            continue;
         }
-        if max_depth > MAX_FLAME_GRAPH_JSON_DEPTH {
-            return Err(<serde_json::Error as serde::de::Error>::custom(format!(
-                "flame graph nests {max_depth} levels deep, more than the supported {MAX_FLAME_GRAPH_JSON_DEPTH}; narrow the time range or add filters"
-            ))
-            .into());
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth += 1;
+                max_depth = max_depth.max(depth);
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
         }
-        let mut deserializer = serde_json::Deserializer::from_str(&text);
-        deserializer.disable_recursion_limit();
-        let response = FlameGraphResponse::deserialize(&mut deserializer)?;
-        deserializer.end()?;
-        Ok(response)
     }
+    if max_depth > MAX_FLAME_GRAPH_JSON_DEPTH {
+        return Err(<serde_json::Error as serde::de::Error>::custom(format!(
+            "flame graph nests {max_depth} levels deep, more than the supported {MAX_FLAME_GRAPH_JSON_DEPTH}; narrow the time range or add filters"
+        ))
+        .into());
+    }
+    let mut deserializer = serde_json::Deserializer::from_str(text);
+    deserializer.disable_recursion_limit();
+    let response = FlameGraphResponse::deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(response)
 }
 
 #[cfg(test)]

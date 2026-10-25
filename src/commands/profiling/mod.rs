@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use colored::Colorize;
 use serde_json::{json, Value};
@@ -9,9 +9,9 @@ use serde_json::{json, Value};
 pub mod api;
 
 use api::{
-    parse_category, parse_profile_type, profile_type_unit, FilterKeysResponse, FiltersResponse,
-    FlameGraphNode, FlameGraphResponse, MetricsResponse, ProfilingApi, ProfilingFilter,
-    ServiceOverview, ServiceQuery, ServicesParams, StringTable, TimeSample,
+    parse_category, parse_flame_graph, parse_profile_type, profile_type_unit, FilterKeysResponse,
+    FiltersResponse, FlameGraphNode, FlameGraphResponse, MetricsResponse, ProfilingApi,
+    ProfilingFilter, ServiceOverview, ServiceQuery, ServicesParams, StringTable, TimeSample,
 };
 
 use crate::config::OutputFormat;
@@ -20,6 +20,7 @@ use crate::render;
 
 const MAX_SERVICES_LIMIT: u32 = 100;
 const SERVER_FLAME_GRAPH_PRUNE_RATIO: f64 = 0.001;
+const FLAME_GRAPH_THREAD_STACK_BYTES: usize = 64 * 1024 * 1024;
 
 pub struct FlameGraphOptions {
     pub show_kernel: bool,
@@ -180,14 +181,7 @@ pub async fn run_metadata(
             let response = api
                 .service_metadata(&service_name, start_epoch, end_epoch)
                 .await?;
-            let service = response
-                .service
-                .filter(|s| !s.profile_types.is_empty())
-                .ok_or_else(|| {
-                    anyhow!(
-                        "malformed profiling service metadata response: missing service profile types"
-                    )
-                })?;
+            let service = response.service.unwrap_or_default();
             Ok(json!({
                 "service_name": service_name,
                 "language": service.language,
@@ -472,7 +466,6 @@ pub async fn run_flame_graph(
     );
 
     let include_profile = targets.len() > 1;
-    let options = &options;
 
     let per_profile = fan_out(targets, |target| {
         let service_name = service_name.clone();
@@ -486,14 +479,51 @@ pub async fn run_flame_graph(
                 end: end_epoch,
                 filters: &filters,
             };
-            let response = api.flame_graph(&query, options.show_kernel).await?;
-            let mut formatted = format_flame_graph(response, options)?;
-            formatted["service_name"] = json!(service_name);
-            formatted["profile_type"] = json!(profile_type);
-            Ok(formatted)
+            Ok(api.flame_graph(&query, options.show_kernel).await?)
         }
     })
     .await;
+
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("flame-graph".to_string())
+            .stack_size(FLAME_GRAPH_THREAD_STACK_BYTES)
+            .spawn_scoped(scope, || {
+                render_flame_graphs(
+                    per_profile,
+                    &service_name,
+                    profile_type,
+                    &options,
+                    include_profile,
+                    output,
+                )
+            })
+            .context("failed to start the flame graph thread")?
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
+fn render_flame_graphs(
+    per_profile: Vec<(String, Result<String>)>,
+    service_name: &str,
+    profile_type: &str,
+    options: &FlameGraphOptions,
+    include_profile: bool,
+    output: OutputFormat,
+) -> Result<()> {
+    let per_profile = per_profile
+        .into_iter()
+        .map(|(profile, text)| {
+            let formatted = text.and_then(|text| {
+                let mut formatted = format_flame_graph(parse_flame_graph(&text)?, options)?;
+                formatted["service_name"] = json!(service_name);
+                formatted["profile_type"] = json!(profile_type);
+                Ok(formatted)
+            });
+            (profile, formatted)
+        })
+        .collect();
 
     let results = tag_results(
         report_errors_and_collect_successes(per_profile)?,

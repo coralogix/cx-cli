@@ -938,12 +938,11 @@ async fn resolve_single(
             // works, so its first expired-session re-login is narrowed to
             // that team. One whoami, only until it succeeds.
             if profile.cached_team_id.is_none() && !region_overridden {
-                if let Ok(client) =
-                    crate::api_client::CxClient::new(profile.region.api_endpoint(), &bearer)
+                if let Some(whoami) =
+                    crate::identity::lookup_whoami_bounded(profile.region.api_endpoint(), &bearer)
+                        .await
                 {
-                    if let Some(whoami) = crate::identity::lookup_whoami(&client).await {
-                        cache_team_identity(profile_name, &whoami);
-                    }
+                    cache_team_identity(profile_name, &whoami);
                 }
             }
             bearer

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::parser::ValueSource;
-use clap::{ArgGroup, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
 use clap_complete::env::CompleteEnv;
@@ -89,6 +89,7 @@ pub enum SearchByValueDataset {
   \x1b[1mslos\x1b[0m               Manage SLO definitions
   \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
   \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities and their RED/health/saturation data
+  \x1b[1mprofiling\x1b[0m          Query continuous-profiling data: services, metrics, flame graphs
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -694,6 +695,20 @@ Examples:
     ServiceCatalog {
         #[command(subcommand)]
         cmd: ServiceCatalogCmd,
+    },
+
+    /// Query continuous-profiling data: profiled services, profile types,
+    /// filters, usage over time, and flame graphs.
+    #[command(after_help = "\
+Examples:
+  cx profiling services --category cpu --limit 10
+  cx profiling metadata checkout
+  cx profiling filters checkout --profile-type cpu
+  cx profiling metrics checkout --profile-type cpu --sum-by k8s.pod.name
+  cx profiling flame-graph checkout --profile-type cpu --top-functions 10")]
+    Profiling {
+        #[command(subcommand)]
+        cmd: ProfilingCmd,
     },
 
     /// Search log/span fields by description or by value content.
@@ -3091,6 +3106,199 @@ Examples:
     },
 }
 
+#[derive(Subcommand)]
+enum ProfilingCmd {
+    /// List profiled services, ranked by CPU+wall seconds (cpu) or
+    /// allocated+heap bytes (memory), highest first.
+    #[command(after_help = "\
+Examples:
+  cx profiling services --category cpu
+  cx profiling services --category memory --environment production --limit 5
+  cx profiling services --category cpu --limit 20 --offset 20")]
+    Services(ProfilingServicesArgs),
+    /// Show a profiled service's language and which profile types have data.
+    #[command(after_help = "\
+Examples:
+  cx profiling metadata checkout
+  cx profiling metadata checkout --start now-24h")]
+    Metadata(ProfilingMetadataArgs),
+    /// List the label keys a service's profiles can be filtered by, with
+    /// their values.
+    #[command(after_help = "\
+Examples:
+  cx profiling filters checkout --profile-type cpu
+  cx profiling filters checkout --profile-type cpu --filter deployment.environment.name=production")]
+    Filters(ProfilingFiltersArgs),
+    /// Show one profile type's usage over time, split by service, pod, or any
+    /// label, keeping the series with the highest totals.
+    #[command(after_help = "\
+Examples:
+  cx profiling metrics checkout --profile-type cpu
+  cx profiling metrics checkout --profile-type cpu --sum-by k8s.pod.name --limit 5
+  cx profiling metrics checkout --profile-type memory-heap-bytes --sum-by service.version --start now-24h")]
+    Metrics(ProfilingMetricsArgs),
+    /// Show a decoded flame graph plus the functions with the highest self
+    /// value. Large services can take ~40s; avoid a short --http-timeout.
+    #[command(after_help = "\
+Examples:
+  cx profiling flame-graph checkout --profile-type cpu
+  cx profiling flame-graph checkout --profile-type cpu --filter k8s.pod.name=checkout-7d9f --top-functions 10
+  cx profiling flame-graph checkout --profile-type memory-allocation-bytes --min-node-ratio 0.05 --max-depth 15")]
+    FlameGraph(ProfilingFlameGraphArgs),
+}
+
+#[derive(Args)]
+struct ProfilingServicesArgs {
+    /// Ranking category: `cpu` or `memory`.
+    #[arg(long)]
+    category: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Only services in this `deployment.environment.name`. Repeatable.
+    #[arg(long = "environment")]
+    environments: Vec<String>,
+
+    /// Max services to return (1-100).
+    #[arg(long, default_value_t = 20)]
+    limit: u32,
+
+    /// Number of ranked services to skip, for paging.
+    #[arg(long, default_value_t = 0)]
+    offset: u32,
+
+    /// Include each service's usage time series.
+    #[arg(long)]
+    include_time_series: bool,
+}
+
+#[derive(Args)]
+struct ProfilingMetadataArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+}
+
+#[derive(Args)]
+struct ProfilingFiltersArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Profile type: cpu, wall, memory-allocation-bytes,
+    /// memory-allocation-objects, memory-heap-bytes, or memory-heap-objects.
+    #[arg(long)]
+    profile_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Narrow the values by a filter: `key=v1,v2`, `key!=v1,v2`,
+    /// `key:exists`, or `key:not-exists`. Repeatable; filters AND together.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Max values listed per key (sorted); the total count is always shown.
+    #[arg(long, default_value_t = 50)]
+    max_values_per_key: usize,
+}
+
+#[derive(Args)]
+struct ProfilingMetricsArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Profile type: cpu, wall, memory-allocation-bytes,
+    /// memory-allocation-objects, memory-heap-bytes, or memory-heap-objects.
+    #[arg(long)]
+    profile_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Filter: `key=v1,v2`, `key!=v1,v2`, `key:exists`, or `key:not-exists`.
+    /// Repeatable; filters AND together.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Split series by `service`, `pod`, or any filter key
+    /// (see `cx profiling filters`).
+    #[arg(long, default_value = "service")]
+    sum_by: String,
+
+    /// Max time buckets per series.
+    #[arg(long, default_value_t = 60)]
+    max_buckets: u32,
+
+    /// Max series to return, highest total first.
+    #[arg(long, default_value_t = 10)]
+    limit: usize,
+}
+
+#[derive(Args)]
+struct ProfilingFlameGraphArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Profile type: cpu, wall, memory-allocation-bytes,
+    /// memory-allocation-objects, memory-heap-bytes, or memory-heap-objects.
+    #[arg(long)]
+    profile_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Filter: `key=v1,v2`, `key!=v1,v2`, `key:exists`, or `key:not-exists`.
+    /// Repeatable; filters AND together.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Include kernel frames.
+    #[arg(long)]
+    show_kernel: bool,
+
+    /// Drop tree nodes below this fraction of the total (>= 0.001, the
+    /// server's own prune ratio, and < 1). Top functions always use the
+    /// full tree.
+    #[arg(long, default_value_t = 0.01)]
+    min_node_ratio: f64,
+
+    /// Drop tree nodes deeper than this many levels below the root.
+    #[arg(long)]
+    max_depth: Option<u32>,
+
+    /// Number of functions to list by self value.
+    #[arg(long, default_value_t = 20)]
+    top_functions: usize,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -4980,6 +5188,111 @@ async fn main() -> Result<()> {
                         &group_by,
                         &filters,
                         &aggregation,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+
+            Commands::Profiling { cmd } => match cmd {
+                ProfilingCmd::Services(ProfilingServicesArgs {
+                    category,
+                    start,
+                    end,
+                    environments,
+                    limit,
+                    offset,
+                    include_time_series,
+                }) => {
+                    commands::profiling::run_services(
+                        &targets,
+                        &category,
+                        &start,
+                        &end,
+                        &environments,
+                        limit,
+                        offset,
+                        include_time_series,
+                        output,
+                    )
+                    .await?;
+                }
+                ProfilingCmd::Metadata(ProfilingMetadataArgs {
+                    service,
+                    start,
+                    end,
+                }) => {
+                    commands::profiling::run_metadata(&targets, &service, &start, &end, output)
+                        .await?;
+                }
+                ProfilingCmd::Filters(ProfilingFiltersArgs {
+                    service,
+                    profile_type,
+                    start,
+                    end,
+                    filters,
+                    max_values_per_key,
+                }) => {
+                    commands::profiling::run_filters(
+                        &targets,
+                        &service,
+                        &profile_type,
+                        &start,
+                        &end,
+                        &filters,
+                        max_values_per_key,
+                        output,
+                    )
+                    .await?;
+                }
+                ProfilingCmd::Metrics(ProfilingMetricsArgs {
+                    service,
+                    profile_type,
+                    start,
+                    end,
+                    filters,
+                    sum_by,
+                    max_buckets,
+                    limit,
+                }) => {
+                    commands::profiling::run_metrics(
+                        &targets,
+                        &service,
+                        &profile_type,
+                        &start,
+                        &end,
+                        &filters,
+                        &sum_by,
+                        max_buckets,
+                        limit,
+                        output,
+                    )
+                    .await?;
+                }
+                ProfilingCmd::FlameGraph(ProfilingFlameGraphArgs {
+                    service,
+                    profile_type,
+                    start,
+                    end,
+                    filters,
+                    show_kernel,
+                    min_node_ratio,
+                    max_depth,
+                    top_functions,
+                }) => {
+                    commands::profiling::run_flame_graph(
+                        &targets,
+                        &service,
+                        &profile_type,
+                        &start,
+                        &end,
+                        &filters,
+                        commands::profiling::FlameGraphOptions {
+                            show_kernel,
+                            min_node_ratio,
+                            max_depth,
+                            top_functions,
+                        },
                         output,
                     )
                     .await?;

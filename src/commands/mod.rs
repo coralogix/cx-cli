@@ -27,6 +27,7 @@ pub mod olly;
 pub mod parsing_rules;
 pub mod presets;
 pub mod profiles;
+pub mod profiling;
 pub mod recording_rules;
 pub mod retentions;
 pub mod roles;

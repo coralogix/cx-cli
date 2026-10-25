@@ -532,7 +532,15 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         // browser login. A terminal is not required: the approval happens in
         // the browser, the login URL is printed for the user (or an agent) to
         // open, and the remaining questions fall back to defaults.
-        configure_oauth(&name, region_choice, interactive, quick, credential_storage).await?
+        configure_oauth(
+            &name,
+            region_choice,
+            interactive,
+            quick,
+            credential_storage,
+            signup,
+        )
+        .await?
     } else if !interactive {
         build_profile_non_interactive(&name, api_key, region_choice, credential_storage).await?
     } else if api_key.is_some() {
@@ -549,7 +557,15 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             .prompt()?;
 
         if auth_choice.starts_with("OAuth") {
-            configure_oauth(&name, region_choice, interactive, quick, credential_storage).await?
+            configure_oauth(
+                &name,
+                region_choice,
+                interactive,
+                quick,
+                credential_storage,
+                signup,
+            )
+            .await?
         } else {
             configure_api_key(&name, None, region_choice, quick, credential_storage).await?
         }

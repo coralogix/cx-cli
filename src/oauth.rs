@@ -883,10 +883,9 @@ pub async fn resolve_token(
         CredentialStorage::OsStore => {
             let profile_name = profile_name.to_string();
             let tokens_for_store = tokens.clone();
-            let store_result = keyring_store::write_with_timeout(move || {
+            let store_result = keyring_store::write(move || {
                 store_tokens_keyring(&profile_name, &tokens_for_store)
-            })
-            .await;
+            });
             os_store_refresh_result(&tokens, store_result)
         }
         CredentialStorage::File => {

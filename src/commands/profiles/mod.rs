@@ -762,12 +762,11 @@ async fn store_api_key(
         CredentialStorage::OsStore => {
             let profile = profile.to_string();
             let keyring_api_key = api_key.clone();
-            let result = keyring_store::write_with_timeout(move || {
+            let result = keyring_store::write(move || {
                 keyring_store::delete_profile(&profile);
                 keyring_store::store_secret(&profile, "api_key", &keyring_api_key)
                     .context("Failed to store API key in the OS credential store")
-            })
-            .await;
+            });
             match result {
                 Ok(()) => Ok((None, "OS credential store")),
                 Err(error) if !crate::config::os_credential_store_required()? => {
@@ -796,12 +795,11 @@ async fn store_oauth_tokens(
         CredentialStorage::OsStore => {
             let profile = profile.to_string();
             let keyring_tokens = tokens.clone();
-            let result = keyring_store::write_with_timeout(move || {
+            let result = keyring_store::write(move || {
                 keyring_store::delete_profile(&profile);
                 oauth::store_tokens_keyring(&profile, &keyring_tokens)
                     .context("Failed to store OAuth tokens in the OS credential store")
-            })
-            .await;
+            });
             match result {
                 Ok(()) => Ok((None, "OS credential store (OAuth tokens)")),
                 Err(error) if !crate::config::os_credential_store_required()? => {
@@ -1064,13 +1062,12 @@ mod tests {
 
     #[tokio::test]
     async fn os_store_write_succeeds_without_file_fallback() {
-        keyring_store::write_with_timeout(|| Ok(())).await.unwrap();
+        keyring_store::write(|| Ok(())).unwrap();
     }
 
     #[tokio::test]
     async fn os_store_write_error_is_returned() {
-        let err = keyring_store::write_with_timeout(|| Err(anyhow::anyhow!("no secret service")))
-            .await
+        let err = keyring_store::write(|| Err(anyhow::anyhow!("no secret service")))
             .expect_err("keyring error must not fall back to file storage");
         assert!(err.to_string().contains("no secret service"));
     }

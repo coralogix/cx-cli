@@ -234,11 +234,6 @@ pub struct Config {
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub managed_completions: Vec<ManagedCompletion>,
-
-    /// CLI version that successfully completed the administrator-required
-    /// credential migration. Only used on macOS and Windows.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub credential_migration_version: Option<String>,
 }
 
 fn default_profile() -> String {
@@ -269,7 +264,6 @@ impl Default for Config {
             read_only: false,
             no_console_link: false,
             managed_completions: vec![],
-            credential_migration_version: None,
         }
     }
 }
@@ -443,15 +437,54 @@ struct SystemPolicy {
 }
 
 #[cfg(target_os = "macos")]
-fn system_policy_file() -> PathBuf {
-    PathBuf::from("/Library/Application Support/cx/policy.toml")
+fn system_policy_file() -> Result<PathBuf> {
+    // Debug integration tests use a filesystem-backed test keyring. They must
+    // not inherit a developer machine's real, administrator-managed policy.
+    #[cfg(debug_assertions)]
+    if std::env::var_os("CX_TEST_KEYRING_DIR").is_some() {
+        return Ok(config_dir()?.join("test-policy.toml"));
+    }
+    Ok(PathBuf::from("/Library/Application Support/cx/policy.toml"))
 }
 
 #[cfg(target_os = "windows")]
-fn system_policy_file() -> PathBuf {
-    PathBuf::from(std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into()))
-        .join("cx")
-        .join("policy.toml")
+fn system_policy_file() -> Result<PathBuf> {
+    // Debug integration tests use a filesystem-backed test keyring. They must
+    // not inherit a developer machine's real, administrator-managed policy.
+    #[cfg(debug_assertions)]
+    if std::env::var_os("CX_TEST_KEYRING_DIR").is_some() {
+        return Ok(config_dir()?.join("test-policy.toml"));
+    }
+
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{FOLDERID_ProgramData, SHGetKnownFolderPath};
+
+    let mut raw_path = std::ptr::null_mut();
+    // SAFETY: SHGetKnownFolderPath allocates a null-terminated UTF-16 string
+    // with the COM allocator. It is copied before CoTaskMemFree releases it.
+    let result = unsafe {
+        SHGetKnownFolderPath(
+            &FOLDERID_ProgramData,
+            0,
+            std::ptr::null_mut(),
+            &mut raw_path,
+        )
+    };
+    if result < 0 {
+        anyhow::bail!("Failed to resolve the Windows ProgramData folder (HRESULT {result:#X})");
+    }
+    // SAFETY: a successful SHGetKnownFolderPath call returns a non-null,
+    // null-terminated UTF-16 string.
+    let path = unsafe {
+        let mut len = 0;
+        while *raw_path.add(len) != 0 {
+            len += 1;
+        }
+        let path = String::from_utf16_lossy(std::slice::from_raw_parts(raw_path, len));
+        CoTaskMemFree(raw_path.cast());
+        path
+    };
+    Ok(PathBuf::from(path).join("cx").join("policy.toml"))
 }
 
 /// Whether the administrator has required OS credential storage.
@@ -461,7 +494,7 @@ fn system_policy_file() -> PathBuf {
 pub fn os_credential_store_required() -> Result<bool> {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        let path = system_policy_file();
+        let path = system_policy_file()?;
         if !path.exists() {
             return Ok(false);
         }
@@ -555,6 +588,31 @@ pub fn load_profile(name: &str) -> Result<Profile> {
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 
+/// Load a profile before resolving its credentials.
+///
+/// The all-profile startup migration normally makes this a no-op. Keep this
+/// check as a defense in depth for a legacy profile created after startup.
+fn load_profile_for_credentials(name: &str) -> Result<Profile> {
+    let profile = load_profile(name)?;
+    if os_credential_store_required()? && profile.credential_storage == CredentialStorage::File {
+        if let Err(error) = migrate_file_credentials_to_os_store(name) {
+            let path = profile_file(name)?;
+            anyhow::bail!(
+                "Profile '{name}' could not be migrated to the required OS credential store.\n\
+                 Reason: {error:#}\n\n\
+                 What you can do:\n\
+                   • Unlock the OS credential store or grant cx access, then run cx again.\n\
+                   • If you no longer need this profile, delete only this profile file:\n\
+                     Profile file: {}\n\
+                   • Otherwise, contact your administrator.",
+                path.display(),
+            );
+        }
+        return load_profile(name);
+    }
+    Ok(profile)
+}
+
 /// An advisory, cross-process lock for one profile's file and credentials.
 ///
 /// The separate lock file lets all writers coordinate before the profile itself
@@ -600,31 +658,29 @@ fn migrate_file_credentials_to_os_store(profile_name: &str) -> Result<()> {
         AuthKind::ApiKey => profile.api_key.is_some(),
         AuthKind::OAuth => profile.oauth_tokens.is_some(),
     };
-    if !has_file_credentials {
-        return Ok(());
-    }
-
-    // Preserve the file until every secret is stored successfully.
-    keyring_store::delete_profile(profile_name);
-    let migrated = match profile.auth {
-        AuthKind::ApiKey => keyring_store::store_secret(
-            profile_name,
-            "api_key",
-            profile.api_key.as_deref().expect("checked above"),
-        ),
-        AuthKind::OAuth => oauth::store_stored_tokens_keyring(
-            profile_name,
-            profile.oauth_tokens.as_ref().expect("checked above"),
-        ),
-    };
-    if let Err(err) = migrated {
+    if has_file_credentials {
+        // Preserve the file until every secret is stored successfully.
         keyring_store::delete_profile(profile_name);
-        return Err(err).with_context(|| {
-            format!(
-                "Failed to migrate profile '{profile_name}' to the OS credential store. \
-                 Unlock the credential store and run cx again"
-            )
-        });
+        let migrated = match profile.auth {
+            AuthKind::ApiKey => keyring_store::store_secret(
+                profile_name,
+                "api_key",
+                profile.api_key.as_deref().expect("checked above"),
+            ),
+            AuthKind::OAuth => oauth::store_stored_tokens_keyring(
+                profile_name,
+                profile.oauth_tokens.as_ref().expect("checked above"),
+            ),
+        };
+        if let Err(err) = migrated {
+            keyring_store::delete_profile(profile_name);
+            return Err(err).with_context(|| {
+                format!(
+                    "Failed to migrate profile '{profile_name}' to the OS credential store. \
+                     Unlock the credential store and run cx again"
+                )
+            });
+        }
     }
 
     profile.credential_storage = CredentialStorage::OsStore;
@@ -633,29 +689,29 @@ fn migrate_file_credentials_to_os_store(profile_name: &str) -> Result<()> {
     save_profile_unlocked(profile_name, &profile)
 }
 
-/// Apply the machine-wide administrator credential policy once per CLI
-/// version. The marker advances only after every profile has migrated.
+/// Migrate every legacy file-backed profile before command parsing when an
+/// administrator requires OS credential storage. This intentionally does not
+/// use a user-owned completion marker: each startup verifies every profile.
 pub fn migrate_all_file_credentials_to_os_store_if_required() -> Result<()> {
     if !os_credential_store_required()? {
-        return Ok(());
-    }
-    let mut config = load_config()?;
-    let version = env!("CARGO_PKG_VERSION");
-    if config.credential_migration_version.as_deref() == Some(version) {
         return Ok(());
     }
     for profile_name in list_profile_names()? {
         if let Err(error) = migrate_file_credentials_to_os_store(&profile_name) {
             let path = profile_file(&profile_name)?;
             anyhow::bail!(
-                "Failed to migrate credential file {} to the OS credential store. \
-                 Contact your administrator.\n{error:#}",
-                path.display()
+                "Profile '{profile_name}' could not be migrated to the required OS credential store.\n\
+                 Reason: {error:#}\n\n\
+                 What you can do:\n\
+                   • Unlock the OS credential store or grant cx access, then run cx again.\n\
+                   • If you no longer need this profile, delete only this profile file:\n\
+                     Profile file: {}\n\
+                   • Otherwise, contact your administrator.",
+                path.display(),
             );
         }
     }
-    config.credential_migration_version = Some(version.to_string());
-    save_config(&config)
+    Ok(())
 }
 
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal
@@ -893,11 +949,10 @@ async fn keep_signed_in_tokens(
         let tokens = tokens.clone();
         let keyring_tokens = tokens.clone();
         let access_token = tokens.access_token.clone();
-        let result = keyring_store::write_with_timeout(move || {
+        let result = keyring_store::write(move || {
             oauth::store_tokens_keyring(&profile_name, &keyring_tokens)
                 .context("Failed to store OAuth tokens in the OS credential store")
-        })
-        .await;
+        });
         match result {
             Ok(()) => return Ok(access_token),
             Err(error) if !os_credential_store_required()? => {
@@ -920,7 +975,7 @@ async fn keep_signed_in_tokens(
 /// reconfiguring it. Region, storage, output format and label stay as they
 /// are; only the tokens (and the cached team) change.
 pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
-    let mut profile = load_profile(profile_name)?;
+    let mut profile = load_profile_for_credentials(profile_name)?;
     if profile.auth != AuthKind::OAuth {
         anyhow::bail!(
             "Profile '{profile_name}' uses an API key, so there is no sign-in to refresh.\n\
@@ -978,7 +1033,7 @@ async fn resolve_single(
         }
     }
 
-    let mut profile = load_profile(profile_name)?;
+    let mut profile = load_profile_for_credentials(profile_name)?;
     // `--region` is for this invocation only. The profile object is what
     // later gets saved, so remember the on-disk region and put it back
     // before any write.
@@ -1135,8 +1190,27 @@ pub async fn resolve_all(
 /// Write a profile to disk, creating directories as needed.
 /// Sets file permissions to 0600 on Unix to protect any inline secrets.
 pub fn save_profile(name: &str, profile: &Profile) -> Result<()> {
+    ensure_credential_storage_allowed(
+        name,
+        profile.credential_storage,
+        os_credential_store_required()?,
+    )?;
     let _lock = lock_profile(name)?;
     save_profile_unlocked(name, profile)
+}
+
+fn ensure_credential_storage_allowed(
+    name: &str,
+    storage: CredentialStorage,
+    os_store_required: bool,
+) -> Result<()> {
+    if os_store_required && storage == CredentialStorage::File {
+        anyhow::bail!(
+            "Cannot save profile '{name}' with file-based credentials because the administrator \
+             requires the OS credential store."
+        );
+    }
+    Ok(())
 }
 
 fn save_profile_unlocked(name: &str, profile: &Profile) -> Result<()> {
@@ -1352,6 +1426,22 @@ default_profile = "my-profile"
     }
 
     #[test]
+    fn legacy_migration_marker_is_ignored() {
+        let config: Config = toml::from_str(
+            r#"
+default_profile = "my-profile"
+credential_migration_version = "0.1.28"
+"#,
+        )
+        .unwrap();
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            !serialized.contains("credential_migration_version"),
+            "the legacy marker must not be an enforcement input"
+        );
+    }
+
+    #[test]
     fn managed_completions_not_written_when_empty() {
         let config = Config::default();
         let toml = toml::to_string_pretty(&config).unwrap();
@@ -1377,6 +1467,17 @@ default_profile = "my-profile"
             credentials_overridden: false,
         };
         assert_eq!(cfg.profile_name, "prod");
+    }
+
+    #[test]
+    fn required_os_store_rejects_file_backed_profile_writes() {
+        let err = ensure_credential_storage_allowed("prod", CredentialStorage::File, true)
+            .expect_err("administrator policy must reject file credentials");
+        assert!(err
+            .to_string()
+            .contains("administrator requires the OS credential store"));
+        ensure_credential_storage_allowed("prod", CredentialStorage::OsStore, true).unwrap();
+        ensure_credential_storage_allowed("prod", CredentialStorage::File, false).unwrap();
     }
 
     #[test]

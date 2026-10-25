@@ -289,10 +289,11 @@ require_os_credential_store = true
 
 The file is `/Library/Application Support/cx/policy.toml` on macOS and
 `%ProgramData%\cx\policy.toml` on Windows. With this policy, file storage is
-not offered, OS-store failures do not fall back to the profile file, and the
-first run of a new CLI version migrates every file-backed profile. A migration
-failure names the profile file and directs the user to contact their
-administrator.
+not offered and OS-store failures do not fall back to the profile file. Before
+handling every command, `cx` migrates all legacy file-backed profiles. A
+migration failure names the affected profile file and gives recovery steps,
+such as unlocking the OS credential store or deleting a profile that is no
+longer needed.
 
 ## Global config (`~/.cx/config.toml`)
 

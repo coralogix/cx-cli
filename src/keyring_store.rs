@@ -4,8 +4,6 @@ use std::path::PathBuf;
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 use std::io::IsTerminal;
-#[cfg(all(target_os = "linux", not(target_env = "musl")))]
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 
@@ -31,9 +29,6 @@ fn test_secret_path(profile: &str, key_name: &str) -> Option<PathBuf> {
         ))
     })
 }
-#[cfg(all(target_os = "linux", not(target_env = "musl")))]
-const NONINTERACTIVE_LINUX_KEYRING_TIMEOUT: Duration = Duration::from_secs(10);
-
 /// Whether this build includes a usable OS credential-store backend.
 ///
 /// On glibc Linux, Secret Service availability is runtime-dependent; creating
@@ -58,29 +53,17 @@ pub fn is_available() -> bool {
     }
 }
 
-/// Run a keyring write. On non-interactive glibc Linux, bound the operation so
-/// a Secret Service unlock prompt cannot hang a script indefinitely.
+/// Run a keyring write.
 ///
-/// A timed-out worker may finish later, but callers must not update a profile
-/// unless this function returns success.
-pub async fn write_with_timeout(
-    action: impl FnOnce() -> Result<()> + Send + 'static,
-) -> Result<()> {
+/// Secret Service can block waiting for an unlock prompt. Do not begin that
+/// operation from a non-interactive glibc Linux process.
+pub fn write(action: impl FnOnce() -> Result<()>) -> Result<()> {
     #[cfg(all(target_os = "linux", not(target_env = "musl")))]
     if !std::io::stdin().is_terminal() {
-        return match tokio::time::timeout(
-            NONINTERACTIVE_LINUX_KEYRING_TIMEOUT,
-            tokio::task::spawn_blocking(action),
-        )
-        .await
-        {
-            Ok(Ok(result)) => result,
-            Ok(Err(err)) => Err(anyhow::anyhow!("OS credential-store worker failed: {err}")),
-            Err(_) => Err(anyhow::anyhow!(
-                "Timed out waiting for the OS credential store. Unlock your keyring and run \
-                 `cx profiles add` from an interactive terminal."
-            )),
-        };
+        anyhow::bail!(
+            "OS credential-store writes require an interactive terminal on Linux. \
+             Unlock your keyring and run the command again from an interactive terminal."
+        );
     }
 
     action()

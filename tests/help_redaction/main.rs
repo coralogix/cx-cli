@@ -10,10 +10,13 @@ use assert_cmd::Command;
 const FAKE_KEY: &str = "cxup_HELP_REDACTION_SHOULD_NOT_APPEAR";
 
 fn help_output(args: &[&str]) -> String {
+    let home = std::env::temp_dir().join(format!("cx_help_redaction_{}", std::process::id()));
     let output = Command::cargo_bin("cx")
         .expect("cx binary should build")
         .args(args)
         .env("CX_API_KEY", FAKE_KEY)
+        .env("CX_HOME", &home)
+        .env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"))
         .output()
         .expect("run cx");
     format!(

@@ -8,8 +8,11 @@ mod main_mod;
 
 #[test]
 fn schema_outputs_valid_json_with_expected_commands() {
+    let home = std::env::temp_dir().join(format!("cx_schema_test_{}", std::process::id()));
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_cx"))
         .arg("schema")
+        .env("CX_HOME", &home)
+        .env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"))
         .output()
         .expect("failed to run cx schema");
 

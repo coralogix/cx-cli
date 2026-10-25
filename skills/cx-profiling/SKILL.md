@@ -10,7 +10,8 @@ description: >
   functions", "flame graph for a service", "why is this service using so much
   CPU", "memory allocations by function", "CPU spike by pod", "which version
   increased CPU", "continuous profiling", "profiling data", or wants to explore
-  profiles of a service.
+  profiles of a service. For how much CPU or memory a service or pod uses and
+  whether it is saturated, use `cx-service-catalog` instead.
 metadata:
   version: "0.1.0"
 ---
@@ -117,6 +118,11 @@ responsible — via the Coralogix profiling API. Requires the
 - **Empty results are not errors** — a service with no data for the chosen
   profile type or range returns empty series or a zero-total graph; re-check
   `metadata` and widen `--start`.
+- **No profiling data** — if `metadata` shows no profile type with
+  `has_data: true`, the service is not profiled. Do not look for other service
+  names: answer from `cx-service-catalog` or `cx-telemetry-querying` (how much
+  CPU or memory, when, which pod) and say that function-level detail needs
+  profiling enabled for that service.
 - **Multi-profile fan-out** works on every subcommand: repeat `-p <profile>`;
   results are tagged with `profile` when more than one is given.
 

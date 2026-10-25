@@ -435,6 +435,9 @@ pub struct AddArgs {
     pub api_key: Option<String>,
     /// `--oauth`: use OAuth browser login, skipping the auth-method prompt.
     pub oauth: bool,
+    /// Sign up for a new Coralogix account during the OAuth login
+    /// (`prompt=create`). Only meaningful with `oauth`.
+    pub signup: bool,
     /// `--force`: overwrite an existing profile without prompting.
     pub force: bool,
     /// `--set-default`: set this profile as the default without prompting.
@@ -459,11 +462,13 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         region,
         api_key,
         oauth,
+        signup,
         force,
         set_default,
         disable_olly,
         quick,
     } = args;
+    let oauth = oauth || signup;
 
     // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
     // secret expanding to nothing) as missing, so it's prompted for or errors
@@ -855,6 +860,7 @@ async fn configure_oauth(
     interactive: bool,
     quick: bool,
     credential_storage: CredentialStorage,
+    signup: bool,
 ) -> Result<(Profile, &'static str)> {
     // Region / environment selection: the --url/--region flags when supplied,
     // otherwise the searchable list (URL derivation, BYOC). The browser login
@@ -910,8 +916,11 @@ async fn configure_oauth(
 
     // ── Browser login ──────────────────────────────────────────────────────────
     println!();
-    let tokens =
-        oauth::browser_login(&base_url, &client_id, oauth::LoginOptions::default()).await?;
+    let login = oauth::LoginOptions {
+        signup,
+        ..oauth::LoginOptions::default()
+    };
+    let tokens = oauth::browser_login(&base_url, &client_id, login).await?;
     println!("Login successful!");
 
     // For custom environments, explicitly store the base URL so that token

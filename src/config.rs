@@ -234,6 +234,11 @@ pub struct Config {
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub managed_completions: Vec<ManagedCompletion>,
+
+    /// CLI version that successfully completed the administrator-required
+    /// credential migration. Only used on macOS and Windows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_migration_version: Option<String>,
 }
 
 fn default_profile() -> String {
@@ -264,6 +269,7 @@ impl Default for Config {
             read_only: false,
             no_console_link: false,
             managed_completions: vec![],
+            credential_migration_version: None,
         }
     }
 }
@@ -430,6 +436,47 @@ pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct SystemPolicy {
+    #[serde(default)]
+    require_os_credential_store: bool,
+}
+
+#[cfg(target_os = "macos")]
+fn system_policy_file() -> PathBuf {
+    PathBuf::from("/Library/Application Support/cx/policy.toml")
+}
+
+#[cfg(target_os = "windows")]
+fn system_policy_file() -> PathBuf {
+    PathBuf::from(std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into()))
+        .join("cx")
+        .join("policy.toml")
+}
+
+/// Whether the administrator has required OS credential storage.
+///
+/// This policy is intentionally available only on macOS and Windows, where
+/// the bundled keyring backend is supported.
+pub fn os_credential_store_required() -> Result<bool> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let path = system_policy_file();
+        if !path.exists() {
+            return Ok(false);
+        }
+        let raw = std::fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read system policy {}", path.display()))?;
+        Ok(toml::from_str::<SystemPolicy>(&raw)
+            .context("Failed to parse system credential policy")?
+            .require_os_credential_store)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Ok(false)
+    }
+}
+
 pub fn profiles_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("profiles"))
 }
@@ -537,9 +584,9 @@ fn lock_profile(name: &str) -> Result<ProfileLock> {
     Ok(ProfileLock(file))
 }
 
-/// Move one selected legacy file-backed profile to the OS credential store on
-/// macOS and Windows. Linux retains its chosen credential backend.
-pub fn migrate_file_credentials_to_os_store(profile_name: &str) -> Result<()> {
+/// Move one file-backed profile to the OS credential store on macOS and Windows.
+/// This is only called by the administrator-required all-profile migration.
+fn migrate_file_credentials_to_os_store(profile_name: &str) -> Result<()> {
     if !cfg!(any(target_os = "macos", target_os = "windows")) {
         return Ok(());
     }
@@ -584,6 +631,31 @@ pub fn migrate_file_credentials_to_os_store(profile_name: &str) -> Result<()> {
     profile.api_key = None;
     profile.oauth_tokens = None;
     save_profile_unlocked(profile_name, &profile)
+}
+
+/// Apply the machine-wide administrator credential policy once per CLI
+/// version. The marker advances only after every profile has migrated.
+pub fn migrate_all_file_credentials_to_os_store_if_required() -> Result<()> {
+    if !os_credential_store_required()? {
+        return Ok(());
+    }
+    let mut config = load_config()?;
+    let version = env!("CARGO_PKG_VERSION");
+    if config.credential_migration_version.as_deref() == Some(version) {
+        return Ok(());
+    }
+    for profile_name in list_profile_names()? {
+        if let Err(error) = migrate_file_credentials_to_os_store(&profile_name) {
+            let path = profile_file(&profile_name)?;
+            anyhow::bail!(
+                "Failed to migrate credential file {} to the OS credential store. \
+                 Contact your administrator.\n{error:#}",
+                path.display()
+            );
+        }
+    }
+    config.credential_migration_version = Some(version.to_string());
+    save_config(&config)
 }
 
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal
@@ -808,8 +880,8 @@ async fn sign_in_to_profile_team(
 }
 
 /// Store new sign-in tokens on the profile's credential backend and return the
-/// access token. The OS-keyring write is mandatory for OS-store profiles; file
-/// storage is used only when that backend was explicitly selected.
+/// access token. Outside an administrator-managed installation, a failed
+/// OS-store write downgrades the profile to file-backed storage.
 async fn keep_signed_in_tokens(
     profile_name: &str,
     profile: &mut Profile,
@@ -818,13 +890,26 @@ async fn keep_signed_in_tokens(
     if profile.credential_storage == CredentialStorage::OsStore {
         let profile_name = profile_name.to_string();
         let tokens = tokens.clone();
+        let keyring_tokens = tokens.clone();
         let access_token = tokens.access_token.clone();
-        keyring_store::write_with_timeout(move || {
-            oauth::store_tokens_keyring(&profile_name, &tokens)
+        let result = keyring_store::write_with_timeout(move || {
+            oauth::store_tokens_keyring(&profile_name, &keyring_tokens)
                 .context("Failed to store OAuth tokens in the OS credential store")
         })
-        .await?;
-        return Ok(access_token);
+        .await;
+        match result {
+            Ok(()) => return Ok(access_token),
+            Err(error) if !os_credential_store_required()? => {
+                eprintln!(
+                    "Warning: failed to store OAuth tokens in the OS credential store: {error:#}. \
+                     Saving credentials to the profile file instead."
+                );
+                profile.credential_storage = CredentialStorage::File;
+                profile.oauth_tokens = Some(oauth::tokens_to_stored(&tokens));
+                return Ok(access_token);
+            }
+            Err(error) => return Err(error),
+        }
     }
     profile.oauth_tokens = Some(oauth::tokens_to_stored(tokens));
     Ok(tokens.access_token.clone())
@@ -834,7 +919,6 @@ async fn keep_signed_in_tokens(
 /// reconfiguring it. Region, storage, output format and label stay as they
 /// are; only the tokens (and the cached team) change.
 pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
-    migrate_file_credentials_to_os_store(profile_name)?;
     let mut profile = load_profile(profile_name)?;
     if profile.auth != AuthKind::OAuth {
         anyhow::bail!(
@@ -893,12 +977,6 @@ async fn resolve_single(
         }
     }
 
-    // An explicit API-key override must not modify the selected profile.
-    // In particular, it must not trigger credential migration before the
-    // overridden invocation is resolved.
-    if api_key_override.is_none() {
-        migrate_file_credentials_to_os_store(profile_name)?;
-    }
     let mut profile = load_profile(profile_name)?;
     // `--region` is for this invocation only. The profile object is what
     // later gets saved, so remember the on-disk region and put it back

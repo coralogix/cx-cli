@@ -34,6 +34,30 @@ fn test_secret_path(profile: &str, key_name: &str) -> Option<PathBuf> {
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const NONINTERACTIVE_LINUX_KEYRING_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Whether this build includes a usable OS credential-store backend.
+///
+/// On glibc Linux, Secret Service availability is runtime-dependent; creating
+/// an entry is sufficient to decide whether to offer the option without
+/// attempting to write a credential.
+pub fn is_available() -> bool {
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+    {
+        return keyring::Entry::new(SERVICE_NAME, "cx-availability-probe").is_ok();
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        true
+    }
+    #[cfg(not(any(
+        all(target_os = "linux", not(target_env = "musl")),
+        target_os = "macos",
+        target_os = "windows"
+    )))]
+    {
+        false
+    }
+}
+
 /// Run a keyring write. On non-interactive glibc Linux, bound the operation so
 /// a Secret Service unlock prompt cannot hang a script indefinitely.
 ///

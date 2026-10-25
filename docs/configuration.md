@@ -39,10 +39,11 @@ remains `~/.cx/`.
 `cx init` creates your first profile as part of setup — see the
 [Quick start](quickstart.md) for that walkthrough. This page covers what it wrote.
 
-`cx init` uses the OS credential store on macOS and Windows, and reports an
-error if it is unavailable. Linux musl builds always use file storage because
-they have no keyring backend. On glibc Linux, interactive setup offers OS
-credential storage (the default) or file storage. It defaults these rather than
+`cx init` prefers the OS credential store on macOS and Windows, and falls back
+to the profile file with a warning if it is unavailable. Linux musl builds
+always use file storage because they have no keyring backend. On glibc Linux,
+interactive setup offers file storage (the default) or OS credential storage.
+It defaults these rather than prompting: profile name `default`, no label, and
 prompting: profile name `default`, no label, and `json` as the profile's default
 output format.
 
@@ -256,9 +257,9 @@ A static Coralogix API key. The key **must be one of the following types** - `cx
 - **[Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys)** - generated in the Coralogix UI under *Data Flow → API Keys → Team Keys*. Scoped to a team; typical choice for shared/CI usage.
 - **[Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys)** - generated in the Coralogix UI under the user menu (top-right) → *Personal Keys*. Scoped to your user account.
 
-macOS and Windows store the key in the OS keyring and return an error if it is
-unavailable. Linux musl stores it in the profile TOML (`0600` permissions on
-Unix); interactive glibc Linux setup lets you choose file storage explicitly.
+macOS and Windows prefer the OS keyring and warn before falling back to the
+profile TOML if it is unavailable. Linux musl stores it in the profile TOML
+(`0600` permissions on Unix); interactive glibc Linux setup lets you choose.
 
 ## OS keyring backends
 
@@ -274,9 +275,24 @@ Credentials stored in the OS keyring use the following backends:
 The default install script and release binaries are built for musl on Linux, so
 `file` is their only credential-storage option. Keyring support is available
 only when building from source against glibc. On glibc Linux, interactive setup
-offers both storage options and defaults to the OS store. Non-interactive setup
-uses the OS store and returns an actionable timeout/error if it is locked or
-unavailable; it never silently falls back to a file.
+offers both storage options and defaults to the profile file. Non-interactive
+setup uses the profile file.
+
+### Administrator-required OS credential storage
+
+On managed macOS and Windows installations, an administrator can create a
+machine-wide policy file with:
+
+```toml
+require_os_credential_store = true
+```
+
+The file is `/Library/Application Support/cx/policy.toml` on macOS and
+`%ProgramData%\cx\policy.toml` on Windows. With this policy, file storage is
+not offered, OS-store failures do not fall back to the profile file, and the
+first run of a new CLI version migrates every file-backed profile. A migration
+failure names the profile file and directs the user to contact their
+administrator.
 
 ## Global config (`~/.cx/config.toml`)
 
@@ -316,7 +332,7 @@ See [TOON output format](toon-output.md) for the `toon` format specification.
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. `credential_storage` records where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. macOS and Windows require `"os_store"` for new profiles and migrate an existing file-backed profile only when that profile is selected for use. Linux musl always uses `"file"`; glibc Linux lets interactive users choose and preserves existing profiles as configured. A profile that omits the key is read as `"file"`.
+Each profile stores credentials and endpoint configuration. `credential_storage` records where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. macOS and Windows prefer `"os_store"` for new profiles but fall back to `"file"` if it fails. Existing file-backed profiles are not migrated normally. Linux musl always uses `"file"`; glibc Linux lets interactive users choose, with file storage selected by default. A profile that omits the key is read as `"file"`.
 
 ### Common fields
 

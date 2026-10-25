@@ -71,39 +71,40 @@ enum RegionChoice {
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
-const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &[
-    "OS credential store (recommended)",
-    "Profile file (less secure)",
-];
+const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &["Profile file (default)", "OS credential store"];
 
 fn credential_storage_for_setup(interactive: bool) -> Result<CredentialStorage> {
-    #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
-    let _ = interactive;
+    if crate::config::os_credential_store_required()? {
+        return Ok(CredentialStorage::OsStore);
+    }
 
-    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         let _ = interactive;
+        Ok(CredentialStorage::OsStore)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+        {
+            if interactive && keyring_store::is_available() {
+                let choice =
+                    Select::new("Credential storage:", CREDENTIAL_STORAGE_OPTIONS.to_vec())
+                        .with_starting_cursor(0)
+                        .with_help_message(
+                            "The profile file is the default. The OS credential store protects secrets from accidental file exposure.",
+                        )
+                        .prompt()?;
+                return Ok(if choice == CREDENTIAL_STORAGE_OPTIONS[0] {
+                    CredentialStorage::File
+                } else {
+                    CredentialStorage::OsStore
+                });
+            }
+        }
         return Ok(CredentialStorage::File);
     }
-
-    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
-    {
-        if interactive {
-            let choice = Select::new("Credential storage:", CREDENTIAL_STORAGE_OPTIONS.to_vec())
-                .with_starting_cursor(0)
-                .with_help_message(
-                    "The OS credential store protects secrets from accidental file exposure.",
-                )
-                .prompt()?;
-            return Ok(if choice == CREDENTIAL_STORAGE_OPTIONS[0] {
-                CredentialStorage::OsStore
-            } else {
-                CredentialStorage::File
-            });
-        }
-    }
-
-    Ok(CredentialStorage::OsStore)
 }
 
 fn credential_storage_description(storage: CredentialStorage) -> &'static str {
@@ -739,13 +740,24 @@ async fn store_api_key(
         CredentialStorage::File => Ok((Some(api_key), "profile file")),
         CredentialStorage::OsStore => {
             let profile = profile.to_string();
-            keyring_store::write_with_timeout(move || {
+            let keyring_api_key = api_key.clone();
+            let result = keyring_store::write_with_timeout(move || {
                 keyring_store::delete_profile(&profile);
-                keyring_store::store_secret(&profile, "api_key", &api_key)
+                keyring_store::store_secret(&profile, "api_key", &keyring_api_key)
                     .context("Failed to store API key in the OS credential store")
             })
-            .await?;
-            Ok((None, "OS credential store"))
+            .await;
+            match result {
+                Ok(()) => Ok((None, "OS credential store")),
+                Err(error) if !crate::config::os_credential_store_required()? => {
+                    eprintln!(
+                        "Warning: failed to store API key in the OS credential store: {error:#}. \
+                         Saving credentials to the profile file instead."
+                    );
+                    Ok((Some(api_key), "profile file"))
+                }
+                Err(error) => Err(error),
+            }
         }
     }
 }
@@ -762,13 +774,27 @@ async fn store_oauth_tokens(
         )),
         CredentialStorage::OsStore => {
             let profile = profile.to_string();
-            keyring_store::write_with_timeout(move || {
+            let keyring_tokens = tokens.clone();
+            let result = keyring_store::write_with_timeout(move || {
                 keyring_store::delete_profile(&profile);
-                oauth::store_tokens_keyring(&profile, &tokens)
+                oauth::store_tokens_keyring(&profile, &keyring_tokens)
                     .context("Failed to store OAuth tokens in the OS credential store")
             })
-            .await?;
-            Ok((None, "OS credential store (OAuth tokens)"))
+            .await;
+            match result {
+                Ok(()) => Ok((None, "OS credential store (OAuth tokens)")),
+                Err(error) if !crate::config::os_credential_store_required()? => {
+                    eprintln!(
+                        "Warning: failed to store OAuth tokens in the OS credential store: {error:#}. \
+                         Saving credentials to the profile file instead."
+                    );
+                    Ok((
+                        Some(oauth::tokens_to_stored(&tokens)),
+                        "profile file (OAuth tokens)",
+                    ))
+                }
+                Err(error) => Err(error),
+            }
         }
     }
 }

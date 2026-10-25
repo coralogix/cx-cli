@@ -499,6 +499,34 @@ pub struct LoginOptions {
     /// it never widens to the full list. Unknown to the IdP for clients with
     /// `cx_teams:all_user_teams`, where it is ignored.
     pub team_id: Option<i64>,
+    /// Adds `prompt=create`, so a signed-out user lands on Coralogix signup
+    /// instead of sign-in and comes back here once their team exists. Signup
+    /// includes reading a verification email, so the callback waits longer.
+    pub signup: bool,
+}
+
+/// The sign-up hint names no command: `cx init` and `cx profiles add` both
+/// take `--signup`, and only the user's own command carries their region and
+/// profile name.
+fn timeout_message(options: &LoginOptions, timeout: Duration) -> String {
+    let minutes = timeout.as_secs() / 60;
+    if options.signup {
+        format!(
+            "OAuth sign-up timed out after {minutes} minutes. If you finished signing up, \
+             run the same command again without `--signup` to sign in with your new account."
+        )
+    } else {
+        format!("OAuth login timed out after {minutes} minutes")
+    }
+}
+
+/// How long [`browser_login`] waits for the browser to come back.
+fn callback_timeout(options: &LoginOptions) -> Duration {
+    if options.signup {
+        Duration::from_secs(30 * 60)
+    } else {
+        Duration::from_secs(5 * 60)
+    }
 }
 
 /// Assemble the `/authorize` URL for one sign-in attempt.
@@ -523,7 +551,10 @@ fn build_authorization_url(
         challenge,
         state,
     );
-    if options.force_account_selection {
+    // One prompt value: signup has no account to select yet.
+    if options.signup {
+        auth_url.push_str("&prompt=create");
+    } else if options.force_account_selection {
         auth_url.push_str("&prompt=select_account");
     }
     if let Some(team_id) = options.team_id {
@@ -582,13 +613,14 @@ pub async fn browser_login(
     }
 
     // Run the blocking TCP listener on a dedicated thread so it does not
-    // stall the async runtime.  Bail out if the user takes longer than 5 minutes.
+    // stall the async runtime, and give up after `callback_timeout`.
+    let timeout = callback_timeout(&options);
     let code = tokio::time::timeout(
-        Duration::from_secs(300),
+        timeout,
         tokio::task::spawn_blocking(move || wait_for_callback_blocking(listeners, state)),
     )
     .await
-    .context("OAuth login timed out after 5 minutes")?
+    .with_context(|| timeout_message(&options, timeout))?
     .context("OAuth callback task failed")??;
 
     eprintln!("Authorization code received, exchanging for tokens...");
@@ -1104,6 +1136,7 @@ mod tests {
             &LoginOptions {
                 force_account_selection: false,
                 team_id: Some(53623),
+                signup: false,
             },
         );
         assert!(
@@ -1124,11 +1157,58 @@ mod tests {
             &LoginOptions {
                 force_account_selection: true,
                 team_id: Some(7),
+                signup: false,
             },
         );
         assert!(
             url.ends_with("&state=STATE&prompt=select_account&cx_team_ids=7"),
             "got: {url}"
         );
+    }
+
+    #[test]
+    fn authorization_url_asks_for_signup_instead_of_an_account_picker() {
+        let url = build_authorization_url(
+            "https://example.com/oauth/authorize",
+            "cli-client",
+            "http://localhost:21783/callback",
+            "CHALLENGE",
+            "STATE",
+            &LoginOptions {
+                force_account_selection: true,
+                team_id: None,
+                signup: true,
+            },
+        );
+        assert!(url.ends_with("&state=STATE&prompt=create"), "got: {url}");
+        assert!(!url.contains("select_account"));
+    }
+
+    #[test]
+    fn signup_timeout_tells_the_user_to_rerun_their_own_command() {
+        let message = timeout_message(
+            &LoginOptions {
+                signup: true,
+                ..LoginOptions::default()
+            },
+            Duration::from_secs(30 * 60),
+        );
+
+        assert!(
+            message.contains("same command again without `--signup`"),
+            "{message}"
+        );
+        assert!(!message.contains("cx init"), "{message}");
+    }
+
+    #[test]
+    fn signup_waits_long_enough_to_read_the_verification_email() {
+        let login = callback_timeout(&LoginOptions::default());
+        let signup = callback_timeout(&LoginOptions {
+            signup: true,
+            ..LoginOptions::default()
+        });
+        assert_eq!(login, Duration::from_secs(5 * 60));
+        assert_eq!(signup, Duration::from_secs(30 * 60));
     }
 }

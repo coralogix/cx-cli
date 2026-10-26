@@ -103,7 +103,7 @@ fn credential_storage_for_setup(interactive: bool) -> Result<CredentialStorage> 
                 });
             }
         }
-        return Ok(CredentialStorage::File);
+        Ok(CredentialStorage::File)
     }
 }
 
@@ -1060,16 +1060,31 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn os_store_write_succeeds_without_file_fallback() {
+    #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
+    #[test]
+    fn os_store_write_succeeds_without_file_fallback() {
         keyring_store::write(|| Ok(())).unwrap();
     }
 
-    #[tokio::test]
-    async fn os_store_write_error_is_returned() {
+    #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]
+    #[test]
+    fn os_store_write_error_is_returned() {
         let err = keyring_store::write(|| Err(anyhow::anyhow!("no secret service")))
             .expect_err("keyring error must not fall back to file storage");
         assert!(err.to_string().contains("no secret service"));
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+    #[test]
+    fn noninteractive_linux_does_not_start_os_store_write() {
+        let mut called = false;
+        let err = keyring_store::write(|| {
+            called = true;
+            Ok(())
+        })
+        .expect_err("non-interactive Linux must not invoke the OS credential store");
+        assert!(!called, "the keyring write must not be started");
+        assert!(err.to_string().contains("interactive terminal"));
     }
 
     /// The default cursor is a raw index into `PICKER_REGIONS`; if the list is

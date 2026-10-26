@@ -430,6 +430,7 @@ pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 #[derive(Debug, Default, Deserialize)]
 struct SystemPolicy {
     #[serde(default)]

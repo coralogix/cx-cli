@@ -37,7 +37,7 @@ fn test_secret_path(profile: &str, key_name: &str) -> Option<PathBuf> {
 pub fn is_available() -> bool {
     #[cfg(all(target_os = "linux", not(target_env = "musl")))]
     {
-        return keyring::Entry::new(SERVICE_NAME, "cx-availability-probe").is_ok();
+        keyring::Entry::new(SERVICE_NAME, "cx-availability-probe").is_ok()
     }
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {

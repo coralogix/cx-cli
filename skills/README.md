@@ -17,6 +17,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation                                       |
 | `cx-infra` | Explore infrastructure resources - discover resource types and filterable attributes, list and filter resources, check per-resource data                                     |
 | `cx-service-catalog` | Query Service Catalog APM entities - services, databases, operations, JVMs, K8s pods; schema, entities, and aggregated/timeseries data          |
+| `cx-profiling` | Query continuous profiling - top CPU/memory services, profile types, filters, usage over time by pod/label, flame graphs and hot functions |
 | `cx-ai-center` | Investigate GenAI applications and agents - behavior, prompts/responses, quality, hallucinations, guardrails, token cost - and manage AI Center config |
 | `cx-coding-agents` | Analyze AI Center Coding Agents data for Claude Code, Codex, Cursor, Gemini CLI, and Copilot CLI - usage, cost, tokens, sessions, tools, code impact |
 | `cx-search-dashboard` | Find existing dashboards and widgets by natural-language description or by the fields they query |
@@ -151,6 +152,7 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "Debug the 500 errors on the payment endpoint"
 - "Which of our EC2 instances were unhealthy this week?"
 - "Show me the top 5 services by p99 latency in the last hour"
+- "What is the checkout service spending its CPU on?"
 - "How can we reduce our Coralogix costs?"
 - "Help me triage this case"
 - "Set up parsing rules for our new service"

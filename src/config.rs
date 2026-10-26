@@ -701,6 +701,7 @@ async fn sign_in_to_profile_team(
         } else {
             profile.cached_team_id
         },
+        signup: false,
     };
     loop {
         let tokens = oauth::browser_login(base_url, client_id, login.clone()).await?;

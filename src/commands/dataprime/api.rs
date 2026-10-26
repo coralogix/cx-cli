@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::error::Result;
+use crate::error::{CxError, Result};
 use crate::Tier;
 
 use crate::api_client::CxClient;
@@ -95,7 +95,8 @@ impl<'a> DataprimeApi<'a> {
         let raw = self
             .client
             .post_raw("/api/v1/dataprime/query", &body)
-            .await?;
+            .await
+            .map_err(|error| self.with_field_validation_hint(error))?;
         parse_ndjson_with_warnings(&raw, |warning| {
             let mut envelope = json!({"warning": warning});
             if let Some(profile) = self.warning_profile {
@@ -103,6 +104,39 @@ impl<'a> DataprimeApi<'a> {
             }
             eprintln!("{envelope}");
         })
+        .map_err(|error| self.with_field_validation_hint(error))
+    }
+
+    // API sets --strict-fields-validation=false by default.
+    // But in CLI we decided to optimize for popular case and set --strict-fields-validation to `true`
+    // This can backfire in case if newly added data fields are not yet ingested in the schema or schema dropped them due to cardinality protections
+    // We aim to help agents and users to discover the `strict-fields-validation` cli param by modifying the error message.
+    fn with_field_validation_hint(&self, mut error: CxError) -> CxError {
+        if self.strict_fields_validation {
+            let message = match &mut error {
+                CxError::Api {
+                    status: 400,
+                    message,
+                }
+                | CxError::QueryStream(message) => Some(message),
+                _ => None,
+            };
+            if let Some(message) = message {
+                // The public query API does not expose warning codes. Matching on strings for now (it is fragile).
+                // API V2 is expected to add error/warning codes
+                if message.starts_with("Compilation errors:")
+                    && message.lines().any(|line| {
+                        line.trim_start()
+                            .starts_with("- keypath does not exist at [")
+                    })
+                {
+                    message.push_str(
+                        "\nIn order to force-run this query use --strict-fields-validation=false",
+                    );
+                }
+            }
+        }
+        error
     }
 
     /// Execute a generic Dataprime query as-is, with no default source.

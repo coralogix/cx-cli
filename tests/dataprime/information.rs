@@ -91,6 +91,101 @@ async fn strict_validation_defaults_true_and_can_be_disabled_on_all_query_comman
 }
 
 #[tokio::test]
+async fn unknown_keypath_errors_suggest_disabling_strict_validation() {
+    let message = "Compilation errors:\n - keypath does not exist at [0:21-0:35]: $d.new_field\n - keypath does not exist at [0:38-0:52]: $d.other_field";
+    let hint = "In order to force-run this query use --strict-fields-validation=false";
+    for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
+        for status in [400, 200] {
+            let server = MockServer::start().await;
+            let response = if status == 400 {
+                // Compilation fails before streaming starts; the public HTTP
+                // endpoint returns its diagnostics as a plain-text 400 body.
+                ResponseTemplate::new(status).set_body_string(message)
+            } else {
+                ResponseTemplate::new(status).set_body_json(json!({"error": {"message": message}}))
+            };
+            Mock::given(method("POST"))
+                .and(path("/api/v1/dataprime/query"))
+                .respond_with(response)
+                .mount(&server)
+                .await;
+            for strict in [true, false] {
+                let mut args = command.clone();
+                args.extend([
+                    "source logs | choose $d.new_field, $d.other_field",
+                    "-o",
+                    "json",
+                ]);
+                if !strict {
+                    args.push("--strict-fields-validation=false");
+                }
+                let output = invoke(&server, &args, &["test"]).await;
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                assert!(!output.status.success(), "{stderr}");
+                // anyhow indents the lines of an error cause for display.
+                for line in message.lines() {
+                    assert!(stderr.contains(line.trim()), "{stderr}");
+                }
+                assert_eq!(
+                    stderr.matches(hint).count(),
+                    usize::from(strict),
+                    "{stderr}"
+                );
+                assert!(output.stdout.is_empty());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn unrelated_errors_and_compile_warnings_do_not_suggest_disabling_strict_validation() {
+    for (status, body) in [
+        (
+            400,
+            json!({"message": "Compilation errors:\n - syntax error at [0:0-0:3]: foo"}),
+        ),
+        // The missing-keypath text in a query excerpt is not a diagnostic.
+        (
+            400,
+            json!({"message": "Compilation errors:\n - expression must have type bool at [0:21-0:55]: 'keypath does not exist at ['"}),
+        ),
+        (
+            503,
+            json!({"message": "Compilation errors:\n - keypath does not exist at [0:21-0:27]: $d.foo"}),
+        ),
+        (200, json!({"error": {"message": "engine failed"}})),
+        (
+            200,
+            json!({"warning": {"compileWarning": {"warningMessage": "keypath does not exist at [0:21-0:27]: $d.foo"}}}),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/dataprime/query"))
+            .respond_with(ResponseTemplate::new(status).set_body_json(&body))
+            .mount(&server)
+            .await;
+        let output = invoke(&server, &["logs", "limit 0", "-o", "json"], &["test"]).await;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.success(),
+            body.get("warning").is_some(),
+            "{stderr}"
+        );
+        assert!(
+            !stderr.contains("--strict-fields-validation=false"),
+            "{stderr}"
+        );
+        if let Some(warning) = body.get("warning") {
+            assert_eq!(
+                stderr_warnings(&output),
+                vec![json!({"profile": "test", "warning": warning})]
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn extended_information_preserves_full_warnings_and_statistics_in_all_formats() {
     let warning = json!({"archiveWarning": {"missingData": {}}});
     let statistics = json!({"status": "COMPLETED", "e2eDurationMs": "125", "outputRowCount": "1", "futureField": {"a": 1}});

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::anyhow;
 use serde::Deserialize;
 
@@ -79,6 +81,18 @@ pub async fn resolve_team_id(client: &CxClient) -> anyhow::Result<String> {
 /// Best-effort `GET /identity/whoami`. `None` on any failure.
 pub async fn lookup_whoami(client: &CxClient) -> Option<Whoami> {
     client.get(WHOAMI_BASE, &[]).await.ok()
+}
+
+/// Deadline for [`lookup_whoami_bounded`]. Short, because the caller only
+/// records the team and must not hold up the command it runs before.
+const BOUNDED_WHOAMI_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Best-effort `GET /identity/whoami` with its own short deadline, for
+/// lookups that run outside an execution target (so `--http-timeout` does
+/// not apply). `None` on any failure, including a timeout.
+pub async fn lookup_whoami_bounded(endpoint: &str, token: &str) -> Option<Whoami> {
+    let client = CxClient::with_timeout(endpoint, token, Some(BOUNDED_WHOAMI_TIMEOUT)).ok()?;
+    lookup_whoami(&client).await
 }
 
 #[cfg(test)]

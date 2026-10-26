@@ -756,3 +756,123 @@ fn refresh_api_key_profile_is_rejected_and_left_unchanged() {
         "an API-key profile must not be rewritten"
     );
 }
+
+/// An OAuth profile created before the team was recorded at sign-in learns it
+/// on the next command while its token is still valid, so its first
+/// expired-session re-login can narrow the consent page to that team.
+#[tokio::test]
+async fn oauth_profile_without_team_records_it_while_token_is_valid() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "team_id": 12,
+            "team_name": "c4c",
+            "team_url": "https://c4c.app.eu2.coralogix.com"
+        })))
+        .mount(&server)
+        .await;
+
+    let tmp = temp_home();
+    let profiles_dir = tmp.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(
+        profiles_dir.join("oauth-noteam.toml"),
+        format!(
+            r#"
+auth = "o_auth"
+credential_storage = "file"
+region = "{}"
+oauth_client_id = "test-client"
+
+[oauth_tokens]
+access_token = "valid"
+expiry = 4102444800
+"#,
+            server.uri()
+        ),
+    )
+    .unwrap();
+
+    // The command itself may fail against the mock; only the backfill matters.
+    let _ = cx(&tmp)
+        .env_remove("CX_REGION")
+        .env_remove("CX_PROFILE")
+        .args(["-p", "oauth-noteam", "alerts", "list"])
+        .output()
+        .expect("failed to run cx");
+
+    let toml = load_profile_toml(&tmp, "oauth-noteam");
+    assert!(
+        toml.contains("cached_team_id = 12"),
+        "team id should be recorded: {toml}"
+    );
+    assert!(
+        toml.contains("cached_team_name = \"c4c\""),
+        "team name should be recorded: {toml}"
+    );
+}
+
+/// The team backfill runs before the command and outside `--http-timeout`, so
+/// a stalled `/identity/whoami` must hit its own short deadline instead of
+/// holding the command up.
+#[tokio::test]
+async fn oauth_team_backfill_gives_up_on_a_stalled_whoami() {
+    use std::time::{Duration, Instant};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/identity/whoami"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "team_id": 12, "team_name": "c4c" }))
+                .set_delay(Duration::from_secs(60)),
+        )
+        .mount(&server)
+        .await;
+
+    let tmp = temp_home();
+    let profiles_dir = tmp.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(
+        profiles_dir.join("oauth-stalled.toml"),
+        format!(
+            r#"
+auth = "o_auth"
+credential_storage = "file"
+region = "{}"
+oauth_client_id = "test-client"
+
+[oauth_tokens]
+access_token = "valid"
+expiry = 4102444800
+"#,
+            server.uri()
+        ),
+    )
+    .unwrap();
+
+    let started = Instant::now();
+    let _ = cx(&tmp)
+        .env_remove("CX_REGION")
+        .env_remove("CX_PROFILE")
+        .args(["-p", "oauth-stalled", "alerts", "list"])
+        .output()
+        .expect("failed to run cx");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(20),
+        "a stalled whoami must not hold up the command (took {elapsed:?})"
+    );
+    let toml = load_profile_toml(&tmp, "oauth-stalled");
+    assert!(
+        !toml.contains("cached_team_id"),
+        "a timed-out lookup must not record a team: {toml}"
+    );
+}

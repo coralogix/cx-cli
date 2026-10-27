@@ -456,6 +456,7 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx cases get <case-id>
+  cx cases create --title \"Payments latency\" --priority P2 --description \"p99 up 3x since 10:00 UTC\"
   cx cases assign <case-id> --user alice@example.com
   cx cases acknowledge <case-id>
   cx cases resolve <case-id> --reason \"Mitigated by rollback\"
@@ -1308,6 +1309,43 @@ Request bodies:
 
 #[derive(Subcommand)]
 enum CasesCmd {
+    /// Create a case manually.
+    #[command(after_help = "\
+A manually created case is not linked to any alert or other indicator. The Cases
+service never updates, resolves, or reopens it on its own: you own its whole
+lifecycle (acknowledge, assign, resolve, close). The description is the only
+context the case carries, so put the evidence there - what is wrong, impact,
+time window, links to queries or dashboards.
+
+Labels feed filtering, category derivation, and notification routing
+(routing.* labels).
+
+Examples:
+  cx cases create --title \"Payments latency\" --priority P2 \\
+    --description \"p99 latency on payments-api up 3x since 10:00 UTC.\"
+  cx cases create --title \"Suspicious logins\" --priority P1 \\
+    --description \"...\" --label routing.team=security --assignee alice@example.com")]
+    Create {
+        /// Case title.
+        #[arg(long)]
+        title: String,
+        /// Case description - the only context a manual case carries.
+        #[arg(long)]
+        description: String,
+        /// Priority (P1, P2, P3, P4, P5).
+        #[arg(long)]
+        priority: String,
+        /// Label as key=value (repeatable).
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        /// Assignee - an email address (resolved via the team-members
+        /// directory) or a raw user ID.
+        #[arg(long)]
+        assignee: Option<String>,
+        /// Initial status: ACTIVE (default) or ACKNOWLEDGED.
+        #[arg(long)]
+        status: Option<String>,
+    },
     /// Get a single case by ID.
     Get {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
@@ -3933,6 +3971,24 @@ async fn main() -> Result<()> {
             },
 
             Commands::Cases { cmd } => match cmd {
+                CasesCmd::Create {
+                    title,
+                    description,
+                    priority,
+                    labels,
+                    assignee,
+                    status,
+                } => {
+                    let args = commands::cases::CreateCaseArgs {
+                        title: &title,
+                        description: &description,
+                        priority: &priority,
+                        labels: &labels,
+                        assignee: assignee.as_deref(),
+                        status: status.as_deref(),
+                    };
+                    commands::cases::run_create(&targets, &args, output).await?;
+                }
                 CasesCmd::Get { id } => {
                     commands::cases::run_get(&targets, &id, output).await?;
                 }

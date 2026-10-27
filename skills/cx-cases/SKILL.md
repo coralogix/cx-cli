@@ -9,20 +9,22 @@ description: >
   task", or wants to inspect or drive Coralogix Cases through their lifecycle using
   the cx CLI.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Cases Management Skill
 
 A **Case** groups related indicators — usually alert events, sometimes an external
 source — into one investigation unit with a status, priority, category, and
-assignee. Use this skill to inspect cases and drive them through their lifecycle
-(active → acknowledged → resolved → closed).
+assignee. Cases can also be **created manually** with no indicator behind them.
+Use this skill to open cases on demand, inspect them, and drive them through their
+lifecycle (active → acknowledged → resolved → closed).
 
 ## CLI Commands
 
 | Command | Purpose |
 |---|---|
+| `cx cases create --title <t> --priority <P1..P5> --description <text> [--label k=v ...] [--assignee <email>] [--status ACTIVE\|ACKNOWLEDGED]` | Create a case manually — see "Creating a case" |
 | `cx cases get <id>` | Get a single case by ID |
 | `cx cases update <id> [--title] [--resolution-reason]` | Update mutable fields |
 | `cx cases comment <id> --text <text>` | Add a comment to the case timeline |
@@ -45,11 +47,11 @@ that does not exist.
 
 | Not available | Why, and what to do instead |
 |---|---|
-| **Creating a case** | Cases are opened by the Cases service from an indicator — an alert event, an Error Tracking issue, or an Olly scheduled task. Create exists only on the *internal* API, so there is no `cx cases create`. To get a case for something: ask Olly to open one (`cx olly`, which can), fix the alert that should have caught it (`cx-alerts`), or open one in the Cases UI. |
+| **Attaching indicators to a case** | A case created with `cx cases create` has no indicators, and none can be added later. If the issue should be tracked by an alert, fix or create the alert (`cx-alerts`) and let the Cases service open its own case. |
 | **Listing / searching cases** | `cx cases list` was removed. Case discovery lives in the dataset: query `system/labs.cases.state_updates` with `cx dataprime`. See [`references/case-analytics.md`](references/case-analytics.md). |
 | **Linking / unlinking cases** | Parent-child links are created in the Cases UI or through the API, not the CLI. You can still *read* the hierarchy from the dataset — see "Case relationships" below. |
 | **Muting a case** | No CLI verb. Mute in the UI. Muting stops notifications without changing status, which is the honest alternative to resolving work nobody has finished. |
-| **Changing labels** | Labels are fixed when the case is created. `cx cases update` patches only the title and resolution reason. |
+| **Changing labels or the description** | Both are fixed when the case is created. `cx cases update` patches only the title and resolution reason; add later context with `cx cases comment`. |
 | **Reopening** | `RESOLVED` → `CLOSED` only. A recurrence of the same underlying indicator reopens the case automatically; a person cannot. |
 
 ## Case Lifecycle
@@ -75,12 +77,52 @@ PENDING_ACTIVATION ──► ACTIVE ◄────────► ACKNOWLEDGED
 
 Categories: `AVAILABILITY` or `SECURITY`. Priorities: `P1` (highest) → `P5`.
 
+## Creating a case
+
+`cx cases create` opens a case on demand — for something you found while
+investigating, a user report, or anything no alert covers.
+
+```bash
+cx cases create \
+  --title "Payments API p99 latency degraded" \
+  --priority P2 \
+  --description "p99 latency on payments-api rose from ~250ms to ~900ms starting 2026-10-27 10:00 UTC; error rate unchanged. Started with deploy v4.12. Evidence: <query/dashboard links>. Impact: checkout slow for EU users." \
+  --label service=payments-api --label routing.team=payments \
+  --assignee you@example.com
+```
+
+A manual case is **fully managed by the user**:
+
+- **No indicators.** It is not linked to any alert, Error Tracking issue, or Olly
+  task. The Cases service never updates, auto-resolves, or reopens it — nothing
+  will change its status but people. Whoever creates it owns driving it to
+  `RESOLVED`/`CLOSED`.
+- **The description is the only context.** There are no alert definitions,
+  permutations, or triggering logs to pivot into, so anyone triaging it — a
+  teammate or an agent — sees only what you wrote. `--description` is required by
+  the CLI. Write it to stand on its own: what is wrong, observed impact, the time
+  window (absolute UTC, not "an hour ago"), affected services/entities, the
+  evidence (exact queries, numbers, dashboard or console links you actually saw),
+  and what has been ruled out. It cannot be edited afterwards — follow-ups go in
+  `cx cases comment`.
+- **Labels** (`--label key=value`, repeatable) drive filtering, category
+  derivation, and notification routing — `routing.*` labels pick the router.
+  Like the description, they are fixed at creation.
+- **Initial status** is `ACTIVE` unless `--status ACKNOWLEDGED`. Only start it
+  acknowledged when a person is actually on it.
+
+Before creating, ask the user to confirm title, priority, and description — a case
+notifies people. Prefer one case per issue; check for an existing open case on the
+same problem first (see [`references/case-analytics.md`](references/case-analytics.md)).
+
 ## Triage Workflow
 
 1. **Inspect** — `cx cases get <id>`. The payload includes `groupings`,
    `labels`, `impactedEntities`, `kpiBreaches`, `aiSummary`, and both
    `priorityDetails.system` (computed) and `priorityDetails.override` (user-set).
 2. **Investigate** — Pull the underlying telemetry by querying the alert's DataPrime / PromQL to find root cause before acting.
+   For a manually created case (no indicators), the description is the starting
+   point — reproduce the evidence it cites rather than trusting it blindly.
    Optionally export the investigation via `cx olly` or pull the case's `impactedEntities` / `groupings` to confirm the impact. 
    See the `cx-telemetry-querying` skill.
 3. **Claim** — `cx cases assign <id> --user you@example.com` then
@@ -167,7 +209,9 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 - **Prefer muting over resolving** when the work is real but nobody is on it. A
   resolved case is a claim the system is healthy.
 - **A case has no source field** — provenance is on its indicators. See
-  "Cases opened by Olly".
+  "Cases opened by Olly". A case with no indicators at all was created manually.
+- **Manual cases are user-owned** — nothing closes them automatically, and their
+  description is the only context; write it to stand on its own.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) for cross-environment triage.
 - **Link to a specific case** — build `<base>/cases?id=<case_id>`, where
   `<base>` is the console URL already seen in a `View in Coralogix:

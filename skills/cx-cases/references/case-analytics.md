@@ -10,6 +10,18 @@ description: Fleet/aggregate analytics across many cases via the `system/labs.ca
 This skill covers two things and only two things: (1) the schema of `system/labs.cases.state_updates`, and (2) the case-counting conventions (1h minimum window, dedupe per `caseId`).
 Use the schema in this skill to know **what fields exist and what they mean**, and use `dataprime` to know **how to shape the query around them**.
 
+## Running these queries with the CLI
+
+Every query below runs through `cx dataprime query`. Set the window with `--start` / `--end` (relative like `now-7d` or ISO 8601). There is no `--from` flag, and the default window is only the last hour.
+
+```bash
+cx dataprime query "source system/labs.cases.state_updates
+  | dedupeby caseId orderby \$m.timestamp desc
+  | choose caseId, caseNumber, title, status, priority" --start now-24h
+```
+
+Wrap the query in double quotes. String literals inside it use single quotes, and `$m` / `$d` must be escaped as `\$m` / `\$d` so the shell does not expand them. Add `-o json` when you need to parse the result.
+
 ## Dataset: `system/labs.cases.state_updates`
 Data for this dataset is only available from June 8th, 2026 onward. If a query requests earlier dates, inform the user that data starts from this date and adjust the query window accordingly.
 A single events dataset that captures every state-change emitted by the Cases service, plus periodic **heartbeat** events for cases that are still active but otherwise inactive (so an open case still shows up inside a query window even when nothing happened to it). All queries in this skill target this dataset.

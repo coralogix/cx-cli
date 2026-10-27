@@ -48,7 +48,7 @@ that does not exist.
 | Not available | Why, and what to do instead |
 |---|---|
 | **Attaching indicators to a case** | A case created with `cx cases create` has no indicators, and none can be added later. If the issue should be tracked by an alert, fix or create the alert (`cx-alerts`) and let the Cases service open its own case. |
-| **Listing / searching cases** | `cx cases list` was removed. Case discovery lives in the dataset: query `system/labs.cases.state_updates` with `cx dataprime`. See [`references/case-analytics.md`](references/case-analytics.md). |
+| **Listing / searching cases** | `cx cases list` was removed. Case discovery lives in the dataset: run `cx dataprime query "source system/labs.cases.state_updates \| ..." --start now-24h` (there is no `--from`; the window is `--start`/`--end`). See [`references/case-analytics.md`](references/case-analytics.md). |
 | **Linking / unlinking cases** | Parent-child links are created in the Cases UI or through the API, not the CLI. You can still *read* the hierarchy from the dataset — see "Case relationships" below. |
 | **Muting a case** | No CLI verb. Mute in the UI. Muting stops notifications without changing status, which is the honest alternative to resolving work nobody has finished. |
 | **Changing labels or the description** | Both are fixed when the case is created. `cx cases update` patches only the title and resolution reason; add later context with `cx cases comment`. |

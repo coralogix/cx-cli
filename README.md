@@ -5,6 +5,14 @@
 [![Homebrew](https://img.shields.io/badge/homebrew-coralogix%2Ftap%2Fcx-blue)](https://github.com/coralogix/homebrew-tap)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
+> [!WARNING]
+> **Security advisory** (Priority: Medium): On October 20, 2026, the private keys for 8 intermediate certificate authorities operated by eMudhra were reported compromised. This is an industry-wide issue, not specific to Coralogix. Update cx-cli to **v0.1.28** or later out of an abundance of caution. Re-run the [install/update script](https://github.com/coralogix/cx-cli/blob/master/docs/quickstart.md#1-install-the-cli) or download it from the [release page](https://github.com/coralogix/cx-cli/releases/tag/v0.1.28). Coralogix endpoints and internal services do not use eMudhra or emSign certificates, and we have not identified any impact to customer data.
+>
+> See the [eMudhra security advisory](https://coralogix.com/blog/coralogix-security-advisory-emudhra-certificate-update/) for full upgrade guidance and breaking-change details.
+>
+> If you have any questions or need help upgrading, our Support team is here to help. Reach out through in-app chat and mention "Security advisory eMudhra" and the required component.
+
+
 The observability backbone for AI agents and engineering teams.<br/>
 Connect your agents to live logs, traces, metrics, dashboards, and alerts so they can investigate incidents, explain what changed, and reason about production with real operational context.
 
@@ -42,6 +50,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the ownership model,
 PR review process, and step-by-step guides for adding commands and skills.
 
-## License
+## License and Terms
 
 Apache-2.0
+Use of the Coralogix services through this CLI is governed by the [Coralogix Terms and Conditions](https://coralogix.com/terms-conditions/), or your separate written agreement with Coralogix where applicable, including when you use the CLI internally or incorporate it into products and services that you make available to your own customers and end users, except to the extent a specific component or dependency is covered by a different license as indicated in that component's LICENSE file.

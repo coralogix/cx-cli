@@ -8,14 +8,14 @@ description: |
   "find stack traces", "filter by severity",
   "check traces", "examine spans", "investigate request latency",
   "debug service-to-service calls", "look up a trace ID",
-  "analyze RUM data", "check frontend performance", "frontend errors",
+  "analyze RUM data", "query rum.events", "check frontend performance", "frontend errors",
   "Core Web Vitals", "JavaScript exceptions",
   "query metrics", "check CPU usage", "run a PromQL query",
   "check error rate", "look up a metric", "check memory usage",
   "how do I write a DataPrime query", "DataPrime syntax",
   or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM.
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # Telemetry Querying Skill
@@ -31,7 +31,7 @@ Before querying, load the reference files for the chosen pillar:
 | Logs | `references/dataprime-reference.md` + `references/logs-querying.md` |
 | Spans / Traces | `references/dataprime-reference.md` + `references/spans-querying.md` |
 | Metrics | `references/promql-guidelines.md` + `references/metrics-querying.md` |
-| RUM (frontend) | `references/dataprime-reference.md` + `references/logs-querying.md` + `references/rum-querying.md` + `references/rum-fields.md` |
+| RUM (frontend) | `references/dataprime-reference.md` + `references/rum-querying.md` + `references/rum-fields.md` |
 | DataPrime syntax only | `references/dataprime-reference.md` |
 
 ---
@@ -177,8 +177,8 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 **Question:** "Why is the dashboard page loading slowly for users?"
 
 **Approach:**
-1. This is clearly a RUM question - load `references/rum-querying.md` + `references/rum-fields.md` + `references/logs-querying.md` + `references/dataprime-reference.md`
-2. Query web vitals and page load times
+1. This is clearly a RUM question - load `references/rum-querying.md` + `references/rum-fields.md` + `references/dataprime-reference.md`
+2. Query web vitals and page load times with `cx dataprime query --source rum.events '...'`
 3. If RUM shows backend calls are slow, pivot to spans references for the API calls
 
 ### Example 4: Error Investigation (Logs + Traces)

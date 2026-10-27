@@ -1,6 +1,6 @@
 [package]
 name = "coralogix-cli"
-version = "0.1.24"
+version = "0.1.28"
 edition = "2021"
 description = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 repository = "https://github.com/coralogix/cx-cli"
@@ -25,7 +25,7 @@ rustls = { version = "0.23", features = ["ring"], default-features = false }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["unbounded_depth"] }
 serde_yaml = "0.9"
 toml = "1.1"
 

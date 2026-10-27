@@ -292,9 +292,15 @@ pub async fn run_evaluations_list(
     for (profile, items) in report_errors_and_collect_successes(per_profile)? {
         // Print the Eval Catalog page link to stderr once per profile.
         // Skip when there are no evaluations, since there's nothing to view.
+        // The per-app page needs both application and subsystem.
         if !items.is_empty() {
             crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::ai_center_evaluations_url(b)
+                match (application, subsystem) {
+                    (Some(app), Some(sub)) => {
+                        crate::console_url::ai_center_application_evaluations_url(b, app, sub)
+                    }
+                    _ => crate::console_url::ai_center_evaluations_url(b),
+                }
             })
             .await;
         }

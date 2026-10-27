@@ -1,6 +1,6 @@
 # RUM Field Reference
 
-All fields are under `$d.cx_rum.*`.
+All fields are under `$d.*` in the `rum.events` dataset (`cx dataprime query --source rum.events`), with no `cx_rum` prefix - e.g. `$d.event_context.type`.
 
 ## Table of Contents
 
@@ -154,6 +154,7 @@ Top-level error grouping fields:
 | `traceId`, `spanId` | Distributed tracing correlation |
 | `screenshot_context.id`, `screenshotId` | Screenshot references |
 | `log_context.message` | Console log message |
+| `custom_log_context.message` | Custom log message (`custom-log` errors) |
 | `longtask_context.id`, `name`, `duration` | Long task details |
 | `custom_measurement_context.name`, `value` | Custom metrics |
 | `browser_sdk.version` | Browser SDK version |

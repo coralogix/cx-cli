@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::parser::ValueSource;
-use clap::{ArgGroup, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_complete::engine::ArgValueCompleter;
 use clap_complete::env::CompleteEnv;
@@ -15,6 +15,7 @@ use coralogix_cli::commands;
 use coralogix_cli::commands::dataprime::DataprimeFilter;
 use coralogix_cli::config;
 use coralogix_cli::execution::build_targets;
+use coralogix_cli::onboarding;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
 use coralogix_cli::update_check;
@@ -88,6 +89,7 @@ pub enum SearchByValueDataset {
   \x1b[1mslos\x1b[0m               Manage SLO definitions
   \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
   \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities and their RED/health/saturation data
+  \x1b[1mprofiling\x1b[0m          Query continuous-profiling data: services, metrics, flame graphs
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -146,6 +148,8 @@ struct Cli {
         long,
         global = true,
         env = "CX_API_KEY",
+        // Never echo the key in `--help`; agents read help into their transcripts.
+        hide_env_values = true,
         help_heading = "Global Options"
     )]
     api_key: Option<String>,
@@ -203,6 +207,7 @@ struct ProfilesCli {
 #[derive(Subcommand)]
 enum ProfilesTopLevel {
     /// Manage profiles (list, add, delete, set-default).
+    #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -305,6 +310,7 @@ Examples:
   cx init                                              # interactive walkthrough
   cx init --url https://myteam.app.eu2.coralogix.com --api-key $CX_API_KEY --global-skills
   cx init --oauth --url https://myteam.app.eu2.coralogix.com
+  cx init --signup --region eu2                        # new to Coralogix: create an account
   cx init --no-skills                                  # skip the agent-skills install")]
     Init {
         /// Coralogix URL to derive the region from (e.g. your browser URL).
@@ -318,6 +324,12 @@ Examples:
         /// with OAuth by surfacing the URL to its user.
         #[arg(long)]
         oauth: bool,
+        /// No Coralogix account yet? Sign up in the browser instead of signing
+        /// in (implies --oauth): create the account and a team, and this
+        /// profile is set up with it. Waits up to 30 minutes, since signup
+        /// includes confirming your email.
+        #[arg(long)]
+        signup: bool,
         /// Skip the agent-skills install step (installed by default).
         #[arg(long, conflicts_with_all = ["global_skills", "local_skills", "agents"])]
         no_skills: bool,
@@ -341,6 +353,7 @@ Examples:
     },
 
     /// Manage profiles (list, add, delete, set-default).
+    #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
         cmd: ProfilesCmd,
@@ -684,6 +697,20 @@ Examples:
         cmd: ServiceCatalogCmd,
     },
 
+    /// Query continuous-profiling data: profiled services, profile types,
+    /// filters, usage over time, and flame graphs.
+    #[command(after_help = "\
+Examples:
+  cx profiling services --category cpu --limit 10
+  cx profiling metadata checkout
+  cx profiling filters checkout --profile-type cpu
+  cx profiling metrics checkout --profile-type cpu --sum-by k8s.pod.name
+  cx profiling flame-graph checkout --profile-type cpu --top-functions 10")]
+    Profiling {
+        #[command(subcommand)]
+        cmd: ProfilingCmd,
+    },
+
     /// Search log/span fields by description or by value content.
     #[command(after_help = "\
 Examples:
@@ -798,6 +825,10 @@ Examples:
         /// it also works without a terminal (requires --url or --region there).
         #[arg(long)]
         oauth: bool,
+        /// No Coralogix account yet? Sign up in the browser instead of signing
+        /// in (implies --oauth). Waits up to 30 minutes for email confirmation.
+        #[arg(long)]
+        signup: bool,
         /// Overwrite an existing profile without prompting.
         #[arg(long)]
         force: bool,
@@ -810,6 +841,17 @@ Examples:
         /// written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
+    },
+    /// Sign an OAuth profile in again, keeping its settings.
+    ///
+    /// Opens the browser sign-in with the profile's team preselected and saves
+    /// the new tokens only when the sign-in is for that same team. Region,
+    /// credential storage, output format and label are not changed. To change
+    /// those, use `cx profiles add <name>`.
+    Refresh {
+        /// Profile name to sign in again.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
     },
     /// Delete a profile and its stored credentials.
     Delete {
@@ -1244,7 +1286,20 @@ Examples:
   cx alerts suppression-rules list
   cx alerts suppression-rules get <rule-id>
   cx alerts suppression-rules create --from-file rule.json
-  cx alerts suppression-rules delete <rule-id>")]
+  cx alerts suppression-rules update --from-file rule.json
+  cx alerts suppression-rules delete <rule-id>
+
+Rule IDs:
+  Rules carry two IDs. 'uniqueIdentifier' is the rule's own, stable ID and is
+  what get/update/delete and console links take. 'id' is the rule *version* ID
+  and changes on every update - it is not addressable. Use the ID column of
+  `list`, or the 'uniqueIdentifier' field in -o json output.
+
+Request bodies:
+  create/update take the rule wrapped in an 'alertSchedulerRule' object, and
+  update must identify the rule by 'uniqueIdentifier':
+
+  {\"alertSchedulerRule\": {\"uniqueIdentifier\": \"<rule-id>\", \"name\": \"...\", ...}}")]
     SuppressionRules {
         #[command(subcommand)]
         cmd: SuppressionRulesCmd,
@@ -1373,20 +1428,25 @@ enum SuppressionRulesCmd {
     List,
     /// Get a single suppression rule by ID.
     Get {
-        /// Suppression rule ID.
+        /// Suppression rule ID: the rule's uniqueIdentifier, not its version id.
         id: String,
     },
     /// Create a suppression rule from a JSON definition file [requires --yes].
     #[command(after_help = "\
 Examples:
   cx alerts suppression-rules create --from-file rule.json
-  cat rule.json | cx alerts suppression-rules create")]
+  cat rule.json | cx alerts suppression-rules create
+
+The rule must be wrapped in an 'alertSchedulerRule' object.")]
     Create {
         /// Path to JSON file with the rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
     },
     /// Update a suppression rule from a JSON definition file [requires --yes].
+    #[command(after_help = "\
+The rule must be wrapped in an 'alertSchedulerRule' object and identify
+itself by 'uniqueIdentifier'.")]
     Update {
         /// Path to JSON file with the updated rule definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1394,7 +1454,7 @@ Examples:
     },
     /// Delete a suppression rule [requires --yes].
     Delete {
-        /// Suppression rule ID.
+        /// Suppression rule ID: the rule's uniqueIdentifier, not its version id.
         id: String,
     },
 }
@@ -2764,9 +2824,11 @@ enum InfraCmd {
     #[command(after_help = "\
 Examples:
   cx infra resources types
-  cx infra resources list --category Hosts --type EC2_Instances --scope environment=prod
+  cx infra resources filters --category Hosts
+  cx infra resources list --category Hosts --type EC2_Instances
   cx infra resources health-history \"1001234:host_id=i-abc123\"
-  cx infra resources raw-data \"1001234:host_id=i-abc123\"")]
+  cx infra resources raw-data \"1001234:host_id=i-abc123\"
+  cx infra resources config-changes --resource-id \"1001234:host_id=i-abc123\" --from now-24h")]
     Resources {
         #[command(subcommand)]
         cmd: InfraResourcesCmd,
@@ -2777,29 +2839,73 @@ Examples:
 enum InfraResourcesCmd {
     /// List the available resource types (category/type pairs).
     Types,
-    /// List resources of a given category and type.
+    /// List the attributes resources can be filtered by.
+    #[command(after_help = "\
+Examples:
+  cx infra resources filters
+  cx infra resources filters --category Hosts
+  cx infra resources filters --category Hosts --type EC2_Instances")]
+    Filters {
+        /// Limit to one category (discover with `cx infra resources types`).
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Limit to one resource type within the category.
+        #[arg(long)]
+        r#type: Option<String>,
+    },
+    /// List resources, optionally narrowed by category, type or attribute filters.
     #[command(after_help = "\
 Examples:
   cx infra resources list --category Hosts --type EC2_Instances
-  cx infra resources list --category Hosts --type EC2_Instances --name-filter web
-  cx infra resources list --category Hosts --type EC2_Instances --scope service=checkout --scope environment=prod
-  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200")]
+  cx infra resources list --match-all Health=Critical
+  cx infra resources list --match-all Region=eu-west-1 --match-all Health=Critical
+  cx infra resources list --match-any Name=coredns --match-any Namespace=kube-system
+  cx infra resources list --match-all OS=linux --match-any Health=Critical --match-any Region=eu-west-1
+  cx infra resources list --match-any Region=eu-west-1,us-east-2
+  cx infra resources list --match-all 'Name=*alert*,*processing*'
+  cx infra resources list --category Hosts --type EC2_Instances --start-row 100 --end-row 200
+
+Discover what can be filtered with `cx infra resources filters`.")]
     List {
         /// Resource category (discover with `cx infra resources types`).
         #[arg(long)]
-        category: String,
+        category: Option<String>,
 
         /// Resource type within the category (discover with `cx infra resources types`).
         #[arg(long)]
-        r#type: String,
+        r#type: Option<String>,
 
-        /// Filter resources by name.
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. Every one must
+        /// match, and commas require every listed value. Discover names with
+        /// `cx infra resources filters`.
         #[arg(long)]
+        match_all: Vec<String>,
+
+        /// Attribute filter as NAME=VALUE[,VALUE...]; repeatable. At least one
+        /// must match, and commas accept any listed value. Combined with
+        /// --match-all by AND.
+        #[arg(long)]
+        match_any: Vec<String>,
+
+        /// Filter resources by name. Legacy: needs --category and --type, and
+        /// cannot be combined with --match-all or --match-any.
+        #[arg(
+            long,
+            requires_all = ["category", "type"],
+            conflicts_with_all = ["match_all", "match_any"]
+        )]
         name_filter: Option<String>,
 
         /// Scope filter as key=value; repeatable across different keys, at most
         /// once per key. Keys: service, environment, team. Multiple keys AND together.
-        #[arg(long)]
+        /// Legacy: needs --category and --type, and cannot be combined with
+        /// --match-all or --match-any.
+        #[arg(
+            long,
+            requires_all = ["category", "type"],
+            conflicts_with_all = ["match_all", "match_any"]
+        )]
         scope: Vec<String>,
 
         /// First row of the page window (0-based; default 0).
@@ -2811,22 +2917,79 @@ Examples:
         #[arg(long)]
         end_row: Option<i64>,
     },
-    /// Show the daily health status history for a resource.
+    /// Show the daily health status history for one or more resources.
     #[command(after_help = "\
 Examples:
-  cx infra resources health-history \"1001234:host_id=i-abc123\"")]
+  cx infra resources health-history \"1001234:host_id=i-abc\" \"1001234:host_id=i-def\"
+
+At most 100 resource IDs per call.")]
     HealthHistory {
-        /// Resource ID, exactly as returned by `cx infra resources list`.
-        resource_id: String,
+        /// Resource IDs, exactly as returned by `cx infra resources list`.
+        #[arg(num_args = 1.., required = true)]
+        resource_ids: Vec<String>,
+    },
+    /// Show which resources changed configuration over a window.
+    #[command(after_help = "\
+Examples:
+  cx infra resources config-changes --resource-id \"1001234:host_id=i-abc\" --from now-24h
+  cx infra resources config-changes --resource-id \"1001234:host_id=i-abc\" \
+--resource-id \"1001234:host_id=i-def\" --from now-7d --to now-1d
+
+A resource that did not change is absent from the output. One row per resource and source:
+a resource reported by two collectors has two independent histories. At most 100 resource IDs.")]
+    ConfigChanges {
+        #[arg(long = "resource-id", num_args = 1.., required = true)]
+        resource_ids: Vec<String>,
+
+        /// Start of the window. Accepts `now-24h` or ISO-8601.
+        #[arg(long)]
+        from: String,
+
+        /// End of the window (default: now). Accepts `now-1d` or ISO-8601.
+        #[arg(long)]
+        to: Option<String>,
+    },
+    /// Compare resource configurations across a window, field by field.
+    #[command(after_help = "\
+Examples:
+  cx infra resources config-diff --resource-id \"1001234:host_id=i-abc\" --from now-24h
+  cx infra resources config-diff --resource-id \"1001234:host_id=i-abc\" --from now-7d --to now-1d
+
+Outcomes: changed, unchanged, created, priorStateUnavailable, comparisonUnavailable.
+At most 100 resource IDs.
+
+Narrow the window around a single change and --from/--to resolve to the
+versions either side of it.")]
+    ConfigDiff {
+        #[arg(long = "resource-id", num_args = 1.., required = true)]
+        resource_ids: Vec<String>,
+
+        /// Start of the window. Accepts `now-24h` or ISO-8601.
+        #[arg(long)]
+        from: String,
+
+        /// End of the window (default: now). Accepts `now-1d` or ISO-8601.
+        #[arg(long)]
+        to: Option<String>,
     },
     /// Fetch the raw resource document as JSON.
     #[command(after_help = "\
 Examples:
   cx infra resources raw-data \"1001234:host_id=i-abc123\"
-  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json")]
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" -o json
+  cx infra resources raw-data \"1001234:host_id=i-abc123\" --timestamp now-7d
+
+Output carries the document under `raw_data` and the version it actually is
+under `version_timestamp`.")]
     RawData {
         /// Resource ID, exactly as returned by `cx infra resources list`.
         resource_id: String,
+
+        /// Return the newest version at or before this time, rather than the
+        /// current one. Accepts `now-7d` or ISO-8601, resolved by the CLI to an
+        /// RFC 3339 instant at nanosecond precision.
+        #[arg(long)]
+        timestamp: Option<String>,
     },
 }
 
@@ -2943,6 +3106,199 @@ Examples:
     },
 }
 
+#[derive(Subcommand)]
+enum ProfilingCmd {
+    /// List profiled services, ranked by CPU+wall seconds (cpu) or
+    /// allocated+heap bytes (memory), highest first.
+    #[command(after_help = "\
+Examples:
+  cx profiling services --category cpu
+  cx profiling services --category memory --environment production --limit 5
+  cx profiling services --category cpu --limit 20 --offset 20")]
+    Services(ProfilingServicesArgs),
+    /// Show a profiled service's language and which profile types have data.
+    #[command(after_help = "\
+Examples:
+  cx profiling metadata checkout
+  cx profiling metadata checkout --start now-24h")]
+    Metadata(ProfilingMetadataArgs),
+    /// List the label keys a service's profiles can be filtered by, with
+    /// their values.
+    #[command(after_help = "\
+Examples:
+  cx profiling filters checkout --profile-type cpu
+  cx profiling filters checkout --profile-type cpu --filter deployment.environment.name=production")]
+    Filters(ProfilingFiltersArgs),
+    /// Show one profile type's usage over time, split by service, pod, or any
+    /// label, keeping the series with the highest totals.
+    #[command(after_help = "\
+Examples:
+  cx profiling metrics checkout --profile-type cpu
+  cx profiling metrics checkout --profile-type cpu --sum-by k8s.pod.name --limit 5
+  cx profiling metrics checkout --profile-type memory-heap-bytes --sum-by service.version --start now-24h")]
+    Metrics(ProfilingMetricsArgs),
+    /// Show a decoded flame graph plus the functions with the highest self
+    /// value. Large services can take ~40s; avoid a short --http-timeout.
+    #[command(after_help = "\
+Examples:
+  cx profiling flame-graph checkout --profile-type cpu
+  cx profiling flame-graph checkout --profile-type cpu --filter k8s.pod.name=checkout-7d9f --top-functions 10
+  cx profiling flame-graph checkout --profile-type memory-allocation-bytes --min-node-ratio 0.05 --max-depth 15")]
+    FlameGraph(ProfilingFlameGraphArgs),
+}
+
+#[derive(Args)]
+struct ProfilingServicesArgs {
+    /// Ranking category: `cpu` or `memory`.
+    #[arg(long)]
+    category: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Only services in this `deployment.environment.name`. Repeatable.
+    #[arg(long = "environment")]
+    environments: Vec<String>,
+
+    /// Max services to return (1-100).
+    #[arg(long, default_value_t = 20)]
+    limit: u32,
+
+    /// Number of ranked services to skip, for paging.
+    #[arg(long, default_value_t = 0)]
+    offset: u32,
+
+    /// Include each service's usage time series.
+    #[arg(long)]
+    include_time_series: bool,
+}
+
+#[derive(Args)]
+struct ProfilingMetadataArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+}
+
+#[derive(Args)]
+struct ProfilingFiltersArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Profile type: cpu, wall, memory-allocation-bytes,
+    /// memory-allocation-objects, memory-heap-bytes, or memory-heap-objects.
+    #[arg(long)]
+    profile_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Narrow the values by a filter: `key=v1,v2`, `key!=v1,v2`,
+    /// `key:exists`, or `key:not-exists`. Repeatable; filters AND together.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Max values listed per key (sorted); the total count is always shown.
+    #[arg(long, default_value_t = 50)]
+    max_values_per_key: usize,
+}
+
+#[derive(Args)]
+struct ProfilingMetricsArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Profile type: cpu, wall, memory-allocation-bytes,
+    /// memory-allocation-objects, memory-heap-bytes, or memory-heap-objects.
+    #[arg(long)]
+    profile_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Filter: `key=v1,v2`, `key!=v1,v2`, `key:exists`, or `key:not-exists`.
+    /// Repeatable; filters AND together.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Split series by `service`, `pod`, or any filter key
+    /// (see `cx profiling filters`).
+    #[arg(long, default_value = "service")]
+    sum_by: String,
+
+    /// Max time buckets per series.
+    #[arg(long, default_value_t = 60)]
+    max_buckets: u32,
+
+    /// Max series to return, highest total first.
+    #[arg(long, default_value_t = 10)]
+    limit: usize,
+}
+
+#[derive(Args)]
+struct ProfilingFlameGraphArgs {
+    /// Service name, as listed by `cx profiling services`.
+    service: String,
+
+    /// Profile type: cpu, wall, memory-allocation-bytes,
+    /// memory-allocation-objects, memory-heap-bytes, or memory-heap-objects.
+    #[arg(long)]
+    profile_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now-1h")]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long, default_value = "now")]
+    end: String,
+
+    /// Filter: `key=v1,v2`, `key!=v1,v2`, `key:exists`, or `key:not-exists`.
+    /// Repeatable; filters AND together.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Include kernel frames.
+    #[arg(long)]
+    show_kernel: bool,
+
+    /// Drop tree nodes below this fraction of the total (>= 0.001, the
+    /// server's own prune ratio, and < 1). Top functions always use the
+    /// full tree.
+    #[arg(long, default_value_t = 0.01)]
+    min_node_ratio: f64,
+
+    /// Drop tree nodes deeper than this many levels below the root.
+    #[arg(long)]
+    max_depth: Option<u32>,
+
+    /// Number of functions to list by self value.
+    #[arg(long, default_value_t = 20)]
+    top_functions: usize,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -2963,7 +3319,10 @@ async fn main() -> Result<()> {
 
     // Check if this is a profiles command - use separate parser without global API flags.
     // Only works when `profiles` is the first arg (no global flags before it).
-    if std::env::args().nth(1).as_deref() == Some("profiles") {
+    if matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("profiles" | "profile")
+    ) {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
@@ -2976,6 +3335,7 @@ async fn main() -> Result<()> {
                 region,
                 api_key,
                 oauth,
+                signup,
                 force,
                 set_default,
                 disable_olly,
@@ -2986,6 +3346,7 @@ async fn main() -> Result<()> {
                     region,
                     api_key,
                     oauth,
+                    signup,
                     force,
                     set_default,
                     disable_olly,
@@ -2993,6 +3354,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3071,6 +3433,7 @@ async fn main() -> Result<()> {
                 region,
                 api_key,
                 oauth,
+                signup,
                 force,
                 set_default,
                 disable_olly,
@@ -3081,6 +3444,7 @@ async fn main() -> Result<()> {
                     region,
                     api_key,
                     oauth,
+                    signup,
                     force,
                     set_default,
                     disable_olly,
@@ -3088,6 +3452,7 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
@@ -3122,6 +3487,7 @@ async fn main() -> Result<()> {
     if let Commands::Init {
         url,
         oauth,
+        signup,
         no_skills,
         global_skills,
         local_skills,
@@ -3141,6 +3507,7 @@ async fn main() -> Result<()> {
             region: cli.region,
             api_key: cli.api_key,
             oauth,
+            signup,
             install_skills: !no_skills,
             agents,
             scope,
@@ -3285,9 +3652,14 @@ async fn main() -> Result<()> {
                 // guidance. The two lines above are the entire first-run story.
                 std::process::exit(1);
             }
-            eprintln!("Configuration error: {error}");
-            eprintln!("Run `cx profiles add` to set up credentials.");
-            return Err(error);
+            // The error already names the fix (for example `cx profiles add
+            // <name>`). Exit here instead of returning it: propagating it
+            // would print the same message a second time as `Error: ...`,
+            // and a generic `cx profiles add` line would sit beside the
+            // specific instruction already in the error. `{:?}` keeps a
+            // single copy of the cause chain (parse errors, and so on).
+            eprintln!("Configuration error: {error:?}");
+            std::process::exit(1);
         }
     };
 
@@ -3297,6 +3669,11 @@ async fn main() -> Result<()> {
         cli.http_timeout.map(std::time::Duration::from_secs),
     )?;
     let agent_mode = safety::is_agent_mode();
+
+    // Report onboarding for any profile whose report hasn't gone through yet
+    // (see `onboarding`); a no-op once settled. Runs alongside the command and
+    // is awaited below.
+    let onboarding_task = tokio::spawn(onboarding::report_pending(targets.clone()));
 
     // Wrap the dispatch in an async block so we can capture its Result and
     // always run the update notice afterwards (even on error).
@@ -4657,32 +5034,92 @@ async fn main() -> Result<()> {
                     InfraResourcesCmd::Types => {
                         commands::infra::run_types(&targets, output).await?;
                     }
+                    InfraResourcesCmd::Filters { category, r#type } => {
+                        commands::infra::run_filters(
+                            &targets,
+                            category.as_deref(),
+                            r#type.as_deref(),
+                            output,
+                        )
+                        .await?;
+                    }
                     InfraResourcesCmd::List {
                         category,
                         r#type,
+                        match_all,
+                        match_any,
                         name_filter,
                         scope,
                         start_row,
                         end_row,
                     } => {
-                        commands::infra::run_list(
+                        if name_filter.is_some() || !scope.is_empty() {
+                            commands::infra::run_list_legacy(
+                                &targets,
+                                category.as_deref(),
+                                r#type.as_deref(),
+                                name_filter.as_deref(),
+                                &scope,
+                                commands::infra::PageWindow { start_row, end_row },
+                                output,
+                            )
+                            .await?;
+                        } else {
+                            commands::infra::run_list(
+                                &targets,
+                                category.as_deref(),
+                                r#type.as_deref(),
+                                &match_all,
+                                &match_any,
+                                commands::infra::PageWindow { start_row, end_row },
+                                output,
+                            )
+                            .await?;
+                        }
+                    }
+                    InfraResourcesCmd::HealthHistory { resource_ids } => {
+                        commands::infra::run_health_history(&targets, &resource_ids, output)
+                            .await?;
+                    }
+                    InfraResourcesCmd::ConfigChanges {
+                        resource_ids,
+                        from,
+                        to,
+                    } => {
+                        commands::infra::run_config_changes(
                             &targets,
-                            &category,
-                            &r#type,
-                            name_filter.as_deref(),
-                            &scope,
-                            start_row,
-                            end_row,
+                            &resource_ids,
+                            &from,
+                            to.as_deref(),
                             output,
                         )
                         .await?;
                     }
-                    InfraResourcesCmd::HealthHistory { resource_id } => {
-                        commands::infra::run_health_history(&targets, &resource_id, output)
-                            .await?;
+                    InfraResourcesCmd::ConfigDiff {
+                        resource_ids,
+                        from,
+                        to,
+                    } => {
+                        commands::infra::run_config_diff(
+                            &targets,
+                            &resource_ids,
+                            &from,
+                            to.as_deref(),
+                            output,
+                        )
+                        .await?;
                     }
-                    InfraResourcesCmd::RawData { resource_id } => {
-                        commands::infra::run_raw_data(&targets, &resource_id, output).await?;
+                    InfraResourcesCmd::RawData {
+                        resource_id,
+                        timestamp,
+                    } => {
+                        commands::infra::run_raw_data(
+                            &targets,
+                            &resource_id,
+                            timestamp.as_deref(),
+                            output,
+                        )
+                        .await?;
                     }
                 },
             },
@@ -4746,6 +5183,111 @@ async fn main() -> Result<()> {
                         &group_by,
                         &filters,
                         &aggregation,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+
+            Commands::Profiling { cmd } => match cmd {
+                ProfilingCmd::Services(ProfilingServicesArgs {
+                    category,
+                    start,
+                    end,
+                    environments,
+                    limit,
+                    offset,
+                    include_time_series,
+                }) => {
+                    commands::profiling::run_services(
+                        &targets,
+                        &category,
+                        &start,
+                        &end,
+                        &environments,
+                        limit,
+                        offset,
+                        include_time_series,
+                        output,
+                    )
+                    .await?;
+                }
+                ProfilingCmd::Metadata(ProfilingMetadataArgs {
+                    service,
+                    start,
+                    end,
+                }) => {
+                    commands::profiling::run_metadata(&targets, &service, &start, &end, output)
+                        .await?;
+                }
+                ProfilingCmd::Filters(ProfilingFiltersArgs {
+                    service,
+                    profile_type,
+                    start,
+                    end,
+                    filters,
+                    max_values_per_key,
+                }) => {
+                    commands::profiling::run_filters(
+                        &targets,
+                        &service,
+                        &profile_type,
+                        &start,
+                        &end,
+                        &filters,
+                        max_values_per_key,
+                        output,
+                    )
+                    .await?;
+                }
+                ProfilingCmd::Metrics(ProfilingMetricsArgs {
+                    service,
+                    profile_type,
+                    start,
+                    end,
+                    filters,
+                    sum_by,
+                    max_buckets,
+                    limit,
+                }) => {
+                    commands::profiling::run_metrics(
+                        &targets,
+                        &service,
+                        &profile_type,
+                        &start,
+                        &end,
+                        &filters,
+                        &sum_by,
+                        max_buckets,
+                        limit,
+                        output,
+                    )
+                    .await?;
+                }
+                ProfilingCmd::FlameGraph(ProfilingFlameGraphArgs {
+                    service,
+                    profile_type,
+                    start,
+                    end,
+                    filters,
+                    show_kernel,
+                    min_node_ratio,
+                    max_depth,
+                    top_functions,
+                }) => {
+                    commands::profiling::run_flame_graph(
+                        &targets,
+                        &service,
+                        &profile_type,
+                        &start,
+                        &end,
+                        &filters,
+                        commands::profiling::FlameGraphOptions {
+                            show_kernel,
+                            min_node_ratio,
+                            max_depth,
+                            top_functions,
+                        },
                         output,
                     )
                     .await?;
@@ -4827,6 +5369,9 @@ async fn main() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     }
     .await;
+
+    // Bounded by the report's own timeout; errors are already swallowed.
+    let _ = onboarding_task.await;
 
     // Print update notice after command output so it doesn't scroll off.
     // Using a separate result variable (rather than ?) ensures the notice

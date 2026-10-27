@@ -16,10 +16,10 @@
 //! `cx profiles add`:
 //!
 //! * **Quick (interactive)** — bare `cx init` on a terminal. Guided prompts:
-//!   OAuth browser login (no auth-method question) and a region prompt.
-//!   Credential storage, output format, and label are defaulted
-//!   (file / JSON / none) rather than asked; Olly is enabled on the first
-//!   profile without asking.
+//!   OAuth browser login (no auth-method question), a region prompt, and where
+//!   to store the secret (OS keychain preselected; `file` is the other choice).
+//!   Output format and label are defaulted (JSON / none) rather than asked;
+//!   Olly is enabled on the first profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or
 //!   there is no terminal). The flags make the *profile* step prompt-free; the
 //!   skills step still asks its scope question unless `--global-skills`/
@@ -59,6 +59,8 @@ pub struct InitArgs {
     pub api_key: Option<String>,
     /// `--oauth`: force OAuth browser login even when an API key is available.
     pub oauth: bool,
+    /// `--signup`: create a new Coralogix account in the browser (implies OAuth).
+    pub signup: bool,
     /// Whether to run the skills install step (`--no-skills` turns it off).
     pub install_skills: bool,
     /// `--agent`: agents passed through to the skills installer.
@@ -81,6 +83,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         region,
         api_key,
         oauth,
+        signup,
         install_skills,
         agents,
         scope,
@@ -91,11 +94,12 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     // Idempotent: skip profile setup when the user already has one. A fresh run
     // creates the first (and thus default) profile — no name / set-default
     // prompts to worry about.
-    if list_profile_names()?.is_empty() {
+    let had_profile = !list_profile_names()?.is_empty();
+    if !had_profile {
         // Auth: quick mode (bare `cx init`, no key) defaults to OAuth without
         // asking the auth-method question; an explicit key uses the API-key
         // path; `--oauth` forces OAuth regardless.
-        let oauth = oauth || api_key.is_none();
+        let oauth = oauth || signup || api_key.is_none();
 
         println!("Setting up your Coralogix profile...\n");
         profiles::run_add(profiles::AddArgs {
@@ -104,6 +108,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
             region,
             api_key,
             oauth,
+            signup,
             force: false,
             set_default: false,
             // `cx init` always enables Olly on the first profile - no opt-out.
@@ -114,6 +119,16 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
         .await?;
     } else {
         println!("A Coralogix profile is already configured - skipping profile setup.");
+        // The profile flags only apply to a fresh setup. Say so, rather than
+        // silently verifying and reporting the existing default profile — the
+        // caller may have meant to sign in to a different team.
+        if url.is_some() || region.is_some() || api_key.is_some() || oauth {
+            eprintln!(
+                "note: --url / --region / --api-key / --oauth are ignored because a profile \
+                 already exists. To set up another team, run \
+                 `cx profiles add <name> --oauth --url <url> --set-default` first."
+            );
+        }
     }
 
     // ── Step 2: verify credentials ────────────────────────────────────────────────
@@ -130,6 +145,15 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
     // Custom / BYOC endpoints skip the probe (returns `false`) — see
     // `verify_credentials` — since they may not expose the whoami route.
     let verified = verify_credentials().await?;
+
+    // Record the user as onboarded even when the profile already existed: the
+    // in-app setup screen waits for this report, and a user who had cx set up
+    // before still runs `cx init` from the copied prompt. A freshly created
+    // profile was already reported by `profiles::run_add`. After the
+    // credential check, so bad credentials don't send a doomed report.
+    if had_profile {
+        profiles::report_onboarding(None).await;
+    }
 
     // ── Step 3: skills ──────────────────────────────────────────────────────────
     // Idempotent, like the profile step: if cx skills are already installed,

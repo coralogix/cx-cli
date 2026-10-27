@@ -85,8 +85,8 @@ Language-level references (DataPrime syntax, PromQL guidelines) and telemetry-pi
 | `skills/shared/logs-querying.md` | Log data model, field discovery, investigation workflow, common patterns |
 | `skills/shared/spans-querying.md` | Span data model, duration units, error detection, investigation patterns |
 | `skills/shared/metrics-querying.md` | Metrics CLI workflow (search → query → range), common patterns, principles |
-| `skills/shared/rum-querying.md` | RUM data model, event types, error detection, web vitals queries |
-| `skills/shared/rum-fields.md` | Complete RUM field catalog by event type (`$d.cx_rum.*`) |
+| `skills/shared/rum-querying.md` | RUM `rum.events` dataset, event types, error detection, web vitals queries |
+| `skills/shared/rum-fields.md` | Complete RUM field catalog by event type (`rum.events` dataset, `$d.*`) |
 
 ### Skill-local reference files
 

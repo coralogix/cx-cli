@@ -128,6 +128,7 @@ pub fn run_list(
                 .collect();
             println!("{}", serde_json::to_string_pretty(&json_items)?);
         }
+        OutputFormat::Yaml => {
         OutputFormat::Toon => {
             let agent_items: Vec<_> = items
                 .iter()
@@ -211,6 +212,7 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
+        OutputFormat::Yaml => {
         OutputFormat::Toon => {
             let json = serde_json::json!({
                 "name": name,
@@ -328,6 +330,7 @@ pub fn render_results(
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&merged.rows)?);
         }
+        OutputFormat::Yaml => {
         OutputFormat::Toon => {
             if merged.is_aggregate {
                 let toon = toon_encode(&merged.rows)

@@ -123,8 +123,11 @@ async fn run_catalog_json_output_succeeds() {
 async fn delete_dashboard_from_mock() {
     let server = MockServer::start().await;
 
+    let dash_id = "nPl9zg5A61iJ75CtN2FDB";
     Mock::given(method("DELETE"))
-        .and(path("/mgmt/openapi/5/dashboards/dashboards/v1/dash-abc"))
+        .and(path(format!(
+            "/mgmt/openapi/5/dashboards/dashboards/v1/{dash_id}"
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
         .mount(&server)
@@ -133,7 +136,7 @@ async fn delete_dashboard_from_mock() {
     let target = common::test_target("mock-profile", &server.uri());
     let targets = vec![target];
 
-    run_delete(&targets, "dash-abc")
+    run_delete(&targets, dash_id)
         .await
         .expect("run_delete should succeed");
 }
@@ -477,7 +480,9 @@ async fn run_check_by_id_sends_dashboard_id_in_body() {
 
     Mock::given(method("POST"))
         .and(path(CHECK_PATH))
-        .and(body_partial_json(json!({ "dashboardId": "dash-abc-123" })))
+        .and(body_partial_json(
+            json!({ "dashboardId": "nPl9zg5A61iJ75CtN2FDB" }),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "issues": [] })))
         .expect(1)
         .mount(&server)
@@ -486,9 +491,14 @@ async fn run_check_by_id_sends_dashboard_id_in_body() {
     let target = common::test_target("mock-profile", &server.uri());
     let targets = vec![target];
 
-    run_check(&targets, None, Some("dash-abc-123"), OutputFormat::Text)
-        .await
-        .expect("run_check by id should succeed");
+    run_check(
+        &targets,
+        None,
+        Some("nPl9zg5A61iJ75CtN2FDB"),
+        OutputFormat::Text,
+    )
+    .await
+    .expect("run_check by id should succeed");
 }
 
 /// Verify that `run_check` renders issues as a JSON array in json output mode.

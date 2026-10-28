@@ -10,6 +10,18 @@ description: Fleet/aggregate analytics across many cases via the `system/labs.ca
 This skill covers two things and only two things: (1) the schema of `system/labs.cases.state_updates`, and (2) the case-counting conventions (1h minimum window, dedupe per `caseId`).
 Use the schema in this skill to know **what fields exist and what they mean**, and use `dataprime` to know **how to shape the query around them**.
 
+## Running these queries with the CLI
+
+Every query below runs through `cx dataprime query`. Set the window with `--start` / `--end` (relative like `now-7d` or ISO 8601). There is no `--from` flag, and the default window is only the last hour.
+
+```bash
+cx dataprime query "source system/labs.cases.state_updates
+  | dedupeby caseId orderby \$m.timestamp desc
+  | choose caseId, caseNumber, title, status, priority" --start now-24h
+```
+
+Wrap the query in double quotes. String literals inside it use single quotes, and `$m` / `$d` must be escaped as `\$m` / `\$d` so the shell does not expand them. Add `-o json` when you need to parse the result.
+
 ## Dataset: `system/labs.cases.state_updates`
 Data for this dataset is only available from June 8th, 2026 onward. If a query requests earlier dates, inform the user that data starts from this date and adjust the query window accordingly.
 A single events dataset that captures every state-change emitted by the Cases service, plus periodic **heartbeat** events for cases that are still active but otherwise inactive (so an open case still shows up inside a query window even when nothing happened to it). All queries in this skill target this dataset.
@@ -195,6 +207,65 @@ Per-element fields:
 | `state` | `TRIGGERED` (still firing) / `RESOLVED` / `NO_DATA` (signal dropped, **not** a recovery) / `MUTED`. |
 | `triggeredAt` / `resolvedAt` | Indicator-side timing (different from case-level resolution). |
 
+#### Generic indicators — non-alert sources
+
+`indicators.genericIndicators[]` — indicators from a source that is not a Coralogix alert. This is where a case's non-alert provenance lives; there is **no top-level `source` field on a case**, so this array is the only way to tell what opened it.
+
+| Field | Meaning |
+|---|---|
+| `indicatorType` | The non-alert source type, e.g. `ERROR_TRACKING`. |
+| `externalId` | The originating system's stable key for the problem. It is also the dedup key: one unresolved case per `(team, indicatorType, externalId)`, and a recurrence reopens rather than forking. |
+| `instanceId` | The indicator's own UUID. |
+| `status` | `TRIGGERED` / `RESOLVED`. |
+| `priority` | `P1`–`P5`, indicator-side (independent of case priority). |
+| `labels` | Flat `{key: value}` map. |
+| `metadata` | **Free-form JSON object**, shaped by the producing system — not a string map, so values may be nested objects, numbers or lists. Deliberately separate from `labels` so source provenance does not pollute the routing namespace. |
+| `entityLinks` | URLs to the originating entity. |
+| `lastTriggeredAt` / `lastResolvedAt` | Indicator-side timing. |
+
+`metadata` is set at creation and there is no API to change it afterwards, so treat it as a fixed record of where the case came from.
+
+**Cases opened by a given non-alert source, most recent first:**
+
+```
+source system/labs.cases.state_updates
+  | dedupeby caseId orderby $m.timestamp desc
+  | explode indicators.genericIndicators into gi
+  | filter gi.indicatorType == 'ERROR_TRACKING'
+  | choose caseId, caseNumber, title, status, priority,
+           gi.externalId as dedup_key, gi.metadata as source_metadata, createdAt
+  | orderby createdAt desc
+```
+
+To narrow further, reach into the metadata (`filter gi.metadata.<key> == '<value>'`) — but confirm the key name from a sample row first, since the shape is owned by the producer, not by this schema.
+
+#### Case relationships (parent / child)
+
+`relationship` — the case's place in a parent-child hierarchy. **Absent entirely for a standalone case**, so test for null before reading it.
+
+| Shape | Meaning |
+|---|---|
+| `{"type": "PARENT"}` | This case is a parent. Its children are **not** inlined — find them by querying for cases whose `relationship.parentCaseId` is this `caseId`. |
+| `{"type": "CHILD", "parentCaseId": "<uuid>"}` | This case is a child of that case. |
+
+Note the discriminator is **`type`**, not `$type` — unlike `metadata.change`, `assignee` and `closedBy`, which use `$type`. This is the easiest thing to get wrong here.
+
+Structural guarantees, which make these queries simpler than they look: a case has **at most one parent**, is **either a parent or a child but never both**, and a parent has **at most 100 children**. The hierarchy is therefore exactly one level deep and cannot contain cycles.
+
+**A parent and its children in one result:**
+
+```
+source system/labs.cases.state_updates
+  | dedupeby caseId orderby $m.timestamp desc
+  | filter relationship != null
+  | filter caseId == '<parent-uuid>' || relationship.parentCaseId == '<parent-uuid>'
+  | choose caseId, caseNumber, title, status, priority, relationship.type as rel
+```
+
+**Linking is not visible as its own event.** A link emits a state-update on both cases with `metadata.trigger == 'caseUpdated'` and no `metadata.change`, so you cannot find "when was this linked" by filtering on a trigger. Detect links from the current `relationship` value, or by diffing it across rows ordered by `$m.timestamp`.
+
+`muteStatus` is the related signal: linking a case as a child mutes it by default, and a child muted that way records a mute source of `AUTOMATIC_LINKING`.
+
 #### Permutations & labels (routing / attribution)
 
 `permutations` — the actual observed label combinations that produced this case. Each element of `permutations` is a **permutation-group**: a list of `{key, value, permutationIndex}` objects representing one real co-occurring set of key/value pairs.
@@ -223,6 +294,19 @@ Per-element fields:
 #### Other fields
 
 `aiSummary` is a pre-computed string. Treat it as one input among many — never the source of truth.
+
+Also present on every row, and worth knowing because they are easy to miss:
+
+| Field | Meaning |
+|---|---|
+| `caseUrl` | Deep link to the case in the console. Prefer it over building a URL by hand. |
+| `labelsFlat` | The case's labels as flat `key=value` strings, which is usually easier to filter on than the nested `labels` map. |
+| `muteStatus` | Whether notifications are suppressed, and why. A child case muted by linking records a source of `AUTOMATIC_LINKING`. |
+| `resolutionCode` | The structured reason a case was resolved, alongside the free-text `resolutionDetails.resolutionReason`. |
+| `lastReactivatedAt` | Set when a resolved case was reopened by a recurrence of the same indicator. Non-null means this case has fired more than once. |
+| `ollyAnalysis` | Olly's stored analysis of the case, when one has been generated. |
+| `schemaVersion` | Payload version. Check it before relying on a field this reference does not list. |
+
 `$m.timestamp` is the **event timestamp** (when the state-update was emitted) and is what you order by. `createdAt` (or `$d.createdAt`) is the **case creation time**.
 
 ## Hard rules (ALWAYS apply)

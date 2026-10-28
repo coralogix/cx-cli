@@ -29,6 +29,74 @@ pub fn normalize_priority(input: &str) -> Result<String> {
     }
 }
 
+/// Normalize the initial status of a manually created case. The create
+/// endpoint accepts only ACTIVE and ACKNOWLEDGED.
+pub fn normalize_initial_status(input: &str) -> Result<String> {
+    let upper = input.trim().to_uppercase();
+    let bare = upper.strip_prefix("CASE_STATUS_").unwrap_or(&upper);
+    match bare {
+        "ACTIVE" | "ACKNOWLEDGED" => Ok(format!("CASE_STATUS_{bare}")),
+        _ => Err(anyhow!(
+            "invalid initial status '{input}': a new case can only start as ACTIVE or ACKNOWLEDGED"
+        )),
+    }
+}
+
+/// Parse a `key=value` label argument. The value may itself contain `=`.
+pub fn parse_label(input: &str) -> Result<(String, String)> {
+    match input.split_once('=') {
+        Some((k, v)) if !k.trim().is_empty() => Ok((k.trim().to_string(), v.to_string())),
+        _ => Err(anyhow!("invalid label '{input}': expected key=value")),
+    }
+}
+
+/// Fields of a manually created case, as given on the command line.
+pub struct CreateCaseArgs<'a> {
+    pub title: &'a str,
+    pub description: &'a str,
+    pub priority: &'a str,
+    pub labels: &'a [String],
+    pub assignee: Option<&'a str>,
+    pub status: Option<&'a str>,
+}
+
+/// Build the `CreateCaseRequest` body, validating and normalizing enums and
+/// labels. The assignee is left out: it is resolved per profile.
+fn build_create_body(args: &CreateCaseArgs<'_>) -> Result<Value> {
+    if args.title.trim().is_empty() {
+        return Err(anyhow!("--title must not be empty"));
+    }
+    if args.description.trim().is_empty() {
+        return Err(anyhow!(
+            "--description must not be empty: it is the only context a manual case carries"
+        ));
+    }
+    let mut body = serde_json::Map::new();
+    body.insert("title".into(), Value::String(args.title.to_string()));
+    body.insert(
+        "description".into(),
+        Value::String(args.description.to_string()),
+    );
+    body.insert(
+        "priority".into(),
+        Value::String(normalize_priority(args.priority)?),
+    );
+    if !args.labels.is_empty() {
+        let labels = args
+            .labels
+            .iter()
+            .map(|l| {
+                parse_label(l).map(|(key, value)| serde_json::json!({ "key": key, "value": value }))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        body.insert("labels".into(), Value::Array(labels));
+    }
+    if let Some(s) = args.status {
+        body.insert("status".into(), Value::String(normalize_initial_status(s)?));
+    }
+    Ok(Value::Object(body))
+}
+
 /// Rewrite the `assignee.userId` inside a raw case payload (as returned by
 /// the API) to a `{ "email": ... }` shape so consumers never see opaque IDs.
 /// When the directory has no entry, the original value is preserved as
@@ -275,6 +343,101 @@ fn str_field(value: &Value, key: &str) -> String {
 }
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
+
+/// Create a case manually. The case is not linked to any indicator, so the
+/// Cases service never updates, resolves, or reopens it on its own — the user
+/// owns its whole lifecycle, and the description is its only context.
+pub async fn run_create(
+    targets: &[Arc<ExecutionTarget>],
+    args: &CreateCaseArgs<'_>,
+    output: OutputFormat,
+) -> Result<()> {
+    // Validate up front, so bad input fails once instead of once per profile.
+    let base_body = build_create_body(args)?;
+
+    eprintln!(
+        "{}",
+        format!("Creating case '{}'...", args.title.trim()).dimmed()
+    );
+
+    let assignee = args.assignee.map(String::from);
+    let per_profile = fan_out(targets, |t| {
+        let mut body = base_body.clone();
+        let assignee = assignee.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            // Same email → user ID resolution as `assign`; the directory is
+            // fetched only when needed, and reused to show the email back.
+            let mut directory = None;
+            if let Some(input) = assignee {
+                let user_id = if input.contains('@') {
+                    let dir = api.teammate_directory().await.map_err(|e| {
+                        anyhow!(
+                            "failed to fetch team members to resolve email '{input}': {e:#}\n\
+                             hint: pass the user ID directly: --assignee <user-id>."
+                        )
+                    })?;
+                    let uid = dir.resolve_to_user_id(&input)?;
+                    directory = Some(dir);
+                    uid
+                } else {
+                    input
+                };
+                body["assignee"] = serde_json::json!({ "userId": user_id });
+            }
+            let mut result = api.create(&body).await?;
+            if let (Some(case), Some(dir)) = (result.get_mut("case"), directory.as_ref()) {
+                substitute_assignee_email(case, dir);
+            }
+            Ok::<_, anyhow::Error>(result)
+        }
+    })
+    .await;
+
+    let include_profile = targets.len() > 1;
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, mut v) in report_errors_and_collect_successes(per_profile)? {
+        let case = v.get("case");
+        let id = case
+            .and_then(|c| c.get("id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("-")
+            .to_string();
+        let readable = case
+            .and_then(|c| c.get("readableId"))
+            .and_then(|v| v.as_str())
+            .map(|r| format!(" ({r})"))
+            .unwrap_or_default();
+        eprintln!(
+            "{}",
+            format!("Created case {id}{readable} in profile '{profile}'.").green()
+        );
+        if id != "-" {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::case_url(b, &id)
+            })
+            .await;
+        }
+        if include_profile {
+            render::tag_get_result(&mut v, &profile);
+        }
+        all_results.push(v);
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Toon => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            // The created ID was already printed above.
+        }
+    }
+
+    Ok(())
+}
 
 pub async fn run_get(
     targets: &[Arc<ExecutionTarget>],
@@ -1035,6 +1198,67 @@ mod tests {
     fn normalize_priority_rejects_invalid() {
         assert!(normalize_priority("CRITICAL").is_err());
         assert!(normalize_priority("P9").is_err());
+    }
+
+    #[test]
+    fn normalize_initial_status_accepts_only_active_and_acknowledged() {
+        assert_eq!(
+            normalize_initial_status("active").unwrap(),
+            "CASE_STATUS_ACTIVE"
+        );
+        assert_eq!(
+            normalize_initial_status("CASE_STATUS_ACKNOWLEDGED").unwrap(),
+            "CASE_STATUS_ACKNOWLEDGED"
+        );
+        assert!(normalize_initial_status("RESOLVED").is_err());
+    }
+
+    #[test]
+    fn parse_label_splits_on_first_equals() {
+        assert_eq!(
+            parse_label("routing.team=a=b").unwrap(),
+            ("routing.team".to_string(), "a=b".to_string())
+        );
+        assert!(parse_label("no-equals").is_err());
+        assert!(parse_label("=value").is_err());
+    }
+
+    #[test]
+    fn build_create_body_normalizes_fields() {
+        let labels = vec!["service=payments".to_string()];
+        let body = build_create_body(&CreateCaseArgs {
+            title: "Payments latency",
+            description: "p99 up 3x since 10:00",
+            priority: "p2",
+            labels: &labels,
+            assignee: None,
+            status: Some("acknowledged"),
+        })
+        .unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "title": "Payments latency",
+                "description": "p99 up 3x since 10:00",
+                "priority": "CASE_PRIORITY_P2",
+                "labels": [{ "key": "service", "value": "payments" }],
+                "status": "CASE_STATUS_ACKNOWLEDGED"
+            })
+        );
+    }
+
+    #[test]
+    fn build_create_body_rejects_blank_description() {
+        let err = build_create_body(&CreateCaseArgs {
+            title: "t",
+            description: "  ",
+            priority: "P3",
+            labels: &[],
+            assignee: None,
+            status: None,
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("--description"));
     }
 
     fn directory() -> TeammateDirectory {

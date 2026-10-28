@@ -171,6 +171,7 @@ impl TeammateDirectory {
 // --- API client ---
 
 const CASES_BASE: &str = "/mgmt/openapi/5/cases/cases/v1";
+const CASES_CREATE: &str = "/mgmt/openapi/5/cases/cases/create/v1";
 const EVENTS_BASE: &str = "/mgmt/openapi/5/cases/events/v1";
 const PRIORITY_BASE: &str = "/mgmt/openapi/5/cases/priority-override/v1";
 const ASSIGNED_BASE: &str = "/mgmt/openapi/5/cases/assigned/v1";
@@ -196,6 +197,13 @@ impl<'a> CasesApi<'a> {
     pub async fn get(&self, id: &str) -> Result<Value> {
         let path = format!("{CASES_BASE}/{id}");
         self.client.get(&path, &[]).await
+    }
+
+    /// Create a case manually. The body is a `CreateCaseRequest` (title,
+    /// priority, and optional description, labels, assignee, status); the
+    /// created case is not linked to any indicator.
+    pub async fn create(&self, body: &Value) -> Result<Value> {
+        self.client.post(CASES_CREATE, body).await
     }
 
     /// Update a case (partial patch). The endpoint takes the updatable fields

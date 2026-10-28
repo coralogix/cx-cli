@@ -6,9 +6,9 @@ use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::cases::{
-    run_acknowledge, run_assign, run_clear_priority, run_close, run_comment, run_event_get,
-    run_events_list, run_get, run_notifications, run_resolve, run_set_priority, run_unassign,
-    run_update,
+    run_acknowledge, run_assign, run_clear_priority, run_close, run_comment, run_create,
+    run_event_get, run_events_list, run_get, run_notifications, run_resolve, run_set_priority,
+    run_unassign, run_update, CreateCaseArgs,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -483,4 +483,81 @@ async fn assign_case_resolves_email_to_user_id() {
     run_assign(&targets, "case-1", "alice@example.com", OutputFormat::Json)
         .await
         .expect("run_assign with email should succeed");
+}
+
+#[tokio::test]
+async fn create_case_posts_normalized_body() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/cases/cases/create/v1"))
+        .and(body_partial_json(json!({
+            "title": "Payments latency",
+            "description": "p99 up 3x since 10:00 UTC",
+            "priority": "CASE_PRIORITY_P2",
+            "labels": [{ "key": "routing.team", "value": "payments" }],
+            "assignee": { "userId": "user-1" },
+            "status": "CASE_STATUS_ACKNOWLEDGED"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "case": {
+                "id": "3f166e9f-3c88-4af2-b52e-138f339dab3e",
+                "readableId": "CASE-7",
+                "title": "Payments latency",
+                "status": "CASE_STATUS_ACKNOWLEDGED",
+                "priority": "CASE_PRIORITY_P2"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+    let labels = vec!["routing.team=payments".to_string()];
+
+    run_create(
+        &targets,
+        &CreateCaseArgs {
+            title: "Payments latency",
+            description: "p99 up 3x since 10:00 UTC",
+            priority: "P2",
+            labels: &labels,
+            assignee: Some("user-1"),
+            status: Some("acknowledged"),
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_create should succeed");
+}
+
+#[tokio::test]
+async fn create_case_rejects_invalid_priority_without_calling_api() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    let err = run_create(
+        &targets,
+        &CreateCaseArgs {
+            title: "t",
+            description: "d",
+            priority: "CRITICAL",
+            labels: &[],
+            assignee: None,
+            status: None,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("invalid priority should fail");
+    assert!(err.to_string().contains("invalid priority"));
 }

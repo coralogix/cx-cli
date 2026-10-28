@@ -107,14 +107,15 @@ main() {
 # Resolve the latest release by following the github.com/<repo>/releases/latest
 # redirect to /releases/tag/v<version>. This avoids api.github.com, whose
 # unauthenticated rate limit (60 req/hour per IP) breaks installs behind
-# shared NAT/egress IPs.
+# shared NAT/egress IPs. Uses a plain GET (not HEAD) because some corporate
+# proxies block HEAD requests; the response body is discarded.
 get_latest_version() {
     local url="https://github.com/${REPO}/releases/latest"
     local final_url
     if command -v curl > /dev/null 2>&1; then
-        final_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$url" || true)"
+        final_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' "$url" || true)"
     else
-        final_url="$(wget -S --spider "$url" 2>&1 | tr -d '\r' \
+        final_url="$(wget -S -O /dev/null "$url" 2>&1 | tr -d '\r' \
             | sed -n 's/^ *Location: *\([^ ]*\).*/\1/p' | tail -n 1 || true)"
     fi
     printf '%s' "$final_url" | sed -n 's|.*/releases/tag/v\([^/?#]*\).*|\1|p'

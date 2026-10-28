@@ -790,7 +790,7 @@ async fn store_oauth_tokens(
     match storage {
         CredentialStorage::File => Ok((
             CredentialStorage::File,
-            Some(oauth::tokens_to_stored(&tokens)),
+            Some(oauth::tokens_to_stored(tokens)),
             "profile file (OAuth tokens)",
         )),
         CredentialStorage::OsStore => {
@@ -814,7 +814,7 @@ async fn store_oauth_tokens(
                     );
                     Ok((
                         CredentialStorage::File,
-                        Some(oauth::tokens_to_stored(&tokens)),
+                        Some(oauth::tokens_to_stored(tokens)),
                         "profile file (OAuth tokens)",
                     ))
                 }

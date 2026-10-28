@@ -104,11 +104,8 @@ main() {
     say "Done! Run '${BINARY_NAME} --help' to get started."
 }
 
-# Resolve the latest release by following the github.com/<repo>/releases/latest
-# redirect to /releases/tag/v<version>. This avoids api.github.com, whose
-# unauthenticated rate limit (60 req/hour per IP) breaks installs behind
-# shared NAT/egress IPs. Uses a plain GET (not HEAD) because some corporate
-# proxies block HEAD requests; the response body is discarded.
+# Follow the releases/latest redirect instead of api.github.com (60 req/h per IP).
+# Plain GET, not HEAD: some proxies block HEAD.
 get_latest_version() {
     local url="https://github.com/${REPO}/releases/latest"
     local final_url

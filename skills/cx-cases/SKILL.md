@@ -5,8 +5,7 @@ description: >
   case", "assign a case", "resolve a case", "close a case", "comment on a case",
   "re-prioritize a case", "check case status", "see a case timeline", "check case
   notifications", "create a case", "open a case", "link cases", "find the parent
-  case", "find child cases", "find cases Olly opened", "find cases from a scheduled
-  task", or wants to inspect or drive Coralogix Cases through their lifecycle using
+  case", "find child cases", "find where a case came from", or wants to inspect or drive Coralogix Cases through their lifecycle using
   the cx CLI.
 metadata:
   version: "0.3.0"
@@ -93,8 +92,7 @@ cx cases create \
 
 A manual case is **fully managed by the user**:
 
-- **No indicators.** It is not linked to any alert, Error Tracking issue, or Olly
-  task. The Cases service never updates, auto-resolves, or reopens it — nothing
+- **No indicators.** It is not linked to any alert or Error Tracking issue. The Cases service never updates, auto-resolves, or reopens it — nothing
   will change its status but people. Whoever creates it owns driving it to
   `RESOLVED`/`CLOSED`.
 - **The description is the only context.** There are no alert definitions,
@@ -172,21 +170,16 @@ in the analytics reference.
 When triaging a child, read the parent first — the investigation usually lives
 there. When resolving a parent, check its children: they do not resolve with it.
 
-## Cases opened by Olly
+## Where a case came from
 
-A case has **no top-level source field**. Provenance lives on its indicators, so a
-case Olly opened carries a generic indicator with
-`indicatorType == "OLLY_SCHEDULED_TASK"` and a free-form `metadata` object naming the
-task and run it came from. That also means `cx cases` cannot filter for Olly's cases
-— see
-[Generic indicators](references/case-analytics.md#generic-indicators--non-alert-sources-including-olly)
+A case has **no top-level source field**. Provenance lives on its indicators: alert
+indicators for cases opened by an alert, and generic indicators (with an
+`indicatorType` and a free-form `metadata` object) for non-alert sources. That also
+means `cx cases` cannot filter by source — see
+[Generic indicators](references/case-analytics.md#generic-indicators--non-alert-sources)
 in the analytics reference for the query.
 
-Triage one the same way as any other case, with one addition: open the run link in
-the indicator's `metadata` to see the evidence Olly based the case on, and judge that
-evidence rather than taking the case's own summary at face value.
-
-The indicator's `externalId` is the dedup key. One unresolved case exists per key, and
+A generic indicator's `externalId` is the dedup key. One unresolved case exists per key, and
 a recurrence reopens the resolved case rather than forking a new one — so a case with
 a non-null `lastReactivatedAt` is a repeat, which is usually the more interesting
 signal than the current occurrence.
@@ -209,7 +202,7 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 - **Prefer muting over resolving** when the work is real but nobody is on it. A
   resolved case is a claim the system is healthy.
 - **A case has no source field** — provenance is on its indicators. See
-  "Cases opened by Olly". A case with no indicators at all was created manually.
+  "Where a case came from". A case with no indicators at all was created manually.
 - **Manual cases are user-owned** — nothing closes them automatically, and their
   description is the only context; write it to stand on its own.
 - **Multi-profile fan-out** with `-p <profile>` (repeatable) for cross-environment triage.

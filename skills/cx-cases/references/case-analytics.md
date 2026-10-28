@@ -207,37 +207,37 @@ Per-element fields:
 | `state` | `TRIGGERED` (still firing) / `RESOLVED` / `NO_DATA` (signal dropped, **not** a recovery) / `MUTED`. |
 | `triggeredAt` / `resolvedAt` | Indicator-side timing (different from case-level resolution). |
 
-#### Generic indicators — non-alert sources, including Olly
+#### Generic indicators — non-alert sources
 
 `indicators.genericIndicators[]` — indicators from a source that is not a Coralogix alert. This is where a case's non-alert provenance lives; there is **no top-level `source` field on a case**, so this array is the only way to tell what opened it.
 
 | Field | Meaning |
 |---|---|
-| `indicatorType` | `ERROR_TRACKING` or `OLLY_SCHEDULED_TASK`. |
+| `indicatorType` | The non-alert source type, e.g. `ERROR_TRACKING`. |
 | `externalId` | The originating system's stable key for the problem. It is also the dedup key: one unresolved case per `(team, indicatorType, externalId)`, and a recurrence reopens rather than forking. |
 | `instanceId` | The indicator's own UUID. |
 | `status` | `TRIGGERED` / `RESOLVED`. |
 | `priority` | `P1`–`P5`, indicator-side (independent of case priority). |
 | `labels` | Flat `{key: value}` map. |
-| `metadata` | **Free-form JSON object**, shaped by the producing system — not a string map, so values may be nested objects, numbers or lists. For an Olly scheduled task it carries the task and run the finding came from (`taskId`, `runUrl` and similar). Deliberately separate from `labels` so source provenance does not pollute the routing namespace. |
+| `metadata` | **Free-form JSON object**, shaped by the producing system — not a string map, so values may be nested objects, numbers or lists. Deliberately separate from `labels` so source provenance does not pollute the routing namespace. |
 | `entityLinks` | URLs to the originating entity. |
 | `lastTriggeredAt` / `lastResolvedAt` | Indicator-side timing. |
 
 `metadata` is set at creation and there is no API to change it afterwards, so treat it as a fixed record of where the case came from.
 
-**Cases opened by an Olly scheduled task, most recent first:**
+**Cases opened by a given non-alert source, most recent first:**
 
 ```
 source system/labs.cases.state_updates
   | dedupeby caseId orderby $m.timestamp desc
   | explode indicators.genericIndicators into gi
-  | filter gi.indicatorType == 'OLLY_SCHEDULED_TASK'
+  | filter gi.indicatorType == 'ERROR_TRACKING'
   | choose caseId, caseNumber, title, status, priority,
            gi.externalId as dedup_key, gi.metadata as source_metadata, createdAt
   | orderby createdAt desc
 ```
 
-To narrow to one task, reach into the metadata (`filter gi.metadata.taskId == '<id>'`) — but confirm the key name from a sample row first, since the shape is owned by the producer, not by this schema.
+To narrow further, reach into the metadata (`filter gi.metadata.<key> == '<value>'`) — but confirm the key name from a sample row first, since the shape is owned by the producer, not by this schema.
 
 #### Case relationships (parent / child)
 

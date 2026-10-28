@@ -37,6 +37,13 @@ main() {
     else
         say "Fetching latest version..."
         version="$(get_latest_version)"
+        if [ -z "$version" ]; then
+            err "Could not determine the latest ${BINARY_NAME} version from GitHub."
+            err "Retry later, or pin a version explicitly, e.g.:"
+            err "  curl -fsSL https://get.coralogix.dev/cli | CX_VERSION=<version> sh"
+            err "Available versions: https://github.com/${REPO}/releases"
+            exit 1
+        fi
     fi
 
     say "Installing ${BINARY_NAME} v${version} (${target})..."
@@ -97,15 +104,20 @@ main() {
     say "Done! Run '${BINARY_NAME} --help' to get started."
 }
 
+# Resolve the latest release by following the github.com/<repo>/releases/latest
+# redirect to /releases/tag/v<version>. This avoids api.github.com, whose
+# unauthenticated rate limit (60 req/hour per IP) breaks installs behind
+# shared NAT/egress IPs.
 get_latest_version() {
-    local url="https://api.github.com/repos/${REPO}/releases/latest"
-    local response
+    local url="https://github.com/${REPO}/releases/latest"
+    local final_url
     if command -v curl > /dev/null 2>&1; then
-        response="$(curl -fsSL "$url")"
+        final_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$url" || true)"
     else
-        response="$(wget -qO- "$url")"
+        final_url="$(wget -S --spider "$url" 2>&1 | tr -d '\r' \
+            | sed -n 's/^ *Location: *\([^ ]*\).*/\1/p' | tail -n 1 || true)"
     fi
-    printf '%s' "$response" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\([^"]*\)".*/\1/p'
+    printf '%s' "$final_url" | sed -n 's|.*/releases/tag/v\([^/?#]*\).*|\1|p'
 }
 
 download() {

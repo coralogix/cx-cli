@@ -756,9 +756,9 @@ async fn store_api_key(
     profile: &str,
     api_key: String,
     storage: CredentialStorage,
-) -> Result<(Option<String>, &'static str)> {
+) -> Result<(CredentialStorage, Option<String>, &'static str)> {
     match storage {
-        CredentialStorage::File => Ok((Some(api_key), "profile file")),
+        CredentialStorage::File => Ok((CredentialStorage::File, Some(api_key), "profile file")),
         CredentialStorage::OsStore => {
             let profile = profile.to_string();
             let keyring_api_key = api_key.clone();
@@ -768,13 +768,13 @@ async fn store_api_key(
                     .context("Failed to store API key in the OS credential store")
             });
             match result {
-                Ok(()) => Ok((None, "OS credential store")),
+                Ok(()) => Ok((CredentialStorage::OsStore, None, "OS credential store")),
                 Err(error) if !crate::config::os_credential_store_required()? => {
                     eprintln!(
                         "Warning: failed to store API key in the OS credential store: {error:#}. \
                          Saving credentials to the profile file instead."
                     );
-                    Ok((Some(api_key), "profile file"))
+                    Ok((CredentialStorage::File, Some(api_key), "profile file"))
                 }
                 Err(error) => Err(error),
             }
@@ -784,11 +784,12 @@ async fn store_api_key(
 
 async fn store_oauth_tokens(
     profile: &str,
-    tokens: oauth::TokenResponse,
+    tokens: &oauth::TokenResponse,
     storage: CredentialStorage,
-) -> Result<(Option<StoredOAuthTokens>, &'static str)> {
+) -> Result<(CredentialStorage, Option<StoredOAuthTokens>, &'static str)> {
     match storage {
         CredentialStorage::File => Ok((
+            CredentialStorage::File,
             Some(oauth::tokens_to_stored(&tokens)),
             "profile file (OAuth tokens)",
         )),
@@ -801,13 +802,18 @@ async fn store_oauth_tokens(
                     .context("Failed to store OAuth tokens in the OS credential store")
             });
             match result {
-                Ok(()) => Ok((None, "OS credential store (OAuth tokens)")),
+                Ok(()) => Ok((
+                    CredentialStorage::OsStore,
+                    None,
+                    "OS credential store (OAuth tokens)",
+                )),
                 Err(error) if !crate::config::os_credential_store_required()? => {
                     eprintln!(
                         "Warning: failed to store OAuth tokens in the OS credential store: {error:#}. \
                          Saving credentials to the profile file instead."
                     );
                     Ok((
+                        CredentialStorage::File,
                         Some(oauth::tokens_to_stored(&tokens)),
                         "profile file (OAuth tokens)",
                     ))
@@ -845,7 +851,8 @@ async fn build_profile_non_interactive(
         RegionChoice::Custom { base_url } => Region::Custom(base_url),
     };
 
-    let (api_key, storage_desc) = store_api_key(name, api_key, credential_storage).await?;
+    let (credential_storage, api_key, storage_desc) =
+        store_api_key(name, api_key, credential_storage).await?;
     let profile = Profile {
         auth: AuthKind::ApiKey,
         credential_storage,
@@ -943,7 +950,8 @@ async fn configure_oauth(
     // is derived from `region.api_endpoint()` at runtime and need not be stored.
     let oauth_base_url_for_profile = if is_custom { Some(base_url) } else { None };
 
-    let (oauth_tokens, storage_desc) = store_oauth_tokens(name, tokens, credential_storage).await?;
+    let (credential_storage, oauth_tokens, storage_desc) =
+        store_oauth_tokens(name, &tokens, credential_storage).await?;
 
     let mut profile = Profile {
         auth: AuthKind::OAuth,
@@ -1026,7 +1034,8 @@ async fn configure_api_key(
             .filter(|s| !s.is_empty())
     };
 
-    let (api_key, storage_desc) = store_api_key(name, api_key, credential_storage).await?;
+    let (credential_storage, api_key, storage_desc) =
+        store_api_key(name, api_key, credential_storage).await?;
 
     let profile = Profile {
         auth: AuthKind::ApiKey,

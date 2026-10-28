@@ -1085,13 +1085,14 @@ async fn resolve_single(
                 profile.oauth_tokens.as_ref(),
             )
             .await;
-            let (bearer, refreshed, persist_profile) = match resolved {
+            let (bearer, refreshed, credential_storage, persist_profile) = match resolved {
                 Ok(oauth::TokenResolution {
                     bearer,
                     refreshed_tokens,
+                    credential_storage,
                 }) => {
-                    let persist = refreshed_tokens.is_some();
-                    (bearer, refreshed_tokens, persist)
+                    let persist = refreshed_tokens.is_some() || credential_storage.is_some();
+                    (bearer, refreshed_tokens, credential_storage, persist)
                 }
                 Err(error) if oauth::is_reauth_required(&error) && interactive_reauth_allowed() => {
                     // The refresh token is missing or rejected. Sign in in the
@@ -1122,12 +1123,16 @@ async fn resolve_single(
                         remember_signed_in_team(&mut profile, &whoami);
                         keep_signed_in_tokens(profile_name, &mut profile, &tokens).await?
                     };
-                    (bearer, None, !region_overridden)
+                    (bearer, None, None, !region_overridden)
                 }
                 Err(error) => return Err(error),
             };
+            if let Some(storage) = credential_storage {
+                profile.credential_storage = storage;
+            }
             if let Some(new_tokens) = refreshed {
-                // File-storage profiles persist their refreshed token set.
+                // File-storage profiles persist their refreshed token set,
+                // including a permitted fallback from the OS credential store.
                 profile.oauth_tokens = Some(new_tokens);
             }
             if persist_profile {

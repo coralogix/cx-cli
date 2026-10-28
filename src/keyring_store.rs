@@ -58,6 +58,16 @@ pub fn is_available() -> bool {
 /// Secret Service can block waiting for an unlock prompt. Do not begin that
 /// operation from a non-interactive glibc Linux process.
 pub fn write(action: impl FnOnce() -> Result<()>) -> Result<()> {
+    ensure_write_allowed()?;
+    action()
+}
+
+/// Check whether a keyring write may be started without risking an unlock prompt.
+///
+/// OAuth refresh must call this before exchanging a refresh token: providers may
+/// rotate that token, so a rejected write after the exchange would discard the
+/// only usable replacement.
+pub fn ensure_write_allowed() -> Result<()> {
     #[cfg(all(target_os = "linux", not(target_env = "musl")))]
     if !std::io::stdin().is_terminal() {
         anyhow::bail!(
@@ -66,7 +76,7 @@ pub fn write(action: impl FnOnce() -> Result<()>) -> Result<()> {
         );
     }
 
-    action()
+    Ok(())
 }
 
 /// Legacy keyring layout: all secrets for a profile in one JSON blob.

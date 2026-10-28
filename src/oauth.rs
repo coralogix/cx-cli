@@ -694,17 +694,36 @@ pub fn store_stored_tokens_keyring(profile: &str, tokens: &StoredOAuthTokens) ->
 pub struct TokenResolution {
     pub bearer: String,
     pub refreshed_tokens: Option<StoredOAuthTokens>,
+    /// Changes the profile storage backend after a recoverable keyring failure.
+    pub credential_storage: Option<CredentialStorage>,
 }
 
 fn os_store_refresh_result(
     tokens: &TokenResponse,
     store_result: Result<()>,
+    file_fallback_allowed: bool,
 ) -> Result<TokenResolution> {
-    store_result.context("Failed to store refreshed OAuth tokens in the OS credential store")?;
-    Ok(TokenResolution {
-        bearer: tokens.access_token.clone(),
-        refreshed_tokens: None,
-    })
+    match store_result {
+        Ok(()) => Ok(TokenResolution {
+            bearer: tokens.access_token.clone(),
+            refreshed_tokens: None,
+            credential_storage: None,
+        }),
+        Err(error) if file_fallback_allowed => {
+            eprintln!(
+                "Warning: failed to store refreshed OAuth tokens in the OS credential store: \
+                 {error:#}. Saving credentials to the profile file instead."
+            );
+            Ok(TokenResolution {
+                bearer: tokens.access_token.clone(),
+                refreshed_tokens: Some(tokens_to_stored(tokens)),
+                credential_storage: Some(CredentialStorage::File),
+            })
+        }
+        Err(error) => {
+            Err(error).context("Failed to store refreshed OAuth tokens in the OS credential store")
+        }
+    }
 }
 
 fn cached_token_is_valid(token: &str, expiry: Option<u64>) -> bool {
@@ -850,12 +869,23 @@ pub async fn resolve_token(
             return Ok(TokenResolution {
                 bearer: token.clone(),
                 refreshed_tokens: None,
+                credential_storage: None,
             });
         }
     }
 
     let refresh_token =
         cached_refresh.ok_or_else(|| reauth_required(profile_name, ReauthKind::SessionExpired))?;
+
+    let os_store_required =
+        storage == CredentialStorage::OsStore && crate::config::os_credential_store_required()?;
+
+    // An administrator-required OS store has no permitted fallback. Check
+    // before contacting the IdP because refresh-token rotation can invalidate
+    // `refresh_token`, and a non-interactive process cannot save its replacement.
+    if os_store_required {
+        keyring_store::ensure_write_allowed()?;
+    }
 
     let oidc = fetch_openid_config(base_url).await.with_context(|| {
         format!(
@@ -886,13 +916,14 @@ pub async fn resolve_token(
             let store_result = keyring_store::write(move || {
                 store_tokens_keyring(&profile_name, &tokens_for_store)
             });
-            os_store_refresh_result(&tokens, store_result)
+            os_store_refresh_result(&tokens, store_result, !os_store_required)
         }
         CredentialStorage::File => {
             let stored = tokens_to_stored(&tokens);
             Ok(TokenResolution {
                 bearer: tokens.access_token,
                 refreshed_tokens: Some(stored),
+                credential_storage: None,
             })
         }
     }
@@ -985,14 +1016,23 @@ mod tests {
     }
 
     #[test]
-    fn os_store_refresh_returns_write_error() {
+    fn os_store_refresh_falls_back_to_file_when_allowed() {
         let tokens = sample_token_response(Some(3600), Some("refresh-1"));
-        let err = os_store_refresh_result(
+        let resolved = os_store_refresh_result(
             &tokens,
             Err(anyhow::anyhow!("credential blob exceeds the limit")),
+            true,
         )
-        .expect_err("OS-store write failures must not fall back to file storage");
-        assert!(format!("{err:#}").contains("credential blob exceeds the limit"));
+        .expect("OS-store write failures should fall back to file storage when permitted");
+        assert_eq!(resolved.credential_storage, Some(CredentialStorage::File));
+        assert_eq!(resolved.bearer, "access-abc");
+        assert_eq!(
+            resolved
+                .refreshed_tokens
+                .as_ref()
+                .and_then(|tokens| tokens.refresh_token.as_deref()),
+            Some("refresh-1")
+        );
     }
 
     #[test]

@@ -330,23 +330,43 @@ Deploy the following PowerShell script as **System** (the Intune management
 extension's default context), not as the signed-in user:
 
 ```powershell
+$ErrorActionPreference = 'Stop'
+
 $policyDir = Join-Path $env:ProgramData 'cx'
 $policyFile = Join-Path $policyDir 'policy.toml'
+$system = '*S-1-5-18'
+$administrators = '*S-1-5-32-544'
+$users = '*S-1-5-32-545'
+
+function Invoke-Icacls {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+
+  & icacls @Arguments | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "icacls failed with exit code $($LASTEXITCODE): $($Arguments -join ' ')"
+  }
+}
 
 New-Item -ItemType Directory -Path $policyDir -Force | Out-Null
-Set-Content -Path $policyFile -Value 'require_os_credential_store = true' -NoNewline
+Set-Content -Path $policyFile -Value 'require_os_credential_store = true' -NoNewline -ErrorAction Stop
 
-# Remove inherited write access; retain full control for the OS and local admins.
-icacls $policyDir /inheritance:r /setowner 'Administrators' /grant:r `
-  'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' 'Users:(OI)(CI)RX' | Out-Null
-icacls $policyFile /inheritance:r /setowner 'Administrators' /grant:r `
-  'SYSTEM:F' 'Administrators:F' 'Users:R' | Out-Null
+# Grant explicit access before removing inherited ACEs. Each icacls operation
+# is separate and turns a non-zero native exit code into an Intune-visible failure.
+Invoke-Icacls $policyDir /grant:r `
+  "${system}:(OI)(CI)F" "${administrators}:(OI)(CI)F" "${users}:(OI)(CI)RX"
+Invoke-Icacls $policyDir /inheritance:r
+Invoke-Icacls $policyDir /setowner $administrators
+
+Invoke-Icacls $policyFile /grant:r `
+  "${system}:F" "${administrators}:F" "${users}:R"
+Invoke-Icacls $policyFile /inheritance:r
+Invoke-Icacls $policyFile /setowner $administrators
 ```
 
 This makes the local `Administrators` group the owner, grants standard users
 read-only access, and prevents them from deleting the policy file or its
-parent directory. Validate the script against localized Windows images if
-their built-in group names differ.
+parent directory. The well-known SIDs make the script independent of localized
+Windows group names.
 
 The policy TOML accepts only the exact
 `require_os_credential_store` key. A misspelled or unknown key is rejected;

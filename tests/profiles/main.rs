@@ -198,6 +198,34 @@ fn list_shows_seeded_profiles() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("alpha"), "should list alpha, got: {stdout}");
     assert!(stdout.contains("beta"), "should list beta, got: {stdout}");
+    assert!(
+        stdout.contains("STORAGE") && stdout.contains("profile file"),
+        "should show each profile's credential storage, got: {stdout}"
+    );
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[test]
+fn list_shows_active_os_credential_store_policy() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "alpha");
+    fs::create_dir_all(tmp.join(".cx")).unwrap();
+    fs::write(
+        tmp.join(".cx").join("test-policy.toml"),
+        "require_os_credential_store = true\n",
+    )
+    .unwrap();
+
+    let output = cx(&tmp)
+        .args(["profiles", "list"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Policy: OS credential store required"),
+        "should show the active policy, got: {stdout}"
+    );
 }
 
 #[test]

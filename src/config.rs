@@ -432,6 +432,7 @@ pub fn config_file() -> Result<PathBuf> {
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SystemPolicy {
     #[serde(default)]
     require_os_credential_store: bool,
@@ -1321,6 +1322,14 @@ pub fn upsert_managed_completion(shell: &str, path: PathBuf) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn system_policy_rejects_unknown_fields() {
+        let error = toml::from_str::<SystemPolicy>("require_os_credential_stores = true\n")
+            .expect_err("misspelled system policy settings must fail");
+        assert!(error.to_string().contains("unknown field"));
+    }
+
     use super::*;
 
     // ── OutputFormat: toon canonical + agents backward-compat alias ─────────────

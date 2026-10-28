@@ -280,8 +280,8 @@ setup uses the profile file.
 
 ### Administrator-required OS credential storage
 
-On managed macOS and Windows installations, an administrator can create a
-machine-wide policy file with:
+On managed macOS and Windows installations, an administrator can require
+Keychain/Credential Manager storage with a machine-wide policy file:
 
 ```toml
 require_os_credential_store = true
@@ -293,7 +293,67 @@ not offered and OS-store failures do not fall back to the profile file. Before
 handling every command, `cx` migrates all legacy file-backed profiles. A
 migration failure names the affected profile file and gives recovery steps,
 such as unlocking the OS credential store or deleting a profile that is no
-longer needed.
+longer needed. **One profile that cannot be migrated blocks every `cx`
+command** until it is fixed or removed, so migrate a pilot device before
+enforcing the policy fleet-wide.
+
+The policy is trusted only through its filesystem permissions; `cx` does not
+validate its owner or ACL. Make the folder and file administrator-owned and
+read-only for standard users. Otherwise a user can delete or replace the file
+to disable the policy.
+
+#### Jamf Pro (macOS)
+
+Deploy the following as a Jamf script (it runs as `root`), or use the same
+commands in a package postinstall script:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+policy_dir="/Library/Application Support/cx"
+policy_file="$policy_dir/policy.toml"
+
+install -d -o root -g wheel -m 0755 "$policy_dir"
+tmp_file="$(mktemp)"
+trap 'rm -f "$tmp_file"' EXIT
+printf '%s\n' 'require_os_credential_store = true' > "$tmp_file"
+install -o root -g wheel -m 0644 "$tmp_file" "$policy_file"
+```
+
+The `root:wheel` ownership and `0755`/`0644` modes let all users read the
+policy while preventing them from changing or deleting it.
+
+#### Microsoft Intune (Windows)
+
+Deploy the following PowerShell script as **System** (the Intune management
+extension's default context), not as the signed-in user:
+
+```powershell
+$policyDir = Join-Path $env:ProgramData 'cx'
+$policyFile = Join-Path $policyDir 'policy.toml'
+
+New-Item -ItemType Directory -Path $policyDir -Force | Out-Null
+Set-Content -Path $policyFile -Value 'require_os_credential_store = true' -NoNewline
+
+# Remove inherited write access; retain full control for the OS and local admins.
+icacls $policyDir /inheritance:r /setowner 'Administrators' /grant:r `
+  'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' 'Users:(OI)(CI)RX' | Out-Null
+icacls $policyFile /inheritance:r /setowner 'Administrators' /grant:r `
+  'SYSTEM:F' 'Administrators:F' 'Users:R' | Out-Null
+```
+
+This makes the local `Administrators` group the owner, grants standard users
+read-only access, and prevents them from deleting the policy file or its
+parent directory. Validate the script against localized Windows images if
+their built-in group names differ.
+
+The policy TOML accepts only the exact
+`require_os_credential_store` key. A misspelled or unknown key is rejected;
+malformed policy TOML also prevents every `cx` command from running until an
+administrator fixes or removes the file. Run `cx profiles list` after
+deployment to verify both `Policy: OS credential store required` and the
+`STORAGE` shown for every profile.
 
 ## Global config (`~/.cx/config.toml`)
 

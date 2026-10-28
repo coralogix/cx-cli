@@ -323,6 +323,7 @@ fn hint_completions_refresh() {
 
 pub fn run_list() -> Result<()> {
     let global_config = load_config().unwrap_or_default();
+    let os_store_required = crate::config::os_credential_store_required()?;
 
     let names = list_profile_names()?;
 
@@ -336,6 +337,9 @@ pub fn run_list() -> Result<()> {
 
     if entries.is_empty() {
         println!("No profiles configured. Run `cx profiles add` to create one.");
+        if os_store_required {
+            println!("Policy: OS credential store required");
+        }
         return Ok(());
     }
 
@@ -359,29 +363,39 @@ pub fn run_list() -> Result<()> {
         .unwrap_or(6)
         .max(6);
     let output_w = 6; // "OUTPUT" header length
+    let storage_w = entries
+        .iter()
+        .map(|(_, p)| credential_storage_description(p.credential_storage).len())
+        .max()
+        .unwrap_or(7)
+        .max(7);
 
     println!(
-        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  DEFAULT",
+        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<storage_w$}  {:<output_w$}  DEFAULT",
         "NAME",
         "LABEL",
         "REGION",
         "AUTH",
+        "STORAGE",
         "OUTPUT",
         name_w = name_w,
         label_w = label_w,
         region_w = region_w,
+        storage_w = storage_w,
         output_w = output_w,
     );
     println!(
-        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  -------",
+        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<storage_w$}  {:<output_w$}  -------",
         "-".repeat(name_w),
         "-".repeat(label_w),
         "-".repeat(region_w),
         "--------",
+        "-".repeat(storage_w),
         "-".repeat(output_w),
         name_w = name_w,
         label_w = label_w,
         region_w = region_w,
+        storage_w = storage_w,
         output_w = output_w,
     );
 
@@ -396,24 +410,31 @@ pub fn run_list() -> Result<()> {
             .default_output_format
             .map(|f| f.as_str())
             .unwrap_or("-");
+        let storage = credential_storage_description(profile.credential_storage);
         let is_default = if *name == global_config.default_profile {
             "yes"
         } else {
             ""
         };
         println!(
-            "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  {}",
+            "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<storage_w$}  {:<output_w$}  {}",
             name,
             label,
             region,
             auth,
+            storage,
             output_fmt,
             is_default,
             name_w = name_w,
             label_w = label_w,
             region_w = region_w,
+            storage_w = storage_w,
             output_w = output_w,
         );
+    }
+
+    if os_store_required {
+        println!("\nPolicy: OS credential store required");
     }
 
     Ok(())

@@ -44,8 +44,7 @@ to the profile file with a warning if it is unavailable. Linux musl builds
 always use file storage because they have no keyring backend. On glibc Linux,
 interactive setup offers file storage (the default) or OS credential storage.
 It defaults these rather than prompting: profile name `default`, no label, and
-prompting: profile name `default`, no label, and `json` as the profile's default
-output format.
+`json` as the profile's default output format.
 
 Set `default_output_format` in the profile TOML (or pass `-o text`) if you would
 rather read the output by eye than hand it to an agent.
@@ -157,7 +156,7 @@ For environments with no profile file at all, see
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted in the OS keyring (`os_store`) on macOS and Windows. Linux musl uses `file`; interactive glibc Linux setup lets you choose either backend, with the OS store selected by default.
+- Tokens (`access_token`, `refresh_token`, `id_token`) use the OS keyring (`os_store`) by default on macOS and Windows. If storing them there fails, `cx` falls back to `file` and updates the profile accordingly, unless an administrator policy requires the OS store. Linux musl uses `file`; interactive glibc Linux setup lets you choose either backend, with `file` selected by default.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
 - If the session needs re-authentication, running a command opens the sign-in page showing only the profile's team, then continues. If the sign-in still comes back for a different team (for example, the first re-login of a profile that has not recorded its team yet), `cx` discards it, leaves the profile unchanged, and offers to reopen the sign-in page.
 - This happens only on an interactive terminal. When output is piped or `cx` runs under a coding agent, it exits with an actionable message instead:

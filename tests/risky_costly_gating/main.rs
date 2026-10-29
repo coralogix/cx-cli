@@ -21,6 +21,7 @@ fn cx_with_config(home: &std::path::Path, config_toml: &str) -> Command {
 
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
+    cmd.env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"));
     cmd
 }
 
@@ -229,6 +230,7 @@ fn no_config_file_allows_everything() {
     // No config file at all - should default to permissive.
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", &tmp);
+    cmd.env("CX_TEST_KEYRING_DIR", tmp.join(".test-keyring"));
     let output = cmd
         .args([
             "iam",

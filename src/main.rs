@@ -3310,6 +3310,12 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
+    // On managed macOS/Windows installations, migrate every legacy
+    // file-backed profile before handling any command. There is deliberately
+    // no user-owned completion marker: the administrator policy is verified
+    // on every invocation.
+    config::migrate_all_file_credentials_to_os_store_if_required()?;
+
     // Kick off the background version check.  The result is written to
     // ~/.cx/state.json and read back on the next command invocation.
     // For fast local commands the task may be cancelled before it finishes

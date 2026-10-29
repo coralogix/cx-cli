@@ -672,30 +672,57 @@ pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()>
     Ok(())
 }
 
+/// Persist file-backed OAuth tokens to the OS keyring without recalculating
+/// their existing expiry timestamp.
+pub fn store_stored_tokens_keyring(profile: &str, tokens: &StoredOAuthTokens) -> Result<()> {
+    keyring_store::store_secret(profile, "oauth_access_token", &tokens.access_token)?;
+    if let Some(ref token) = tokens.refresh_token {
+        keyring_store::store_secret(profile, "oauth_refresh_token", token)?;
+    }
+    if let Some(ref token) = tokens.id_token {
+        keyring_store::store_secret(profile, "oauth_id_token", token)?;
+    }
+    if let Some(expiry) = tokens.expiry {
+        keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
+    }
+    Ok(())
+}
+
 /// Result of resolving an OAuth bearer token.
 ///
-/// When `os_store_fallback_reason` is set, the caller must persist
-/// `refreshed_tokens` in the profile file and switch the profile's credential
-/// storage to `file`.
 #[derive(Debug)]
 pub struct TokenResolution {
     pub bearer: String,
     pub refreshed_tokens: Option<StoredOAuthTokens>,
-    pub os_store_fallback_reason: Option<String>,
+    /// Changes the profile storage backend after a recoverable keyring failure.
+    pub credential_storage: Option<CredentialStorage>,
 }
 
-fn os_store_refresh_result(tokens: &TokenResponse, store_result: Result<()>) -> TokenResolution {
+fn os_store_refresh_result(
+    tokens: &TokenResponse,
+    store_result: Result<()>,
+    file_fallback_allowed: bool,
+) -> Result<TokenResolution> {
     match store_result {
-        Ok(()) => TokenResolution {
+        Ok(()) => Ok(TokenResolution {
             bearer: tokens.access_token.clone(),
             refreshed_tokens: None,
-            os_store_fallback_reason: None,
-        },
-        Err(err) => TokenResolution {
-            bearer: tokens.access_token.clone(),
-            refreshed_tokens: Some(tokens_to_stored(tokens)),
-            os_store_fallback_reason: Some(format!("{err:#}")),
-        },
+            credential_storage: None,
+        }),
+        Err(error) if file_fallback_allowed => {
+            eprintln!(
+                "Warning: failed to store refreshed OAuth tokens in the OS credential store: \
+                 {error:#}. Saving credentials to the profile file instead."
+            );
+            Ok(TokenResolution {
+                bearer: tokens.access_token.clone(),
+                refreshed_tokens: Some(tokens_to_stored(tokens)),
+                credential_storage: Some(CredentialStorage::File),
+            })
+        }
+        Err(error) => {
+            Err(error).context("Failed to store refreshed OAuth tokens in the OS credential store")
+        }
     }
 }
 
@@ -805,10 +832,9 @@ pub fn is_reauth_required(err: &anyhow::Error) -> bool {
 /// if it is still valid (≥ 30 s remaining). Otherwise, uses the cached refresh
 /// token to obtain a fresh token set.
 ///
-/// For `OsStore`, the keyring is updated in place. If that write fails, the
-/// returned [`TokenResolution`] asks the caller to migrate the profile to file
-/// storage and persist the refreshed token set. For `File`, the caller
-/// persists the returned token set when a refresh occurred.
+/// For `OsStore`, the keyring is updated in place and a failed write is
+/// returned to the caller. For `File`, the caller persists the returned token
+/// set when a refresh occurred.
 ///
 /// When the session cannot be refreshed, the error satisfies
 /// [`is_reauth_required`]. Callers on an interactive terminal may run
@@ -843,13 +869,23 @@ pub async fn resolve_token(
             return Ok(TokenResolution {
                 bearer: token.clone(),
                 refreshed_tokens: None,
-                os_store_fallback_reason: None,
+                credential_storage: None,
             });
         }
     }
 
     let refresh_token =
         cached_refresh.ok_or_else(|| reauth_required(profile_name, ReauthKind::SessionExpired))?;
+
+    let os_store_required =
+        storage == CredentialStorage::OsStore && crate::config::os_credential_store_required()?;
+
+    // An administrator-required OS store has no permitted fallback. Check
+    // before contacting the IdP because refresh-token rotation can invalidate
+    // `refresh_token`, and a non-interactive process cannot save its replacement.
+    if os_store_required {
+        keyring_store::ensure_write_allowed()?;
+    }
 
     let oidc = fetch_openid_config(base_url).await.with_context(|| {
         format!(
@@ -874,16 +910,20 @@ pub async fn resolve_token(
     };
 
     match storage {
-        CredentialStorage::OsStore => Ok(os_store_refresh_result(
-            &tokens,
-            store_tokens_keyring(profile_name, &tokens),
-        )),
+        CredentialStorage::OsStore => {
+            let profile_name = profile_name.to_string();
+            let tokens_for_store = tokens.clone();
+            let store_result = keyring_store::write(move || {
+                store_tokens_keyring(&profile_name, &tokens_for_store)
+            });
+            os_store_refresh_result(&tokens, store_result, !os_store_required)
+        }
         CredentialStorage::File => {
             let stored = tokens_to_stored(&tokens);
             Ok(TokenResolution {
                 bearer: tokens.access_token,
                 refreshed_tokens: Some(stored),
-                os_store_fallback_reason: None,
+                credential_storage: None,
             })
         }
     }
@@ -976,25 +1016,23 @@ mod tests {
     }
 
     #[test]
-    fn os_store_refresh_falls_back_to_file_storage() {
+    fn os_store_refresh_falls_back_to_file_when_allowed() {
         let tokens = sample_token_response(Some(3600), Some("refresh-1"));
         let resolved = os_store_refresh_result(
             &tokens,
             Err(anyhow::anyhow!("credential blob exceeds the limit")),
-        );
-
-        assert_eq!(resolved.bearer, tokens.access_token);
+            true,
+        )
+        .expect("OS-store write failures should fall back to file storage when permitted");
+        assert_eq!(resolved.credential_storage, Some(CredentialStorage::File));
+        assert_eq!(resolved.bearer, "access-abc");
         assert_eq!(
             resolved
                 .refreshed_tokens
                 .as_ref()
-                .and_then(|stored| stored.refresh_token.as_deref()),
+                .and_then(|tokens| tokens.refresh_token.as_deref()),
             Some("refresh-1")
         );
-        assert!(resolved
-            .os_store_fallback_reason
-            .as_deref()
-            .is_some_and(|reason| reason.contains("credential blob exceeds the limit")));
     }
 
     #[test]
@@ -1051,7 +1089,6 @@ mod tests {
         .expect("cached path must not hit the network");
         assert_eq!(resolved.bearer, "still-good");
         assert!(resolved.refreshed_tokens.is_none());
-        assert!(resolved.os_store_fallback_reason.is_none());
     }
 
     #[tokio::test]

@@ -1,4 +1,9 @@
 use std::collections::HashMap;
+#[cfg(debug_assertions)]
+use std::path::PathBuf;
+
+#[cfg(all(target_os = "linux", not(target_env = "musl")))]
+use std::io::IsTerminal;
 
 use anyhow::{Context, Result};
 
@@ -10,6 +15,69 @@ const SECRET_NAMES: &[&str] = &[
     "oauth_id_token",
     "oauth_token_expiry",
 ];
+
+/// A filesystem-backed keyring used only by debug integration-test binaries.
+/// Release builds never include this path; production credentials always use
+/// the platform backend.
+#[cfg(debug_assertions)]
+fn test_secret_path(profile: &str, key_name: &str) -> Option<PathBuf> {
+    std::env::var_os("CX_TEST_KEYRING_DIR").map(|root| {
+        PathBuf::from(root).join(format!(
+            "{}--{}",
+            profile.replace(['/', '\\'], "_"),
+            key_name
+        ))
+    })
+}
+/// Whether this build includes a usable OS credential-store backend.
+///
+/// On glibc Linux, Secret Service availability is runtime-dependent; creating
+/// an entry is sufficient to decide whether to offer the option without
+/// attempting to write a credential.
+pub fn is_available() -> bool {
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+    {
+        keyring::Entry::new(SERVICE_NAME, "cx-availability-probe").is_ok()
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        true
+    }
+    #[cfg(not(any(
+        all(target_os = "linux", not(target_env = "musl")),
+        target_os = "macos",
+        target_os = "windows"
+    )))]
+    {
+        false
+    }
+}
+
+/// Run a keyring write.
+///
+/// Secret Service can block waiting for an unlock prompt. Do not begin that
+/// operation from a non-interactive glibc Linux process.
+pub fn write(action: impl FnOnce() -> Result<()>) -> Result<()> {
+    ensure_write_allowed()?;
+    action()
+}
+
+/// Check whether a keyring write may be started without risking an unlock prompt.
+///
+/// OAuth refresh must call this before exchanging a refresh token: providers may
+/// rotate that token, so a rejected write after the exchange would discard the
+/// only usable replacement.
+pub fn ensure_write_allowed() -> Result<()> {
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "OS credential-store writes require an interactive terminal on Linux. \
+             Unlock your keyring and run the command again from an interactive terminal."
+        );
+    }
+
+    Ok(())
+}
 
 /// Legacy keyring layout: all secrets for a profile in one JSON blob.
 ///
@@ -62,6 +130,13 @@ fn remove_legacy_secret(profile: &str, key_name: &str) {
 /// characters. OAuth persistence falls back to file storage when a value
 /// exceeds that limit.
 pub fn store_secret(profile: &str, key_name: &str, secret: &str) -> Result<()> {
+    #[cfg(debug_assertions)]
+    if let Some(path) = test_secret_path(profile, key_name) {
+        std::fs::create_dir_all(path.parent().expect("test keyring path has parent"))?;
+        return std::fs::write(&path, secret)
+            .with_context(|| format!("Failed to store '{key_name}' in test keyring"));
+    }
+
     secret_entry(profile, key_name)?
         .set_password(secret)
         .with_context(|| format!("Failed to store '{key_name}' in keyring"))
@@ -72,6 +147,15 @@ pub fn store_secret(profile: &str, key_name: &str, secret: &str) -> Result<()> {
 /// Falls back to the legacy combined entry so profiles created by older
 /// versions continue to work. Returns `None` if the entry or key does not exist.
 pub fn get_secret(profile: &str, key_name: &str) -> Result<Option<String>> {
+    #[cfg(debug_assertions)]
+    if let Some(path) = test_secret_path(profile, key_name) {
+        return match std::fs::read_to_string(path) {
+            Ok(secret) => Ok(Some(secret)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err).context("Failed to read test keyring secret"),
+        };
+    }
+
     let entry = secret_entry(profile, key_name)?;
     match entry.get_password() {
         Ok(secret) => Ok(Some(secret)),
@@ -86,6 +170,12 @@ pub fn get_secret(profile: &str, key_name: &str) -> Result<Option<String>> {
 
 /// Delete a secret from the system keyring. Best-effort - does not fail if missing.
 pub fn delete_secret(profile: &str, key_name: &str) {
+    #[cfg(debug_assertions)]
+    if let Some(path) = test_secret_path(profile, key_name) {
+        let _ = std::fs::remove_file(path);
+        return;
+    }
+
     if let Ok(entry) = secret_entry(profile, key_name) {
         let _ = entry.delete_credential();
     }
@@ -94,6 +184,16 @@ pub fn delete_secret(profile: &str, key_name: &str) {
 
 /// Delete all secrets for a profile. Best-effort.
 pub fn delete_profile(profile: &str) {
+    #[cfg(debug_assertions)]
+    if test_secret_path(profile, SECRET_NAMES[0]).is_some() {
+        for key_name in SECRET_NAMES {
+            if let Some(path) = test_secret_path(profile, key_name) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        return;
+    }
+
     if let Ok(entry) = legacy_entry(profile) {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}

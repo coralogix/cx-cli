@@ -70,6 +70,9 @@ enum RegionChoice {
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &["OS credential store (default)", "Profile file"];
+
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const CREDENTIAL_STORAGE_OPTIONS: &[&str] = &["Profile file (default)", "OS credential store"];
 
@@ -80,29 +83,49 @@ fn credential_storage_for_setup(interactive: bool) -> Result<CredentialStorage> 
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        let _ = interactive;
+        if interactive {
+            let choice =
+                Select::new("Credential storage:", CREDENTIAL_STORAGE_OPTIONS.to_vec())
+                    .with_starting_cursor(0)
+                    .with_help_message(
+                        "The OS credential store is the default. The profile file stores secrets alongside the profile configuration.",
+                    )
+                    .prompt()?;
+            return Ok(if choice == CREDENTIAL_STORAGE_OPTIONS[0] {
+                CredentialStorage::OsStore
+            } else {
+                CredentialStorage::File
+            });
+        }
         Ok(CredentialStorage::OsStore)
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
     {
-        #[cfg(all(target_os = "linux", not(target_env = "musl")))]
-        {
-            if interactive && keyring_store::is_available() {
-                let choice =
-                    Select::new("Credential storage:", CREDENTIAL_STORAGE_OPTIONS.to_vec())
-                        .with_starting_cursor(0)
-                        .with_help_message(
-                            "The profile file is the default. The OS credential store protects secrets from accidental file exposure.",
-                        )
-                        .prompt()?;
-                return Ok(if choice == CREDENTIAL_STORAGE_OPTIONS[0] {
-                    CredentialStorage::File
-                } else {
-                    CredentialStorage::OsStore
-                });
-            }
+        if interactive && keyring_store::is_available() {
+            let choice =
+                Select::new("Credential storage:", CREDENTIAL_STORAGE_OPTIONS.to_vec())
+                    .with_starting_cursor(0)
+                    .with_help_message(
+                        "The profile file is the default. The OS credential store protects secrets from accidental file exposure.",
+                    )
+                    .prompt()?;
+            return Ok(if choice == CREDENTIAL_STORAGE_OPTIONS[0] {
+                CredentialStorage::File
+            } else {
+                CredentialStorage::OsStore
+            });
         }
+        Ok(CredentialStorage::File)
+    }
+
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "windows",
+        all(target_os = "linux", not(target_env = "musl"))
+    )))]
+    {
+        let _ = interactive;
         Ok(CredentialStorage::File)
     }
 }
@@ -1098,6 +1121,24 @@ mod tests {
                 variant.as_str(),
             );
         }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn os_store_is_the_default_interactive_storage_choice() {
+        assert_eq!(
+            CREDENTIAL_STORAGE_OPTIONS.first(),
+            Some(&"OS credential store (default)")
+        );
+    }
+
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+    #[test]
+    fn file_is_the_default_interactive_linux_storage_choice() {
+        assert_eq!(
+            CREDENTIAL_STORAGE_OPTIONS.first(),
+            Some(&"Profile file (default)")
+        );
     }
 
     #[cfg(not(all(target_os = "linux", not(target_env = "musl"))))]

@@ -889,7 +889,7 @@ Examples:
     /// Fetch one Coralogix docs page as markdown.
     #[command(after_help = "\
 Example:
-  cx docs fetch user-guides/data_exploration/spans/")]
+  cx docs fetch user-guides/data_exploration/spans.md")]
     Fetch {
         /// Path suffix from `cx docs search` (not a full URL).
         suffix: String,

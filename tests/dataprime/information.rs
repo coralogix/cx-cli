@@ -5,6 +5,15 @@ use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn invoke(server: &MockServer, args: &[&str], profiles: &[&str]) -> Output {
+    invoke_with_profile_settings(server, args, profiles, "").await
+}
+
+async fn invoke_with_profile_settings(
+    server: &MockServer,
+    args: &[&str],
+    profiles: &[&str],
+    profile_settings: &str,
+) -> Output {
     let home = std::env::temp_dir().join(format!("cx_query_info_{}", uuid::Uuid::new_v4()));
     let dir = home.join(".cx");
     std::fs::create_dir_all(dir.join("profiles")).unwrap();
@@ -15,7 +24,7 @@ async fn invoke(server: &MockServer, args: &[&str], profiles: &[&str]) -> Output
     .unwrap();
     for profile in profiles {
         std::fs::write(dir.join("profiles").join(format!("{profile}.toml")), format!(
-            "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"test-key\"\nregion = \"{}\"\n", server.uri()
+            "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"test-key\"\nregion = \"{}\"\n{profile_settings}", server.uri()
         )).unwrap();
     }
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cx"));
@@ -91,9 +100,79 @@ async fn strict_validation_defaults_true_and_can_be_disabled_on_all_query_comman
 }
 
 #[tokio::test]
+async fn profile_setting_sets_strict_validation_default_and_flag_overrides_it() {
+    for (profile_setting, flag, strict) in [
+        ("strict_fields_validation = false\n", None, false),
+        ("strict_fields_validation = true\n", None, true),
+        (
+            "strict_fields_validation = false\n",
+            Some("--strict-fields-validation"),
+            true,
+        ),
+        (
+            "strict_fields_validation = true\n",
+            Some("--strict-fields-validation=false"),
+            false,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/dataprime/query"))
+            .and(body_partial_json(
+                json!({"metadata": {"strictFieldsValidation": strict}}),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("{\"statistics\":{\"status\":\"COMPLETED\"}}"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut args = vec!["logs", "limit 0", "-o", "json"];
+        args.extend(flag);
+        let output = invoke_with_profile_settings(&server, &args, &["test"], profile_setting).await;
+        assert!(
+            output.status.success(),
+            "{profile_setting} {flag:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[tokio::test]
+async fn profile_setting_applies_to_every_profile_in_fan_out() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .and(body_partial_json(
+            json!({"metadata": {"strictFieldsValidation": false}}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("{\"statistics\":{\"status\":\"COMPLETED\"}}"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let output = invoke_with_profile_settings(
+        &server,
+        &["logs", "limit 0", "-o", "json"],
+        &["a", "b"],
+        "strict_fields_validation = false\n",
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
 async fn unknown_keypath_errors_suggest_disabling_strict_validation() {
     let message = "Compilation errors:\n - keypath does not exist at [0:21-0:35]: $d.new_field\n - keypath does not exist at [0:38-0:52]: $d.other_field";
-    let hint = "In order to force-run this query use --strict-fields-validation=false";
+    let hint = "In order to force-run this query use --strict-fields-validation=false \
+                (or set strict_fields_validation = false in the profile to make it the default)";
     for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
         for status in [400, 200] {
             let server = MockServer::start().await;

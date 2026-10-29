@@ -357,6 +357,12 @@ pub struct Profile {
     /// Falls back to `Archive` when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_tier: Option<crate::Tier>,
+    /// Per-profile default for DataPrime `strictFieldsValidation` (logs,
+    /// spans, raw queries). The `--strict-fields-validation` flag overrides
+    /// it. Falls back to `true` when omitted. Set `false` for teams whose
+    /// schema drops fields (e.g. very wide JSON branches).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict_fields_validation: Option<bool>,
     /// Explicit override for the Coralogix web console base URL used to build
     /// "View in Coralogix" links. Include the team subdomain - console links
     /// resolve to a team, and the team name is not always derivable
@@ -402,6 +408,9 @@ pub struct ResolvedConfig {
     /// Default storage tier for DataPrime queries, resolved from the profile
     /// config. Falls back to `Archive` when the profile does not specify one.
     pub default_tier: crate::Tier,
+    /// Default DataPrime strict field validation, resolved from the profile
+    /// config. Falls back to `true` when the profile does not specify one.
+    pub strict_fields_validation: bool,
     /// Explicit console base URL override from `Profile::console_url`, with
     /// any trailing slash trimmed. Takes precedence over the automatic
     /// `GET /identity/whoami`-based resolution.
@@ -814,6 +823,7 @@ async fn resolve_single(
                 api_key: key.to_string(),
                 auth_kind: AuthKind::ApiKey,
                 default_tier: crate::Tier::Archive,
+                strict_fields_validation: true,
                 console_url: None,
                 credentials_overridden: true,
             });
@@ -956,6 +966,7 @@ async fn resolve_single(
         api_key: bearer,
         auth_kind,
         default_tier: profile.default_tier.unwrap_or(crate::Tier::Archive),
+        strict_fields_validation: profile.strict_fields_validation.unwrap_or(true),
         console_url: profile
             .console_url
             .as_deref()
@@ -1236,6 +1247,7 @@ default_profile = "my-profile"
             auth_kind: AuthKind::ApiKey,
             endpoint: "https://api.eu2.coralogix.com".to_string(),
             default_tier: crate::Tier::Archive,
+            strict_fields_validation: true,
             console_url: None,
             credentials_overridden: false,
         };
@@ -1335,6 +1347,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
@@ -1370,6 +1383,7 @@ api_key = "mykey"
             }),
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
@@ -1400,6 +1414,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
@@ -1494,6 +1509,7 @@ api_key = "mykey"
                 oauth_tokens: None,
                 default_output_format: None,
                 default_tier: None,
+                strict_fields_validation: None,
                 console_url: None,
                 cached_console_url: None,
                 cached_console_url_at: None,
@@ -1536,6 +1552,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
@@ -1564,6 +1581,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
@@ -1593,6 +1611,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
@@ -1622,6 +1641,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: None,
             cached_console_url_at: None,
@@ -1662,6 +1682,7 @@ api_key = "mykey"
             oauth_tokens: None,
             default_output_format: None,
             default_tier: None,
+            strict_fields_validation: None,
             console_url: None,
             cached_console_url: Some("https://cached.app.eu2.coralogix.com".to_string()),
             cached_console_url_at: cached_at,

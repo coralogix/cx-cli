@@ -42,6 +42,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 - [Multi-profile fan-out](docs/multi-profile.md)
 - [TOON output format](docs/toon-output.md)
 - [Time syntax](docs/time-syntax.md)
+- [DataPrime validation and diagnostics](docs/dataprime-diagnostics.md)
 - [Architecture](contributing/architecture.md)
 - [Development guide](contributing/development.md)
 
@@ -54,37 +55,3 @@ PR review process, and step-by-step guides for adding commands and skills.
 
 Apache-2.0
 Use of the Coralogix services through this CLI is governed by the [Coralogix Terms and Conditions](https://coralogix.com/terms-conditions/), or your separate written agreement with Coralogix where applicable, including when you use the CLI internally or incorporate it into products and services that you make available to your own customers and end users, except to the extent a specific component or dependency is covered by a different license as indicated in that component's LICENSE file.
-
-### DataPrime query validation and diagnostics
-
-`cx logs`, `cx spans`, and `cx dataprime query` reject unknown schema fields by
-default. Use `--strict-fields-validation=false` to allow unknown fields with
-compile warnings. `--strict-fields-validation` (or `=true`) enables validation
-explicitly. This CLI default differs from the public API's permissive default.
-
-All API warnings are printed to stderr as complete JSON envelopes, including
-limit warnings, archive warnings, and warnings preceding a failed query.
-
-Add `--extended-information` to include query information on stdout:
-
-```bash
-cx logs 'limit 10' --extended-information -o json
-cx spans 'limit 10' --strict-fields-validation=false --extended-information -o json
-cx dataprime query 'source logs | limit 10' --extended-information -o json
-```
-
-For one profile, the extended JSON/TOON response is `{ "results": [...], "queryId": "...",
-"warnings": [...], "statistics": {...} }`. Missing query IDs/statistics are
-`null`; absent warnings are `[]`. Results keep their existing normalization.
-
-For multiple profiles, the response is `{ "results": [...], "queries": [...] }`.
-Each query entry contains `profile`, `queryId`, `warnings`, and `statistics`;
-result rows retain their profile tags. IDs and statistics are not combined.
-
-Text mode keeps the existing result rendering and appends a JSON diagnostics
-object after a blank line. For one profile, this object contains `queryId`,
-`warnings`, and `statistics`; for multiple profiles it contains `queries`.
-JSON mode returns the combined envelope; TOON mode encodes that envelope as TOON.
-Extended output stays on stdout, bypassing result spilling.
-Without the flag, the existing stdout format and spilling behavior are preserved.
-Query failures still return a nonzero exit code.

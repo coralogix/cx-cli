@@ -131,7 +131,8 @@ impl<'a> DataprimeApi<'a> {
                     })
                 {
                     message.push_str(
-                        "\nIn order to force-run this query use --strict-fields-validation=false",
+                        "\nIn order to force-run this query use --strict-fields-validation=false \
+                         (or set strict_fields_validation = false in the profile to make it the default)",
                     );
                 }
             }
@@ -190,8 +191,7 @@ pub fn build_dataprime_body(
             "syntax": "QUERY_SYNTAX_DATAPRIME",
             "startDate": start_time,
             "endDate": end_time,
-            "limit": limit,
-            "strictFieldsValidation": true
+            "limit": limit
         }
     });
     if !source.is_empty() {

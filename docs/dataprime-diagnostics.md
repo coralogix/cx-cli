@@ -19,19 +19,18 @@ Strict validation can reject fields that exist:
   data. Without strict validation, the API sends an
   `archiveWarning.noMetastoreData` warning for this case.
 
-To turn strict validation on by default for a profile, set it in
-`~/.cx/profiles/<name>.toml`:
+To turn strict validation on by default for all profiles, set it in
+`~/.cx/config.toml`:
 
 ```toml
 strict_fields_validation = true
 ```
 
-Put the line at the top of the file, above any `[section]` header such as
-`[oauth_tokens]`. A line placed after a section header belongs to that section
-and is silently ignored.
+Put the line above any `[section]` or `[[section]]` header, such as
+`[[managed_completions]]`. A line placed after a section header belongs to that
+section and is silently ignored.
 
-The flag always wins over the profile setting. With multiple profiles, each
-profile uses its own setting unless the flag is passed.
+The flag always wins over the config setting.
 
 ## Warnings
 

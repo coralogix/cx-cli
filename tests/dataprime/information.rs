@@ -5,26 +5,28 @@ use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn invoke(server: &MockServer, args: &[&str], profiles: &[&str]) -> Output {
-    invoke_with_profile_settings(server, args, profiles, "").await
+    invoke_with_config_settings(server, args, profiles, "").await
 }
 
-async fn invoke_with_profile_settings(
+async fn invoke_with_config_settings(
     server: &MockServer,
     args: &[&str],
     profiles: &[&str],
-    profile_settings: &str,
+    config_settings: &str,
 ) -> Output {
     let home = std::env::temp_dir().join(format!("cx_query_info_{}", uuid::Uuid::new_v4()));
     let dir = home.join(".cx");
     std::fs::create_dir_all(dir.join("profiles")).unwrap();
     std::fs::write(
         dir.join("config.toml"),
-        "default_profile = \"test\"\nmax_dataprime_direct_output_size = 1\n",
+        format!(
+            "default_profile = \"test\"\nmax_dataprime_direct_output_size = 1\n{config_settings}"
+        ),
     )
     .unwrap();
     for profile in profiles {
         std::fs::write(dir.join("profiles").join(format!("{profile}.toml")), format!(
-            "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"test-key\"\nregion = \"{}\"\n{profile_settings}", server.uri()
+            "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"test-key\"\nregion = \"{}\"\n", server.uri()
         )).unwrap();
     }
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cx"));
@@ -100,8 +102,8 @@ async fn strict_validation_defaults_false_and_can_be_enabled_on_all_query_comman
 }
 
 #[tokio::test]
-async fn profile_setting_sets_strict_validation_default_and_flag_overrides_it() {
-    for (profile_setting, flag, strict) in [
+async fn config_setting_sets_strict_validation_default_and_flag_overrides_it() {
+    for (config_setting, flag, strict) in [
         ("strict_fields_validation = false\n", None, false),
         ("strict_fields_validation = true\n", None, true),
         (
@@ -130,17 +132,17 @@ async fn profile_setting_sets_strict_validation_default_and_flag_overrides_it() 
             .await;
         let mut args = vec!["logs", "limit 0", "-o", "json"];
         args.extend(flag);
-        let output = invoke_with_profile_settings(&server, &args, &["test"], profile_setting).await;
+        let output = invoke_with_config_settings(&server, &args, &["test"], config_setting).await;
         assert!(
             output.status.success(),
-            "{profile_setting} {flag:?}: {}",
+            "{config_setting} {flag:?}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
 }
 
 #[tokio::test]
-async fn profile_setting_applies_to_every_profile_in_fan_out() {
+async fn config_setting_applies_to_every_profile_in_fan_out() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/dataprime/query"))
@@ -154,7 +156,7 @@ async fn profile_setting_applies_to_every_profile_in_fan_out() {
         .expect(2)
         .mount(&server)
         .await;
-    let output = invoke_with_profile_settings(
+    let output = invoke_with_config_settings(
         &server,
         &["logs", "limit 0", "-o", "json"],
         &["a", "b"],

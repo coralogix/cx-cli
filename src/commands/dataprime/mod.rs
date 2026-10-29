@@ -246,8 +246,8 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
 /// Options shared by logs, spans, and raw DataPrime queries.
 #[derive(clap::Args, Clone, Copy, Debug, Default)]
 pub struct QueryOptions {
-    /// Reject keypaths absent from the schema [default: false, or the profile's
-    /// strict_fields_validation]. Unknown fields otherwise only produce warnings.
+    /// Reject keypaths absent from the schema [default: strict_fields_validation
+    /// in config.toml, else false]. Unknown fields otherwise only produce warnings.
     #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true",
           require_equals = true)]
     pub strict_fields_validation: Option<bool>,
@@ -255,6 +255,15 @@ pub struct QueryOptions {
     /// Include results, queryId, warnings, and statistics in the stdout response.
     #[arg(long)]
     pub extended_information: bool,
+}
+
+impl QueryOptions {
+    /// Fill an unset `--strict-fields-validation` from `config.toml`.
+    pub fn with_config_default(mut self, strict_fields_validation: bool) -> Self {
+        self.strict_fields_validation
+            .get_or_insert(strict_fields_validation);
+        self
+    }
 }
 
 /// Information for one independently executed profile query.
@@ -280,11 +289,7 @@ async fn execute_query(
     options: QueryOptions,
 ) -> Result<QueryGenericResponse> {
     let api = DataprimeApi::new(&target.client)
-        .with_strict_fields_validation(
-            options
-                .strict_fields_validation
-                .unwrap_or(target.cfg.strict_fields_validation),
-        )
+        .with_strict_fields_validation(options.strict_fields_validation.unwrap_or_default())
         .with_warning_profile(&target.cfg.profile_name);
     Ok(api
         .query_generic(query, start_ts, end_ts, limit, tier, source)

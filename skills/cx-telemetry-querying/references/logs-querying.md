@@ -31,7 +31,7 @@ The `source logs` prefix is automatically injected if the query doesn't already 
 | `--limit` | `100` | Maximum number of results |
 | `--tier` | `frequent` | Storage tier: `frequent` (hot/recent) or `archive` (cold/historical) |
 | `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
-| `--strict-fields-validation[=BOOL]` | `false` (or the profile's `strict_fields_validation`) | Reject queries that reference fields missing from the schema, instead of running them with a warning |
+| `--strict-fields-validation[=BOOL]` | `false` (or `strict_fields_validation` in `~/.cx/config.toml`) | Reject queries that reference fields missing from the schema, instead of running them with a warning |
 | `--extended-information` | off | Add `queryId`, `warnings`, and `statistics` to stdout (no spilling) |
 
 ### Warnings and field validation

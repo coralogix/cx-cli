@@ -60,7 +60,7 @@ impl<'a> DataprimeApi<'a> {
     pub fn new(client: &'a CxClient) -> Self {
         Self {
             client,
-            strict_fields_validation: true,
+            strict_fields_validation: false,
             warning_profile: None,
         }
     }
@@ -107,9 +107,9 @@ impl<'a> DataprimeApi<'a> {
         .map_err(|error| self.with_field_validation_hint(error))
     }
 
-    // API sets --strict-fields-validation=false by default.
-    // But in CLI we decided to optimize for popular case and set --strict-fields-validation to `true`
-    // This can backfire in case if newly added data fields are not yet ingested in the schema or schema dropped them due to cardinality protections
+    // Strict validation is opt-in (flag or profile), matching the API default.
+    // It can reject real fields: new fields not yet in the schema, fields the schema dropped for
+    // cardinality protection, and every field when the time range has no data.
     // We aim to help agents and users to discover the `strict-fields-validation` cli param by modifying the error message.
     fn with_field_validation_hint(&self, mut error: CxError) -> CxError {
         if self.strict_fields_validation {
@@ -131,8 +131,7 @@ impl<'a> DataprimeApi<'a> {
                     })
                 {
                     message.push_str(
-                        "\nIn order to force-run this query use --strict-fields-validation=false \
-                         (or set strict_fields_validation = false in the profile to make it the default)",
+                        "\nIn order to force-run this query use --strict-fields-validation=false",
                     );
                 }
             }

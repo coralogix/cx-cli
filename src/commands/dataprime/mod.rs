@@ -246,8 +246,8 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
 /// Options shared by logs, spans, and raw DataPrime queries.
 #[derive(clap::Args, Clone, Copy, Debug, Default)]
 pub struct QueryOptions {
-    /// Reject keypaths absent from the schema [default: true, or the profile's
-    /// strict_fields_validation]. Set =false to allow unknown fields.
+    /// Reject keypaths absent from the schema [default: false, or the profile's
+    /// strict_fields_validation]. Unknown fields otherwise only produce warnings.
     #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true",
           require_equals = true)]
     pub strict_fields_validation: Option<bool>,

@@ -359,8 +359,7 @@ pub struct Profile {
     pub default_tier: Option<crate::Tier>,
     /// Per-profile default for DataPrime `strictFieldsValidation` (logs,
     /// spans, raw queries). The `--strict-fields-validation` flag overrides
-    /// it. Falls back to `true` when omitted. Set `false` for teams whose
-    /// schema drops fields (e.g. very wide JSON branches).
+    /// it. Falls back to `false` (the public API default) when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_fields_validation: Option<bool>,
     /// Explicit override for the Coralogix web console base URL used to build
@@ -409,7 +408,7 @@ pub struct ResolvedConfig {
     /// config. Falls back to `Archive` when the profile does not specify one.
     pub default_tier: crate::Tier,
     /// Default DataPrime strict field validation, resolved from the profile
-    /// config. Falls back to `true` when the profile does not specify one.
+    /// config. Falls back to `false` when the profile does not specify one.
     pub strict_fields_validation: bool,
     /// Explicit console base URL override from `Profile::console_url`, with
     /// any trailing slash trimmed. Takes precedence over the automatic
@@ -823,7 +822,7 @@ async fn resolve_single(
                 api_key: key.to_string(),
                 auth_kind: AuthKind::ApiKey,
                 default_tier: crate::Tier::Archive,
-                strict_fields_validation: true,
+                strict_fields_validation: false,
                 console_url: None,
                 credentials_overridden: true,
             });
@@ -966,7 +965,7 @@ async fn resolve_single(
         api_key: bearer,
         auth_kind,
         default_tier: profile.default_tier.unwrap_or(crate::Tier::Archive),
-        strict_fields_validation: profile.strict_fields_validation.unwrap_or(true),
+        strict_fields_validation: profile.strict_fields_validation.unwrap_or(false),
         console_url: profile
             .console_url
             .as_deref()
@@ -1247,7 +1246,7 @@ default_profile = "my-profile"
             auth_kind: AuthKind::ApiKey,
             endpoint: "https://api.eu2.coralogix.com".to_string(),
             default_tier: crate::Tier::Archive,
-            strict_fields_validation: true,
+            strict_fields_validation: false,
             console_url: None,
             credentials_overridden: false,
         };

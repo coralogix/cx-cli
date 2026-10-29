@@ -38,6 +38,7 @@ fn dataprime_strict_validation_and_extended_information() {
             harness::SHORT_WINDOW_START,
             "--limit",
             "1",
+            "--strict-fields-validation",
             "-o",
             "json",
         ])
@@ -45,7 +46,7 @@ fn dataprime_strict_validation_and_extended_information() {
         .expect("cx must run");
     assert!(
         !strict.status.success(),
-        "unknown keypaths must fail by default"
+        "unknown keypaths must fail with --strict-fields-validation"
     );
     let stderr = String::from_utf8_lossy(&strict.stderr);
     assert!(stderr.contains("keypath does not exist"), "{stderr}");
@@ -57,7 +58,6 @@ fn dataprime_strict_validation_and_extended_information() {
         harness::SHORT_WINDOW_START,
         "--limit",
         "1",
-        "--strict-fields-validation=false",
         "--extended-information",
         "-o",
         "json",

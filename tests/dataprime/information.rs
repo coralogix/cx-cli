@@ -58,7 +58,7 @@ fn stderr_warnings(output: &Output) -> Vec<Value> {
 }
 
 #[tokio::test]
-async fn strict_validation_defaults_true_and_can_be_disabled_on_all_query_commands() {
+async fn strict_validation_defaults_false_and_can_be_enabled_on_all_query_commands() {
     for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
         for flag in [
             None,
@@ -67,7 +67,7 @@ async fn strict_validation_defaults_true_and_can_be_disabled_on_all_query_comman
             Some("--strict-fields-validation=false"),
         ] {
             let server = MockServer::start().await;
-            let strict = flag != Some("--strict-fields-validation=false");
+            let strict = flag.is_some_and(|f| f != "--strict-fields-validation=false");
             Mock::given(method("POST"))
                 .and(path("/api/v1/dataprime/query"))
                 .and(body_partial_json(
@@ -145,7 +145,7 @@ async fn profile_setting_applies_to_every_profile_in_fan_out() {
     Mock::given(method("POST"))
         .and(path("/api/v1/dataprime/query"))
         .and(body_partial_json(
-            json!({"metadata": {"strictFieldsValidation": false}}),
+            json!({"metadata": {"strictFieldsValidation": true}}),
         ))
         .respond_with(
             ResponseTemplate::new(200)
@@ -158,7 +158,7 @@ async fn profile_setting_applies_to_every_profile_in_fan_out() {
         &server,
         &["logs", "limit 0", "-o", "json"],
         &["a", "b"],
-        "strict_fields_validation = false\n",
+        "strict_fields_validation = true\n",
     )
     .await;
     assert!(
@@ -171,8 +171,7 @@ async fn profile_setting_applies_to_every_profile_in_fan_out() {
 #[tokio::test]
 async fn unknown_keypath_errors_suggest_disabling_strict_validation() {
     let message = "Compilation errors:\n - keypath does not exist at [0:21-0:35]: $d.new_field\n - keypath does not exist at [0:38-0:52]: $d.other_field";
-    let hint = "In order to force-run this query use --strict-fields-validation=false \
-                (or set strict_fields_validation = false in the profile to make it the default)";
+    let hint = "In order to force-run this query use --strict-fields-validation=false";
     for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
         for status in [400, 200] {
             let server = MockServer::start().await;
@@ -195,8 +194,8 @@ async fn unknown_keypath_errors_suggest_disabling_strict_validation() {
                     "-o",
                     "json",
                 ]);
-                if !strict {
-                    args.push("--strict-fields-validation=false");
+                if strict {
+                    args.push("--strict-fields-validation");
                 }
                 let output = invoke(&server, &args, &["test"]).await;
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -244,7 +243,18 @@ async fn unrelated_errors_and_compile_warnings_do_not_suggest_disabling_strict_v
             .respond_with(ResponseTemplate::new(status).set_body_json(&body))
             .mount(&server)
             .await;
-        let output = invoke(&server, &["logs", "limit 0", "-o", "json"], &["test"]).await;
+        let output = invoke(
+            &server,
+            &[
+                "logs",
+                "limit 0",
+                "-o",
+                "json",
+                "--strict-fields-validation",
+            ],
+            &["test"],
+        )
+        .await;
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(
             output.status.success(),

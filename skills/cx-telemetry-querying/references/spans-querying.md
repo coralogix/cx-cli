@@ -31,13 +31,13 @@ The `source spans` is automatically injected - do not include it in the query.
 | `--limit` | `200` | Maximum number of results |
 | `--tier` | `frequent` | Storage tier: `frequent` (hot/recent) or `archive` (cold/historical) |
 | `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
-| `--strict-fields-validation[=BOOL]` | `true` (or the profile's `strict_fields_validation`) | Reject queries that reference fields missing from the schema. `=false` lets them run with a warning |
+| `--strict-fields-validation[=BOOL]` | `false` (or the profile's `strict_fields_validation`) | Reject queries that reference fields missing from the schema, instead of running them with a warning |
 | `--extended-information` | off | Add `queryId`, `warnings`, and `statistics` to stdout (no spilling) |
 
 ### Warnings and field validation
 
 - **Read stderr, not just stdout.** Every API warning is printed to stderr as one JSON line, e.g. `{"warning":{"numberOfResultsLimitWarning":{"numberOfResultsLimit":2000}},"profile":"prod"}`. Limit warnings (`numberOfResultsLimitWarning`, `bytesScannedLimitWarning`, `aggregationBucketsLimitWarning`, `filesReadLimitWarning`) and `archiveWarning` mean the results may be **incomplete** - say so in your answer, and narrow the query or time range before drawing conclusions.
-- **`keypath does not exist` is usually a typo or a wrong field.** Fix the field name first (`cx search-fields`, or a sample `-o json` query). Only if you have evidence the field really exists in the data (seen in raw records, or very new/very wide JSON that the schema may not have caught up with), rerun with `--strict-fields-validation=false`.
+- **A `compileWarning` with `keypath does not exist` means the field is not in the schema for that time range.** Empty results then usually mean a typo or a wrong field, not "no matching data". Fix the field name (`cx search-fields`, or a sample `-o json` query) before you conclude anything. If every field gets this warning, including `$m`/`$l` fields, the time range has no data (look for `archiveWarning.noMetastoreData`).
 - Add `--extended-information -o json` when you need the query ID (for debugging or support) or execution statistics.
 
 ---

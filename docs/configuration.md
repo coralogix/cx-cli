@@ -323,7 +323,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
 | `label` | No | Free-form label, for example `"production"` |
-| `strict_fields_validation` | No | Default for `--strict-fields-validation` on `cx logs`, `cx spans`, and `cx dataprime query` (default `true`). Set `false` if this team's schema is missing fields its data has. See [DataPrime validation and diagnostics](dataprime-diagnostics.md). |
+| `strict_fields_validation` | No | Default for `--strict-fields-validation` on `cx logs`, `cx spans`, and `cx dataprime query` (default `false`). Set `true` to reject queries that reference fields missing from the schema. See [DataPrime validation and diagnostics](dataprime-diagnostics.md). |
 | `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links. If unset, `cx` resolves it automatically via `GET /identity/whoami` - see [Console links](#console-links). |
 
 ### OAuth-specific fields

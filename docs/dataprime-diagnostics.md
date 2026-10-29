@@ -4,20 +4,26 @@ Applies to `cx logs`, `cx spans`, and `cx dataprime query`.
 
 ## Strict field validation
 
-Queries that reference fields missing from the schema are rejected by default. Use `--strict-fields-validation=false` to allow unknown fields with
-compile warnings. `--strict-fields-validation` (or `=true`) enables validation
-explicitly. This CLI default differs from the public API's permissive default.
+Strict field validation is off by default, the same as the public API. A query
+that references a field missing from the schema still runs. The API sends a
+`compileWarning` with `keypath does not exist`, and the CLI prints it on stderr.
 
-When a query fails with `keypath does not exist`, the error ends with a hint
-pointing at `--strict-fields-validation=false`. Use it when the field exists in
-the data but not in the schema yet (ingestion delay, or the schema dropped it
-because a JSON branch has too many children).
+Use `--strict-fields-validation` (or `=true`) to reject these queries instead.
+The error ends with a hint pointing at `--strict-fields-validation=false`.
 
-To make permissive validation the default for a profile, set it in
+Strict validation can reject fields that exist:
+
+- New fields that are not in the schema yet (ingestion delay).
+- Fields the schema dropped because a JSON branch has too many children.
+- All fields, including standard `$m`/`$l` fields, when the time range has no
+  data. Without strict validation, the API sends an
+  `archiveWarning.noMetastoreData` warning for this case.
+
+To turn strict validation on by default for a profile, set it in
 `~/.cx/profiles/<name>.toml`:
 
 ```toml
-strict_fields_validation = false
+strict_fields_validation = true
 ```
 
 Put the line at the top of the file, above any `[section]` header such as
@@ -46,7 +52,7 @@ Add `--extended-information` to include query information on stdout:
 
 ```bash
 cx logs 'limit 10' --extended-information -o json
-cx spans 'limit 10' --strict-fields-validation=false --extended-information -o json
+cx spans 'limit 10' --strict-fields-validation --extended-information -o json
 cx dataprime query 'source logs | limit 10' --extended-information -o json
 ```
 

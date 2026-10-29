@@ -300,7 +300,7 @@ mod tests {
             auth_kind: crate::config::AuthKind::ApiKey,
             endpoint: endpoint.to_string(),
             default_tier: crate::Tier::Archive,
-            strict_fields_validation: true,
+            strict_fields_validation: false,
             console_url: console_url.map(str::to_string),
             credentials_overridden: false,
         }

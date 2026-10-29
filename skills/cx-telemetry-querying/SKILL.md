@@ -218,4 +218,4 @@ Not every question is answered by querying data. If the user's intent is operati
 - **Parallel discovery**: for ambiguous questions, search metrics, logs, and spans concurrently
 - **Validate with code**: when unsure what a metric or field represents, check the codebase
 - **Pivot on failure**: if one pillar is empty, try another before giving up
-- **Check stderr warnings on logs/spans/DataPrime queries**: they are JSON lines and can mean the results are incomplete (see the Warnings section in the logs/spans references)
+- **Check stderr warnings on logs, spans, RUM, and other DataPrime queries**: they are JSON lines and can mean the results are incomplete (see the Warnings section in `dataprime-reference.md`)

@@ -4,7 +4,7 @@ mod common;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::dataprime::run_query;
+use coralogix_cli::commands::dataprime::{run_query, QueryOptions};
 use coralogix_cli::commands::logs;
 use coralogix_cli::commands::spans;
 use coralogix_cli::config::OutputFormat;
@@ -161,6 +161,7 @@ async fn logs_command_delegates_to_dataprime() {
         OutputFormat::Json,
         None,
         "/tmp",
+        QueryOptions::default(),
     )
     .await
     .expect("logs::run should succeed");
@@ -194,6 +195,7 @@ async fn spans_command_delegates_to_dataprime() {
         OutputFormat::Json,
         None,
         "/tmp",
+        QueryOptions::default(),
     )
     .await
     .expect("spans::run should succeed");

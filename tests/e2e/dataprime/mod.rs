@@ -50,6 +50,14 @@ fn dataprime_strict_validation_and_extended_information() {
     );
     let stderr = String::from_utf8_lossy(&strict.stderr);
     assert!(stderr.contains("keypath does not exist"), "{stderr}");
+    assert!(
+        stderr.contains("--strict-fields-validation=false"),
+        "strict keypath errors must name the flag that turns validation off: {stderr}"
+    );
+    assert!(
+        stderr.contains("strict_fields_validation"),
+        "strict keypath errors must name strict_fields_validation in ~/.cx/config.toml: {stderr}"
+    );
     let permissive = harness::run_ok_json(&[
         "dataprime",
         "query",

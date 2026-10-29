@@ -107,10 +107,11 @@ impl<'a> DataprimeApi<'a> {
         .map_err(|error| self.with_field_validation_hint(error))
     }
 
-    // Strict validation is opt-in (flag or profile), matching the API default.
+    // Strict validation is opt-in (the flag, or strict_fields_validation in
+    // ~/.cx/config.toml), matching the API default.
     // It can reject real fields: new fields not yet in the schema, fields the schema dropped for
     // cardinality protection, and every field when the time range has no data.
-    // We aim to help agents and users to discover the `strict-fields-validation` cli param by modifying the error message.
+    // The hint names both the flag (one run) and the config key (the default).
     fn with_field_validation_hint(&self, mut error: CxError) -> CxError {
         if self.strict_fields_validation {
             let message = match &mut error {
@@ -131,7 +132,7 @@ impl<'a> DataprimeApi<'a> {
                     })
                 {
                     message.push_str(
-                        "\nIn order to force-run this query use --strict-fields-validation=false",
+                        "\nHint: add --strict-fields-validation=false, or set strict_fields_validation = false in ~/.cx/config.toml.",
                     );
                 }
             }

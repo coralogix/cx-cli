@@ -235,6 +235,15 @@ cx dataprime show filter                        # Detailed help for a specific c
 cx dataprime show groupby
 ```
 
+## Warnings
+
+These apply to `cx logs`, `cx spans`, and `cx dataprime query`, including `cx dataprime query --source rum.events`.
+
+- **Read stderr, not just stdout.** Every API warning is printed to stderr as one JSON line, for example `{"warning":{"numberOfResultsLimitWarning":{"numberOfResultsLimit":2000}},"profile":"prod"}`. Limit warnings (`numberOfResultsLimitWarning`, `bytesScannedLimitWarning`, `aggregationBucketsLimitWarning`, `filesReadLimitWarning`) and `archiveWarning` mean the results may be incomplete. Say so in the answer, and narrow the query or the time range before drawing conclusions.
+- **A `compileWarning` with `keypath does not exist` means the field is not in the schema for that time range.** Empty results then usually mean a typo or a wrong field, not "no matching data". Fix the field name (`cx search-fields`, or a sample `-o json` query) before concluding anything. If every field gets this warning, including `$m` and `$l`, the time range has no data (look for `archiveWarning.noMetastoreData`).
+- `--strict-fields-validation` is off unless the flag is passed or `~/.cx/config.toml` sets `strict_fields_validation = true`. Off, an unknown field is a stderr `compileWarning` and the query still runs. On, that query fails. The error names `--strict-fields-validation=false` and the config key.
+- Add `--extended-information -o json` when the query id or execution statistics are needed. Non-aggregated `toon` output with that flag still spills when it is over the size cap; the file includes the query information.
+
 ## Validating a DataPrime query
 
 A query that looks right can still fail on a typoed field path, an invented function, or a malformed pipeline stage. Validate before trusting the output — a short-window run through the CLI is cheap and catches almost all of these:
@@ -256,6 +265,6 @@ Check both the exit code and the output — some errors surface only in the outp
 - `Compilation errors:` — parse error, unknown function, malformed expression
 
 **Soft fail** (needs investigation):
-- `keypath does not exist` — the query parsed, but no record in the window had the referenced field. This is ambiguous: the field name might be a typo, or it might be real but absent from records in this 15-minute slice. Confirm with `cx search-fields "<field hint>" --dataset logs` (or `--dataset spans`). If the field is real, the query is fine — try a wider window or accept the empty result. If it isn't, fix the field name.
+- `keypath does not exist` inside a `compileWarning` — the field is not in the schema for that time range. See [Warnings](#warnings). Confirm the name with `cx search-fields`. If every field warns, including `$m` and `$l`, the time range has no data.
 
 On fail: re-discover fields with `cx search-fields`, look up command syntax with `cx dataprime show <command>`, fix, re-run.

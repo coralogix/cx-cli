@@ -9,7 +9,8 @@ that references a field missing from the schema still runs. The API sends a
 `compileWarning` with `keypath does not exist`, and the CLI prints it on stderr.
 
 Use `--strict-fields-validation` (or `=true`) to reject these queries instead.
-The error ends with a hint pointing at `--strict-fields-validation=false`.
+The error ends with a hint pointing at `--strict-fields-validation=false` and at
+`strict_fields_validation` in `~/.cx/config.toml`.
 
 Strict validation can reject fields that exist:
 
@@ -55,9 +56,11 @@ cx spans 'limit 10' --strict-fields-validation --extended-information -o json
 cx dataprime query 'source logs | limit 10' --extended-information -o json
 ```
 
-For one profile, the extended JSON/TOON response is `{ "results": [...], "queryId": "...",
+For one profile, the extended response is `{ "results": [...], "queryId": "...",
 "warnings": [...], "statistics": {...} }`. Missing query IDs/statistics are
-`null`; absent warnings are `[]`. Results keep their existing normalization.
+`null`; absent warnings are `[]`. JSON results keep their existing normalization.
+Non-aggregated TOON result rows are renamed to `$m`, `$l`, and `$d` first, the
+same as a normal `toon` query.
 
 For multiple profiles, the response is `{ "results": [...], "queries": [...] }`.
 Each query entry contains `profile`, `queryId`, `warnings`, and `statistics`;
@@ -66,7 +69,10 @@ result rows retain their profile tags. IDs and statistics are not combined.
 Text mode keeps the existing result rendering and appends a JSON diagnostics
 object after a blank line. For one profile, this object contains `queryId`,
 `warnings`, and `statistics`; for multiple profiles it contains `queries`.
-JSON mode returns the combined envelope; TOON mode encodes that envelope as TOON.
-Extended output stays on stdout, bypassing result spilling.
+JSON mode prints the combined envelope. TOON mode encodes that envelope as TOON.
+A non-aggregated TOON payload larger than `max_dataprime_direct_output_size` is
+written to the temp file as JSON, and stdout is the result count plus that path.
+The file is the full envelope, not the rows alone. Aggregated TOON output is not
+spilled. JSON and text extended output stay on stdout.
 Without the flag, the existing stdout format and spilling behavior are preserved.
 Query failures still return a nonzero exit code.

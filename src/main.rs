@@ -3735,9 +3735,16 @@ async fn main() -> Result<()> {
                 tier,
                 query_options,
             } => {
-                commands::dataprime::run_query_with_options(
-                    &targets, &query, "logs", &start, &end, limit, tier, output, max_direct, &temp_dir,
-                    Some(commands::logs::render_log_text),
+                commands::logs::run(
+                    &targets,
+                    &query,
+                    &start,
+                    &end,
+                    limit,
+                    tier,
+                    output,
+                    max_direct,
+                    &temp_dir,
                     query_options.with_config_default(global_config.strict_fields_validation),
                 )
                 .await?;
@@ -3780,9 +3787,16 @@ async fn main() -> Result<()> {
                 tier,
                 query_options,
             } => {
-                commands::dataprime::run_query_with_options(
-                    &targets, &query, "spans", &start, &end, limit, tier, output, max_direct, &temp_dir,
-                    Some(commands::spans::render_span_text),
+                commands::spans::run(
+                    &targets,
+                    &query,
+                    &start,
+                    &end,
+                    limit,
+                    tier,
+                    output,
+                    max_direct,
+                    &temp_dir,
                     query_options.with_config_default(global_config.strict_fields_validation),
                 )
                 .await?;

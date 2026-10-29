@@ -4,7 +4,7 @@ use anyhow::Result;
 use colored::Colorize;
 use serde_json::Value;
 
-use crate::commands::dataprime::MergedResults;
+use crate::commands::dataprime::{MergedResults, QueryOptions};
 use crate::config::OutputFormat;
 use crate::execution::ExecutionTarget;
 use crate::Tier;
@@ -98,8 +98,9 @@ pub async fn run(
     output: OutputFormat,
     max_direct: Option<usize>,
     temp_dir: &str,
+    options: QueryOptions,
 ) -> Result<()> {
-    super::dataprime::run_query(
+    super::dataprime::run_query_with_options(
         targets,
         query,
         "spans",
@@ -111,6 +112,7 @@ pub async fn run(
         max_direct,
         temp_dir,
         Some(render_span_text),
+        options,
     )
     .await
 }

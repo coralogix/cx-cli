@@ -173,7 +173,7 @@ async fn config_setting_applies_to_every_profile_in_fan_out() {
 #[tokio::test]
 async fn unknown_keypath_errors_suggest_disabling_strict_validation() {
     let message = "Compilation errors:\n - keypath does not exist at [0:21-0:35]: $d.new_field\n - keypath does not exist at [0:38-0:52]: $d.other_field";
-    let hint = "In order to force-run this query use --strict-fields-validation=false";
+    let hint = "Hint: add --strict-fields-validation=false, or set strict_fields_validation = false in ~/.cx/config.toml.";
     for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
         for status in [400, 200] {
             let server = MockServer::start().await;
@@ -310,12 +310,18 @@ async fn extended_information_preserves_full_warnings_and_statistics_in_all_form
         );
         let stdout = String::from_utf8(output.stdout).unwrap();
         if format == "toon" {
-            assert!(
-                stdout.contains("query-123")
-                    && stdout.contains("missingData")
-                    && stdout.contains("statistics"),
-                "{stdout}"
-            );
+            let path = stdout
+                .lines()
+                .find_map(|line| line.strip_prefix("1 results retrieved. Results written to: "))
+                .unwrap_or_else(|| panic!("{stdout}"));
+            let value: Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let _ = std::fs::remove_file(path);
+            assert_eq!(value["queryId"], "query-123");
+            assert_eq!(value["warnings"], json!([warning]));
+            assert_eq!(value["statistics"], statistics);
+            assert_eq!(value["results"][0]["$d"]["message"], "hello");
+            assert!(value["results"][0].get("userData").is_none(), "{value}");
         } else {
             let value: Value = if format == "text" {
                 let (rows, information) = stdout.split_once("\n\n").unwrap();
@@ -331,11 +337,11 @@ async fn extended_information_preserves_full_warnings_and_statistics_in_all_form
             assert_eq!(value["queryId"], "query-123");
             assert_eq!(value["warnings"], json!([warning]));
             assert_eq!(value["statistics"], statistics);
+            assert!(
+                !stdout.contains("Results written to:"),
+                "json and text extended output stays on stdout"
+            );
         }
-        assert!(
-            !stdout.contains("Results written to:"),
-            "extended information must remain on stdout"
-        );
     }
 }
 

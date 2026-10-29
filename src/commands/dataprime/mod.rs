@@ -16,7 +16,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
-use crate::spill::{maybe_spill, transform_for_toon, SpillOutcome};
+use crate::spill::{maybe_spill, transform_for_toon, write_result_file, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;
 
@@ -505,32 +505,66 @@ pub async fn run_query_with_options(
     .await;
 
     let merged = merge_results(per_profile, include_profile, cases_warning.as_deref())?;
-    if options.extended_information && output == OutputFormat::Text {
-        render_results(&merged, output, max_direct, temp_dir, text_renderer)?;
+    if options.extended_information {
+        match output {
+            OutputFormat::Text => {
+                render_results(&merged, output, max_direct, temp_dir, text_renderer)?;
+                println!(
+                    "\n{}",
+                    serde_json::to_string_pretty(&query_information(&merged))?
+                );
+            }
+            OutputFormat::Json => {
+                for warning in &merged.warnings {
+                    eprintln!("{warning}");
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&extended_response(&merged))?
+                );
+            }
+            OutputFormat::Toon => {
+                for warning in &merged.warnings {
+                    eprintln!("{warning}");
+                }
+                render_extended_toon(&merged, max_direct, temp_dir)?;
+            }
+        }
+        return Ok(());
+    }
+    render_results(&merged, output, max_direct, temp_dir, text_renderer)
+}
+
+/// TOON extended output. Non-aggregated rows are renamed to `$m` / `$l` / `$d`.
+/// When that encoded payload exceeds `max_direct`, the envelope is written as
+/// JSON and stdout gets the spill path instead of the payload.
+fn render_extended_toon(
+    merged: &MergedResults,
+    max_direct: Option<usize>,
+    temp_dir: &str,
+) -> Result<()> {
+    let mut response = extended_response(merged);
+    if !merged.is_aggregate {
+        if let Some(rows) = response.get_mut("results").and_then(Value::as_array_mut) {
+            for row in rows.iter_mut() {
+                *row = transform_for_toon(row);
+            }
+        }
+    }
+    let encoded =
+        toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+    let over_limit = !merged.is_aggregate && max_direct.is_some_and(|limit| encoded.len() > limit);
+    if over_limit {
+        let path = write_result_file(&serde_json::to_string_pretty(&response)?, temp_dir)?;
         println!(
-            "\n{}",
-            serde_json::to_string_pretty(&query_information(&merged))?
+            "{} results retrieved. Results written to: {}",
+            merged.rows.len(),
+            path.display()
         );
         return Ok(());
     }
-    if options.extended_information {
-        for warning in &merged.warnings {
-            eprintln!("{warning}");
-        }
-        let response = extended_response(&merged);
-        match output {
-            OutputFormat::Toon => println!(
-                "{}",
-                toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?
-            ),
-            OutputFormat::Json | OutputFormat::Text => {
-                println!("{}", serde_json::to_string_pretty(&response)?)
-            }
-        }
-        Ok(())
-    } else {
-        render_results(&merged, output, max_direct, temp_dir, text_renderer)
-    }
+    println!("{encoded}");
+    Ok(())
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

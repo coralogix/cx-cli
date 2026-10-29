@@ -17,7 +17,7 @@ Strict validation can reject fields that exist:
 - New fields that are not in the schema yet (ingestion delay).
 - Fields the schema dropped because a JSON branch has too many children.
 - All fields, including standard `$m`/`$l` fields, when the time range has no
-  data. Without strict validation, the API sends an
+  data. Without strict validation, the API can send an
   `archiveWarning.noMetastoreData` warning for this case.
 
 To turn strict validation on by default for all profiles, set it in

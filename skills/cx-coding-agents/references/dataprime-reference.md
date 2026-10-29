@@ -237,12 +237,12 @@ cx dataprime show groupby
 
 ## Warnings
 
-These apply to `cx logs`, `cx spans`, and `cx dataprime query`, including `cx dataprime query --source rum.events`.
+These apply to `cx logs`, `cx spans`, and `cx dataprime query`.
 
 - **Read stderr, not just stdout.** Every API warning is printed to stderr as one JSON line, for example `{"warning":{"numberOfResultsLimitWarning":{"numberOfResultsLimit":2000}},"profile":"prod"}`. Limit warnings (`numberOfResultsLimitWarning`, `bytesScannedLimitWarning`, `aggregationBucketsLimitWarning`, `filesReadLimitWarning`) and `archiveWarning` mean the results may be incomplete. Say so in the answer, and narrow the query or the time range before drawing conclusions.
-- **A `compileWarning` with `keypath does not exist` means the field is not in the schema for that time range.** Empty results then usually mean a typo or a wrong field, not "no matching data". Fix the field name (`cx search-fields`, or a sample `-o json` query) before concluding anything. If every field gets this warning, including `$m` and `$l`, the time range has no data (look for `archiveWarning.noMetastoreData`).
-- `--strict-fields-validation` is off unless the flag is passed or `~/.cx/config.toml` sets `strict_fields_validation = true`. Off, an unknown field is a stderr `compileWarning` and the query still runs. On, that query fails. The error names `--strict-fields-validation=false` and the config key.
-- Add `--extended-information -o json` when the query id or execution statistics are needed. Non-aggregated `toon` output with that flag still spills when it is over the size cap; the file includes the query information.
+- **A `compileWarning` with `keypath does not exist` means the field is not in the schema for that time range.** Empty results then usually mean a typo or a wrong field, not "no matching data". Fix the field name (`cx search-fields`, or a sample `-o json` query) before concluding anything. If every field gets this warning, including `$m` and `$l`, the time range has no data (the API can also send `archiveWarning.noMetastoreData`).
+- `--strict-fields-validation` is off unless the flag is passed or `~/.cx/config.toml` sets `strict_fields_validation = true`. Off, an unknown field is a stderr `compileWarning` and the query still runs. On, that query fails, and the error ends with a hint: `add --strict-fields-validation=false, or set strict_fields_validation = false in ~/.cx/config.toml`.
+- Add `--extended-information -o json` when the query id or execution statistics are needed.
 
 ## Validating a DataPrime query
 

@@ -32,13 +32,11 @@ The `source spans` is automatically injected - do not include it in the query.
 | `--tier` | `frequent` | Storage tier: `frequent` (hot/recent) or `archive` (cold/historical) |
 | `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
 | `--strict-fields-validation[=BOOL]` | `false` (or `strict_fields_validation` in `~/.cx/config.toml`) | Reject queries that reference fields missing from the schema, instead of running them with a warning |
-| `--extended-information` | off | Add `queryId`, `warnings`, and `statistics` to stdout. Non-aggregated `toon` output still spills when it is over the size cap; the file includes this query information |
+| `--extended-information` | off | Add `queryId`, `warnings`, and `statistics` to stdout |
 
-### Warnings and field validation
+### Warnings
 
-- **Read stderr, not just stdout.** Every API warning is printed to stderr as one JSON line, e.g. `{"warning":{"numberOfResultsLimitWarning":{"numberOfResultsLimit":2000}},"profile":"prod"}`. Limit warnings (`numberOfResultsLimitWarning`, `bytesScannedLimitWarning`, `aggregationBucketsLimitWarning`, `filesReadLimitWarning`) and `archiveWarning` mean the results may be **incomplete** - say so in your answer, and narrow the query or time range before drawing conclusions.
-- **A `compileWarning` with `keypath does not exist` means the field is not in the schema for that time range.** Empty results then usually mean a typo or a wrong field, not "no matching data". Fix the field name (`cx search-fields`, or a sample `-o json` query) before you conclude anything. If every field gets this warning, including `$m`/`$l` fields, the time range has no data (look for `archiveWarning.noMetastoreData`).
-- Add `--extended-information -o json` when you need the query ID (for debugging or support) or execution statistics.
+Read stderr warnings before treating a result as complete. See the Warnings section in `dataprime-reference.md`.
 
 ---
 

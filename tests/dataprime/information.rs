@@ -17,10 +17,13 @@ async fn invoke_with_config_settings(
     let home = std::env::temp_dir().join(format!("cx_query_info_{}", uuid::Uuid::new_v4()));
     let dir = home.join(".cx");
     std::fs::create_dir_all(dir.join("profiles")).unwrap();
+    // The default temp_dir is /tmp/, which does not exist on Windows. The spill file must
+    // outlive `home`, so use the OS temp dir (a TOML literal string keeps Windows backslashes).
     std::fs::write(
         dir.join("config.toml"),
         format!(
-            "default_profile = \"test\"\nmax_dataprime_direct_output_size = 1\n{config_settings}"
+            "default_profile = \"test\"\nmax_dataprime_direct_output_size = 1\ntemp_dir = '{}'\n{config_settings}",
+            std::env::temp_dir().display()
         ),
     )
     .unwrap();

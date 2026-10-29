@@ -20,6 +20,10 @@ To make permissive validation the default for a profile, set it in
 strict_fields_validation = false
 ```
 
+Put the line at the top of the file, above any `[section]` header such as
+`[oauth_tokens]`. A line placed after a section header belongs to that section
+and is silently ignored.
+
 The flag always wins over the profile setting. With multiple profiles, each
 profile uses its own setting unless the flag is passed.
 

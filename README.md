@@ -42,6 +42,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 - [Multi-profile fan-out](docs/multi-profile.md)
 - [TOON output format](docs/toon-output.md)
 - [Time syntax](docs/time-syntax.md)
+- [DataPrime validation and diagnostics](docs/dataprime-diagnostics.md)
 - [Architecture](contributing/architecture.md)
 - [Development guide](contributing/development.md)
 

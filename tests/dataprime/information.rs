@@ -1,0 +1,566 @@
+//! Public CLI contract: validation, full stderr warnings, and extended stdout.
+use serde_json::{json, Value};
+use std::process::{Command, Output};
+use wiremock::matchers::{body_partial_json, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+async fn invoke(server: &MockServer, args: &[&str], profiles: &[&str]) -> Output {
+    invoke_with_config_settings(server, args, profiles, "").await
+}
+
+async fn invoke_with_config_settings(
+    server: &MockServer,
+    args: &[&str],
+    profiles: &[&str],
+    config_settings: &str,
+) -> Output {
+    let home = std::env::temp_dir().join(format!("cx_query_info_{}", uuid::Uuid::new_v4()));
+    let dir = home.join(".cx");
+    std::fs::create_dir_all(dir.join("profiles")).unwrap();
+    // The default temp_dir is /tmp/, which does not exist on Windows. The spill file must
+    // outlive `home`, so use the OS temp dir (a TOML literal string keeps Windows backslashes).
+    std::fs::write(
+        dir.join("config.toml"),
+        format!(
+            "default_profile = \"test\"\nmax_dataprime_direct_output_size = 1\ntemp_dir = '{}'\n{config_settings}",
+            std::env::temp_dir().display()
+        ),
+    )
+    .unwrap();
+    for profile in profiles {
+        std::fs::write(dir.join("profiles").join(format!("{profile}.toml")), format!(
+            "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"test-key\"\nregion = \"{}\"\n", server.uri()
+        )).unwrap();
+    }
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cx"));
+    command
+        .env("CX_HOME", &home)
+        .env_remove("CX_API_KEY")
+        .env_remove("CX_REGION")
+        .env_remove("CX_PROFILE")
+        .env_remove("CX_OUTPUT")
+        .env_remove("CX_AGENT_MODE")
+        .env_remove("CLAUDECODE")
+        .env_remove("CLAUDE_CODE")
+        .args(["--no-console-link"]);
+    for profile in profiles {
+        command.args(["--profile", profile]);
+    }
+    command.args(args);
+    let result = tokio::task::spawn_blocking(move || command.output().unwrap())
+        .await
+        .unwrap();
+    std::fs::remove_dir_all(home).unwrap();
+    result
+}
+
+fn stderr_warnings(output: &Output) -> Vec<Value> {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|v| v.get("warning").is_some())
+        .collect()
+}
+
+#[tokio::test]
+async fn strict_validation_defaults_false_and_can_be_enabled_on_all_query_commands() {
+    for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
+        for flag in [
+            None,
+            Some("--strict-fields-validation"),
+            Some("--strict-fields-validation=true"),
+            Some("--strict-fields-validation=false"),
+        ] {
+            let server = MockServer::start().await;
+            let strict = flag.is_some_and(|f| f != "--strict-fields-validation=false");
+            Mock::given(method("POST"))
+                .and(path("/api/v1/dataprime/query"))
+                .and(body_partial_json(
+                    json!({"metadata": {"strictFieldsValidation": strict}}),
+                ))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string("{\"statistics\":{\"status\":\"COMPLETED\"}}"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let mut args = command.clone();
+            args.extend(["source logs | limit 0", "-o", "json"]);
+            if let Some(flag) = flag {
+                args.push(flag);
+            }
+            let output = invoke(&server, &args, &["test"]).await;
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+                json!([])
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn config_setting_sets_strict_validation_default_and_flag_overrides_it() {
+    for (config_setting, flag, strict) in [
+        ("strict_fields_validation = false\n", None, false),
+        ("strict_fields_validation = true\n", None, true),
+        (
+            "strict_fields_validation = false\n",
+            Some("--strict-fields-validation"),
+            true,
+        ),
+        (
+            "strict_fields_validation = true\n",
+            Some("--strict-fields-validation=false"),
+            false,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/dataprime/query"))
+            .and(body_partial_json(
+                json!({"metadata": {"strictFieldsValidation": strict}}),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("{\"statistics\":{\"status\":\"COMPLETED\"}}"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut args = vec!["logs", "limit 0", "-o", "json"];
+        args.extend(flag);
+        let output = invoke_with_config_settings(&server, &args, &["test"], config_setting).await;
+        assert!(
+            output.status.success(),
+            "{config_setting} {flag:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[tokio::test]
+async fn config_setting_applies_to_every_profile_in_fan_out() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .and(body_partial_json(
+            json!({"metadata": {"strictFieldsValidation": true}}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("{\"statistics\":{\"status\":\"COMPLETED\"}}"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let output = invoke_with_config_settings(
+        &server,
+        &["logs", "limit 0", "-o", "json"],
+        &["a", "b"],
+        "strict_fields_validation = true\n",
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn unknown_keypath_errors_suggest_disabling_strict_validation() {
+    let message = "Compilation errors:\n - keypath does not exist at [0:21-0:35]: $d.new_field\n - keypath does not exist at [0:38-0:52]: $d.other_field";
+    let hint = "Hint: add --strict-fields-validation=false, or set strict_fields_validation = false in ~/.cx/config.toml.";
+    for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
+        for status in [400, 200] {
+            let server = MockServer::start().await;
+            let response = if status == 400 {
+                // Compilation fails before streaming starts; the public HTTP
+                // endpoint returns its diagnostics as a plain-text 400 body.
+                ResponseTemplate::new(status).set_body_string(message)
+            } else {
+                ResponseTemplate::new(status).set_body_json(json!({"error": {"message": message}}))
+            };
+            Mock::given(method("POST"))
+                .and(path("/api/v1/dataprime/query"))
+                .respond_with(response)
+                .mount(&server)
+                .await;
+            for strict in [true, false] {
+                let mut args = command.clone();
+                args.extend([
+                    "source logs | choose $d.new_field, $d.other_field",
+                    "-o",
+                    "json",
+                ]);
+                if strict {
+                    args.push("--strict-fields-validation");
+                }
+                let output = invoke(&server, &args, &["test"]).await;
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                assert!(!output.status.success(), "{stderr}");
+                // anyhow indents the lines of an error cause for display.
+                for line in message.lines() {
+                    assert!(stderr.contains(line.trim()), "{stderr}");
+                }
+                assert_eq!(
+                    stderr.matches(hint).count(),
+                    usize::from(strict),
+                    "{stderr}"
+                );
+                assert!(output.stdout.is_empty());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn unrelated_errors_and_compile_warnings_do_not_suggest_disabling_strict_validation() {
+    for (status, body) in [
+        (
+            400,
+            json!({"message": "Compilation errors:\n - syntax error at [0:0-0:3]: foo"}),
+        ),
+        // The missing-keypath text in a query excerpt is not a diagnostic.
+        (
+            400,
+            json!({"message": "Compilation errors:\n - expression must have type bool at [0:21-0:55]: 'keypath does not exist at ['"}),
+        ),
+        (
+            503,
+            json!({"message": "Compilation errors:\n - keypath does not exist at [0:21-0:27]: $d.foo"}),
+        ),
+        (200, json!({"error": {"message": "engine failed"}})),
+        (
+            200,
+            json!({"warning": {"compileWarning": {"warningMessage": "keypath does not exist at [0:21-0:27]: $d.foo"}}}),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/dataprime/query"))
+            .respond_with(ResponseTemplate::new(status).set_body_json(&body))
+            .mount(&server)
+            .await;
+        let output = invoke(
+            &server,
+            &[
+                "logs",
+                "limit 0",
+                "-o",
+                "json",
+                "--strict-fields-validation",
+            ],
+            &["test"],
+        )
+        .await;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.success(),
+            body.get("warning").is_some(),
+            "{stderr}"
+        );
+        assert!(
+            !stderr.contains("--strict-fields-validation=false"),
+            "{stderr}"
+        );
+        if let Some(warning) = body.get("warning") {
+            assert_eq!(
+                stderr_warnings(&output),
+                vec![json!({"profile": "test", "warning": warning})]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn extended_information_preserves_full_warnings_and_statistics_in_all_formats() {
+    let warning = json!({"archiveWarning": {"missingData": {}}});
+    let statistics = json!({"status": "COMPLETED", "e2eDurationMs": "125", "outputRowCount": "1", "futureField": {"a": 1}});
+    let ndjson = [
+        json!({"queryId": {"queryId": "query-123"}}),
+        json!({"warning": warning}),
+        json!({"result": {"results": [{"metadata": [], "labels": [], "userData": "{\"message\":\"hello\"}"}]}}),
+        json!({"statistics": statistics}),
+    ].iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+    for format in ["json", "text", "toon"] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/dataprime/query"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(&ndjson))
+            .mount(&server)
+            .await;
+        let output = invoke(
+            &server,
+            &["logs", "limit 1", "--extended-information", "-o", format],
+            &["test"],
+        )
+        .await;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            stderr_warnings(&output),
+            vec![json!({"profile": "test", "warning": warning})]
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        if format == "toon" {
+            let path = stdout
+                .lines()
+                .find_map(|line| line.strip_prefix("1 results retrieved. Results written to: "))
+                .unwrap_or_else(|| panic!("{stdout}"));
+            let value: Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let _ = std::fs::remove_file(path);
+            assert_eq!(value["queryId"], "query-123");
+            assert_eq!(value["warnings"], json!([warning]));
+            assert_eq!(value["statistics"], statistics);
+            assert_eq!(value["results"][0]["$d"]["message"], "hello");
+            assert!(value["results"][0].get("userData").is_none(), "{value}");
+        } else {
+            let value: Value = if format == "text" {
+                let (rows, information) = stdout.split_once("\n\n").unwrap();
+                assert_eq!(rows, "- [INFO] hello");
+                let information: Value = serde_json::from_str(information).unwrap();
+                assert!(information.get("results").is_none());
+                information
+            } else {
+                let value: Value = serde_json::from_str(&stdout).unwrap();
+                assert_eq!(value["results"][0]["userData"]["message"], "hello");
+                value
+            };
+            assert_eq!(value["queryId"], "query-123");
+            assert_eq!(value["warnings"], json!([warning]));
+            assert_eq!(value["statistics"], statistics);
+            assert!(
+                !stdout.contains("Results written to:"),
+                "json and text extended output stays on stdout"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn warnings_without_message_are_emitted_even_on_failure() {
+    for terminal in [
+        json!({"statistics": {"status": "COMPLETED"}}),
+        json!({"error": {"message": "engine failed"}}),
+    ] {
+        let server = MockServer::start().await;
+        let warnings = [
+            json!({"numberOfResultsLimitWarning": {"numberOfResultsLimit": 100}}),
+            json!({"bytesScannedLimitWarning": {}}),
+        ];
+        let body = format!(
+            "{}\n{}\n{}",
+            json!({"warning": warnings[0]}),
+            json!({"warning": warnings[1]}),
+            terminal
+        );
+        Mock::given(method("POST"))
+            .and(path("/api/v1/dataprime/query"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+        let output = invoke(&server, &["logs", "limit 0", "-o", "json"], &["test"]).await;
+        assert_eq!(output.status.success(), terminal.get("error").is_none());
+        let emitted = stderr_warnings(&output);
+        assert_eq!(emitted.len(), 2);
+        assert_eq!(emitted[0]["warning"], warnings[0]);
+        assert_eq!(emitted[1]["warning"], warnings[1]);
+    }
+}
+
+#[tokio::test]
+async fn extended_information_keeps_profile_queries_separate_and_handles_absent_metadata() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{\"result\":{\"results\":[]}}"))
+        .mount(&server)
+        .await;
+    let output = invoke(
+        &server,
+        &[
+            "dataprime",
+            "query",
+            "source logs | limit 0",
+            "--extended-information",
+            "-o",
+            "json",
+        ],
+        &["prod", "staging"],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["results"], json!([]));
+    assert_eq!(value["queries"].as_array().unwrap().len(), 2);
+    for (query, profile) in value["queries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(["prod", "staging"])
+    {
+        assert_eq!(query["profile"], profile);
+        assert!(query["queryId"].is_null());
+        assert!(query["statistics"].is_null());
+        assert_eq!(query["warnings"], json!([]));
+    }
+}
+
+#[tokio::test]
+async fn raw_query_with_source_in_query_omits_unset_default_source() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/dataprime/query"))
+        .and(|request: &wiremock::Request| {
+            let body: Value = request.body_json().unwrap();
+            body["metadata"].get("defaultSource").is_none()
+                && body["query"] == "source logs | limit 0"
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "{\"queryId\":{\"queryId\":\"raw-query\"}}\n{\"statistics\":{\"status\":\"COMPLETED\"}}",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let output = invoke(
+        &server,
+        &[
+            "dataprime",
+            "query",
+            "source logs | limit 0",
+            "--extended-information",
+            "-o",
+            "json",
+        ],
+        &["test"],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["queryId"], "raw-query");
+    assert_eq!(value["results"], json!([]));
+}
+
+#[tokio::test]
+async fn extended_text_preserves_result_rendering_across_commands_and_profiles() {
+    let warning = json!({"archiveWarning": {"missingData": {}}});
+    let statistics = json!({"status": "COMPLETED", "outputRowCount": "1", "futureField": {"a": 1}});
+    let cases = [
+        (
+            "limit 1",
+            json!({"message": "hello", "traceID": "trace-1", "spanID": "span-1"}),
+        ),
+        ("choose app", json!({"app": "api"})),
+        ("aggregate count() as total", json!({"total": 3})),
+    ];
+    for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
+        for (query, data) in &cases {
+            let ndjson = [
+                json!({"queryId": {"queryId": "query-123"}}),
+                json!({"warning": warning}),
+                json!({"result": {"results": [{
+                    "metadata": [
+                        {"key": "timestamp", "value": "2026-01-01T00:00:00Z"},
+                        {"key": "severity", "value": "5"},
+                        {"key": "duration", "value": "5000"}
+                    ],
+                    "labels": [
+                        {"key": "serviceName", "value": "gateway"},
+                        {"key": "operationName", "value": "GET /health"}
+                    ],
+                    "userData": data.to_string()
+                }]}}),
+                json!({"statistics": statistics}),
+            ]
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/api/v1/dataprime/query"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(&ndjson))
+                .mount(&server)
+                .await;
+            for profiles in [vec!["test"], vec!["prod", "staging"]] {
+                let mut args = command.clone();
+                args.extend([query, "-o", "text"]);
+                let plain = invoke(&server, &args, &profiles).await;
+                args.push("--extended-information");
+                let extended = invoke(&server, &args, &profiles).await;
+                assert!(
+                    plain.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&plain.stderr)
+                );
+                assert!(
+                    extended.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&extended.stderr)
+                );
+                let plain_rows = String::from_utf8(plain.stdout.clone()).unwrap();
+                let extended_stdout = String::from_utf8(extended.stdout.clone()).unwrap();
+                let prefix = format!("{plain_rows}\n");
+                let information: Value = serde_json::from_str(
+                    extended_stdout
+                        .strip_prefix(&prefix)
+                        .expect("text result rendering must be unchanged"),
+                )
+                .unwrap();
+                assert!(information.get("results").is_none());
+                if profiles.len() == 1 {
+                    assert_eq!(
+                        information,
+                        json!({
+                            "queryId": "query-123", "warnings": [warning], "statistics": statistics
+                        })
+                    );
+                } else {
+                    assert_eq!(
+                        information["queries"].as_array().unwrap().len(),
+                        profiles.len()
+                    );
+                    for (info, profile) in information["queries"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .zip(&profiles)
+                    {
+                        assert_eq!(info["profile"], *profile);
+                        assert_eq!(info["queryId"], "query-123");
+                        assert_eq!(info["warnings"], json!([warning]));
+                        assert_eq!(info["statistics"], statistics);
+                    }
+                }
+                for output in [&plain, &extended] {
+                    let emitted = stderr_warnings(output);
+                    assert_eq!(emitted.len(), profiles.len());
+                    for profile in &profiles {
+                        assert!(emitted
+                            .iter()
+                            .any(|w| w == &json!({"profile": profile, "warning": warning})));
+                    }
+                }
+            }
+        }
+    }
+}

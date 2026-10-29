@@ -36,6 +36,10 @@ Wrap the query in **single quotes** so the shell does not expand `$d`, and use d
 | `--limit` | `100` | Maximum number of results |
 | `--tier` | profile's `default_tier`, else `archive` | Storage tier: `frequent` or `archive` |
 | `-o, --output` | `text` | Output format: `text`, `json`, or `toon` |
+| `--strict-fields-validation[=BOOL]` | `false` (or `strict_fields_validation` in `~/.cx/config.toml`) | Reject queries that reference fields missing from the schema, instead of running them with a warning |
+| `--extended-information` | off | Add `queryId`, `warnings`, and `statistics` to stdout |
+
+Stderr warnings for this command are the same JSON lines as logs and spans. Read the Warnings section in `dataprime-reference.md` before treating a short result as complete.
 
 **Note:** Use `--start now-7d` (or wider) for web vitals and page performance queries. Short time ranges produce unreliable percentiles - low-traffic pages have too few data points.
 

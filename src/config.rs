@@ -222,6 +222,12 @@ pub struct Config {
     #[serde(default)]
     pub read_only: bool,
 
+    /// Default for `--strict-fields-validation` on logs, spans, and
+    /// `dataprime query`: reject keypaths absent from the schema instead of
+    /// running with a compile warning. Off by default, like the public API.
+    #[serde(default)]
+    pub strict_fields_validation: bool,
+
     /// When true, "View in Coralogix" console links (the stderr line) are
     /// suppressed for ALL invocations. Equivalent to always passing
     /// --no-console-link.
@@ -260,6 +266,7 @@ impl Default for Config {
             allow_risky_commands: true,
             olly_enabled: true,
             read_only: false,
+            strict_fields_validation: false,
             no_console_link: false,
             managed_completions: vec![],
         }

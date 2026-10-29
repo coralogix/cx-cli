@@ -16,7 +16,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
-use crate::spill::{maybe_spill, transform_for_toon, SpillOutcome};
+use crate::spill::{maybe_spill, transform_for_toon, write_result_file, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;
 
@@ -243,7 +243,41 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
 
 // ── DataPrime query execution ────────────────────────────────────────────────
 
+/// Options shared by logs, spans, and raw DataPrime queries.
+#[derive(clap::Args, Clone, Copy, Debug, Default)]
+pub struct QueryOptions {
+    /// Reject keypaths absent from the schema [default: strict_fields_validation
+    /// in config.toml, else false]. Unknown fields otherwise only produce warnings.
+    #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true",
+          require_equals = true)]
+    pub strict_fields_validation: Option<bool>,
+
+    /// Include results, queryId, warnings, and statistics in the stdout response.
+    #[arg(long)]
+    pub extended_information: bool,
+}
+
+impl QueryOptions {
+    /// Fill an unset `--strict-fields-validation` from `config.toml`.
+    pub fn with_config_default(mut self, strict_fields_validation: bool) -> Self {
+        self.strict_fields_validation
+            .get_or_insert(strict_fields_validation);
+        self
+    }
+}
+
+/// Information for one independently executed profile query.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryInformation {
+    pub profile: String,
+    pub query_id: Option<String>,
+    pub warnings: Vec<Value>,
+    pub statistics: Option<Value>,
+}
+
 /// Execute a generic DataPrime query against one target.
+#[allow(clippy::too_many_arguments)]
 async fn execute_query(
     target: Arc<ExecutionTarget>,
     query: &str,
@@ -252,8 +286,11 @@ async fn execute_query(
     limit: u32,
     tier: Tier,
     source: &str,
+    options: QueryOptions,
 ) -> Result<QueryGenericResponse> {
-    let api = DataprimeApi::new(&target.client);
+    let api = DataprimeApi::new(&target.client)
+        .with_strict_fields_validation(options.strict_fields_validation.unwrap_or_default())
+        .with_warning_profile(&target.cfg.profile_name);
     Ok(api
         .query_generic(query, start_ts, end_ts, limit, tier, source)
         .await?)
@@ -265,6 +302,7 @@ pub struct MergedResults {
     pub warnings: Vec<String>,
     pub is_aggregate: bool,
     pub include_profile: bool,
+    pub queries: Vec<QueryInformation>,
 }
 
 /// Merge per-profile generic responses into a single result set.
@@ -279,11 +317,15 @@ pub fn merge_results(
         warnings.push(w.to_string());
     }
     let mut is_aggregate: Option<bool> = None;
+    let mut queries = Vec::new();
 
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        for w in resp.warnings {
-            warnings.push(format!("[{profile}] {w}"));
-        }
+        queries.push(QueryInformation {
+            profile: profile.clone(),
+            query_id: resp.query_id,
+            warnings: resp.warnings,
+            statistics: resp.statistics,
+        });
         if is_aggregate.is_none() {
             is_aggregate = Some(resp.is_aggregate);
         }
@@ -304,7 +346,36 @@ pub fn merge_results(
         warnings,
         is_aggregate: is_aggregate.unwrap_or(false),
         include_profile,
+        queries,
     })
+}
+
+/// Preserve per-profile information without inventing a combined query ID or statistics.
+pub fn extended_response(merged: &MergedResults) -> Value {
+    if !merged.include_profile {
+        let info = merged.queries.first();
+        serde_json::json!({
+            "results": merged.rows,
+            "queryId": info.and_then(|q| q.query_id.as_ref()),
+            "warnings": info.map(|q| q.warnings.as_slice()).unwrap_or_default(),
+            "statistics": info.and_then(|q| q.statistics.as_ref()),
+        })
+    } else {
+        serde_json::json!({"results": merged.rows, "queries": merged.queries})
+    }
+}
+
+fn query_information(merged: &MergedResults) -> Value {
+    if merged.include_profile {
+        serde_json::json!({"queries": merged.queries})
+    } else {
+        let info = merged.queries.first();
+        serde_json::json!({
+            "queryId": info.and_then(|q| q.query_id.as_ref()),
+            "warnings": info.map(|q| q.warnings.as_slice()).unwrap_or_default(),
+            "statistics": info.and_then(|q| q.statistics.as_ref()),
+        })
+    }
 }
 
 /// Render merged results to stdout.
@@ -379,6 +450,39 @@ pub async fn run_query(
     temp_dir: &str,
     text_renderer: Option<fn(&MergedResults) -> Result<()>>,
 ) -> Result<()> {
+    run_query_with_options(
+        targets,
+        query,
+        source,
+        start,
+        end,
+        limit,
+        tier,
+        output,
+        max_direct,
+        temp_dir,
+        text_renderer,
+        QueryOptions::default(),
+    )
+    .await
+}
+
+/// Execute with explicit validation and extended-output options.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_query_with_options(
+    targets: &[Arc<ExecutionTarget>],
+    query: &str,
+    source: &str,
+    start: &str,
+    end: &str,
+    limit: u32,
+    tier: Option<Tier>,
+    output: OutputFormat,
+    max_direct: Option<usize>,
+    temp_dir: &str,
+    text_renderer: Option<fn(&MergedResults) -> Result<()>>,
+    options: QueryOptions,
+) -> Result<()> {
     eprintln!("{}", "Querying...".dimmed());
 
     let start_fmt = parse_timestamp(start)?;
@@ -395,13 +499,72 @@ pub async fn run_query(
         let e = end_fmt.clone();
         async move {
             let effective_tier = tier.unwrap_or(t.cfg.default_tier);
-            execute_query(t, &q, &s, &e, limit, effective_tier, &src).await
+            execute_query(t, &q, &s, &e, limit, effective_tier, &src, options).await
         }
     })
     .await;
 
     let merged = merge_results(per_profile, include_profile, cases_warning.as_deref())?;
+    if options.extended_information {
+        match output {
+            OutputFormat::Text => {
+                render_results(&merged, output, max_direct, temp_dir, text_renderer)?;
+                println!(
+                    "\n{}",
+                    serde_json::to_string_pretty(&query_information(&merged))?
+                );
+            }
+            OutputFormat::Json => {
+                for warning in &merged.warnings {
+                    eprintln!("{warning}");
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&extended_response(&merged))?
+                );
+            }
+            OutputFormat::Toon => {
+                for warning in &merged.warnings {
+                    eprintln!("{warning}");
+                }
+                render_extended_toon(&merged, max_direct, temp_dir)?;
+            }
+        }
+        return Ok(());
+    }
     render_results(&merged, output, max_direct, temp_dir, text_renderer)
+}
+
+/// TOON extended output. Non-aggregated rows are renamed to `$m` / `$l` / `$d`.
+/// When that encoded payload exceeds `max_direct`, the envelope is written as
+/// JSON and stdout gets the spill path instead of the payload.
+fn render_extended_toon(
+    merged: &MergedResults,
+    max_direct: Option<usize>,
+    temp_dir: &str,
+) -> Result<()> {
+    let mut response = extended_response(merged);
+    if !merged.is_aggregate {
+        if let Some(rows) = response.get_mut("results").and_then(Value::as_array_mut) {
+            for row in rows.iter_mut() {
+                *row = transform_for_toon(row);
+            }
+        }
+    }
+    let encoded =
+        toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+    let over_limit = !merged.is_aggregate && max_direct.is_some_and(|limit| encoded.len() > limit);
+    if over_limit {
+        let path = write_result_file(&serde_json::to_string_pretty(&response)?, temp_dir)?;
+        println!(
+            "{} results retrieved. Results written to: {}",
+            merged.rows.len(),
+            path.display()
+        );
+        return Ok(());
+    }
+    println!("{encoded}");
+    Ok(())
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -483,6 +646,40 @@ category: ["Commands reference", "test"]
             raw_results: rows,
             warnings: vec![],
             is_aggregate,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn extended_response_keeps_each_query_id_statistics_and_warnings_with_its_profile() {
+        let responses = ["prod", "staging"].map(|profile| {
+            (
+                profile.to_string(),
+                Ok(QueryGenericResponse {
+                    raw_results: vec![json!({"userData": {"message": profile}})],
+                    query_id: Some(format!("{profile}-query")),
+                    statistics: Some(json!({"status": "COMPLETED", "profileSpecific": profile})),
+                    warnings: vec![json!({"futureWarning": {"profileSpecific": profile}})],
+                    ..Default::default()
+                }),
+            )
+        });
+        let merged = merge_results(responses.into(), true, None).unwrap();
+        let value = extended_response(&merged);
+        for (index, profile) in ["prod", "staging"].into_iter().enumerate() {
+            assert_eq!(value["results"][index]["profile"], profile);
+            assert_eq!(
+                value["queries"][index]["queryId"],
+                format!("{profile}-query")
+            );
+            assert_eq!(
+                value["queries"][index]["statistics"]["profileSpecific"],
+                profile
+            );
+            assert_eq!(
+                value["queries"][index]["warnings"][0]["futureWarning"]["profileSpecific"],
+                profile
+            );
         }
     }
 
@@ -538,14 +735,14 @@ category: ["Commands reference", "test"]
     }
 
     #[test]
-    fn merge_collects_warnings_with_profile_prefix() {
+    fn merge_preserves_structured_warnings_per_profile() {
         let mut resp = make_generic_response(vec![], false);
-        resp.warnings = vec!["too many results".to_string()];
+        resp.warnings = vec![json!({"compileWarning": {"warningMessage": "too many results"}})];
         let per_profile = vec![("prod".to_string(), Ok(resp))];
         let merged = merge_results(per_profile, true, None).unwrap();
 
-        assert_eq!(merged.warnings.len(), 1);
-        assert!(merged.warnings[0].contains("[prod]"));
+        assert_eq!(merged.queries[0].warnings.len(), 1);
+        assert_eq!(merged.queries[0].profile, "prod");
     }
 
     #[test]
@@ -616,18 +813,21 @@ category: ["Commands reference", "test"]
         assert!(cases_warn.is_some());
 
         let mut resp = make_generic_response(vec![], false);
-        resp.warnings = vec!["too many results".to_string()];
+        resp.warnings = vec![json!({"compileWarning": {"warningMessage": "too many results"}})];
         let per_profile = vec![("prod".to_string(), Ok(resp))];
         let merged = merge_results(per_profile, true, cases_warn.as_deref()).unwrap();
 
         assert_eq!(
-            merged.warnings.len(),
+            merged.warnings.len() + merged.queries[0].warnings.len(),
             2,
             "should have one cases warning and one profile warning"
         );
         assert!(merged.warnings[0].contains("[Cases query warning]"));
-        assert!(merged.warnings[1].contains("[prod]"));
-        assert!(merged.warnings[1].contains("too many results"));
+        assert_eq!(merged.queries[0].profile, "prod");
+        assert_eq!(
+            merged.queries[0].warnings[0]["compileWarning"]["warningMessage"],
+            "too many results"
+        );
     }
 
     #[test]

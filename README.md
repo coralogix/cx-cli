@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/coralogix/cx-cli/actions/workflows/build.yml/badge.svg)](https://github.com/coralogix/cx-cli/actions/workflows/build.yml)
 [![Crates.io](https://img.shields.io/crates/v/coralogix-cli)](https://crates.io/crates/coralogix-cli)
-[![Homebrew](https://img.shields.io/badge/homebrew-coralogix%2Ftap%2Fcx-blue)](https://github.com/coralogix/homebrew-tap)
+[![Homebrew](https://img.shields.io/homebrew/v/cx)](https://formulae.brew.sh/formula/cx)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 > [!WARNING]

@@ -16,8 +16,8 @@
 //! `cx profiles add`:
 //!
 //! * **Quick (interactive)** — bare `cx init` on a terminal. Guided prompts:
-//!   OAuth browser login (no auth-method question), a region prompt, and where
-//!   to store the secret (OS keychain preselected; `file` is the other choice).
+//!   OAuth browser login and a region prompt. Credentials are stored in the OS
+//!   credential store, with an automatic file fallback when it is unavailable.
 //!   Output format and label are defaulted (JSON / none) rather than asked;
 //!   Olly is enabled on the first profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or

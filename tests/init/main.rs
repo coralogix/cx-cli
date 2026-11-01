@@ -49,6 +49,7 @@ fn cx(home: &Path, path_dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("HOME", home)
         .env("CX_HOME", home)
+        .env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"))
         .env("PATH", path_dir)
         // Never inherit the developer's key into the sandbox.
         .env_remove("CX_API_KEY")
@@ -105,13 +106,14 @@ async fn init_writes_profile_then_installs_skills() {
         .assert()
         .success();
 
-    // Step 1: prompt-free setup writes the key into the profile file and
-    // pins JSON output. Interactive `cx init` asks and preselects os-store.
+    // Step 1: prompt-free setup uses the OS store when available and pins
+    // JSON output.
     let toml = fs::read_to_string(profile_path(&home, "default")).unwrap();
     assert!(toml.contains("auth = \"api_key\""), "profile: {toml}");
     assert!(
-        toml.contains("credential_storage = \"file\""),
-        "prompt-free setup stores the key in the profile file: {toml}"
+        toml.contains("credential_storage = \"file\"")
+            || toml.contains("credential_storage = \"os_store\""),
+        "setup should record a credential backend: {toml}"
     );
     assert!(
         toml.contains("default_output_format = \"json\""),
@@ -448,10 +450,10 @@ async fn init_skips_profile_setup_when_one_already_exists() {
         "expected a skip notice on the second run, stdout: {stdout}"
     );
 
-    // The profile is unchanged — still the first key.
+    // The profile is unchanged — the second key was not written.
     let toml = fs::read_to_string(profile_path(&home, "default")).unwrap();
     assert!(
-        toml.contains("first"),
+        !toml.contains("second"),
         "existing profile must not be overwritten: {toml}"
     );
 

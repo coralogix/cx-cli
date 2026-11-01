@@ -23,7 +23,7 @@ Or, you can [Install manually](#install-manually).
 **macOS / Linux** - Homebrew is the recommended route on macOS:
 
 ```bash
-brew install coralogix/tap/cx
+brew install cx
 ```
 
 Or use the cross-platform install script:

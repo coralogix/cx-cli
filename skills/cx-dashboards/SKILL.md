@@ -9,7 +9,7 @@ description: >
   deploy, update, replace, or modify a Coralogix dashboard, monitoring dashboard,
   or observability dashboard for a service, app, or pipeline.
 metadata:
-  version: "0.2.1"
+  version: "0.2.2"
 ---
 
 # Create Coralogix Dashboard
@@ -210,12 +210,13 @@ Every PromQL and DataPrime query in the draft has to successfully run through `c
 ### Frequent vs Archive (what / when / where in JSON)
 
 **What**:
-- **Frequent** (`TIER_FREQUENT_SEARCH`): hot tier for fast search on recent logs/spans.
-- **Archive** (`TIER_ARCHIVE`): cold tier for older logs/spans (long-term).
+- **Archive** (`TIER_ARCHIVE`, "Monitoring" in the UI): holds all ingested logs and spans.
+- **Frequent** (`TIER_FREQUENT_SEARCH`): holds only data that TCO routes to the high-priority tier.
 
 **When to choose**:
-- Choose **Frequent** for on-call and recent investigations (hours/days).
-- Choose **Archive** for long lookbacks (weeks/months) or when the time range is beyond hot retention.
+- Use **Archive** by default. Set `dataModeType` to `DATA_MODE_TYPE_ARCHIVE` on every logs, spans and DataPrime widget, and verify with `--tier archive` (the `cx logs` / `cx spans` default).
+- Use **Frequent** only when the user asks for it. A Frequent widget renders empty for data that is not in the high-priority tier.
+- Metrics widgets are not tiered.
 
 The two languages are verified against different windows:
 

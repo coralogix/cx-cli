@@ -60,7 +60,9 @@ Verify against a **fixed short window** (`now-15m` → `now`), not the dashboard
 Verify against the same tier as the widget's `dataModeType`:
 
 - `--tier archive` (default): all ingested logs and spans. Use it for `DATA_MODE_TYPE_ARCHIVE` widgets, which is the default.
-- `--tier frequent`: only data that TCO routes to the high-priority tier. Use it only for widgets the user asked to put on Frequent Search.
+- `--tier frequent`: only data that TCO routes to the high-priority tier. Use it for widgets the user asked to put on Frequent Search, and for every widget on an account with no archive.
+
+On an account with no archive (`cx archive logs get` shows `isActive: false`; see `SKILL.md` Phase 5), `--tier archive` returns empty with exit 0 and no warning. An empty Archive result is then not a pass.
 
 If a known-good query returns empty on `--tier frequent`, the data may not be in the high-priority tier. Do not change the tier yourself: the user chose Frequent Search. Tell the user, and suggest moving the widget to `DATA_MODE_TYPE_ARCHIVE`. If they agree, change the widget's `dataModeType` and verify again with `--tier archive`; do not only change the flag.
 

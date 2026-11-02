@@ -382,9 +382,9 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 | Value | When |
 |---|---|
 | `DATA_MODE_TYPE_ARCHIVE` | **default** for every logs, spans and DataPrime widget — Archive ("Monitoring" in the UI) holds all ingested logs and spans |
-| `DATA_MODE_TYPE_HIGH_UNSPECIFIED` | Frequent Search — only when the user asks for it. It holds only data that TCO routes to the high-priority tier, so other data renders empty |
+| `DATA_MODE_TYPE_HIGH_UNSPECIFIED` | Frequent Search — only when the user asks for it, or when the account has no archive (`cx archive logs get` shows `isActive: false`). It holds only data that TCO routes to the high-priority tier, so other data renders empty |
 
-Logs, spans and DataPrime widgets ship with `DATA_MODE_TYPE_ARCHIVE`. Set it on **every** such widget, not just the dashboard root. The metrics templates above keep `DATA_MODE_TYPE_HIGH_UNSPECIFIED`, because metrics are not tiered.
+Logs, spans and DataPrime widgets ship with `DATA_MODE_TYPE_ARCHIVE`. On an account with no archive, change them all to `DATA_MODE_TYPE_HIGH_UNSPECIFIED`. Set it on **every** such widget, not just the dashboard root. The metrics templates above keep `DATA_MODE_TYPE_HIGH_UNSPECIFIED`, because metrics are not tiered.
 
 ---
 

@@ -213,7 +213,15 @@ Every PromQL and DataPrime query in the draft has to successfully run through `c
 - **Archive** (`TIER_ARCHIVE`, "Monitoring" in the UI): holds all ingested logs and spans.
 - **Frequent** (`TIER_FREQUENT_SEARCH`): holds only data that TCO routes to the high-priority tier.
 
-**When to choose**:
+**Check the archive first.** Run this once, before you set any widget's tier:
+
+```bash
+cx archive logs get -o json
+```
+
+If `target.archiveSpec.isActive` is `false`, or the target has no bucket, the account has no archive. Archive queries then return empty with exit 0 and no warning, so verification passes and the widgets render empty. Use **Frequent** for every logs, spans and DataPrime widget, verify with `--tier frequent`, and tell the user why. `get` is a read, so it needs no `--yes`.
+
+**When to choose** (account with an active archive):
 - Use **Archive** by default. Set `dataModeType` to `DATA_MODE_TYPE_ARCHIVE` on every logs, spans and DataPrime widget, and verify with `--tier archive` (the `cx logs` / `cx spans` default).
 - Use **Frequent** only when the user asks for it. A Frequent widget renders empty for data that is not in the high-priority tier.
 - Metrics widgets are not tiered.

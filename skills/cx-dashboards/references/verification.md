@@ -62,7 +62,7 @@ Verify against the same tier as the widget's `dataModeType`:
 - `--tier archive` (default): all ingested logs and spans. Use it for `DATA_MODE_TYPE_ARCHIVE` widgets, which is the default.
 - `--tier frequent`: only data that TCO routes to the high-priority tier. Use it only for widgets the user asked to put on Frequent Search.
 
-If a known-good query returns empty on `--tier frequent`, the data is not in the high-priority tier. Move the widget to `DATA_MODE_TYPE_ARCHIVE`; do not only change the flag.
+If a known-good query returns empty on `--tier frequent`, the data may not be in the high-priority tier. Do not change the tier yourself: the user chose Frequent Search. Tell the user, and suggest moving the widget to `DATA_MODE_TYPE_ARCHIVE`. If they agree, change the widget's `dataModeType` and verify again with `--tier archive`; do not only change the flag.
 
 In the commands below, set `--tier` to the widget's tier: `archive` for `DATA_MODE_TYPE_ARCHIVE`, `frequent` for `DATA_MODE_TYPE_HIGH_UNSPECIFIED`.
 

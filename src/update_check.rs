@@ -2,8 +2,9 @@
 //!
 //! ## Design (mirrors `gh`'s model)
 //!
-//! * Once per 24 h, [`fetch_if_stale`] contacts the GitHub releases API to
-//!   discover the latest version.  Results are cached in `~/.cx/state.json`
+//! * Once per 24 h, [`fetch_if_stale`] contacts the GitHub releases API (or,
+//!   for Homebrew installs, the homebrew-core formula API) to discover the
+//!   latest version.  Results are cached in `~/.cx/state.json`
 //!   (see [`crate::version_cache`]).
 //! * Every command reads that cached result and either:
 //!   - Prints update notices to **stderr** (see [`maybe_print_notice`]):
@@ -29,6 +30,7 @@ use crate::safety::env_is_truthy;
 use crate::version_cache::VersionCheckCache;
 
 const BINARY_REPO: &str = "coralogix/cx-cli";
+const BREW_FORMULA_URL: &str = "https://formulae.brew.sh/api/formula/cx.json";
 
 // ── Background fetcher ────────────────────────────────────────────────────────
 
@@ -67,12 +69,35 @@ pub async fn fetch_if_stale() {
     let _ = state.save();
 }
 
+/// Homebrew installs ask homebrew-core instead of GitHub: a release reaches the
+/// formula hours after it is tagged, and until then `brew upgrade cx` has
+/// nothing to install.
 async fn fetch_latest_binary(client: &reqwest::Client) -> Option<String> {
-    let url = format!("https://api.github.com/repos/{BINARY_REPO}/releases/latest");
-    let resp: Value = client.get(&url).send().await.ok()?.json().await.ok()?;
+    match install_method::detect() {
+        install_method::InstallMethod::Brew => {
+            let resp = get_json(client, BREW_FORMULA_URL).await?;
+            brew_stable_version(&resp)
+        }
+        _ => {
+            let url = format!("https://api.github.com/repos/{BINARY_REPO}/releases/latest");
+            let resp = get_json(client, &url).await?;
+            github_release_version(&resp)
+        }
+    }
+}
+
+async fn get_json(client: &reqwest::Client, url: &str) -> Option<Value> {
+    client.get(url).send().await.ok()?.json().await.ok()
+}
+
+fn github_release_version(resp: &Value) -> Option<String> {
     resp["tag_name"]
         .as_str()
         .map(|s| s.trim_start_matches('v').to_string())
+}
+
+fn brew_stable_version(resp: &Value) -> Option<String> {
+    resp["versions"]["stable"].as_str().map(str::to_string)
 }
 
 // ── Human notice (stderr) ─────────────────────────────────────────────────────
@@ -262,6 +287,23 @@ mod tests {
         assert!(is_newer("v1.3.0", "1.2.0"));
         assert!(is_newer("1.3.0", "v1.2.0"));
         assert!(is_newer("v1.3.0", "v1.2.0"));
+    }
+
+    #[test]
+    fn github_release_version_strips_v_prefix() {
+        let resp = json!({ "tag_name": "v0.1.29" });
+        assert_eq!(github_release_version(&resp).as_deref(), Some("0.1.29"));
+        assert_eq!(github_release_version(&json!({})), None);
+    }
+
+    #[test]
+    fn brew_stable_version_reads_formula_api() {
+        let resp = json!({
+            "name": "cx",
+            "versions": { "stable": "0.1.28", "head": null, "bottle": true }
+        });
+        assert_eq!(brew_stable_version(&resp).as_deref(), Some("0.1.28"));
+        assert_eq!(brew_stable_version(&json!({})), None);
     }
 
     #[test]

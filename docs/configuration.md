@@ -39,11 +39,14 @@ remains `~/.cx/`.
 `cx init` creates your first profile as part of setup — see the
 [Quick start](quickstart.md) for that walkthrough. This page covers what it wrote.
 
-`cx init` asks where to store the secret and preselects `os-store` when an OS
-keyring backend is available. Linux musl builds have no keyring backend, so
-`file` is their only storage option. It defaults these rather than prompting: profile name
-`default`, no label, and `json` as the profile's default output format. A
-prompt-free run (no terminal) also writes `file`.
+On macOS and Windows, interactive `cx init` asks where to store credentials,
+with the OS credential store selected by default. Linux musl builds always use
+file storage because they have no keyring backend. On glibc Linux, interactive
+setup offers file storage (the default) or OS credential storage. If the
+selected OS store is unavailable, `cx` falls back to the profile file with a
+warning unless an administrator policy requires OS credential storage.
+It defaults these rather than prompting: profile name `default`, no label, and
+`json` as the profile's default output format.
 
 Set `default_output_format` in the profile TOML (or pass `-o text`) if you would
 rather read the output by eye than hand it to an agent.
@@ -89,9 +92,8 @@ At the prompts, in order:
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
 5. **Label** — an optional tag to group or identify profiles (e.g. `production`).
-6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `os-store` is preselected when an OS keyring backend is available and uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). On Linux musl builds, `file` is the only storage option and saves credentials in the profile TOML with `0600` permissions. On platforms with an OS-store option, setup falls back to `file` if that store is unavailable (for example Linux without a Secret Service).
-7. **Default output format** — `text`, `json`, or `toon`.
-8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
+6. **Default output format** — `text`, `json`, or `toon`.
+7. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
 Creating the first profile on a machine also writes the two global settings,
 `allow_risky_commands` and `olly_enabled`. Both are on from the start, so Olly
@@ -156,7 +158,7 @@ For environments with no profile file at all, see
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend. The prompt preselects the OS keyring (`os_store`) when a keyring backend is available; on Linux musl builds `file` is the only storage option. `file` writes them inline in the profile TOML, and that is also what a prompt-free run uses.
+- Tokens (`access_token`, `refresh_token`, `id_token`) use the storage selected during setup. On macOS and Windows, interactive setup asks between the OS keyring (`os_store`, the default) and `file`. If storing them in the selected OS store fails, `cx` falls back to `file` and updates the profile accordingly, unless an administrator policy requires the OS store. Linux musl uses `file`; interactive glibc Linux setup lets you choose either backend, with `file` selected by default.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
 - If the session needs re-authentication, running a command opens the sign-in page showing only the profile's team, then continues. If the sign-in still comes back for a different team (for example, the first re-login of a profile that has not recorded its team yet), `cx` discards it, leaves the profile unchanged, and offers to reopen the sign-in page.
 - This happens only on an interactive terminal. When output is piped or `cx` runs under a coding agent, it exits with an actionable message instead:
@@ -256,7 +258,11 @@ A static Coralogix API key. The key **must be one of the following types** - `cx
 - **[Team Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#team-keys)** - generated in the Coralogix UI under *Data Flow → API Keys → Team Keys*. Scoped to a team; typical choice for shared/CI usage.
 - **[Personal Key](https://coralogix.com/docs/user-guides/account-management/api-keys/api-keys/#personal-keys)** - generated in the Coralogix UI under the user menu (top-right) → *Personal Keys*. Scoped to your user account.
 
-The key can be stored either in the profile TOML file (permissions set to `0600` on Unix) or in the OS keyring.
+On macOS and Windows, interactive setup asks between the OS keyring (the
+default) and profile TOML. If the selected OS keyring is unavailable, `cx`
+warns and falls back to the profile TOML unless an administrator policy
+requires the OS store. Linux musl stores it in the profile TOML (`0600`
+permissions on Unix); interactive glibc Linux setup lets you choose.
 
 ## OS keyring backends
 
@@ -271,9 +277,106 @@ Credentials stored in the OS keyring use the following backends:
 
 The default install script and release binaries are built for musl on Linux, so
 `file` is their only credential-storage option. Keyring support is available
-only when building from source against glibc. On platforms with an OS-store
-option, `cx` falls back to file-based credential storage when that store fails
-at setup time.
+only when building from source against glibc. On glibc Linux, interactive setup
+offers both storage options and defaults to the profile file. Non-interactive
+setup uses the profile file.
+
+### Administrator-required OS credential storage
+
+On managed macOS and Windows installations, an administrator can require
+Keychain/Credential Manager storage with a machine-wide policy file:
+
+```toml
+require_os_credential_store = true
+```
+
+The file is `/Library/Application Support/cx/policy.toml` on macOS and
+`%ProgramData%\cx\policy.toml` on Windows. With this policy, file storage is
+not offered and OS-store failures do not fall back to the profile file. Before
+handling every command, `cx` migrates all legacy file-backed profiles. A
+migration failure names the affected profile file and gives recovery steps,
+such as unlocking the OS credential store or deleting a profile that is no
+longer needed. **One profile that cannot be migrated blocks every `cx`
+command** until it is fixed or removed, so migrate a pilot device before
+enforcing the policy fleet-wide.
+
+The policy is trusted only through its filesystem permissions; `cx` does not
+validate its owner or ACL. Make the folder and file administrator-owned and
+read-only for standard users. Otherwise a user can delete or replace the file
+to disable the policy.
+
+#### Jamf Pro (macOS)
+
+Deploy the following as a Jamf script (it runs as `root`), or use the same
+commands in a package postinstall script:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+policy_dir="/Library/Application Support/cx"
+policy_file="$policy_dir/policy.toml"
+
+install -d -o root -g wheel -m 0755 "$policy_dir"
+tmp_file="$(mktemp)"
+trap 'rm -f "$tmp_file"' EXIT
+printf '%s\n' 'require_os_credential_store = true' > "$tmp_file"
+install -o root -g wheel -m 0644 "$tmp_file" "$policy_file"
+```
+
+The `root:wheel` ownership and `0755`/`0644` modes let all users read the
+policy while preventing them from changing or deleting it.
+
+#### Microsoft Intune (Windows)
+
+Deploy the following PowerShell script as **System** (the Intune management
+extension's default context), not as the signed-in user:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+
+$policyDir = Join-Path $env:ProgramData 'cx'
+$policyFile = Join-Path $policyDir 'policy.toml'
+$system = '*S-1-5-18'
+$administrators = '*S-1-5-32-544'
+$users = '*S-1-5-32-545'
+
+function Invoke-Icacls {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+
+  & icacls @Arguments | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "icacls failed with exit code $($LASTEXITCODE): $($Arguments -join ' ')"
+  }
+}
+
+New-Item -ItemType Directory -Path $policyDir -Force | Out-Null
+Set-Content -Path $policyFile -Value 'require_os_credential_store = true' -NoNewline -ErrorAction Stop
+
+# Grant explicit access before removing inherited ACEs. Each icacls operation
+# is separate and turns a non-zero native exit code into an Intune-visible failure.
+Invoke-Icacls $policyDir /grant:r `
+  "${system}:(OI)(CI)F" "${administrators}:(OI)(CI)F" "${users}:(OI)(CI)RX"
+Invoke-Icacls $policyDir /inheritance:r
+Invoke-Icacls $policyDir /setowner $administrators
+
+Invoke-Icacls $policyFile /grant:r `
+  "${system}:F" "${administrators}:F" "${users}:R"
+Invoke-Icacls $policyFile /inheritance:r
+Invoke-Icacls $policyFile /setowner $administrators
+```
+
+This makes the local `Administrators` group the owner, grants standard users
+read-only access, and prevents them from deleting the policy file or its
+parent directory. The well-known SIDs make the script independent of localized
+Windows group names.
+
+The policy TOML accepts only the exact
+`require_os_credential_store` key. A misspelled or unknown key is rejected;
+malformed policy TOML also prevents every `cx` command from running until an
+administrator fixes or removes the file. Run `cx profiles list` after
+deployment to verify both `Policy: OS credential store required` and the
+`STORAGE` shown for every profile.
 
 ## Global config (`~/.cx/config.toml`)
 
@@ -313,7 +416,7 @@ See [TOON output format](toon-output.md) for the `toon` format specification.
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. The setup prompt preselects `"os_store"` when a keyring backend is available; on Linux musl builds `"file"` is the only storage option. A profile that omits the key is read as `"file"`.
+Each profile stores credentials and endpoint configuration. `credential_storage` records where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. On macOS and Windows, interactive setup lets users choose, with `"os_store"` selected by default; it falls back to `"file"` if the selected OS store fails, unless an administrator policy requires the OS store. Existing file-backed profiles are not migrated normally. Linux musl always uses `"file"`; glibc Linux lets interactive users choose, with file storage selected by default. A profile that omits the key is read as `"file"`.
 
 ### Common fields
 

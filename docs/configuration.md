@@ -387,7 +387,7 @@ deployment to verify both `Policy: OS credential store required` and the
 | `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `toon` mode before spilling to a temp file. Set to `-1` to disable |
 | `temp_dir` | `"/tmp/"` | Directory for spilled result files |
 | `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
-| `strict_fields_validation` | `false` | Default for `--strict-fields-validation` on `cx logs`, `cx spans`, and `cx dataprime query`. Set `true` to reject queries that reference fields missing from the schema. See [DataPrime validation and diagnostics](dataprime-diagnostics.md) |
+| `strict_fields_validation` | `false` | Reject `cx logs`, `cx spans`, and `cx dataprime query` queries that reference fields missing from the schema (equivalent to always passing `--strict-fields-validation`; `--no-strict-fields-validation` overrides it). Off, such queries run and print a `compileWarning` on stderr |
 | `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |
 | `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`). Written when you create your first profile; never prompted. |
 | `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`). Written when you create your first profile; never prompted. Use `cx profiles add --disable-olly` to create it switched off. |

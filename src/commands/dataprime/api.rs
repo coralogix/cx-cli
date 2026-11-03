@@ -132,7 +132,7 @@ impl<'a> DataprimeApi<'a> {
                     })
                 {
                     message.push_str(
-                        "\nHint: add --strict-fields-validation=false, or set strict_fields_validation = false in ~/.cx/config.toml.",
+                        "\nHint: add --no-strict-fields-validation, or set strict_fields_validation = false in ~/.cx/config.toml.",
                     );
                 }
             }

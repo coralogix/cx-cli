@@ -51,7 +51,7 @@ fn dataprime_strict_validation_and_extended_information() {
     let stderr = String::from_utf8_lossy(&strict.stderr);
     assert!(stderr.contains("keypath does not exist"), "{stderr}");
     assert!(
-        stderr.contains("--strict-fields-validation=false"),
+        stderr.contains("--no-strict-fields-validation"),
         "strict keypath errors must name the flag that turns validation off: {stderr}"
     );
     assert!(

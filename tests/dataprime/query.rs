@@ -54,6 +54,7 @@ async fn dataprime_query_with_log_results() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("dataprime query should succeed");
@@ -90,6 +91,7 @@ async fn dataprime_aggregate_query() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("aggregate query should succeed");
@@ -128,6 +130,7 @@ async fn dataprime_query_with_warning() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("query with warning should succeed");
@@ -231,6 +234,7 @@ async fn multi_profile_fan_out_tags_rows() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("multi-profile fan-out should succeed");
@@ -263,6 +267,7 @@ async fn dataprime_query_all_profiles_failing_returns_err() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await;
 
@@ -305,6 +310,7 @@ async fn dataprime_query_ndjson_unrecognized_envelope_returns_err() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await;
 
@@ -349,6 +355,7 @@ async fn dataprime_query_non_completed_statistics_status_returns_err() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await;
 
@@ -391,6 +398,7 @@ async fn dataprime_query_completed_statistics_with_zero_rows_succeeds() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("a legitimately empty result with COMPLETED status must still succeed");

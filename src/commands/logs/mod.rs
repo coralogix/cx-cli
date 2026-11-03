@@ -112,7 +112,7 @@ pub async fn run(
     temp_dir: &str,
     options: QueryOptions,
 ) -> Result<()> {
-    super::dataprime::run_query_with_options(
+    super::dataprime::run_query(
         targets,
         query,
         "logs",

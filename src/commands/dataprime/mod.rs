@@ -246,11 +246,14 @@ pub fn run_help(name: &str, output: OutputFormat) -> Result<()> {
 /// Options shared by logs, spans, and raw DataPrime queries.
 #[derive(clap::Args, Clone, Copy, Debug, Default)]
 pub struct QueryOptions {
-    /// Reject keypaths absent from the schema [default: strict_fields_validation
-    /// in config.toml, else false]. Unknown fields otherwise only produce warnings.
-    #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true",
-          require_equals = true)]
-    pub strict_fields_validation: Option<bool>,
+    /// Reject keypaths absent from the schema. Unknown fields otherwise only produce
+    /// warnings. Default: strict_fields_validation in config.toml, else off.
+    #[arg(long, overrides_with = "no_strict_fields_validation")]
+    pub strict_fields_validation: bool,
+
+    /// Run queries with unknown keypaths (overrides strict_fields_validation in config.toml).
+    #[arg(long, overrides_with = "strict_fields_validation")]
+    pub no_strict_fields_validation: bool,
 
     /// Include results, queryId, warnings, and statistics in the stdout response.
     #[arg(long)]
@@ -258,10 +261,11 @@ pub struct QueryOptions {
 }
 
 impl QueryOptions {
-    /// Fill an unset `--strict-fields-validation` from `config.toml`.
+    /// Apply `strict_fields_validation` from `config.toml` unless a flag set it.
     pub fn with_config_default(mut self, strict_fields_validation: bool) -> Self {
-        self.strict_fields_validation
-            .get_or_insert(strict_fields_validation);
+        if !self.no_strict_fields_validation {
+            self.strict_fields_validation |= strict_fields_validation;
+        }
         self
     }
 }
@@ -289,7 +293,7 @@ async fn execute_query(
     options: QueryOptions,
 ) -> Result<QueryGenericResponse> {
     let api = DataprimeApi::new(&target.client)
-        .with_strict_fields_validation(options.strict_fields_validation.unwrap_or_default())
+        .with_strict_fields_validation(options.strict_fields_validation)
         .with_warning_profile(&target.cfg.profile_name);
     Ok(api
         .query_generic(query, start_ts, end_ts, limit, tier, source)
@@ -438,38 +442,6 @@ pub fn render_results(
 /// Run a generic DataPrime query across all targets with fan-out, merge, and render.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_query(
-    targets: &[Arc<ExecutionTarget>],
-    query: &str,
-    source: &str,
-    start: &str,
-    end: &str,
-    limit: u32,
-    tier: Option<Tier>,
-    output: OutputFormat,
-    max_direct: Option<usize>,
-    temp_dir: &str,
-    text_renderer: Option<fn(&MergedResults) -> Result<()>>,
-) -> Result<()> {
-    run_query_with_options(
-        targets,
-        query,
-        source,
-        start,
-        end,
-        limit,
-        tier,
-        output,
-        max_direct,
-        temp_dir,
-        text_renderer,
-        QueryOptions::default(),
-    )
-    .await
-}
-
-/// Execute with explicit validation and extended-output options.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_query_with_options(
     targets: &[Arc<ExecutionTarget>],
     query: &str,
     source: &str,

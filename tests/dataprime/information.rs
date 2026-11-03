@@ -68,11 +68,10 @@ async fn strict_validation_defaults_false_and_can_be_enabled_on_all_query_comman
         for flag in [
             None,
             Some("--strict-fields-validation"),
-            Some("--strict-fields-validation=true"),
-            Some("--strict-fields-validation=false"),
+            Some("--no-strict-fields-validation"),
         ] {
             let server = MockServer::start().await;
-            let strict = flag.is_some_and(|f| f != "--strict-fields-validation=false");
+            let strict = flag == Some("--strict-fields-validation");
             Mock::given(method("POST"))
                 .and(path("/api/v1/dataprime/query"))
                 .and(body_partial_json(
@@ -116,7 +115,7 @@ async fn config_setting_sets_strict_validation_default_and_flag_overrides_it() {
         ),
         (
             "strict_fields_validation = true\n",
-            Some("--strict-fields-validation=false"),
+            Some("--no-strict-fields-validation"),
             false,
         ),
     ] {
@@ -176,7 +175,7 @@ async fn config_setting_applies_to_every_profile_in_fan_out() {
 #[tokio::test]
 async fn unknown_keypath_errors_suggest_disabling_strict_validation() {
     let message = "Compilation errors:\n - keypath does not exist at [0:21-0:35]: $d.new_field\n - keypath does not exist at [0:38-0:52]: $d.other_field";
-    let hint = "Hint: add --strict-fields-validation=false, or set strict_fields_validation = false in ~/.cx/config.toml.";
+    let hint = "Hint: add --no-strict-fields-validation, or set strict_fields_validation = false in ~/.cx/config.toml.";
     for command in [vec!["logs"], vec!["spans"], vec!["dataprime", "query"]] {
         for status in [400, 200] {
             let server = MockServer::start().await;
@@ -267,7 +266,7 @@ async fn unrelated_errors_and_compile_warnings_do_not_suggest_disabling_strict_v
             "{stderr}"
         );
         assert!(
-            !stderr.contains("--strict-fields-validation=false"),
+            !stderr.contains("--no-strict-fields-validation"),
             "{stderr}"
         );
         if let Some(warning) = body.get("warning") {

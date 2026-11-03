@@ -3715,7 +3715,7 @@ async fn main() -> Result<()> {
                     tier,
                     query_options,
                 } => {
-                    commands::dataprime::run_query_with_options(
+                    commands::dataprime::run_query(
                         &targets,
                         &query,
                         source.as_deref().unwrap_or(""),

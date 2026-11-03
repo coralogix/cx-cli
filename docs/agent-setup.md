@@ -1,9 +1,14 @@
-# Onboard to Coralogix with the cx CLI
+# Set up the Coralogix CLI
 
-Paste this into Claude Code, Cursor, Codex, or any other coding agent:
+This page sets up the Coralogix CLI (`cx`) for one of two people:
+
+- **New to Coralogix:** no account yet. Your agent installs `cx`, signs you up for a new Coralogix account and team, and creates a key so you can start sending data.
+- **New to the CLI:** your team already uses Coralogix and is sending data, and you just want `cx` on your machine. Your agent installs `cx` and signs you in to your existing team.
+
+Either way, paste this into Claude Code, Cursor, Codex, or any other coding agent:
 
 ```text
-Onboard me to Coralogix via the CLI by following https://coralogix.com/docs/cli
+Set me up with the Coralogix CLI by following https://coralogix.com/docs/cli
 ```
 
 The rest of this page is written for the agent.
@@ -12,7 +17,12 @@ The rest of this page is written for the agent.
 
 ## Instructions for the agent
 
-Take the user from nothing installed to a signed-in `cx` profile, signing them up for a Coralogix account first if they don't have one. Finish with a Send-Your-Data key so they can start sending data. Follow the steps in order.
+Take the user from nothing installed to a signed-in `cx` profile. The user is one of two kinds, and Step 3 finds out which:
+
+- **New Coralogix customer** (no account): sign them up with `cx init --signup` (Step 4b), then create a Send-Your-Data key so they can start sending data (Step 6).
+- **New CLI user on an existing Coralogix environment** (their team already has an account, and usually data flowing): sign them in to that team (Step 4a). Don't push them through data setup; offer the key in Step 6 only if they want to send new data.
+
+Follow the steps in order.
 
 Ground rules:
 
@@ -66,7 +76,7 @@ cx profiles list
 
 Ask these up front, skipping anything the user already told you:
 
-1. **Do you already have a Coralogix account?** This picks Step 4a or 4b.
+1. **Do you (or your team) already use Coralogix?** If yes, they're a new CLI user on an existing environment: Step 4a. If no, they're a new Coralogix customer: Step 4b. If they were invited to their team's Coralogix but haven't accepted the invitation yet, have them accept it first, then use Step 4a. Don't sign them up for a separate account.
 2. **Region.** For an existing account, the easiest answer is the URL they open Coralogix with (e.g. `https://myteam.app.eu2.coralogix.com`): pass it as `--url` and `cx` works out the region. For a new account the region is permanent and decides where data is stored. Offer the regions that accept new accounts:
 
    | Region | Location | Coralogix domain (for shippers) |
@@ -83,7 +93,7 @@ Ask these up front, skipping anything the user already told you:
 
 **Install shell completions without asking.** Take the shell from `basename "$SHELL"` and pass `--install-completions <shell>` when it's `zsh`, `bash` or `fish`. For any other shell, and on Windows, leave the flag out: it only supports those three, and without it `cx init` skips completions when there's no terminal. Also leave it out if the user says they don't want completions.
 
-### Step 4a: Existing account: sign in
+### Step 4a: Existing Coralogix environment: sign in
 
 ```bash
 cx init --oauth --region <region> --global-skills --install-completions <shell>
@@ -95,7 +105,7 @@ Use `--url <their-coralogix-url>` instead of `--region` if that's what they gave
 - If the user belongs to several teams, they pick one on the approval page.
 - If the user has a **Team Key or Personal Key** (not a Send-Your-Data key) and prefers no browser, run `cx init --region <region> --api-key "$CX_API_KEY" --global-skills`. Never ask them to paste the key into the chat; have them export it in their shell.
 
-### Step 4b: No account: sign up
+### Step 4b: New to Coralogix: sign up
 
 ```bash
 cx init --signup --region <region> --global-skills --install-completions <shell>
@@ -116,7 +126,7 @@ If it times out after the user finished signing up, rerun the **same command wit
 
 ### Step 6: Create a Send-Your-Data key
 
-Always offer this after a signup, since a new team has no data, and to existing users who want to start sending data. Shippers (OpenTelemetry Collector, Fluent Bit, SDKs) authenticate with a Send-Your-Data key. It isn't the credential `cx` uses.
+**New Coralogix customer:** always offer this, since a new team has no data yet. **New CLI user on an existing environment:** their team is likely sending data already, so only offer it if they say they want to send new data (e.g. a new service); otherwise skip to Step 7. Shippers (OpenTelemetry Collector, Fluent Bit, SDKs) authenticate with a Send-Your-Data key. It isn't the credential `cx` uses.
 
 The commands below use `jq` to keep key values out of the output. If `jq` isn't installed, install it or read the JSON without echoing the `value` fields back.
 
@@ -157,9 +167,9 @@ The commands below use `jq` to keep key values out of the output. If `jq` isn't 
 
 ### Step 7: Next steps
 
-- Find the guide for the user's stack with `cx docs search "<their stack> send data"`, then `cx docs fetch <result>`.
-- On a new team, query with `--tier frequent`, e.g. `cx logs --tier frequent 'source logs | limit 10'`. New accounts have no archive, so the default archive tier returns `[]`.
-- If the skills were installed, the coding agent can now investigate data, build dashboards and set up alerts with `cx`. `cx schema` lists every command.
+- **New Coralogix customer:** find the guide for their stack with `cx docs search "<their stack> send data"`, then `cx docs fetch <result>`. Once data arrives, query with `--tier frequent`, e.g. `cx logs --tier frequent 'source logs | limit 10'`: new accounts have no archive, so the default archive tier returns `[]`.
+- **New CLI user on an existing environment:** show them their data right away, e.g. `cx logs 'source logs | limit 10'`. If that returns `[]`, retry with `--tier frequent`.
+- **Both:** if the skills were installed, the coding agent can now investigate data, build dashboards and set up alerts with `cx`. `cx schema` lists every command.
 
 ## Troubleshooting
 

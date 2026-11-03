@@ -242,14 +242,62 @@ fn print_mapped_text(response: &MapStackTraceResponse) {
             } else {
                 " "
             };
-            println!("   {marker} {:>5} | {}", line.line_number, line.text);
+            let focus = (marker == ">").then_some(source.column_number as usize);
+            println!(
+                "   {marker} {:>5} | {}",
+                line.line_number,
+                clip_line(&line.text, focus)
+            );
         }
     }
+}
+
+const MAX_TEXT_LINE: usize = 160;
+
+/// Keeps text output readable for minified sources: a long line shows a window around
+/// `focus` (the mapped column) when given, else its start. JSON output keeps the full line.
+fn clip_line(text: &str, focus: Option<usize>) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= MAX_TEXT_LINE {
+        return text.to_string();
+    }
+    let start = focus
+        .map(|col| col.saturating_sub(MAX_TEXT_LINE / 3))
+        .unwrap_or(0)
+        .min(chars.len() - MAX_TEXT_LINE);
+    let end = start + MAX_TEXT_LINE;
+    let mut clipped: String = chars[start..end].iter().collect();
+    if start > 0 {
+        clipped.insert(0, '…');
+    }
+    if end < chars.len() {
+        clipped.push('…');
+    }
+    clipped
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clips_long_lines_around_the_mapped_column() {
+        assert_eq!(clip_line("short", Some(2)), "short");
+
+        let long: String = (0..1000)
+            .map(|i| char::from(b'a' + (i % 26) as u8))
+            .collect();
+        let head = clip_line(&long, None);
+        assert!(head.starts_with("abc") && head.ends_with('…'));
+        assert_eq!(head.chars().count(), MAX_TEXT_LINE + 1);
+
+        let around = clip_line(&long, Some(500));
+        assert!(around.starts_with('…') && around.ends_with('…'));
+        assert!(around.contains(&long[495..505]));
+
+        let tail = clip_line(&long, Some(999));
+        assert!(tail.starts_with('…') && tail.ends_with(&long[990..]));
+    }
 
     #[test]
     fn maps_platform_flag() {

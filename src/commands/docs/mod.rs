@@ -85,9 +85,17 @@ pub fn page_url_from_suffix(suffix: &str) -> Result<String> {
     Ok(format!("{DOCS_BASE_URL}/{}", normalize_suffix(suffix)?))
 }
 
-/// Return the page URL unchanged for fetching.
+/// Markdown URL for a docs page. The portal serves `<page>.md`; a plain page
+/// path (with or without a trailing slash) returns the HTML page instead.
 pub fn md_url(url: &str) -> String {
-    url.trim().to_string()
+    let url = url.trim().trim_end_matches('/');
+    if url.ends_with(".md") {
+        url.to_string()
+    } else if url == DOCS_BASE_URL {
+        format!("{url}/index.md")
+    } else {
+        format!("{url}.md")
+    }
 }
 
 fn is_coralogix_docs_url(url: &str) -> bool {
@@ -332,10 +340,34 @@ mod tests {
     }
 
     #[test]
-    fn md_url_preserves_page_url() {
+    fn md_url_appends_md_to_plain_page_path() {
+        // Example from `cx docs fetch --help`.
+        let page = page_url_from_suffix("user-guides/data_exploration/spans/").unwrap();
         assert_eq!(
-            md_url("https://coralogix.com/docs/foo/"),
-            "https://coralogix.com/docs/foo/"
+            md_url(&page),
+            "https://coralogix.com/docs/user-guides/data_exploration/spans.md"
+        );
+        assert_eq!(
+            md_url("https://coralogix.com/docs/user-guides/alerting/introduction-to-alerts"),
+            "https://coralogix.com/docs/user-guides/alerting/introduction-to-alerts.md"
+        );
+    }
+
+    #[test]
+    fn md_url_keeps_suffixes_from_search() {
+        // `cx docs search` returns suffixes that already end in `.md`.
+        let page = page_url_from_suffix("user-guides/aaa/access-control/permissions.md").unwrap();
+        assert_eq!(
+            md_url(&page),
+            "https://coralogix.com/docs/user-guides/aaa/access-control/permissions.md"
+        );
+    }
+
+    #[test]
+    fn md_url_maps_docs_root_to_index() {
+        assert_eq!(
+            md_url(&page_url_from_suffix("").unwrap()),
+            "https://coralogix.com/docs/index.md"
         );
     }
 

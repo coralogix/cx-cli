@@ -403,6 +403,9 @@ Examples:
         /// If neither is set, defaults to archive.
         #[arg(long)]
         tier: Option<Tier>,
+
+        #[command(flatten)]
+        query_options: commands::dataprime::QueryOptions,
     },
 
     /// Query metrics using PromQL.
@@ -438,6 +441,9 @@ Examples:
         /// If neither is set, defaults to archive.
         #[arg(long)]
         tier: Option<Tier>,
+
+        #[command(flatten)]
+        query_options: commands::dataprime::QueryOptions,
     },
 
     /// Manage and inspect dashboards.
@@ -950,6 +956,9 @@ Examples:
         /// If neither is set, defaults to archive.
         #[arg(long)]
         tier: Option<Tier>,
+
+        #[command(flatten)]
+        query_options: commands::dataprime::QueryOptions,
     },
 }
 
@@ -3704,6 +3713,7 @@ async fn main() -> Result<()> {
                     end,
                     limit,
                     tier,
+                    query_options,
                 } => {
                     commands::dataprime::run_query(
                         &targets,
@@ -3717,6 +3727,7 @@ async fn main() -> Result<()> {
                         max_direct,
                         &temp_dir,
                         None,
+                        query_options.with_config_default(global_config.strict_fields_validation),
                     )
                     .await?;
                 }
@@ -3728,9 +3739,19 @@ async fn main() -> Result<()> {
                 end,
                 limit,
                 tier,
+                query_options,
             } => {
                 commands::logs::run(
-                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+                    &targets,
+                    &query,
+                    &start,
+                    &end,
+                    limit,
+                    tier,
+                    output,
+                    max_direct,
+                    &temp_dir,
+                    query_options.with_config_default(global_config.strict_fields_validation),
                 )
                 .await?;
             }
@@ -3770,9 +3791,19 @@ async fn main() -> Result<()> {
                 end,
                 limit,
                 tier,
+                query_options,
             } => {
                 commands::spans::run(
-                    &targets, &query, &start, &end, limit, tier, output, max_direct, &temp_dir,
+                    &targets,
+                    &query,
+                    &start,
+                    &end,
+                    limit,
+                    tier,
+                    output,
+                    max_direct,
+                    &temp_dir,
+                    query_options.with_config_default(global_config.strict_fields_validation),
                 )
                 .await?;
             }

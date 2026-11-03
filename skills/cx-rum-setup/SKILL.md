@@ -130,7 +130,7 @@ Gotchas:
 - **Next.js:** init only on the client - a `'use client'` component that calls `init` in `useEffect`, rendered from the root layout. Never in server components.
 - **Env vars:** keep the key in env config (`NEXT_PUBLIC_*`, `VITE_*`, `REACT_APP_*`), not hard-coded. It is public, but env config makes rotation easy.
 - **`version`** should match the release - source maps and release comparison rely on it.
-- **Source maps** (optional) are uploaded with `coralogix-rum-cli` and need a *separate* key - in the UI, key type **Team Key** with role preset **`SourceMapping`** (`source-mapping:ReadMapping` + `UploadMapping`) - never reuse the RUM key, and keep this one secret (CI only, not in client code). See `cx docs fetch user-guides/rum/cli/rum-cli.md` (search doesn't surface it). After an upload, `cx rum source-maps list --application <app>` confirms the release is there.
+- **Source maps** (optional) are uploaded with `coralogix-rum-cli` and need a *separate* key - in the UI, key type **Team Key** with role preset **`SourceMapping`** (`source-mapping:ReadMapping` + `UploadMapping`) - never reuse the RUM key, and keep this one secret (CI only, not in client code). See `cx docs fetch user-guides/rum/cli/rum-cli.md` (search doesn't surface it). If the user asks to verify an upload, `cx rum source-maps list --application <app>` confirms the release is there; don't run it unprompted.
 
 ### 6. Verify data arrives (optional)
 

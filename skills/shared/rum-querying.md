@@ -181,6 +181,11 @@ Use the `LT` (Load Time) web vital for page loading time questions. Group by `$d
 
 `error_context.original_stacktrace` holds minified frames. When the app uploaded source maps, `cx rum stacktrace` maps them back to the original file, line, function, and surrounding code, so you can open the file and fix it:
 
+**Run it only when the user explicitly asks you to fix the error or find its source code** ("fix this error", "where in our code does this fail", "show me the source"). Every call reads and decodes source maps in the RUM service, so it is not part of routine error analysis. Questions like "what are the top RUM errors", "how many users hit this error", or "tell me about this error" are answered from `rum.events` alone: don't call `cx rum stacktrace` or `cx rum source-maps list` for them. If you think the source would help, offer it and wait for a yes.
+
+Once asked, map one representative event per error (`limit 1`), not one call per event or per session.
+
+
 ```bash
 # 1. Get the stack trace with its app name and version
 cx dataprime query --source rum.events 'filter $d.event_context.type == "error" && $d.rum_template_id == "<template-id>" | choose $d.version_metadata.app_name as app, $d.version_metadata.app_version as version, $d.platform as platform, $d.error_context.original_stacktrace as stack | limit 1' --start now-7d -o json

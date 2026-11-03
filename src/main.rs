@@ -2847,6 +2847,9 @@ enum RumCmd {
         cmd: RumSourceMapsCmd,
     },
     /// Map a minified stack trace to original files, lines, and code.
+    ///
+    /// Reads source maps on every call: run it when fixing an error or finding its source,
+    /// not for routine error triage.
     #[command(after_help = "\
 Frames come from --frame, or else from a JSON array read from --from-file (stdin by default).
 The array is RUM's error_context.original_stacktrace as-is: [{fileName, lineNumber, columnNumber}].

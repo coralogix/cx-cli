@@ -52,9 +52,10 @@ pub fn collect_frames(frame_args: &[String], from_file: Option<&str>) -> Result<
     Ok(frames)
 }
 
-fn tag(mut value: Value, include_profile: bool, profile: &str) -> Value {
-    if include_profile {
-        render::tag_get_result(&mut value, profile);
+/// List rows carry `profile`, get-style results `_profile`, matching the rest of the CLI.
+fn tag(mut value: Value, include_profile: bool, profile: &str, key: &str) -> Value {
+    if let (true, Value::Object(map)) = (include_profile, &mut value) {
+        map.insert(key.to_string(), Value::String(profile.to_string()));
     }
     value
 }
@@ -94,7 +95,7 @@ pub async fn run_source_maps_list(
 
     let as_json = || -> Vec<Value> {
         all.iter()
-            .map(|(profile, r)| tag(json!(r), include_profile, profile))
+            .map(|(profile, r)| tag(json!(r), include_profile, profile, "profile"))
             .collect()
     };
     match output {
@@ -176,7 +177,7 @@ pub async fn run_stacktrace(
     let as_json = || -> Vec<Value> {
         results
             .iter()
-            .map(|(profile, r)| tag(json!(r), include_profile, profile))
+            .map(|(profile, r)| tag(json!(r), include_profile, profile, "_profile"))
             .collect()
     };
     match output {
@@ -279,6 +280,18 @@ fn clip_line(text: &str, focus: Option<usize>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tags_rows_only_for_multiple_profiles() {
+        assert_eq!(
+            tag(json!({"v": 1}), true, "eu2", "profile"),
+            json!({"v": 1, "profile": "eu2"})
+        );
+        assert_eq!(
+            tag(json!({"v": 1}), false, "eu2", "profile"),
+            json!({"v": 1})
+        );
+    }
 
     #[test]
     fn clips_long_lines_around_the_mapped_column() {

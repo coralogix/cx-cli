@@ -177,6 +177,26 @@ Filter network requests by event type `$d.event_context.type == "network-request
 
 Use the `LT` (Load Time) web vital for page loading time questions. Group by `$d.page_context.page_fragments` (not `page_url`), and include user count for context with `distinct_count($d.session_context.user_id:string) as users`.
 
+### Mapping Stack Traces to Source Code
+
+`error_context.original_stacktrace` holds minified frames. When the app uploaded source maps, `cx rum stacktrace` maps them back to the original file, line, function, and surrounding code, so you can open the file and fix it:
+
+```bash
+# 1. Get the stack trace with its app name and version
+cx dataprime query --source rum.events 'filter $d.event_context.type == "error" && $d.rum_template_id == "<template-id>" | choose $d.version_metadata.app_name as app, $d.version_metadata.app_version as version, $d.platform as platform, $d.error_context.original_stacktrace as stack | limit 1' --start now-7d -o json
+
+# 2. Pipe the stack array (as-is) to the mapper
+echo '<stack array>' | cx rum stacktrace --application <app> --version <version>
+
+# Or pass frames directly, top first
+cx rum stacktrace --application <app> --version <version> --frame https://shop.com/static/js/main.9b99e888.js:153:588096
+```
+
+- `--platform` defaults to `web`; use `android` or `ios` for React Native.
+- Each frame comes back `MAPPED` (with `source`), `SOURCE_MAP_NOT_FOUND` (no map for that file, often a third-party script), or `POSITION_NOT_FOUND`.
+- The response's `commitHash` and `repoName` identify the code the release was built from.
+- A 404 means no source maps were uploaded for that version. Run `cx rum source-maps list --application <app>` to see which versions have them.
+
 ---
 
 ## Troubleshooting

@@ -74,6 +74,8 @@ mod retentions;
 mod roles;
 #[path = "e2e/routers.rs"]
 mod routers;
+#[path = "e2e/rum.rs"]
+mod rum;
 #[path = "e2e/scopes.rs"]
 mod scopes;
 #[path = "e2e/search_fields/mod.rs"]

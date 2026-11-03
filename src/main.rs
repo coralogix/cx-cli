@@ -2503,7 +2503,11 @@ enum ApiKeysCmd {
         /// API key ID.
         id: String,
     },
-    /// List send-data API keys.
+    /// List Send-Your-Data (ingest-only) API keys, including RUM keys.
+    ///
+    /// Merges the legacy send-data keys with every key whose permissions are
+    /// all data-ingest (`...:SendData`), such as keys created with the
+    /// `SendData` or `SendRUMData` presets. Shows each key's presets.
     SendDataKeys,
     /// Admin operations on team members' API keys.
     Admin {

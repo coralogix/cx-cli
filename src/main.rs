@@ -1253,6 +1253,22 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
+    /// Replace an alert from a JSON definition file [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx alerts replace 11111111-2222-3333-4444-555555555555 --from-file alert.json
+  cat alert.json | cx alerts replace")]
+    Replace {
+        /// Optional alert definition ID (UUID). If absent, data file must
+        /// contain "alertDef" key containing the "id" beside the
+        /// "alertDefProperties".
+        #[arg(long)]
+        alert_id: Option<String>,
+        
+        /// Path to JSON file with the alert definition. Use '-' for stdin.
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
     /// Delete an alert [requires --yes].
     Delete {
         /// Alert definition ID (UUID).
@@ -3908,6 +3924,14 @@ async fn main() -> Result<()> {
                 }
                 AlertsCmd::Create { from_file } => {
                     confirm_destructive("Create a new alert?", yes, agent_mode)?;
+                    commands::alerts::run_create(&targets, &from_file, output).await?;
+                }
+                AlertsCmd::Replace { alert_id, from_file } => {
+                    let message = match alert_id {
+                        Some(id) => format!("Replace alert '{id}'?"),
+                        None => "Replace alert?".to_string(),
+                    };
+                    confirm_destructive(&message, yes, agent_mode)?;
                     commands::alerts::run_create(&targets, &from_file, output).await?;
                 }
                 AlertsCmd::Delete { alert_id } => {

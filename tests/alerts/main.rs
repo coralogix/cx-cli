@@ -2,6 +2,7 @@
 mod common;
 
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -11,7 +12,7 @@ use wiremock::matchers::{body_json, method, path, query_param, query_param_is_mi
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::alerts::{
-    run_delete, run_disable, run_enable, run_events, run_get, run_list,
+    run_delete, run_disable, run_enable, run_events, run_get, run_list, run_replace,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -188,6 +189,53 @@ async fn enable_alert() {
     run_enable(&targets, "alert-001")
         .await
         .expect("run_enable should succeed");
+}
+
+#[tokio::test]
+async fn replace_alert() {
+    let server = MockServer::start().await;
+
+    // Alert definition ID and payload.
+    let id = uuid::Uuid::new_v4().to_string();
+    let alert_def = json!({
+        "id": &id,
+        "alertDefProperties": json!({
+            "name": "Test",
+            "enabled": true,
+            "priority": "ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED"
+        })
+    });
+
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
+        .and(body_json(&alert_def))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    // Create a temporary file with the content to feed to the tool.
+    let tmp_path = std::env::temp_dir().join(id.to_string());
+    fs::File::create(&tmp_path)
+        .expect("Couldn't create temporary file")
+        .write(alert_def.to_string().as_bytes())
+        .expect("Couldn't write temporary file content");
+    println!("{:?}", tmp_path);
+
+    let result = run_replace(
+        &targets, 
+        Some(&id), 
+        &tmp_path.to_string_lossy(), 
+        OutputFormat::Json
+    ).await;
+
+    // Delete temp file
+    std::fs::remove_file(tmp_path).expect("Couldn't delete temporary file");
+
+    result.expect("run_replace should succeed");
 }
 
 #[tokio::test]

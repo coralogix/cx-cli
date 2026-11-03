@@ -18,11 +18,13 @@ fn rum_stacktrace() {
         return;
     }
     let releases = harness::run_ok_json(&["rum", "source-maps", "list", "-o", "json"]);
-    let Some(release) = harness::assert_array(&releases)
-        .iter()
-        .find(|r| r["platform"] == "SOURCE_MAP_PLATFORM_WEB")
-    else {
-        eprintln!("[e2e] skipping rum_stacktrace: no web source maps on test team");
+    let Some(release) = harness::assert_array(&releases).iter().find(|r| {
+        r["platform"] == "SOURCE_MAP_PLATFORM_WEB"
+            && r["uploadStatus"] == "SOURCE_MAP_UPLOAD_STATUS_SUCCEEDED"
+    }) else {
+        eprintln!(
+            "[e2e] skipping rum_stacktrace: no successfully uploaded web source maps on test team"
+        );
         return;
     };
     let (app, version) = (

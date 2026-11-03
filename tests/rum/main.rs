@@ -134,3 +134,24 @@ async fn stacktrace_surfaces_api_errors() {
         .expect_err("a 400 should fail the command");
     assert!(format!("{error:#}").contains("React Native"), "{error:#}");
 }
+
+#[tokio::test]
+async fn list_stops_when_the_server_repeats_a_page_token() {
+    let server = MockServer::start().await;
+
+    // Every page hands back the same token; without a guard this would loop forever.
+    Mock::given(method("GET"))
+        .and(path(RELEASES_PATH))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "releases": [{ "application": "shop", "version": "1.0.0" }],
+            "nextPageToken": "MQ"
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    run_source_maps_list(&targets, None, OutputFormat::Json)
+        .await
+        .expect("run_source_maps_list should stop and succeed");
+}

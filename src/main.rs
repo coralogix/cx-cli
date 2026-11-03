@@ -2855,12 +2855,13 @@ enum RumCmd {
     /// Reads source maps on every call: run it when fixing an error or finding its source,
     /// not for routine error triage.
     #[command(after_help = "\
-Frames come from --frame, or else from a JSON array read from --from-file (stdin by default).
+Frames come from --frame, or from a JSON array read with --from-file (use '-' for stdin).
 The array is RUM's error_context.original_stacktrace as-is: [{fileName, lineNumber, columnNumber}].
 
 Examples:
   cx rum stacktrace --application shop --version 1.2.3 --frame https://shop.com/main.js:153:398981
-  cx rum stacktrace --application shop --version 1.2.3 --platform android --from-file stack.json")]
+  cx rum stacktrace --application shop --version 1.2.3 --platform android --from-file stack.json
+  cat stack.json | cx rum stacktrace --application shop --version 1.2.3 --from-file -")]
     Stacktrace {
         /// RUM application name (version_metadata.app_name).
         #[arg(long)]
@@ -2875,14 +2876,14 @@ Examples:
         #[arg(long = "frame")]
         frames: Vec<String>,
         /// JSON file with the frames. Use '-' for stdin.
-        #[arg(long, conflicts_with = "frames")]
+        #[arg(long, conflicts_with = "frames", required_unless_present = "frames")]
         from_file: Option<String>,
     },
 }
 
 #[derive(Subcommand)]
 enum RumSourceMapsCmd {
-    /// List source map releases, newest first.
+    /// List source map releases, newest first (the API's order).
     List {
         /// Only releases of this RUM application.
         #[arg(long)]

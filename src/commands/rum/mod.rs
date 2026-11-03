@@ -35,10 +35,23 @@ fn read_input(path: &str) -> Result<String> {
     }
 }
 
-/// Collects frames from `--frame` flags, or else from the `--from-file` JSON (stdin by default).
+/// Collects frames from `--frame` flags, or else from the `--from-file` JSON (`-` for stdin).
 pub fn collect_frames(frame_args: &[String], from_file: Option<&str>) -> Result<Vec<StackFrame>> {
     let frames = if frame_args.is_empty() {
-        api::parse_frames(&read_input(from_file.unwrap_or("-"))?).map_err(anyhow::Error::msg)?
+        // Never read stdin implicitly: a terminal or an agent without stdin would wait forever.
+        let Some(path) = from_file else {
+            bail!("no stack frames given; pass --frame <file>:<line>[:<column>] or --from-file <path|->");
+        };
+        let (frames, skipped) =
+            api::parse_frames(&read_input(path)?).map_err(anyhow::Error::msg)?;
+        if skipped > 0 {
+            eprintln!(
+                "{}",
+                format!("Skipped {skipped} frames without a line number (native, eval or anonymous code).")
+                    .yellow()
+            );
+        }
+        frames
     } else {
         frame_args
             .iter()
@@ -47,24 +60,17 @@ pub fn collect_frames(frame_args: &[String], from_file: Option<&str>) -> Result<
             .map_err(anyhow::Error::msg)?
     };
     if frames.is_empty() {
-        bail!("no stack frames given; pass --frame or a JSON array of frames");
+        bail!("no mappable stack frames: every frame lacks a line number");
     }
     Ok(frames)
 }
 
-/// List rows carry `profile`, get-style results `_profile`, matching the rest of the CLI.
-fn tag(mut value: Value, include_profile: bool, profile: &str, key: &str) -> Value {
+/// List rows carry `profile`, like every other list command (get-style results use `_profile`).
+fn tag_list_row(mut value: Value, include_profile: bool, profile: &str) -> Value {
     if let (true, Value::Object(map)) = (include_profile, &mut value) {
-        map.insert(key.to_string(), Value::String(profile.to_string()));
+        map.insert("profile".to_string(), Value::String(profile.to_string()));
     }
     value
-}
-
-fn print_toon(values: &[Value]) -> Result<()> {
-    let toon = toon_format::encode_default(&values)
-        .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-    println!("{toon}");
-    Ok(())
 }
 
 // ── Subcommand runners ────────────────────────────────────────────────────────
@@ -95,12 +101,12 @@ pub async fn run_source_maps_list(
 
     let as_json = || -> Vec<Value> {
         all.iter()
-            .map(|(profile, r)| tag(json!(r), include_profile, profile, "profile"))
+            .map(|(profile, r)| tag_list_row(json!(r), include_profile, profile))
             .collect()
     };
     match output {
         OutputFormat::Json => render::render_json(&as_json())?,
-        OutputFormat::Toon => print_toon(&as_json())?,
+        OutputFormat::Toon => render::render_toon(&as_json())?,
         OutputFormat::Text => {
             if all.is_empty() {
                 render::print_no_results("No source map releases found.");
@@ -177,12 +183,18 @@ pub async fn run_stacktrace(
     let as_json = || -> Vec<Value> {
         results
             .iter()
-            .map(|(profile, r)| tag(json!(r), include_profile, profile, "_profile"))
+            .map(|(profile, r)| {
+                let mut value = json!(r);
+                if include_profile {
+                    render::tag_get_result(&mut value, profile);
+                }
+                value
+            })
             .collect()
     };
     match output {
         OutputFormat::Json => render::render_json_auto(&as_json())?,
-        OutputFormat::Toon => print_toon(&as_json())?,
+        OutputFormat::Toon => render::render_toon(&as_json())?,
         OutputFormat::Text => {
             for (profile, response) in &results {
                 if include_profile {
@@ -284,13 +296,16 @@ mod tests {
     #[test]
     fn tags_rows_only_for_multiple_profiles() {
         assert_eq!(
-            tag(json!({"v": 1}), true, "eu2", "profile"),
+            tag_list_row(json!({"v": 1}), true, "eu2"),
             json!({"v": 1, "profile": "eu2"})
         );
-        assert_eq!(
-            tag(json!({"v": 1}), false, "eu2", "profile"),
-            json!({"v": 1})
-        );
+        assert_eq!(tag_list_row(json!({"v": 1}), false, "eu2"), json!({"v": 1}));
+    }
+
+    #[test]
+    fn refuses_to_read_stdin_implicitly() {
+        let error = collect_frames(&[], None).unwrap_err().to_string();
+        assert!(error.contains("--from-file"), "{error}");
     }
 
     #[test]

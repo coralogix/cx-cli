@@ -124,8 +124,10 @@ impl<'a> RumApi<'a> {
                 params.push(("pageToken", page_token.as_str()));
             }
             let page: ListReleasesResponse = self.client.get(&path, &params).await?;
+            let empty_page = page.releases.is_empty();
             releases.extend(page.releases);
-            if page.next_page_token.is_empty() {
+            // Stop on the last page, and on a page that would loop forever (no rows, or the same token back).
+            if page.next_page_token.is_empty() || empty_page || page.next_page_token == page_token {
                 return Ok(releases);
             }
             page_token = page.next_page_token;
@@ -151,16 +153,40 @@ impl<'a> RumApi<'a> {
     }
 }
 
+/// A frame as it may appear in RUM JSON: native, eval and `<anonymous>` frames can lack a line.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawFrame {
+    file_name: String,
+    line_number: Option<u32>,
+    column_number: Option<u32>,
+}
+
 /// Parses frames from RUM's `original_stacktrace` JSON: a bare array, or an object with `frames`.
-pub fn parse_frames(raw: &str) -> std::result::Result<Vec<StackFrame>, String> {
+/// Frames without a line can't be mapped, so they're dropped; the second value counts them.
+pub fn parse_frames(raw: &str) -> std::result::Result<(Vec<StackFrame>, usize), String> {
     let value: Value = serde_json::from_str(raw).map_err(|e| format!("invalid JSON: {e}"))?;
     let frames = match value {
         Value::Object(mut map) => map.remove("frames").unwrap_or(Value::Null),
         other => other,
     };
-    serde_json::from_value(frames).map_err(|e| {
+    let raw_frames: Vec<RawFrame> = serde_json::from_value(frames).map_err(|e| {
         format!("expected an array of {{fileName, lineNumber, columnNumber}} frames: {e}")
-    })
+    })?;
+    let total = raw_frames.len();
+    let frames: Vec<StackFrame> = raw_frames
+        .into_iter()
+        .filter_map(|f| match f.line_number {
+            Some(line) if line > 0 => Some(StackFrame {
+                file_name: f.file_name,
+                line_number: line,
+                column_number: f.column_number,
+            }),
+            _ => None,
+        })
+        .collect();
+    let skipped = total - frames.len();
+    Ok((frames, skipped))
 }
 
 /// Parses `--frame <url>:<line>[:<column>]`. The URL itself may contain colons.
@@ -178,14 +204,18 @@ pub fn parse_frame_arg(raw: &str) -> std::result::Result<StackFrame, String> {
             line_number: line,
             column_number: Some(last),
         }),
-        _ if !middle.is_empty() => Ok(StackFrame {
-            file_name: raw
-                .rsplit_once(':')
-                .map(|(f, _)| f.to_string())
-                .ok_or_else(error)?,
-            line_number: last,
-            column_number: None,
-        }),
+        // <file>:<line>: the middle is the tail of the file name ("main.js", or "//a.com/main.js"
+        // after a URL scheme). Anything else is a typo in <line> ("main.js:15O:5"), not a file name.
+        (_, rest) if !middle.is_empty() && (rest.is_none() || middle.contains('/')) => {
+            Ok(StackFrame {
+                file_name: raw
+                    .rsplit_once(':')
+                    .map(|(f, _)| f.to_string())
+                    .ok_or_else(error)?,
+                line_number: last,
+                column_number: None,
+            })
+        }
         _ => Err(error()),
     }
 }
@@ -267,11 +297,24 @@ mod tests {
             r#"[{"columnNumber": 398981, "fileName": "https://a.com/main.js", "functionName": "onClick", "lineNumber": 153},
                 {"fileName": "https://a.com/main.js", "lineNumber": 2}]"#,
         )
-        .unwrap();
+        .unwrap()
+        .0;
         assert_eq!(frames[0].column_number, Some(398981));
         assert_eq!(frames[1].column_number, None);
-        assert_eq!(parse_frames(r#"{"frames": []}"#).unwrap(), vec![]);
+        assert_eq!(parse_frames(r#"{"frames": []}"#).unwrap(), (vec![], 0));
         assert!(parse_frames(r#"[{"lineNumber": 1}]"#).is_err());
+    }
+
+    #[test]
+    fn skips_frames_without_a_line() {
+        let (frames, skipped) = parse_frames(
+            r#"[{"fileName": "native"}, {"fileName": "https://a.com/main.js", "lineNumber": 3, "columnNumber": 4},
+                {"fileName": "eval", "lineNumber": 0}]"#,
+        )
+        .unwrap();
+        assert_eq!(skipped, 2);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].line_number, 3);
     }
 
     #[test]
@@ -292,6 +335,14 @@ mod tests {
                 column_number: None,
             }
         );
+        assert_eq!(
+            parse_frame_arg("https://a.com/main.js:10")
+                .unwrap()
+                .file_name,
+            "https://a.com/main.js"
+        );
+        assert!(parse_frame_arg("https://shop.com/main.js:15O:588096").is_err());
+        assert!(parse_frame_arg("main.js:15O:5").is_err());
         assert!(parse_frame_arg("main.js").is_err());
         assert!(parse_frame_arg(":10").is_err());
     }

@@ -191,8 +191,8 @@ Once asked, map one representative event per error (`limit 1`), not one call per
 # DataPrime strings take single quotes, so wrap the query in double quotes and escape $
 cx dataprime query --source rum.events "filter \$d.event_context.type == 'error' && \$d.rum_template_id == '<template-id>' | choose \$d.version_metadata.app_name as app, \$d.version_metadata.app_version as version, \$d.platform as platform, \$d.error_context.original_stacktrace as stack | limit 1" --start now-7d -o json
 
-# 2. Pipe the stack array (as-is) to the mapper
-echo '<stack array>' | cx rum stacktrace --application <app> --version <version>
+# 2. Pipe the stack array (as-is) to the mapper. Frames without a line number are skipped.
+echo '<stack array>' | cx rum stacktrace --application <app> --version <version> --from-file -
 
 # Or pass frames directly, top first
 cx rum stacktrace --application <app> --version <version> --frame https://shop.com/static/js/main.9b99e888.js:153:588096

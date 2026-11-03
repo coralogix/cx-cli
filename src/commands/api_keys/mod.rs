@@ -287,6 +287,72 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
     Ok(())
 }
 
+/// Suffix shared by every data-ingest permission (`logs.data-ingress:SendData`,
+/// `rum-ingress:SendData`, ...).
+const SEND_DATA_PERMISSION_SUFFIX: &str = ":SendData";
+
+/// All permissions a key grants: its direct permissions plus every permission
+/// of its presets.
+fn granted_permissions(key: &KeyInfo) -> Vec<&str> {
+    let Some(kp) = key.key_permissions.as_ref() else {
+        return Vec::new();
+    };
+    let direct = kp["permissions"].as_array().into_iter().flatten();
+    let from_presets = kp["presets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|p| p["permissions"].as_array().into_iter().flatten());
+    direct
+        .chain(from_presets)
+        .filter_map(Value::as_str)
+        .collect()
+}
+
+/// Whether a key from the API-keys list is a Send-Your-Data key: it grants at
+/// least one permission, and only data-ingest ones. Covers keys created with
+/// the `SendData` and `SendRUMData` presets as well as custom ingest-only keys.
+fn is_send_data_key(key: &KeyInfo) -> bool {
+    let permissions = granted_permissions(key);
+    !permissions.is_empty()
+        && permissions
+            .iter()
+            .all(|p| p.ends_with(SEND_DATA_PERMISSION_SUFFIX))
+}
+
+fn preset_names(key: &KeyInfo) -> Vec<&str> {
+    key.key_permissions
+        .as_ref()
+        .and_then(|kp| kp["presets"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p["name"].as_str())
+        .collect()
+}
+
+/// Merge the legacy send-data endpoint's keys with the Send-Your-Data keys
+/// found in the API-keys list. The legacy endpoint only returns keys created
+/// through the old send-data flow, so keys created with the `SendData` preset
+/// show up only in the list. Keys present in both are reported once.
+fn merge_send_data_keys(legacy: &[KeyInfo], listed: &[KeyInfo]) -> Vec<Value> {
+    let mut seen = std::collections::HashSet::new();
+    legacy
+        .iter()
+        .chain(listed.iter().filter(|k| is_send_data_key(k)))
+        .filter(|k| k.id.as_ref().is_none_or(|id| seen.insert(id.clone())))
+        .map(|k| {
+            json!({
+                "id": k.id,
+                "name": k.display_name(),
+                "active": k.display_active(),
+                "hashed": k.hashed,
+                "presets": preset_names(k),
+                "value": k.value,
+            })
+        })
+        .collect()
+}
+
 pub async fn run_send_data_keys(
     targets: &[Arc<ExecutionTarget>],
     output: OutputFormat,
@@ -296,21 +362,21 @@ pub async fn run_send_data_keys(
 
     let per_profile = fan_out(targets, |t| async move {
         let api = ApiKeysApi::new(&t.client);
-        let resp = api.get_send_data_keys().await?;
-        let keys_json: Vec<Value> = resp
-            .keys
-            .iter()
-            .map(|k| {
-                json!({
-                    "id": k.id,
-                    "name": k.display_name(),
-                    "active": k.display_active(),
-                    "hashed": k.hashed,
-                    "value": k.value,
-                })
-            })
-            .collect();
-        Ok(Value::Array(keys_json))
+        // The two sources need different permissions, so one failing must not
+        // hide the keys the other can see. Fail only when both do.
+        let (legacy, listed) = tokio::join!(api.get_send_data_keys(), api.list());
+        if let (Err(_), Err(e)) = (&legacy, &listed) {
+            anyhow::bail!("{e}");
+        }
+        if let Err(e) = &legacy {
+            eprintln!("warning: could not fetch legacy send-data keys: {e}");
+        }
+        if let Err(e) = &listed {
+            eprintln!("warning: could not list API keys: {e}");
+        }
+        let legacy = legacy.map(|r| r.keys).unwrap_or_default();
+        let listed = listed.map(|r| r.keys).unwrap_or_default();
+        Ok(Value::Array(merge_send_data_keys(&legacy, &listed)))
     })
     .await;
 
@@ -464,4 +530,89 @@ pub async fn run_admin_set_status(
         .await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(id: &str, key_permissions: Value) -> KeyInfo {
+        serde_json::from_value(json!({
+            "id": id,
+            "name": id,
+            "active": true,
+            "keyPermissions": key_permissions,
+        }))
+        .unwrap()
+    }
+
+    fn preset(name: &str, permissions: &[&str]) -> Value {
+        json!({ "name": name, "permissions": permissions })
+    }
+
+    #[test]
+    fn send_data_preset_keys_are_send_data_keys() {
+        let send_data = key(
+            "sd",
+            json!({
+                "presets": [preset("SendData", &["logs.data-ingress:SendData", "spans.data-ingress:SendData"])],
+                "permissions": [],
+            }),
+        );
+        let rum = key(
+            "rum",
+            json!({ "presets": [preset("SendRUMData", &["rum-ingress:SendData"])], "permissions": [] }),
+        );
+        let custom = key(
+            "custom",
+            json!({ "presets": [], "permissions": ["metrics.data-ingress:SendData"] }),
+        );
+        assert!(is_send_data_key(&send_data));
+        assert!(is_send_data_key(&rum));
+        assert!(is_send_data_key(&custom));
+    }
+
+    #[test]
+    fn keys_with_non_ingest_permissions_are_not_send_data_keys() {
+        let mixed = key(
+            "mixed",
+            json!({
+                "presets": [preset("SendData", &["logs.data-ingress:SendData"])],
+                "permissions": ["alerts:ReadConfig"],
+            }),
+        );
+        let query = key(
+            "query",
+            json!({ "presets": [preset("DataQuerying", &["logs.data-api#high:ReadData"])], "permissions": [] }),
+        );
+        let empty = key("empty", json!({ "presets": [], "permissions": [] }));
+        let unknown: KeyInfo = serde_json::from_value(json!({ "id": "unknown" })).unwrap();
+        assert!(!is_send_data_key(&mixed));
+        assert!(!is_send_data_key(&query));
+        assert!(!is_send_data_key(&empty));
+        assert!(!is_send_data_key(&unknown));
+    }
+
+    #[test]
+    fn merge_keeps_legacy_keys_adds_listed_ones_and_dedupes() {
+        let legacy = vec![key("legacy", Value::Null), key("both", Value::Null)];
+        let listed = vec![
+            key(
+                "both",
+                json!({ "presets": [preset("SendData", &["logs.data-ingress:SendData"])], "permissions": [] }),
+            ),
+            key(
+                "new",
+                json!({ "presets": [preset("SendData", &["logs.data-ingress:SendData"])], "permissions": [] }),
+            ),
+            key(
+                "admin",
+                json!({ "presets": [preset("TeamAdmin", &["team-members:Manage"])], "permissions": [] }),
+            ),
+        ];
+        let merged = merge_send_data_keys(&legacy, &listed);
+        let ids: Vec<&str> = merged.iter().map(|k| k["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["legacy", "both", "new"]);
+        assert_eq!(merged[2]["presets"], json!(["SendData"]));
+    }
 }

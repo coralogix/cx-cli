@@ -23,7 +23,7 @@ Use this skill to onboard an application to Coralogix Real User Monitoring (RUM)
 | Command | Purpose |
 |---|---|
 | `cx iam api-keys list -o json` | List candidate keys and the team ID (no permissions in output) |
-| `cx iam api-keys send-data-keys -o json` | List candidate send-data keys (no permissions in output) |
+| `cx iam api-keys send-data-keys -o json` | List ingest-only keys with their `presets` (RUM keys show `SendRUMData`) |
 | `cx iam api-keys get <id> -o json` | Read a key's permissions (`keyInfo.keyPermissions`) and value |
 | `cx iam api-keys create --from-file <file>` | Create the RUM key (write - needs approval + `--yes`) |
 | `cx docs search <query>` / `cx docs fetch <suffix>` | Current SDK install and init docs per platform |
@@ -64,11 +64,10 @@ RUM keys are **public by design** - they ship inside client code. Create it with
 **Reuse first.** Check for an existing RUM key:
 
 ```bash
-cx iam api-keys list -p <profile> -o json
 cx iam api-keys send-data-keys -p <profile> -o json
 ```
 
-These listings don't include permissions, so treat every row as a **candidate only** - never reuse a key based on its name. For each candidate run `cx iam api-keys get <id> -p <profile> -o json` and reuse it only if it is **active** (`keyInfo.active: true`) **and** `keyInfo.keyPermissions` has `SendRUMData` as its only preset and no other permissions (or `rum-ingress:SendData` as its only permission). Skip inactive keys - the SDK can't send with them. The value is in `keyInfo.value` (returned for unhashed keys - a hashed key can't be reused, create a new one).
+It lists only ingest-only keys, with their `presets`; never reuse a key based on its name. A row with `presets: ["SendRUMData"]`, `active: "yes"` and `hashed: false` is reusable as is, and its `value` is the key. A row with empty `presets` may be a custom RUM key: run `cx iam api-keys get <id> -p <profile> -o json` and reuse it only if it is **active** (`keyInfo.active: true`) **and** `keyInfo.keyPermissions` has `SendRUMData` as its only preset and no other permissions (or `rum-ingress:SendData` as its only permission). Skip inactive keys - the SDK can't send with them. The value is in `keyInfo.value` (returned for unhashed keys - a hashed key can't be reused, create a new one).
 
 **Create one if none exists.** This is a write - describe it to the user and get approval before passing `--yes` (same rules as `cx-platform-admin`).
 
@@ -86,7 +85,7 @@ cx iam api-keys create --from-file rum-key.json -p <profile> --yes -o json
 
 - `teamId`: read `cached_team_id` from the step-2 profile's file `~/.cx/profiles/<profile>.toml` (written by `cx init`), or the `owner.teamId` of any key in `cx iam api-keys list -o json`, or ask the user.
 - `Permission denied`: RUM keys are Send-Your-Data (data-ingest) keys, so they need the `DATA-INGEST-API-KEYS` permissions, not the team custom-key ones:
-  - on `send-data-keys` → the role lacks `DATA-INGEST-API-KEYS:READCONFIG` (view keys);
+  - `send-data-keys` warns `could not fetch legacy send-data keys` → the role lacks `DATA-INGEST-API-KEYS:READCONFIG` (view keys); keys from the regular list are still shown;
   - on `get` or `create` → the role lacks `DATA-INGEST-API-KEYS:MANAGE` (`get` needs it too, since it returns the key value).
 
   Don't retry with other payloads. Tell the user which permission is missing and ask them to get it, or to create it in **Settings → API Keys** - key type **Send Your Data Key**, role preset **`SendRUMData`** only (or have an admin do it), then continue from step 4 with the key value.

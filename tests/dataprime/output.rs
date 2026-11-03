@@ -2,7 +2,7 @@
 /// records and formatted output.
 use coralogix_cli::commands::dataprime::api::{
     extract_severity, group_spans_into_traces, is_aggregation_query, normalize_aggregate_row,
-    normalize_row, parse_log_record, parse_ndjson_response, parse_span_record,
+    normalize_row, parse_log_record, parse_ndjson_response, parse_span_record, ParsedQueryResponse,
 };
 use serde_json::{json, Value};
 
@@ -26,10 +26,10 @@ fn make_ndjson(rows: &[Value]) -> String {
 }
 
 #[test]
-fn ndjson_skips_query_id_line() {
+fn ndjson_query_id_is_not_a_result_row() {
     let ndjson = r#"{"queryId":{"queryId":"abc"}}
 "#;
-    let (rows, warnings) = parse_ndjson_response(ndjson).unwrap();
+    let ParsedQueryResponse { rows, warnings, .. } = parse_ndjson_response(ndjson).unwrap();
     assert!(rows.is_empty());
     assert!(warnings.is_empty());
 }
@@ -37,7 +37,7 @@ fn ndjson_skips_query_id_line() {
 #[test]
 fn ndjson_extracts_result_rows() {
     let ndjson = make_ndjson(&[json!({"userData": "{}"}), json!({"userData": "{}"})]);
-    let (rows, _) = parse_ndjson_response(&ndjson).unwrap();
+    let ParsedQueryResponse { rows, .. } = parse_ndjson_response(&ndjson).unwrap();
     assert_eq!(rows.len(), 2);
 }
 
@@ -46,16 +46,19 @@ fn ndjson_extracts_warning_message() {
     let ndjson = r#"{"queryId":{"queryId":"abc"}}
 {"warning":{"compileWarning":{"warningMessage":"index not found for field xyz"}}}
 "#;
-    let (rows, warnings) = parse_ndjson_response(ndjson).unwrap();
+    let ParsedQueryResponse { rows, warnings, .. } = parse_ndjson_response(ndjson).unwrap();
     assert!(rows.is_empty());
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("index not found"));
+    assert!(warnings[0]["compileWarning"]["warningMessage"]
+        .as_str()
+        .unwrap()
+        .contains("index not found"));
 }
 
 #[test]
 fn ndjson_ignores_empty_lines() {
     let ndjson = "\n\n\n";
-    let (rows, warnings) = parse_ndjson_response(ndjson).unwrap();
+    let ParsedQueryResponse { rows, warnings, .. } = parse_ndjson_response(ndjson).unwrap();
     assert!(rows.is_empty());
     assert!(warnings.is_empty());
 }
@@ -68,7 +71,7 @@ fn ndjson_handles_multiple_result_batches() {
         serde_json::to_string(&json!({"result": {"results": [json!({"a": 2}), json!({"a": 3})]}}))
             .unwrap();
     let ndjson = format!("{header}\n{batch1}\n{batch2}\n");
-    let (rows, _) = parse_ndjson_response(&ndjson).unwrap();
+    let ParsedQueryResponse { rows, .. } = parse_ndjson_response(&ndjson).unwrap();
     assert_eq!(rows.len(), 3);
 }
 
@@ -83,7 +86,11 @@ fn ndjson_from_example_logs_data() {
         json!({"metadata": kv_array(&[("severity","Error"), ("timestamp","2026-03-21T09:39:51.294912")]), "labels": kv_array(&[("applicationname","api")]), "userData": "{\"levelname\":\"ERROR\",\"message\":\"Health check failure\"}"}),
     ];
     let ndjson = make_ndjson(&rows);
-    let (parsed_rows, warnings) = parse_ndjson_response(&ndjson).unwrap();
+    let ParsedQueryResponse {
+        rows: parsed_rows,
+        warnings,
+        ..
+    } = parse_ndjson_response(&ndjson).unwrap();
     assert_eq!(parsed_rows.len(), 5);
     assert!(warnings.is_empty());
 }
@@ -99,7 +106,11 @@ fn ndjson_from_example_traces_data() {
         json!({"metadata": kv_array(&[("duration","35")]),    "labels": kv_array(&[("operationName","GET /health/readiness http send"),("serviceName","api")]), "userData": "{\"spanID\":\"cb379f67b0f45e9e\",\"traceID\":\"7e11b3be4f2f57a1d3f97648d7f59b64\",\"operationName\":\"GET /health/readiness http send\",\"duration\":35}"}),
     ];
     let ndjson = make_ndjson(&rows);
-    let (parsed_rows, warnings) = parse_ndjson_response(&ndjson).unwrap();
+    let ParsedQueryResponse {
+        rows: parsed_rows,
+        warnings,
+        ..
+    } = parse_ndjson_response(&ndjson).unwrap();
     assert_eq!(parsed_rows.len(), 5);
     assert!(warnings.is_empty());
 }
@@ -439,7 +450,11 @@ fn aggregate_ndjson_full_pipeline() {
     let result = serde_json::to_string(&json!({"result": {"results": rows}})).unwrap();
     let ndjson = format!("{header}\n{result}\n");
 
-    let (parsed_rows, warnings) = parse_ndjson_response(&ndjson).unwrap();
+    let ParsedQueryResponse {
+        rows: parsed_rows,
+        warnings,
+        ..
+    } = parse_ndjson_response(&ndjson).unwrap();
     assert_eq!(parsed_rows.len(), 5);
     assert!(warnings.is_empty());
 

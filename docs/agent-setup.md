@@ -70,7 +70,17 @@ Confirm with `cx --version`. `PATH` changes may need a new shell.
 cx profiles list
 ```
 
-`cx init` only creates a profile on a machine with **none**. If one exists, it skips the profile step and ignores `--region`/`--url`/`--oauth`/`--signup`. Ask the user whether to keep using it. If they want another team or a new account, run `cx profiles add <name> --set-default` with the same flags as Step 4 instead of `cx init`. Pick a `<name>` that isn't taken; never pass `--force` without consent.
+`cx init` only creates a profile on a machine with **none**. If one exists, it skips the profile step and ignores `--region`/`--url`/`--oauth`/`--signup`. Ask the user whether to keep using it.
+
+- **Keep it:** ask the Step 3 skills question, skip Step 4, and run `cx init <skills-flag> [--install-completions <shell>]` to install them. Then continue at Step 5.
+- **Another team or a new account:** ask the Step 3 questions as usual, but instead of the `cx init` command in Step 4, create the profile with `cx profiles add`. It takes only the profile flags, not the skills or completions ones:
+
+  ```bash
+  cx profiles add <name> --oauth --region <region> --set-default    # existing account (Step 4a)
+  cx profiles add <name> --signup --region <region> --set-default   # new account (Step 4b)
+  ```
+
+  The same waits and URL hand-off as in Step 4 apply. Then run `cx init <skills-flag> [--install-completions <shell>]`: it skips the profile step and installs the rest. Pick a `<name>` that isn't taken; never pass `--force` without consent.
 
 ### Step 3: Ask the setup questions
 
@@ -89,26 +99,26 @@ Ask these up front, skipping anything the user already told you:
    | `ap3` | Indonesia | `ap3.coralogix.com` |
 
    `us1` and `eu1` don't accept new accounts (offer `us2`/`eu2` instead), but work for signing in to existing ones. If the user is unsure, suggest the region closest to their systems, or the one their data-residency rules require.
-3. **Where to install the cx agent skills,** which teach coding agents to use `cx`: everywhere (`--global-skills`), this project only (`--local-skills`, run from that project's directory), or not at all (`--no-skills`). The install needs Node.js (`npx`).
+3. **Where to install the cx agent skills,** which teach coding agents to use `cx`: everywhere (`--global-skills`), this project only (`--local-skills`, run from that project's directory), or not at all (`--no-skills`). The install needs Node.js (`npx`). The commands below write the chosen flag as `<skills-flag>`.
 
 **Install shell completions without asking.** Take the shell from `basename "$SHELL"` and pass `--install-completions <shell>` when it's `zsh`, `bash` or `fish`. For any other shell, and on Windows, leave the flag out: it only supports those three, and without it `cx init` skips completions when there's no terminal. Also leave it out if the user says they don't want completions.
 
 ### Step 4a: Existing Coralogix environment: sign in
 
 ```bash
-cx init --oauth --region <region> --global-skills --install-completions <shell>
+cx init --oauth --region <region> <skills-flag> --install-completions <shell>
 ```
 
 Use `--url <their-coralogix-url>` instead of `--region` if that's what they gave you. With every question answered by flags, `cx init` runs without prompts:
 
 - It prints `Sign in by visiting:` and a URL on **stderr**, tries to open the browser, and **waits up to 5 minutes** for approval. Run it in the background (or with a timeout of at least 6 minutes) and give the user the URL immediately, in case the browser didn't open. Keep the process running: sign-in completes through a `localhost` callback in it.
 - If the user belongs to several teams, they pick one on the approval page.
-- If the user has a **Team Key or Personal Key** (not a Send-Your-Data key) and prefers no browser, run `cx init --region <region> --api-key "$CX_API_KEY" --global-skills`. Never ask them to paste the key into the chat; have them export it in their shell.
+- If the user has a **Team Key or Personal Key** (not a Send-Your-Data key) and prefers no browser, run `cx init --region <region> --api-key "$CX_API_KEY" <skills-flag>`. Never ask them to paste the key into the chat; have them export it in their shell.
 
 ### Step 4b: New to Coralogix: sign up
 
 ```bash
-cx init --signup --region <region> --global-skills --install-completions <shell>
+cx init --signup --region <region> <skills-flag> --install-completions <shell>
 ```
 
 `--signup` opens Coralogix's signup page instead of the sign-in page, and creates the profile once the new team exists. It **waits up to 30 minutes**, so run it in the background with a timeout of at least 31 minutes. Give the user the stderr URL right away, with these instructions:

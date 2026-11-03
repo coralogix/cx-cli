@@ -48,7 +48,7 @@ that does not exist.
 |---|---|
 | **Attaching indicators to a case** | A case created with `cx cases create` has no indicators, and none can be added later. If the issue should be tracked by an alert, fix or create the alert (`cx-alerts`) and let the Cases service open its own case. |
 | **Listing / searching cases** | `cx cases list` was removed. Case discovery lives in the dataset: run `cx dataprime query "source system/labs.cases.state_updates \| ..." --start now-24h` (there is no `--from`; the window is `--start`/`--end`). See [`references/case-analytics.md`](references/case-analytics.md). |
-| **Linking / unlinking cases** | Parent-child links are created in the Cases UI or through the API, not the CLI. You can still *read* the hierarchy from the dataset — see "Case relationships" below. |
+| **Linking / unlinking cases** | Parent-child links are created in the Cases UI only. The linking API is internal and not in the public API, so neither the CLI nor a public API call can do it. You can still *read* the hierarchy from the dataset — see "Case relationships" below. |
 | **Muting a case** | No CLI verb. Mute in the UI. Muting stops notifications without changing status, which is the honest alternative to resolving work nobody has finished. |
 | **Changing labels or the description** | Both are fixed when the case is created. `cx cases update` patches only the title and resolution reason; add later context with `cx cases comment`. |
 | **Reopening** | `RESOLVED` → `CLOSED` only. A recurrence of the same underlying indicator reopens the case automatically; a person cannot. |
@@ -152,8 +152,9 @@ confident. For non-resolution edits (title, post-hoc postmortem link), use
 ## Case relationships (parent / child)
 
 Cases can be linked into a **one-level** parent-child hierarchy: the parent is the
-incident of record and children hang under it. A case has at most one parent, is
-either a parent or a child but never both, and a parent has at most 100 children —
+incident of record and children hang under it. Every case is exactly one of
+**standalone**, **parent** or **child**, never both a parent and a child. A case has at most one
+parent, and a parent has at most 100 children,
 so there are no grandparents and no cycles. There is no "related" or "duplicate"
 link type.
 
@@ -169,6 +170,11 @@ in the analytics reference.
 
 When triaging a child, read the parent first — the investigation usually lives
 there. When resolving a parent, check its children: they do not resolve with it.
+
+The events API can return a parent's events together with its children's
+(`includeChildrenEvents: true` on ListEvents). That field is internal-only, so
+`cx cases events list` does not expose it. Run `cx cases events list <child-id>`
+for each child instead.
 
 ## Where a case came from
 

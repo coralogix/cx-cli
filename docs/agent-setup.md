@@ -126,7 +126,9 @@ cx init --signup --region <region> <skills-flag> --install-completions <shell>
 1. Fill in the signup form and complete the reCAPTCHA.
 2. Open the verification email from Coralogix and click its link (check spam).
 3. Set a password, then create a team when asked.
-4. Approve the CLI's access on the page that follows.
+4. The CLI then connects on its own. If an approval page appears instead, select your new team and approve.
+
+If the user says they got an approval page listing teams they already belong to instead of a signup form, they're already signed in to Coralogix, so they have an account. Don't try to register them again. Let them approve the team they want, which completes this command like a normal sign-in, and from here on treat them as a new CLI user on an existing environment (Step 6 only if they want to send new data).
 
 If it times out after the user finished signing up, rerun the **same command without `--signup`** (Step 4a).
 

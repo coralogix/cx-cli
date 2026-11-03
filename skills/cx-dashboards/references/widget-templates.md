@@ -203,7 +203,7 @@ The widget for tables and for charts over a logs, spans or DataPrime query. A `d
 - **Set `visualization` to the chart the data calls for.** A `table` visualization is the neutral default and is right only for raw rows the user wants to read. Do not ship a wall of tables.
 - **A visualization maps the query's output columns.** Alias every projection and aggregation in the query (`aggregate count() as error_count`) and reference the alias in the visualization's fields.
 - **A `queryDefinitions[].id` is a plain string**, unlike widget and row ids, which are `{"value": ...}`.
-- **Set `dataModeType`** on logs, spans and DataPrime queries to the tier the data lives in (see "Data mode" below). `DATA_MODE_TYPE_HIGH_UNSPECIFIED` in these templates is a placeholder. Metrics queries are not tiered.
+- **Set `dataModeType` to `DATA_MODE_TYPE_ARCHIVE`** on logs, spans and DataPrime queries (see "Tier (`dataModeType`) quick-reference" below). Metrics queries are not tiered.
 
 | Query returns | `visualization` |
 |---|---|
@@ -226,7 +226,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
       "queryDefinitions": [
         {
           "id": "<uuid>",
-          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc | choose $m.timestamp as timestamp, $m.severity as severity, $l.subsystemname as service, $d as body"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR || $m.severity == CRITICAL | orderby $m.timestamp desc | choose $m.timestamp as timestamp, $m.severity as severity, $l.subsystemname as service, $d as body"}, "dataModeType": "DATA_MODE_TYPE_ARCHIVE"}}
         }
       ],
       "visualization": {"table": {"columns": [{"field": {"keypath": ["timestamp"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["severity"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["service"], "scope": "DATASET_SCOPE_USER_DATA"}}, {"field": {"keypath": ["body"], "scope": "DATASET_SCOPE_USER_DATA"}}], "settings": {"rowStyle": "ROW_STYLE_ONE_LINE"}}}
@@ -266,7 +266,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
       "queryDefinitions": [
         {
           "id": "<query-uuid>",
-          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby roundTime($m.timestamp, 5m) as bucket aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby roundTime($m.timestamp, 5m) as bucket aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_ARCHIVE"}}
         }
       ],
       "visualization": {"timeSeriesLinesMulti": {"queryDisplaySettings": [{"queryId": "<query-uuid>", "temporalField": {"keypath": ["bucket"], "scope": "DATASET_SCOPE_USER_DATA"}, "valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}]}}
@@ -286,7 +286,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
       "queryDefinitions": [
         {
           "id": "<uuid>",
-          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby $l.subsystemname as service aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | groupby $l.subsystemname as service aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_ARCHIVE"}}
         }
       ],
       "visualization": {"horizontalBars": {"categoryFields": [{"keypath": ["service"], "scope": "DATASET_SCOPE_USER_DATA"}], "valueField": {"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}}}
@@ -306,7 +306,7 @@ A top-N result is one number per category, so it also fits the bar and pie rows.
       "queryDefinitions": [
         {
           "id": "<uuid>",
-          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_HIGH_UNSPECIFIED"}}
+          "query": {"dataprime": {"dataprimeQuery": {"text": "source logs | filter $m.severity == ERROR | aggregate count() as error_count"}, "dataModeType": "DATA_MODE_TYPE_ARCHIVE"}}
         }
       ],
       "visualization": {"stat": {"valueFields": [{"keypath": ["error_count"], "scope": "DATASET_SCOPE_USER_DATA"}]}}
@@ -381,10 +381,10 @@ Set `collapsed: true` for logs/debug sections and any section that isn't the das
 
 | Value | When |
 |---|---|
-| `DATA_MODE_TYPE_HIGH_UNSPECIFIED` | default — frequent (hot) search tier |
-| `DATA_MODE_TYPE_ARCHIVE` | archive (cold) tier — for long lookbacks or when the user requests archive |
+| `DATA_MODE_TYPE_ARCHIVE` | **default** for every logs, spans and DataPrime widget — Archive ("Monitoring" in the UI) holds all ingested logs and spans |
+| `DATA_MODE_TYPE_HIGH_UNSPECIFIED` | Frequent Search — only when the user asks for it, or when the account has no archive (`cx archive logs get` shows `isActive: false`). It holds only data that TCO routes to the high-priority tier, so other data renders empty |
 
-The templates above ship with `DATA_MODE_TYPE_HIGH_UNSPECIFIED`. When the user wants archive, replace `DATA_MODE_TYPE_HIGH_UNSPECIFIED` → `DATA_MODE_TYPE_ARCHIVE` on **every** widget before deploy (not just the dashboard root).
+Logs, spans and DataPrime widgets ship with `DATA_MODE_TYPE_ARCHIVE`. On an account with no archive, change them all to `DATA_MODE_TYPE_HIGH_UNSPECIFIED`. Set it on **every** such widget, not just the dashboard root. The metrics templates above keep `DATA_MODE_TYPE_HIGH_UNSPECIFIED`, because metrics are not tiered.
 
 ---
 

@@ -94,6 +94,7 @@ pub async fn run(
     output: OutputFormat,
     max_direct: Option<usize>,
     temp_dir: &str,
+    options: QueryOptions,
 ) -> Result<()> {
     super::dataprime::run_query(
         targets,
@@ -107,6 +108,7 @@ pub async fn run(
         max_direct,
         temp_dir,
         Some(render_your_domain_text),
+        options, // --strict-fields-validation, --extended-information
     )
     .await
 }

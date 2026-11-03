@@ -5,15 +5,15 @@ Everything needed is on this page and in the CLI's own `--help` output.
 
 ## 1. Install
 
-If `cx` is already installed, upgrade it first (`brew upgrade coralogix/tap/cx`,
+If `cx` is already installed, upgrade it first (`brew upgrade cx`,
 or re-run the install script below); older versions don't complete setup.
 
 Otherwise, ask the user which install method they prefer:
 
-**Homebrew** (macOS):
+**Homebrew** (macOS / Linux):
 
 ```bash
-brew install coralogix/tap/cx
+brew install cx
 ```
 
 **Install script** (any platform):

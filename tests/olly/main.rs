@@ -39,7 +39,10 @@ region = "{base_url}"
     fs::write(profiles_dir.join("default.toml"), content).unwrap();
     fs::write(
         home.join(".cx").join("config.toml"),
-        "default_profile = \"default\"\n",
+        format!(
+            "default_profile = \"default\"\ncredential_migration_version = \"{}\"\n",
+            env!("CARGO_PKG_VERSION")
+        ),
     )
     .unwrap();
 }
@@ -47,6 +50,7 @@ region = "{base_url}"
 fn cx_olly(home: &std::path::Path) -> AssertCommand {
     let mut cmd = AssertCommand::cargo_bin("cx").expect("cx binary should build");
     cmd.env("CX_HOME", home);
+    cmd.env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"));
     cmd.env_remove("CX_API_KEY");
     cmd.env_remove("CX_REGION");
     cmd.env_remove("CX_PROFILE");

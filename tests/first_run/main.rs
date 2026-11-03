@@ -31,6 +31,7 @@ fn cx(home: &Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("HOME", home)
         .env("CX_HOME", home)
+        .env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"))
         // Never inherit the developer's credentials into the sandbox, so the
         // resolver sees a genuinely unconfigured machine.
         .env_remove("CX_API_KEY")

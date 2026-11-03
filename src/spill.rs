@@ -110,6 +110,10 @@ pub fn maybe_spill(
 
 /// Write `content` to a `cx_results_<hash>.json` file inside `temp_dir`.
 /// Returns the full path to the written file.
+pub fn write_result_file(content: &str, temp_dir: &str) -> Result<PathBuf> {
+    write_to_temp(content, temp_dir)
+}
+
 fn write_to_temp(content: &str, temp_dir: &str) -> Result<PathBuf> {
     let hash = short_hash(content);
     let filename = format!("{FILE_PREFIX}_{hash}.json");

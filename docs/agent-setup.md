@@ -34,7 +34,7 @@ Ground rules:
 
 ### Step 1: Install the CLI
 
-If `cx --version` already works, upgrade instead (`brew upgrade cx`, or rerun the install script): older versions lack `cx init --signup`. Otherwise detect the OS (`uname -s`; on Windows, `$env:OS` in PowerShell) and ask the user which method they prefer when more than one fits.
+If `cx --version` already works, **upgrade it first** (`brew upgrade cx`, or rerun the install script below), even when the user only wants to sign in: older versions don't complete setup, and lack `cx init --signup`. Otherwise detect the OS (`uname -s`; on Windows, `$env:OS` in PowerShell) and ask the user which method they prefer when more than one fits.
 
 **macOS** (Homebrew, recommended) or **Linux** with Homebrew:
 
@@ -134,7 +134,12 @@ If it times out after the user finished signing up, rerun the **same command wit
 
 ### Step 5: Confirm it worked
 
-`cx init` exits 0 and prints a `✓ Connected` box after a live credential check. A non-zero exit means the profile was saved but the check failed, usually because the region doesn't match the account. With the user's consent, fix it with `cx profiles add default --oauth --region <right-region> --force`. Then check that `cx profiles list` shows the profile as the default.
+`cx init` exits 0 and prints a `✓ Connected` box after a live credential check. A non-zero exit means the profile was saved but the check failed, usually because the region doesn't match the account. With the user's consent, fix it with `cx profiles add default --oauth --region <right-region> --force`. Then run:
+
+```bash
+cx profiles list        # the new profile exists and is the default
+cx dashboards catalog   # a cheap read that confirms the API is reachable
+```
 
 ### Step 6: Create a Send-Your-Data key
 
@@ -179,8 +184,10 @@ The commands below use `jq` to keep key values out of the output. If `jq` isn't 
 
 ### Step 7: Next steps
 
-- **New Coralogix customer:** find the guide for their stack with `cx docs search "<their stack> send data"`, then `cx docs fetch <result>`. Once data arrives, query with `--tier frequent`, e.g. `cx logs --tier frequent 'source logs | limit 10'`: new accounts have no archive, so the default archive tier returns `[]`.
-- **New CLI user on an existing environment:** show them their data right away, e.g. `cx logs 'source logs | limit 10'`. If that returns `[]`, retry with `--tier frequent`.
+Setup ends at Step 6. Suggest these to the user, but don't run any of them until they ask:
+
+- **New Coralogix customer:** offer to find the guide for their stack (`cx docs search "<their stack> send data"`, then `cx docs fetch <result>`). Once data arrives, offer to query it with `--tier frequent`, e.g. `cx logs --tier frequent 'source logs | limit 10'`: new accounts have no archive, so the default archive tier returns `[]`.
+- **New CLI user on an existing environment:** offer to show them their data, e.g. `cx logs 'source logs | limit 10'`. If that returns `[]`, retry with `--tier frequent`.
 - **Both:** if the skills were installed, the coding agent can now investigate data, build dashboards and set up alerts with `cx`. `cx schema` lists every command.
 
 ## Troubleshooting

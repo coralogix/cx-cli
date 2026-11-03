@@ -1,3 +1,7 @@
+#[path = "../common/mod.rs"]
+#[allow(dead_code)]
+mod common;
+
 use assert_cmd::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -14,8 +18,7 @@ fn temp_home() -> std::path::PathBuf {
 }
 
 fn cx() -> Command {
-    let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", temp_home());
+    let mut cmd = common::cx_command(&temp_home());
     cmd.env_remove("CLAUDECODE");
     cmd.env_remove("CLAUDE_CODE");
     cmd.env_remove("CX_AGENT_MODE");

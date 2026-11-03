@@ -1,3 +1,7 @@
+#[path = "../common/mod.rs"]
+#[allow(dead_code)]
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -38,8 +42,7 @@ fn write_config(home: &std::path::Path, default_profile: &str) {
 }
 
 fn cx(home: &std::path::Path) -> Command {
-    let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", home);
+    let mut cmd = common::cx_command(home);
     cmd.env_remove("CX_API_KEY");
     cmd.env_remove("CX_REGION");
     cmd.env_remove("CX_PROFILE");

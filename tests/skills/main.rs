@@ -3,6 +3,10 @@
 //! The installer is exercised through a fake `npx` script placed on PATH that
 //! records the arguments it receives, so no Node.js or network is required.
 
+#[path = "../common/mod.rs"]
+#[allow(dead_code)]
+mod common;
+
 use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,11 +28,8 @@ fn temp_dir(tag: &str) -> PathBuf {
 fn cx(home: &Path, path_dir: &Path) -> Command {
     let cwd = home.join("project");
     fs::create_dir_all(&cwd).unwrap();
-    let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("HOME", home)
-        .env("CX_HOME", home)
-        .env("PATH", path_dir)
-        .current_dir(cwd);
+    let mut cmd = common::cx_command(home);
+    cmd.env("HOME", home).env("PATH", path_dir).current_dir(cwd);
     cmd
 }
 

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
@@ -18,13 +19,70 @@ const SECRET_NAMES: &[&str] = &[
 /// bytes, which is not enough for a complete OAuth token set.
 type SecretMap = HashMap<String, String>;
 
-fn legacy_entry(profile: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(SERVICE_NAME, profile).context("Failed to create legacy keyring entry")
+/// Test-only override: when set, secrets are plain files in this directory
+/// instead of OS keyring entries. Integration tests that spawn the `cx` binary
+/// set it so they never touch the developer's real keyring (on macOS every
+/// rebuilt binary otherwise triggers a Keychain access prompt).
+pub const TEST_KEYRING_DIR_ENV: &str = "CX_TEST_KEYRING_DIR";
+
+/// An OS keyring entry, or a file under [`TEST_KEYRING_DIR_ENV`].
+enum Entry {
+    Os(keyring::Entry),
+    File(PathBuf),
 }
 
-fn secret_entry(profile: &str, key_name: &str) -> Result<keyring::Entry> {
+impl Entry {
+    fn new(service: &str, user: &str) -> keyring::Result<Self> {
+        match std::env::var_os(TEST_KEYRING_DIR_ENV) {
+            // `:` is not allowed in Windows file names.
+            Some(dir) => Ok(Self::File(
+                PathBuf::from(dir).join(format!("{service}__{user}").replace(':', "_")),
+            )),
+            None => keyring::Entry::new(service, user).map(Self::Os),
+        }
+    }
+
+    fn get_password(&self) -> keyring::Result<String> {
+        match self {
+            Self::Os(e) => e.get_password(),
+            Self::File(p) => std::fs::read_to_string(p).map_err(file_error),
+        }
+    }
+
+    fn set_password(&self, secret: &str) -> keyring::Result<()> {
+        match self {
+            Self::Os(e) => e.set_password(secret),
+            Self::File(p) => p
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::write(p, secret))
+                .map_err(file_error),
+        }
+    }
+
+    fn delete_credential(&self) -> keyring::Result<()> {
+        match self {
+            Self::Os(e) => e.delete_credential(),
+            Self::File(p) => std::fs::remove_file(p).map_err(file_error),
+        }
+    }
+}
+
+fn file_error(e: std::io::Error) -> keyring::Error {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        keyring::Error::NoEntry
+    } else {
+        keyring::Error::PlatformFailure(Box::new(e))
+    }
+}
+
+fn legacy_entry(profile: &str) -> Result<Entry> {
+    Entry::new(SERVICE_NAME, profile).context("Failed to create legacy keyring entry")
+}
+
+fn secret_entry(profile: &str, key_name: &str) -> Result<Entry> {
     let service = format!("{SERVICE_NAME}:{profile}");
-    keyring::Entry::new(&service, key_name).context("Failed to create keyring entry")
+    Entry::new(&service, key_name).context("Failed to create keyring entry")
 }
 
 fn load_legacy_map(profile: &str) -> Result<Option<SecretMap>> {
@@ -161,6 +219,21 @@ mod tests {
             Some("token-2".to_string())
         );
         delete_profile(profile);
+    }
+
+    #[test]
+    fn file_entry_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("cx_keyring_file_test_{}", std::process::id()));
+        let entry = Entry::File(dir.join("cx-cli_p__api_key"));
+        assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
+        entry.set_password("s3cret").unwrap();
+        assert_eq!(entry.get_password().unwrap(), "s3cret");
+        entry.delete_credential().unwrap();
+        assert!(matches!(
+            entry.delete_credential(),
+            Err(keyring::Error::NoEntry)
+        ));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

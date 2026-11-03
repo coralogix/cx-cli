@@ -34,3 +34,14 @@ pub fn test_target_with_token(
     };
     Arc::new(ExecutionTarget::new(cfg).expect("test_target: failed to build ExecutionTarget"))
 }
+
+/// `cx` binary command sandboxed to `home`: config is read from `CX_HOME` and
+/// credentials go to a file store under it instead of the OS keyring, so tests
+/// never touch the developer's real Keychain.
+#[allow(dead_code)]
+pub fn cx_command(home: &std::path::Path) -> assert_cmd::Command {
+    let mut cmd = assert_cmd::Command::cargo_bin("cx").expect("cx binary should build");
+    cmd.env("CX_HOME", home)
+        .env("CX_TEST_KEYRING_DIR", home.join("test-keyring"));
+    cmd
+}

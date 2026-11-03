@@ -425,8 +425,7 @@ fn write_config(home: &std::path::Path, default_profile: &str) {
 }
 
 fn cx(home: &std::path::Path) -> AssertCommand {
-    let mut cmd = AssertCommand::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", home);
+    let mut cmd = common::cx_command(home);
     cmd.env_remove("CX_API_KEY");
     cmd.env_remove("CX_REGION");
     cmd.env_remove("CX_PROFILE");

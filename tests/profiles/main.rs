@@ -1,3 +1,7 @@
+#[path = "../common/mod.rs"]
+#[allow(dead_code)]
+mod common;
+
 use assert_cmd::Command;
 use std::fs;
 use std::path::PathBuf;
@@ -15,8 +19,7 @@ fn temp_home() -> PathBuf {
 }
 
 fn cx(home: &std::path::Path) -> Command {
-    let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", home);
+    let mut cmd = common::cx_command(home);
     // `profiles add` reads CX_API_KEY; a key exported in the user's shell
     // must not be used in tests.
     cmd.env_remove("CX_API_KEY");

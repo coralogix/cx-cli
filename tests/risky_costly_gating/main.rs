@@ -1,3 +1,7 @@
+#[path = "../common/mod.rs"]
+#[allow(dead_code)]
+mod common;
+
 use assert_cmd::Command;
 use std::fs;
 use std::path::PathBuf;
@@ -19,9 +23,7 @@ fn cx_with_config(home: &std::path::Path, config_toml: &str) -> Command {
     fs::create_dir_all(&cx_dir).unwrap();
     fs::write(cx_dir.join("config.toml"), config_toml).unwrap();
 
-    let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", home);
-    cmd
+    common::cx_command(home)
 }
 
 // ── Risky command gating ─────────────────────────────────────────────────────
@@ -227,8 +229,7 @@ fn read_only_config_allows_read() {
 fn no_config_file_allows_everything() {
     let tmp = temp_home();
     // No config file at all - should default to permissive.
-    let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", &tmp);
+    let mut cmd = common::cx_command(&tmp);
     let output = cmd
         .args([
             "iam",

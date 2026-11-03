@@ -14,6 +14,10 @@
 //! chain; the two `*_custom_endpoint*` tests assert the probe is skipped (the
 //! identity route receives zero requests).
 
+#[path = "../common/mod.rs"]
+#[allow(dead_code)]
+mod common;
+
 use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -46,9 +50,8 @@ async fn custom_endpoint_server() -> MockServer {
 fn cx(home: &Path, path_dir: &Path) -> Command {
     let cwd = home.join("project");
     fs::create_dir_all(&cwd).unwrap();
-    let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
+    let mut cmd = common::cx_command(home);
     cmd.env("HOME", home)
-        .env("CX_HOME", home)
         .env("PATH", path_dir)
         // Never inherit the developer's key into the sandbox.
         .env_remove("CX_API_KEY")

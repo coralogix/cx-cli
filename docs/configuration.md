@@ -39,11 +39,13 @@ remains `~/.cx/`.
 `cx init` creates your first profile as part of setup — see the
 [Quick start](quickstart.md) for that walkthrough. This page covers what it wrote.
 
-`cx init` asks where to store the secret and preselects `os-store` when an OS
-keyring backend is available. Linux musl builds have no keyring backend, so
-`file` is their only storage option. It defaults these rather than prompting: profile name
-`default`, no label, and `json` as the profile's default output format. A
-prompt-free run (no terminal) also writes `file`.
+`cx init` asks where to store the secret and preselects `file` (the profile
+TOML, mode `0600`). `os-store` is the other choice on Windows, on glibc Linux,
+and on macOS when this `cx` binary is Developer ID signed. An ad-hoc or
+unsigned macOS build offers only `file`. Linux musl builds have no keyring
+backend, so `file` is their only storage option. It defaults these rather than
+prompting: profile name `default`, no label, and `json` as the profile's
+default output format. A prompt-free run (no terminal) also writes `file`.
 
 Set `default_output_format` in the profile TOML (or pass `-o text`) if you would
 rather read the output by eye than hand it to an agent.
@@ -89,7 +91,7 @@ At the prompts, in order:
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
 5. **Label** — an optional tag to group or identify profiles (e.g. `production`).
-6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `os-store` is preselected when an OS keyring backend is available and uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). On Linux musl builds, `file` is the only storage option and saves credentials in the profile TOML with `0600` permissions. On platforms with an OS-store option, setup falls back to `file` if that store is unavailable (for example Linux without a Secret Service).
+6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `file` is preselected and saves credentials in the profile TOML with `0600` permissions. `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). On macOS it is offered only when this `cx` binary is signed with an Apple Developer ID certificate; an ad-hoc or unsigned build offers only `file`. On Linux musl builds, `file` is the only storage option. If you choose `os-store` and that store is unavailable (for example Linux without a Secret Service), setup saves the secret in the profile file instead.
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
@@ -156,7 +158,7 @@ For environments with no profile file at all, see
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend. The prompt preselects the OS keyring (`os_store`) when a keyring backend is available; on Linux musl builds `file` is the only storage option. `file` writes them inline in the profile TOML, and that is also what a prompt-free run uses.
+- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend. The prompt preselects `file`. On macOS, `os_store` is offered only when this `cx` binary is Developer ID signed; on Linux musl builds `file` is the only storage option. `file` writes them inline in the profile TOML, and that is also what a prompt-free run uses.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
 - If the session needs re-authentication, running a command opens the sign-in page showing only the profile's team, then continues. If the sign-in still comes back for a different team (for example, the first re-login of a profile that has not recorded its team yet), `cx` discards it, leaves the profile unchanged, and offers to reopen the sign-in page.
 - This happens only on an interactive terminal. When output is piped or `cx` runs under a coding agent, it exits with an actionable message instead:
@@ -271,9 +273,12 @@ Credentials stored in the OS keyring use the following backends:
 
 The default install script and release binaries are built for musl on Linux, so
 `file` is their only credential-storage option. Keyring support is available
-only when building from source against glibc. On platforms with an OS-store
-option, `cx` falls back to file-based credential storage when that store fails
-at setup time.
+only when building from source against glibc. The setup prompt preselects
+`file` on every platform. On macOS, `os-store` is listed only when `cx` checks
+its own signature and finds an Apple Developer ID certificate. An ad-hoc or
+unsigned build does not offer the Keychain, because an "Always Allow" entry is
+tied to that build and does not match the next one. If you choose `os-store` and that store fails at setup time, `cx`
+saves the secret in the profile file instead.
 
 ## Global config (`~/.cx/config.toml`)
 
@@ -315,7 +320,7 @@ See [TOON output format](toon-output.md) for the `toon` format specification.
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. The setup prompt preselects `"os_store"` when a keyring backend is available; on Linux musl builds `"file"` is the only storage option. A profile that omits the key is read as `"file"`.
+Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. The setup prompt preselects `"file"`. On macOS, `"os_store"` is offered only for a Developer ID-signed `cx`; on Linux musl builds `"file"` is the only storage option. A profile that omits the key is read as `"file"`.
 
 ### Common fields
 

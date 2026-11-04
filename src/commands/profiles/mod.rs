@@ -69,53 +69,94 @@ enum RegionChoice {
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
-/// Storage backend choices presented to the user. Linux musl builds have no
-/// keyring backend, so `file` is their only safe option.
-#[cfg(all(target_os = "linux", target_env = "musl"))]
-const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] =
-    &[("file", CredentialStorage::File)];
+/// `file` is always offered. `os-store` is offered where a keyring backend
+/// exists, except on macOS unless this process is signed with an Apple
+/// Developer ID certificate. An ad-hoc signature makes a Keychain "Always
+/// Allow" expire with the next build.
+fn os_store_offered() -> bool {
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    {
+        false
+    }
+    #[cfg(target_os = "macos")]
+    {
+        crate::code_sign::has_apple_developer_id()
+    }
+    #[cfg(not(any(target_os = "macos", all(target_os = "linux", target_env = "musl"))))]
+    {
+        true
+    }
+}
 
-/// Storage backend choices presented to the user. The first element is the
-/// label shown in the prompt; the second is the variant it maps to. Order
-/// matters: `os-store` is the default cursor where a keyring backend exists.
-#[cfg(not(all(target_os = "linux", target_env = "musl")))]
-const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] = &[
-    ("os-store (encrypted)", CredentialStorage::OsStore),
-    ("file", CredentialStorage::File),
-];
-
-/// Cursor index for [`select_credential_storage`]. `os-store` is the default
-/// wherever a keyring backend is compiled in.
-fn credential_storage_starting_cursor() -> usize {
-    CREDENTIAL_STORAGE_OPTIONS
-        .iter()
-        .position(|(_, storage)| *storage == CredentialStorage::OsStore)
-        .unwrap_or(0)
+/// Storage choices for the setup prompt. `file` is first, so it is the default
+/// cursor. `os-store` is appended only when [`os_store_offered`] is true.
+fn credential_storage_options() -> Vec<(&'static str, CredentialStorage)> {
+    let mut options = vec![("file", CredentialStorage::File)];
+    if os_store_offered() {
+        options.push(("os-store (encrypted)", CredentialStorage::OsStore));
+    }
+    options
 }
 
 fn credential_storage_help_message(file_description: &str) -> String {
     if cfg!(all(target_os = "linux", target_env = "musl")) {
         format!("Linux musl builds do not have an OS credential store. 'file' {file_description}")
+    } else if cfg!(target_os = "macos") && !os_store_offered() {
+        format!(
+            "'file' {file_description} This build is not Developer ID signed, so the macOS \
+             Keychain is not offered."
+        )
+    } else if cfg!(target_os = "macos") {
+        format!(
+            "'file' {file_description} 'os-store' uses the macOS Keychain. Falls back to file if \
+             the OS store is unavailable."
+        )
     } else {
         format!(
-            "'os-store' uses the OS credential store (macOS Keychain, Windows Credential Manager, \
-             Linux Secret Service). 'file' {file_description} Falls back to file if the OS store \
-             is unavailable."
+            "'file' {file_description} 'os-store' uses the OS credential store (Windows \
+             Credential Manager, Linux Secret Service). Falls back to file if the OS store is \
+             unavailable."
         )
     }
 }
 
 fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
-    let labels: Vec<&str> = CREDENTIAL_STORAGE_OPTIONS.iter().map(|(l, _)| *l).collect();
+    let options = credential_storage_options();
+    let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
+    let cursor = options
+        .iter()
+        .position(|(_, storage)| *storage == CredentialStorage::File)
+        .unwrap_or(0);
     let chosen = Select::new(prompt, labels)
         .with_help_message(help_message)
-        .with_starting_cursor(credential_storage_starting_cursor())
+        .with_starting_cursor(cursor)
         .prompt()?;
-    Ok(CREDENTIAL_STORAGE_OPTIONS
+    Ok(options
         .iter()
         .find(|(label, _)| *label == chosen)
         .map(|(_, storage)| *storage)
         .expect("inquire returns one of the labels we passed in"))
+}
+
+/// `Some` when a profile file for `name` exists and parses. Missing files and
+/// unreadable TOML are `None`: there is nothing recorded to act on.
+fn recorded_credential_storage(name: &str) -> Option<CredentialStorage> {
+    let path = profile_file(name).ok()?;
+    if !path.exists() {
+        return None;
+    }
+    load_profile(name)
+        .ok()
+        .map(|profile| profile.credential_storage)
+}
+
+/// Remove OS-store secrets for `name` only when its profile file says they live
+/// there. A missing profile, or one stored in the file, does not open the
+/// keychain. On macOS that open prompts even for a delete.
+fn delete_os_store_secrets_if_recorded(name: &str) {
+    if recorded_credential_storage(name) == Some(CredentialStorage::OsStore) {
+        keyring_store::delete_profile(name);
+    }
 }
 
 /// Persist to the OS credential store when possible; otherwise fall back to file.
@@ -477,7 +518,7 @@ pub struct AddArgs {
     pub disable_olly: bool,
     /// Quick setup: on a terminal, skip the optional prompts (default output
     /// format, label) and apply sensible defaults (JSON output, no label).
-    /// Credential storage is still asked, with the OS store preselected.
+    /// Credential storage is still asked, with file preselected.
     /// Non-interactive runs store secrets in the profile file. Used by
     /// `cx init`'s guided flow; `cx profiles add` leaves it `false` and keeps
     /// its full prompt set.
@@ -724,7 +765,7 @@ pub fn run_delete(profile_name: String, force: bool) -> Result<()> {
         }
     }
 
-    keyring_store::delete_profile(&profile_name);
+    delete_os_store_secrets_if_recorded(&profile_name);
     std::fs::remove_file(&path)?;
     println!("Profile '{profile_name}' deleted.");
 
@@ -789,8 +830,8 @@ fn build_profile_non_interactive(
         RegionChoice::Custom { base_url } => Region::Custom(base_url),
     };
 
-    // Clean up any leftover keychain entries from a previous config.
-    keyring_store::delete_profile(name);
+    // Drop OS-store secrets only when this profile's file says they are there.
+    delete_os_store_secrets_if_recorded(name);
     let profile = Profile {
         auth: AuthKind::ApiKey,
         credential_storage: CredentialStorage::File,
@@ -872,9 +913,9 @@ async fn configure_oauth(
         None
     };
 
-    // Clean up any existing keyring entries before writing new ones, regardless
-    // of which storage backend the user picks below.
-    keyring_store::delete_profile(name);
+    // Drop OS-store secrets only when this profile's file says they are there.
+    // A new profile has no file, so setup does not open the keychain.
+    delete_os_store_secrets_if_recorded(name);
 
     // ── Browser login ──────────────────────────────────────────────────────────
     println!();
@@ -885,7 +926,7 @@ async fn configure_oauth(
     let tokens = oauth::browser_login(&base_url, &client_id, login).await?;
     println!("Login successful!");
 
-    // Interactive runs (including `cx init`) ask, with the OS store preselected.
+    // Interactive runs (including `cx init`) ask, with file preselected.
     // Non-interactive runs store tokens in the profile file so a script never
     // blocks on a keychain dialog. If the OS store is selected but unavailable
     // (common on Linux without Secret Service), we fall back to file.
@@ -998,8 +1039,9 @@ fn configure_api_key(
             .filter(|s| !s.is_empty())
     };
 
-    // Reached only on a terminal, including `cx init`. The OS store is preselected.
-    // If the store is unavailable, fall back to file so Linux clients keep working.
+    // Reached only on a terminal, including `cx init`. File is preselected.
+    // If the OS store is chosen but unavailable, fall back to file so Linux
+    // clients keep working.
     let help_message =
         credential_storage_help_message("stores credentials in the profile config (0600 perms).");
     let credential_storage =
@@ -1014,8 +1056,8 @@ fn configure_api_key(
             "profile file",
         ),
         CredentialStorage::File => {
-            // Clean up any leftover keychain entries from a previous config.
-            keyring_store::delete_profile(name);
+            // Drop OS-store secrets only when this profile's file says they are there.
+            delete_os_store_secrets_if_recorded(name);
             (CredentialStorage::File, Some(api_key), "profile file")
         }
     };
@@ -1063,13 +1105,22 @@ mod tests {
     }
 
     #[test]
-    fn credential_storage_default_is_os_store_when_keyring_is_available() {
-        let (_, storage) = CREDENTIAL_STORAGE_OPTIONS[credential_storage_starting_cursor()];
-        if cfg!(all(target_os = "linux", target_env = "musl")) {
-            assert_eq!(storage, CredentialStorage::File);
-            assert_eq!(CREDENTIAL_STORAGE_OPTIONS.len(), 1);
+    fn missing_profile_does_not_record_os_store() {
+        assert_eq!(
+            recorded_credential_storage("cx_profile_that_does_not_exist"),
+            None
+        );
+    }
+
+    #[test]
+    fn credential_storage_default_cursor() {
+        let options = credential_storage_options();
+        assert_eq!(options[0].1, CredentialStorage::File);
+        if os_store_offered() {
+            assert_eq!(options.len(), 2);
+            assert_eq!(options[1].1, CredentialStorage::OsStore);
         } else {
-            assert_eq!(storage, CredentialStorage::OsStore);
+            assert_eq!(options.len(), 1);
         }
     }
 

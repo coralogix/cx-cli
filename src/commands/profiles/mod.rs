@@ -108,9 +108,8 @@ fn credential_storage_help_message(file_description: &str) -> String {
         )
     } else if cfg!(target_os = "macos") {
         format!(
-            "'file' {file_description} 'os-store' uses the macOS Keychain. It is offered because \
-             this binary is Developer ID signed, so Keychain access stays valid across upgrades. \
-             Falls back to file if the OS store is unavailable."
+            "'file' {file_description} 'os-store' uses the macOS Keychain. Falls back to file if \
+             the OS store is unavailable."
         )
     } else {
         format!(

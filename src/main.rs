@@ -1257,15 +1257,15 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx alerts replace 11111111-2222-3333-4444-555555555555 --from-file alert.json
-  cat alert.json | cx alerts replace")]
+  cat alert.json | cx alerts replace --yes")]
     Replace {
         /// Optional alert definition ID (UUID). If absent, data file must
         /// contain "alertDef" key containing the "id" beside the
         /// "alertDefProperties".
-        #[arg(long)]
         alert_id: Option<String>,
 
-        /// Path to JSON file with the alert definition. Use '-' for stdin.
+        /// Path to JSON file with the alert definition.
+        /// Use '-' for stdin [requires --yes].
         #[arg(long, default_value = "-")]
         from_file: String,
     },

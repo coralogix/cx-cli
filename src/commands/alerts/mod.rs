@@ -395,7 +395,7 @@ pub async fn run_replace(
         .and_then(Value::as_str)
         .unwrap_or("<unknown>")
         .to_string();
-    eprintln!("{}", format!("Replacing alert {alert_name}...").dimmed());
+    eprintln!("{}", format!("Replacing alert '{alert_name}'...").dimmed());
 
     let include_profile = targets.len() > 1;
 

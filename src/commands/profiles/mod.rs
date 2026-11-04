@@ -69,49 +69,69 @@ enum RegionChoice {
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
-/// Storage backend choices presented to the user. Linux musl builds have no
-/// keyring backend, so `file` is their only safe option.
-#[cfg(all(target_os = "linux", target_env = "musl"))]
-const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] =
-    &[("file", CredentialStorage::File)];
+/// `file` is always offered. `os-store` is offered where a keyring backend
+/// exists, except on macOS unless this process is signed with an Apple
+/// Developer ID certificate. An ad-hoc signature makes a Keychain "Always
+/// Allow" expire with the next build.
+fn os_store_offered() -> bool {
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    {
+        false
+    }
+    #[cfg(target_os = "macos")]
+    {
+        crate::code_sign::has_apple_developer_id()
+    }
+    #[cfg(not(any(target_os = "macos", all(target_os = "linux", target_env = "musl"))))]
+    {
+        true
+    }
+}
 
-/// Storage backend choices presented to the user. The first element is the
-/// label shown in the prompt; the second is the variant it maps to. Order
-/// matters: `file` is the default cursor wherever a keyring backend exists.
-#[cfg(not(all(target_os = "linux", target_env = "musl")))]
-const CREDENTIAL_STORAGE_OPTIONS: &[(&str, CredentialStorage)] = &[
-    ("file", CredentialStorage::File),
-    ("os-store (encrypted)", CredentialStorage::OsStore),
-];
-
-/// Cursor index for [`select_credential_storage`]. `file` is the default on
-/// every platform. `os-store` stays available where a keyring backend exists.
-fn credential_storage_starting_cursor() -> usize {
-    CREDENTIAL_STORAGE_OPTIONS
-        .iter()
-        .position(|(_, storage)| *storage == CredentialStorage::File)
-        .unwrap_or(0)
+/// Storage choices for the setup prompt. `file` is first, so it is the default
+/// cursor. `os-store` is appended only when [`os_store_offered`] is true.
+fn credential_storage_options() -> Vec<(&'static str, CredentialStorage)> {
+    let mut options = vec![("file", CredentialStorage::File)];
+    if os_store_offered() {
+        options.push(("os-store (encrypted)", CredentialStorage::OsStore));
+    }
+    options
 }
 
 fn credential_storage_help_message(file_description: &str) -> String {
     if cfg!(all(target_os = "linux", target_env = "musl")) {
         format!("Linux musl builds do not have an OS credential store. 'file' {file_description}")
+    } else if cfg!(target_os = "macos") && !os_store_offered() {
+        format!(
+            "'file' {file_description} This build is not Developer ID signed, so the macOS \
+             Keychain is not offered."
+        )
+    } else if cfg!(target_os = "macos") {
+        format!(
+            "'file' {file_description} 'os-store' uses the macOS Keychain. Falls back to file if \
+             the OS store is unavailable."
+        )
     } else {
         format!(
-            "'file' {file_description} 'os-store' uses the OS credential store (macOS Keychain, \
-             Windows Credential Manager, Linux Secret Service). Falls back to file if the OS \
-             store is unavailable."
+            "'file' {file_description} 'os-store' uses the OS credential store (Windows \
+             Credential Manager, Linux Secret Service). Falls back to file if the OS store is \
+             unavailable."
         )
     }
 }
 
 fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
-    let labels: Vec<&str> = CREDENTIAL_STORAGE_OPTIONS.iter().map(|(l, _)| *l).collect();
+    let options = credential_storage_options();
+    let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
+    let cursor = options
+        .iter()
+        .position(|(_, storage)| *storage == CredentialStorage::File)
+        .unwrap_or(0);
     let chosen = Select::new(prompt, labels)
         .with_help_message(help_message)
-        .with_starting_cursor(credential_storage_starting_cursor())
+        .with_starting_cursor(cursor)
         .prompt()?;
-    Ok(CREDENTIAL_STORAGE_OPTIONS
+    Ok(options
         .iter()
         .find(|(label, _)| *label == chosen)
         .map(|(_, storage)| *storage)
@@ -1094,12 +1114,13 @@ mod tests {
 
     #[test]
     fn credential_storage_default_cursor() {
-        let (_, storage) = CREDENTIAL_STORAGE_OPTIONS[credential_storage_starting_cursor()];
-        assert_eq!(storage, CredentialStorage::File);
-        if cfg!(all(target_os = "linux", target_env = "musl")) {
-            assert_eq!(CREDENTIAL_STORAGE_OPTIONS.len(), 1);
+        let options = credential_storage_options();
+        assert_eq!(options[0].1, CredentialStorage::File);
+        if os_store_offered() {
+            assert_eq!(options.len(), 2);
+            assert_eq!(options[1].1, CredentialStorage::OsStore);
         } else {
-            assert_eq!(CREDENTIAL_STORAGE_OPTIONS.len(), 2);
+            assert_eq!(options.len(), 1);
         }
     }
 

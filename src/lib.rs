@@ -1,6 +1,8 @@
 pub mod api_client;
 pub mod banner;
 pub mod cases_query_rules;
+#[cfg(target_os = "macos")]
+mod code_sign;
 pub mod commands;
 pub mod config;
 pub mod console_url;

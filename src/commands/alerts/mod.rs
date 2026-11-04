@@ -334,7 +334,7 @@ fn build_alert_update_args<'a>(
     alert_id: Option<&'a str>,
     body: &'a Value,
 ) -> Result<(&'a str, &'a Value)> {
-    if ! body.is_object() {
+    if !body.is_object() {
         bail!("Alert definition must be a JSON object");
     }
 
@@ -344,10 +344,9 @@ fn build_alert_update_args<'a>(
 
     // Prefer the alert ID from the CLI arg if given, otherwise try to get
     // it from the alert definition.
-    let Some(alert_id) = alert_id
-        .or(alert_def.get("id").and_then(Value::as_str)) else {
-            bail!("Can't determine the alert id")
-        };
+    let Some(alert_id) = alert_id.or(alert_def.get("id").and_then(Value::as_str)) else {
+        bail!("Can't determine the alert id")
+    };
 
     // We need the `alertDefProperties`, bail if it's not there.
     let Some(alert_def_properties) = alert_def.get("alertDefProperties") else {
@@ -391,7 +390,8 @@ pub async fn run_replace(
     // The API says `name` could be `None`, whereas `alert-schemas.md` implies
     // that it _must_ be present. For update it doesn't matter: either we're
     // updating the name or not. Let the other end decide what to do with it.
-    let alert_name = alert_def_properties.get("name")
+    let alert_name = alert_def_properties
+        .get("name")
         .and_then(Value::as_str)
         .unwrap_or("<unknown>")
         .to_string();
@@ -730,7 +730,6 @@ pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFor
     Ok(())
 }
 
-
 // ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -752,9 +751,13 @@ mod tests {
             }
         });
 
-        let (actual_id, actual_payload) = build_alert_update_args(alert_id, &body).expect("there should be no errors");
+        let (actual_id, actual_payload) =
+            build_alert_update_args(alert_id, &body).expect("there should be no errors");
 
-        assert_eq!(actual_id, "123e4567-e89b-12d3-a456-426614174000", "alert_id should be found in the alert definition body");
+        assert_eq!(
+            actual_id, "123e4567-e89b-12d3-a456-426614174000",
+            "alert_id should be found in the alert definition body"
+        );
         assert_eq!(
             *actual_payload,
             json!({
@@ -776,9 +779,13 @@ mod tests {
             }
         });
 
-        let (actual_id, actual_payload) = build_alert_update_args(alert_id, &body).expect("there should be no errors");
+        let (actual_id, actual_payload) =
+            build_alert_update_args(alert_id, &body).expect("there should be no errors");
 
-        assert_eq!(actual_id, "123e4567-e89b-12d3-a456-426614174000", "alert_id should be from CLI arg");
+        assert_eq!(
+            actual_id, "123e4567-e89b-12d3-a456-426614174000",
+            "alert_id should be from CLI arg"
+        );
         assert_eq!(
             *actual_payload,
             json!({
@@ -786,7 +793,7 @@ mod tests {
                 "description": "other stuff below..."
             }),
             "actual payload should be content of alertDefProperties"
-        );        
+        );
     }
 
     /// Alert ID from CLI should be preferred over that from file/stdin.
@@ -803,9 +810,13 @@ mod tests {
             }
         });
 
-        let (actual_id, actual_payload) = build_alert_update_args(alert_id, &body).expect("there should be no errors");
+        let (actual_id, actual_payload) =
+            build_alert_update_args(alert_id, &body).expect("there should be no errors");
 
-        assert_eq!(actual_id, "123e4567-e89b-12d3-a456-426614174000", "alert_id should prefer CLI arg");
+        assert_eq!(
+            actual_id, "123e4567-e89b-12d3-a456-426614174000",
+            "alert_id should prefer CLI arg"
+        );
         assert_eq!(
             *actual_payload,
             json!({
@@ -814,7 +825,6 @@ mod tests {
             }),
             "actual payload should be content of alertDefProperties"
         );
-        
     }
 
     /// There must _be_ an Alert ID somewhere.
@@ -830,8 +840,10 @@ mod tests {
 
         match build_alert_update_args(alert_id, &body) {
             Ok(_) => panic!("there should be an error"),
-            Err(e) if e.to_string() != "Can't determine the alert id" => panic!("Didn't get expected error"),
-            _ => ()
+            Err(e) if e.to_string() != "Can't determine the alert id" => {
+                panic!("Didn't get expected error")
+            }
+            _ => (),
         }
     }
 }

@@ -226,11 +226,12 @@ async fn replace_alert() {
     println!("{:?}", tmp_path);
 
     let result = run_replace(
-        &targets, 
-        Some(&id), 
-        &tmp_path.to_string_lossy(), 
-        OutputFormat::Json
-    ).await;
+        &targets,
+        Some(&id),
+        &tmp_path.to_string_lossy(),
+        OutputFormat::Json,
+    )
+    .await;
 
     // Delete temp file
     std::fs::remove_file(tmp_path).expect("Couldn't delete temporary file");

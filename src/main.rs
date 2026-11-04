@@ -1264,7 +1264,7 @@ Examples:
         /// "alertDefProperties".
         #[arg(long)]
         alert_id: Option<String>,
-        
+
         /// Path to JSON file with the alert definition. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,

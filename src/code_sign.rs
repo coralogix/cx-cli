@@ -1,31 +1,27 @@
-//! Whether this macOS process carries the stable Developer ID signature.
+//! Whether this macOS process is signed with an Apple Developer ID certificate.
 //!
-//! A Keychain "Always Allow" entry is stored against the binary's signing
-//! requirement. The release binary keeps one requirement across upgrades.
-//! An ad-hoc signature (a local build, or a bottle built without that
-//! identity) gets a new hash every build, so the entry does not match again.
+//! A Keychain "Always Allow" entry for an ad-hoc signature is stored against
+//! that build's hash, so it does not match the next build. An Apple-issued
+//! Developer ID signature is not ad-hoc. Certificate renewal keeps that
+//! property, so the check does not name a team id.
 
 use std::str::FromStr;
 
 use security_framework::os::macos::code_signing::{Flags, SecCode, SecRequirement};
 
-/// Designated requirement of the signed release binary. The team and
-/// identifier are what a Keychain ACL matches across versions.
-const STABLE_SIGNING_REQUIREMENT: &str = concat!(
-    r#"identifier "com.coralogix.cx" "#,
-    r#"and anchor apple generic "#,
-    r#"and certificate leaf[subject.OU] = "5566BG6FW3""#,
-);
+/// Passes for any Apple-issued Developer ID signature, and fails for an
+/// ad-hoc or unsigned binary.
+const APPLE_SIGNED_REQUIREMENT: &str = "anchor apple generic";
 
-/// `true` when this process satisfies [`STABLE_SIGNING_REQUIREMENT`].
+/// `true` when this process satisfies [`APPLE_SIGNED_REQUIREMENT`].
 ///
 /// Any failure to read or validate the signature is treated as unsigned, so
 /// setup does not offer the Keychain.
-pub fn has_stable_developer_id() -> bool {
+pub fn has_apple_developer_id() -> bool {
     let Ok(code) = SecCode::for_self(Flags::NONE) else {
         return false;
     };
-    let Ok(requirement) = SecRequirement::from_str(STABLE_SIGNING_REQUIREMENT) else {
+    let Ok(requirement) = SecRequirement::from_str(APPLE_SIGNED_REQUIREMENT) else {
         return false;
     };
     code.check_validity(Flags::NONE, &requirement).is_ok()
@@ -36,15 +32,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn requirement_names_the_release_identity() {
-        assert!(STABLE_SIGNING_REQUIREMENT.contains("com.coralogix.cx"));
-        assert!(STABLE_SIGNING_REQUIREMENT.contains("5566BG6FW3"));
+    fn requirement_is_any_apple_certificate() {
+        assert_eq!(APPLE_SIGNED_REQUIREMENT, "anchor apple generic");
     }
 
     #[test]
-    fn cargo_test_binary_is_not_the_signed_release() {
+    fn cargo_test_binary_is_not_apple_signed() {
         // `cargo test` produces an ad-hoc binary. A Developer ID signature
         // would make this assertion wrong, which is the signal to revisit it.
-        assert!(!has_stable_developer_id());
+        assert!(!has_apple_developer_id());
     }
 }

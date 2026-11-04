@@ -70,9 +70,9 @@ enum RegionChoice {
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
 /// `file` is always offered. `os-store` is offered where a keyring backend
-/// exists, except on macOS unless this process has the stable Developer ID
-/// signature. An ad-hoc signature makes a Keychain "Always Allow" expire with
-/// the next build.
+/// exists, except on macOS unless this process is signed with an Apple
+/// Developer ID certificate. An ad-hoc signature makes a Keychain "Always
+/// Allow" expire with the next build.
 fn os_store_offered() -> bool {
     #[cfg(all(target_os = "linux", target_env = "musl"))]
     {
@@ -80,7 +80,7 @@ fn os_store_offered() -> bool {
     }
     #[cfg(target_os = "macos")]
     {
-        crate::code_sign::has_stable_developer_id()
+        crate::code_sign::has_apple_developer_id()
     }
     #[cfg(not(any(target_os = "macos", all(target_os = "linux", target_env = "musl"))))]
     {

@@ -18,7 +18,7 @@
 //! * **Quick (interactive)** — bare `cx init` on a terminal. Guided prompts:
 //!   OAuth browser login (no auth-method question), a region prompt, and where
 //!   to store the secret (`file` preselected; the OS keychain is the other
-//!   choice where a keyring exists).
+//!   choice on Windows, glibc Linux, and a Developer ID-signed macOS binary).
 //!   Output format and label are defaulted (JSON / none) rather than asked;
 //!   Olly is enabled on the first profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or

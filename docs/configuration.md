@@ -90,7 +90,7 @@ At the prompts, in order:
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
 5. **Label** — an optional tag to group or identify profiles (e.g. `production`).
-6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `file` is preselected and saves credentials in the profile TOML with `0600` permissions. `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux) when a keyring backend is available. On Linux musl builds, `file` is the only storage option. On platforms with an OS-store option, setup falls back to `file` if that store is unavailable (for example Linux without a Secret Service).
+6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `file` is preselected and saves credentials in the profile TOML with `0600` permissions. `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux) when a keyring backend is available. On Linux musl builds, `file` is the only storage option. If you choose `os-store` and that store is unavailable (for example Linux without a Secret Service), setup saves the secret in the profile file instead.
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
@@ -273,8 +273,8 @@ Credentials stored in the OS keyring use the following backends:
 The default install script and release binaries are built for musl on Linux, so
 `file` is their only credential-storage option. Keyring support is available
 only when building from source against glibc. The setup prompt preselects
-`file` on every platform. On platforms with an OS-store option, `cx` falls back
-to file-based credential storage when that store fails at setup time.
+`file` on every platform. If you choose `os-store` and that store fails at
+setup time, `cx` saves the secret in the profile file instead.
 
 ## Global config (`~/.cx/config.toml`)
 

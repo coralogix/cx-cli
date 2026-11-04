@@ -3927,12 +3927,14 @@ async fn main() -> Result<()> {
                     commands::alerts::run_create(&targets, &from_file, output).await?;
                 }
                 AlertsCmd::Replace { alert_id, from_file } => {
-                    let message = match alert_id {
+                    // NB only shows ID if specified in CLI args.
+                    //    Presumably when doing a replace with a file they don't care as much anyway.
+                    let message = match alert_id.as_deref() {
                         Some(id) => format!("Replace alert '{id}'?"),
                         None => "Replace alert?".to_string(),
                     };
                     confirm_destructive(&message, yes, agent_mode)?;
-                    commands::alerts::run_create(&targets, &from_file, output).await?;
+                    commands::alerts::run_replace(&targets, alert_id.as_deref(), &from_file, output).await?;
                 }
                 AlertsCmd::Delete { alert_id } => {
                     confirm_destructive(&format!("Delete alert '{alert_id}'?"), yes, agent_mode)?;

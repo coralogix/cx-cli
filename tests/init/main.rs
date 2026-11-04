@@ -106,7 +106,7 @@ async fn init_writes_profile_then_installs_skills() {
         .success();
 
     // Step 1: prompt-free setup writes the key into the profile file and
-    // pins JSON output. Interactive `cx init` asks and preselects os-store.
+    // pins JSON output. Interactive `cx init` asks and preselects file.
     let toml = fs::read_to_string(profile_path(&home, "default")).unwrap();
     assert!(toml.contains("auth = \"api_key\""), "profile: {toml}");
     assert!(

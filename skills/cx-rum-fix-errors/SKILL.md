@@ -126,7 +126,7 @@ Load `references/context.md`. Collect breadcrumbs (last 20 events of the session
 Write it down:
 
 - **Summary:** one line.
-- **Immediate cause:** the exact expression that throws and the value it had (e.g. `this.gridService.api` is `undefined` at `traces-grid.component.ts:68`).
+- **Immediate cause:** the exact expression that throws and the value it had (e.g. `this.chart` is `undefined` at `chart.component.ts:42`).
 - **Root cause:** why the value is wrong at that moment. Read each in-app frame top-down, trace where the data comes from, and use `git log -L` / `git blame` on the failing lines.
 - **Evidence:** mapped frames, breadcrumbs, network, trace, first-seen version and the commit that introduced it.
 - **Alternatives:** other explanations and why you ruled them out.

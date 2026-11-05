@@ -104,16 +104,22 @@ MCP: call `map_rum_stack_trace` with `rum_template_id: "<template-id>"`. It read
 
 ```bash
 git remote get-url origin            # should end in <repoName>
+git fetch origin
 git cat-file -e <commitHash> || git fetch origin <commitHash>
 git ls-files <mapped source.fileName>
-git log --oneline <commitHash>..HEAD -- <mapped files>
-git diff <commitHash> HEAD -- <mapped files>
+git symbolic-ref --short refs/remotes/origin/HEAD   # default branch, e.g. origin/main
+git merge-base --is-ancestor HEAD <commitHash> && echo "local HEAD is older than the release"
+git log --oneline <commitHash>..origin/<default> -- <mapped files>
+git diff <commitHash> origin/<default> -- <mapped files>
 ```
+
+- Compare the release with the **default branch**, not only `HEAD`: a fix may already be merged there, and a local branch can be older than the release. Then `<commitHash>..HEAD` is empty while `git diff <commitHash> HEAD` shows changes the release already has (or lacks). Don't read that as "already fixed".
+- **Local `HEAD` is older than the release:** read code with `git show <commitHash>:<path>` (in zsh, quote it: `"${C}:<path>"`, since `$C:l` is a zsh modifier). Before editing, tell the user the fix needs a branch from `origin/<default>`. Don't switch branches yourself if the working tree has changes.
 
 Stop and report instead of fixing when:
 
 - the remote is a different repo than `repoName`, or the top in-app mapped file is not in this repo. Tell the user which repo the error belongs to.
-- the diff already changes the failing line or its inputs. The error may already be fixed: report the commit and ask whether to continue.
+- the default branch already changes the failing line or its inputs since the release. The error may already be fixed: report the commit and ask whether to continue.
 
 If the commit can't be fetched, compare the mapped `codeLines` with the current file. Continue only if they match, and say so in the report.
 

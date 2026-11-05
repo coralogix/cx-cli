@@ -1,0 +1,37 @@
+{
+  "name": "cx-skills",
+  "description": "OpenTelemetry Collector deployment, OTTL pipeline authoring, SDK instrumentation, and Real User Monitoring (RUM) setup skills for AI coding assistants",
+  "version": "0.2.0",
+  "author": {
+    "name": "Coralogix",
+    "email": "support@coralogix.com"
+  },
+  "homepage": "https://github.com/coralogix/cx-skills",
+  "repository": "https://github.com/coralogix/cx-skills",
+  "license": "Apache-2.0",
+  "keywords": [
+    "coralogix",
+    "opentelemetry",
+    "otel",
+    "observability",
+    "o11y",
+    "otel-collector",
+    "ottl",
+    "monitoring",
+    "ai-agent",
+    "skills",
+    "agentic",
+    "developer",
+    "coding",
+    "productivity",
+    "rum",
+    "real-user-monitoring",
+    "error-tracking",
+    "session-replay"
+  ],
+  "skills": [
+    "./skills/opentelemetry/",
+    "./skills/ai-center/",
+    "./skills/rum/"
+  ]
+}

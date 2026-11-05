@@ -32,7 +32,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
-| `cx-rum-setup` | Add RUM to a browser or mobile app - RUM API key, SDK install and init, verify events arrive |
+| `coralogix-rum-setup` | Add Coralogix RUM to a web or mobile app - SDK install and init, privacy defaults, source-map upload in the build, verify events arrive. Works with or without `cx`. |
 | `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications |
 
 ## Requirements

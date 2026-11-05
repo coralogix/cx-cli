@@ -1,0 +1,54 @@
+name: Sync coralogix-rum-setup skill
+
+# The skill is maintained in coralogix/cx-cli (skills/coralogix-rum-setup), which
+# also ships it with the Coralogix CLI. This workflow copies it here and opens a
+# PR when it changes. Edit the skill in cx-cli, not in this repo.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  DEST: skills/coralogix-rum-setup
+  BRANCH: sync/coralogix-rum-setup
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Copy the skill from coralogix/cx-cli
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/coralogix/cx-cli "$RUNNER_TEMP/cx-cli"
+          git -C "$RUNNER_TEMP/cx-cli" sparse-checkout set skills/coralogix-rum-setup
+          mkdir -p "$DEST"
+          rsync -a --delete --exclude .claude-plugin "$RUNNER_TEMP/cx-cli/skills/coralogix-rum-setup/" "$DEST/"
+          echo "SRC_SHA=$(git -C "$RUNNER_TEMP/cx-cli" rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      - name: Open or update the sync PR
+        env:
+          # A PAT or GitHub App token lets the PR trigger this repo's own CI; github.token does not.
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+        run: |
+          if [ -z "$(git status --porcelain -- "$DEST")" ]; then
+            echo "Already in sync with cx-cli@$SRC_SHA"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$BRANCH" 2>/dev/null || true
+          git checkout -B "$BRANCH"
+          git add -A -- "$DEST"
+          git commit -m "chore: sync coralogix-rum-setup from cx-cli@$SRC_SHA"
+          # Only this bot-owned branch is ever rewritten.
+          git push --force-with-lease origin "$BRANCH"
+          gh pr view "$BRANCH" --json url >/dev/null 2>&1 || gh pr create \
+            --base "${{ github.event.repository.default_branch }}" --head "$BRANCH" \
+            --title "chore: sync coralogix-rum-setup skill from cx-cli" \
+            --body "Automated copy of \`skills/coralogix-rum-setup\` from coralogix/cx-cli@$SRC_SHA. Edit the skill in cx-cli, not here."

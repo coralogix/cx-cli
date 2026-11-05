@@ -44,7 +44,7 @@ When running inside an AI agent (Claude Code, Cursor, Codex, etc.), cx automatic
 
 ### API Keys
 
-> For RUM (browser/mobile) keys and SDK setup, use the **`cx-rum-setup`** skill.
+> For RUM (browser/mobile) keys and SDK setup, use the **`coralogix-rum-setup`** skill.
 
 | Command | Purpose |
 |---|---|
@@ -201,4 +201,4 @@ Safe key rotation workflow:
 ## Related Skills
 
 - **`cx-cost-optimization`** - review what API keys are used for and whether they're still needed
-- **`cx-rum-setup`** - create RUM API keys and wire the RUM SDK into an app
+- **`coralogix-rum-setup`** - create RUM API keys and wire the RUM SDK into an app

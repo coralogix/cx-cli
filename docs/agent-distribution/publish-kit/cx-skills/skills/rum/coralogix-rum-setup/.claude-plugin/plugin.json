@@ -1,0 +1,12 @@
+{
+  "name": "coralogix-rum",
+  "description": "Add Coralogix Real User Monitoring to a web or mobile app — SDK install and init, privacy defaults, source-map upload in the build, and data verification.",
+  "author": {
+    "name": "Coralogix",
+    "email": "support@coralogix.com"
+  },
+  "homepage": "https://coralogix.com/docs/user-guides/rum/getting-started/real-user-monitoring/",
+  "repository": "https://github.com/coralogix/cx-skills",
+  "license": "Apache-2.0",
+  "keywords": ["coralogix", "rum", "real-user-monitoring", "error-tracking", "session-replay", "source-maps", "frontend", "mobile"]
+}

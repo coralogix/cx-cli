@@ -1,0 +1,30 @@
+{
+  "name": "cx-skills",
+  "owner": {
+    "name": "Coralogix"
+  },
+  "description": "Coralogix observability skills for coding agents: OpenTelemetry, AI app instrumentation, and Real User Monitoring setup.",
+  "plugins": [
+    {
+      "name": "coralogix",
+      "description": "Coralogix observability skills for AI agents — OpenTelemetry Collector deployment, OTTL pipeline authoring, SDK instrumentation, and Real User Monitoring (RUM) setup.",
+      "source": "./"
+    },
+    {
+      "name": "coralogix-rum",
+      "description": "Add Coralogix Real User Monitoring to a web or mobile app — SDK install and init, privacy defaults, source-map upload in the build, and data verification.",
+      "source": "./skills/rum/coralogix-rum-setup",
+      "category": "monitoring",
+      "keywords": [
+        "coralogix",
+        "rum",
+        "real-user-monitoring",
+        "error-tracking",
+        "session-replay",
+        "source-maps",
+        "frontend",
+        "mobile"
+      ]
+    }
+  ]
+}

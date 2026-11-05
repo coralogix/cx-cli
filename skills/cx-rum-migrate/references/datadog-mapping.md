@@ -247,13 +247,13 @@ maskClass: /(^|\s)(cx-mask|dd-privacy-mask|dd-privacy-hidden)(\s|$)/,  // under 
 | `addReactError(error, info)` | `CoralogixRum.captureError(error, { componentStack: info.componentStack })` | |
 | `UNSTABLE_ReactComponentTracker` | none | Approximation: `startTimeMeasure`/`endTimeMeasure`. |
 | Angular: `angularPlugin({ router: true })`, `provideDatadogRouter()` | remove | |
-| `provideDatadogErrorHandler()` / `addAngularError(error)` | custom `ErrorHandler` whose `handleError(e)` calls `CoralogixRum.captureError(...)` and then `console.error(e)`; provide it as `{ provide: ErrorHandler, useClass: ... }` | `runOutsideAngularZone` (default true) keeps SDK timers out of Zone.js. |
+| `provideDatadogErrorHandler()` / `addAngularError(error)` | custom `ErrorHandler` whose `handleError(e)` calls `CoralogixRum.captureError(...)` and does **not** `console.error(e)`; provide it as `{ provide: ErrorHandler, useClass: ... }` | The SDK captures `console.error` as an error, so re-logging would report each error twice (see `rum-browser-init.md`). `runOutsideAngularZone` (default true) keeps SDK timers out of Zone.js. |
 | Vue: `vuePlugin({ router: true })`, `createRouter` from `@datadog/browser-rum-vue/vue-router` | remove plugin; `createRouter` from `vue-router` | |
 | `app.config.errorHandler = addVueError` | `app.config.errorHandler = (err, _vm, info) => CoralogixRum.captureError(err instanceof Error ? err : new Error(String(err)), { info })` | |
 | Next.js: `nextjsPlugin()`, `onRouterTransitionStart`, `<DatadogAppRouter />`, `<DatadogPagesRouter />` | remove | Init `CoralogixRum` in client-only code (e.g. the same `instrumentation-client` file, or a `'use client'` component); never on the server. |
 | `addNextjsError(error)` in `error.tsx` / `global-error.tsx` | `CoralogixRum.captureError(error)` in the same `useEffect` | |
 | Next.js Pages `ErrorBoundary` | as React `ErrorBoundary` above | |
-| DD source-map upload (`datadog-ci sourcemaps upload`) | `@coralogix/rum-cli` or `@coralogix/webpack-plugin` / `vite-plugin` / `esbuild-plugin` | `application`/`version` must match init. See `cx-rum-setup`. |
+| DD source-map upload (`datadog-ci sourcemaps upload`) | `coralogix-rum-cli upload-source-maps` (`@coralogix/rum-cli`) in CI | The only upload path: the Coralogix bundler plugins don't upload maps (they emit micro-frontend metadata only). `application`/`version` must match init. See `sourcemaps.md`. |
 
 ## 10. Other
 

@@ -53,11 +53,21 @@ Move a browser app from the Sentry or Datadog SDK to the Coralogix RUM SDK (`@co
 Confirm it's a browser app (same detection order as `cx-rum-setup` step 1). Then inventory the source SDK - grep, excluding `node_modules`, build output, and lockfiles:
 
 ```bash
+# Code and config - credential files excluded so no secret values are printed
 grep -rnE "@sentry/|Sentry\.|sentry-cli|withSentryConfig|sentryVitePlugin|sentryWebpackPlugin|SENTRY_" \
-  --exclude-dir={node_modules,.git,dist,build,.next,coverage} .
+  --exclude-dir={node_modules,.git,dist,build,.next,coverage} \
+  --exclude='.env*' --exclude='.sentryclirc' --exclude='sentry.properties' --exclude='*.pem' .
 grep -rnE "@datadog/browser-|datadogRum|datadogLogs|DD_RUM|DD_LOGS|datadog-ci|DD_|DATADOG_" \
-  --exclude-dir={node_modules,.git,dist,build,.next,coverage} .
+  --exclude-dir={node_modules,.git,dist,build,.next,coverage} \
+  --exclude='.env*' --exclude='datadog-ci.json' --exclude='*.pem' .
+
+# Credential files: names only, never values
+ls -a | grep -E '^\.env|^\.sentryclirc$|^sentry\.properties$|^datadog-ci\.json$'
+grep -ohE '^[[:space:]]*(export[[:space:]]+)?[A-Z0-9_]*(SENTRY|DD|DATADOG)[A-Z0-9_]*=' .env* 2>/dev/null \
+  | sed -E 's/^[[:space:]]*(export[[:space:]]+)?//; s/=$//' | sort -u
 ```
+
+Never `cat` or grep with content output on `.env*`, `.sentryclirc`, `sentry.properties`, or `datadog-ci.json`.
 
 Collect:
 

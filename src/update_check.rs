@@ -12,6 +12,11 @@
 //!     mode or non-TTY stderr (binary and skills separated by `|`).
 //!   - Returns a `_meta.update` JSON block for the toon output path (see
 //!     [`build_meta_block`]).
+//! * Independently of the binary check, every command compares the cx version
+//!   that last installed the skills (`skills_installed_for` in the state file)
+//!   with the running version.  After an upgrade (`brew upgrade cx`) the binary
+//!   is current but the skills are not, so a skills-only notice shows.  This
+//!   check is local only: no network call.
 //! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications (including the fetch).
 //! * `fetch_if_stale` is spawned via `tokio::spawn` and intentionally races
 //!   with the command.  For fast local commands (e.g. `cx profiles list`) the
@@ -63,9 +68,12 @@ pub async fn fetch_if_stale() {
     // unreachable).  This prevents hammering the API on every command during
     // an outage — we accept missing one 24 h window rather than spamming.
     state.last_checked_at = Some(Utc::now());
-    state.installation_id = VersionCheckCache::load()
-        .installation_id
-        .or(state.installation_id);
+    // Re-read the fields other commands may have written while we fetched
+    // (`cx skills install` records its version), so we don't overwrite them.
+    let latest_state = VersionCheckCache::load();
+    state.installation_id = latest_state.installation_id.or(state.installation_id);
+    state.skills_installed_for = latest_state.skills_installed_for;
+    state.skills_scope = latest_state.skills_scope;
     let _ = state.save();
 }
 
@@ -102,9 +110,10 @@ fn brew_stable_version(resp: &Value) -> Option<String> {
 
 // ── Human notice (stderr) ─────────────────────────────────────────────────────
 
-/// Print a one-line update notice to stderr, if all conditions are met:
-/// - `CX_NO_UPDATE_NOTIFIER` is not set
-/// - A newer version is available in the cache
+/// Print an update notice to stderr, if `CX_NO_UPDATE_NOTIFIER` is not set and
+/// either a newer binary is in the cache or the installed skills are older than
+/// the running binary.  A newer binary wins: its notice already names the
+/// skills refresh.
 /// - Toon mode or non-TTY stderr: plain `[cx update]` (agent/script friendly)
 /// - Text mode with TTY stderr: colored human notice
 pub fn maybe_print_notice(output: OutputFormat) {
@@ -114,17 +123,18 @@ pub fn maybe_print_notice(output: OutputFormat) {
 
     let state = VersionCheckCache::load();
     let current = env!("CARGO_PKG_VERSION");
+    let plain = output == OutputFormat::Toon || !std::io::stderr().is_terminal();
+    let skills = install_method::skills_upgrade_command(state.skills_scope);
 
     if let Some(latest) = state.latest_binary.as_deref() {
         if is_newer(latest, current) {
             let upgrade = install_method::binary_upgrade_command(&install_method::detect());
 
-            if output == OutputFormat::Toon || !std::io::stderr().is_terminal() {
-                print_plain_notice(latest, current, &upgrade);
+            if plain {
+                print_plain_notice(latest, current, &upgrade, skills);
                 return;
             }
 
-            let skills = install_method::skills_upgrade_command();
             eprintln!();
             eprintln!(
                 "{} {} {} {}{}.",
@@ -146,22 +156,47 @@ pub fn maybe_print_notice(output: OutputFormat) {
                 "{}",
                 "Set CX_NO_UPDATE_NOTIFIER=1 to silence this.".dimmed()
             );
+            return;
         }
     }
+
+    if skills_status(&state, current) == SkillsStatus::Current {
+        return;
+    }
+    if plain {
+        eprintln!("[cx update] cx agent skills are older than cx {current} | skills: {skills}");
+        return;
+    }
+    eprintln!();
+    eprintln!(
+        "{} {}{}",
+        "Your cx agent skills are older than cx".dimmed(),
+        current.bold(),
+        ".".dimmed()
+    );
+    eprintln!("{} {}", "update:".dimmed(), skills.bold());
+    eprintln!(
+        "{}",
+        "Set CX_NO_UPDATE_NOTIFIER=1 to silence this.".dimmed()
+    );
 }
 
 // ── Toon meta block (stdout) ────────────────────────────────────────────────
 
 /// Build a `_meta` JSON object for injection into toon-mode output.
-/// Returns `None` when suppressed or when no update is available.
+/// Returns `None` when suppressed or when there is nothing to update.
+///
+/// `update.binary` is present only when a newer binary exists.  `update.skills`
+/// is present whenever `update` is; it carries `installed_for` (the cx version
+/// that installed them, `null` if unknown) only when the skills are outdated.
 pub fn build_meta_block() -> Option<Value> {
     if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
         return None;
     }
+    meta_block_for(&VersionCheckCache::load(), env!("CARGO_PKG_VERSION"))
+}
 
-    let state = VersionCheckCache::load();
-    let current = env!("CARGO_PKG_VERSION");
-
+fn meta_block_for(state: &VersionCheckCache, current: &str) -> Option<Value> {
     let binary_block = state.latest_binary.as_deref().and_then(|latest| {
         if is_newer(latest, current) {
             let command = install_method::binary_upgrade_command(&install_method::detect());
@@ -171,17 +206,20 @@ pub fn build_meta_block() -> Option<Value> {
         }
     });
 
-    binary_block.map(|b| {
-        json!({
-            "update": {
-                "binary": b,
-                "skills": {
-                    "command": install_method::skills_upgrade_command(),
-                    "docs": install_method::install_docs_url()
-                }
-            }
-        })
-    })
+    let mut skills = json!({
+        "command": install_method::skills_upgrade_command(state.skills_scope),
+        "docs": install_method::install_docs_url()
+    });
+    let skills_outdated = skills_status(state, current) != SkillsStatus::Current;
+    if skills_outdated {
+        skills["installed_for"] = json!(state.skills_installed_for);
+    }
+
+    match binary_block {
+        Some(b) => Some(json!({ "update": { "binary": b, "skills": skills } })),
+        None if skills_outdated => Some(json!({ "update": { "skills": skills } })),
+        None => None,
+    }
 }
 
 /// Print the `_meta` block to stdout in toon mode.
@@ -198,11 +236,42 @@ pub fn maybe_print_toon_meta() {
 
 /// Single-line notice for toon mode and non-TTY stderr.
 /// Binary upgrade and skills refresh are separated by `|` so both stay together.
-fn print_plain_notice(latest: &str, current: &str, upgrade: &str) {
-    let skills = install_method::skills_upgrade_command();
+fn print_plain_notice(latest: &str, current: &str, upgrade: &str, skills: &str) {
     eprintln!(
         "[cx update] v{latest} available (you have {current}) | upgrade: {upgrade} | skills: {skills}"
     );
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SkillsStatus {
+    /// Installed for this version or newer, or no cx skills found at all.
+    Current,
+    /// cx installed the skills for an older version.
+    Outdated,
+    /// cx skills exist but cx never recorded a version for them: they were
+    /// installed before cx recorded one, or with `npx skills add` directly.
+    Unrecorded,
+}
+
+fn skills_status(state: &VersionCheckCache, current: &str) -> SkillsStatus {
+    skills_status_with(state.skills_installed_for.as_deref(), current, || {
+        crate::commands::skills::global_lock_has_cx_skills()
+    })
+}
+
+/// `has_unrecorded_install` runs only when no version is recorded, so the
+/// lock-file read is skipped for every user who installed through cx.
+fn skills_status_with(
+    installed_for: Option<&str>,
+    current: &str,
+    has_unrecorded_install: impl FnOnce() -> bool,
+) -> SkillsStatus {
+    match installed_for {
+        Some(v) if is_newer(current, v) => SkillsStatus::Outdated,
+        Some(_) => SkillsStatus::Current,
+        None if has_unrecorded_install() => SkillsStatus::Unrecorded,
+        None => SkillsStatus::Current,
+    }
 }
 
 /// Returns true when `latest` is strictly greater than `current`.
@@ -304,6 +373,77 @@ mod tests {
         });
         assert_eq!(brew_stable_version(&resp).as_deref(), Some("0.1.28"));
         assert_eq!(brew_stable_version(&json!({})), None);
+    }
+
+    #[test]
+    fn skills_older_than_binary_are_outdated() {
+        assert_eq!(
+            skills_status_with(Some("0.1.20"), "0.1.30", || panic!("no lock read")),
+            SkillsStatus::Outdated
+        );
+    }
+
+    #[test]
+    fn skills_for_this_or_newer_version_are_current() {
+        assert_eq!(
+            skills_status_with(Some("0.1.30"), "0.1.30", || panic!("no lock read")),
+            SkillsStatus::Current
+        );
+        // Downgraded binary: never ask to "update" skills to an older version.
+        assert_eq!(
+            skills_status_with(Some("0.2.0"), "0.1.30", || panic!("no lock read")),
+            SkillsStatus::Current
+        );
+    }
+
+    #[test]
+    fn unrecorded_skills_depend_on_lock_file() {
+        assert_eq!(
+            skills_status_with(None, "0.1.30", || true),
+            SkillsStatus::Unrecorded
+        );
+        assert_eq!(
+            skills_status_with(None, "0.1.30", || false),
+            SkillsStatus::Current
+        );
+    }
+
+    #[test]
+    fn meta_block_skills_only_after_upgrade() {
+        let state = VersionCheckCache {
+            latest_binary: Some("0.1.30".into()),
+            skills_installed_for: Some("0.1.20".into()),
+            ..Default::default()
+        };
+        let meta = meta_block_for(&state, "0.1.30").expect("skills are outdated");
+        assert!(meta["update"].get("binary").is_none());
+        assert_eq!(meta["update"]["skills"]["installed_for"], "0.1.20");
+        assert_eq!(
+            meta["update"]["skills"]["command"],
+            "cx skills install --global"
+        );
+    }
+
+    #[test]
+    fn meta_block_none_when_everything_current() {
+        let state = VersionCheckCache {
+            latest_binary: Some("0.1.30".into()),
+            skills_installed_for: Some("0.1.30".into()),
+            ..Default::default()
+        };
+        assert!(meta_block_for(&state, "0.1.30").is_none());
+    }
+
+    #[test]
+    fn meta_block_binary_update_keeps_skills_hint() {
+        let state = VersionCheckCache {
+            latest_binary: Some("0.2.0".into()),
+            skills_installed_for: Some("0.1.30".into()),
+            ..Default::default()
+        };
+        let meta = meta_block_for(&state, "0.1.30").expect("binary is outdated");
+        assert_eq!(meta["update"]["binary"]["latest"], "0.2.0");
+        assert!(meta["update"]["skills"].get("installed_for").is_none());
     }
 
     #[test]

@@ -9,7 +9,7 @@ description: >
   or wants to instrument a browser or mobile application with Coralogix Real User Monitoring
   end to end - RUM API key, SDK install, init code, and verifying data arrives.
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
 ---
 
 # RUM Setup Skill
@@ -105,7 +105,7 @@ cx docs fetch <suffix-from-search>
 
 Use the profile and `coralogixDomain` from step 2.
 
-Browser example (confirm against the fetched docs):
+Browser: `references/rum-browser-init.md` has every init option, the runtime API, and where to init per framework (shared with `cx-rum-migrate`). Minimal example (confirm against the fetched docs):
 
 ```bash
 npm install @coralogix/browser
@@ -158,4 +158,13 @@ No rows? Check the browser network tab for requests to the RUM ingress endpoint.
 
 - **`cx-platform-admin`** - general API key management
 - **`coralogix-docs`** - fetch platform-specific SDK docs
+- **`cx-rum-migrate`** - move an app from Sentry or Datadog to Coralogix RUM
 - **`cx-telemetry-querying`** - query RUM data once it flows
+
+---
+
+## Additional Resources
+
+### Reference files
+
+- **`references/rum-browser-init.md`** - Coralogix browser SDK init options, runtime API, init location per framework (shared)

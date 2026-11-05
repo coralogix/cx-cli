@@ -1,5 +1,7 @@
 //! Detect how `cx` was installed so we can suggest the right upgrade command.
 
+use crate::commands::skills::SkillsScope;
+
 pub enum InstallMethod {
     Brew,
     Curl,
@@ -55,8 +57,15 @@ pub fn binary_upgrade_command(method: &InstallMethod) -> String {
 }
 
 /// Return the one-liner that refreshes agent skills from the cx-cli repo.
-pub fn skills_upgrade_command() -> &'static str {
-    "npx skills add coralogix/cx-cli/skills"
+///
+/// Always passes a scope flag: agents run cx without a terminal, and
+/// `cx skills install` cannot ask for the scope there. Defaults to global,
+/// where the installer keeps the lock file cx checks.
+pub fn skills_upgrade_command(scope: Option<SkillsScope>) -> &'static str {
+    match scope {
+        Some(SkillsScope::Local) => "cx skills install --local",
+        Some(SkillsScope::Global) | None => "cx skills install --global",
+    }
 }
 
 /// Official install docs URL (binary + skills).
@@ -87,10 +96,15 @@ mod tests {
     }
 
     #[test]
-    fn skills_upgrade_command_is_npx() {
+    fn skills_upgrade_command_repeats_scope() {
+        assert_eq!(skills_upgrade_command(None), "cx skills install --global");
         assert_eq!(
-            skills_upgrade_command(),
-            "npx skills add coralogix/cx-cli/skills"
+            skills_upgrade_command(Some(SkillsScope::Global)),
+            "cx skills install --global"
+        );
+        assert_eq!(
+            skills_upgrade_command(Some(SkillsScope::Local)),
+            "cx skills install --local"
         );
     }
 }

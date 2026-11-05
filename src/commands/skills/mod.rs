@@ -10,7 +10,7 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use inquire::Select;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The source passed to `skills add`. Points at the repo's user-facing
 /// `skills/` subdirectory, not the repo root: `--skill '*'` installs every
@@ -36,7 +36,8 @@ const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
 const SKILLS_REVIEW_URL: &str = "https://skills.sh/coralogix/cx-cli";
 
 /// Where the installer puts skills: the user's home (`~/`) or the project (`./`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SkillsScope {
     Global,
     Local,
@@ -154,6 +155,7 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     }
 
     print_install_summary(scope);
+    crate::version_cache::record_skills_install(Some(scope));
     Ok(InstallOutcome::Installed)
 }
 
@@ -196,6 +198,7 @@ pub fn run_advanced_install() -> Result<()> {
     if !status.success() {
         bail!("skills installer exited with {status}");
     }
+    crate::version_cache::record_skills_install(None);
     Ok(())
 }
 
@@ -257,6 +260,37 @@ fn installed_cx_skills(scope: SkillsScope) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+/// True when the installer's global lock file (`~/.agents/.skill-lock.json`)
+/// lists cx skills. A plain file read, so it is cheap enough to run after every
+/// command, unlike `npx skills ls`. Used to find skills installed before cx
+/// recorded the version it installed them for.
+pub fn global_lock_has_cx_skills() -> bool {
+    let Some(path) = dirs::home_dir().map(|h| h.join(".agents").join(".skill-lock.json")) else {
+        return false;
+    };
+    std::fs::read_to_string(path)
+        .map(|contents| lock_has_cx_skills(&contents))
+        .unwrap_or(false)
+}
+
+/// The lock file maps skill names to entries that carry a `source`.
+fn lock_has_cx_skills(contents: &str) -> bool {
+    #[derive(Deserialize)]
+    struct Lock {
+        #[serde(default)]
+        skills: std::collections::BTreeMap<String, LockEntry>,
+    }
+    #[derive(Deserialize)]
+    struct LockEntry {
+        source: Option<String>,
+    }
+    serde_json::from_str::<Lock>(contents).is_ok_and(|lock| {
+        lock.skills
+            .values()
+            .any(|entry| entry.source.as_deref() == Some(INSTALLED_SOURCE))
+    })
 }
 
 /// Arguments for the fully non-interactive install.
@@ -367,6 +401,24 @@ mod tests {
                 "cursor"
             ]
         );
+    }
+
+    #[test]
+    fn lock_with_cx_skills_is_detected() {
+        let lock = r#"{"version":3,"skills":{
+            "other":{"source":"someone/else"},
+            "cx-cli":{"source":"coralogix/cx-cli","ref":"master","installedAt":"x"}
+        }}"#;
+        assert!(lock_has_cx_skills(lock));
+    }
+
+    #[test]
+    fn lock_without_cx_skills_is_not_detected() {
+        assert!(!lock_has_cx_skills(
+            r#"{"version":3,"skills":{"other":{"source":"someone/else"}}}"#
+        ));
+        assert!(!lock_has_cx_skills(r#"{"version":3}"#));
+        assert!(!lock_has_cx_skills("not json"));
     }
 
     #[test]

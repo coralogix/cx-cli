@@ -1265,6 +1265,22 @@ Examples:
         #[arg(long, default_value = "-")]
         from_file: String,
     },
+    /// Replace an alert from a JSON definition file [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx alerts replace 11111111-2222-3333-4444-555555555555 --from-file alert.json
+  cat alert.json | cx alerts replace --yes")]
+    Replace {
+        /// Optional alert definition ID (UUID). If absent, data file must
+        /// contain "alertDef" key containing the "id" beside the
+        /// "alertDefProperties".
+        alert_id: Option<String>,
+
+        /// Path to JSON file with the alert definition.
+        /// Use '-' for stdin [requires --yes].
+        #[arg(long, default_value = "-")]
+        from_file: String,
+    },
     /// Delete an alert [requires --yes].
     Delete {
         /// Alert definition ID (UUID).
@@ -3969,6 +3985,16 @@ async fn main() -> Result<()> {
                 AlertsCmd::Create { from_file } => {
                     confirm_destructive("Create a new alert?", yes, agent_mode)?;
                     commands::alerts::run_create(&targets, &from_file, output).await?;
+                }
+                AlertsCmd::Replace { alert_id, from_file } => {
+                    // NB only shows ID if specified in CLI args.
+                    //    Presumably when doing a replace with a file they don't care as much anyway.
+                    let message = match alert_id.as_deref() {
+                        Some(id) => format!("Replace alert '{id}'?"),
+                        None => "Replace alert?".to_string(),
+                    };
+                    confirm_destructive(&message, yes, agent_mode)?;
+                    commands::alerts::run_replace(&targets, alert_id.as_deref(), &from_file, output).await?;
                 }
                 AlertsCmd::Delete { alert_id } => {
                     confirm_destructive(&format!("Delete alert '{alert_id}'?"), yes, agent_mode)?;

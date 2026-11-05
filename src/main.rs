@@ -90,6 +90,7 @@ pub enum SearchByValueDataset {
   \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
   \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities and their RED/health/saturation data
   \x1b[1mprofiling\x1b[0m          Query continuous-profiling data: services, metrics, flame graphs
+  \x1b[1mrum\x1b[0m                Map RUM stack traces to source code with uploaded source maps
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -715,6 +716,17 @@ Examples:
     Profiling {
         #[command(subcommand)]
         cmd: ProfilingCmd,
+    },
+
+    /// Map minified RUM stack traces back to source code with uploaded source maps.
+    #[command(after_help = "\
+Examples:
+  cx rum source-maps list --application shop
+  cx rum stacktrace --application shop --version 1.2.3 --frame https://shop.com/main.js:1:5
+  cx rum stacktrace --application shop --version 1.2.3 --from-file stack.json")]
+    Rum {
+        #[command(subcommand)]
+        cmd: RumCmd,
     },
 
     /// Search log/span fields by description or by value content.
@@ -2828,6 +2840,54 @@ Examples:
     Delete {
         /// SLO ID (UUID).
         id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum RumCmd {
+    /// List releases with uploaded source maps.
+    SourceMaps {
+        #[command(subcommand)]
+        cmd: RumSourceMapsCmd,
+    },
+    /// Map a minified stack trace to original files, lines, and code.
+    ///
+    /// Reads source maps on every call: run it when fixing an error or finding its source,
+    /// not for routine error triage.
+    #[command(after_help = "\
+Frames come from --frame, or from a JSON array read with --from-file (use '-' for stdin).
+The array is RUM's error_context.original_stacktrace as-is: [{fileName, lineNumber, columnNumber}].
+
+Examples:
+  cx rum stacktrace --application shop --version 1.2.3 --frame https://shop.com/main.js:153:398981
+  cx rum stacktrace --application shop --version 1.2.3 --platform android --from-file stack.json
+  cat stack.json | cx rum stacktrace --application shop --version 1.2.3 --from-file -")]
+    Stacktrace {
+        /// RUM application name (version_metadata.app_name).
+        #[arg(long)]
+        application: String,
+        /// Application version the source maps were uploaded for (version_metadata.app_version).
+        #[arg(long)]
+        version: String,
+        /// Platform the source maps were uploaded for: web, android, or ios.
+        #[arg(long, default_value = "web")]
+        platform: String,
+        /// A minified frame as <file>:<line>[:<column>]. Repeat for each frame, top first.
+        #[arg(long = "frame")]
+        frames: Vec<String>,
+        /// JSON file with the frames. Use '-' for stdin.
+        #[arg(long, conflicts_with = "frames", required_unless_present = "frames")]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum RumSourceMapsCmd {
+    /// List source map releases, newest first (the API's order).
+    List {
+        /// Only releases of this RUM application.
+        #[arg(long)]
+        application: Option<String>,
     },
 }
 
@@ -5218,6 +5278,33 @@ async fn main() -> Result<()> {
                         &group_by,
                         &filters,
                         &aggregation,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+
+            Commands::Rum { cmd } => match cmd {
+                RumCmd::SourceMaps {
+                    cmd: RumSourceMapsCmd::List { application },
+                } => {
+                    commands::rum::run_source_maps_list(&targets, application.as_deref(), output)
+                        .await?;
+                }
+                RumCmd::Stacktrace {
+                    application,
+                    version,
+                    platform,
+                    frames,
+                    from_file,
+                } => {
+                    let frames = commands::rum::collect_frames(&frames, from_file.as_deref())?;
+                    commands::rum::run_stacktrace(
+                        &targets,
+                        &application,
+                        &version,
+                        &platform,
+                        frames,
                         output,
                     )
                     .await?;

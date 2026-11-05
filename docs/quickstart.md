@@ -199,6 +199,7 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx slos`       | Manage SLO definitions                                                 |
 | `cx infra`      | Get infrastructure data: `types`, `list`, `health-history`, `raw-data` |
 | `cx service-catalog` | Query service-catalog entities and their RED / health / saturation data |
+| `cx rum`        | Map RUM stack traces to source code: `source-maps list`, `stacktrace`  |
 
 **AI**
 

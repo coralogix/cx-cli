@@ -82,6 +82,12 @@ copy_refs "cx-coding-agents" \
     "promql-guidelines.md" \
     "metrics-querying.md"
 
+# cx-rum-fix-errors: RUM querying, field catalog, and DataPrime syntax
+copy_refs "cx-rum-fix-errors" \
+    "dataprime-reference.md" \
+    "rum-querying.md" \
+    "rum-fields.md"
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Synced $COPIED file(s)"

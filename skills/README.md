@@ -33,6 +33,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
 | `cx-rum-setup` | Add RUM to a browser or mobile app - RUM API key, SDK install and init, verify events arrive |
+| `cx-rum-migrate` | Move a browser app from Sentry or Datadog RUM to Coralogix RUM - SDK calls, replay, tracing, source-map upload |
 | `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications |
 
 ## Requirements

@@ -37,6 +37,8 @@ This is the core judgment when a user asks "is this a real incident", "is this j
 
 > The alert-side analysis lives in the `alerts` skill. The steps here are the case→alert handoff, not a replacement.
 
+**Manually created cases have no indicators.** A case opened with `cx cases create` (or by a person in the UI) is not linked to any alert, so there is nothing below to walk. Its description is the only context: read it, re-run the queries and check the links it cites, and judge the claim against that evidence. Nothing in the system will resolve or reopen it — the user who created it owns its lifecycle.
+
 For each `AlertIndicator`:
 
 1. **Fetch the alert definition.** Always use `latest_alert_version_id` with `get_alerts_object` — this provides the exact alert definition that created the case. `alert_id` will return the current definition which may have changed since the case was created.

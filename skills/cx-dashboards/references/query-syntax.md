@@ -30,7 +30,7 @@ Use fixed ranges (`[5m]`, `[1h]`) only when the panel intentionally shows a roll
 
 Every metrics widget has a `promqlQueryType`:
 
-- `PROM_QL_QUERY_TYPE_INSTANT` - single point in time. Required for `gauge`, `pieChart`, and `dataTable`.
+- `PROM_QL_QUERY_TYPE_INSTANT` - single point in time. Required for `gauge`, `pieChart`, and dynamic tables.
 - Omit (or default) - time series. Use for `lineChart`.
 
 Leaving an instant widget in time-series mode makes the panel render a single average across the window instead of the intended single-point value, which breaks success-rate gauges and top-N tables.
@@ -161,7 +161,7 @@ The dashboard-analysis counterpart to this skill lives at `cx-olly/apps/api/src/
 ## 7. Dashboard-syntax checklist (apply before Phase 5)
 
 - [ ] PromQL range vectors inside widgets use `[${__range}]`.
-- [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for `gauge` / `pieChart` / `dataTable`; omitted for `lineChart`.
+- [ ] `promqlQueryType` is `PROM_QL_QUERY_TYPE_INSTANT` for `gauge` / `pieChart` / dynamic table; omitted for `lineChart`.
 - [ ] DataPrime widget queries start with `source logs` or `source spans` (required for dashboard widgets; stripped during Phase 5 CLI verification).
 - [ ] DataPrime `contains` is written as `.contains(...)`.
 - [ ] DataPrime severity enums are unquoted (`ERROR`, `CRITICAL`, …).

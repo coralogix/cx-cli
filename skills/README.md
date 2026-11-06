@@ -15,23 +15,25 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `coralogix-docs` | Search and fetch official Coralogix product documentation (`cx docs search`, `cx docs fetch`) — not live tenant data                              |
 | `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts`                                                        |
 | `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation                                       |
-| `cx-infra` | Explore infrastructure resources - discover monitored resource types, list resources, check per-resource data                                     |
+| `cx-infra` | Explore infrastructure resources - discover resource types and filterable attributes, list and filter resources, check per-resource data                                     |
 | `cx-service-catalog` | Query Service Catalog APM entities - services, databases, operations, JVMs, K8s pods; schema, entities, and aggregated/timeseries data          |
+| `cx-profiling` | Query continuous profiling - top CPU/memory services, profile types, filters, usage over time by pod/label, flame graphs and hot functions |
 | `cx-ai-center` | Investigate GenAI applications and agents - behavior, prompts/responses, quality, hallucinations, guardrails, token cost - and manage AI Center config |
 | `cx-coding-agents` | Analyze AI Center Coding Agents data for Claude Code, Codex, Cursor, Gemini CLI, and Copilot CLI - usage, cost, tokens, sessions, tools, code impact |
 | `cx-search-dashboard` | Find existing dashboards and widgets by natural-language description or by the fields they query |
 
 ### Workflow
 
-| Skill | Description                                                                                                                                                                        |
-|---|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `cx-cost-optimization` | Analyze and reduce Coralogix data costs - usage analysis, TCO policies, retention, archive                                                                                         |
+| Skill | Description |
+|---|---|
+| `cx-cost-optimization` | Analyze and reduce Coralogix data costs - usage analysis, TCO policies, retention, archive |
 | `cx-cases` | Manage Coralogix Cases - list, inspect, assign/acknowledge/resolve/close, set priority overrides, read parent-child links and case provenance |
-| `cx-slos` | Manage SLO definitions - list, inspect, check error budgets, create/update/delete                                                                                                  |
-| `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules                                                                                            |
-| `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access                                                                                                             |
-| `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations                                                                                                             |
-| `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications                                                                                            |
+| `cx-slos` | Manage SLO definitions - list, inspect, check error budgets, create/update/delete |
+| `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
+| `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
+| `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
+| `cx-rum-setup` | Add RUM to a browser or mobile app - RUM API key, SDK install and init, verify events arrive |
+| `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications |
 
 ## Requirements
 
@@ -150,8 +152,10 @@ Once installed, your agent uses the relevant skill automatically. Example querie
 - "Debug the 500 errors on the payment endpoint"
 - "Which of our EC2 instances were unhealthy this week?"
 - "Show me the top 5 services by p99 latency in the last hour"
+- "What is the checkout service spending its CPU on?"
 - "How can we reduce our Coralogix costs?"
 - "Help me triage this case"
 - "Set up parsing rules for our new service"
+- "Add Coralogix RUM to my React app"
 - "Who has access to production?"
 - "Configure Slack notifications for critical alerts"

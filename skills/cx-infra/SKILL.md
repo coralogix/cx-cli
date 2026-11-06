@@ -1,171 +1,165 @@
 ---
 name: cx-infra
 description: >
-  Query Coralogix infrastructure resources with the `cx infra` CLI — discover
-  monitored resource types, list resources, check per-resource data. Use when the user asks
-  to "show resource types", "list infrastructure resources", "what resources of this kind are monitored",
-  "list resources of this kind", "is this resource healthy",
-  "resource health history", "when did this resource go critical",
-  "get raw resource data", "infrastructure inventory", "find resources by name",
-  "filter resources by service or environment", or wants to explore
-  infrastructure resources and their data.
+  Query Coralogix infrastructure resources with the `cx infra` CLI: resource
+  types, filterable attributes, resource lists, health, raw data and
+  configuration changes. Use when the user asks to "show resource types",
+  "list infrastructure resources", "what resources of this kind are monitored",
+  "is this resource healthy", "why is this resource critical",
+  "which health policy is failing", "when did this resource go critical",
+  "get raw resource data", "find resources by name",
+  "filter resources by service or environment", "critical hosts in a region",
+  "what can I filter resources by", "resources in this cluster or namespace",
+  "which resources changed recently", "what changed in this resource",
+  "configuration drift", "did anything change before the incident",
+  "what was this config last week", or wants to explore infrastructure resources.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
-# Infrastructure Resources Skill
+# Infrastructure Resources
 
-Use this skill to discover and inspect **infrastructure resources** — what exists, whether it
-is healthy, and what its raw data contains.
+All commands live under `cx infra resources` and are read-only. Run
+`cx infra resources <command> --help` for flags.
 
-## CLI Commands
+"Infrastructure monitoring is not enabled for this team" means the team has no
+infrastructure data. Stop and say so. Do not retry or change filters.
 
-| Command | Purpose | Key flags |
-|---|---|---|
-| `cx infra resources types` | List available resource types (category/type pairs) | - |
-| `cx infra resources list` | List resources of one category/type | `--category`, `--type` (required); `--name-filter`, `--scope key=value`, `--start-row`, `--end-row` |
-| `cx infra resources health-history <resource-id>` | Daily health samples for one resource, oldest first | - |
-| `cx infra resources raw-data <resource-id>` | Raw resource document as JSON | - |
+A stderr line starting `warning: ... could not verify that infrastructure
+monitoring is enabled` is informational: the enablement check itself failed and
+the command still ran.
 
-- All commands are **read-only** and support `-o json` / `-o toon` for
-  structured output.
-- **Multi-profile fan-out applies to `types` and `list` only.** Repeat
-  `-p <profile>` on those to compare fleets across accounts. `health-history` and
-  `raw-data` take a resource id, which is scoped to one team, so they **reject**
-  more than one `-p` — run them once per profile instead.
-- `--scope` is repeatable across **different** keys; allowed keys are `service`,
-  `environment`, `team` (e.g. `--scope environment=prod --scope service=checkout`).
-  Multiple keys combine with **AND** — a resource must match all of them. Each key
-  accepts a single value and may be given **at most once**; repeating one (e.g.
-  `--scope service=a --scope service=b`) is rejected. To cover several values for one key, run one query per
-  value and combine the results.
-- Pagination: `--start-row` / `--end-row` define a row window (`--end-row` is
-  **exclusive**); the default is the first 100 rows, and omitting only `--end-row`
-  gives 100 rows from `--start-row`. Page through large fleets in windows
-  (0-100, 100-200, …). **`list` never pages for you** — fleets can run to hundreds
-  of thousands of resources, so it returns one window and reports the total.
-- **The window cannot reach past row 10,000.** The API rejects any request whose
-  `start-row + rows` exceeds 10,000, so paging cannot enumerate a fleet larger
-  than that even though `total_count` reports its true size. In any case,
-  narrow with `--name-filter` or `--scope` and page within each subset rather
-  than trying to walk the whole list.
-- `list` wraps its rows in an envelope (`total_count`, `returned_count`,
-  `resources`) — the other subcommands return bare arrays. `total_count` is the
-  fleet-wide match count, always present and independent of the window, so use it
-  as the stop condition: keep paging while `start_row + returned_count <
-  total_count`, subject to the 10,000-row ceiling above.
-- Pass resource IDs **exactly as returned by `list`** (quote them — they contain
-  `:` and `=`); the CLI percent-encodes them for you.
+| Command          | Answers                                                        |
+|------------------|----------------------------------------------------------------|
+| `types`          | which `(category, type)` pairs exist                           |
+| `filters`        | which attributes can be filtered on, and their accepted values |
+| `list`           | which resources match, with their health policies              |
+| `health-history` | daily health per resource, oldest first                        |
+| `raw-data`       | the raw resource document, now or at a past time               |
+| `config-changes` | which resources changed configuration in a window              |
+| `config-diff`    | what changed, field by field                                   |
 
-## Inspection Workflow
+## Resource ids
 
-Three steps, and only because each one supplies an input the next one requires:
-`types` gives the mandatory `--category`/`--type`, `list` gives the `resource_id`.
-Answering "is `web-server-1` healthy?" is these three calls — nothing more.
+- Take them from `list` (`resource_id`) and pass them as-is, quoted.
+- `health-history`, `config-changes` and `config-diff` take up to 100 ids per
+  call. Pass them all in one call, not one call each. Over 100, the CLI refuses.
+  Split into batches.
+- An id belongs to one team, so the id commands refuse more than one `-p`.
+  Only `types`, `filters` and `list` fan out across profiles. From a
+  multi-profile `list`, use the row's `profile` to pick the one to query.
+- Ids mean nothing outside this skill. To reach other skills, use the resource
+  `name` or its `Service` value.
 
-1. **Discover what exists** — categories and types are dynamic, so never guess:
+## Finding resources
 
-   ```bash
-   cx infra resources types -o json
-   ```
+1. `filters` first. Attribute names and values differ per type, so never guess.
+   Per attribute: `kind` (`string` is free text, `status` a fixed set),
+   `values` (the accepted set) and `wildcard` (whether `*` works).
+2. `list` with the filters:
+   - Every `--match-all` must match, at least one `--match-any` must match, and
+     the two groups are ANDed.
+     `--match-all OS=linux --match-any Health=Critical --match-any Region=eu-west-1`
+     means `OS=linux AND (Health=Critical OR Region=eu-west-1)`.
+   - Commas give one attribute several values. In `--match-any` any one
+     matches. In `--match-all` all must, which only makes sense for wildcards:
+     `--match-all 'Name=*alert*,*processing*'`.
+   - Name an attribute once, in one flag. A repeat is refused.
+   - `--category` and `--type` are plain filters, not requirements, and are not
+     attributes (no `--match-all Category=...`). At least one filter or scope
+     flag is required.
+   - Exact values are case-sensitive (`OS=linux`, not `OS=Linux`). Wildcards
+     are not. Quote wildcards so the shell leaves `*` alone.
+   - `--name-filter` and `--scope` (`service`, `environment`, `team`) are legacy
+     flags. They need both `--category` and `--type`, and cannot mix with
+     `--match-*`. `--match-all 'Name=*web*'` does what `--name-filter web` does.
+3. Zero rows is an answer. Don't retry. A wrong attribute or value is refused
+   with the accepted ones listed.
 
-2. **List resources** of that category/type, narrowing with name and scope filters:
+`list -o json` is an envelope: `{total_count, returned_count, resources}`.
+The other commands return plain arrays or objects.
 
-   ```bash
-   cx infra resources list --category Hosts --type EC2_Instances \
-     --name-filter web --scope environment=prod -o json
-   ```
+- It returns one window, rows 0 to 100 by default (`--start-row`, and
+  `--end-row` which is exclusive). Keep paging while
+  `start_row + returned_count < total_count`.
+- A window cannot pass row 10,000. For bigger results, narrow the query.
+- With several profiles, each one pages against its own `total_count` (see
+  `counts_by_profile`).
 
-3. **Inspect one resource** using a `resource_id` from step 2. Statuses are
-   `Healthy`, `Critical`, or `Unmonitored`, one sample per day, oldest first:
+## Health
 
-   ```bash
-   cx infra resources health-history "1001234:host_id=i-abc123" -o json
-   ```
-
-   `raw-data` is the **alternative** to this step, not a follow-on — use it
-   instead when you need source-specific detail rather than health.
-
-## Examples
-
-### Just the ids and names
-
-```bash
-# Rows live under .resources — `list` returns an envelope
-cx infra resources list --category Hosts --type EC2_Instances -o json \
-  | jq '[.resources[] | {resource_id, name}]'
-```
-
-### Check fleet size, and whether one window covered it
+- `list` rows carry `health_policies: [{id, name, status}]` with `status` one of
+  `healthy`, `critical` or `pending` (not evaluated yet). A critical policy says
+  why a resource is critical. No extra call needed.
+- `health-history` returns `[{resource_id, health_history: [{timestamp, status}]}]`
+  with `status` one of `Healthy`, `Critical` or `Unmonitored`. The two sets of
+  statuses have different casing.
+- Ids that don't parse, and repeats, are dropped. A shorter answer is normal and
+  stderr gives the count. Returned ids are normalized, so they may not
+  string-match the ones sent.
+- Infra health is not Service Catalog health. Correlate it with telemetry
+  rather than treating the two as the same.
 
 ```bash
-cx infra resources list --category Hosts --type EC2_Instances -o json \
-  | jq '{total_count, returned_count}'
+cx infra resources list --match-all Health=Critical -o json \
+  | jq '.resources[] | {name, failing: [.health_policies[] | select(.status == "critical") | .name]}'
 
-# Next window, if there is one
-cx infra resources list --category Hosts --type EC2_Instances \
-  --start-row 100 --end-row 200 -o json
+cx infra resources health-history "1001234:host_id=i-abc" "1001234:host_id=i-def" -o json \
+  | jq '.[] | {resource_id, critical: [.health_history[] | select(.status == "Critical") | .timestamp]}'
 ```
 
-### Find when a resource went critical
+## Raw data
+
+`raw-data -o json` returns `{version_timestamp, raw_data}`.
+
+- `--timestamp` (`now-7d` or ISO-8601) gets the newest version at or before that
+  time. `version_timestamp` says which version came back, and can be passed back
+  as `--timestamp` to get it again.
+- `raw_data: null` means no document. That is not an error. `version_timestamp:
+  null` with a document means the document has no version.
+
+## Configuration changes
+
+Two steps: find out which resources changed, then see what changed.
 
 ```bash
-# health-history returns a bare array, so no .resources here
-cx infra resources health-history "1001234:host_id=i-abc123" -o json \
-  | jq '[.[] | select(.status == "Critical")]'
+cx infra resources config-changes --resource-id "1001234:host_id=i-abc" \
+  --resource-id "1001234:host_id=i-def" --from now-24h -o json
+
+cx infra resources config-diff --resource-id "1001234:host_id=i-abc" --from now-24h -o json \
+  | jq '.[] | select(.outcome == "changed") | .changes[] | {field, before, after}'
 ```
 
-### Read the raw resource document
+- `config-changes` lists only resources that changed. Empty means nothing
+  changed. Don't retry with a wider window.
+- Rows are per resource and source. A resource with two collectors can give two
+  rows.
+- Some cloud and agent types report an update every collection cycle, so
+  `config-changes` can flag them when nothing changed. Check with `config-diff`
+  before telling the user something changed.
+- `config-diff` has no row for a resource with no history in the 14 days before
+  `--from` or inside the window. Read `outcome` before `changes`:
 
-```bash
-# Source-specific detail: tags, instance metadata, configuration
-cx infra resources raw-data "1001234:host_id=i-abc123" -o json
-```
+| `outcome`               | meaning                                                              |
+|-------------------------|----------------------------------------------------------------------|
+| `changed`               | the versions before and inside the window differ                     |
+| `unchanged`             | they don't differ, or nothing happened inside the window             |
+| `created`               | the resource first appeared inside the window                        |
+| `priorStateUnavailable` | it changed, but no version exists in the 14 days before `--from`. Not a failure. Move `--from` earlier to reach an older version |
+| `comparisonUnavailable` | both versions exist, but one could not be read                       |
 
-## Key Principles
-
-- **Discover before listing** — `--category` and `--type` are required;
-  always start from `cx infra resources types`.
-- **Quote resource IDs and pass them verbatim** — they embed `:`, `|`, and `=`;
-  the CLI handles URL encoding.
-- **Scope keys are a fixed set** (`service`, `environment`, `team`) — unknown
-  keys are rejected client-side before any request is made.
-- **A missing raw document is not an error** — `raw-data` exits 0 and emits an
-  *empty result* on **stdout**: `[]` in `json`, `[0]:` in `agents`, and
-  `No raw data found.` in text. Only the note `no raw data for this resource` goes
-  to stderr. Parse the empty stdout result as a cleanly absent document, not a
-  failure — and do not expect stdout to be blank.
-- **Use `-o json` with `jq`** for filtering; use `-o toon` for token-efficient
-  output in agent contexts.
-- **Multi-profile fan-out is for `types` and `list` only** — repeating
-  `-p <profile>` tags each row with its profile so fleets can be compared across
-  accounts. The row window applies per profile, so `list` adds a
-  `counts_by_profile` breakdown — page each profile against its own `total_count`,
-  not the aggregate. `health-history` and `raw-data` error on a second `-p`.
-- **A resource id never crosses profiles** — it embeds the team id
-  (`1001234:host_id=…`), so an id from one account cannot resolve in another. When
-  a multi-profile `list` turns up something worth inspecting, note its `profile`
-  field and query that single profile for its health or raw data.
-- **Infra health is its own concept** — the `Healthy`/`Critical`/`Unmonitored`
-  statuses are computed by the infrastructure domain and are not the same as
-  Service Catalog health. Correlate them with telemetry signals;
-  do not treat them as interchangeable.
-- **`resource_id` never leaves this skill** — pass it only to `health-history`
-  and `raw-data`. For every other command, pivot on the resource `name` or the
-  `service` scope value.
+- `before` and `after` are raw JSON. `null` means the field was added or
+  removed. A new or removed subtree is one entry.
+- To look at a single change, narrow `--from` and `--to` around it.
 
 ## Related Skills
 
-Bridge to these skills using the resource **name** or the **service** scope
-value — never the resource id, which only this skill understands:
+Bridge with the resource name or its Service value:
 
-- **`cx-telemetry-querying`** — `cx search-fields "<name>" -s value` discovers
-  which log/span fields contain the resource name; `cx logs "filter
-  $l.subsystemname == '<service>'"` queries the service's telemetry. Correlate a
-  `Critical` health day with error logs or CPU metrics.
-- **`cx-alerts`** — `cx alerts list --name "<name-or-service>"` finds alert
-  definitions matching the resource or its service by substring.
-- **`cx-dashboards`** — `cx dashboards search "<name-or-service> ..."` and
-  `cx dashboards query-search --description "..."` find dashboards semantically;
-  pair with `search-fields -s value` to then `query-search --field` the exact
-  field holding the resource name.
+- **`cx-telemetry-querying`**: `cx search-fields "<name>" -s value` finds the
+  log and span fields holding the name. `cx logs "filter $l.subsystemname == '<service>'"`
+  gets its telemetry.
+- **`cx-alerts`**: `cx alerts list --name "<name-or-service>"`.
+- **`cx-dashboards`**: `cx dashboards search "<name-or-service> ..."`. After
+  `search-fields -s value`, `cx dashboards query-search --field <field>` finds
+  queries on that field.

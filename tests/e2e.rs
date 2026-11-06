@@ -62,6 +62,8 @@ mod output_formats;
 mod parsing_rules;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
+#[path = "e2e/profiling.rs"]
+mod profiling;
 #[path = "e2e/read_only.rs"]
 mod read_only;
 #[path = "e2e/recording_rules.rs"]
@@ -72,6 +74,8 @@ mod retentions;
 mod roles;
 #[path = "e2e/routers.rs"]
 mod routers;
+#[path = "e2e/rum/mod.rs"]
+mod rum;
 #[path = "e2e/scopes.rs"]
 mod scopes;
 #[path = "e2e/search_fields/mod.rs"]

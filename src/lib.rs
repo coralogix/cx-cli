@@ -1,6 +1,8 @@
 pub mod api_client;
 pub mod banner;
 pub mod cases_query_rules;
+#[cfg(target_os = "macos")]
+mod code_sign;
 pub mod commands;
 pub mod config;
 pub mod console_url;
@@ -10,6 +12,7 @@ pub mod identity;
 pub mod install_method;
 pub mod keyring_store;
 pub mod oauth;
+pub mod onboarding;
 pub mod region;
 pub mod render;
 pub mod safety;

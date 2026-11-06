@@ -3,7 +3,7 @@ name: cx-platform-admin
 description: >
   Use this skill when the user asks "who has access", "audit permissions",
   "check user roles", "list API keys", "review access controls",
-  "rotate API keys", "create API key", "delete expired keys", "send data keys",
+  "rotate API keys", "create API key", "RUM API key", "delete expired keys", "send data keys",
   "IP allowlist", "IP access restrictions",
   "check IP whitelist", "add user", "deactivate user", "manage team groups",
   "user permissions", "role-based access", "manage scopes", "system roles",
@@ -44,6 +44,8 @@ When running inside an AI agent (Claude Code, Cursor, Codex, etc.), cx automatic
 
 ### API Keys
 
+> For RUM (browser/mobile) keys and SDK setup, use the **`cx-rum-setup`** skill.
+
 | Command | Purpose |
 |---|---|
 | `cx iam api-keys list` | List all API keys |
@@ -51,7 +53,7 @@ When running inside an AI agent (Claude Code, Cursor, Codex, etc.), cx automatic
 | `cx iam api-keys create --from-file` | Create an API key |
 | `cx iam api-keys update --from-file <id>` | Update an API key |
 | `cx iam api-keys delete <id>` | Delete an API key |
-| `cx iam api-keys send-data-keys` | List send-data API keys |
+| `cx iam api-keys send-data-keys` | List Send-Your-Data (ingest-only) keys, including RUM keys, with their presets |
 | `cx iam api-keys admin list` | List all team members' keys |
 | `cx iam api-keys admin delete --ids <id1> <id2>` | Bulk delete keys |
 | `cx iam api-keys admin set-status --ids <id1> --active true/false` | Activate/deactivate keys |
@@ -199,3 +201,4 @@ Safe key rotation workflow:
 ## Related Skills
 
 - **`cx-cost-optimization`** - review what API keys are used for and whether they're still needed
+- **`cx-rum-setup`** - create RUM API keys and wire the RUM SDK into an app

@@ -4,7 +4,7 @@ mod common;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::dataprime::run_query;
+use coralogix_cli::commands::dataprime::{run_query, QueryOptions};
 use coralogix_cli::commands::logs;
 use coralogix_cli::commands::spans;
 use coralogix_cli::config::OutputFormat;
@@ -54,6 +54,7 @@ async fn dataprime_query_with_log_results() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("dataprime query should succeed");
@@ -90,6 +91,7 @@ async fn dataprime_aggregate_query() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("aggregate query should succeed");
@@ -128,6 +130,7 @@ async fn dataprime_query_with_warning() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("query with warning should succeed");
@@ -161,6 +164,7 @@ async fn logs_command_delegates_to_dataprime() {
         OutputFormat::Json,
         None,
         "/tmp",
+        QueryOptions::default(),
     )
     .await
     .expect("logs::run should succeed");
@@ -194,6 +198,7 @@ async fn spans_command_delegates_to_dataprime() {
         OutputFormat::Json,
         None,
         "/tmp",
+        QueryOptions::default(),
     )
     .await
     .expect("spans::run should succeed");
@@ -229,6 +234,7 @@ async fn multi_profile_fan_out_tags_rows() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("multi-profile fan-out should succeed");
@@ -261,6 +267,7 @@ async fn dataprime_query_all_profiles_failing_returns_err() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await;
 
@@ -303,6 +310,7 @@ async fn dataprime_query_ndjson_unrecognized_envelope_returns_err() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await;
 
@@ -347,6 +355,7 @@ async fn dataprime_query_non_completed_statistics_status_returns_err() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await;
 
@@ -389,6 +398,7 @@ async fn dataprime_query_completed_statistics_with_zero_rows_succeeds() {
         None,
         "/tmp",
         None,
+        QueryOptions::default(),
     )
     .await
     .expect("a legitimately empty result with COMPLETED status must still succeed");

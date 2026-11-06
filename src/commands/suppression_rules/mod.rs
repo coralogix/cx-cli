@@ -16,6 +16,7 @@ use api::{AlertSchedulerRule, AlertSchedulersApi};
 
 fn rule_to_json(rule: &AlertSchedulerRule, include_profile: bool, profile: &str) -> Value {
     let mut v = json!({
+        "unique_identifier": rule.unique_identifier,
         "id": rule.id,
         "name": rule.name,
         "description": rule.description,
@@ -72,10 +73,17 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, AlertSchedulerRule)> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        for entry in resp.alert_scheduler_rules {
-            let Some(rule) = entry.alert_scheduler_rule else {
-                continue;
-            };
+        if !resp.alert_scheduler_rules.is_empty() {
+            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                crate::console_url::suppression_rules_url(b)
+            })
+            .await;
+        }
+        for rule in resp
+            .alert_scheduler_rules
+            .into_iter()
+            .filter_map(|entry| entry.alert_scheduler_rule)
+        {
             all_json.push(rule_to_json(&rule, include_profile, &profile));
             all_items.push((profile.clone(), rule));
         }
@@ -98,7 +106,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                 .map(|(profile, rule)| {
                     vec![
                         profile.clone(),
-                        rule.id.clone().unwrap_or_default(),
+                        rule.unique_identifier.clone().unwrap_or_default(),
                         rule.name.clone().unwrap_or_default(),
                         render::bool_display(rule.enabled),
                         rule.created_at.clone().unwrap_or_default(),
@@ -127,18 +135,22 @@ pub async fn run_get(
 
     let per_profile = fan_out(targets, |t| {
         let id = id.clone();
-        async move {
-            let api = AlertSchedulersApi::new(&t.client);
-            Ok(api.get(&id).await?)
-        }
+        async move { Ok(AlertSchedulersApi::new(&t.client).get(&id).await?) }
     })
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+    for (profile, found) in report_errors_and_collect_successes(per_profile)? {
+        let Some(mut val) = found else {
+            continue;
+        };
         if include_profile {
             render::tag_get_result(&mut val, &profile);
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::suppression_rule_url(b, rule_id)
+        })
+        .await;
         all_results.push(val);
     }
 
@@ -181,7 +193,14 @@ pub async fn run_create(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
-            render::print_created("Created", "rule", Some(name), rule.id.as_deref(), &profile);
+            let id = rule.unique_identifier.as_deref();
+            render::print_created("Created", "rule", Some(name), id, &profile);
+            if let Some(id) = id {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::suppression_rule_url(b, id)
+                })
+                .await;
+            }
             all_results.push(rule_to_json(&rule, include_profile, &profile));
         }
     }
@@ -212,10 +231,7 @@ pub async fn run_update(
 
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
-        async move {
-            let api = AlertSchedulersApi::new(&t.client);
-            Ok(api.update(&body).await?)
-        }
+        async move { Ok(AlertSchedulersApi::new(&t.client).update(&body).await?) }
     })
     .await;
 
@@ -223,10 +239,14 @@ pub async fn run_update(
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         if let Some(rule) = resp.alert_scheduler_rule {
             let name = rule.name.as_deref().unwrap_or("<unnamed>");
-            eprintln!(
-                "{}",
-                format!("Updated rule '{name}' in profile '{profile}'.").green()
-            );
+            let id = rule.unique_identifier.as_deref();
+            render::print_created("Updated", "rule", Some(name), id, &profile);
+            if let Some(id) = id {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::suppression_rule_url(b, id)
+                })
+                .await;
+            }
             all_results.push(rule_to_json(&rule, include_profile, &profile));
         }
     }
@@ -256,8 +276,14 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], rule_id: &str) -> Resu
         let id = id.clone();
         async move {
             let api = AlertSchedulersApi::new(&t.client);
-            api.delete(&id).await?;
-            Ok(())
+            if api.delete(&id).await? {
+                Ok(())
+            } else {
+                bail!(
+                    "No suppression rule found with ID '{id}'. Run \
+                     `cx alerts suppression-rules list` to find its uniqueIdentifier."
+                )
+            }
         }
     })
     .await;

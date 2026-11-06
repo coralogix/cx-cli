@@ -24,7 +24,7 @@ Parse `relativeTimeFrame` from the draft (default `"172800s"` = 48h) into a huma
 
 For every widget whose definition contains a `promqlQuery`, substitute `${__range}` in the expression with `[$RANGE]` (e.g. `[48h]`). Leave any other fixed window (`[5m]`, `[1h]`) untouched - those were placed intentionally for sliding-rate panels.
 
-**Instant-style widgets** (`gauge` / `pieChart` / `dataTable` with `promqlQueryType: PROM_QL_QUERY_TYPE_INSTANT`):
+**Instant-style widgets** (`gauge` / `pieChart` / dynamic table with `promqlQueryType: PROM_QL_QUERY_TYPE_INSTANT`):
 
 ```bash
 cx metrics query '<expression-with-[$RANGE]-substituted>' -o toon
@@ -57,27 +57,27 @@ The dashboard runtime requires the `source …` prefix inside the widget JSON (s
 
 Verify against a **fixed short window** (`now-15m` → `now`), not the dashboard's `$RANGE`. The goal here is syntax / field / pipeline validation — proving the query parses and references real fields. The dashboard runs against `${__range}` itself at render time; we don't need to re-prove data presence on the dashboard's window during the build. A short window is faster, cheaper, and a clean fail signal (a query that fails on `now-15m` is broken regardless of range).
 
-Choose the tier to verify:
+Verify against the same tier as the widget's `dataModeType`:
 
-- `--tier frequent` (default): hot storage, fast, recent data.
-- `--tier archive`: cold/long-term storage, older data.
+- `--tier archive` (default): all ingested logs and spans. Use it for `DATA_MODE_TYPE_ARCHIVE` widgets, which is the default.
+- `--tier frequent`: only data that TCO routes to the high-priority tier. Use it for widgets the user asked to put on Frequent Search, and for every widget on an account with no archive.
 
-Use **Frequent Search** unless you have a reason to validate against Archive. Switch to **Archive** when:
+On an account with no archive (`cx archive logs get` shows `isActive: false`; see `SKILL.md` Phase 5), `--tier archive` returns empty with exit 0 and no warning. An empty Archive result is then not a pass.
 
-- The dashboard is intended for long lookbacks (weekly/monthly trends, retrospectives).
-- Frequent Search returns empty for known-good queries because the time range is beyond hot retention.
-- The user explicitly says “this dashboard should work on archived data.”
+If a known-good query returns empty on `--tier frequent`, the data may not be in the high-priority tier. Do not change the tier yourself: the user chose Frequent Search. Tell the user, and suggest moving the widget to `DATA_MODE_TYPE_ARCHIVE`. If they agree, change the widget's `dataModeType` and verify again with `--tier archive`; do not only change the flag.
+
+In the commands below, set `--tier` to the widget's tier: `archive` for `DATA_MODE_TYPE_ARCHIVE`, `frequent` for `DATA_MODE_TYPE_HIGH_UNSPECIFIED`.
 
 **Log-backed widgets:**
 
 ```bash
-cx logs '<pipeline-without-leading-source-logs>' --start now-15m --end now --limit 1 --tier <frequent|archive>
+cx logs '<pipeline-without-leading-source-logs>' --start now-15m --end now --limit 1 --tier <archive|frequent>
 ```
 
 **Span-backed widgets:**
 
 ```bash
-cx spans '<pipeline-without-leading-source-spans>' --start now-15m --end now --limit 1 --tier <frequent|archive>
+cx spans '<pipeline-without-leading-source-spans>' --start now-15m --end now --limit 1 --tier <archive|frequent>
 ```
 
 Check both the exit code and the output — some errors surface only in the output. A query **passes** when `cx` exits 0 and the output is rows or `[]` with no error or warning lines (an empty result on a low-volume signal is fine). It **hard-fails** on a non-zero exit, an `error from profile '...': API request failed` line, or a `Compilation errors:` block — the query is broken. A `keypath does not exist` warning is a **soft fail**: the query parsed but no record in the window had the referenced field. Verify with `cx search-fields "<hint>" --dataset logs|spans`; if the field is real the query is fine (widen the window or accept the empty result), if it isn't, fix the field name. On failure: consult the `cx-dataprime` skill (`cx dataprime show <command>` for inline help), re-discover fields with `cx search-fields`, fix, retry. Budget ≤5 retry attempts per query.

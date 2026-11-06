@@ -70,6 +70,11 @@ fn dashboards_replace_round_trip() {
     if harness::require_creds("dashboards_replace_round_trip").is_none() {
         return;
     }
+    // Replace writes the dashboard back. The e2e key is denied.
+    if std::env::var_os("CX_E2E_INCLUDE_WRITES").is_none() {
+        eprintln!("[e2e] skipping dashboards_replace_round_trip: dashboard replace is denied");
+        return;
+    }
     let Some(id) = discover_dashboard_id() else {
         eprintln!(
             "[e2e] skipping dashboards_replace_round_trip: no dashboards available on test team"
@@ -173,12 +178,13 @@ fn dashboards_query_search_field_returns_results() {
     if harness::require_creds("dashboards_query_search_field").is_none() {
         return;
     }
-    // GET /api/v1/olly-kb/queries/by-field — returns results for fields referenced in dashboards
+    // GET /api/v1/olly-kb/queries/by-field. The field has to be one this
+    // account's dashboards actually reference; `team_id` is not among them.
     let v = harness::run_ok_json(&[
         "dashboards",
         "query-search",
         "--field",
-        "team_id",
+        "applicationname",
         "--limit",
         "5",
         "-o",
@@ -187,7 +193,7 @@ fn dashboards_query_search_field_returns_results() {
     let arr = v.as_array().expect("should be a JSON array");
     assert!(
         !arr.is_empty(),
-        "dashboards query-search --field 'team_id' should return at least one result"
+        "dashboards query-search --field 'applicationname' should return at least one result"
     );
     harness::assert_array_of_objects_with_keys(
         &v,

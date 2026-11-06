@@ -106,18 +106,23 @@ impl CxClient {
 
     /// POST JSON body, deserialize response into T.
     pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
-        self.post_with_headers(path, body, &[]).await
+        self.post_with_headers(path, None, body, &[]).await
     }
 
-    /// POST JSON body with extra headers, deserialize response into T.
+    /// POST JSON body with optional query params and extra headers, deserialize
+    /// response into T.
     pub async fn post_with_headers<T: DeserializeOwned>(
         &self,
         path: &str,
+        params: Option<&[(&str, &str)]>,
         body: &Value,
         headers: &[(&str, &str)],
     ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
         let mut req = self.inner.post(&url).json(body);
+        if let Some(params) = params {
+            req = req.query(params);
+        }
         for (key, value) in headers {
             req = req.header(*key, *value);
         }

@@ -137,8 +137,10 @@ impl<'a> TeamGroupsApi<'a> {
     }
 
     /// Get users in a team group.
+    ///
+    /// Management API v5 serves this at `/users/list`. `/users` is the retired v4 route.
     pub async fn get_users(&self, group_id: &str) -> Result<GetGroupUsersResponse> {
-        let path = format!("{TEAM_GROUPS_BASE}/{group_id}/users");
+        let path = format!("{TEAM_GROUPS_BASE}/{group_id}/users/list");
         self.client.get(&path, &[]).await
     }
 

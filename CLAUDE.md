@@ -40,6 +40,7 @@ Observe:
   views              Manage saved views and view folders
   slos               Manage SLO definitions
   infra              Query infrastructure resources and their data
+  rum                Map RUM stack traces to source code with uploaded source maps
 
 AI:
   ai-center (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -183,7 +184,8 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx metrics` | `cx-telemetry-querying` | Covered (loads `metrics-querying.md` + `promql-guidelines.md`) |
 | `cx dataprime` | `cx-telemetry-querying` | Covered (loads `dataprime-reference.md`) |
 | `cx docs` | `coralogix-docs` | Covered |
-| `cx logs` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
+| `cx dataprime query --source rum.events` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
+| `cx rum` (source maps, stack traces) | `cx-telemetry-querying` | Covered (`rum-querying.md` § Mapping Stack Traces); `cx-rum-setup` for verifying uploads |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx alerts` | `cx-alerts` | Covered |

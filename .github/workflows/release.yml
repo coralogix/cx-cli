@@ -77,7 +77,7 @@ jobs:
 
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 88f49ff79e777bef6d3564531636ee4d3cc2f8d2
 
       - name: Build (cross)
         if: matrix.cross
@@ -87,11 +87,88 @@ jobs:
         if: ${{ !matrix.cross }}
         run: cargo build --release --locked --target ${{ matrix.target }}
 
+      - name: Check Apple signing configuration
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE_P12_BASE64" ] ||
+             [ -z "$APPLE_CERTIFICATE_PASSWORD" ] ||
+             [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::error::macOS release signing requires APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, and APPLE_SIGNING_IDENTITY GitHub Actions secrets."
+            exit 1
+          fi
+
+      - name: Import Apple signing certificate
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/cx-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          CERTIFICATE_PATH="$RUNNER_TEMP/cx-signing.p12"
+          CERTIFICATE_PEM="$RUNNER_TEMP/cx-signing-cert.pem"
+          trap 'rm -f "$CERTIFICATE_PATH" "$CERTIFICATE_PEM"' EXIT
+
+          echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
+          if ! openssl pkcs12 \
+            -in "$CERTIFICATE_PATH" \
+            -clcerts \
+            -nokeys \
+            -passin env:APPLE_CERTIFICATE_PASSWORD \
+            -out "$CERTIFICATE_PEM"; then
+            echo "::error::Unable to read the Apple signing certificate."
+            exit 1
+          fi
+          if ! openssl x509 -in "$CERTIFICATE_PEM" -noout -checkend 0; then
+            echo "::error::Apple signing certificate has expired. Renew it and update the GitHub Actions secrets before releasing."
+            exit 1
+          fi
+          openssl x509 -in "$CERTIFICATE_PEM" -noout -subject -enddate
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          {
+            echo "APPLE_SIGNING_KEYCHAIN=$KEYCHAIN_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign macOS binary
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          BINARY="target/${{ matrix.target }}/release/cx"
+          codesign \
+            --force \
+            --identifier com.coralogix.cx \
+            --options runtime \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            --timestamp \
+            "$BINARY"
+          codesign --verify --strict --verbose=2 "$BINARY"
+
       - name: Package (unix)
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../cx-${RELEASE_TAG#v}-${{ matrix.target }}.tar.gz cx
+          cp ../../../cx-${RELEASE_TAG#v}-${{ matrix.target }}.tar.gz \
+            ../../../cx-${{ matrix.target }}.tar.gz
           cd ../../..
 
       - name: Package (windows)
@@ -100,6 +177,7 @@ jobs:
         run: |
           $version = $env:RELEASE_TAG -replace '^v', ''
           Compress-Archive -Path "target/${{ matrix.target }}/release/cx.exe" -DestinationPath "cx-$version-${{ matrix.target }}.zip"
+          Copy-Item "cx-$version-${{ matrix.target }}.zip" "cx-${{ matrix.target }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -107,6 +185,13 @@ jobs:
           name: cx-${{ matrix.target }}
           path: cx-*
           if-no-files-found: error
+
+      - name: Remove Apple signing keychain
+        if: ${{ always() && runner.os == 'macOS' }}
+        run: |
+          if [ -n "${APPLE_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$APPLE_SIGNING_KEYCHAIN" || true
+          fi
 
   release:
     name: Create Release

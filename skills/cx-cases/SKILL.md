@@ -25,7 +25,7 @@ lifecycle (active → acknowledged → resolved → closed).
 |---|---|
 | `cx cases create --title <t> --priority <P1..P5> --description <text> [--label k=v ...] [--assignee <email>] [--status ACTIVE\|ACKNOWLEDGED]` | Create a case manually — see "Creating a case" |
 | `cx cases get <id>` | Get a single case by ID |
-| `cx cases update <id> [--title] [--resolution-reason]` | Update mutable fields |
+| `cx cases update <id> [--title] [--resolution-reason] [--description]` | Update mutable fields; `--description` replaces the whole description — see "Updating the description" |
 | `cx cases comment <id> --text <text>` | Add a comment to the case timeline |
 | `cx cases assign <id> --user <email>` | Assign a case (email, or raw user ID) |
 | `cx cases unassign <id>` | Remove the assignee |
@@ -50,7 +50,7 @@ that does not exist.
 | **Listing / searching cases** | `cx cases list` was removed. Case discovery lives in the dataset: run `cx dataprime query "source system/labs.cases.state_updates \| ..." --start now-24h` (there is no `--from`; the window is `--start`/`--end`). See [`references/case-analytics.md`](references/case-analytics.md). |
 | **Linking / unlinking cases** | Parent-child links are created in the Cases UI only. The linking API is internal and not in the public API, so neither the CLI nor a public API call can do it. You can still *read* the hierarchy from the dataset — see "Case relationships" below. |
 | **Muting a case** | No CLI verb. Mute in the UI. Muting stops notifications without changing status, which is the honest alternative to resolving work nobody has finished. |
-| **Changing labels or the description** | Both are fixed when the case is created. `cx cases update` patches only the title and resolution reason; add later context with `cx cases comment`. |
+| **Changing labels** | Labels are fixed when the case is created. `cx cases update` patches only the title, resolution reason and description. |
 | **Reopening** | `RESOLVED` → `CLOSED` only. A recurrence of the same underlying indicator reopens the case automatically; a person cannot. |
 
 ## Case Lifecycle
@@ -101,17 +101,31 @@ A manual case is **fully managed by the user**:
   the CLI. Write it to stand on its own: what is wrong, observed impact, the time
   window (absolute UTC, not "an hour ago"), affected services/entities, the
   evidence (exact queries, numbers, dashboard or console links you actually saw),
-  and what has been ruled out. It cannot be edited afterwards — follow-ups go in
-  `cx cases comment`.
+  and what has been ruled out. Keep it current with `cx cases update --description`
+  (see "Updating the description"); short follow-ups go in `cx cases comment`.
 - **Labels** (`--label key=value`, repeatable) drive filtering, category
   derivation, and notification routing — `routing.*` labels pick the router.
-  Like the description, they are fixed at creation.
+  Unlike the description, they are fixed at creation.
 - **Initial status** is `ACTIVE` unless `--status ACKNOWLEDGED`. Only start it
   acknowledged when a person is actually on it.
 
 Before creating, ask the user to confirm title, priority, and description — a case
 notifies people. Prefer one case per issue; check for an existing open case on the
 same problem first (see [`references/case-analytics.md`](references/case-analytics.md)).
+
+### Updating the description
+
+`cx cases update <id> --description "<text>"` **replaces the whole description**;
+nothing is appended. Use it to keep a manual case current as the investigation moves
+on: new findings, the confirmed root cause, the mitigation.
+
+- Pass the complete new description, in the same shape as at creation, at most
+  10,000 characters. Build it from the text you wrote; if you don't have the
+  current text, ask the user for it or for the full replacement. Never pass only
+  the new part — it erases the rest.
+- Short notes, or anything that belongs in the history, go in `cx cases comment`.
+  The description holds the current picture; the timeline holds how it got there.
+- Show the user the full new description and confirm before running the update.
 
 ## Triage Workflow
 
@@ -146,8 +160,8 @@ the CLI requires both a reason and a confirmation:
   refuses and must be handed to the user to run interactively.
 
 If uncertain, stay in `ACKNOWLEDGED` (reversible via `unacknowledge`) until
-confident. For non-resolution edits (title, post-hoc postmortem link), use
-`cx cases update`.
+confident. For non-resolution edits (title, description, post-hoc postmortem
+link), use `cx cases update`.
 
 ## Case relationships (parent / child)
 

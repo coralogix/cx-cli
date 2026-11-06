@@ -544,21 +544,18 @@ pub async fn run_get(
     Ok(())
 }
 
-pub async fn run_update(
-    targets: &[Arc<ExecutionTarget>],
-    case_id: &str,
+const MAX_DESCRIPTION_CHARS: usize = 10_000;
+
+fn build_update_patch(
     title: Option<&str>,
     resolution_reason: Option<&str>,
-    output: OutputFormat,
-) -> Result<()> {
-    if title.is_none() && resolution_reason.is_none() {
+    description: Option<&str>,
+) -> Result<Value> {
+    if title.is_none() && resolution_reason.is_none() && description.is_none() {
         return Err(anyhow!(
-            "specify at least one of --title or --resolution-reason"
+            "specify at least one of --title, --resolution-reason or --description"
         ));
     }
-
-    eprintln!("{}", format!("Updating case {case_id}...").dimmed());
-
     let mut patch = serde_json::Map::new();
     if let Some(t) = title {
         patch.insert("title".to_string(), Value::String(t.to_string()));
@@ -566,7 +563,33 @@ pub async fn run_update(
     if let Some(r) = resolution_reason {
         patch.insert("resolutionReason".to_string(), Value::String(r.to_string()));
     }
-    let patch = Value::Object(patch);
+    if let Some(d) = description {
+        if d.trim().is_empty() {
+            return Err(anyhow!("--description must not be empty"));
+        }
+        let len = d.chars().count();
+        if len > MAX_DESCRIPTION_CHARS {
+            return Err(anyhow!(
+                "--description must be at most {MAX_DESCRIPTION_CHARS} characters, got {len}"
+            ));
+        }
+        patch.insert("description".to_string(), Value::String(d.to_string()));
+    }
+    Ok(Value::Object(patch))
+}
+
+pub async fn run_update(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    title: Option<&str>,
+    resolution_reason: Option<&str>,
+    description: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let patch = build_update_patch(title, resolution_reason, description)?;
+
+    eprintln!("{}", format!("Updating case {case_id}...").dimmed());
+
     let id = case_id.to_string();
 
     let per_profile = fan_out(targets, |t| {
@@ -1245,6 +1268,39 @@ mod tests {
                 "status": "CASE_STATUS_ACKNOWLEDGED"
             })
         );
+    }
+
+    #[test]
+    fn build_update_patch_sends_only_given_fields() {
+        let patch = build_update_patch(None, None, Some("Root cause: bad deploy")).unwrap();
+        assert_eq!(
+            patch,
+            serde_json::json!({ "description": "Root cause: bad deploy" })
+        );
+
+        let patch = build_update_patch(Some("t"), Some("r"), Some("d")).unwrap();
+        assert_eq!(
+            patch,
+            serde_json::json!({ "title": "t", "resolutionReason": "r", "description": "d" })
+        );
+    }
+
+    #[test]
+    fn build_update_patch_rejects_blank_or_oversized_description() {
+        let err = build_update_patch(None, None, Some("  ")).unwrap_err();
+        assert!(err.to_string().contains("--description must not be empty"));
+
+        let long = "x".repeat(MAX_DESCRIPTION_CHARS + 1);
+        let err = build_update_patch(None, None, Some(&long)).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("at most 10000 characters, got 10001"));
+    }
+
+    #[test]
+    fn build_update_patch_requires_a_field() {
+        let err = build_update_patch(None, None, None).unwrap_err();
+        assert!(err.to_string().contains("--description"));
     }
 
     #[test]

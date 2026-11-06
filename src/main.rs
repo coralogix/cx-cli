@@ -1373,6 +1373,14 @@ Examples:
         id: String,
     },
     /// Update mutable fields on a case.
+    #[command(after_help = "\
+--description replaces the whole description; nothing is appended. Pass the
+complete new text (at most 10,000 characters). Short follow-ups belong in
+`cx cases comment`.
+
+Examples:
+  cx cases update CASE-123 --title \"Payments latency (EU only)\"
+  cx cases update CASE-123 --description \"p99 up 3x since 10:00 UTC. Root cause: deploy v4.12, rolled back 11:05 UTC.\"")]
     Update {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
@@ -1382,6 +1390,9 @@ Examples:
         /// Resolution reason.
         #[arg(long)]
         resolution_reason: Option<String>,
+        /// New case description. Replaces the whole description.
+        #[arg(long)]
+        description: Option<String>,
     },
     /// Add a comment to a case.
     Comment {
@@ -4091,12 +4102,14 @@ async fn main() -> Result<()> {
                     id,
                     title,
                     resolution_reason,
+                    description,
                 } => {
                     commands::cases::run_update(
                         &targets,
                         &id,
                         title.as_deref(),
                         resolution_reason.as_deref(),
+                        description.as_deref(),
                         output,
                     )
                     .await?;

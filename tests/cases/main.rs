@@ -2,7 +2,7 @@
 mod common;
 
 use serde_json::json;
-use wiremock::matchers::{body_partial_json, method, path};
+use wiremock::matchers::{body_json, body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::cases::{
@@ -211,6 +211,36 @@ async fn update_case_sends_fields_directly() {
         "case-1",
         Some("New title"),
         None,
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_update should succeed");
+}
+
+#[tokio::test]
+async fn update_case_sends_description() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-7"))
+        .and(body_json(json!({
+            "description": "Root cause: deploy v4.12, rolled back."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"case": { "id": "case-7" }})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_update(
+        &targets,
+        "CASE-7",
+        None,
+        None,
+        Some("Root cause: deploy v4.12, rolled back."),
         OutputFormat::Json,
     )
     .await
@@ -222,7 +252,7 @@ async fn update_case_requires_at_least_one_field() {
     let target = common::test_target("test-profile", "http://localhost:0");
     let targets = vec![target];
 
-    let result = run_update(&targets, "case-1", None, None, OutputFormat::Json).await;
+    let result = run_update(&targets, "case-1", None, None, None, OutputFormat::Json).await;
     assert!(result.is_err(), "expected update without fields to error");
 }
 

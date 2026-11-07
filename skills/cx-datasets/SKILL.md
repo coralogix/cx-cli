@@ -52,7 +52,7 @@ text output is the copy-pasteable `source` argument.
 
    ```bash
    cx datasets list
-   cx datasets list -o json | jq -r '.[].dataspace + "/" + .[] .dataset' | sort
+   cx datasets list -o json | jq -r '.[] | .dataspace + "/" + .dataset' | sort
    ```
 
 2. **Narrow with a DPXL filter** when looking for a specific pillar or dataspace:
@@ -60,7 +60,7 @@ text output is the copy-pasteable `source` argument.
    ```bash
    cx datasets list --filter "<v1> $d.pillar == 'logs'"
    cx datasets list --filter "<v1> $d.dataspace == 'default' && $d.pillar == 'data'"
-   cx datasets list --filter "<v1> $d.dataset contains 'rum'" -o json
+   cx datasets list --filter "<v1> $d.dataset.contains('rum')" -o json
    ```
 
 3. **Query the dataset** with DataPrime, using the full source name:
@@ -76,8 +76,9 @@ text output is the copy-pasteable `source` argument.
 with `<v1>`. An expression missing the tag is rejected with a 400.
 
 Available fields: `$d.dataspace`, `$d.dataset`, `$d.pillar`, `$d.entityType`,
-`$d.teamId`. Combine with `&&` / `||`, compare with `==` / `!=`, and match with
-`contains` / `startsWith`.
+`$d.teamId`. Compare with `==` / `!=` and combine with `&&` / `||`. Substring
+matching uses method-call syntax — `$d.dataset.contains('rum')` (case-sensitive
+substring), not an infix `contains` operator.
 
 ## Key Principles
 

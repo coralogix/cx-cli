@@ -762,7 +762,7 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx datasets list
-  cx datasets list --filter \"<v1> $d.pillar == 'logs'\"
+  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
   cx datasets list -o json")]
     Datasets {
         #[command(subcommand)]
@@ -936,11 +936,11 @@ enum DatasetsCmd {
     #[command(after_help = "\
 Examples:
   cx datasets list
-  cx datasets list --filter \"<v1> $d.pillar == 'logs'\"
-  cx datasets list --filter \"<v1> $d.dataspace == 'default'\" -o json")]
+  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
+  cx datasets list --filter \"<v1> \\$d.dataspace == 'default'\" -o json")]
     List {
         /// DPXL filter over $d.dataspace, $d.dataset, $d.pillar, $d.entityType and $d.teamId.
-        /// Must start with the version tag, e.g. "<v1> $d.pillar == 'logs'".
+        /// Must start with the version tag, e.g. "<v1> \$d.pillar == 'logs'".
         #[arg(long)]
         filter: Option<String>,
     },

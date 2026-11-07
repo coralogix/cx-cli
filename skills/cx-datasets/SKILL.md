@@ -58,9 +58,9 @@ text output is the copy-pasteable `source` argument.
 2. **Narrow with a DPXL filter** when looking for a specific pillar or dataspace:
 
    ```bash
-   cx datasets list --filter "<v1> $d.pillar == 'logs'"
-   cx datasets list --filter "<v1> $d.dataspace == 'default' && $d.pillar == 'data'"
-   cx datasets list --filter "<v1> $d.dataset.contains('rum')" -o json
+   cx datasets list --filter "<v1> \$d.pillar == 'logs'"
+   cx datasets list --filter "<v1> \$d.dataspace == 'default' && \$d.pillar == 'data'"
+   cx datasets list --filter "<v1> \$d.dataset.contains('rum')" -o json
    ```
 
 3. **Query the dataset** with DataPrime, using the full source name:
@@ -73,7 +73,9 @@ text output is the copy-pasteable `source` argument.
 ## DPXL Filter Syntax
 
 `--filter` takes a DPXL expression **including its version tag** — it must start
-with `<v1>`. An expression missing the tag is rejected with a 400.
+with `<v1>`. An expression missing the tag is rejected with a 400. In
+double-quoted shells (bash/zsh), escape the `$` as `\$d` so the shell does not
+expand it — the examples above are copy-paste safe.
 
 Available fields: `$d.dataspace`, `$d.dataset`, `$d.pillar`, `$d.entityType`,
 `$d.teamId`. Compare with `==` / `!=` and combine with `&&` / `||`. Substring

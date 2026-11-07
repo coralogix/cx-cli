@@ -38,6 +38,8 @@ mod data_archive;
 mod data_usage;
 #[path = "e2e/dataprime/mod.rs"]
 mod dataprime;
+#[path = "e2e/datasets/mod.rs"]
+mod datasets;
 #[path = "e2e/e2m.rs"]
 mod e2m;
 #[path = "e2e/enrichments.rs"]

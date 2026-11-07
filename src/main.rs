@@ -82,6 +82,7 @@ pub enum SearchByValueDataset {
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
   \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
+  \x1b[1mdatasets\x1b[0m           List queryable datasets for DataPrime sources
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
@@ -757,6 +758,17 @@ Examples:
         offset: u32,
     },
 
+    /// List the datasets queryable by the current team, for DataPrime sources.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list --filter \"<v1> $d.pillar == 'logs'\"
+  cx datasets list -o json")]
+    Datasets {
+        #[command(subcommand)]
+        cmd: DatasetsCmd,
+    },
+
     /// DataPrime language reference and documentation.
     Dataprime {
         #[command(subcommand)]
@@ -911,6 +923,26 @@ Example:
     Fetch {
         /// Path suffix from `cx docs search` (not a full URL).
         suffix: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DatasetsCmd {
+    /// List the datasets queryable by the current team's API key.
+    ///
+    /// Each row is a fully qualified `<dataspace>/<dataset>` name usable in a
+    /// DataPrime `source` command. Only read-enabled, latest-version datasets
+    /// are returned.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list --filter \"<v1> $d.pillar == 'logs'\"
+  cx datasets list --filter \"<v1> $d.dataspace == 'default'\" -o json")]
+    List {
+        /// DPXL filter over $d.dataspace, $d.dataset, $d.pillar, $d.entityType and $d.teamId.
+        /// Must start with the version tag, e.g. "<v1> $d.pillar == 'logs'".
+        #[arg(long)]
+        filter: Option<String>,
     },
 }
 
@@ -3759,6 +3791,12 @@ async fn main() -> Result<()> {
             Commands::Schema => unreachable!("handled above"),
             Commands::Completions { .. } => unreachable!("handled above"),
             Commands::Docs { .. } => unreachable!("handled above"),
+
+            Commands::Datasets { cmd } => match cmd {
+                DatasetsCmd::List { filter } => {
+                    commands::datasets::run_list(&targets, filter.as_deref(), output).await?;
+                }
+            },
 
             Commands::Dataprime { cmd } => match cmd {
                 DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {

@@ -60,6 +60,8 @@ cx dashboards get <dashboard-id> -o json > dashboard.json
 cx dashboards replace --from-file dashboard.json
 ```
 
+`replace` overwrites the whole dashboard with no conflict check, so run `get` right before `replace` and change only what the user asked for in the fetched JSON. Edits made since an older copy was fetched are silently lost.
+
 To duplicate a dashboard as a new copy:
 
 ```bash

@@ -463,6 +463,7 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx cases get <case-id>
+  cx cases create --title \"Payments latency\" --priority P2 --description \"p99 up 3x since 10:00 UTC\"
   cx cases assign <case-id> --user alice@example.com
   cx cases acknowledge <case-id>
   cx cases resolve <case-id> --reason \"Mitigated by rollback\"
@@ -1329,12 +1330,57 @@ Request bodies:
 
 #[derive(Subcommand)]
 enum CasesCmd {
+    /// Create a case manually.
+    #[command(after_help = "\
+A manually created case is not linked to any alert or other indicator. The Cases
+service never updates, resolves, or reopens it on its own: you own its whole
+lifecycle (acknowledge, assign, resolve, close). The description is the only
+context the case carries, so put the evidence there - what is wrong, impact,
+time window, links to queries or dashboards.
+
+Labels feed filtering, category derivation, and notification routing
+(routing.* labels).
+
+Examples:
+  cx cases create --title \"Payments latency\" --priority P2 \\
+    --description \"p99 latency on payments-api up 3x since 10:00 UTC.\"
+  cx cases create --title \"Suspicious logins\" --priority P1 \\
+    --description \"...\" --label routing.team=security --assignee alice@example.com")]
+    Create {
+        /// Case title.
+        #[arg(long)]
+        title: String,
+        /// Case description - the only context a manual case carries.
+        #[arg(long)]
+        description: String,
+        /// Priority (P1, P2, P3, P4, P5).
+        #[arg(long)]
+        priority: String,
+        /// Label as key=value (repeatable).
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        /// Assignee - an email address (resolved via the team-members
+        /// directory) or a raw user ID.
+        #[arg(long)]
+        assignee: Option<String>,
+        /// Initial status: ACTIVE (default) or ACKNOWLEDGED.
+        #[arg(long)]
+        status: Option<String>,
+    },
     /// Get a single case by ID.
     Get {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Update mutable fields on a case.
+    #[command(after_help = "\
+--description replaces the whole description; nothing is appended. Pass the
+complete new text (at most 10,000 characters). Short follow-ups belong in
+`cx cases comment`.
+
+Examples:
+  cx cases update CASE-123 --title \"Payments latency (EU only)\"
+  cx cases update CASE-123 --description \"p99 up 3x since 10:00 UTC. Root cause: deploy v4.12, rolled back 11:05 UTC.\"")]
     Update {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
@@ -1344,6 +1390,9 @@ enum CasesCmd {
         /// Resolution reason.
         #[arg(long)]
         resolution_reason: Option<String>,
+        /// New case description. Replaces the whole description.
+        #[arg(long)]
+        description: Option<String>,
     },
     /// Add a comment to a case.
     Comment {
@@ -1412,6 +1461,7 @@ enum CasesCmd {
     #[command(after_help = "\
 Examples:
   cx cases events list <case-id>
+  cx cases events list <parent-case-id> --include-children-events
   cx cases events get <event-id>")]
     Events {
         #[command(subcommand)]
@@ -1435,6 +1485,9 @@ enum CasesEventsCmd {
     List {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         case_id: String,
+        /// Also include events from the case's child cases (each event carries its caseId).
+        #[arg(long)]
+        include_children_events: bool,
     },
     /// Get a single case event by its event ID.
     Get {
@@ -3372,8 +3425,21 @@ struct ProfilingFlameGraphArgs {
     top_functions: usize,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Debug-build clap/dispatch frames exceed the 1 MiB Windows main-thread stack.
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(run())
+        })?
+        .join()
+        .unwrap_or_else(|e| std::panic::resume_unwind(e))
+}
+
+async fn run() -> Result<()> {
     // Handle shell completions before any stdout output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.
@@ -4028,6 +4094,24 @@ async fn main() -> Result<()> {
             },
 
             Commands::Cases { cmd } => match cmd {
+                CasesCmd::Create {
+                    title,
+                    description,
+                    priority,
+                    labels,
+                    assignee,
+                    status,
+                } => {
+                    let args = commands::cases::CreateCaseArgs {
+                        title: &title,
+                        description: &description,
+                        priority: &priority,
+                        labels: &labels,
+                        assignee: assignee.as_deref(),
+                        status: status.as_deref(),
+                    };
+                    commands::cases::run_create(&targets, &args, output).await?;
+                }
                 CasesCmd::Get { id } => {
                     commands::cases::run_get(&targets, &id, output).await?;
                 }
@@ -4035,12 +4119,14 @@ async fn main() -> Result<()> {
                     id,
                     title,
                     resolution_reason,
+                    description,
                 } => {
                     commands::cases::run_update(
                         &targets,
                         &id,
                         title.as_deref(),
                         resolution_reason.as_deref(),
+                        description.as_deref(),
                         output,
                     )
                     .await?;
@@ -4108,8 +4194,17 @@ async fn main() -> Result<()> {
                     commands::cases::run_clear_priority(&targets, &id, output).await?;
                 }
                 CasesCmd::Events { cmd } => match cmd {
-                    CasesEventsCmd::List { case_id } => {
-                        commands::cases::run_events_list(&targets, &case_id, output).await?;
+                    CasesEventsCmd::List {
+                        case_id,
+                        include_children_events,
+                    } => {
+                        commands::cases::run_events_list(
+                            &targets,
+                            &case_id,
+                            include_children_events,
+                            output,
+                        )
+                        .await?;
                     }
                     CasesEventsCmd::Get { event_id } => {
                         commands::cases::run_event_get(&targets, &event_id, output).await?;

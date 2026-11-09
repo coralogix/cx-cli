@@ -69,23 +69,48 @@ enum RegionChoice {
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
-/// `file` is always offered. `os-store` is offered where a keyring backend
-/// exists, except on macOS unless this process is signed with an Apple
-/// Developer ID certificate. An ad-hoc signature makes a Keychain "Always
-/// Allow" expire with the next build.
-fn os_store_offered() -> bool {
-    #[cfg(all(target_os = "linux", target_env = "musl"))]
-    {
-        false
+/// Where the setup prompt is running, for help text and whether `os-store`
+/// exists at all. Linux musl has no keyring backend. macOS always has one:
+/// a Developer ID-signed `cx` uses the Keychain directly, and an unsigned or
+/// ad-hoc build (Homebrew core) uses `/usr/bin/security`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OsStorePlatform {
+    LinuxMusl,
+    Macos { apple_signed: bool },
+    Other,
+}
+
+fn current_os_store_platform() -> OsStorePlatform {
+    if cfg!(all(target_os = "linux", target_env = "musl")) {
+        OsStorePlatform::LinuxMusl
+    } else if cfg!(target_os = "macos") {
+        OsStorePlatform::Macos {
+            apple_signed: apple_developer_id(),
+        }
+    } else {
+        OsStorePlatform::Other
     }
+}
+
+fn apple_developer_id() -> bool {
     #[cfg(target_os = "macos")]
     {
         crate::code_sign::has_apple_developer_id()
     }
-    #[cfg(not(any(target_os = "macos", all(target_os = "linux", target_env = "musl"))))]
+    #[cfg(not(target_os = "macos"))]
     {
-        true
+        false
     }
+}
+
+/// `file` is always offered. `os-store` is offered wherever a credential
+/// backend exists, including unsigned macOS builds.
+fn os_store_offered() -> bool {
+    os_store_offered_on(current_os_store_platform())
+}
+
+fn os_store_offered_on(platform: OsStorePlatform) -> bool {
+    !matches!(platform, OsStorePlatform::LinuxMusl)
 }
 
 /// Storage choices for the setup prompt. `file` is first, so it is the default
@@ -99,24 +124,34 @@ fn credential_storage_options() -> Vec<(&'static str, CredentialStorage)> {
 }
 
 fn credential_storage_help_message(file_description: &str) -> String {
-    if cfg!(all(target_os = "linux", target_env = "musl")) {
-        format!("Linux musl builds do not have an OS credential store. 'file' {file_description}")
-    } else if cfg!(target_os = "macos") && !os_store_offered() {
-        format!(
-            "'file' {file_description} This build is not Developer ID signed, so the macOS \
-             Keychain is not offered."
-        )
-    } else if cfg!(target_os = "macos") {
-        format!(
-            "'file' {file_description} 'os-store' uses the macOS Keychain. Falls back to file if \
-             the OS store is unavailable."
-        )
-    } else {
-        format!(
+    credential_storage_help(file_description, current_os_store_platform())
+}
+
+fn credential_storage_help(file_description: &str, platform: OsStorePlatform) -> String {
+    match platform {
+        OsStorePlatform::LinuxMusl => {
+            format!(
+                "Linux musl builds do not have an OS credential store. 'file' {file_description}"
+            )
+        }
+        OsStorePlatform::Macos {
+            apple_signed: false,
+        } => format!(
+            "'file' {file_description} 'os-store' stores the secret in the macOS Keychain via \
+             /usr/bin/security, so a Homebrew upgrade does not prompt again. Any process running \
+             as your user can read that secret through the same tool. Falls back to file if the \
+             Keychain is unavailable."
+        ),
+        OsStorePlatform::Macos { apple_signed: true } => format!(
+            "'file' {file_description} 'os-store' stores the secret in the macOS Keychain with an \
+             ACL tied to this Developer ID-signed cx. Falls back to file if the Keychain is \
+             unavailable."
+        ),
+        OsStorePlatform::Other => format!(
             "'file' {file_description} 'os-store' uses the OS credential store (Windows \
              Credential Manager, Linux Secret Service). Falls back to file if the OS store is \
              unavailable."
-        )
+        ),
     }
 }
 
@@ -1122,6 +1157,44 @@ mod tests {
         } else {
             assert_eq!(options.len(), 1);
         }
+    }
+
+    #[test]
+    fn unsigned_macos_offers_keychain_through_security() {
+        let platform = OsStorePlatform::Macos {
+            apple_signed: false,
+        };
+        assert!(os_store_offered_on(platform));
+        let help = credential_storage_help(
+            "stores credentials in the profile config (0600 perms).",
+            platform,
+        );
+        assert!(help.contains("/usr/bin/security"), "got: {help}");
+        assert!(help.contains("Homebrew"), "got: {help}");
+        assert!(
+            !help.contains("not offered"),
+            "unsigned builds must offer the Keychain, got: {help}"
+        );
+    }
+
+    #[test]
+    fn signed_macos_help_describes_the_signature_acl() {
+        let platform = OsStorePlatform::Macos { apple_signed: true };
+        assert!(os_store_offered_on(platform));
+        let help = credential_storage_help(
+            "stores credentials in the profile config (0600 perms).",
+            platform,
+        );
+        assert!(help.contains("Developer ID-signed"), "got: {help}");
+        assert!(
+            !help.contains("/usr/bin/security"),
+            "signed builds keep direct Keychain access, got: {help}"
+        );
+    }
+
+    #[test]
+    fn linux_musl_offers_only_file() {
+        assert!(!os_store_offered_on(OsStorePlatform::LinuxMusl));
     }
 
     #[test]

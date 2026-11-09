@@ -1,9 +1,14 @@
 //! Whether this macOS process is signed with an Apple Developer ID certificate.
 //!
-//! A Keychain "Always Allow" entry for an ad-hoc signature is stored against
-//! that build's hash, so it does not match the next build. An Apple-issued
-//! Developer ID signature is not ad-hoc. Certificate renewal keeps that
-//! property, so the check does not name a team id.
+//! A Keychain item created through the Security framework is ACL'd to the
+//! calling binary. An ad-hoc signature is stored against that build's hash, so
+//! it does not match the next Homebrew upgrade. An Apple-issued Developer ID
+//! signature is not ad-hoc. Certificate renewal keeps that property, so the
+//! check does not name a team id.
+//!
+//! Unsigned and ad-hoc binaries store Keychain items through `/usr/bin/security`
+//! instead. Any failure to read the signature is treated as unsigned, so those
+//! builds take that path.
 
 use std::str::FromStr;
 
@@ -16,7 +21,8 @@ const APPLE_SIGNED_REQUIREMENT: &str = "anchor apple generic";
 /// `true` when this process satisfies [`APPLE_SIGNED_REQUIREMENT`].
 ///
 /// Any failure to read or validate the signature is treated as unsigned, so
-/// setup does not offer the Keychain.
+/// credential storage uses `/usr/bin/security` rather than the direct Keychain
+/// ACL.
 pub fn has_apple_developer_id() -> bool {
     let Ok(code) = SecCode::for_self(Flags::NONE) else {
         return false;

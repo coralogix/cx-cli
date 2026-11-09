@@ -270,9 +270,18 @@ impl<'a> CasesApi<'a> {
     }
 
     /// List events for a case.
-    pub async fn list_events(&self, case_id: &str) -> Result<ListEventsResponse> {
+    pub async fn list_events(
+        &self,
+        case_id: &str,
+        include_children: bool,
+    ) -> Result<ListEventsResponse> {
         let path = format!("{CASES_BASE}/{case_id}/events");
-        self.client.get(&path, &[]).await
+        let params: &[(&str, &str)] = if include_children {
+            &[("includeChildrenEvents", "true")]
+        } else {
+            &[]
+        };
+        self.client.get(&path, params).await
     }
 
     /// Add a comment to a case. The body field is `text`; the server stores it

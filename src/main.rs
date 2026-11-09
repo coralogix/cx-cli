@@ -1461,6 +1461,7 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx cases events list <case-id>
+  cx cases events list <parent-case-id> --include-children-events
   cx cases events get <event-id>")]
     Events {
         #[command(subcommand)]
@@ -1484,6 +1485,9 @@ enum CasesEventsCmd {
     List {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         case_id: String,
+        /// Also include events from the case's child cases (each event carries its caseId).
+        #[arg(long)]
+        include_children_events: bool,
     },
     /// Get a single case event by its event ID.
     Get {
@@ -4190,8 +4194,17 @@ async fn run() -> Result<()> {
                     commands::cases::run_clear_priority(&targets, &id, output).await?;
                 }
                 CasesCmd::Events { cmd } => match cmd {
-                    CasesEventsCmd::List { case_id } => {
-                        commands::cases::run_events_list(&targets, &case_id, output).await?;
+                    CasesEventsCmd::List {
+                        case_id,
+                        include_children_events,
+                    } => {
+                        commands::cases::run_events_list(
+                            &targets,
+                            &case_id,
+                            include_children_events,
+                            output,
+                        )
+                        .await?;
                     }
                     CasesEventsCmd::Get { event_id } => {
                         commands::cases::run_event_get(&targets, &event_id, output).await?;

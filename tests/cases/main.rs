@@ -2,7 +2,9 @@
 mod common;
 
 use serde_json::json;
-use wiremock::matchers::{body_json, body_partial_json, method, path};
+use wiremock::matchers::{
+    body_json, body_partial_json, method, path, query_param, query_param_is_missing,
+};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::cases::{
@@ -302,6 +304,7 @@ async fn events_list_calls_nested_path() {
 
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/cases/cases/v1/case-1/events"))
+        .and(query_param_is_missing("includeChildrenEvents"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .expect(1)
         .mount(&server)
@@ -310,9 +313,47 @@ async fn events_list_calls_nested_path() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    run_events_list(&targets, "case-1", OutputFormat::Json)
+    run_events_list(&targets, "case-1", false, OutputFormat::Json)
         .await
         .expect("run_events_list should succeed");
+}
+
+#[tokio::test]
+async fn events_list_include_children_sends_query_param() {
+    let server = MockServer::start().await;
+
+    let body = json!({
+        "events": [
+            {
+                "id": "evt-1",
+                "caseId": "parent-1",
+                "eventData": { "comment": { "unsafeText": "on parent" } }
+            },
+            {
+                "id": "evt-2",
+                "caseId": "child-1",
+                "eventData": { "comment": { "unsafeText": "on child" } }
+            }
+        ]
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/parent-1/events"))
+        .and(query_param("includeChildrenEvents", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    let targets = vec![target];
+
+    run_events_list(&targets, "parent-1", true, OutputFormat::Json)
+        .await
+        .expect("run_events_list should succeed");
+    run_events_list(&targets, "parent-1", true, OutputFormat::Text)
+        .await
+        .expect("run_events_list should render text with case IDs");
 }
 
 #[tokio::test]
@@ -356,7 +397,7 @@ async fn events_list_resolves_user_ids_to_emails() {
     let target = common::test_target("test-profile", &server.uri());
     let targets = vec![target];
 
-    run_events_list(&targets, "case-1", OutputFormat::Json)
+    run_events_list(&targets, "case-1", false, OutputFormat::Json)
         .await
         .expect("run_events_list should resolve user IDs without error");
 }

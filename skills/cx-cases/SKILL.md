@@ -36,6 +36,7 @@ lifecycle (active → acknowledged → resolved → closed).
 | `cx cases set-priority <id> --priority <P1..P5>` | Override the computed priority |
 | `cx cases clear-priority <id>` | Remove a priority override |
 | `cx cases events list <case-id>` | Event timeline (status changes, comments, assignments) |
+| `cx cases events list <case-id> --include-children-events` | Parent timeline merged with its children's events |
 | `cx cases events get <event-id>` | A single event — drill in, e.g. to expand a comment thread |
 | `cx cases notifications <case-id> [<case-id> ...]` | Notification deliveries (connector, status, time) |
 
@@ -185,10 +186,11 @@ in the analytics reference.
 When triaging a child, read the parent first — the investigation usually lives
 there. When resolving a parent, check its children: they do not resolve with it.
 
-The events API can return a parent's events together with its children's
-(`includeChildrenEvents: true` on ListEvents). That field is internal-only, so
-`cx cases events list` does not expose it. Run `cx cases events list <child-id>`
-for each child instead.
+To read a parent's timeline together with its children's, run
+`cx cases events list <parent-id> --include-children-events`. Every event carries
+the `caseId` it belongs to (shown as a Case ID column in text output), so you can
+tell parent events from child events. Child events are subject to the caller's
+access checks.
 
 ## Where a case came from
 

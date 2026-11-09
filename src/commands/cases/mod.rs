@@ -910,6 +910,7 @@ pub async fn run_clear_priority(
 pub async fn run_events_list(
     targets: &[Arc<ExecutionTarget>],
     case_id: &str,
+    include_children: bool,
     output: OutputFormat,
 ) -> Result<()> {
     eprintln!(
@@ -926,8 +927,10 @@ pub async fn run_events_list(
             let api = CasesApi::new(&t.client);
             // Fetch events and the team directory together; the directory is
             // best-effort so events still render if the lookup is unavailable.
-            let (events_res, dir_res) =
-                tokio::join!(api.list_events(&id), api.teammate_directory());
+            let (events_res, dir_res) = tokio::join!(
+                api.list_events(&id, include_children),
+                api.teammate_directory()
+            );
             let events = events_res?;
             let directory = dir_res.unwrap_or_default();
             Ok::<_, anyhow::Error>((events, directory))
@@ -988,14 +991,25 @@ pub async fn run_events_list(
                         .to_string();
                     let actor = format_event_actor(event);
                     let details = format_event_details(event);
-                    vec![profile, event_id, event_type, actor, details, created]
+                    let mut row = vec![profile];
+                    if include_children {
+                        row.push(
+                            event
+                                .get("caseId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        );
+                    }
+                    row.extend([event_id, event_type, actor, details, created]);
+                    row
                 })
                 .collect();
-            render::render_table(
-                &["Event ID", "Type", "Actor", "Details", "Timestamp"],
-                rows,
-                include_profile,
-            );
+            let mut headers = vec!["Event ID", "Type", "Actor", "Details", "Timestamp"];
+            if include_children {
+                headers.insert(0, "Case ID");
+            }
+            render::render_table(&headers, rows, include_profile);
         }
     }
 

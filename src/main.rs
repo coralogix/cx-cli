@@ -3423,6 +3423,11 @@ struct ProfilingFlameGraphArgs {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // The dispatch future exceeds the 1 MiB Windows main-thread stack unless heap-allocated.
+    Box::pin(run()).await
+}
+
+async fn run() -> Result<()> {
     // Handle shell completions before any stdout output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.

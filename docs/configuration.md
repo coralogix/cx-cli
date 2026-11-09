@@ -283,28 +283,28 @@ instead.
 
 ## Credentials on macOS
 
+> Note: On Homebrew installs, any process running as your user can read your cx credentials without a prompt. If you want only the Coralogix-signed cx to read them, see [Stronger isolation](#stronger-isolation-optional).
+
 `os-store` is the default on macOS, for both the setup prompt and a prompt-free
 run. `file` stays available. A profile that already says `credential_storage =
 "file"`, or that omits the key, stays file-based. If the Keychain write fails,
-or the secret does not fit `/usr/bin/security`'s interactive line, setup saves
-it in the profile file instead.
+setup saves the secret in the profile file instead.
 
 Which Keychain API `cx` uses depends on the signature of the binary you are
 running, not on a separate setting.
 
 **Homebrew core** (`brew install cx`) is compiled from source without the
-Coralogix certificate: unsigned on Intel, ad-hoc signed on Apple silicon. That
-build reads and writes the Keychain through Apple's `/usr/bin/security` tool.
-The Keychain trusts that Apple-signed tool, which does not change when
-Homebrew upgrades `cx`, so you are not asked again after `brew upgrade`. Any
-process running as your user can also read those credentials by invoking the
-same tool. The secret is passed to `security` on its stdin (`security -i`), not
-as an argument of `cx` or of `security`. `security`'s interactive parser reads
-one line into a 4096-byte buffer and cannot carry a newline in the secret; a
-value that does not fit is saved in the profile file instead. For CI and coding agents,
-prefer `CX_API_KEY` and `CX_REGION` — see [Environment variables](#environment-variables).
+Coralogix certificate. That build reads and writes the Keychain through Apple's
+`/usr/bin/security` tool. The Keychain trusts that Apple-signed tool, which
+does not change when Homebrew upgrades `cx`, so you are not asked again after
+`brew upgrade`. Any process running as your user can also read those
+credentials by invoking the same tool. Very long secrets are saved in the
+profile file instead. For CI and coding agents, prefer `CX_API_KEY` and
+`CX_REGION` — see [Environment variables](#environment-variables).
 
-**Signed builds** talk to the Keychain directly. The item's ACL is tied to the
+### Stronger isolation (optional)
+
+Signed builds talk to the Keychain directly. The item's ACL is tied to the
 Coralogix Developer ID signature, so only a `cx` signed with that certificate
 can read the secret without a prompt. That is what the install script and the
 GitHub release archives install:
@@ -315,12 +315,7 @@ curl -fsSL https://get.coralogix.dev/cli | sh
 
 Release archives are listed under [Installation reference](#installation-reference).
 
-`brew install coralogix/tap/cx` is the Coralogix tap's install command. That
-tap no longer publishes its own `cx` formula — Homebrew migrates it to
-`homebrew/core` — so it follows the `/usr/bin/security` path above. A
-Developer ID-signed binary, from the install script or a release archive,
-keeps the signature ACL. The choice is made from the running binary's
-signature: if a later install is signed, it uses the direct Keychain path.
+> Note: `brew install coralogix/tap/cx` installs the same Homebrew build as `brew install cx`, so it uses `/usr/bin/security`. For the signed build, use the install script above.
 
 ## Global config (`~/.cx/config.toml`)
 

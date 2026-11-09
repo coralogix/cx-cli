@@ -9,6 +9,7 @@ use std::io::IsTerminal;
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use inquire::Select;
 use serde::Deserialize;
 
@@ -267,17 +268,23 @@ fn installed_cx_skills(scope: SkillsScope) -> Vec<String> {
         .collect()
 }
 
-/// True when the installer's global lock file lists cx skills. A plain file
-/// read, so it is cheap enough to run after every command, unlike
-/// `npx skills ls`. Used to find skills that cx did not install itself.
-pub fn global_lock_has_cx_skills() -> bool {
+/// cx skills listed in the installer's global lock file.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LockedCxSkills {
+    /// The oldest `updatedAt` (else `installedAt`) among them. `None` when any
+    /// of them carries no readable time, so the age is unknown.
+    pub oldest_update: Option<DateTime<Utc>>,
+}
+
+/// The cx skills in the installer's global lock file, or `None` when it lists
+/// none. A plain file read, so it is cheap enough to run after every command,
+/// unlike `npx skills ls`. It also sees skills refreshed with `npx skills add`
+/// directly, which cx does not record.
+pub fn global_lock_cx_skills() -> Option<LockedCxSkills> {
     let xdg_state_home = std::env::var_os("XDG_STATE_HOME").map(std::path::PathBuf::from);
-    let Some(path) = global_lock_path(xdg_state_home, dirs::home_dir()) else {
-        return false;
-    };
-    std::fs::read_to_string(path)
-        .map(|contents| lock_has_cx_skills(&contents))
-        .unwrap_or(false)
+    let path = global_lock_path(xdg_state_home, dirs::home_dir())?;
+    let contents = std::fs::read_to_string(path).ok()?;
+    lock_cx_skills(&contents)
 }
 
 /// Same lookup as the installer's `getSkillLockPath`: `$XDG_STATE_HOME` when
@@ -294,22 +301,43 @@ fn global_lock_path(
     }
 }
 
-/// The lock file maps skill names to entries that carry a `source`.
-fn lock_has_cx_skills(contents: &str) -> bool {
+/// The lock file maps skill names to entries that carry a `source` and
+/// ISO-8601 `installedAt` / `updatedAt` times.
+fn lock_cx_skills(contents: &str) -> Option<LockedCxSkills> {
     #[derive(Deserialize)]
     struct Lock {
         #[serde(default)]
         skills: std::collections::BTreeMap<String, LockEntry>,
     }
     #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
     struct LockEntry {
         source: Option<String>,
+        installed_at: Option<String>,
+        updated_at: Option<String>,
     }
-    serde_json::from_str::<Lock>(contents).is_ok_and(|lock| {
-        lock.skills
-            .values()
-            .any(|entry| entry.source.as_deref() == Some(INSTALLED_SOURCE))
-    })
+    let lock = serde_json::from_str::<Lock>(contents).ok()?;
+    let times: Vec<Option<DateTime<Utc>>> = lock
+        .skills
+        .values()
+        .filter(|entry| entry.source.as_deref() == Some(INSTALLED_SOURCE))
+        .map(|entry| {
+            entry
+                .updated_at
+                .as_deref()
+                .or(entry.installed_at.as_deref())
+                .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t.with_timezone(&Utc))
+        })
+        .collect();
+    if times.is_empty() {
+        return None;
+    }
+    let oldest_update = times
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .and_then(|times| times.into_iter().min());
+    Some(LockedCxSkills { oldest_update })
 }
 
 /// Arguments for the fully non-interactive install.
@@ -441,21 +469,44 @@ mod tests {
     }
 
     #[test]
-    fn lock_with_cx_skills_is_detected() {
+    fn lock_with_cx_skills_reports_oldest_update() {
         let lock = r#"{"version":3,"skills":{
-            "other":{"source":"someone/else"},
-            "cx-cli":{"source":"coralogix/cx-cli","ref":"master","installedAt":"x"}
+            "other":{"source":"someone/else","updatedAt":"2020-01-01T00:00:00.000Z"},
+            "cx-alerts":{"source":"coralogix/cx-cli","ref":"master",
+                "installedAt":"2026-09-01T10:00:00.000Z","updatedAt":"2026-10-05T08:00:00.000Z"},
+            "cx-cli":{"source":"coralogix/cx-cli","installedAt":"2026-10-01T09:30:00.000Z"}
         }}"#;
-        assert!(lock_has_cx_skills(lock));
+        let oldest = "2026-10-01T09:30:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert_eq!(
+            lock_cx_skills(lock),
+            Some(LockedCxSkills {
+                oldest_update: Some(oldest)
+            })
+        );
+    }
+
+    #[test]
+    fn lock_with_undated_cx_skill_has_unknown_age() {
+        let lock = r#"{"version":3,"skills":{
+            "cx-alerts":{"source":"coralogix/cx-cli","updatedAt":"2026-10-05T08:00:00.000Z"},
+            "cx-cli":{"source":"coralogix/cx-cli","updatedAt":"not a time"}
+        }}"#;
+        assert_eq!(
+            lock_cx_skills(lock),
+            Some(LockedCxSkills {
+                oldest_update: None
+            })
+        );
     }
 
     #[test]
     fn lock_without_cx_skills_is_not_detected() {
-        assert!(!lock_has_cx_skills(
-            r#"{"version":3,"skills":{"other":{"source":"someone/else"}}}"#
-        ));
-        assert!(!lock_has_cx_skills(r#"{"version":3}"#));
-        assert!(!lock_has_cx_skills("not json"));
+        assert_eq!(
+            lock_cx_skills(r#"{"version":3,"skills":{"other":{"source":"someone/else"}}}"#),
+            None
+        );
+        assert_eq!(lock_cx_skills(r#"{"version":3}"#), None);
+        assert_eq!(lock_cx_skills("not json"), None);
     }
 
     #[test]

@@ -18,7 +18,7 @@ After running any cx command, check for update notices using the channels below 
 There are two kinds of notice:
 
 - **Binary update** — a newer cx version exists. The notice has two parts: the binary upgrade and the skills refresh. Offer both commands, binary first.
-- **Skills-only update** — cx itself is current, but the installed agent skills are older than it (typical right after `brew upgrade cx`). Offer only the skills refresh command.
+- **Skills-only update** — cx itself is on the newest version, but the installed agent skills are older than it (typical right after `brew upgrade cx`), or cx can't tell which version they are. Offer only the skills refresh command.
 
 ### 1. Primary — toon mode (`-o toon`)
 
@@ -28,10 +28,10 @@ Commands with `--output toon` append a **standalone trailing JSON line** to stdo
 {"_meta":{"update":{"binary":{"current":"0.1.7","latest":"0.2.0","command":"brew upgrade cx"},"skills":{"command":"cx skills install --global","docs":"https://github.com/coralogix/cx-cli#install"}}}}
 ```
 
-Skills-only update (no `binary` key; `installed_for` is the cx version the skills were installed for, or `null` when unknown):
+Skills-only update (no `binary` key). `reason` is `"outdated"` (cx installed the skills for an older version) or `"unknown_version"` (cx did not install them, so it can't tell their version). `installed_for` is the cx version the skills were installed for, or `null` when unknown:
 
 ```json
-{"_meta":{"update":{"skills":{"command":"cx skills install --global","docs":"https://github.com/coralogix/cx-cli#install","installed_for":"0.1.20"}}}}
+{"_meta":{"update":{"skills":{"command":"cx skills install --global","docs":"https://github.com/coralogix/cx-cli#install","reason":"outdated","installed_for":"0.1.20"}}}}
 ```
 
 Scan the **last line** of stdout for `_meta.update`. When present:
@@ -51,13 +51,14 @@ Also scan stderr and stdout for plain-text notices. A binary update shows binary
 [cx update] v0.2.0 available (you have 0.1.9) | upgrade: brew upgrade cx | skills: cx skills install --global
 ```
 
-A skills-only update:
+A skills-only update, for outdated or unknown-version skills:
 
 ```
 [cx update] cx agent skills are older than cx 0.1.9 | skills: cx skills install --global
+[cx update] cx can't tell which version your cx agent skills are | skills: cx skills install --global
 ```
 
-TTY text mode uses two lines with the same `upgrade: ... | skills: ...` or `update: ...` pattern:
+TTY text mode uses two lines; the second line always names the skills command after `skills:`:
 
 ```
 cx 0.2.0 is available (you have 0.1.9).
@@ -80,7 +81,7 @@ Skills-only update:
 > [Summarize the command result here]
 >
 > ---
-> Your cx agent skills are older than your cx version, so some commands may be missing from them. Would you like me to run `<skills command>` to update them?
+> Your cx agent skills may be older than your cx version, so some commands may be missing from them. Would you like me to run `<skills command>` to update them?
 
 Keep it to one brief closing line. Don't repeat on later commands in the same session.
 

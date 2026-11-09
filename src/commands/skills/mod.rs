@@ -10,7 +10,7 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use inquire::Select;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// The source passed to `skills add`. Points at the repo's user-facing
 /// `skills/` subdirectory, not the repo root: `--skill '*'` installs every
@@ -36,8 +36,7 @@ const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
 const SKILLS_REVIEW_URL: &str = "https://skills.sh/coralogix/cx-cli";
 
 /// Where the installer puts skills: the user's home (`~/`) or the project (`./`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillsScope {
     Global,
     Local,
@@ -155,7 +154,11 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     }
 
     print_install_summary(scope);
-    crate::version_cache::record_skills_install(Some(scope));
+    // Only a global install is recorded: local skills belong to one project,
+    // and the state file is shared by all of them.
+    if scope == SkillsScope::Global {
+        crate::version_cache::record_global_skills_install();
+    }
     Ok(InstallOutcome::Installed)
 }
 
@@ -198,7 +201,9 @@ pub fn run_advanced_install() -> Result<()> {
     if !status.success() {
         bail!("skills installer exited with {status}");
     }
-    crate::version_cache::record_skills_install(None);
+    // Not recorded: the installer exits 0 when the user cancels, and the user
+    // may pick local scope or only some skills, so success says nothing about
+    // which skills are now current.
     Ok(())
 }
 
@@ -262,17 +267,31 @@ fn installed_cx_skills(scope: SkillsScope) -> Vec<String> {
         .collect()
 }
 
-/// True when the installer's global lock file (`~/.agents/.skill-lock.json`)
-/// lists cx skills. A plain file read, so it is cheap enough to run after every
-/// command, unlike `npx skills ls`. Used to find skills installed before cx
-/// recorded the version it installed them for.
+/// True when the installer's global lock file lists cx skills. A plain file
+/// read, so it is cheap enough to run after every command, unlike
+/// `npx skills ls`. Used to find skills that cx did not install itself.
 pub fn global_lock_has_cx_skills() -> bool {
-    let Some(path) = dirs::home_dir().map(|h| h.join(".agents").join(".skill-lock.json")) else {
+    let xdg_state_home = std::env::var_os("XDG_STATE_HOME").map(std::path::PathBuf::from);
+    let Some(path) = global_lock_path(xdg_state_home, dirs::home_dir()) else {
         return false;
     };
     std::fs::read_to_string(path)
         .map(|contents| lock_has_cx_skills(&contents))
         .unwrap_or(false)
+}
+
+/// Same lookup as the installer's `getSkillLockPath`: `$XDG_STATE_HOME` when
+/// set (and not empty), else `~/.agents`.
+fn global_lock_path(
+    xdg_state_home: Option<std::path::PathBuf>,
+    home: Option<std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    match xdg_state_home {
+        Some(xdg) if !xdg.as_os_str().is_empty() => {
+            Some(xdg.join("skills").join(".skill-lock.json"))
+        }
+        _ => home.map(|h| h.join(".agents").join(".skill-lock.json")),
+    }
 }
 
 /// The lock file maps skill names to entries that carry a `source`.
@@ -400,6 +419,24 @@ mod tests {
                 "claude-code",
                 "cursor"
             ]
+        );
+    }
+
+    #[test]
+    fn global_lock_path_prefers_xdg_state_home() {
+        use std::path::PathBuf;
+        let home = Some(PathBuf::from("/home/u"));
+        assert_eq!(
+            global_lock_path(Some(PathBuf::from("/state")), home.clone()),
+            Some(PathBuf::from("/state/skills/.skill-lock.json"))
+        );
+        assert_eq!(
+            global_lock_path(Some(PathBuf::new()), home.clone()),
+            Some(PathBuf::from("/home/u/.agents/.skill-lock.json"))
+        );
+        assert_eq!(
+            global_lock_path(None, home),
+            Some(PathBuf::from("/home/u/.agents/.skill-lock.json"))
         );
     }
 

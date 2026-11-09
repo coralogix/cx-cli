@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::commands::skills::SkillsScope;
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VersionCheckCache {
     /// When we last fetched version info from GitHub.
@@ -25,17 +23,21 @@ pub struct VersionCheckCache {
     /// generated and persisted on the next command invocation when absent.
     pub installation_id: Option<String>,
 
-    /// The `cx` version that last ran `cx skills install` successfully.
+    /// The `cx` version that last ran `cx skills install --global` successfully.
     ///
     /// The skills ship from the same repo as the binary, so the CLI version is
-    /// the skills version. `None` means cx never installed skills (or did so
-    /// before this field existed).
+    /// the skills version. Only global installs are recorded: a local install
+    /// belongs to one project, and this file is shared by all of them. `None`
+    /// means cx never installed global skills (or did so before this field
+    /// existed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills_installed_for: Option<String>,
 
-    /// The scope of that install, so the refresh hint can repeat it.
+    /// The `cx` version that last showed the "unknown skills version" notice.
+    /// That notice shows once per cx version, because cx cannot tell whether
+    /// skills it did not install are old.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skills_scope: Option<SkillsScope>,
+    pub skills_unknown_noticed_for: Option<String>,
 }
 
 impl VersionCheckCache {
@@ -84,12 +86,17 @@ impl VersionCheckCache {
     }
 }
 
-/// Record a successful skills install for the running `cx` version.
-/// `scope` is `None` when the user picked it inside the installer's own flow.
-pub fn record_skills_install(scope: Option<SkillsScope>) {
+/// Record a successful global skills install for the running `cx` version.
+pub fn record_global_skills_install() {
     let mut state = VersionCheckCache::load();
     state.skills_installed_for = Some(env!("CARGO_PKG_VERSION").to_string());
-    state.skills_scope = scope;
+    let _ = state.save();
+}
+
+/// Record that the "unknown skills version" notice was shown for `version`.
+pub fn record_skills_unknown_noticed(version: &str) {
+    let mut state = VersionCheckCache::load();
+    state.skills_unknown_noticed_for = Some(version.to_string());
     let _ = state.save();
 }
 
@@ -153,20 +160,22 @@ mod tests {
             serde_json::from_str(r#"{"last_checked_at":null,"latest_binary":null}"#).unwrap();
         assert!(state.installation_id.is_none());
         assert!(state.skills_installed_for.is_none());
-        assert!(state.skills_scope.is_none());
+        assert!(state.skills_unknown_noticed_for.is_none());
     }
 
     #[test]
     fn skills_fields_round_trip() {
         let state = VersionCheckCache {
             skills_installed_for: Some("0.1.30".into()),
-            skills_scope: Some(SkillsScope::Local),
+            skills_unknown_noticed_for: Some("0.1.29".into()),
             ..Default::default()
         };
         let json = serde_json::to_string(&state).unwrap();
-        assert!(json.contains(r#""skills_scope":"local""#));
         let reloaded: VersionCheckCache = serde_json::from_str(&json).unwrap();
         assert_eq!(reloaded.skills_installed_for.as_deref(), Some("0.1.30"));
-        assert_eq!(reloaded.skills_scope, Some(SkillsScope::Local));
+        assert_eq!(
+            reloaded.skills_unknown_noticed_for.as_deref(),
+            Some("0.1.29")
+        );
     }
 }

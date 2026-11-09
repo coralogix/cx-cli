@@ -3421,10 +3421,18 @@ struct ProfilingFlameGraphArgs {
     top_functions: usize,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // The dispatch future exceeds the 1 MiB Windows main-thread stack unless heap-allocated.
-    Box::pin(run()).await
+fn main() -> Result<()> {
+    // Debug-build clap/dispatch frames exceed the 1 MiB Windows main-thread stack.
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(run())
+        })?
+        .join()
+        .unwrap_or_else(|e| std::panic::resume_unwind(e))
 }
 
 async fn run() -> Result<()> {

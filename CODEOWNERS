@@ -20,6 +20,7 @@
 /skills/query-logs/                    @coralogix/team-cxai
 /skills/query-spans/                   @coralogix/team-cxai
 /skills/rum/                           @coralogix/team-cxai
+**/rum/                                @coralogix/team-cxai
 
 # === metrics ===
 **/metrics/                            @coralogix/team-cxai

@@ -1,6 +1,6 @@
 [package]
 name = "coralogix-cli"
-version = "0.1.28"
+version = "0.1.31"
 edition = "2021"
 description = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 repository = "https://github.com/coralogix/cx-cli"
@@ -38,7 +38,6 @@ thiserror = "2"
 
 # Config directory resolution
 dirs = "6"
-fs2 = "0.4"
 
 # Secure credential storage (platform-specific backends added below)
 keyring = { version = "3", default-features = false }
@@ -79,14 +78,14 @@ flate2 = "1"
 uuid = { version = "1.24.0", features = ["v4"] }
 
 # ── Platform-specific keyring backends ─────────────────────────────────────────
-# macOS: Keychain
+# macOS: Keychain, plus the signing check that decides whether to offer it
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+security-framework = "3"
 
 # Windows: Credential Manager
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
-windows-sys = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_Shell"] }
 
 # Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)
 # NOTE: musl builds have no keyring backend - users must use file-based credential storage

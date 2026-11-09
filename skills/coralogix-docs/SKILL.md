@@ -34,7 +34,7 @@ No Coralogix API key is required.
 ```bash
 cx docs search "explore spans" --limit 5
 cx docs search "OpenTelemetry traces"
-cx docs fetch user-guides/data_exploration/spans/
+cx docs fetch user-guides/data_exploration/spans.md
 cx docs search "API keys" -o json
 ```
 
@@ -74,7 +74,7 @@ Use **`cx docs search`** + **`cx docs fetch`** when the user wants:
 User: "How do I show spans in the Coralogix website?"
 
 1. cx docs search "explore spans" --limit 5
-2. cx docs fetch user-guides/data_exploration/spans/
+2. cx docs fetch user-guides/data_exploration/spans.md
 3. Summarize: Explore → spans dataset → Spans/Traces/Flows tabs → drilldown
 ```
 
@@ -89,7 +89,7 @@ User: "How do I show spans in the Coralogix website?"
 
 ### `cx docs fetch`
 
-- Pass the **suffix** from **`cx docs search`** (e.g. `user-guides/data_exploration/spans/`). Full URLs are rejected.
+- Pass the **suffix** from **`cx docs search`** (e.g. `user-guides/data_exploration/spans.md`). Full URLs are rejected.
 - **`cx docs fetch` one page at a time** — pick the best match first.
 
 ## Troubleshooting

@@ -32,6 +32,7 @@ pub mod recording_rules;
 pub mod retentions;
 pub mod roles;
 pub mod routers;
+pub mod rum;
 pub mod saml;
 pub mod schema;
 pub mod scopes;

@@ -8,11 +8,8 @@ mod main_mod;
 
 #[test]
 fn schema_outputs_valid_json_with_expected_commands() {
-    let home = std::env::temp_dir().join(format!("cx_schema_test_{}", std::process::id()));
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_cx"))
         .arg("schema")
-        .env("CX_HOME", &home)
-        .env("CX_TEST_KEYRING_DIR", home.join(".test-keyring"))
         .output()
         .expect("failed to run cx schema");
 
@@ -24,7 +21,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
     let commands = schema["commands"]
         .as_array()
         .expect("commands should be an array");
-    assert_eq!(commands.len(), 34, "expected 34 top-level commands");
+    assert_eq!(commands.len(), 35, "expected 35 top-level commands");
 
     let names: Vec<&str> = commands
         .iter()
@@ -53,6 +50,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
         "missing service-catalog"
     );
     assert!(names.contains(&"profiling"), "missing profiling");
+    assert!(names.contains(&"rum"), "missing rum");
     assert!(names.contains(&"skills"), "missing skills");
     assert!(names.contains(&"init"), "missing init");
 

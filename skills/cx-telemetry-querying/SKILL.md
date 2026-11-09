@@ -5,7 +5,7 @@ description: |
   "debug a problem", "find out why something is slow", "check error rates",
   "analyze user behavior", "understand a production incident",
   "query telemetry data", "look at logs", "search logs", "find errors",
-  "find stack traces", "filter by severity",
+  "find stack traces", "de-minify a stack trace", "map a RUM error to source code", "filter by severity",
   "check traces", "examine spans", "investigate request latency",
   "debug service-to-service calls", "look up a trace ID",
   "analyze RUM data", "query rum.events", "check frontend performance", "frontend errors",
@@ -15,7 +15,7 @@ description: |
   "how do I write a DataPrime query", "DataPrime syntax",
   or wants to answer questions using observability data from logs, metrics, traces, RUM, or APM.
 metadata:
-  version: "0.2.1"
+  version: "0.2.2"
 ---
 
 # Telemetry Querying Skill
@@ -218,3 +218,4 @@ Not every question is answered by querying data. If the user's intent is operati
 - **Parallel discovery**: for ambiguous questions, search metrics, logs, and spans concurrently
 - **Validate with code**: when unsure what a metric or field represents, check the codebase
 - **Pivot on failure**: if one pillar is empty, try another before giving up
+- **Check stderr warnings on logs, spans, RUM, and other DataPrime queries**: they are JSON lines and can mean the results are incomplete (see the Warnings section in `dataprime-reference.md`)

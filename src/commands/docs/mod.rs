@@ -15,6 +15,8 @@ use crate::render;
 pub const DOCS_LLMS_INDEX_URL: &str = "https://coralogix.com/docs/llms.txt";
 const DOCS_HOST: &str = "coralogix.com";
 const DOCS_BASE_URL: &str = "https://coralogix.com/docs";
+/// Docs resources that are not pages and are fetched as-is (no `.md` suffix).
+const NON_PAGE_EXTENSIONS: &[&str] = &[".txt", ".json"];
 const INDEX_TTL: Duration = Duration::from_secs(3600);
 // The docs CDN rejects reqwest's default user agent. Keep the cx identity as
 // a product token while using a curl-compatible leading token.
@@ -70,24 +72,47 @@ pub fn docs_suffix(url: &str) -> String {
 }
 
 /// Validate and normalize a docs path suffix from `cx docs search`.
+///
+/// Strips a leading `/` or `docs/`, a trailing `/`, and any `#fragment` or
+/// `?query` (agents often paste heading links).
 pub fn normalize_suffix(value: &str) -> Result<String> {
     if value.starts_with("http://") || value.starts_with("https://") {
         bail!("expected a path suffix from `cx docs search` (e.g. user-guides/foo)");
     }
-    let mut suffix = value.trim().trim_start_matches('/').to_string();
-    if let Some(rest) = suffix.strip_prefix("docs/") {
-        suffix = rest.to_string();
+    let mut suffix = value.trim();
+    if let Some(idx) = suffix.find(['#', '?']) {
+        suffix = &suffix[..idx];
     }
-    Ok(suffix)
+    let suffix = suffix.trim_start_matches('/');
+    let suffix = suffix.strip_prefix("docs/").unwrap_or(suffix);
+    Ok(suffix.trim_end_matches('/').to_string())
 }
 
+/// Page URL for a normalized docs suffix; the empty suffix is the docs root.
 pub fn page_url_from_suffix(suffix: &str) -> Result<String> {
-    Ok(format!("{DOCS_BASE_URL}/{}", normalize_suffix(suffix)?))
+    let suffix = normalize_suffix(suffix)?;
+    if suffix.is_empty() {
+        Ok(DOCS_BASE_URL.to_string())
+    } else {
+        Ok(format!("{DOCS_BASE_URL}/{suffix}"))
+    }
 }
 
-/// Return the page URL unchanged for fetching.
+/// Markdown URL for a docs resource. The portal serves pages as `<page>.md`
+/// (`index.md` for the docs root); a plain page path returns HTML, and
+/// `<page>/index.md` is not served. Non-page files such as `llms-full.txt`
+/// and `docs-index.json` are fetched as-is.
 pub fn md_url(url: &str) -> String {
-    url.trim().to_string()
+    let url = url.trim().trim_end_matches('/');
+    if NON_PAGE_EXTENSIONS.iter().any(|ext| url.ends_with(ext)) {
+        return url.to_string();
+    }
+    let page = page_url(url);
+    if page == DOCS_BASE_URL {
+        format!("{page}/index.md")
+    } else {
+        format!("{page}.md")
+    }
 }
 
 fn is_coralogix_docs_url(url: &str) -> bool {
@@ -248,11 +273,10 @@ pub async fn run_search(query: &str, limit: u32, output: OutputFormat) -> Result
 }
 
 pub async fn run_fetch(suffix: &str, output: OutputFormat) -> Result<()> {
-    let suffix = normalize_suffix(suffix)?;
-    let md = md_url(&page_url_from_suffix(&suffix)?);
+    let md = md_url(&page_url_from_suffix(suffix)?);
     let body = fetch_text(&md).await?;
     let result = FetchDocResult {
-        suffix: suffix.clone(),
+        suffix: docs_suffix(&md),
         body: body.trim().to_string(),
     };
 
@@ -324,6 +348,33 @@ mod tests {
     }
 
     #[test]
+    fn normalize_suffix_strips_fragment_query_and_trailing_slash() {
+        assert_eq!(
+            normalize_suffix("user-guides/alerting/introduction-to-alerts#overview").unwrap(),
+            "user-guides/alerting/introduction-to-alerts"
+        );
+        assert_eq!(
+            normalize_suffix("user-guides/foo/?x=1").unwrap(),
+            "user-guides/foo"
+        );
+        assert_eq!(
+            normalize_suffix("user-guides/foo/").unwrap(),
+            "user-guides/foo"
+        );
+        assert_eq!(normalize_suffix("/").unwrap(), "");
+    }
+
+    #[test]
+    fn page_url_from_suffix_maps_empty_to_docs_root() {
+        assert_eq!(page_url_from_suffix("").unwrap(), DOCS_BASE_URL);
+        assert_eq!(page_url_from_suffix("/").unwrap(), DOCS_BASE_URL);
+        assert_eq!(
+            page_url_from_suffix("docs/user-guides/foo/").unwrap(),
+            "https://coralogix.com/docs/user-guides/foo"
+        );
+    }
+
+    #[test]
     fn page_url_strips_md_and_index() {
         assert_eq!(
             page_url("https://coralogix.com/docs/foo/index.md"),
@@ -332,10 +383,84 @@ mod tests {
     }
 
     #[test]
-    fn md_url_preserves_page_url() {
+    fn md_url_appends_md_to_plain_page_path() {
+        // Example from `cx docs fetch --help`.
+        let page = page_url_from_suffix("user-guides/data_exploration/spans/").unwrap();
         assert_eq!(
-            md_url("https://coralogix.com/docs/foo/"),
-            "https://coralogix.com/docs/foo/"
+            md_url(&page),
+            "https://coralogix.com/docs/user-guides/data_exploration/spans.md"
+        );
+        assert_eq!(
+            md_url("https://coralogix.com/docs/user-guides/alerting/introduction-to-alerts"),
+            "https://coralogix.com/docs/user-guides/alerting/introduction-to-alerts.md"
+        );
+    }
+
+    #[test]
+    fn md_url_keeps_suffixes_from_search() {
+        // `cx docs search` returns suffixes that already end in `.md`.
+        let page = page_url_from_suffix("user-guides/aaa/access-control/permissions.md").unwrap();
+        assert_eq!(
+            md_url(&page),
+            "https://coralogix.com/docs/user-guides/aaa/access-control/permissions.md"
+        );
+    }
+
+    #[test]
+    fn md_url_maps_docs_root_to_index() {
+        assert_eq!(
+            md_url(&page_url_from_suffix("").unwrap()),
+            "https://coralogix.com/docs/index.md"
+        );
+        // `cx docs search` lists the root as `index.md`.
+        assert_eq!(
+            md_url(&page_url_from_suffix("index.md").unwrap()),
+            "https://coralogix.com/docs/index.md"
+        );
+    }
+
+    #[test]
+    fn md_url_strips_page_index() {
+        // The portal serves `<page>.md`, not `<page>/index.md`.
+        for suffix in ["user-guides/foo/index", "user-guides/foo/index.md"] {
+            assert_eq!(
+                md_url(&page_url_from_suffix(suffix).unwrap()),
+                "https://coralogix.com/docs/user-guides/foo.md"
+            );
+        }
+    }
+
+    #[test]
+    fn md_url_strips_fragment_from_pasted_heading_link() {
+        assert_eq!(
+            md_url(
+                &page_url_from_suffix("user-guides/alerting/introduction-to-alerts#overview")
+                    .unwrap()
+            ),
+            "https://coralogix.com/docs/user-guides/alerting/introduction-to-alerts.md"
+        );
+    }
+
+    #[test]
+    fn md_url_keeps_non_page_resources() {
+        for file in [
+            "llms-full.txt",
+            "docs-index.json",
+            "search/search_index.json",
+        ] {
+            assert_eq!(
+                md_url(&page_url_from_suffix(file).unwrap()),
+                format!("https://coralogix.com/docs/{file}")
+            );
+        }
+    }
+
+    #[test]
+    fn md_url_keeps_dotted_page_names() {
+        // Page names can contain dots; only known non-page extensions pass through.
+        assert_eq!(
+            md_url("https://coralogix.com/docs/user-guides/https/support-for-incident.io"),
+            "https://coralogix.com/docs/user-guides/https/support-for-incident.io.md"
         );
     }
 

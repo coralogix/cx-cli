@@ -66,6 +66,100 @@ pub enum SearchByValueDataset {
     All,
 }
 
+/// DataPrime keypath scope for `keypaths list --scope`.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum KeypathScopeArg {
+    /// User data (`$d`).
+    D,
+    /// Labels (`$l`).
+    L,
+    /// Metadata (`$m`).
+    M,
+}
+
+#[derive(Subcommand)]
+enum KeypathsCmd {
+    /// List the keypaths observed in one or more datasets, with their DataPrime types.
+    #[command(after_help = "\
+Examples:
+  cx keypaths list --contains pod
+  cx keypaths list --prefix '$d.kubernetes' --label subsystemName=api
+  cx keypaths list --exact \"\\$d.tags['http.method']\" --start now-24h
+  cx keypaths list --dataset logs --dataset spans --scope l")]
+    List {
+        /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
+        /// several (up to 10); results are the union.
+        #[arg(long = "dataset", default_value = "logs")]
+        datasets: Vec<String>,
+
+        /// Keypaths containing this text (case-insensitive).
+        #[arg(long, conflicts_with_all = ["prefix", "exact"])]
+        contains: Option<String>,
+
+        /// Keypaths starting with this text, e.g. '$d.kubernetes' (case-insensitive).
+        #[arg(long, conflicts_with = "exact")]
+        prefix: Option<String>,
+
+        /// Exactly this keypath (case-insensitive).
+        #[arg(long)]
+        exact: Option<String>,
+
+        /// Only these scopes. Repeatable.
+        #[arg(long = "scope", value_enum)]
+        scopes: Vec<KeypathScopeArg>,
+
+        /// Only keypaths seen with this label value, as 'name=value'. Repeat a name to allow
+        /// several values; different names must all match.
+        #[arg(long = "label", visible_alias = "labels")]
+        labels: Vec<String>,
+
+        /// Start time in ISO 8601 or relative format.
+        #[arg(long, default_value = "now-1h")]
+        start: String,
+
+        /// End time in ISO 8601 or relative format.
+        #[arg(long, default_value = "now")]
+        end: String,
+
+        /// Maximum number of keypaths (server default 100).
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+
+    /// Show sample values of one keypath.
+    #[command(after_help = "\
+Examples:
+  cx keypaths samples '$m.severity'
+  cx keypaths samples \"\\$d.tags['http.method']\" --label applicationName=checkout --label applicationName=payments
+  cx keypaths samples '$l.subsystemName' --dataset logs --dataset spans --start now-6h")]
+    Samples {
+        /// Keypath in DataPrime syntax, as `keypaths list` prints it.
+        keypath: String,
+
+        /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
+        /// several (up to 10); results are the union.
+        #[arg(long = "dataset", default_value = "logs")]
+        datasets: Vec<String>,
+
+        /// Only samples seen with this label value, as 'name=value'. Repeat a name to allow
+        /// several values; different names must all match.
+        #[arg(long = "label", visible_alias = "labels")]
+        labels: Vec<String>,
+
+        /// Start time in ISO 8601 or relative format.
+        #[arg(long, default_value = "now-1h")]
+        start: String,
+
+        /// End time in ISO 8601 or relative format.
+        #[arg(long, default_value = "now")]
+        end: String,
+
+        /// Maximum number of samples (server default 20).
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+}
+
 /// Coralogix CLI - the observability backbone for AI agents and engineering teams.
 #[derive(Parser)]
 #[command(
@@ -82,6 +176,7 @@ pub enum SearchByValueDataset {
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
   \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
+  \x1b[1mkeypaths\x1b[0m           List a dataset's keypaths and sample their values
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
@@ -755,6 +850,12 @@ Examples:
         /// Number of results to skip for pagination (only used with -s value).
         #[arg(long, default_value_t = 0)]
         offset: u32,
+    },
+
+    /// List a dataset's keypaths with their DataPrime types, and sample their values.
+    Keypaths {
+        #[command(subcommand)]
+        cmd: KeypathsCmd,
     },
 
     /// DataPrime language reference and documentation.
@@ -5449,6 +5550,66 @@ async fn main() -> Result<()> {
                         output,
                     )
                     .await?;
+                }
+            },
+
+            Commands::Keypaths { cmd } => match cmd {
+                KeypathsCmd::List {
+                    datasets,
+                    contains,
+                    prefix,
+                    exact,
+                    scopes,
+                    labels,
+                    start,
+                    end,
+                    limit,
+                } => {
+                    use commands::keypaths::api::{
+                        KeypathFilter, KeypathMatchMode, KeypathScope, ListKeypathsRequest,
+                    };
+                    let keypath_filter = [
+                        (contains, KeypathMatchMode::Contains),
+                        (prefix, KeypathMatchMode::StartsWith),
+                        (exact, KeypathMatchMode::Exact),
+                    ]
+                    .into_iter()
+                    .find_map(|(value, match_mode)| {
+                        value.map(|value| KeypathFilter { value, match_mode })
+                    });
+                    let request = ListKeypathsRequest {
+                        datasets: commands::keypaths::parse_datasets(&datasets)?,
+                        time_range: commands::keypaths::time_range(&start, &end)?,
+                        keypath_filter,
+                        scopes: scopes
+                            .into_iter()
+                            .map(|scope| match scope {
+                                KeypathScopeArg::D => KeypathScope::UserData,
+                                KeypathScopeArg::L => KeypathScope::Label,
+                                KeypathScopeArg::M => KeypathScope::Metadata,
+                            })
+                            .collect(),
+                        dimension_filter: commands::keypaths::parse_labels(&labels)?,
+                        limit,
+                    };
+                    commands::keypaths::run_list(&targets, &request, output).await?;
+                }
+                KeypathsCmd::Samples {
+                    keypath,
+                    datasets,
+                    labels,
+                    start,
+                    end,
+                    limit,
+                } => {
+                    let request = commands::keypaths::api::GetKeypathSamplesRequest {
+                        datasets: commands::keypaths::parse_datasets(&datasets)?,
+                        keypath,
+                        time_range: commands::keypaths::time_range(&start, &end)?,
+                        dimension_filter: commands::keypaths::parse_labels(&labels)?,
+                        limit,
+                    };
+                    commands::keypaths::run_samples(&targets, &request, output).await?;
                 }
             },
 

@@ -67,7 +67,7 @@ enum RegionChoice {
     Custom { base_url: String },
 }
 
-const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
+const OUTPUT_FORMATS: &[&str] = &["text", "json", "yaml", "toon"];
 
 /// `file` is always offered. `os-store` is offered where a keyring backend
 /// exists, except on macOS unless this process is signed with an Apple
@@ -625,6 +625,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     };
 
     // ── Common: default output format (per-profile) ────────────────────────────
+        "yaml" => OutputFormat::Yaml,
     // Quick setup pins JSON without asking. Non-interactive runs leave it unset,
     // falling back to the global default.
     if quick {

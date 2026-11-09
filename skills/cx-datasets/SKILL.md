@@ -66,7 +66,7 @@ text output is the copy-pasteable `source` argument.
 3. **Query the dataset** with DataPrime, using the full source name:
 
    ```bash
-   cx logs 'filter $d.severity == ERROR' --source default/checkoutservice_dataset
+   cx dataprime query --source default/checkoutservice_dataset 'filter $d.severity == ERROR'
    cx dataprime query --source system/labs.limitViolations 'filter timestamp > now()-1h'
    ```
 

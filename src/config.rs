@@ -320,11 +320,12 @@ pub struct StoredOAuthTokens {
 /// A named profile storing credentials and endpoint info.
 ///
 /// `credential_storage` selects where secrets live for both auth modes:
-///   - `"file"` (default): API keys / OAuth tokens are written inline in the
-///     TOML, which is created with `0600` permissions.
-///   - `"os_store"`: secrets are stored in the OS credential store
-///     (macOS Keychain, Windows Credential Manager, etc.) and the inline
-///     fields are absent from the TOML.
+///   - `"file"` (the value when the key is omitted, so existing profiles stay
+///     file-based, and the setup default off macOS): API keys / OAuth tokens
+///     are written inline in the TOML, which is created with `0600` permissions.
+///   - `"os_store"` (the setup default on macOS): secrets are stored in the OS
+///     credential store (macOS Keychain, Windows Credential Manager, etc.) and
+///     the inline fields are absent from the TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     /// Authentication method for this profile.

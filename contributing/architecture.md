@@ -286,7 +286,7 @@ src/
 ├── time.rs              # Relative/absolute timestamp parsing
 ├── tier.rs              # Tier enum (FrequentSearch | Archive)
 ├── oauth.rs             # OAuth 2.0 + OIDC browser login flow
-├── keyring_store.rs     # OS keyring read/write (macOS unsigned: /usr/bin/security)
+├── keyring_store.rs     # OS keyring. macOS setup defaults to it (unsigned: /usr/bin/security)
 ├── macos_security.rs    # /usr/bin/security Keychain protocol for unsigned macOS
 ├── serde_helpers.rs     # Shared serde deserializers (string_or_number, etc.)
 └── commands/

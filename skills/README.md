@@ -21,6 +21,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-ai-center` | Investigate GenAI applications and agents - behavior, prompts/responses, quality, hallucinations, guardrails, token cost - and manage AI Center config |
 | `cx-coding-agents` | Analyze AI Center Coding Agents data for Claude Code, Codex, Cursor, Gemini CLI, and Copilot CLI - usage, cost, tokens, sessions, tools, code impact |
 | `cx-search-dashboard` | Find existing dashboards and widgets by natural-language description or by the fields they query |
+| `cx-datasets` | Discover queryable datasets - fully qualified `<dataspace>/<dataset>` names for DataPrime sources, with DPXL filtering |
 
 ### Workflow
 

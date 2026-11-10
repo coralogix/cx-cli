@@ -28,6 +28,8 @@
 
 # === dataprime (DataPrime query language + semantic search + embedded docs) ===
 **/dataprime/                          @coralogix/team-cxai
+**/datasets/                           @coralogix/team-cxai
+/skills/cx-datasets/                   @coralogix/team-cxai
 /skills/telemetry-querying/            @coralogix/team-cxai
 /assets/                               @coralogix/team-cxai
 

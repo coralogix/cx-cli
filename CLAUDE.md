@@ -34,6 +34,7 @@ Query:
   dataprime          DataPrime language reference and raw queries
   docs               Search and fetch official Coralogix product documentation
   search-fields      Search log/span fields by description or value content
+  datasets           List queryable datasets for DataPrime sources
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -187,6 +188,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx dataprime query --source rum.events` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
 | `cx rum` (source maps, stack traces) | `cx-telemetry-querying` | Covered (`rum-querying.md` § Mapping Stack Traces); `cx-rum-setup` for verifying uploads |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
+| `cx datasets` | `cx-datasets` | Covered |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx alerts` | `cx-alerts` | Covered |
 | `cx dashboards` | `cx-dashboards` | Covered |

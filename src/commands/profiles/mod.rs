@@ -600,9 +600,10 @@ pub struct AddArgs {
 /// Labels for a profile being added or reconfigured.
 ///
 /// A provided `--label` replaces the set. With no flag, an interactive run
-/// (other than quick setup) asks, and an empty answer keeps the labels already
-/// stored. Non-interactive and quick runs keep those labels without asking, so
-/// a new profile stays unlabeled and a reconfigure does not wipe them.
+/// (other than quick setup) asks. An empty answer, or Enter on the shown
+/// default, keeps the labels already stored. Non-interactive and quick runs
+/// keep those labels without asking, so a new profile stays unlabeled and a
+/// reconfigure does not wipe them.
 fn resolve_profile_labels(
     name: &str,
     provided: Option<Vec<String>>,
@@ -626,9 +627,29 @@ fn resolve_profile_labels(
     if !current.is_empty() {
         prompt = prompt.with_default(&current);
     }
-    match prompt.prompt_skippable()? {
-        Some(text) if !text.trim().is_empty() => Ok(crate::config::parse_label_args([text])),
-        _ => Ok(existing),
+    // Enter submits the joined default, not an empty string. The helper treats
+    // that as "unchanged" so the display text is not parsed back into labels.
+    Ok(labels_from_prompt_answer(
+        &existing,
+        prompt.prompt_skippable()?.as_deref(),
+    ))
+}
+
+/// Labels to store after the interactive labels prompt.
+///
+/// `answer` is what inquire returned. The prompt default is `existing` joined
+/// with commas, and an empty submission returns that default rather than `""`.
+/// An empty answer and an answer equal to that default both keep `existing`,
+/// so accepting the default does not re-parse the display text. A legacy
+/// label that itself contains a comma (`"prod,eu"`) therefore stays one
+/// label. Any other text is parsed as a comma-separated list.
+fn labels_from_prompt_answer(existing: &[String], answer: Option<&str>) -> Vec<String> {
+    let current = existing.join(",");
+    match answer {
+        Some(text) if !text.trim().is_empty() && text.trim() != current => {
+            crate::config::parse_label_args([text])
+        }
+        _ => existing.to_vec(),
     }
 }
 
@@ -1210,6 +1231,28 @@ mod tests {
         assert_eq!(
             display_labels(&["prod".to_string(), "eu".to_string()]),
             "prod,eu"
+        );
+    }
+
+    /// Pressing Enter returns the comma-joined default, not an empty string.
+    /// A legacy label that contains a comma must survive that answer; only a
+    /// different answer is parsed.
+    #[test]
+    fn accepted_label_default_keeps_legacy_comma_label() {
+        let existing = vec!["prod,eu".to_string()];
+        let accepted_default = existing.join(",");
+
+        assert_eq!(
+            labels_from_prompt_answer(&existing, Some(&accepted_default)),
+            existing
+        );
+        assert_eq!(labels_from_prompt_answer(&existing, Some("")), existing);
+        assert_eq!(labels_from_prompt_answer(&existing, Some("   ")), existing);
+        assert_eq!(labels_from_prompt_answer(&existing, None), existing);
+
+        assert_eq!(
+            labels_from_prompt_answer(&existing, Some("prod, eu")),
+            vec!["prod".to_string(), "eu".to_string()]
         );
     }
 

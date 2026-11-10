@@ -373,3 +373,51 @@ fn global_and_local_conflict() {
         .assert()
         .failure();
 }
+
+// ── Recorded skills version (HEA-62) ──────────────────────────────────────────
+
+/// The `skills_installed_for` value cx saved in `state.json`, if any.
+fn recorded_skills_version(home: &Path) -> Option<String> {
+    let contents = fs::read_to_string(home.join(".cx").join("state.json")).ok()?;
+    let state: serde_json::Value = serde_json::from_str(&contents).ok()?;
+    state["skills_installed_for"].as_str().map(str::to_string)
+}
+
+#[cfg(unix)]
+#[test]
+fn global_install_records_the_cx_version() {
+    let home = temp_dir("record_global");
+    let bin = temp_dir("record_global_bin");
+    install_fake_npx(&bin, &bin.join("args.txt"), "[]", "[]");
+
+    cx(&home, &bin)
+        .env("CX_NO_UPDATE_NOTIFIER", "1")
+        .args(["skills", "install", "--global"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        recorded_skills_version(&home).as_deref(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
+}
+
+/// Local skills belong to one project, and `--interactive` may be cancelled
+/// (the installer still exits 0), so neither marks the skills as current.
+#[cfg(unix)]
+#[test]
+fn local_and_interactive_installs_record_nothing() {
+    for flag in ["--local", "--interactive"] {
+        let home = temp_dir("record_none");
+        let bin = temp_dir("record_none_bin");
+        install_fake_npx(&bin, &bin.join("args.txt"), "[]", "[]");
+
+        cx(&home, &bin)
+            .env("CX_NO_UPDATE_NOTIFIER", "1")
+            .args(["skills", "install", flag])
+            .assert()
+            .success();
+
+        assert_eq!(recorded_skills_version(&home), None, "{flag}");
+    }
+}

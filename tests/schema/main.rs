@@ -30,7 +30,7 @@ fn schema_outputs_valid_json_with_expected_commands() {
 
     // Verify key merged/renamed commands exist
     assert!(names.contains(&"alerts"), "missing alerts");
-    assert!(names.contains(&"keypaths"), "missing keypaths");
+    assert!(names.contains(&"datasets"), "missing datasets");
     assert!(names.contains(&"cases"), "missing cases");
     assert!(names.contains(&"iam"), "missing iam");
     assert!(names.contains(&"notifications"), "missing notifications");

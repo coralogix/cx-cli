@@ -66,98 +66,109 @@ pub enum SearchByValueDataset {
     All,
 }
 
-/// DataPrime keypath scope for `keypaths list --scope`.
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum KeypathScopeArg {
-    /// User data (`$d`).
-    D,
-    /// Labels (`$l`).
-    L,
-    /// Metadata (`$m`).
-    M,
+#[derive(Subcommand)]
+enum DatasetsCmd {
+    /// Search a dataset's fields (DataPrime keypaths) and sample their values. Without a
+    /// subcommand it runs `search`.
+    #[command(args_conflicts_with_subcommands = true, after_help = FIELDS_SEARCH_EXAMPLES)]
+    Fields {
+        #[command(subcommand)]
+        cmd: Option<FieldsCmd>,
+
+        #[command(flatten)]
+        search: FieldsSearchArgs,
+    },
 }
 
+const FIELDS_SEARCH_EXAMPLES: &str = "\
+Examples:
+  cx datasets fields --contains pod
+  cx datasets fields --prefix '$d.kubernetes' --prefix '$d.k8s'
+  cx datasets fields --prefix '$l' --prefix '$m' --dataset logs --dataset spans
+  cx datasets fields search --exact \"\\$d.tags['http.method']\" --label subsystemName=api --start now-24h";
+
 #[derive(Subcommand)]
-enum KeypathsCmd {
-    /// List the keypaths observed in one or more datasets, with their DataPrime types.
+enum FieldsCmd {
+    /// Search the fields observed in one or more datasets, with their DataPrime types.
+    ///
+    /// Repeating --exact, --prefix or --contains means any of its values; different flags must
+    /// all hold.
+    #[command(after_help = FIELDS_SEARCH_EXAMPLES)]
+    Search(FieldsSearchArgs),
+
+    /// Show sample values of one field.
     #[command(after_help = "\
 Examples:
-  cx keypaths list --contains pod
-  cx keypaths list --prefix '$d.kubernetes' --label subsystemName=api
-  cx keypaths list --exact \"\\$d.tags['http.method']\" --start now-24h
-  cx keypaths list --dataset logs --dataset spans --scope l")]
-    List {
-        /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
-        /// several (up to 10); results are the union.
-        #[arg(long = "dataset", default_value = "logs")]
-        datasets: Vec<String>,
+  cx datasets fields values '$m.severity'
+  cx datasets fields values \"\\$d.tags['http.method']\" --label applicationName=checkout --label applicationName=payments
+  cx datasets fields values '$l.subsystemName' --dataset logs --dataset spans --start now-6h")]
+    Values(FieldValuesArgs),
+}
 
-        /// Keypaths containing this text (case-insensitive).
-        #[arg(long, conflicts_with_all = ["prefix", "exact"])]
-        contains: Option<String>,
+#[derive(Args)]
+struct FieldsSearchArgs {
+    /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
+    /// several (up to 100); results are the union.
+    #[arg(long = "dataset", default_value = "logs")]
+    datasets: Vec<String>,
 
-        /// Keypaths starting with this text, e.g. '$d.kubernetes' (case-insensitive).
-        #[arg(long, conflicts_with = "exact")]
-        prefix: Option<String>,
+    /// Exactly this field, in DataPrime syntax (case-insensitive). Repeatable.
+    #[arg(long)]
+    exact: Vec<String>,
 
-        /// Exactly this keypath (case-insensitive).
-        #[arg(long)]
-        exact: Option<String>,
+    /// Fields starting with this, e.g. '$d.kubernetes', or '$l' for all labels
+    /// (case-insensitive). Without '$d', '$l' or '$m' it is user data. Repeatable.
+    #[arg(long)]
+    prefix: Vec<String>,
 
-        /// Only these scopes. Repeatable.
-        #[arg(long = "scope", value_enum)]
-        scopes: Vec<KeypathScopeArg>,
+    /// Fields containing this (case-insensitive). Repeatable.
+    #[arg(long)]
+    contains: Vec<String>,
 
-        /// Only keypaths seen with this label value, as 'name=value'. Repeat a name to allow
-        /// several values; different names must all match.
-        #[arg(long = "label", visible_alias = "labels")]
-        labels: Vec<String>,
+    /// Only fields seen with this label value, as 'name=value'. Repeat a name to allow
+    /// several values; different names must all match.
+    #[arg(long = "label", visible_alias = "labels")]
+    labels: Vec<String>,
 
-        /// Start time in ISO 8601 or relative format.
-        #[arg(long, default_value = "now-1h")]
-        start: String,
+    /// Start time in ISO 8601 or relative format (at most 7 days before --end).
+    #[arg(long, default_value = "now-1h")]
+    start: String,
 
-        /// End time in ISO 8601 or relative format.
-        #[arg(long, default_value = "now")]
-        end: String,
+    /// End time in ISO 8601 or relative format.
+    #[arg(long, default_value = "now")]
+    end: String,
 
-        /// Maximum number of keypaths (server default 100).
-        #[arg(long)]
-        limit: Option<u32>,
-    },
+    /// Maximum number of fields (server default 100, at most 1000).
+    #[arg(long)]
+    limit: Option<u32>,
+}
 
-    /// Show sample values of one keypath.
-    #[command(after_help = "\
-Examples:
-  cx keypaths samples '$m.severity'
-  cx keypaths samples \"\\$d.tags['http.method']\" --label applicationName=checkout --label applicationName=payments
-  cx keypaths samples '$l.subsystemName' --dataset logs --dataset spans --start now-6h")]
-    Samples {
-        /// Keypath in DataPrime syntax, as `keypaths list` prints it.
-        keypath: String,
+#[derive(Args)]
+struct FieldValuesArgs {
+    /// Field in DataPrime syntax, as `datasets fields search` prints it.
+    keypath: String,
 
-        /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
-        /// several (up to 10); results are the union.
-        #[arg(long = "dataset", default_value = "logs")]
-        datasets: Vec<String>,
+    /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
+    /// several (up to 100); results are the union.
+    #[arg(long = "dataset", default_value = "logs")]
+    datasets: Vec<String>,
 
-        /// Only samples seen with this label value, as 'name=value'. Repeat a name to allow
-        /// several values; different names must all match.
-        #[arg(long = "label", visible_alias = "labels")]
-        labels: Vec<String>,
+    /// Only values seen with this label value, as 'name=value'. Repeat a name to allow
+    /// several values; different names must all match.
+    #[arg(long = "label", visible_alias = "labels")]
+    labels: Vec<String>,
 
-        /// Start time in ISO 8601 or relative format.
-        #[arg(long, default_value = "now-1h")]
-        start: String,
+    /// Start time in ISO 8601 or relative format (at most 7 days before --end).
+    #[arg(long, default_value = "now-1h")]
+    start: String,
 
-        /// End time in ISO 8601 or relative format.
-        #[arg(long, default_value = "now")]
-        end: String,
+    /// End time in ISO 8601 or relative format.
+    #[arg(long, default_value = "now")]
+    end: String,
 
-        /// Maximum number of samples (server default 20).
-        #[arg(long)]
-        limit: Option<u32>,
-    },
+    /// Maximum number of values (server default 20, at most 100).
+    #[arg(long)]
+    limit: Option<u32>,
 }
 
 /// Coralogix CLI - the observability backbone for AI agents and engineering teams.
@@ -176,7 +187,7 @@ Examples:
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
   \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
-  \x1b[1mkeypaths\x1b[0m           List a dataset's keypaths and sample their values
+  \x1b[1mdatasets\x1b[0m           Inspect datasets, their fields and sample values
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
@@ -852,10 +863,10 @@ Examples:
         offset: u32,
     },
 
-    /// List a dataset's keypaths with their DataPrime types, and sample their values.
-    Keypaths {
+    /// Inspect datasets, their fields and sample values.
+    Datasets {
         #[command(subcommand)]
-        cmd: KeypathsCmd,
+        cmd: DatasetsCmd,
     },
 
     /// DataPrime language reference and documentation.
@@ -5553,55 +5564,36 @@ async fn main() -> Result<()> {
                 }
             },
 
-            Commands::Keypaths { cmd } => match cmd {
-                KeypathsCmd::List {
+            Commands::Datasets {
+                cmd: DatasetsCmd::Fields { cmd, search },
+            } => match cmd.unwrap_or(FieldsCmd::Search(search)) {
+                FieldsCmd::Search(FieldsSearchArgs {
                     datasets,
-                    contains,
-                    prefix,
                     exact,
-                    scopes,
+                    prefix,
+                    contains,
                     labels,
                     start,
                     end,
                     limit,
-                } => {
-                    use commands::keypaths::api::{
-                        KeypathFilter, KeypathMatchMode, KeypathScope, ListKeypathsRequest,
-                    };
-                    let keypath_filter = [
-                        (contains, KeypathMatchMode::Contains),
-                        (prefix, KeypathMatchMode::StartsWith),
-                        (exact, KeypathMatchMode::Exact),
-                    ]
-                    .into_iter()
-                    .find_map(|(value, match_mode)| {
-                        value.map(|value| KeypathFilter { value, match_mode })
-                    });
-                    let request = ListKeypathsRequest {
+                }) => {
+                    let request = commands::keypaths::api::SearchKeypathsRequest {
                         datasets: commands::keypaths::parse_datasets(&datasets)?,
                         time_range: commands::keypaths::time_range(&start, &end)?,
-                        keypath_filter,
-                        scopes: scopes
-                            .into_iter()
-                            .map(|scope| match scope {
-                                KeypathScopeArg::D => KeypathScope::UserData,
-                                KeypathScopeArg::L => KeypathScope::Label,
-                                KeypathScopeArg::M => KeypathScope::Metadata,
-                            })
-                            .collect(),
+                        keypath_filter: commands::keypaths::keypath_filter(exact, prefix, contains),
                         dimension_filter: commands::keypaths::parse_labels(&labels)?,
                         limit,
                     };
-                    commands::keypaths::run_list(&targets, &request, output).await?;
+                    commands::keypaths::run_search(&targets, &request, output).await?;
                 }
-                KeypathsCmd::Samples {
+                FieldsCmd::Values(FieldValuesArgs {
                     keypath,
                     datasets,
                     labels,
                     start,
                     end,
                     limit,
-                } => {
+                }) => {
                     let request = commands::keypaths::api::GetKeypathSamplesRequest {
                         datasets: commands::keypaths::parse_datasets(&datasets)?,
                         keypath,
@@ -5702,5 +5694,38 @@ mod tests {
     #[test]
     fn parse_completions_shell_rejects_garbage() {
         assert!(parse_completions_shell("not-a-shell").is_err());
+    }
+
+    fn fields_command(args: &[&str]) -> Result<FieldsCmd, clap::Error> {
+        let cli = Cli::try_parse_from(["cx", "datasets", "fields"].iter().chain(args))?;
+        match cli.command {
+            Commands::Datasets {
+                cmd: DatasetsCmd::Fields { cmd, search },
+            } => Ok(cmd.unwrap_or(FieldsCmd::Search(search))),
+            _ => panic!("not a datasets fields command"),
+        }
+    }
+
+    #[test]
+    fn datasets_fields_without_a_subcommand_is_search() {
+        for args in [&["--contains", "pod"][..], &["search", "--contains", "pod"]] {
+            match fields_command(args).unwrap() {
+                FieldsCmd::Search(search) => assert_eq!(search.contains, ["pod"], "{args:?}"),
+                FieldsCmd::Values(_) => panic!("{args:?} is not a search"),
+            }
+        }
+    }
+
+    #[test]
+    fn datasets_fields_values_takes_the_field() {
+        match fields_command(&["values", "$m.severity"]).unwrap() {
+            FieldsCmd::Values(values) => assert_eq!(values.keypath, "$m.severity"),
+            FieldsCmd::Search(_) => panic!("not values"),
+        }
+    }
+
+    #[test]
+    fn search_flags_on_fields_conflict_with_a_subcommand() {
+        assert!(fields_command(&["--contains", "pod", "values", "$m.severity"]).is_err());
     }
 }

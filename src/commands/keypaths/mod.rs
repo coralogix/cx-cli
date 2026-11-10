@@ -13,8 +13,9 @@ use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTa
 use crate::render;
 use crate::time::parse_timestamp_nanos;
 use api::{
-    DimensionMatch, GetKeypathSamplesRequest, Keypath, KeypathsApi, ListKeypathsRequest,
-    NamedDataset, TimeRange,
+    DimensionFilter, DimensionFilters, DimensionMatch, GetKeypathSamplesRequest, KeypathFilter,
+    KeypathFilters, KeypathSearchResult, KeypathsApi, NamedDataset, SearchKeypathsRequest,
+    TimeRange,
 };
 
 const DEFAULT_DATASPACE: &str = "default";
@@ -34,10 +35,10 @@ pub fn parse_dataset(input: &str) -> Result<NamedDataset> {
     })
 }
 
-/// `--label name=value` flags as label matches: `name` may also be written `$l.name`, and repeating
-/// a name adds a value it may match.
-pub fn parse_labels(inputs: &[String]) -> Result<Vec<DimensionMatch>> {
-    let mut matches: Vec<DimensionMatch> = Vec::new();
+/// `--label name=value` flags as a dimension filter: `name` may also be written `$l.name`,
+/// repeating a name adds a value it may match, and different names must all match.
+pub fn parse_labels(inputs: &[String]) -> Result<Option<DimensionFilter>> {
+    let mut labels: Vec<(String, Vec<DimensionFilter>)> = Vec::new();
     for input in inputs {
         let Some((name, value)) = input.split_once('=') else {
             bail!(
@@ -50,15 +51,60 @@ pub fn parse_labels(inputs: &[String]) -> Result<Vec<DimensionMatch>> {
             bail!("invalid --label '{input}': the label name is empty");
         }
         let keypath = format!("$l.{name}");
-        match matches.iter_mut().find(|m| m.keypath == keypath) {
-            Some(existing) => existing.values.push(value.to_string()),
-            None => matches.push(DimensionMatch {
-                keypath,
-                values: vec![value.to_string()],
-            }),
+        let condition = DimensionFilter::Match(DimensionMatch {
+            keypath: keypath.clone(),
+            value: value.to_string(),
+        });
+        match labels.iter_mut().find(|(existing, _)| *existing == keypath) {
+            Some((_, matches)) => matches.push(condition),
+            None => labels.push((keypath, vec![condition])),
         }
     }
-    Ok(matches)
+    let mut filters: Vec<DimensionFilter> = labels
+        .into_iter()
+        .map(|(_, mut matches)| {
+            if matches.len() == 1 {
+                matches.remove(0)
+            } else {
+                DimensionFilter::Any(DimensionFilters { filters: matches })
+            }
+        })
+        .collect();
+    Ok(match filters.len() {
+        0 => None,
+        1 => filters.pop(),
+        _ => Some(DimensionFilter::All(DimensionFilters { filters })),
+    })
+}
+
+/// The keypath filter for `--exact`, `--prefix` and `--contains`: repeating a flag means any of
+/// its values, and different flags must all hold.
+pub fn keypath_filter(
+    exact: Vec<String>,
+    prefixes: Vec<String>,
+    contains: Vec<String>,
+) -> Option<KeypathFilter> {
+    let any_of = |values: Vec<String>, condition: fn(String) -> KeypathFilter| {
+        let mut filters: Vec<KeypathFilter> = values.into_iter().map(condition).collect();
+        match filters.len() {
+            0 => None,
+            1 => filters.pop(),
+            _ => Some(KeypathFilter::Any(KeypathFilters { filters })),
+        }
+    };
+    let mut filters: Vec<KeypathFilter> = [
+        any_of(exact, KeypathFilter::Exact),
+        any_of(prefixes, KeypathFilter::Prefix),
+        any_of(contains, KeypathFilter::Contains),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    match filters.len() {
+        0 => None,
+        1 => filters.pop(),
+        _ => Some(KeypathFilter::All(KeypathFilters { filters })),
+    }
 }
 
 pub fn parse_datasets(inputs: &[String]) -> Result<Vec<NamedDataset>> {
@@ -72,26 +118,26 @@ pub fn time_range(start: &str, end: &str) -> Result<TimeRange> {
     })
 }
 
-pub async fn run_list(
+pub async fn run_search(
     targets: &[Arc<ExecutionTarget>],
-    request: &ListKeypathsRequest,
+    request: &SearchKeypathsRequest,
     output: OutputFormat,
 ) -> Result<()> {
-    eprintln!("{}", "Listing keypaths…".dimmed());
+    eprintln!("{}", "Searching keypaths…".dimmed());
 
     let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |target| {
         let request = request.clone();
         async move {
             KeypathsApi::new(&target.client)
-                .list(&request)
+                .search(&request)
                 .await
                 .map_err(Into::into)
         }
     })
     .await;
 
-    let mut keypaths: Vec<(String, Keypath)> = Vec::new();
+    let mut keypaths: Vec<(String, KeypathSearchResult)> = Vec::new();
     let mut truncated = false;
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         truncated |= resp.truncated;
@@ -102,7 +148,7 @@ pub async fn run_list(
     if truncated {
         eprintln!(
             "{}",
-            "More keypaths matched than --limit. Narrow with --contains, --prefix, --scope or --label, or raise --limit."
+            "More fields matched than --limit. Narrow with --prefix, --contains or --label, or raise --limit."
                 .yellow()
         );
     }
@@ -123,7 +169,7 @@ pub async fn run_list(
         }
         OutputFormat::Text => {
             if keypaths.is_empty() {
-                render::print_no_results("No keypaths found.");
+                render::print_no_results("No fields found.");
                 return Ok(());
             }
             let rows = keypaths
@@ -190,7 +236,7 @@ pub async fn run_samples(
         }
         OutputFormat::Text => {
             if samples.is_empty() {
-                render::print_no_results("No samples found.");
+                render::print_no_results("No values found.");
                 return Ok(());
             }
             let rows = samples
@@ -236,35 +282,62 @@ mod tests {
         }
     }
 
+    fn label(keypath: &str, values: &[&str]) -> DimensionFilter {
+        let mut matches: Vec<DimensionFilter> = values
+            .iter()
+            .map(|value| {
+                DimensionFilter::Match(DimensionMatch {
+                    keypath: keypath.into(),
+                    value: value.to_string(),
+                })
+            })
+            .collect();
+        if matches.len() == 1 {
+            matches.remove(0)
+        } else {
+            DimensionFilter::Any(DimensionFilters { filters: matches })
+        }
+    }
+
     #[test]
-    fn label_names_get_the_label_root() {
+    fn no_labels_is_no_filter() {
+        assert_eq!(parse_labels(&[]).unwrap(), None);
+    }
+
+    #[test]
+    fn one_label_is_a_match() {
         assert_eq!(
-            parse_labels(&["applicationName=a=b".into(), "$l.subsystemName=api".into()]).unwrap(),
-            [
-                DimensionMatch {
-                    keypath: "$l.applicationName".into(),
-                    values: vec!["a=b".into()]
-                },
-                DimensionMatch {
-                    keypath: "$l.subsystemName".into(),
-                    values: vec!["api".into()]
-                },
-            ]
+            parse_labels(&["applicationName=a=b".into()]).unwrap(),
+            Some(label("$l.applicationName", &["a=b"]))
         );
     }
 
     #[test]
-    fn repeated_label_names_merge_their_values() {
+    fn different_labels_must_all_match() {
+        assert_eq!(
+            parse_labels(&[
+                "applicationName=checkout".into(),
+                "$l.subsystemName=api".into()
+            ])
+            .unwrap(),
+            Some(DimensionFilter::All(DimensionFilters {
+                filters: vec![
+                    label("$l.applicationName", &["checkout"]),
+                    label("$l.subsystemName", &["api"]),
+                ]
+            }))
+        );
+    }
+
+    #[test]
+    fn a_repeated_label_name_matches_any_of_its_values() {
         assert_eq!(
             parse_labels(&[
                 "applicationName=checkout".into(),
                 "$l.applicationName=payments".into()
             ])
             .unwrap(),
-            [DimensionMatch {
-                keypath: "$l.applicationName".into(),
-                values: vec!["checkout".into(), "payments".into()]
-            }]
+            Some(label("$l.applicationName", &["checkout", "payments"]))
         );
     }
 
@@ -273,5 +346,44 @@ mod tests {
         for bad in ["applicationName", "=checkout", "$l.=checkout", ""] {
             assert!(parse_labels(&[bad.into()]).is_err(), "{bad}");
         }
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn no_keypath_flags_is_no_filter() {
+        assert_eq!(keypath_filter(vec![], vec![], vec![]), None);
+    }
+
+    #[test]
+    fn one_keypath_flag_is_one_condition() {
+        assert_eq!(
+            keypath_filter(vec![], strings(&["$d"]), vec![]),
+            Some(KeypathFilter::Prefix("$d".into()))
+        );
+    }
+
+    #[test]
+    fn repeated_flags_mean_any_and_different_flags_must_all_hold() {
+        assert_eq!(
+            keypath_filter(
+                vec![],
+                strings(&["$d.kubernetes", "$d.k8s"]),
+                strings(&["pod"])
+            ),
+            Some(KeypathFilter::All(KeypathFilters {
+                filters: vec![
+                    KeypathFilter::Any(KeypathFilters {
+                        filters: vec![
+                            KeypathFilter::Prefix("$d.kubernetes".into()),
+                            KeypathFilter::Prefix("$d.k8s".into()),
+                        ]
+                    }),
+                    KeypathFilter::Contains("pod".into()),
+                ]
+            }))
+        );
     }
 }

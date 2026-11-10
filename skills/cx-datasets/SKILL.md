@@ -70,6 +70,9 @@ text output is the copy-pasteable `source` argument.
    cx dataprime query --source system/labs.limitViolations 'filter timestamp > now()-1h'
    ```
 
+   `--source` is a `cx dataprime query` flag — `cx logs` and `cx spans` always
+   query the legacy `logs`/`spans` datasets and take no source override.
+
 ## DPXL Filter Syntax
 
 `--filter` takes a DPXL expression **including its version tag** — it must start

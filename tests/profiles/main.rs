@@ -1205,3 +1205,198 @@ fn refresh_leaves_labeled_api_key_profile_unchanged() {
         "refresh must not rewrite labels when it refuses an API-key profile"
     );
 }
+
+// ── JSON output ──────────────────────────────────────────────────────────────
+
+#[test]
+fn list_json_includes_all_required_fields() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"secret-key-123\"\nregion = \"eu2\"\nlabels = [\"prod\", \"eu\"]\ndefault_output_format = \"json\"\n",
+    );
+    write_profile(
+        &tmp,
+        "plain",
+        "auth = \"o_auth\"\ncredential_storage = \"file\"\nregion = \"us1\"\n",
+    );
+    seed_config(&tmp, "default_profile = \"demo\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    assert_eq!(profiles.len(), 2, "should have 2 profiles");
+
+    let demo = profiles
+        .iter()
+        .find(|p| p["name"] == "demo")
+        .expect("demo profile should be present");
+    assert_eq!(demo["name"], "demo");
+    assert_eq!(demo["labels"], serde_json::json!(["prod", "eu"]));
+    assert_eq!(demo["region"], "eu2");
+    assert_eq!(demo["auth"], "api-key");
+    assert_eq!(demo["output"], "json");
+    assert_eq!(demo["default"], true);
+
+    let plain = profiles
+        .iter()
+        .find(|p| p["name"] == "plain")
+        .expect("plain profile should be present");
+    assert_eq!(plain["name"], "plain");
+    assert_eq!(plain["labels"], serde_json::json!([]));
+    assert_eq!(plain["region"], "us1");
+    assert_eq!(plain["auth"], "oauth");
+    assert_eq!(plain["output"], serde_json::Value::Null);
+    assert_eq!(plain["default"], false);
+}
+
+#[test]
+fn list_json_excludes_secrets() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "keyed",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"secret-key-123\"\nregion = \"eu1\"\n",
+    );
+    write_profile(
+        &tmp,
+        "oauth",
+        "auth = \"o_auth\"\ncredential_storage = \"file\"\nregion = \"us1\"\n\n[oauth_tokens]\naccess_token = \"secret-token-456\"\nexpiry = 4102444800\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        !stdout.contains("secret-key-123"),
+        "API key should not appear in JSON output: {stdout}"
+    );
+    assert!(
+        !stdout.contains("secret-token-456"),
+        "OAuth token should not appear in JSON output: {stdout}"
+    );
+    assert!(
+        !stdout.contains("api_key") || !stdout.contains("oauth_tokens"),
+        "Secret field names should not appear in JSON output: {stdout}"
+    );
+
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    for profile in &profiles {
+        let obj = profile.as_object().expect("profile should be an object");
+        assert!(
+            !obj.contains_key("api_key"),
+            "api_key field should not be present"
+        );
+        assert!(
+            !obj.contains_key("oauth_tokens"),
+            "oauth_tokens field should not be present"
+        );
+    }
+}
+
+#[test]
+fn list_json_with_label_filter_applies() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "prod-eu",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"prod\", \"eu\"]\n",
+    );
+    write_profile(
+        &tmp,
+        "staging",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"staging\"]\n",
+    );
+    write_profile(
+        &tmp,
+        "bare",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"us1\"\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--label", "prod", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+
+    assert_eq!(profiles.len(), 1, "should have 1 profile");
+    assert_eq!(profiles[0]["name"], "prod-eu");
+}
+
+#[test]
+fn list_json_empty_result_prints_empty_array() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"prod\"]\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--label", "missing", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "empty filter should succeed, stderr: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(stdout, "[]", "empty result should be [], got: {stdout}");
+
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    assert_eq!(profiles.len(), 0, "should have 0 profiles");
+}
+
+#[test]
+fn list_json_no_profiles_prints_empty_array() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(stdout, "[]", "no profiles should print [], got: {stdout}");
+}
+
+#[test]
+fn list_json_global_flag_before_profiles() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["--output", "json", "profiles", "list"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    assert_eq!(profiles.len(), 1, "should have 1 profile");
+    assert_eq!(profiles[0]["name"], "demo");
+}

@@ -201,6 +201,10 @@ struct Cli {
     about = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 )]
 struct ProfilesCli {
+    /// Output format (text, json, toon).
+    #[arg(long, short = 'o', global = true, value_name = "FORMAT")]
+    output: Option<OutputFormat>,
+
     #[command(subcommand)]
     command: ProfilesTopLevel,
 }
@@ -3418,8 +3422,10 @@ async fn main() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        let global_config = config::load_config().unwrap_or_default();
+        let output = profiles_cli.output.unwrap_or(global_config.default_output_format);
         let result = match cmd {
-            ProfilesCmd::List { label } => commands::profiles::run_list(label),
+            ProfilesCmd::List { label } => commands::profiles::run_list(label, output),
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3452,7 +3458,7 @@ async fn main() -> Result<()> {
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
-        update_check::maybe_print_notice(OutputFormat::Text);
+        update_check::maybe_print_notice(output);
         return result;
     }
     // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
@@ -3518,8 +3524,10 @@ async fn main() -> Result<()> {
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // it falls through to here.
     if let Commands::Profiles { cmd } = cli.command {
+        let global_config = config::load_config().unwrap_or_default();
+        let output = cli.output.unwrap_or(global_config.default_output_format);
         let result = match cmd {
-            ProfilesCmd::List { label } => commands::profiles::run_list(label),
+            ProfilesCmd::List { label } => commands::profiles::run_list(label, output),
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3552,7 +3560,7 @@ async fn main() -> Result<()> {
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
         };
-        update_check::maybe_print_notice(OutputFormat::Text);
+        update_check::maybe_print_notice(output);
         return result;
     }
 

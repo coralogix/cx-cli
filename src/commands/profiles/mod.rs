@@ -414,7 +414,7 @@ fn no_profiles_for_labels(labels: &[String]) -> String {
     }
 }
 
-pub fn run_list(label_filter: Vec<String>) -> Result<()> {
+pub fn run_list(label_filter: Vec<String>, output: OutputFormat) -> Result<()> {
     let filter = crate::config::parse_label_args(label_filter);
     let global_config = load_config().unwrap_or_default();
 
@@ -429,18 +429,55 @@ pub fn run_list(label_filter: Vec<String>) -> Result<()> {
         .collect();
 
     if entries.is_empty() {
-        println!("No profiles configured. Run `cx profiles add` to create one.");
+        if output == OutputFormat::Json {
+            println!("[]");
+        } else {
+            println!("No profiles configured. Run `cx profiles add` to create one.");
+        }
         return Ok(());
     }
 
     if !filter.is_empty() {
         entries.retain(|(_, profile)| profile_has_any_label(profile, &filter));
         if entries.is_empty() {
-            println!("{}", no_profiles_for_labels(&filter));
+            if output == OutputFormat::Json {
+                println!("[]");
+            } else {
+                println!("{}", no_profiles_for_labels(&filter));
+            }
             return Ok(());
         }
     }
 
+    match output {
+        OutputFormat::Json => {
+            let json_profiles: Vec<serde_json::Value> = entries
+                .iter()
+                .map(|(name, profile)| {
+                    serde_json::json!({
+                        "name": name,
+                        "labels": profile.labels,
+                        "region": profile.region.to_string(),
+                        "auth": match profile.auth {
+                            AuthKind::OAuth => "oauth",
+                            AuthKind::ApiKey => "api-key",
+                        },
+                        "output": profile.default_output_format.map(|f| f.as_str()),
+                        "default": *name == global_config.default_profile,
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&json_profiles)?);
+        }
+        OutputFormat::Text | OutputFormat::Toon => {
+            render_text_table(&entries, &global_config);
+        }
+    }
+
+    Ok(())
+}
+
+fn render_text_table(entries: &[(String, Profile)], global_config: &crate::config::Config) {
     // Column widths
     let name_w = entries
         .iter()
@@ -487,7 +524,7 @@ pub fn run_list(label_filter: Vec<String>) -> Result<()> {
         output_w = output_w,
     );
 
-    for (name, profile) in &entries {
+    for (name, profile) in entries {
         let label = display_labels(&profile.labels);
         let region = profile.region.to_string();
         let auth = match profile.auth {
@@ -517,8 +554,6 @@ pub fn run_list(label_filter: Vec<String>) -> Result<()> {
             output_w = output_w,
         );
     }
-
-    Ok(())
 }
 
 // ── Add ───────────────────────────────────────────────────────────────────────

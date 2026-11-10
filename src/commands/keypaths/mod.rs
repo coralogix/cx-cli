@@ -11,12 +11,13 @@ use crate::commands::dashboards::profiled_api_row_to_json;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use crate::time::parse_timestamp_nanos;
+use crate::time::parse_timestamp_nanos_at;
 use api::{
     DimensionFilter, DimensionFilters, DimensionMatch, GetKeypathSamplesRequest, KeypathFilter,
     KeypathFilters, KeypathSearchResult, KeypathsApi, NamedDataset, SearchKeypathsRequest,
     TimeRange,
 };
+use chrono::Utc;
 
 const DEFAULT_DATASPACE: &str = "default";
 
@@ -111,10 +112,12 @@ pub fn parse_datasets(inputs: &[String]) -> Result<Vec<NamedDataset>> {
     inputs.iter().map(|d| parse_dataset(d)).collect()
 }
 
+/// Both bounds resolve against one clock reading, so `now-7d`..`now` spans exactly seven days.
 pub fn time_range(start: &str, end: &str) -> Result<TimeRange> {
+    let now = Utc::now();
     Ok(TimeRange {
-        start: parse_timestamp_nanos(start)?,
-        end: parse_timestamp_nanos(end)?,
+        start: parse_timestamp_nanos_at(start, now)?,
+        end: parse_timestamp_nanos_at(end, now)?,
     })
 }
 
@@ -297,6 +300,14 @@ mod tests {
         } else {
             DimensionFilter::Any(DimensionFilters { filters: matches })
         }
+    }
+
+    #[test]
+    fn relative_bounds_share_one_clock_reading() {
+        let range = time_range("now-7d", "now").unwrap();
+        let start = chrono::DateTime::parse_from_rfc3339(&range.start).unwrap();
+        let end = chrono::DateTime::parse_from_rfc3339(&range.end).unwrap();
+        assert_eq!(end - start, chrono::Duration::days(7));
     }
 
     #[test]

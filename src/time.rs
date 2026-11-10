@@ -19,7 +19,13 @@ pub fn parse_timestamp(input: &str) -> Result<String> {
 /// Parse the same time expressions as [`parse_timestamp`], returning an RFC 3339
 /// instant at nanosecond precision.
 pub fn parse_timestamp_nanos(input: &str) -> Result<String> {
-    Ok(parse_datetime(input)?.to_rfc3339_opts(SecondsFormat::Nanos, true))
+    parse_timestamp_nanos_at(input, Utc::now())
+}
+
+/// [`parse_timestamp_nanos`] with `now` as the current time, so several bounds can share one
+/// clock reading.
+pub fn parse_timestamp_nanos_at(input: &str, now: DateTime<Utc>) -> Result<String> {
+    Ok(parse_datetime_at(input, now)?.to_rfc3339_opts(SecondsFormat::Nanos, true))
 }
 
 /// Parse the same time expressions as [`parse_timestamp`], returning a Unix
@@ -30,10 +36,14 @@ pub fn parse_timestamp_epoch_seconds(input: &str) -> Result<i64> {
 }
 
 fn parse_datetime(input: &str) -> Result<DateTime<Utc>> {
+    parse_datetime_at(input, Utc::now())
+}
+
+fn parse_datetime_at(input: &str, now: DateTime<Utc>) -> Result<DateTime<Utc>> {
     let trimmed = input.trim();
 
     let dt: DateTime<Utc> = if trimmed.eq_ignore_ascii_case("now") {
-        Utc::now()
+        now
     } else if let Some(rest) = trimmed.strip_prefix("now") {
         let rest = rest.trim();
         if let Some(duration_str) = rest.strip_prefix('-') {
@@ -47,7 +57,7 @@ fn parse_datetime(input: &str) -> Result<DateTime<Utc>> {
                 )
             })?;
             let chrono_duration = chrono::Duration::from_std(std_duration)?;
-            Utc::now() - chrono_duration
+            now - chrono_duration
         } else {
             bail!(
                 "Invalid time expression '{}'. \

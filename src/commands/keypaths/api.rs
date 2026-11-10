@@ -1,16 +1,16 @@
-//! Schema Store keypaths HTTP client.
+//! Schema Store keypath search HTTP client.
 //!
-//! - [`LIST_KEYPATHS_PATH`] and [`GET_KEYPATH_SAMPLES_PATH`] (`POST`), JSON in the proto3 JSON
-//!   form of `com.coralogixapis.schemastore.v1.KeypathsService` (cx-api-schema-store).
-//! - Requests over a server-side cap (time range, `limit`, dataset count) are rejected with 400;
-//!   they are never clamped.
+//! - [`SEARCH_KEYPATHS_PATH`] and [`GET_KEYPATH_SAMPLES_PATH`] (`POST`), JSON in the proto3 JSON
+//!   form of `com.coralogixapis.schemastore.v1.SchemaService` (cx-api-schema-store).
+//! - Requests over a server-side cap (time range, `limit`, dataset count, filter size) are rejected
+//!   with 400; they are never clamped.
 
 use serde::{Deserialize, Serialize};
 
 use crate::api_client::CxClient;
 use crate::error::Result as CxResult;
 
-pub const LIST_KEYPATHS_PATH: &str = "/api/v1/schema-store/keypaths/list";
+pub const SEARCH_KEYPATHS_PATH: &str = "/api/v1/schema-store/keypaths/search";
 pub const GET_KEYPATH_SAMPLES_PATH: &str = "/api/v1/schema-store/keypaths/samples";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -25,51 +25,52 @@ pub struct TimeRange {
     pub end: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub enum KeypathMatchMode {
-    #[serde(rename = "KEYPATH_MATCH_MODE_CONTAINS")]
-    Contains,
-    #[serde(rename = "KEYPATH_MATCH_MODE_STARTS_WITH")]
-    StartsWith,
-    #[serde(rename = "KEYPATH_MATCH_MODE_EXACT")]
-    Exact,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub enum KeypathScope {
-    #[serde(rename = "KEYPATH_SCOPE_USER_DATA")]
-    UserData,
-    #[serde(rename = "KEYPATH_SCOPE_LABEL")]
-    Label,
-    #[serde(rename = "KEYPATH_SCOPE_METADATA")]
-    Metadata,
-}
-
-#[derive(Debug, Clone, Serialize)]
+/// One condition on a keypath; serializes as `{"prefix": "..."}`, `{"all": {"filters": [...]}}`, ...
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KeypathFilter {
-    pub value: String,
-    pub match_mode: KeypathMatchMode,
+pub enum KeypathFilter {
+    Exact(String),
+    Prefix(String),
+    Contains(String),
+    All(KeypathFilters),
+    Any(KeypathFilters),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct KeypathFilters {
+    pub filters: Vec<KeypathFilter>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DimensionFilter {
+    Match(DimensionMatch),
+    /// Every one holds.
+    All(DimensionFilters),
+    /// At least one holds; the server accepts matches on one dimension only.
+    Any(DimensionFilters),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DimensionFilters {
+    pub filters: Vec<DimensionFilter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DimensionMatch {
     pub keypath: String,
-    /// Any of these matches.
-    pub values: Vec<String>,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ListKeypathsRequest {
+pub struct SearchKeypathsRequest {
     pub datasets: Vec<NamedDataset>,
     pub time_range: TimeRange,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keypath_filter: Option<KeypathFilter>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub scopes: Vec<KeypathScope>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub dimension_filter: Vec<DimensionMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimension_filter: Option<DimensionFilter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }
@@ -80,24 +81,24 @@ pub struct GetKeypathSamplesRequest {
     pub datasets: Vec<NamedDataset>,
     pub keypath: String,
     pub time_range: TimeRange,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub dimension_filter: Vec<DimensionMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimension_filter: Option<DimensionFilter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }
 
-/// One listed keypath: its DataPrime spelling and the DataPrime types it held.
+/// One found keypath: its DataPrime spelling and the DataPrime types it held.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Keypath {
+pub struct KeypathSearchResult {
     pub keypath: String,
     #[serde(default)]
     pub types: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ListKeypathsResponse {
+pub struct SearchKeypathsResponse {
     #[serde(default)]
-    pub keypaths: Vec<Keypath>,
+    pub keypaths: Vec<KeypathSearchResult>,
     /// proto3 JSON omits `false`.
     #[serde(default)]
     pub truncated: bool,
@@ -118,9 +119,12 @@ impl<'a> KeypathsApi<'a> {
         Self { client }
     }
 
-    pub async fn list(&self, request: &ListKeypathsRequest) -> CxResult<ListKeypathsResponse> {
+    pub async fn search(
+        &self,
+        request: &SearchKeypathsRequest,
+    ) -> CxResult<SearchKeypathsResponse> {
         self.client
-            .post(LIST_KEYPATHS_PATH, &serde_json::to_value(request)?)
+            .post(SEARCH_KEYPATHS_PATH, &serde_json::to_value(request)?)
             .await
     }
 
@@ -154,19 +158,33 @@ mod tests {
     }
 
     #[test]
-    fn serializes_full_list_request() {
-        let request = ListKeypathsRequest {
+    fn serializes_full_search_request() {
+        let request = SearchKeypathsRequest {
             datasets: logs(),
             time_range: range(),
-            keypath_filter: Some(KeypathFilter {
-                value: "$d.kubernetes".into(),
-                match_mode: KeypathMatchMode::StartsWith,
-            }),
-            scopes: vec![KeypathScope::UserData, KeypathScope::Label],
-            dimension_filter: vec![DimensionMatch {
-                keypath: "$l.applicationName".into(),
-                values: vec!["checkout".into(), "payments".into()],
-            }],
+            keypath_filter: Some(KeypathFilter::All(KeypathFilters {
+                filters: vec![
+                    KeypathFilter::Any(KeypathFilters {
+                        filters: vec![
+                            KeypathFilter::Prefix("$d.kubernetes".into()),
+                            KeypathFilter::Prefix("$d.k8s".into()),
+                        ],
+                    }),
+                    KeypathFilter::Contains("pod".into()),
+                ],
+            })),
+            dimension_filter: Some(DimensionFilter::Any(DimensionFilters {
+                filters: vec![
+                    DimensionFilter::Match(DimensionMatch {
+                        keypath: "$l.applicationName".into(),
+                        value: "checkout".into(),
+                    }),
+                    DimensionFilter::Match(DimensionMatch {
+                        keypath: "$l.applicationName".into(),
+                        value: "payments".into(),
+                    }),
+                ],
+            })),
             limit: Some(50),
         };
         assert_eq!(
@@ -174,27 +192,26 @@ mod tests {
             json!({
                 "datasets": [{"dataspace": "default", "dataset": "logs"}],
                 "timeRange": {"start": "2026-11-06T10:00:00Z", "end": "2026-11-06T11:00:00Z"},
-                "keypathFilter": {
-                    "value": "$d.kubernetes",
-                    "matchMode": "KEYPATH_MATCH_MODE_STARTS_WITH"
-                },
-                "scopes": ["KEYPATH_SCOPE_USER_DATA", "KEYPATH_SCOPE_LABEL"],
-                "dimensionFilter": [
-                    {"keypath": "$l.applicationName", "values": ["checkout", "payments"]}
-                ],
+                "keypathFilter": {"all": {"filters": [
+                    {"any": {"filters": [{"prefix": "$d.kubernetes"}, {"prefix": "$d.k8s"}]}},
+                    {"contains": "pod"}
+                ]}},
+                "dimensionFilter": {"any": {"filters": [
+                    {"match": {"keypath": "$l.applicationName", "value": "checkout"}},
+                    {"match": {"keypath": "$l.applicationName", "value": "payments"}}
+                ]}},
                 "limit": 50
             })
         );
     }
 
     #[test]
-    fn omits_unset_list_fields() {
-        let request = ListKeypathsRequest {
+    fn omits_unset_search_fields() {
+        let request = SearchKeypathsRequest {
             datasets: logs(),
             time_range: range(),
             keypath_filter: None,
-            scopes: vec![],
-            dimension_filter: vec![],
+            dimension_filter: None,
             limit: None,
         };
         let value = serde_json::to_value(&request).unwrap();
@@ -213,7 +230,12 @@ mod tests {
             datasets: logs(),
             keypath: "$m.severity".into(),
             time_range: range(),
-            dimension_filter: vec![],
+            dimension_filter: Some(DimensionFilter::All(DimensionFilters {
+                filters: vec![DimensionFilter::Match(DimensionMatch {
+                    keypath: "$l.subsystemName".into(),
+                    value: "api".into(),
+                })],
+            })),
             limit: Some(5),
         };
         assert_eq!(
@@ -222,14 +244,17 @@ mod tests {
                 "datasets": [{"dataspace": "default", "dataset": "logs"}],
                 "keypath": "$m.severity",
                 "timeRange": {"start": "2026-11-06T10:00:00Z", "end": "2026-11-06T11:00:00Z"},
+                "dimensionFilter": {"all": {"filters": [
+                    {"match": {"keypath": "$l.subsystemName", "value": "api"}}
+                ]}},
                 "limit": 5
             })
         );
     }
 
     #[test]
-    fn deserializes_list_response() {
-        let resp: ListKeypathsResponse = serde_json::from_value(json!({
+    fn deserializes_search_response() {
+        let resp: SearchKeypathsResponse = serde_json::from_value(json!({
             "keypaths": [
                 {"keypath": "$d.kubernetes.pod_name", "types": ["string"]},
                 {"keypath": "$d.tags['http.method']", "types": ["number", "string"]}
@@ -244,9 +269,9 @@ mod tests {
 
     #[test]
     fn deserializes_empty_responses() {
-        let list: ListKeypathsResponse = serde_json::from_value(json!({})).unwrap();
-        assert!(list.keypaths.is_empty());
-        assert!(!list.truncated);
+        let search: SearchKeypathsResponse = serde_json::from_value(json!({})).unwrap();
+        assert!(search.keypaths.is_empty());
+        assert!(!search.truncated);
         let samples: GetKeypathSamplesResponse = serde_json::from_value(json!({})).unwrap();
         assert!(samples.samples.is_empty());
     }

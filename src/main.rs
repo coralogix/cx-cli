@@ -3423,7 +3423,9 @@ async fn main() -> Result<()> {
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let global_config = config::load_config().unwrap_or_default();
-        let output = profiles_cli.output.unwrap_or(global_config.default_output_format);
+        let output = profiles_cli
+            .output
+            .unwrap_or(global_config.default_output_format);
         let result = match cmd {
             ProfilesCmd::List { label } => commands::profiles::run_list(label, output),
             ProfilesCmd::Add {

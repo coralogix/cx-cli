@@ -804,7 +804,18 @@ impl Commands {
 #[derive(Subcommand)]
 enum ProfilesCmd {
     /// List all configured profiles.
-    List,
+    ///
+    /// `--label` filters the table. Repeat the flag or pass a comma-separated
+    /// list. A profile is shown when it has any of the given labels.
+    List {
+        /// Only show profiles that have any of these labels.
+        ///
+        /// Repeat the flag (`--label prod --label eu`) or pass a comma-separated
+        /// list (`--label prod,eu`). A profile matches when it has at least one
+        /// of the labels. Matching is exact after surrounding whitespace is trimmed.
+        #[arg(long = "label", value_name = "LABEL")]
+        label: Vec<String>,
+    },
     /// Add or reconfigure a profile.
     ///
     /// Values supplied via flags/env are never prompted for. On a terminal,
@@ -818,6 +829,7 @@ Examples:
   cx profiles add prod --region eu2                      # region answered, rest prompted
   cx profiles add --oauth --region eu2                   # straight to browser login
   cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
+  cx profiles add prod --region eu2 --label prod --label eu
   CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite")]
     Add {
         /// Profile name to configure (prompted if not provided; defaults to
@@ -859,12 +871,19 @@ Examples:
         /// written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
+        /// Labels for this profile, such as `prod` or `eu`.
+        ///
+        /// Repeat the flag or pass a comma-separated list (`--label prod,eu`).
+        /// Whitespace is trimmed; empty values and duplicates are dropped.
+        /// When reconfiguring, omit this flag to keep the profile's existing labels.
+        #[arg(long = "label", value_name = "LABEL")]
+        label: Vec<String>,
     },
     /// Sign an OAuth profile in again, keeping its settings.
     ///
     /// Opens the browser sign-in with the profile's team preselected and saves
     /// the new tokens only when the sign-in is for that same team. Region,
-    /// credential storage, output format and label are not changed. To change
+    /// credential storage, output format and labels are not changed. To change
     /// those, use `cx profiles add <name>`.
     Refresh {
         /// Profile name to sign in again.
@@ -3400,7 +3419,7 @@ async fn main() -> Result<()> {
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
-            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::List { label } => commands::profiles::run_list(label),
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3412,6 +3431,7 @@ async fn main() -> Result<()> {
                 force,
                 set_default,
                 disable_olly,
+                label,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3424,6 +3444,7 @@ async fn main() -> Result<()> {
                     set_default,
                     disable_olly,
                     quick: false,
+                    labels: (!label.is_empty()).then_some(label),
                 })
                 .await
             }
@@ -3498,7 +3519,7 @@ async fn main() -> Result<()> {
     // it falls through to here.
     if let Commands::Profiles { cmd } = cli.command {
         let result = match cmd {
-            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::List { label } => commands::profiles::run_list(label),
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3510,6 +3531,7 @@ async fn main() -> Result<()> {
                 force,
                 set_default,
                 disable_olly,
+                label,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3522,6 +3544,7 @@ async fn main() -> Result<()> {
                     set_default,
                     disable_olly,
                     quick: false,
+                    labels: (!label.is_empty()).then_some(label),
                 })
                 .await
             }

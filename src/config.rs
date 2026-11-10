@@ -317,6 +317,55 @@ pub struct StoredOAuthTokens {
     pub expiry: Option<u64>,
 }
 
+/// Trim label values, drop empties, and drop duplicates (first occurrence wins).
+/// Comparison is exact and case-sensitive.
+pub(crate) fn normalize_labels<I, S>(values: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut out = Vec::new();
+    for value in values {
+        let trimmed = value.as_ref().trim();
+        if trimmed.is_empty() || out.iter().any(|existing| existing == trimmed) {
+            continue;
+        }
+        out.push(trimmed.to_string());
+    }
+    out
+}
+
+/// Parse repeatable `--label` values. Each value may itself be comma-separated
+/// (`--label prod,eu` and `--label prod --label eu` are the same).
+pub(crate) fn parse_label_args<I, S>(values: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut parts = Vec::new();
+    for value in values {
+        for part in value.as_ref().split(',') {
+            parts.push(part.to_string());
+        }
+    }
+    normalize_labels(parts)
+}
+
+/// `labels` is the canonical key. When it is missing or normalizes to nothing,
+/// a legacy `label = "prod"` string is loaded as a one-item list.
+fn labels_from_file(label: Option<String>, labels: Option<Vec<String>>) -> Vec<String> {
+    if let Some(labels) = labels {
+        let normalized = normalize_labels(labels);
+        if !normalized.is_empty() {
+            return normalized;
+        }
+    }
+    match label {
+        Some(label) => normalize_labels([label]),
+        None => Vec::new(),
+    }
+}
+
 /// A named profile storing credentials and endpoint info.
 ///
 /// `credential_storage` selects where secrets live for both auth modes:
@@ -325,7 +374,7 @@ pub struct StoredOAuthTokens {
 ///   - `"os_store"`: secrets are stored in the OS credential store
 ///     (macOS Keychain, Windows Credential Manager, etc.) and the inline
 ///     fields are absent from the TOML.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Profile {
     /// Authentication method for this profile.
     /// Defaults to `ApiKey` so that existing profiles without this field continue to work.
@@ -340,8 +389,11 @@ pub struct Profile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     pub region: Region,
-    /// Optional free-form label (e.g. "prod", "staging")
-    pub label: Option<String>,
+    /// Free-form labels (for example "prod", "eu"). Empty when the profile has
+    /// none. Written as a `labels` array. A legacy `label` string is still
+    /// read and becomes a one-item list.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
     /// OAuth: override the OAuth client ID.
     /// Required for custom regions; hard-coded for known Coralogix regions.
     /// Not written to the TOML for known regions (looked up from `KNOWN_ENVIRONMENTS`).
@@ -395,6 +447,72 @@ pub struct Profile {
     /// [`Self::cached_team_id`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_team_name: Option<String>,
+}
+
+/// On-disk profile shape. `label` is the legacy singular key; `labels` is what
+/// current versions write. Unknown keys are ignored, matching historical
+/// profile files.
+#[derive(Deserialize)]
+struct ProfileDe {
+    #[serde(default)]
+    auth: AuthKind,
+    #[serde(default)]
+    credential_storage: CredentialStorage,
+    #[serde(default)]
+    api_key: Option<String>,
+    region: Region,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    labels: Option<Vec<String>>,
+    #[serde(default)]
+    oauth_client_id: Option<String>,
+    #[serde(default)]
+    oauth_base_url: Option<String>,
+    #[serde(default)]
+    oauth_tokens: Option<StoredOAuthTokens>,
+    #[serde(default)]
+    default_output_format: Option<OutputFormat>,
+    #[serde(default)]
+    default_tier: Option<crate::Tier>,
+    #[serde(default)]
+    console_url: Option<String>,
+    #[serde(default)]
+    cached_console_url: Option<String>,
+    #[serde(default)]
+    cached_console_url_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    cached_team_id: Option<i64>,
+    #[serde(default)]
+    cached_team_name: Option<String>,
+}
+
+impl From<ProfileDe> for Profile {
+    fn from(file: ProfileDe) -> Self {
+        Self {
+            auth: file.auth,
+            credential_storage: file.credential_storage,
+            api_key: file.api_key,
+            region: file.region,
+            labels: labels_from_file(file.label, file.labels),
+            oauth_client_id: file.oauth_client_id,
+            oauth_base_url: file.oauth_base_url,
+            oauth_tokens: file.oauth_tokens,
+            default_output_format: file.default_output_format,
+            default_tier: file.default_tier,
+            console_url: file.console_url,
+            cached_console_url: file.cached_console_url,
+            cached_console_url_at: file.cached_console_url_at,
+            cached_team_id: file.cached_team_id,
+            cached_team_name: file.cached_team_name,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Profile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(ProfileDe::deserialize(deserializer)?.into())
+    }
 }
 
 /// Resolved configuration ready for use at runtime.
@@ -766,8 +884,10 @@ fn keep_signed_in_tokens(
 }
 
 /// `cx profiles refresh <name>`: sign an OAuth profile in again without
-/// reconfiguring it. Region, storage, output format and label stay as they
-/// are; only the tokens (and the cached team) change.
+/// reconfiguring it. Region, storage, output format and labels stay as they
+/// are; only the tokens (and the cached team) change. A legacy `label` string
+/// is loaded into `labels` and written back under that key, with the same
+/// values.
 pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
     let mut profile = load_profile(profile_name)?;
     if profile.auth != AuthKind::OAuth {
@@ -1324,8 +1444,145 @@ api_key = "mykey"
         let p: Profile = toml::from_str(toml).unwrap();
         assert_eq!(p.auth, AuthKind::ApiKey);
         assert_eq!(p.api_key.as_deref(), Some("mykey"));
+        assert!(p.labels.is_empty());
         assert!(p.oauth_client_id.is_none());
         assert!(p.oauth_base_url.is_none());
+    }
+
+    fn assert_no_legacy_label_key(toml_text: &str) {
+        assert!(
+            toml_text.lines().all(|line| {
+                let trimmed = line.trim_start();
+                !trimmed.starts_with("label ") && !trimmed.starts_with("label=")
+            }),
+            "legacy label key should not be written, got: {toml_text}"
+        );
+    }
+
+    fn profile_with_labels(labels: Vec<String>) -> Profile {
+        Profile {
+            auth: AuthKind::ApiKey,
+            credential_storage: CredentialStorage::File,
+            api_key: None,
+            region: Region::Eu1,
+            labels,
+            oauth_client_id: None,
+            oauth_base_url: None,
+            oauth_tokens: None,
+            default_output_format: None,
+            default_tier: None,
+            console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
+        }
+    }
+
+    #[test]
+    fn normalize_labels_trims_drops_empties_and_duplicates() {
+        assert_eq!(
+            normalize_labels([" prod ", "", "prod", "eu", " eu ", "  "]),
+            vec!["prod".to_string(), "eu".to_string()]
+        );
+        // Case-sensitive: "Prod" and "prod" are different labels.
+        assert_eq!(
+            normalize_labels(["Prod", "prod"]),
+            vec!["Prod".to_string(), "prod".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_label_args_splits_commas_and_repeated_flags() {
+        assert_eq!(
+            parse_label_args([" prod, eu ", "eu", " staging ", ",", "prod"]),
+            vec!["prod".to_string(), "eu".to_string(), "staging".to_string()]
+        );
+        assert!(parse_label_args(["", "  ", ","]).is_empty());
+    }
+
+    /// Existing configs store one `label` string. That key must still load, as
+    /// a one-item list, including surrounding whitespace being trimmed.
+    #[test]
+    fn legacy_label_string_loads_as_one_item_list() {
+        let profile: Profile = toml::from_str("region = \"eu1\"\nlabel = \"  prod  \"\n").unwrap();
+        assert_eq!(profile.labels, vec!["prod".to_string()]);
+    }
+
+    /// The legacy field is a single label, so a comma inside it is not a
+    /// separator. Splitting commas is a CLI-flag convenience only.
+    #[test]
+    fn legacy_label_string_is_not_split_on_commas() {
+        let profile: Profile = toml::from_str("region = \"eu1\"\nlabel = \"prod,eu\"\n").unwrap();
+        assert_eq!(profile.labels, vec!["prod,eu".to_string()]);
+    }
+
+    #[test]
+    fn legacy_blank_label_loads_as_no_labels() {
+        let profile: Profile = toml::from_str("region = \"eu1\"\nlabel = \"   \"\n").unwrap();
+        assert!(profile.labels.is_empty());
+    }
+
+    #[test]
+    fn labels_array_preserves_order_and_normalizes_on_load() {
+        let toml_text = r#"
+region = "eu1"
+labels = [" eu ", "prod", "eu", "", "staging"]
+"#;
+        let profile: Profile = toml::from_str(toml_text).unwrap();
+        assert_eq!(
+            profile.labels,
+            vec!["eu".to_string(), "prod".to_string(), "staging".to_string()]
+        );
+    }
+
+    /// When both keys are present, the canonical `labels` array wins. An empty
+    /// `labels` array still falls back to the legacy string so a half-migrated
+    /// file does not drop the only label it has.
+    #[test]
+    fn labels_array_wins_over_legacy_label_unless_empty() {
+        let both: Profile =
+            toml::from_str("region = \"eu1\"\nlabel = \"old\"\nlabels = [\"prod\", \"eu\"]\n")
+                .unwrap();
+        assert_eq!(both.labels, vec!["prod".to_string(), "eu".to_string()]);
+
+        let empty_array: Profile =
+            toml::from_str("region = \"eu1\"\nlabel = \"old\"\nlabels = []\n").unwrap();
+        assert_eq!(empty_array.labels, vec!["old".to_string()]);
+    }
+
+    #[test]
+    fn labels_round_trip_writes_labels_key_only() {
+        let profile = profile_with_labels(vec!["prod".to_string(), "eu".to_string()]);
+        let toml_text = toml::to_string_pretty(&profile).unwrap();
+        assert!(
+            toml_text.contains("labels"),
+            "expected labels key, got: {toml_text}"
+        );
+        assert_no_legacy_label_key(&toml_text);
+        let restored: Profile = toml::from_str(&toml_text).unwrap();
+        assert_eq!(restored.labels, vec!["prod".to_string(), "eu".to_string()]);
+    }
+
+    #[test]
+    fn empty_labels_are_omitted_when_writing() {
+        let toml_text = toml::to_string_pretty(&profile_with_labels(Vec::new())).unwrap();
+        assert!(
+            !toml_text.contains("label"),
+            "empty labels should be omitted, got: {toml_text}"
+        );
+    }
+
+    /// The same load-then-save `cx profiles refresh` uses. A legacy file comes
+    /// back with the same label values under the `labels` key.
+    #[test]
+    fn resave_preserves_legacy_label_values() {
+        let loaded: Profile = toml::from_str("region = \"eu1\"\nlabel = \"prod\"\n").unwrap();
+        assert_eq!(loaded.labels, vec!["prod".to_string()]);
+        let written = toml::to_string_pretty(&loaded).unwrap();
+        assert_no_legacy_label_key(&written);
+        let again: Profile = toml::from_str(&written).unwrap();
+        assert_eq!(again.labels, vec!["prod".to_string()]);
     }
 
     /// OAuth profile round-trips through TOML serialisation.
@@ -1336,7 +1593,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::OsStore,
             api_key: None,
             region: Region::Eu2,
-            label: Some("prod".to_string()),
+            labels: vec!["prod".to_string()],
             oauth_client_id: None,
             oauth_base_url: None,
             oauth_tokens: None,
@@ -1353,6 +1610,7 @@ api_key = "mykey"
         assert_eq!(restored.auth, AuthKind::OAuth);
         assert_eq!(restored.credential_storage, CredentialStorage::OsStore);
         assert!(restored.api_key.is_none());
+        assert_eq!(restored.labels, vec!["prod".to_string()]);
         // oauth_client_id / oauth_base_url are skip_serializing_if = None, so absent
         assert!(restored.oauth_client_id.is_none());
         assert!(restored.oauth_tokens.is_none());
@@ -1366,7 +1624,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::File,
             api_key: None,
             region: Region::Eu2,
-            label: Some("prod".to_string()),
+            labels: vec!["prod".to_string()],
             oauth_client_id: None,
             oauth_base_url: None,
             oauth_tokens: Some(StoredOAuthTokens {
@@ -1401,7 +1659,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::OsStore,
             api_key: None,
             region: Region::Custom("https://api.myenv.coralogix.com".to_string()),
-            label: None,
+            labels: Vec::new(),
             oauth_client_id: Some("abc-123".to_string()),
             oauth_base_url: None,
             oauth_tokens: None,
@@ -1495,7 +1753,7 @@ api_key = "mykey"
                 credential_storage: CredentialStorage::File,
                 api_key: Some(format!("key-{i}")),
                 region: Region::Eu1,
-                label: None,
+                labels: Vec::new(),
                 oauth_client_id: None,
                 oauth_base_url: None,
                 oauth_tokens: None,
@@ -1537,7 +1795,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::File,
             api_key: Some("default-key".to_string()),
             region: Region::Eu1,
-            label: None,
+            labels: Vec::new(),
             oauth_client_id: None,
             oauth_base_url: None,
             oauth_tokens: None,
@@ -1565,7 +1823,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::File,
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
-            label: None,
+            labels: Vec::new(),
             oauth_client_id: None,
             oauth_base_url: None,
             oauth_tokens: None,
@@ -1594,7 +1852,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::File,
             api_key: Some("file-key".to_string()),
             region: Region::Eu1,
-            label: None,
+            labels: Vec::new(),
             oauth_client_id: None,
             oauth_base_url: None,
             oauth_tokens: None,
@@ -1623,7 +1881,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::File,
             api_key: None,
             region: Region::Eu1,
-            label: None,
+            labels: Vec::new(),
             oauth_client_id: None,
             oauth_base_url: None,
             oauth_tokens: None,
@@ -1663,7 +1921,7 @@ api_key = "mykey"
             credential_storage: CredentialStorage::File,
             api_key: Some("k".to_string()),
             region: Region::Eu1,
-            label: None,
+            labels: Vec::new(),
             oauth_client_id: None,
             oauth_base_url: None,
             oauth_tokens: None,

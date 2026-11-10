@@ -34,8 +34,7 @@ Query:
   dataprime          DataPrime language reference and raw queries
   docs               Search and fetch official Coralogix product documentation
   search-fields      Search log/span fields by description or value content
-  datasets           List queryable datasets for DataPrime sources
-  keypaths           List a dataset's keypaths and sample their values
+  datasets           Inspect datasets, their fields and sample values
 
 Observe:
   dashboards         Manage dashboards and dashboard folders

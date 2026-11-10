@@ -68,24 +68,12 @@ pub enum SearchByValueDataset {
 
 #[derive(Subcommand)]
 enum DatasetsCmd {
-    /// Search a dataset's fields (DataPrime keypaths) and sample their values. Without a
-    /// subcommand it runs `search`.
-    #[command(args_conflicts_with_subcommands = true, after_help = FIELDS_SEARCH_EXAMPLES)]
+    /// Search a dataset's fields (DataPrime keypaths) and sample their values.
     Fields {
         #[command(subcommand)]
-        cmd: Option<FieldsCmd>,
-
-        #[command(flatten)]
-        search: FieldsSearchArgs,
+        cmd: FieldsCmd,
     },
 }
-
-const FIELDS_SEARCH_EXAMPLES: &str = "\
-Examples:
-  cx datasets fields --contains pod
-  cx datasets fields --prefix '$d.kubernetes' --prefix '$d.k8s'
-  cx datasets fields --prefix '$l' --prefix '$m' --dataset logs --dataset spans
-  cx datasets fields search --exact \"\\$d.tags['http.method']\" --label subsystemName=api --start now-24h";
 
 #[derive(Subcommand)]
 enum FieldsCmd {
@@ -93,7 +81,12 @@ enum FieldsCmd {
     ///
     /// Repeating --exact, --prefix or --contains means any of its values; different flags must
     /// all hold.
-    #[command(after_help = FIELDS_SEARCH_EXAMPLES)]
+    #[command(after_help = "\
+Examples:
+  cx datasets fields search --contains pod
+  cx datasets fields search --prefix '$d.kubernetes' --prefix '$d.k8s'
+  cx datasets fields search --prefix '$l' --prefix '$m' --dataset logs --dataset spans
+  cx datasets fields search --exact \"\\$d.tags['http.method']\" --label subsystemName=api --start now-24h")]
     Search(FieldsSearchArgs),
 
     /// Show sample values of one field.
@@ -5565,8 +5558,8 @@ async fn main() -> Result<()> {
             },
 
             Commands::Datasets {
-                cmd: DatasetsCmd::Fields { cmd, search },
-            } => match cmd.unwrap_or(FieldsCmd::Search(search)) {
+                cmd: DatasetsCmd::Fields { cmd },
+            } => match cmd {
                 FieldsCmd::Search(FieldsSearchArgs {
                     datasets,
                     exact,
@@ -5700,20 +5693,24 @@ mod tests {
         let cli = Cli::try_parse_from(["cx", "datasets", "fields"].iter().chain(args))?;
         match cli.command {
             Commands::Datasets {
-                cmd: DatasetsCmd::Fields { cmd, search },
-            } => Ok(cmd.unwrap_or(FieldsCmd::Search(search))),
+                cmd: DatasetsCmd::Fields { cmd },
+            } => Ok(cmd),
             _ => panic!("not a datasets fields command"),
         }
     }
 
     #[test]
-    fn datasets_fields_without_a_subcommand_is_search() {
-        for args in [&["--contains", "pod"][..], &["search", "--contains", "pod"]] {
-            match fields_command(args).unwrap() {
-                FieldsCmd::Search(search) => assert_eq!(search.contains, ["pod"], "{args:?}"),
-                FieldsCmd::Values(_) => panic!("{args:?} is not a search"),
-            }
+    fn datasets_fields_search_takes_the_search_flags() {
+        match fields_command(&["search", "--contains", "pod"]).unwrap() {
+            FieldsCmd::Search(search) => assert_eq!(search.contains, ["pod"]),
+            FieldsCmd::Values(_) => panic!("not a search"),
         }
+    }
+
+    #[test]
+    fn datasets_fields_requires_a_subcommand() {
+        assert!(fields_command(&[]).is_err());
+        assert!(fields_command(&["--contains", "pod"]).is_err());
     }
 
     #[test]
@@ -5725,7 +5722,12 @@ mod tests {
     }
 
     #[test]
-    fn search_flags_on_fields_conflict_with_a_subcommand() {
-        assert!(fields_command(&["--contains", "pod", "values", "$m.severity"]).is_err());
+    fn global_options_work_before_a_fields_subcommand() {
+        for args in [
+            &["-o", "json", "values", "$m.severity"][..],
+            &["--read-only", "search", "--contains", "pod"],
+        ] {
+            assert!(fields_command(args).is_ok(), "{args:?}");
+        }
     }
 }

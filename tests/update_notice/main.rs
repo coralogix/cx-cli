@@ -44,10 +44,16 @@ fn read_state(home: &Path) -> Value {
     serde_json::from_str(&contents).unwrap()
 }
 
+/// Where the tests point `XDG_STATE_HOME`. The lock file is found through it
+/// rather than `~/.agents`, because on Windows `dirs::home_dir()` ignores `HOME`.
+fn state_home(home: &Path) -> PathBuf {
+    home.join("state")
+}
+
 /// Write an installer lock file that lists one cx skill, updated long before
 /// this binary was built.
 fn write_old_lock(home: &Path) {
-    let dir = home.join(".agents");
+    let dir = state_home(home).join("skills");
     fs::create_dir_all(&dir).unwrap();
     fs::write(
         dir.join(".skill-lock.json"),
@@ -63,7 +69,7 @@ fn cx(home: &Path) -> Command {
     cmd.env("HOME", home)
         .env("CX_HOME", home)
         .env_remove("CX_NO_UPDATE_NOTIFIER")
-        .env_remove("XDG_STATE_HOME")
+        .env("XDG_STATE_HOME", state_home(home))
         .env_remove("CX_API_KEY")
         .env_remove("CX_REGION")
         .env_remove("CX_PROFILE");

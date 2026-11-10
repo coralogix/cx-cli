@@ -23,6 +23,13 @@ fn cx(home: &std::path::Path) -> Command {
     cmd
 }
 
+fn profile_labels(home: &std::path::Path, name: &str) -> Vec<String> {
+    let raw = load_profile_toml(home, name);
+    let profile: coralogix_cli::config::Profile =
+        toml::from_str(&raw).unwrap_or_else(|err| panic!("parse {name}: {err}\n{raw}"));
+    profile.labels
+}
+
 fn load_profile_toml(home: &std::path::Path, name: &str) -> String {
     fs::read_to_string(
         home.join(".cx")
@@ -875,4 +882,521 @@ expiry = 4102444800
         !toml.contains("cached_team_id"),
         "a timed-out lookup must not record a team: {toml}"
     );
+}
+
+// ── Profile labels ───────────────────────────────────────────────────────────
+
+fn write_profile(home: &std::path::Path, name: &str, body: &str) {
+    let profiles_dir = home.join(".cx").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(profiles_dir.join(format!("{name}.toml")), body).unwrap();
+}
+
+fn table_cells(stdout: &str) -> Vec<Vec<String>> {
+    stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split("  ")
+                .filter(|cell| !cell.is_empty())
+                .map(|cell| cell.trim().to_string())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn add_sets_labels_from_repeatable_and_comma_flags() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "demo",
+            "--api-key",
+            "k",
+            "--region",
+            "eu1",
+            "--label",
+            " prod, eu ",
+            "--label",
+            "eu",
+            "--label",
+            "staging",
+            "--label",
+            "prod",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    assert_eq!(
+        profile_labels(&tmp, "demo"),
+        vec!["prod".to_string(), "eu".to_string(), "staging".to_string()]
+    );
+    let raw = load_profile_toml(&tmp, "demo");
+    assert!(
+        raw.contains("labels"),
+        "new profiles should store a labels array, got: {raw}"
+    );
+    assert!(
+        raw.lines()
+            .all(|line| !line.trim_start().starts_with("label ")),
+        "new profiles should not write the legacy label key, got: {raw}"
+    );
+}
+
+#[test]
+fn add_without_label_keeps_existing_labels() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "legacy",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"old\"\nregion = \"eu1\"\nlabel = \"keep-me\"\n",
+    );
+    write_profile(
+        &tmp,
+        "current",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"old\"\nregion = \"eu1\"\nlabels = [\"prod\", \"eu\"]\n",
+    );
+    seed_config(&tmp, "default_profile = \"legacy\"\n");
+
+    for name in ["legacy", "current"] {
+        let output = cx(&tmp)
+            .args([
+                "profiles",
+                "add",
+                name,
+                "--api-key",
+                "new-key",
+                "--region",
+                "eu2",
+                "--force",
+            ])
+            .output()
+            .expect("failed to run cx");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "{name} should reconfigure, stderr: {stderr}"
+        );
+    }
+
+    assert_eq!(profile_labels(&tmp, "legacy"), vec!["keep-me".to_string()]);
+    assert_eq!(
+        profile_labels(&tmp, "current"),
+        vec!["prod".to_string(), "eu".to_string()]
+    );
+    let legacy_raw = load_profile_toml(&tmp, "legacy");
+    assert!(
+        legacy_raw.contains("new-key") && legacy_raw.contains("labels"),
+        "reconfigure should rewrite credentials and keep labels, got: {legacy_raw}"
+    );
+}
+
+#[test]
+fn add_label_flag_replaces_existing_labels() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"old\"\nregion = \"eu1\"\nlabels = [\"prod\", \"eu\"]\n",
+    );
+    seed_config(&tmp, "default_profile = \"demo\"\n");
+
+    let output = cx(&tmp)
+        .args([
+            "profiles",
+            "add",
+            "demo",
+            "--api-key",
+            "k",
+            "--region",
+            "eu1",
+            "--force",
+            "--label",
+            "staging",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    assert_eq!(profile_labels(&tmp, "demo"), vec!["staging".to_string()]);
+}
+
+#[test]
+fn list_shows_labels_and_adapts_column_width() {
+    let tmp = temp_home();
+    let joined = "production,europe-west";
+    write_profile(
+        &tmp,
+        "wide",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"production\", \"europe-west\"]\n",
+    );
+    write_profile(
+        &tmp,
+        "plain",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\n",
+    );
+    write_profile(
+        &tmp,
+        "old",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu2\"\nlabel = \"legacy\"\n",
+    );
+    seed_config(&tmp, "default_profile = \"plain\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "list"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let rows = table_cells(&stdout);
+    assert!(
+        rows.len() >= 5,
+        "expected header, rule, and 3 profiles, got: {stdout}"
+    );
+
+    let header = &rows[0];
+    assert_eq!(header.first().map(String::as_str), Some("NAME"));
+    assert_eq!(header.get(1).map(String::as_str), Some("LABEL"));
+
+    // The rule row is dashes. Its LABEL cell must be as wide as the longest
+    // joined value, which is longer than the "LABEL" header.
+    let rule = &rows[1];
+    assert_eq!(
+        rule.get(1).map(String::len),
+        Some(joined.len()),
+        "LABEL column should grow to fit {joined}, table:\n{stdout}"
+    );
+    assert!(joined.len() > "LABEL".len());
+
+    let mut labels_by_name = std::collections::HashMap::new();
+    for row in rows.iter().skip(2) {
+        let name = row.first().map(String::as_str).unwrap_or("");
+        let label = row.get(1).map(String::as_str).unwrap_or("");
+        labels_by_name.insert(name.to_string(), label.to_string());
+    }
+    assert_eq!(labels_by_name.get("wide").map(String::as_str), Some(joined));
+    assert_eq!(labels_by_name.get("plain").map(String::as_str), Some("-"));
+    assert_eq!(
+        labels_by_name.get("old").map(String::as_str),
+        Some("legacy"),
+        "legacy label key should still display, table:\n{stdout}"
+    );
+}
+
+#[test]
+fn list_filter_matches_any_label() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "prod-eu",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"prod\", \"eu\"]\n",
+    );
+    write_profile(
+        &tmp,
+        "staging",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"staging\"]\n",
+    );
+    write_profile(
+        &tmp,
+        "bare",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\n",
+    );
+
+    let any = cx(&tmp)
+        .args([
+            "profiles", "list", "--label", " prod ", "--label", "staging",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&any.stderr);
+    assert!(any.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&any.stdout);
+    assert!(
+        stdout.contains("prod-eu"),
+        "prod should match, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("staging"),
+        "staging should match any of the flags, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("bare"),
+        "a profile with no labels should be excluded, got: {stdout}"
+    );
+
+    let comma = cx(&tmp)
+        .args(["profiles", "list", "--label", "eu,staging"])
+        .output()
+        .expect("failed to run cx");
+    let stdout = String::from_utf8_lossy(&comma.stdout);
+    assert!(comma.status.success());
+    assert!(
+        stdout.contains("prod-eu") && stdout.contains("staging"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("bare"), "{stdout}");
+}
+
+#[test]
+fn list_filter_with_no_matches_is_explicit() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"prod\"]\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--label", "missing", "--label", "other"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "empty filter is not an error, stderr: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("No profiles with label 'missing' or 'other'."),
+        "empty filter should say so, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("demo"),
+        "non-matching profile should be hidden: {stdout}"
+    );
+}
+
+#[test]
+fn list_help_documents_any_label_match() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--help"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--label") && stdout.to_ascii_lowercase().contains("any"),
+        "help should document that repeated --label matches any label, got: {stdout}"
+    );
+}
+
+#[test]
+fn refresh_leaves_labeled_api_key_profile_unchanged() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "keyed",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabel = \"prod\"\nlabels = [\"eu\"]\n",
+    );
+    let before = load_profile_toml(&tmp, "keyed");
+    let output = cx(&tmp)
+        .args(["profiles", "refresh", "keyed"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    assert_eq!(
+        load_profile_toml(&tmp, "keyed"),
+        before,
+        "refresh must not rewrite labels when it refuses an API-key profile"
+    );
+}
+
+// ── JSON output ──────────────────────────────────────────────────────────────
+
+#[test]
+fn list_json_includes_all_required_fields() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"secret-key-123\"\nregion = \"eu2\"\nlabels = [\"prod\", \"eu\"]\ndefault_output_format = \"json\"\n",
+    );
+    write_profile(
+        &tmp,
+        "plain",
+        "auth = \"o_auth\"\ncredential_storage = \"file\"\nregion = \"us1\"\n",
+    );
+    seed_config(&tmp, "default_profile = \"demo\"\n");
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    assert_eq!(profiles.len(), 2, "should have 2 profiles");
+
+    let demo = profiles
+        .iter()
+        .find(|p| p["name"] == "demo")
+        .expect("demo profile should be present");
+    assert_eq!(demo["name"], "demo");
+    assert_eq!(demo["labels"], serde_json::json!(["prod", "eu"]));
+    assert_eq!(demo["region"], "eu2");
+    assert_eq!(demo["auth"], "api-key");
+    assert_eq!(demo["output"], "json");
+    assert_eq!(demo["default"], true);
+
+    let plain = profiles
+        .iter()
+        .find(|p| p["name"] == "plain")
+        .expect("plain profile should be present");
+    assert_eq!(plain["name"], "plain");
+    assert_eq!(plain["labels"], serde_json::json!([]));
+    assert_eq!(plain["region"], "us1");
+    assert_eq!(plain["auth"], "oauth");
+    assert_eq!(plain["output"], serde_json::Value::Null);
+    assert_eq!(plain["default"], false);
+}
+
+#[test]
+fn list_json_excludes_secrets() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "keyed",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"secret-key-123\"\nregion = \"eu1\"\n",
+    );
+    write_profile(
+        &tmp,
+        "oauth",
+        "auth = \"o_auth\"\ncredential_storage = \"file\"\nregion = \"us1\"\n\n[oauth_tokens]\naccess_token = \"secret-token-456\"\nexpiry = 4102444800\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        !stdout.contains("secret-key-123"),
+        "API key should not appear in JSON output: {stdout}"
+    );
+    assert!(
+        !stdout.contains("secret-token-456"),
+        "OAuth token should not appear in JSON output: {stdout}"
+    );
+    assert!(
+        !stdout.contains("api_key") || !stdout.contains("oauth_tokens"),
+        "Secret field names should not appear in JSON output: {stdout}"
+    );
+
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    for profile in &profiles {
+        let obj = profile.as_object().expect("profile should be an object");
+        assert!(
+            !obj.contains_key("api_key"),
+            "api_key field should not be present"
+        );
+        assert!(
+            !obj.contains_key("oauth_tokens"),
+            "oauth_tokens field should not be present"
+        );
+    }
+}
+
+#[test]
+fn list_json_with_label_filter_applies() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "prod-eu",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"prod\", \"eu\"]\n",
+    );
+    write_profile(
+        &tmp,
+        "staging",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"staging\"]\n",
+    );
+    write_profile(
+        &tmp,
+        "bare",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"us1\"\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--label", "prod", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+
+    assert_eq!(profiles.len(), 1, "should have 1 profile");
+    assert_eq!(profiles[0]["name"], "prod-eu");
+}
+
+#[test]
+fn list_json_empty_result_prints_empty_array() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabels = [\"prod\"]\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--label", "missing", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "empty filter should succeed, stderr: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(stdout, "[]", "empty result should be [], got: {stdout}");
+
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    assert_eq!(profiles.len(), 0, "should have 0 profiles");
+}
+
+#[test]
+fn list_json_no_profiles_prints_empty_array() {
+    let tmp = temp_home();
+    let output = cx(&tmp)
+        .args(["profiles", "list", "--output", "json"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(stdout, "[]", "no profiles should print [], got: {stdout}");
+}
+
+#[test]
+fn list_json_global_flag_before_profiles() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "demo",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\n",
+    );
+
+    let output = cx(&tmp)
+        .args(["--output", "json", "profiles", "list"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "should succeed, stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let profiles: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("should be valid JSON");
+    assert_eq!(profiles.len(), 1, "should have 1 profile");
+    assert_eq!(profiles[0]["name"], "demo");
 }

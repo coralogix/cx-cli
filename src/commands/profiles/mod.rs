@@ -390,12 +390,37 @@ fn hint_completions_refresh() {
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
-pub fn run_list() -> Result<()> {
+/// Comma-joined labels for the LABEL column, or `-` when the profile has none.
+fn display_labels(labels: &[String]) -> String {
+    if labels.is_empty() {
+        "-".to_string()
+    } else {
+        labels.join(",")
+    }
+}
+
+fn profile_has_any_label(profile: &Profile, filter: &[String]) -> bool {
+    filter
+        .iter()
+        .any(|wanted| profile.labels.iter().any(|have| have == wanted))
+}
+
+fn no_profiles_for_labels(labels: &[String]) -> String {
+    let quoted: Vec<String> = labels.iter().map(|label| format!("'{label}'")).collect();
+    match quoted.as_slice() {
+        [] => "No profiles matched.".to_string(),
+        [label] => format!("No profiles with label {label}."),
+        [head @ .., last] => format!("No profiles with label {} or {last}.", head.join(", ")),
+    }
+}
+
+pub fn run_list(label_filter: Vec<String>, output: OutputFormat) -> Result<()> {
+    let filter = crate::config::parse_label_args(label_filter);
     let global_config = load_config().unwrap_or_default();
 
     let names = list_profile_names()?;
 
-    let entries: Vec<(String, Profile)> = names
+    let mut entries: Vec<(String, Profile)> = names
         .into_iter()
         .filter_map(|name| {
             let profile = load_profile(&name).ok()?;
@@ -404,10 +429,55 @@ pub fn run_list() -> Result<()> {
         .collect();
 
     if entries.is_empty() {
-        println!("No profiles configured. Run `cx profiles add` to create one.");
+        if output == OutputFormat::Json {
+            println!("[]");
+        } else {
+            println!("No profiles configured. Run `cx profiles add` to create one.");
+        }
         return Ok(());
     }
 
+    if !filter.is_empty() {
+        entries.retain(|(_, profile)| profile_has_any_label(profile, &filter));
+        if entries.is_empty() {
+            if output == OutputFormat::Json {
+                println!("[]");
+            } else {
+                println!("{}", no_profiles_for_labels(&filter));
+            }
+            return Ok(());
+        }
+    }
+
+    match output {
+        OutputFormat::Json => {
+            let json_profiles: Vec<serde_json::Value> = entries
+                .iter()
+                .map(|(name, profile)| {
+                    serde_json::json!({
+                        "name": name,
+                        "labels": profile.labels,
+                        "region": profile.region.to_string(),
+                        "auth": match profile.auth {
+                            AuthKind::OAuth => "oauth",
+                            AuthKind::ApiKey => "api-key",
+                        },
+                        "output": profile.default_output_format.map(|f| f.as_str()),
+                        "default": *name == global_config.default_profile,
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&json_profiles)?);
+        }
+        OutputFormat::Text | OutputFormat::Toon => {
+            render_text_table(&entries, &global_config);
+        }
+    }
+
+    Ok(())
+}
+
+fn render_text_table(entries: &[(String, Profile)], global_config: &crate::config::Config) {
     // Column widths
     let name_w = entries
         .iter()
@@ -417,10 +487,10 @@ pub fn run_list() -> Result<()> {
         .max(4);
     let label_w = entries
         .iter()
-        .map(|(_, p)| p.label.as_deref().unwrap_or("-").len())
+        .map(|(_, profile)| display_labels(&profile.labels).len())
         .max()
-        .unwrap_or(5)
-        .max(5);
+        .unwrap_or("LABEL".len())
+        .max("LABEL".len());
     let region_w = entries
         .iter()
         .map(|(_, p)| p.region.to_string().len())
@@ -454,8 +524,8 @@ pub fn run_list() -> Result<()> {
         output_w = output_w,
     );
 
-    for (name, profile) in &entries {
-        let label = profile.label.as_deref().unwrap_or("-");
+    for (name, profile) in entries {
+        let label = display_labels(&profile.labels);
         let region = profile.region.to_string();
         let auth = match profile.auth {
             AuthKind::OAuth => "oauth",
@@ -484,8 +554,6 @@ pub fn run_list() -> Result<()> {
             output_w = output_w,
         );
     }
-
-    Ok(())
 }
 
 // ── Add ───────────────────────────────────────────────────────────────────────
@@ -517,12 +585,72 @@ pub struct AddArgs {
     /// written). No prompt either way.
     pub disable_olly: bool,
     /// Quick setup: on a terminal, skip the optional prompts (default output
-    /// format, label) and apply sensible defaults (JSON output, no label).
-    /// Credential storage is still asked, with file preselected.
+    /// format, labels) and apply sensible defaults (JSON output, no labels on
+    /// a new profile). Credential storage is still asked, with file preselected.
     /// Non-interactive runs store secrets in the profile file. Used by
     /// `cx init`'s guided flow; `cx profiles add` leaves it `false` and keeps
     /// its full prompt set.
     pub quick: bool,
+    /// `--label` values, already collected by clap but not yet normalized.
+    /// `None` means the flag was omitted: keep the profile's existing labels.
+    /// `Some` replaces them (an empty list after normalization clears them).
+    pub labels: Option<Vec<String>>,
+}
+
+/// Labels for a profile being added or reconfigured.
+///
+/// A provided `--label` replaces the set. With no flag, an interactive run
+/// (other than quick setup) asks. An empty answer, or Enter on the shown
+/// default, keeps the labels already stored. Non-interactive and quick runs
+/// keep those labels without asking, so a new profile stays unlabeled and a
+/// reconfigure does not wipe them.
+fn resolve_profile_labels(
+    name: &str,
+    provided: Option<Vec<String>>,
+    interactive: bool,
+    quick: bool,
+) -> Result<Vec<String>> {
+    if let Some(raw) = provided {
+        return Ok(crate::config::parse_label_args(raw));
+    }
+    let existing = load_profile(name)
+        .ok()
+        .map(|profile| profile.labels)
+        .unwrap_or_default();
+    if !interactive || quick {
+        return Ok(existing);
+    }
+
+    let current = existing.join(",");
+    let mut prompt = Text::new("Labels (e.g. 'prod, eu'):")
+        .with_help_message("Comma-separated. Leave empty to keep the current labels.");
+    if !current.is_empty() {
+        prompt = prompt.with_default(&current);
+    }
+    // Enter submits the joined default, not an empty string. The helper treats
+    // that as "unchanged" so the display text is not parsed back into labels.
+    Ok(labels_from_prompt_answer(
+        &existing,
+        prompt.prompt_skippable()?.as_deref(),
+    ))
+}
+
+/// Labels to store after the interactive labels prompt.
+///
+/// `answer` is what inquire returned. The prompt default is `existing` joined
+/// with commas, and an empty submission returns that default rather than `""`.
+/// An empty answer and an answer equal to that default both keep `existing`,
+/// so accepting the default does not re-parse the display text. A legacy
+/// label that itself contains a comma (`"prod,eu"`) therefore stays one
+/// label. Any other text is parsed as a comma-separated list.
+fn labels_from_prompt_answer(existing: &[String], answer: Option<&str>) -> Vec<String> {
+    let current = existing.join(",");
+    match answer {
+        Some(text) if !text.trim().is_empty() && text.trim() != current => {
+            crate::config::parse_label_args([text])
+        }
+        _ => existing.to_vec(),
+    }
 }
 
 pub async fn run_add(args: AddArgs) -> Result<()> {
@@ -537,6 +665,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         set_default,
         disable_olly,
         quick,
+        labels,
     } = args;
     let oauth = oauth || signup;
 
@@ -601,12 +730,12 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         // browser login. A terminal is not required: the approval happens in
         // the browser, the login URL is printed for the user (or an agent) to
         // open, and the remaining questions fall back to defaults.
-        configure_oauth(&name, region_choice, interactive, quick, signup).await?
+        configure_oauth(&name, region_choice, interactive, signup).await?
     } else if !interactive {
         build_profile_non_interactive(&name, api_key, region_choice)?
     } else if api_key.is_some() {
         // An API key was supplied, so the auth-method question is answered.
-        configure_api_key(&name, api_key, region_choice, quick)?
+        configure_api_key(&name, api_key, region_choice)?
     } else {
         let auth_choice = Select::new("Authentication method:", AUTH_METHODS.to_vec())
             .with_starting_cursor(0) // OAuth is the default
@@ -618,11 +747,17 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             .prompt()?;
 
         if auth_choice.starts_with("OAuth") {
-            configure_oauth(&name, region_choice, interactive, quick, signup).await?
+            configure_oauth(&name, region_choice, interactive, signup).await?
         } else {
-            configure_api_key(&name, None, region_choice, quick)?
+            configure_api_key(&name, None, region_choice)?
         }
     };
+
+    // ── Common: labels ─────────────────────────────────────────────────────────
+    // `--label` answers the question. Otherwise an interactive run (not quick
+    // setup) prompts, and skipping keeps whatever the profile already has.
+    // Non-interactive runs never invent labels: omit the flag to keep them.
+    profile.labels = resolve_profile_labels(&name, labels, interactive, quick)?;
 
     // ── Common: default output format (per-profile) ────────────────────────────
     // Quick setup pins JSON without asking. Non-interactive runs leave it unset,
@@ -837,7 +972,7 @@ fn build_profile_non_interactive(
         credential_storage: CredentialStorage::File,
         api_key: Some(api_key),
         region,
-        label: None,
+        labels: Vec::new(),
         oauth_client_id: None,
         oauth_base_url: None,
         oauth_tokens: None,
@@ -858,7 +993,6 @@ async fn configure_oauth(
     name: &str,
     region_choice: Option<RegionChoice>,
     interactive: bool,
-    quick: bool,
     signup: bool,
 ) -> Result<(Profile, &'static str)> {
     // Region / environment selection: the --url/--region flags when supplied,
@@ -903,14 +1037,6 @@ async fn configure_oauth(
             // Known regions: client ID is hard-coded, don't store in profile TOML.
             (region, base_url, client_id, None)
         }
-    };
-
-    let label = if interactive && !quick {
-        Text::new("Label (e.g. 'prod'):")
-            .prompt_skippable()?
-            .filter(|s| !s.is_empty())
-    } else {
-        None
     };
 
     // Drop OS-store secrets only when this profile's file says they are there.
@@ -964,7 +1090,7 @@ async fn configure_oauth(
         credential_storage,
         api_key: None,
         region,
-        label,
+        labels: Vec::new(),
         oauth_client_id: oauth_client_id_for_profile,
         oauth_base_url: oauth_base_url_for_profile,
         oauth_tokens,
@@ -996,7 +1122,6 @@ fn configure_api_key(
     name: &str,
     api_key: Option<String>,
     region_choice: Option<RegionChoice>,
-    quick: bool,
 ) -> Result<(Profile, &'static str)> {
     let api_key = match api_key {
         Some(key) => key,
@@ -1031,14 +1156,6 @@ fn configure_api_key(
         RegionChoice::Custom { base_url } => Region::Custom(base_url),
     };
 
-    let label = if quick {
-        None
-    } else {
-        Text::new("Label (e.g. 'prod'):")
-            .prompt_skippable()?
-            .filter(|s| !s.is_empty())
-    };
-
     // Reached only on a terminal, including `cx init`. File is preselected.
     // If the OS store is chosen but unavailable, fall back to file so Linux
     // clients keep working.
@@ -1067,7 +1184,7 @@ fn configure_api_key(
         credential_storage,
         api_key,
         region,
-        label,
+        labels: Vec::new(),
         oauth_client_id: None,
         oauth_base_url: None,
         oauth_tokens: None,
@@ -1092,6 +1209,53 @@ mod tests {
     /// against `OUTPUT_FORMATS`. If a canonical variant string is missing from the
     /// list, the cursor silently falls back to index 0 instead of the user's current
     /// setting (this regressed when `Agents`/`agents` was renamed to `Toon`/`toon`).
+    #[test]
+    fn list_filter_miss_message_names_each_label() {
+        assert_eq!(
+            no_profiles_for_labels(&["prod".to_string()]),
+            "No profiles with label 'prod'."
+        );
+        assert_eq!(
+            no_profiles_for_labels(&["prod".to_string(), "eu".to_string()]),
+            "No profiles with label 'prod' or 'eu'."
+        );
+        assert_eq!(
+            no_profiles_for_labels(&["prod".to_string(), "eu".to_string(), "staging".to_string()]),
+            "No profiles with label 'prod', 'eu' or 'staging'."
+        );
+    }
+
+    #[test]
+    fn display_labels_joins_with_commas_or_dash() {
+        assert_eq!(display_labels(&[]), "-");
+        assert_eq!(
+            display_labels(&["prod".to_string(), "eu".to_string()]),
+            "prod,eu"
+        );
+    }
+
+    /// Pressing Enter returns the comma-joined default, not an empty string.
+    /// A legacy label that contains a comma must survive that answer; only a
+    /// different answer is parsed.
+    #[test]
+    fn accepted_label_default_keeps_legacy_comma_label() {
+        let existing = vec!["prod,eu".to_string()];
+        let accepted_default = existing.join(",");
+
+        assert_eq!(
+            labels_from_prompt_answer(&existing, Some(&accepted_default)),
+            existing
+        );
+        assert_eq!(labels_from_prompt_answer(&existing, Some("")), existing);
+        assert_eq!(labels_from_prompt_answer(&existing, Some("   ")), existing);
+        assert_eq!(labels_from_prompt_answer(&existing, None), existing);
+
+        assert_eq!(
+            labels_from_prompt_answer(&existing, Some("prod, eu")),
+            vec!["prod".to_string(), "eu".to_string()]
+        );
+    }
+
     #[test]
     fn every_output_format_is_selectable_in_picker() {
         for variant in OutputFormat::value_variants() {

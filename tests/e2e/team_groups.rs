@@ -135,7 +135,8 @@ fn discover_team_group_id() -> Option<String> {
             let stdout = harness::run_ok(&["iam", "groups", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
-                .first()
+                .iter()
+                .find(|item| !harness::is_e2e_item(item))
                 .and_then(|item| item.get("group_id"))
                 .map(|x| match x {
                     serde_json::Value::String(s) => s.clone(),

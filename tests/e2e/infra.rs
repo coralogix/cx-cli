@@ -416,7 +416,8 @@ fn discover_closed_set_filter() -> Option<(String, String)> {
                 let value = item
                     .get("values")?
                     .as_array()?
-                    .first()?
+                    .iter()
+                    .find(|item| !harness::is_e2e_item(item))?
                     .as_str()?
                     .to_string();
                 Some((name, value))

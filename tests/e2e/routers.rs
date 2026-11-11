@@ -66,7 +66,8 @@ fn discover_router_id() -> Option<String> {
             let stdout = harness::run_ok(&["notifications", "routers", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
-                .first()
+                .iter()
+                .find(|item| !harness::is_e2e_item(item))
                 .and_then(|item| item.get("id"))
                 .map(|x| match x {
                     serde_json::Value::String(s) => s.clone(),

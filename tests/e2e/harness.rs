@@ -282,10 +282,13 @@ pub fn require_write_creds(test_name: &str) -> Option<()> {
 pub fn run_id() -> &'static str {
     static RUN_ID: OnceLock<String> = OnceLock::new();
     RUN_ID.get_or_init(|| {
+        // Lowercase: several APIs (TCO application rules, parsing-rule
+        // matchers) lowercase names on write, and tests compare by name.
         if let Ok(id) = std::env::var("CX_E2E_RUN_ID") {
             let id: String = id
                 .chars()
                 .filter(|c| c.is_ascii_alphanumeric())
+                .map(|c| c.to_ascii_lowercase())
                 .take(16)
                 .collect();
             if !id.is_empty() {
@@ -493,4 +496,14 @@ pub fn eventually<T>(
         }
     }
     None
+}
+
+/// True when a list item is a temporary resource of some e2e run (its name
+/// starts with [`E2E_NAME_PREFIX`]). Discovery helpers skip these so a
+/// read-only test never picks a resource another run is about to delete.
+pub fn is_e2e_item(item: &Value) -> bool {
+    ["name", "display_name", "displayName", "title"]
+        .iter()
+        .filter_map(|k| item.get(*k).and_then(Value::as_str))
+        .any(|n| n.starts_with(E2E_NAME_PREFIX))
 }

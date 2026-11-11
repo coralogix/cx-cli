@@ -443,7 +443,8 @@ fn discover_service() -> Option<String> {
             ]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
-                .first()?
+                .iter()
+                .find(|item| !harness::is_e2e_item(item))?
                 .get("service_name")?
                 .as_str()
                 .map(String::from)

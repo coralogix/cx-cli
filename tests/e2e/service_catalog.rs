@@ -146,7 +146,8 @@ fn discover_entity_type_and_column() -> Option<(String, String)> {
                 let column = schema
                     .get("columns")?
                     .as_array()?
-                    .first()?
+                    .iter()
+                    .find(|item| !harness::is_e2e_item(item))?
                     .get("id")?
                     .as_str()?
                     .to_string();

@@ -285,6 +285,7 @@ fn discover_event_id() -> Option<String> {
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
                 .iter()
+                .filter(|item| !harness::is_e2e_item(item))
                 .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
                 .next()
                 .map(String::from)

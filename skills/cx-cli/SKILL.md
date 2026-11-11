@@ -19,7 +19,7 @@ There are three kinds of notice:
 
 - **Binary update** — a newer cx version exists. The notice has two parts: the binary upgrade and the skills refresh. Offer both commands, binary first.
 - **Skills-only update** — cx itself is on the newest version, but the installed agent skills are older than it (typical right after `brew upgrade cx`), or cx can't tell which version they are. Offer only the skills refresh command.
-- **Skills refreshing** — cx installed the skills for an older version and is now refreshing them itself in the background (`reason: "refreshing"`). No action is needed: say once that the cx skills are being updated and take effect in a new agent session. Don't offer a command.
+- **Skills refreshing** — the installed skills are older than cx (or cx can't tell their version), and cx is now refreshing them itself in the background (`reason: "refreshing"`). No action is needed: say once that the cx skills are being updated and take effect in a new agent session. Don't offer a command.
 
 ### 1. Primary — toon mode (`-o toon`)
 

@@ -235,8 +235,9 @@ pub struct Config {
     pub no_console_link: bool,
 
     /// After a cx upgrade, refresh the global cx agent skills in the
-    /// background (`cx skills install --global` with the recorded agents).
-    /// Only when cx installed them globally before, and only with `npx`.
+    /// background (`cx skills install --global` with the recorded agents, or
+    /// auto-detected agents when cx did not record the install). Only for
+    /// global cx skills that are older than this cx, and only with `npx`.
     #[serde(default = "default_true")]
     pub auto_update_skills: bool,
 

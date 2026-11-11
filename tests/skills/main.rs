@@ -593,3 +593,49 @@ fn auto_refresh_opt_out_keeps_the_notice() {
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert!(!args_file.exists(), "no install may run when opted out");
 }
+
+#[cfg(unix)]
+#[test]
+fn unrecorded_old_skills_refresh_with_auto_detected_agents() {
+    // Skills from an older cx or plain `npx`: no version recorded, and the
+    // installer's lock file dates them before this build.
+    let home = temp_dir("auto_refresh_unknown");
+    let bin = temp_dir("auto_refresh_unknown_bin");
+    let args_file = bin.join("args.txt");
+    install_fake_npx(&bin, &args_file, "[]", "[]");
+    let lock_dir = home.join("state").join("skills");
+    fs::create_dir_all(&lock_dir).unwrap();
+    fs::write(
+        lock_dir.join(".skill-lock.json"),
+        r#"{"version":3,"skills":{"cx-alerts":{"source":"coralogix/cx-cli","updatedAt":"2020-01-01T00:00:00.000Z"}}}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home, &bin)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env_remove("CX_NO_UPDATE_NOTIFIER")
+        .env_remove("CX_NO_SKILLS_AUTO_UPDATE")
+        .arg("cleanup")
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refreshing cx agent skills"),
+        "stderr: {stderr}"
+    );
+
+    // No recorded agents: the installer auto-detects them (no `-a`).
+    assert!(
+        wait_for(|| read_state(&home)["skills_installed_for"] == env!("CARGO_PKG_VERSION")),
+        "refresh never recorded; state: {}",
+        read_state(&home)
+    );
+    let recorded = fs::read_to_string(&args_file).unwrap();
+    assert_eq!(
+        recorded.trim(),
+        format!(
+            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g",
+            env!("CARGO_PKG_VERSION")
+        )
+    );
+}

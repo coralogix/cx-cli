@@ -291,7 +291,7 @@ saves the secret in the profile file instead.
 | `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
 | `strict_fields_validation` | `false` | Reject `cx logs`, `cx spans`, and `cx dataprime query` queries that reference fields missing from the schema (equivalent to always passing `--strict-fields-validation`; `--no-strict-fields-validation` overrides it). Off, such queries run and print a `compileWarning` on stderr |
 | `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |
-| `auto_update_skills` | `true` | After a cx upgrade, refresh the global cx agent skills in the background, pinned to the new version. Only when `cx skills install --global` installed them before, and only when `npx` is on `PATH`. `CX_NO_SKILLS_AUTO_UPDATE=1` also turns it off. |
+| `auto_update_skills` | `true` | After a cx upgrade, refresh the global cx agent skills in the background, pinned to the new version. Only for global cx skills that are older than the new version (installed with `cx skills install --global`, an older cx, or `npx` directly), and only when `npx` is on `PATH`. `CX_NO_SKILLS_AUTO_UPDATE=1` also turns it off. |
 | `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`). Written when you create your first profile; never prompted. |
 | `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`). Written when you create your first profile; never prompted. Use `cx profiles add --disable-olly` to create it switched off. |
 

@@ -199,7 +199,10 @@ fn run_npx_install(scope: SkillsScope, agents: &[String]) -> Result<std::process
 /// The hidden `cx skills auto-refresh` command, started in the background by
 /// the update check after a cx upgrade (see `update_check`). Repeats the
 /// recorded global install (same agents) with this version's skills, with no
-/// output. Exits quietly on any problem: the update notice is the fallback.
+/// output. When no install was recorded (skills from an older cx or plain
+/// `npx`), there are no recorded agents, so the installer auto-detects them,
+/// as `cx skills install --global` does. Exits quietly on any problem: the
+/// update notice is the fallback.
 pub fn run_auto_refresh() -> Result<()> {
     let Some(_lock) = RefreshLock::acquire() else {
         return Ok(());

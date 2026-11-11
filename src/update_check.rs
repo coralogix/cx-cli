@@ -21,6 +21,10 @@
 //!   lock file shows every cx skill updated after this binary was built (for
 //!   example by `npx skills add -g`).  This check is local only: no network
 //!   call.
+//! * In both cases, cx first tries to fix the skills itself: it starts the
+//!   hidden `cx skills auto-refresh` in the background (see
+//!   [`skills_status_with_refresh`]).  The notices are the fallback when that
+//!   is off, impossible (no `npx`), or failed.
 //! * `CX_NO_UPDATE_NOTIFIER=1` suppresses all notifications (including the fetch).
 //! * `fetch_if_stale` is spawned via `tokio::spawn` and intentionally races
 //!   with the command.  For fast local commands (e.g. `cx profiles list`) the
@@ -301,8 +305,8 @@ enum SkillsStatus {
     /// were installed before cx recorded one, or with `npx skills add`
     /// directly.  They may be current, so this shows once per cx version.
     Unknown,
-    /// Outdated, and cx just started `cx skills auto-refresh` in the
-    /// background to update them.  No action needed.
+    /// Outdated or unknown, and cx just started `cx skills auto-refresh` in
+    /// the background to update them.  No action needed.
     Refreshing,
 }
 
@@ -314,7 +318,7 @@ pub fn suppress_skills_refresh() {
     SKILLS_REFRESH_SUPPRESSED.store(true, Ordering::Relaxed);
 }
 
-/// What to do about an outdated global install, from [`refresh_decision`].
+/// What to do about outdated or unknown global skills, from [`refresh_decision`].
 #[derive(Debug, PartialEq, Eq)]
 enum RefreshDecision {
     /// Start the background refresh.
@@ -332,7 +336,13 @@ const REFRESH_RUNNING_FOR: chrono::Duration = chrono::Duration::minutes(15);
 const REFRESH_RETRY_AFTER: chrono::Duration = chrono::Duration::hours(24);
 
 /// Pure so every branch is unit-testable.  `allowed` covers the opt-outs and
-/// whether `npx` exists; it is called only for an outdated install.
+/// whether `npx` exists; it is called only for outdated or unknown skills.
+///
+/// Unknown skills (installed with an older cx, `--interactive`, or `npx`
+/// directly) are refreshed too: the refresh runs `cx skills install --global`
+/// with auto-detected agents, the same command the unknown-version notice
+/// asks the user to run, and the same agent detection the installer's own
+/// `skills update` uses.
 fn refresh_decision(
     status: &SkillsStatus,
     allowed: impl FnOnce() -> bool,
@@ -341,7 +351,8 @@ fn refresh_decision(
     current: &str,
     now: DateTime<Utc>,
 ) -> RefreshDecision {
-    if *status != SkillsStatus::Outdated || SKILLS_REFRESH_SUPPRESSED.load(Ordering::Relaxed) {
+    let stale = matches!(status, SkillsStatus::Outdated | SkillsStatus::Unknown);
+    if !stale || SKILLS_REFRESH_SUPPRESSED.load(Ordering::Relaxed) {
         return RefreshDecision::No;
     }
     if attempted_for == Some(current) {
@@ -362,8 +373,9 @@ fn refresh_decision(
 }
 
 /// [`skills_status`], plus the automatic refresh: when cx recorded a global
-/// install for an older version, start `cx skills auto-refresh` in the
-/// background instead of asking the user to run the install.
+/// install for an older version, or found cx skills it cannot date, start
+/// `cx skills auto-refresh` in the background instead of asking the user to
+/// run the install.
 fn skills_status_with_refresh(state: &VersionCheckCache, current: &str) -> SkillsStatus {
     let status = skills_status(state, current);
     let decision = refresh_decision(
@@ -688,15 +700,16 @@ mod tests {
     }
 
     #[test]
-    fn refresh_starts_only_for_outdated_and_allowed() {
+    fn refresh_starts_for_stale_skills_when_allowed() {
         let decide = |status: SkillsStatus, allowed: bool| {
             refresh_decision(&status, || allowed, None, None, "0.1.31", now())
         };
         assert_eq!(decide(SkillsStatus::Outdated, true), RefreshDecision::Start);
         // Opted out, or no npx.
         assert_eq!(decide(SkillsStatus::Outdated, false), RefreshDecision::No);
-        // Never for skills cx did not install, or current ones.
-        assert_eq!(decide(SkillsStatus::Unknown, true), RefreshDecision::No);
+        // Skills cx cannot date are refreshed too; current ones never.
+        assert_eq!(decide(SkillsStatus::Unknown, true), RefreshDecision::Start);
+        assert_eq!(decide(SkillsStatus::Unknown, false), RefreshDecision::No);
         assert_eq!(decide(SkillsStatus::Current, true), RefreshDecision::No);
     }
 

@@ -74,3 +74,55 @@ async fn get_e2m_by_id() {
         .await
         .expect("run_get should succeed");
 }
+
+// ── limits / labels-cardinality against the real v2 wire shapes ─────────────
+
+/// `GET /limits/v2` nests the definition cap under `metricsLimit`.
+#[tokio::test]
+async fn limits_reads_nested_metrics_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/events2metrics/limits/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "companyId": "4019663",
+            "labelsLimit": 6,
+            "permutationsLimit": { "limit": 10000000, "used": 0 },
+            "metricsLimit": { "limit": 300, "used": 2 }
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    coralogix_cli::commands::e2m::run_limits(std::slice::from_ref(&target), OutputFormat::Json)
+        .await
+        .expect("run_limits json should succeed");
+    coralogix_cli::commands::e2m::run_limits(&[target], OutputFormat::Text)
+        .await
+        .expect("run_limits text should succeed");
+}
+
+/// The cardinality endpoint requires a query; the CLI sends a match-all
+/// logs query and reads the `permutations` list.
+#[tokio::test]
+async fn labels_cardinality_sends_a_query() {
+    use wiremock::matchers::query_param;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/events2metrics/labels/v2/cardinalities",
+        ))
+        .and(query_param("logs_query.lucene", "*"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "permutations": [{ "day": "2026-11-10", "permutations": 3 }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    coralogix_cli::commands::e2m::run_labels_cardinality(&[target], OutputFormat::Json)
+        .await
+        .expect("run_labels_cardinality should succeed");
+}

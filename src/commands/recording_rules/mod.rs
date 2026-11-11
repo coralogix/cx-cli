@@ -19,7 +19,7 @@ fn group_to_json(group: &RecordingRuleGroup, include_profile: bool, profile: &st
         "id": group.id,
         "name": group.display_name(),
         "rules_count": group.rules_count(),
-        "interval": group.interval,
+        "interval": group.display_interval(),
         "created_at": group.created_at,
         "updated_at": group.updated_at,
     });
@@ -93,7 +93,7 @@ pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) ->
                         group.id.clone().unwrap_or_default(),
                         group.display_name().to_string(),
                         group.rules_count().to_string(),
-                        group.interval.clone().unwrap_or_default(),
+                        group.display_interval().unwrap_or_default(),
                         group.created_at.clone().unwrap_or_default(),
                     ]
                 })
@@ -152,23 +152,21 @@ pub async fn run_get(
                 include_profile,
                 "Recording rule group not found.",
                 Some(&|val| {
-                    if let Some(group_val) = val.get("group") {
-                        if let Ok(group) =
-                            serde_json::from_value::<RecordingRuleGroup>(group_val.clone())
-                        {
-                            println!("{}:       {}", "Name".bold(), group.display_name());
-                            println!(
-                                "{}:         {}",
-                                "ID".bold(),
-                                group.id.as_deref().unwrap_or("-")
-                            );
-                            println!("{}: {}", "Rules Count".bold(), group.rules_count());
-                            println!(
-                                "{}:   {}",
-                                "Interval".bold(),
-                                group.interval.as_deref().unwrap_or("-")
-                            );
-                        }
+                    // The API returns the set at the top level; older
+                    // payloads wrap it as `{"group": {...}}`.
+                    if let Ok(group) = api::parse_set(val.clone()) {
+                        println!("{}:       {}", "Name".bold(), group.display_name());
+                        println!(
+                            "{}:         {}",
+                            "ID".bold(),
+                            group.id.as_deref().unwrap_or("-")
+                        );
+                        println!("{}: {}", "Rules Count".bold(), group.rules_count());
+                        println!(
+                            "{}:   {}",
+                            "Interval".bold(),
+                            group.display_interval().as_deref().unwrap_or("-")
+                        );
                     }
                 }),
             )?;
@@ -193,14 +191,33 @@ pub async fn run_create(
         let body = body.clone();
         async move {
             let api = RecordingRulesApi::new(&t.client);
-            Ok(api.create(&body).await?)
+            let resp = api.create(&body).await?;
+            // The API answers `{"id": "..."}` only, so fetch the stored set
+            // to report its name, rule count and interval. If the read-back
+            // fails, fall back to the id plus the name from the request.
+            let group = match (resp.group, resp.id) {
+                (Some(group), _) => Some(group),
+                (None, Some(id)) => {
+                    Some(
+                        api.get_set(&id)
+                            .await
+                            .unwrap_or_else(|_| RecordingRuleGroup {
+                                id: Some(id),
+                                name: body.get("name").and_then(Value::as_str).map(str::to_string),
+                                ..Default::default()
+                            }),
+                    )
+                }
+                (None, None) => None,
+            };
+            Ok(group)
         }
     })
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(group) = resp.group {
+    for (profile, group) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(group) = group {
             let name = group.display_name().to_string();
             render::print_created(
                 "Created",
@@ -247,14 +264,28 @@ pub async fn run_update(
         let id = id.clone();
         async move {
             let api = RecordingRulesApi::new(&t.client);
-            Ok(api.update(&id, &body).await?)
+            let resp = api.update(&id, &body).await?;
+            // The API answers `{}`, so read the stored set back. If that
+            // fails, fall back to the id plus the name from the request.
+            let group = match resp.group {
+                Some(group) => group,
+                None => api
+                    .get_set(&id)
+                    .await
+                    .unwrap_or_else(|_| RecordingRuleGroup {
+                        id: Some(id.clone()),
+                        name: body.get("name").and_then(Value::as_str).map(str::to_string),
+                        ..Default::default()
+                    }),
+            };
+            Ok(group)
         }
     })
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(group) = resp.group {
+    for (profile, group) in report_errors_and_collect_successes(per_profile)? {
+        {
             let name = group.display_name().to_string();
             eprintln!(
                 "{}",

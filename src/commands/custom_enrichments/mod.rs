@@ -79,6 +79,43 @@ fn validate_create_body(body: &Value) -> Result<()> {
 }
 
 /// Shallow validation of the UpdateCustomEnrichment request body.
+/// Reduce the `POST /all/contents` answer (every table, full content) to the
+/// rows of table `id` that contain `query` (case-insensitive). The first
+/// line of the table is its header and is returned separately.
+fn filter_search_results(resp: &Value, id: &str, query: &str) -> Result<Value> {
+    let tables = resp
+        .get("customEnrichmentsData")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("unexpected search response: {resp}"))?;
+    let table = tables
+        .iter()
+        .find(|t| {
+            // Ids are numbers on the wire; `--id` is text.
+            match t.pointer("/definition/id") {
+                Some(Value::String(s)) => s == id,
+                Some(Value::Number(n)) => id.parse::<u64>().ok() == n.as_u64(),
+                _ => false,
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("custom enrichment {id} not found"))?;
+    let textual = table.get("textual").and_then(Value::as_str).unwrap_or("");
+    let mut lines = textual.lines();
+    let header = lines.next().unwrap_or("").to_string();
+    let needle = query.to_lowercase();
+    let matches: Vec<Value> = lines
+        .filter(|line| line.to_lowercase().contains(&needle))
+        .map(|line| Value::String(line.to_string()))
+        .collect();
+    Ok(json!({
+        "customEnrichmentId": table.pointer("/definition/id").cloned().unwrap_or(Value::Null),
+        "name": table.pointer("/definition/name").cloned().unwrap_or(Value::Null),
+        "query": query,
+        "header": header,
+        "matchCount": matches.len(),
+        "matches": matches,
+    }))
+}
+
 fn validate_update_body(body: &Value) -> Result<()> {
     let ctx = "update custom enrichment";
     let obj = body
@@ -342,11 +379,12 @@ pub async fn run_search(
     .await;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, val) in report_errors_and_collect_successes(per_profile)? {
+        let filtered = filter_search_results(&val, &id, &query)?;
         crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
             crate::console_url::enrichments_url(b)
         })
         .await;
-        all_results.push(val);
+        all_results.push(filtered);
     }
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,
@@ -474,5 +512,45 @@ mod tests {
         body.as_object_mut().unwrap().remove("file");
         let err = validate_update_body(&body).unwrap_err();
         assert!(err.to_string().contains("update"));
+    }
+
+    fn search_response() -> Value {
+        json!({
+            "customEnrichmentsData": [
+                {
+                    "definition": { "id": 172830, "name": "ip_lookup", "version": 1 },
+                    "textual": "ip,city\n1.2.3.4,London\n5.6.7.8,Paris"
+                },
+                {
+                    "definition": { "id": 999, "name": "other" },
+                    "textual": "k,v\nLondon,other-table"
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn filter_search_results_matches_rows_of_the_requested_table_only() {
+        let out = filter_search_results(&search_response(), "172830", "london").unwrap();
+        assert_eq!(out["customEnrichmentId"], json!(172830));
+        assert_eq!(out["name"], json!("ip_lookup"));
+        assert_eq!(out["header"], json!("ip,city"));
+        assert_eq!(out["matchCount"], json!(1));
+        assert_eq!(out["matches"], json!(["1.2.3.4,London"]));
+    }
+
+    #[test]
+    fn filter_search_results_no_match_is_empty() {
+        let out = filter_search_results(&search_response(), "172830", "zzz").unwrap();
+        assert_eq!(out["matchCount"], json!(0));
+        assert_eq!(out["matches"], json!([]));
+    }
+
+    #[test]
+    fn filter_search_results_unknown_table_errors() {
+        let err = filter_search_results(&search_response(), "1", "x").unwrap_err();
+        assert!(err.to_string().contains("not found"));
+        let err = filter_search_results(&json!({}), "1", "x").unwrap_err();
+        assert!(err.to_string().contains("unexpected"));
     }
 }

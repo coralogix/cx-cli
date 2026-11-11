@@ -73,7 +73,7 @@ jobs:
       - name: Sweep stale resources from crashed runs
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         env:
-          CX_API_KEY: ${{ secrets.CX_E2E_API_KEY }}
+          CX_API_KEY: ${{ secrets.CX_E2E_WRITE_API_KEY }}
           CX_REGION: eu2
           CX_E2E_ALLOW_WRITES: "1"
           CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
@@ -82,7 +82,7 @@ jobs:
       - name: Run e2e suite
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         env:
-          CX_API_KEY: ${{ secrets.CX_E2E_API_KEY }}
+          CX_API_KEY: ${{ secrets.CX_E2E_WRITE_API_KEY }}
           CX_REGION: eu2
           CX_E2E_ALLOW_WRITES: "1"
           CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}

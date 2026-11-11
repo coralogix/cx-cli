@@ -84,9 +84,10 @@ depend on shared state:
 `.github/workflows/e2e.yml` runs the sweeper and then the suite on every
 pull request (code paths only) and every push to `master`. Different PRs
 run in parallel; a new push to the same PR cancels its older run. The
-workflow reads the repository secret `CX_E2E_API_KEY` (an API key of the
-writable test team with full permissions); the region is set in the
-workflow file.
+workflow reads the repository secret `CX_E2E_WRITE_API_KEY` (an API key of
+the writable test team with full permissions); the region is set in the
+workflow file. The older `CX_E2E_API_KEY` secret (read-only team) is no
+longer used.
 
 ## DataPrime documentation bundle
 

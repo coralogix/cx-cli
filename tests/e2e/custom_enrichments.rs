@@ -36,9 +36,7 @@ fn discover_custom_enrichment_id() -> Option<String> {
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            if harness::require_creds("custom_enrichments_discover").is_none() {
-                return None;
-            }
+            harness::require_creds("custom_enrichments_discover")?;
             let stdout = harness::run_ok(&["enrichments", "custom", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?

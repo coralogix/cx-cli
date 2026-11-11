@@ -72,15 +72,17 @@ const SWEEPABLES: &[Sweepable] = &[
         list: &["webhooks", "actions", "list"],
         delete: &["webhooks", "actions", "delete"],
     },
-    Sweepable {
-        label: "connectors",
-        list: &["notifications", "connectors", "list"],
-        delete: &["notifications", "connectors", "delete"],
-    },
+    // Routers reference connectors, so they are swept first; a referenced
+    // connector cannot be deleted.
     Sweepable {
         label: "routers",
         list: &["notifications", "routers", "list"],
         delete: &["notifications", "routers", "delete"],
+    },
+    Sweepable {
+        label: "connectors",
+        list: &["notifications", "connectors", "list"],
+        delete: &["notifications", "connectors", "delete"],
     },
     Sweepable {
         label: "presets",

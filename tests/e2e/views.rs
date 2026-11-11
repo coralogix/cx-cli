@@ -62,9 +62,7 @@ fn discover_view_id() -> Option<String> {
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            if harness::require_creds("views_discover").is_none() {
-                return None;
-            }
+            harness::require_creds("views_discover")?;
             let stdout = harness::run_ok(&["views", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?
@@ -82,9 +80,7 @@ fn discover_view_folder_id() -> Option<String> {
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            if harness::require_creds("views_folders_discover").is_none() {
-                return None;
-            }
+            harness::require_creds("views_folders_discover")?;
             let stdout = harness::run_ok(&["views", "folders", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?

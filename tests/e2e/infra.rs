@@ -425,5 +425,252 @@ fn discover_closed_set_filter() -> Option<(String, String)> {
         .clone()
 }
 
+/// `--start-row` / `--end-row` bound the page: the API never returns more
+/// rows than the window asks for, and `total_count` stays the full count.
+#[test]
+#[ignore]
+fn infra_list_page_window() {
+    if harness::require_creds("infra_list_page_window").is_none() {
+        return;
+    }
+    let Some((category, resource_type)) = discover_category_type() else {
+        eprintln!("[e2e] skipping infra_list_page_window: no resource types on test team");
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "list",
+        "--category",
+        &category,
+        "--type",
+        &resource_type,
+        "--start-row",
+        "0",
+        "--end-row",
+        "2",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["total_count", "returned_count", "resources"]);
+    let returned = v["returned_count"].as_u64().unwrap();
+    assert!(returned <= 2, "window of 2 rows, got {returned}: {v}");
+    assert_eq!(returned as usize, v["resources"].as_array().unwrap().len());
+    assert!(returned <= v["total_count"].as_u64().unwrap());
+    // Text and toon renderings of the same page.
+    harness::run_ok(&[
+        "infra",
+        "resources",
+        "list",
+        "--category",
+        &category,
+        "--type",
+        &resource_type,
+        "--end-row",
+        "2",
+        "-o",
+        "text",
+    ]);
+    harness::run_ok(&[
+        "infra",
+        "resources",
+        "list",
+        "--category",
+        &category,
+        "--type",
+        &resource_type,
+        "--end-row",
+        "2",
+        "-o",
+        "toon",
+    ]);
+}
+
+/// The legacy filters (`--name-filter`, `--scope`) need a pinned category
+/// and type and answer with the same envelope. A name filter only keeps
+/// resources whose name contains the text.
+#[test]
+#[ignore]
+fn infra_list_legacy_name_filter_and_scope() {
+    if harness::require_creds("infra_list_legacy_name_filter_and_scope").is_none() {
+        return;
+    }
+    let Some((category, resource_type)) = discover_category_type() else {
+        eprintln!(
+            "[e2e] skipping infra_list_legacy_name_filter_and_scope: no resource types on test team"
+        );
+        return;
+    };
+    let Some(name) = discover_resource_name() else {
+        eprintln!(
+            "[e2e] skipping infra_list_legacy_name_filter_and_scope: no resources on test team"
+        );
+        return;
+    };
+    let needle: String = name.chars().take(3).collect();
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "list",
+        "--category",
+        &category,
+        "--type",
+        &resource_type,
+        "--name-filter",
+        &needle,
+        "--start-row",
+        "0",
+        "--end-row",
+        "50",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["total_count", "returned_count", "resources"]);
+    harness::assert_nonempty_array_of_objects_with_keys(&v["resources"], &["resource_id", "name"]);
+    for row in v["resources"].as_array().unwrap() {
+        assert!(
+            row["name"].as_str().unwrap_or_default().contains(&needle),
+            "--name-filter {needle:?} must keep only matching names: {row}"
+        );
+    }
+
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "list",
+        "--category",
+        &category,
+        "--type",
+        &resource_type,
+        "--scope",
+        "environment=staging",
+        "--scope",
+        "service=cx-e2e-no-such-service",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["total_count", "returned_count", "resources"]);
+
+    // The legacy filters cannot be mixed with the attribute filters.
+    let output = harness::cx()
+        .args([
+            "infra",
+            "resources",
+            "list",
+            "--category",
+            &category,
+            "--type",
+            &resource_type,
+            "--name-filter",
+            "x",
+            "--match-all",
+            "Health=Critical",
+        ])
+        .output()
+        .expect("cx must run");
+    assert!(!output.status.success());
+}
+
+/// `--to` closes the window for both change commands; text output renders.
+#[test]
+#[ignore]
+fn infra_config_changes_and_diff_with_to() {
+    if harness::require_creds("infra_config_changes_and_diff_with_to").is_none() {
+        return;
+    }
+    let Some(id) = discover_resource_id() else {
+        eprintln!(
+            "[e2e] skipping infra_config_changes_and_diff_with_to: no resources on test team"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "config-changes",
+        "--resource-id",
+        &id,
+        "--from",
+        "now-7d",
+        "--to",
+        "now",
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["resource_id", "outcome"]);
+    let v = harness::run_ok_json(&[
+        "infra",
+        "resources",
+        "config-diff",
+        "--resource-id",
+        &id,
+        "--from",
+        "now-7d",
+        "--to",
+        "now",
+        "-o",
+        "json",
+    ]);
+    harness::assert_nonempty_array_of_objects_with_keys(&v, &["resource_id", "outcome", "changes"]);
+    assert_eq!(v[0]["resource_id"], id);
+    harness::run_ok(&[
+        "infra",
+        "resources",
+        "config-diff",
+        "--resource-id",
+        &id,
+        "--from",
+        "now-7d",
+        "-o",
+        "text",
+    ]);
+    harness::run_ok(&["infra", "resources", "health-history", &id, "-o", "text"]);
+    harness::run_ok_nonempty(&["infra", "resources", "types", "-o", "text"]);
+
+    // A malformed id is refused by the API with a clear message.
+    let output = harness::cx()
+        .args([
+            "infra",
+            "resources",
+            "config-changes",
+            "--resource-id",
+            "not-a-resource-id",
+            "--from",
+            "now-1h",
+        ])
+        .output()
+        .expect("cx must run");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("malformed"));
+}
+
+/// Discover a resource name via `infra resources list` for the first
+/// available resource type.
+fn discover_resource_name() -> Option<String> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let (category, resource_type) = discover_category_type()?;
+            let stdout = harness::run_ok(&[
+                "infra",
+                "resources",
+                "list",
+                "--category",
+                &category,
+                "--type",
+                &resource_type,
+                "-o",
+                "json",
+            ]);
+            let v = harness::parse_json(&stdout)?;
+            v.get("resources")?
+                .as_array()?
+                .iter()
+                .find_map(|item| item.get("name")?.as_str().map(String::from))
+                .filter(|name| name.len() >= 3)
+        })
+        .clone()
+}
+
 // `infra` has no mutating subcommands, so there is nothing deliberately
 // uncovered here - all four read-only subcommands are exercised above.

@@ -1148,7 +1148,7 @@ mod tests {
             "profile file",
         );
         assert_eq!(storage, CredentialStorage::File);
-        assert_eq!(payload.as_deref(), Some("secret"));
+        assert_eq!(payload, Some("secret"));
         assert_eq!(desc, "profile file");
     }
 

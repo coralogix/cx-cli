@@ -48,9 +48,7 @@ fn discover_parsing_rule_id() -> Option<String> {
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            if harness::require_creds("parsing_rules_discover").is_none() {
-                return None;
-            }
+            harness::require_creds("parsing_rules_discover")?;
             let stdout = harness::run_ok(&["parsing-rules", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?

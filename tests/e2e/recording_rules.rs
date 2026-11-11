@@ -38,9 +38,7 @@ fn discover_recording_rule_id() -> Option<String> {
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
-            if harness::require_creds("recording_rules_discover").is_none() {
-                return None;
-            }
+            harness::require_creds("recording_rules_discover")?;
             let stdout = harness::run_ok(&["recording-rules", "list", "-o", "json"]);
             let v = harness::parse_json(&stdout)?;
             v.as_array()?

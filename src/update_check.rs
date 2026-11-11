@@ -28,6 +28,7 @@
 //!   on the next API command.  This accepted race matches `gh`'s behaviour.
 
 use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, Utc};
 use colored::Colorize;
@@ -79,6 +80,9 @@ pub async fn fetch_if_stale() {
     state.installation_id = latest_state.installation_id.or(state.installation_id);
     state.skills_installed_for = latest_state.skills_installed_for;
     state.skills_unknown_noticed_for = latest_state.skills_unknown_noticed_for;
+    state.skills_agents = latest_state.skills_agents;
+    state.skills_refresh_attempted_for = latest_state.skills_refresh_attempted_for;
+    state.skills_refresh_attempted_at = latest_state.skills_refresh_attempted_at;
     let _ = state.save();
 }
 
@@ -130,6 +134,9 @@ pub fn maybe_print_notice(output: OutputFormat) {
     let current = env!("CARGO_PKG_VERSION");
     let plain = output == OutputFormat::Toon || !std::io::stderr().is_terminal();
     let skills = install_method::skills_upgrade_command();
+    // Before the binary check, so the skills refresh starts even when a newer
+    // binary is also out.
+    let status = skills_status_with_refresh(&state, current);
 
     if let Some(latest) = state.latest_binary.as_deref() {
         if is_newer(latest, current) {
@@ -165,9 +172,23 @@ pub fn maybe_print_notice(output: OutputFormat) {
         }
     }
 
-    let status = skills_status(&state, current);
     let message = match status {
         SkillsStatus::Current => return,
+        SkillsStatus::Refreshing => {
+            let message = format!("refreshing cx agent skills for cx {current} in the background");
+            if plain {
+                eprintln!("[cx update] {message}");
+            } else {
+                eprintln!();
+                eprintln!("{}", format!("Your cx agent skills are older than cx {current}. Refreshing them in the background.").dimmed());
+                eprintln!(
+                    "{}",
+                    "Set auto_update_skills = false in ~/.cx/config.toml to turn this off."
+                        .dimmed()
+                );
+            }
+            return;
+        }
         SkillsStatus::Outdated => format!("cx agent skills are older than cx {current}"),
         SkillsStatus::Unknown => "cx can't tell which version your cx agent skills are".to_string(),
     };
@@ -194,15 +215,16 @@ pub fn maybe_print_notice(output: OutputFormat) {
 ///
 /// `update.binary` is present only when a newer binary exists.  `update.skills`
 /// is present whenever `update` is; when the skills themselves need a refresh
-/// it also carries `reason` (`"outdated"` or `"unknown_version"`) and
-/// `installed_for` (the cx version that installed them, `null` if unknown).
+/// it also carries `reason` (`"outdated"`, `"unknown_version"`, or
+/// `"refreshing"` when cx started the refresh itself) and `installed_for` (the
+/// cx version that installed them, `null` if unknown).
 pub fn build_meta_block() -> Option<Value> {
     if env_is_truthy("CX_NO_UPDATE_NOTIFIER") {
         return None;
     }
     let state = VersionCheckCache::load();
     let current = env!("CARGO_PKG_VERSION");
-    let status = skills_status(&state, current);
+    let status = skills_status_with_refresh(&state, current);
     let meta = meta_block_for(&state, current, &status);
     if meta.is_some() && status == SkillsStatus::Unknown {
         crate::version_cache::record_skills_unknown_noticed(current);
@@ -232,6 +254,7 @@ fn meta_block_for(
         SkillsStatus::Current => None,
         SkillsStatus::Outdated => Some("outdated"),
         SkillsStatus::Unknown => Some("unknown_version"),
+        SkillsStatus::Refreshing => Some("refreshing"),
     };
     if let Some(reason) = reason {
         skills["reason"] = json!(reason);
@@ -278,6 +301,127 @@ enum SkillsStatus {
     /// were installed before cx recorded one, or with `npx skills add`
     /// directly.  They may be current, so this shows once per cx version.
     Unknown,
+    /// Outdated, and cx just started `cx skills auto-refresh` in the
+    /// background to update them.  No action needed.
+    Refreshing,
+}
+
+/// Set by commands that install skills themselves (`cx skills`, `cx init`),
+/// so their own post-command check never starts a second install.
+static SKILLS_REFRESH_SUPPRESSED: AtomicBool = AtomicBool::new(false);
+
+pub fn suppress_skills_refresh() {
+    SKILLS_REFRESH_SUPPRESSED.store(true, Ordering::Relaxed);
+}
+
+/// What to do about an outdated global install, from [`refresh_decision`].
+#[derive(Debug, PartialEq, Eq)]
+enum RefreshDecision {
+    /// Start the background refresh.
+    Start,
+    /// A refresh for this version started a few minutes ago and may still be
+    /// running: say nothing.
+    InProgress,
+    /// Do not start one: show the status as it is.
+    No,
+}
+
+/// How long a started refresh counts as still running.
+const REFRESH_RUNNING_FOR: chrono::Duration = chrono::Duration::minutes(15);
+/// How long to wait before retrying a refresh that did not update the skills.
+const REFRESH_RETRY_AFTER: chrono::Duration = chrono::Duration::hours(24);
+
+/// Pure so every branch is unit-testable.  `allowed` covers the opt-outs and
+/// whether `npx` exists; it is called only for an outdated install.
+fn refresh_decision(
+    status: &SkillsStatus,
+    allowed: impl FnOnce() -> bool,
+    attempted_for: Option<&str>,
+    attempted_at: Option<DateTime<Utc>>,
+    current: &str,
+    now: DateTime<Utc>,
+) -> RefreshDecision {
+    if *status != SkillsStatus::Outdated || SKILLS_REFRESH_SUPPRESSED.load(Ordering::Relaxed) {
+        return RefreshDecision::No;
+    }
+    if attempted_for == Some(current) {
+        if let Some(at) = attempted_at {
+            if now - at < REFRESH_RUNNING_FOR {
+                return RefreshDecision::InProgress;
+            }
+            if now - at < REFRESH_RETRY_AFTER {
+                return RefreshDecision::No;
+            }
+        }
+    }
+    if allowed() {
+        RefreshDecision::Start
+    } else {
+        RefreshDecision::No
+    }
+}
+
+/// [`skills_status`], plus the automatic refresh: when cx recorded a global
+/// install for an older version, start `cx skills auto-refresh` in the
+/// background instead of asking the user to run the install.
+fn skills_status_with_refresh(state: &VersionCheckCache, current: &str) -> SkillsStatus {
+    let status = skills_status(state, current);
+    let decision = refresh_decision(
+        &status,
+        auto_refresh_allowed,
+        state.skills_refresh_attempted_for.as_deref(),
+        state.skills_refresh_attempted_at,
+        current,
+        Utc::now(),
+    );
+    match decision {
+        RefreshDecision::Start if spawn_skills_refresh() => {
+            crate::version_cache::record_skills_refresh_attempt(current);
+            SkillsStatus::Refreshing
+        }
+        RefreshDecision::InProgress => SkillsStatus::Current,
+        _ => status,
+    }
+}
+
+/// Off with `CX_NO_SKILLS_AUTO_UPDATE=1` or `auto_update_skills = false` in
+/// `config.toml`; impossible without `npx` on `PATH`.
+fn auto_refresh_allowed() -> bool {
+    !env_is_truthy("CX_NO_SKILLS_AUTO_UPDATE")
+        && crate::config::load_config()
+            .map(|c| c.auto_update_skills)
+            .unwrap_or(true)
+        && crate::commands::skills::npx_on_path()
+}
+
+/// Start `cx skills auto-refresh` as a detached process with no terminal
+/// output, so the user's command neither waits for it nor shows its output.
+fn spawn_skills_refresh() -> bool {
+    use std::process::{Command, Stdio};
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let mut cmd = Command::new(exe);
+    cmd.args(["skills", "auto-refresh"])
+        .env("CX_NO_UPDATE_NOTIFIER", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // Its own process group (Unix) or a detached console (Windows), so it
+    // keeps running after the user's command and terminal session end.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd.spawn().is_ok()
 }
 
 fn skills_status(state: &VersionCheckCache, current: &str) -> SkillsStatus {
@@ -537,6 +681,57 @@ mod tests {
     #[test]
     fn build_time_is_embedded() {
         assert!(binary_built_at() > "2026-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap());
+    }
+
+    fn now() -> DateTime<Utc> {
+        "2026-11-10T12:00:00Z".parse().unwrap()
+    }
+
+    #[test]
+    fn refresh_starts_only_for_outdated_and_allowed() {
+        let decide = |status: SkillsStatus, allowed: bool| {
+            refresh_decision(&status, || allowed, None, None, "0.1.31", now())
+        };
+        assert_eq!(decide(SkillsStatus::Outdated, true), RefreshDecision::Start);
+        // Opted out, or no npx.
+        assert_eq!(decide(SkillsStatus::Outdated, false), RefreshDecision::No);
+        // Never for skills cx did not install, or current ones.
+        assert_eq!(decide(SkillsStatus::Unknown, true), RefreshDecision::No);
+        assert_eq!(decide(SkillsStatus::Current, true), RefreshDecision::No);
+    }
+
+    #[test]
+    fn refresh_runs_once_per_version_per_day() {
+        let decide = |attempted_for: &str, minutes_ago: i64| {
+            refresh_decision(
+                &SkillsStatus::Outdated,
+                || true,
+                Some(attempted_for),
+                Some(now() - chrono::Duration::minutes(minutes_ago)),
+                "0.1.31",
+                now(),
+            )
+        };
+        // Just started: may still be running, say nothing.
+        assert_eq!(decide("0.1.31", 5), RefreshDecision::InProgress);
+        // Started hours ago and the skills are still old: it failed; no retry yet.
+        assert_eq!(decide("0.1.31", 3 * 60), RefreshDecision::No);
+        // A day later: retry.
+        assert_eq!(decide("0.1.31", 25 * 60), RefreshDecision::Start);
+        // The attempt was for an older version: start for this one.
+        assert_eq!(decide("0.1.30", 5), RefreshDecision::Start);
+    }
+
+    #[test]
+    fn meta_block_refreshing_has_reason() {
+        let state = VersionCheckCache {
+            skills_installed_for: Some("0.1.20".into()),
+            ..Default::default()
+        };
+        let meta = meta_block_for(&state, "0.1.31", &SkillsStatus::Refreshing).expect("refreshing");
+        assert!(meta["update"].get("binary").is_none());
+        assert_eq!(meta["update"]["skills"]["reason"], "refreshing");
+        assert_eq!(meta["update"]["skills"]["installed_for"], "0.1.20");
     }
 
     #[test]

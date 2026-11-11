@@ -120,7 +120,10 @@ fn install_global_runs_fully_noninteractive_command() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli/skills --skill * -y -g"
+        format!(
+            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 
@@ -148,7 +151,10 @@ fn install_local_with_agents_passes_them_through() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli/skills --skill * -y -a claude-code cursor"
+        format!(
+            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -a claude-code cursor",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 
@@ -168,7 +174,13 @@ fn install_interactive_runs_the_raw_installer() {
         .success();
 
     let recorded = fs::read_to_string(&args_file).unwrap();
-    assert_eq!(recorded.trim(), "skills add coralogix/cx-cli/skills");
+    assert_eq!(
+        recorded.trim(),
+        format!(
+            "skills add coralogix/cx-cli/skills#v{}",
+            env!("CARGO_PKG_VERSION")
+        )
+    );
 }
 
 // ── Already-installed detection (explicit run reinstalls) ─────────────────────
@@ -420,4 +432,164 @@ fn local_and_interactive_installs_record_nothing() {
 
         assert_eq!(recorded_skills_version(&home), None, "{flag}");
     }
+}
+
+// ── Release-tag pin, recorded agents, background refresh (HEA-62) ─────────────
+
+/// The `~/.cx/state.json` that cx reads with `CX_HOME=home`.
+fn state_path(home: &Path) -> PathBuf {
+    home.join(".cx").join("state.json")
+}
+
+fn read_state(home: &Path) -> serde_json::Value {
+    fs::read_to_string(state_path(home))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Poll for up to 10 s: the background refresh runs in a detached process.
+fn wait_for(mut done: impl FnMut() -> bool) -> bool {
+    for _ in 0..100 {
+        if done() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    false
+}
+
+#[cfg(unix)]
+#[test]
+fn install_falls_back_to_default_branch_when_tag_install_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = temp_dir("tag_fallback");
+    let bin = temp_dir("tag_fallback_bin");
+    let args_file = bin.join("args.txt");
+    // Fails for a `#tag` source (a tag that does not exist), works otherwise.
+    let script = format!(
+        "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
+         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         case \"$4\" in *#*) exit 1;; esac\n\
+         echo \"$@\" > \"{}\"\n",
+        args_file.display()
+    );
+    let npx = bin.join("npx");
+    fs::write(&npx, script).unwrap();
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+
+    cx(&home, &bin)
+        .args(["skills", "install", "--global"])
+        .assert()
+        .success();
+
+    let recorded = fs::read_to_string(&args_file).unwrap();
+    assert_eq!(
+        recorded.trim(),
+        "-y skills add coralogix/cx-cli/skills --skill * -y -g"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn global_install_records_version_and_agents() {
+    let home = temp_dir("records_agents");
+    let bin = temp_dir("records_agents_bin");
+    install_fake_npx(&bin, &bin.join("args.txt"), "[]", "[]");
+
+    cx(&home, &bin)
+        .args(["skills", "install", "--global", "--agent", "cursor"])
+        .assert()
+        .success();
+
+    let state = read_state(&home);
+    assert_eq!(state["skills_installed_for"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(state["skills_agents"], serde_json::json!(["cursor"]));
+}
+
+#[cfg(unix)]
+#[test]
+fn outdated_global_skills_refresh_in_the_background() {
+    let home = temp_dir("auto_refresh");
+    let bin = temp_dir("auto_refresh_bin");
+    let args_file = bin.join("args.txt");
+    install_fake_npx(&bin, &args_file, "[]", "[]");
+    fs::create_dir_all(home.join(".cx")).unwrap();
+    fs::write(
+        state_path(&home),
+        r#"{"skills_installed_for":"0.0.1","skills_agents":["cursor"]}"#,
+    )
+    .unwrap();
+
+    let output = cx(&home, &bin)
+        .env_remove("CX_NO_UPDATE_NOTIFIER")
+        .env_remove("CX_NO_SKILLS_AUTO_UPDATE")
+        .arg("cleanup")
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refreshing cx agent skills"),
+        "stderr: {stderr}"
+    );
+
+    // The detached `cx skills auto-refresh` repeats the recorded install,
+    // pinned to this version, then records it.
+    assert!(
+        wait_for(|| read_state(&home)["skills_installed_for"] == env!("CARGO_PKG_VERSION")),
+        "refresh never recorded; state: {}",
+        read_state(&home)
+    );
+    let recorded = fs::read_to_string(&args_file).unwrap();
+    assert_eq!(
+        recorded.trim(),
+        format!(
+            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g -a cursor",
+            env!("CARGO_PKG_VERSION")
+        )
+    );
+
+    // Now current: the next command is silent.
+    let output = cx(&home, &bin)
+        .env_remove("CX_NO_UPDATE_NOTIFIER")
+        .arg("cleanup")
+        .output()
+        .expect("failed to run cx");
+    assert!(
+        !String::from_utf8_lossy(&output.stderr).contains("[cx update]"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn auto_refresh_opt_out_keeps_the_notice() {
+    let home = temp_dir("auto_refresh_off");
+    let bin = temp_dir("auto_refresh_off_bin");
+    let args_file = bin.join("args.txt");
+    install_fake_npx(&bin, &args_file, "[]", "[]");
+    fs::create_dir_all(home.join(".cx")).unwrap();
+    fs::write(state_path(&home), r#"{"skills_installed_for":"0.0.1"}"#).unwrap();
+    fs::write(
+        home.join(".cx").join("config.toml"),
+        "auto_update_skills = false\n",
+    )
+    .unwrap();
+
+    let output = cx(&home, &bin)
+        .env_remove("CX_NO_UPDATE_NOTIFIER")
+        .env_remove("CX_NO_SKILLS_AUTO_UPDATE")
+        .arg("cleanup")
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cx agent skills are older than cx"),
+        "stderr: {stderr}"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert!(!args_file.exists(), "no install may run when opted out");
 }

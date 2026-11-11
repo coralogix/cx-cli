@@ -3,6 +3,8 @@
 //!
 //! Owns no skill/agent logic of its own beyond driving the one scope
 //! question (global vs local) and passing flags through to the installer.
+//! Installs are pinned to this version's release tag. `run_auto_refresh` is the
+//! hidden background refresh that the update check starts after an upgrade.
 
 use std::collections::BTreeSet;
 use std::io::IsTerminal;
@@ -25,8 +27,25 @@ pub const SKILLS_SOURCE: &str = "coralogix/cx-cli/skills";
 /// detection matches on this rather than [`SKILLS_SOURCE`].
 const INSTALLED_SOURCE: &str = "coralogix/cx-cli";
 
+/// The running cx version. Installs are pinned to its release tag.
+const CX_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The installer source pinned to the release tag of `version`
+/// (`coralogix/cx-cli/skills#v0.1.31`), so the skills match the binary instead
+/// of the default branch. A pre-release version (`0.1.32-dev`) has no tag, so
+/// it gets the unpinned source.
+fn pinned_source(version: &str) -> String {
+    if version.contains('-') {
+        SKILLS_SOURCE.to_string()
+    } else {
+        format!("{SKILLS_SOURCE}#v{version}")
+    }
+}
+
 /// The command a user can run by hand when cx fails the install.
-const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
+fn manual_install_cmd() -> String {
+    format!("npx skills add {}", pinned_source(CX_VERSION))
+}
 
 /// Where to browse the installed skills and read their contents. Shown in the
 /// compact summary as a pointer for manually reviewing what was installed;
@@ -124,8 +143,6 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
         );
     }
 
-    let args = build_install_args(scope, &opts.agents);
-
     // The `-y` installer runs fully non-interactively, so it needs no terminal
     // and its verbose TUI (banner, per-skill table, risk matrix) is pure noise.
     // Capture it and replace it with a one-line summary; only surface the raw
@@ -133,10 +150,7 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     // interactive walk (`run_advanced_install`) keeps full passthrough.
     println!("Installing cx agent skills…");
 
-    let output = Command::new(npx_program())
-        .args(&args)
-        .output()
-        .context("failed to run npx")?;
+    let output = run_npx_install(scope, &opts.agents)?;
     if !output.status.success() {
         // Show the installer's own diagnostics before the retry hint. Node
         // CLIs report errors on either stream, so surface both.
@@ -149,8 +163,9 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
         }
         bail!(
             "skills installer exited with {}.\n\
-             You can retry manually with: {MANUAL_INSTALL_CMD}",
-            output.status
+             You can retry manually with: {}",
+            output.status,
+            manual_install_cmd()
         );
     }
 
@@ -158,9 +173,88 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     // Only a global install is recorded: local skills belong to one project,
     // and the state file is shared by all of them.
     if scope == SkillsScope::Global {
-        crate::version_cache::record_global_skills_install();
+        crate::version_cache::record_global_skills_install(&opts.agents);
     }
     Ok(InstallOutcome::Installed)
+}
+
+/// Run the non-interactive install from this version's release tag. If that
+/// fails (for example, the tag does not exist yet), retry once from the
+/// default branch, so a missing tag never blocks the install.
+fn run_npx_install(scope: SkillsScope, agents: &[String]) -> Result<std::process::Output> {
+    let pinned = pinned_source(CX_VERSION);
+    let output = Command::new(npx_program())
+        .args(build_install_args(&pinned, scope, agents))
+        .output()
+        .context("failed to run npx")?;
+    if output.status.success() || pinned == SKILLS_SOURCE {
+        return Ok(output);
+    }
+    Command::new(npx_program())
+        .args(build_install_args(SKILLS_SOURCE, scope, agents))
+        .output()
+        .context("failed to run npx")
+}
+
+/// The hidden `cx skills auto-refresh` command, started in the background by
+/// the update check after a cx upgrade (see `update_check`). Repeats the
+/// recorded global install (same agents) with this version's skills, with no
+/// output. Exits quietly on any problem: the update notice is the fallback.
+pub fn run_auto_refresh() -> Result<()> {
+    let Some(_lock) = RefreshLock::acquire() else {
+        return Ok(());
+    };
+    let agents = crate::version_cache::VersionCheckCache::load().skills_agents;
+    let output = run_npx_install(SkillsScope::Global, &agents)?;
+    if output.status.success() {
+        crate::version_cache::record_global_skills_install(&agents);
+    }
+    Ok(())
+}
+
+/// A lock file (`~/.cx/skills-refresh.lock`) so two cx commands that run at
+/// the same time do not start two installs. A lock older than
+/// [`RefreshLock::STALE_AFTER`] is left over from a killed run and is replaced.
+struct RefreshLock(std::path::PathBuf);
+
+impl RefreshLock {
+    const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+    fn acquire() -> Option<Self> {
+        let path = crate::config::config_dir()
+            .ok()?
+            .join("skills-refresh.lock");
+        let stale = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > Self::STALE_AFTER);
+        if stale {
+            let _ = std::fs::remove_file(&path);
+        }
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .ok()?;
+        Some(Self(path))
+    }
+}
+
+impl Drop for RefreshLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// True when an `npx` executable is on `PATH`. A plain directory scan, so it
+/// is cheap enough for the update check, unlike spawning `npx --version`.
+pub fn npx_on_path() -> bool {
+    std::env::var_os("PATH").is_some_and(|path| npx_in(&path))
+}
+
+fn npx_in(path: &std::ffi::OsStr) -> bool {
+    std::env::split_paths(path).any(|dir| dir.join(npx_program()).is_file())
 }
 
 /// The compact success line shown after a non-interactive install, in place of
@@ -191,9 +285,10 @@ fn print_install_summary(scope: SkillsScope) {
 /// Advanced install: run the raw installer with no flags and let the user
 /// walk its full interactive flow (skill/agent selection, scope, method).
 pub fn run_advanced_install() -> Result<()> {
-    println!("Running the skills installer interactively: {MANUAL_INSTALL_CMD}");
+    let source = pinned_source(CX_VERSION);
+    println!("Running the skills installer interactively: npx skills add {source}");
     let status = Command::new(npx_program())
-        .args(["skills", "add", SKILLS_SOURCE])
+        .args(["skills", "add", &source])
         .status()
         .context(
             "failed to run npx - Node.js is required for the skills install \
@@ -344,12 +439,12 @@ fn lock_cx_skills(contents: &str) -> Option<LockedCxSkills> {
 ///
 /// The leading `-y` is npx's own auto-approve (first-run package download
 /// prompt); the trailing `-y` is the installer's skip-all-confirmations.
-fn build_install_args(scope: SkillsScope, agents: &[String]) -> Vec<String> {
+fn build_install_args(source: &str, scope: SkillsScope, agents: &[String]) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-y".into(),
         "skills".into(),
         "add".into(),
-        SKILLS_SOURCE.into(),
+        source.into(),
         "--skill".into(),
         "*".into(),
         "-y".into(),
@@ -401,7 +496,7 @@ mod tests {
 
     #[test]
     fn install_args_local_scope() {
-        let args = build_install_args(SkillsScope::Local, &[]);
+        let args = build_install_args(SKILLS_SOURCE, SkillsScope::Local, &[]);
         assert_eq!(
             args,
             ["-y", "skills", "add", SKILLS_SOURCE, "--skill", "*", "-y"]
@@ -410,7 +505,7 @@ mod tests {
 
     #[test]
     fn install_args_global_scope() {
-        let args = build_install_args(SkillsScope::Global, &[]);
+        let args = build_install_args(SKILLS_SOURCE, SkillsScope::Global, &[]);
         assert_eq!(
             args,
             [
@@ -429,6 +524,7 @@ mod tests {
     #[test]
     fn install_args_pass_agents_through() {
         let args = build_install_args(
+            SKILLS_SOURCE,
             SkillsScope::Global,
             &["claude-code".to_string(), "cursor".to_string()],
         );
@@ -507,6 +603,28 @@ mod tests {
         );
         assert_eq!(lock_cx_skills(r#"{"version":3}"#), None);
         assert_eq!(lock_cx_skills("not json"), None);
+    }
+
+    #[test]
+    fn release_versions_pin_to_their_tag() {
+        assert_eq!(pinned_source("0.1.31"), "coralogix/cx-cli/skills#v0.1.31");
+        // Pre-release builds have no tag: use the default branch.
+        assert_eq!(pinned_source("0.1.32-dev"), SKILLS_SOURCE);
+        assert_eq!(
+            build_install_args(&pinned_source("0.1.31"), SkillsScope::Global, &[])[3],
+            "coralogix/cx-cli/skills#v0.1.31"
+        );
+    }
+
+    #[test]
+    fn npx_on_path_scans_path_dirs() {
+        let dir = std::env::temp_dir().join(format!("cx-npx-scan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = std::env::join_paths([&dir]).unwrap();
+        assert!(!npx_in(&path));
+        std::fs::write(dir.join(npx_program()), "").unwrap();
+        assert!(npx_in(&path));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

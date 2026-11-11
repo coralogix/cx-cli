@@ -38,6 +38,19 @@ pub struct VersionCheckCache {
     /// skills it did not install are old.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills_unknown_noticed_for: Option<String>,
+
+    /// The agents passed to that global install (`--agent`). Empty means the
+    /// installer auto-detected them. The background refresh repeats them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills_agents: Vec<String>,
+
+    /// The `cx` version for which the background skills refresh last started,
+    /// and when. Limits it to one attempt per version per day, so a failing
+    /// refresh (offline, installer error) does not run after every command.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_refresh_attempted_for: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_refresh_attempted_at: Option<DateTime<Utc>>,
 }
 
 impl VersionCheckCache {
@@ -86,10 +99,20 @@ impl VersionCheckCache {
     }
 }
 
-/// Record a successful global skills install for the running `cx` version.
-pub fn record_global_skills_install() {
+/// Record a successful global skills install for the running `cx` version,
+/// with the agents it targeted.
+pub fn record_global_skills_install(agents: &[String]) {
     let mut state = VersionCheckCache::load();
     state.skills_installed_for = Some(env!("CARGO_PKG_VERSION").to_string());
+    state.skills_agents = agents.to_vec();
+    let _ = state.save();
+}
+
+/// Record that the background skills refresh started for `version` now.
+pub fn record_skills_refresh_attempt(version: &str) {
+    let mut state = VersionCheckCache::load();
+    state.skills_refresh_attempted_for = Some(version.to_string());
+    state.skills_refresh_attempted_at = Some(Utc::now());
     let _ = state.save();
 }
 
@@ -168,6 +191,9 @@ mod tests {
         let state = VersionCheckCache {
             skills_installed_for: Some("0.1.30".into()),
             skills_unknown_noticed_for: Some("0.1.29".into()),
+            skills_agents: vec!["cursor".into()],
+            skills_refresh_attempted_for: Some("0.1.30".into()),
+            skills_refresh_attempted_at: Some(Utc::now()),
             ..Default::default()
         };
         let json = serde_json::to_string(&state).unwrap();
@@ -177,5 +203,11 @@ mod tests {
             reloaded.skills_unknown_noticed_for.as_deref(),
             Some("0.1.29")
         );
+        assert_eq!(reloaded.skills_agents, vec!["cursor".to_string()]);
+        assert_eq!(
+            reloaded.skills_refresh_attempted_for.as_deref(),
+            Some("0.1.30")
+        );
+        assert!(reloaded.skills_refresh_attempted_at.is_some());
     }
 }

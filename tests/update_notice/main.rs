@@ -64,11 +64,14 @@ fn write_old_lock(home: &Path) {
 }
 
 /// A `cx` command sealed off from the developer's real home and environment.
+/// The background skills refresh is off: these tests check the notice itself,
+/// and a real `npx` may be on `PATH` (the refresh is tested in `tests/skills`).
 fn cx(home: &Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
     cmd.env("HOME", home)
         .env("CX_HOME", home)
         .env_remove("CX_NO_UPDATE_NOTIFIER")
+        .env("CX_NO_SKILLS_AUTO_UPDATE", "1")
         .env("XDG_STATE_HOME", state_home(home))
         .env_remove("CX_API_KEY")
         .env_remove("CX_REGION")

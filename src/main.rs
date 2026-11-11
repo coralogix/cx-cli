@@ -257,8 +257,10 @@ enum SkillsCmd {
     /// Install or update the cx agent skills bundle via the `skills` npx installer.
     ///
     /// By default this asks one question (install scope) and then runs the
-    /// installer fully non-interactively with agent auto-detection. Re-running
-    /// updates already-installed skills to the latest published bundle.
+    /// installer fully non-interactively with agent auto-detection. Installs
+    /// the skills from this cx version's release tag; re-running updates
+    /// already-installed skills. After a cx upgrade, a global install refreshes
+    /// itself in the background (`auto_update_skills` in config.toml).
     /// Requires Node.js (npx).
     #[command(after_help = "\
 Examples:
@@ -286,6 +288,11 @@ Examples:
         #[arg(long)]
         interactive: bool,
     },
+
+    /// Started in the background by the update check after a cx upgrade:
+    /// repeats the recorded global install with this version's skills.
+    #[command(hide = true)]
+    AutoRefresh,
 }
 
 #[derive(Subcommand)]
@@ -3568,6 +3575,7 @@ async fn main() -> Result<()> {
         install_completions,
     } = cli.command
     {
+        update_check::suppress_skills_refresh();
         let scope = if global_skills {
             Some(commands::skills::SkillsScope::Global)
         } else if local_skills {
@@ -3593,12 +3601,17 @@ async fn main() -> Result<()> {
 
     // Skills install shells out to npx locally - no API credentials.
     if let Commands::Skills { cmd } = cli.command {
+        update_check::suppress_skills_refresh();
         let SkillsCmd::Install {
             global,
             local,
             agents,
             interactive,
-        } = cmd;
+        } = cmd
+        else {
+            // No notice: this runs detached, with no terminal.
+            return commands::skills::run_auto_refresh();
+        };
         let result = if interactive {
             commands::skills::run_advanced_install()
         } else {

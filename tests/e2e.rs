@@ -88,6 +88,8 @@ mod slos;
 mod spans;
 #[path = "e2e/suppression_rules.rs"]
 mod suppression_rules;
+#[path = "e2e/sweeper.rs"]
+mod sweeper;
 #[path = "e2e/tco_policies.rs"]
 mod tco_policies;
 #[path = "e2e/team_groups.rs"]

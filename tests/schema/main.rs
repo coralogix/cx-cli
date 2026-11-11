@@ -10,6 +10,7 @@ mod main_mod;
 fn schema_outputs_valid_json_with_expected_commands() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_cx"))
         .arg("schema")
+        .env_remove("CX_FEATURE_FLAG_AGENT_CONTEXT")
         .output()
         .expect("failed to run cx schema");
 

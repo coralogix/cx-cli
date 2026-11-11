@@ -66,15 +66,8 @@ pub enum SearchByValueDataset {
     All,
 }
 
-/// Coralogix CLI - the observability backbone for AI agents and engineering teams.
-#[derive(Parser)]
-#[command(
-    name = "cx",
-    version,
-    about,
-    long_about = None,
-    help_template = "{before-help}{about-with-newline}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
-    after_help = "\
+/// Root help's hand-written command list; `cli_command` adds the hidden `context` line.
+const ROOT_HELP: &str = "\
 \x1b[1m\x1b[4mQuery:\x1b[0m
   \x1b[1mlogs\x1b[0m               Query logs using DataPrime syntax
   \x1b[1mspans\x1b[0m              Query spans using DataPrime syntax
@@ -129,7 +122,22 @@ pub enum SearchByValueDataset {
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
   \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
   \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
-  \x1b[1mcleanup\x1b[0m            Remove stale temp files"
+  \x1b[1mcleanup\x1b[0m            Remove stale temp files";
+
+const ROOT_HELP_OLLY_LINE: &str =
+    "  \x1b[1molly\x1b[0m               Interact with the AI assistant\n";
+const ROOT_HELP_CONTEXT_LINE: &str =
+    "  \x1b[1mcontext\x1b[0m            Read and save team memories and instructions\n";
+
+/// Coralogix CLI - the observability backbone for AI agents and engineering teams.
+#[derive(Parser)]
+#[command(
+    name = "cx",
+    version,
+    about,
+    long_about = None,
+    help_template = "{before-help}{about-with-newline}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
+    after_help = ROOT_HELP
 )]
 struct Cli {
     /// Profile(s) to use. Repeat to fan out across multiple profiles simultaneously.
@@ -783,6 +791,12 @@ Examples:
         #[command(subcommand)]
         cmd: OllyCmd,
     },
+
+    /// Read and save team memories and instructions for investigations (single-profile only).
+    Context {
+        #[command(subcommand)]
+        cmd: ContextCmd,
+    },
 }
 
 impl Commands {
@@ -799,6 +813,193 @@ impl Commands {
             _ => false,
         }
     }
+}
+
+/// Builds the command tree for the parser, `cx schema`, completions and the
+/// completion entry point, so the feature flag hides `context` in all of them.
+fn cli_command() -> clap::Command {
+    let cmd = Cli::command();
+    if safety::env_is_truthy("CX_FEATURE_FLAG_AGENT_CONTEXT") {
+        cmd.after_help(ROOT_HELP.replace(
+            ROOT_HELP_OLLY_LINE,
+            &format!("{ROOT_HELP_OLLY_LINE}{ROOT_HELP_CONTEXT_LINE}"),
+        ))
+    } else {
+        cmd.mut_subcommand("context", |c| c.hide(true))
+    }
+}
+
+async fn run_context_entry_cmd(
+    targets: &[std::sync::Arc<coralogix_cli::execution::ExecutionTarget>],
+    kind: commands::context::api::Kind,
+    cmd: ContextEntryCmd,
+    confirmation: commands::context::Confirmation,
+    output: OutputFormat,
+) -> Result<()> {
+    use commands::context as ctx;
+    match cmd {
+        ContextEntryCmd::Create { args } => {
+            ctx::run_create(targets, kind, args, confirmation, output).await
+        }
+        ContextEntryCmd::Search {
+            pattern,
+            patterns,
+            fixed,
+            filter,
+        } => {
+            let all = std::iter::once(pattern).chain(patterns).collect();
+            ctx::run_query(targets, kind, all, fixed, &filter, output).await
+        }
+        ContextEntryCmd::List { filter } => {
+            ctx::run_query(targets, kind, Vec::new(), false, &filter, output).await
+        }
+        ContextEntryCmd::Get { id, revision } => {
+            ctx::run_entry_get(targets, kind, &id, revision, output).await
+        }
+        ContextEntryCmd::History { id, paging } => {
+            ctx::run_entry_history(targets, kind, &id, paging.limit, paging.offset, output).await
+        }
+        ContextEntryCmd::Update { id, args } => {
+            ctx::run_update(targets, kind, &id, args, confirmation, output).await
+        }
+        ContextEntryCmd::Delete {
+            id,
+            expected_revision,
+        } => ctx::run_delete(targets, kind, &id, expected_revision, confirmation, output).await,
+        ContextEntryCmd::Revert {
+            id,
+            to_revision,
+            expected_revision,
+        } => {
+            ctx::run_revert(
+                targets,
+                kind,
+                &id,
+                to_revision,
+                expected_revision,
+                confirmation,
+                output,
+            )
+            .await
+        }
+    }
+}
+
+#[derive(Subcommand)]
+enum ContextCmd {
+    /// Read the instructions and memories for subjects (team-wide instructions
+    /// and recent memories without subjects).
+    Get {
+        /// Subjects as `type` or `type:value` (split on the first colon).
+        #[arg(value_name = "SUBJECT")]
+        subjects: Vec<String>,
+
+        #[command(flatten)]
+        paging: commands::context::Paging,
+    },
+
+    /// List changes across the team.
+    History {
+        #[command(flatten)]
+        filter: commands::context::HistoryFilter,
+    },
+
+    /// Search, read and change memories.
+    Memories {
+        #[command(subcommand)]
+        cmd: ContextEntryCmd,
+    },
+
+    /// Search, read and change instructions.
+    Instructions {
+        #[command(subcommand)]
+        cmd: ContextEntryCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ContextEntryCmd {
+    /// Search titles, summaries and bodies line by line (case-insensitive).
+    Search {
+        /// Regular expression (or fixed string with -F).
+        pattern: String,
+
+        /// Another pattern; a line matching any pattern matches. Repeatable.
+        #[arg(short = 'e', value_name = "PATTERN")]
+        patterns: Vec<String>,
+
+        /// Treat all patterns as fixed strings.
+        #[arg(short = 'F')]
+        fixed: bool,
+
+        #[command(flatten)]
+        filter: commands::context::Filter,
+    },
+
+    /// List entries, most recently updated first.
+    List {
+        #[command(flatten)]
+        filter: commands::context::Filter,
+    },
+
+    /// Read one entry in full.
+    Get {
+        /// Entry ID.
+        id: String,
+
+        /// Read this revision instead of the current one.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        revision: Option<u64>,
+    },
+
+    /// Create an entry. [requires --yes]
+    #[command(group(ArgGroup::new("scope").required(true).args(["subjects", "team_wide"])))]
+    Create {
+        #[command(flatten)]
+        args: commands::context::CreateArgs,
+    },
+
+    /// Replace fields of an entry; others are kept. [requires --yes]
+    Update {
+        /// Entry ID.
+        id: String,
+
+        #[command(flatten)]
+        args: commands::context::UpdateArgs,
+    },
+
+    /// Delete an entry (it can be restored with revert). [requires --yes]
+    Delete {
+        /// Entry ID.
+        id: String,
+
+        /// Revision the change is based on.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        expected_revision: u64,
+    },
+
+    /// Show the revisions of one entry, newest first.
+    History {
+        /// Entry ID.
+        id: String,
+
+        #[command(flatten)]
+        paging: commands::context::Paging,
+    },
+
+    /// Make an earlier revision's content the newest revision. [requires --yes]
+    Revert {
+        /// Entry ID.
+        id: String,
+
+        /// Revision whose content to restore.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        to_revision: u64,
+
+        /// Revision the change is based on.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        expected_revision: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3377,7 +3578,7 @@ async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.
-    CompleteEnv::with_factory(Cli::command).complete();
+    CompleteEnv::with_factory(cli_command).complete();
 
     rustls::crypto::ring::default_provider()
         .install_default()
@@ -3437,7 +3638,7 @@ async fn main() -> Result<()> {
     // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // the early check above misses it. The main Cli parser handles it below.
 
-    let mut cmd = Cli::command();
+    let mut cmd = cli_command();
     if banner::should_show() {
         cmd = cmd.before_help(banner::render()).help_template(
             "{before-help}\n{usage-heading} {usage}{after-help}\n\n\x1b[1m\x1b[4mGlobal Options:\x1b[0m\n{options}",
@@ -3471,6 +3672,10 @@ async fn main() -> Result<()> {
                 safety::enforce_read_only(&leaf)?;
             }
         }
+    }
+
+    if matches!(cli.command, Commands::Context { .. }) && cli.profile.len() > 1 {
+        bail!(commands::context::MULTI_PROFILE_MESSAGE);
     }
 
     // Risky command gating (iam, archive write operations).
@@ -3626,7 +3831,7 @@ async fn main() -> Result<()> {
     // The _meta.update block is already embedded in the JSON output for toon mode;
     // the stderr notice covers TTY human users (or plain text for toon mode).
     if let Commands::Schema = cli.command {
-        let result = commands::schema::run(Cli::command());
+        let result = commands::schema::run(cli_command());
         let output = cli.output.unwrap_or(OutputFormat::Text);
         update_check::maybe_print_notice(output);
         return result;
@@ -3636,12 +3841,12 @@ async fn main() -> Result<()> {
     if let Commands::Completions { cmd } = cli.command {
         let result = match cmd {
             CompletionsCmd::Generate { shell } => {
-                commands::completions::run_generate(shell, &mut Cli::command())
+                commands::completions::run_generate(shell, &mut cli_command())
             }
             CompletionsCmd::Install { shell, path } => {
                 commands::completions::run_install(shell, path)
             }
-            CompletionsCmd::Refresh => commands::completions::run_refresh(Cli::command),
+            CompletionsCmd::Refresh => commands::completions::run_refresh(cli_command),
         };
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
@@ -5487,6 +5692,32 @@ async fn main() -> Result<()> {
                     }
                 },
             },
+            Commands::Context { cmd } => {
+                let confirmation = commands::context::Confirmation { yes, agent_mode };
+                match cmd {
+                    ContextCmd::Get { subjects, paging } => {
+                        commands::context::run_get(
+                            &targets,
+                            &subjects,
+                            paging.limit,
+                            paging.offset,
+                            output,
+                        )
+                        .await?;
+                    }
+                    ContextCmd::Memories { cmd } => {
+                        let kind = commands::context::api::Kind::Memory;
+                        run_context_entry_cmd(&targets, kind, cmd, confirmation, output).await?;
+                    }
+                    ContextCmd::Instructions { cmd } => {
+                        let kind = commands::context::api::Kind::Instruction;
+                        run_context_entry_cmd(&targets, kind, cmd, confirmation, output).await?;
+                    }
+                    ContextCmd::History { filter } => {
+                        commands::context::run_team_history(&targets, &filter, output).await?;
+                    }
+                }
+            }
         } // end match cli.command
         Ok::<(), anyhow::Error>(())
     }

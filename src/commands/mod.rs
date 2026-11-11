@@ -6,6 +6,7 @@ pub mod cases;
 pub mod cleanup;
 pub mod completions;
 pub mod connectors;
+pub mod context;
 pub mod contextual_data;
 pub mod custom_enrichments;
 pub mod dashboards;

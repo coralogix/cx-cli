@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn deserialize_limits_response_nested() {
         let json = json!({
-            "companyId": "4019663",
+            "companyId": "1234567",
             "labelsLimit": 6,
             "permutationsLimit": { "limit": 10000000, "used": 0 },
             "metricsLimit": { "limit": 300, "used": 2 }

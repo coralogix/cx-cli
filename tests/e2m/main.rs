@@ -84,7 +84,7 @@ async fn limits_reads_nested_metrics_limit() {
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/events2metrics/limits/v2"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "companyId": "4019663",
+            "companyId": "1234567",
             "labelsLimit": 6,
             "permutationsLimit": { "limit": 10000000, "used": 0 },
             "metricsLimit": { "limit": 300, "used": 2 }

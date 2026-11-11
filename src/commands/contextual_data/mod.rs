@@ -48,6 +48,35 @@ fn read_from_file(path: &str) -> Result<Value> {
     Ok(serde_json::from_str(&raw)?)
 }
 
+/// Extract the `metadata` object (`integrationKey` + `version` +
+/// `integrationParameters`) from a user-supplied JSON. Accepts the API shape
+/// (`{ "metadata": {...} }`, as used by `create`) or the flat shape with
+/// `integrationKey` and `parameters`/`integrationParameters` at the top.
+fn integration_metadata(body: &Value) -> Result<Value> {
+    if let Some(metadata) = body.get("metadata") {
+        return Ok(metadata.clone());
+    }
+    if body.get("integrationKey").is_some() {
+        let mut metadata = body.clone();
+        if let Some(parameters) = metadata.get("parameters").cloned() {
+            let Some(object) = metadata.as_object_mut() else {
+                unreachable!("a JSON value with integrationKey must be an object");
+            };
+            object.remove("parameters");
+            object.insert(
+                "integrationParameters".to_string(),
+                json!({ "parameters": parameters }),
+            );
+        }
+        metadata.as_object_mut().map(|o| o.remove("integrationId"));
+        return Ok(metadata);
+    }
+    Err(anyhow::anyhow!(
+        "contextual data JSON must contain `metadata` or `integrationKey` (with `version` and \
+         `parameters`)"
+    ))
+}
+
 pub async fn run_list(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     eprintln!("{}", "Fetching contextual data integrations...".dimmed());
     let include_profile = targets.len() > 1;
@@ -144,14 +173,21 @@ pub async fn run_get(
     for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
         // Normalize: API returns {integrationDetail: {integration: {...}, ...}}
         // Extract the inner integration and flatten to match list output.
+        // Keep the registered instances: their ids are what `update`,
+        // `test` and `delete` take.
         if let Some(inner) = val
             .get("integrationDetail")
             .and_then(|d| d.get("integration"))
         {
+            let instances = val
+                .pointer("/integrationDetail/default/registered")
+                .cloned()
+                .unwrap_or_else(|| json!([]));
             val = json!({
                 "id": inner.get("id"),
                 "name": inner.get("name"),
                 "description": inner.get("description"),
+                "instances": instances,
             });
         }
         if include_profile {
@@ -244,6 +280,7 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    let metadata = integration_metadata(&body)?;
     eprintln!(
         "{}",
         format!("Updating contextual data integration {id}...").dimmed()
@@ -251,11 +288,11 @@ pub async fn run_update(
     let id = id.to_string();
 
     let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
+        let metadata = metadata.clone();
         let id = id.clone();
         async move {
             let api = ContextualDataApi::new(&t.client);
-            Ok(api.update(&id, &body).await?)
+            Ok(api.update(&id, &metadata).await?)
         }
     })
     .await;
@@ -412,4 +449,35 @@ pub async fn run_test(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn integration_metadata_unwraps_api_shape() {
+        let body = json!({ "metadata": { "integrationKey": "awssns", "version": "0.0.1",
+            "integrationParameters": { "parameters": [] } } });
+        assert_eq!(integration_metadata(&body).unwrap(), body["metadata"]);
+    }
+
+    #[test]
+    fn integration_metadata_normalizes_flat_shape() {
+        let body = json!({ "integrationId": "abc", "integrationKey": "awssns", "version": "0.0.1",
+            "parameters": [{ "key": "IntegrationName", "stringValue": "n" }] });
+        let m = integration_metadata(&body).unwrap();
+        assert_eq!(m["integrationKey"], "awssns");
+        assert_eq!(
+            m["integrationParameters"]["parameters"][0]["key"],
+            "IntegrationName"
+        );
+        assert!(m.get("parameters").is_none());
+        assert!(m.get("integrationId").is_none());
+    }
+
+    #[test]
+    fn integration_metadata_rejects_unknown_shape() {
+        assert!(integration_metadata(&json!({ "name": "x" })).is_err());
+    }
 }

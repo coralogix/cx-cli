@@ -2421,10 +2421,8 @@ async fn enrichments_custom_create_prints_console_link() {
 async fn integrations_create_prints_console_link() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/mgmt/openapi/5/integrations/integrations/v1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "deployment": {"id": "int-1", "name": "New Integration"}
-        })))
+        .and(path("/mgmt/openapi/5/integrations/metadata/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "integrationId": "int-1" })))
         .mount(&server)
         .await;
 
@@ -2438,7 +2436,11 @@ async fn integrations_create_prints_console_link() {
     write_config(&home, "mock");
 
     let file_path = temp_json_path("integrations_create");
-    fs::write(&file_path, r#"{"name": "New Integration"}"#).unwrap();
+    fs::write(
+        &file_path,
+        r#"{"integrationKey": "K8s-Collector", "version": "0.12.1", "parameters": []}"#,
+    )
+    .unwrap();
 
     let output = cx(&home)
         .args([

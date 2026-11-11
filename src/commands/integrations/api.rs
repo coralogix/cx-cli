@@ -58,10 +58,11 @@ pub struct ListIntegrationsResponse {
     pub integrations: Vec<IntegrationEntry>,
 }
 
+/// `POST /integrations/metadata/v1` answers with just the new deployment id.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveIntegrationResponse {
-    pub deployment: Option<Integration>,
+    pub integration_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +72,7 @@ pub struct DeleteIntegrationResponse {}
 
 const INTEGRATIONS_BASE: &str = "/mgmt/openapi/5/integrations/integrations/v1";
 const INTEGRATIONS_METADATA_BASE: &str = "/mgmt/openapi/5/integrations/metadata/v1";
+const INTEGRATIONS_TEMPLATE_BASE: &str = "/mgmt/openapi/5/integrations/template/v1";
 
 pub struct IntegrationsApi<'a> {
     client: &'a CxClient,
@@ -90,26 +92,33 @@ impl<'a> IntegrationsApi<'a> {
         self.client.get(&path, &[]).await
     }
 
+    /// `GET .../integrations/v1/definitions/{key}` - the catalog definition
+    /// (fields per revision) of an integration type.
     pub async fn get_definition(&self, id: &str) -> Result<Value> {
-        let path = format!("{INTEGRATIONS_BASE}/{id}/definition");
+        let path = format!("{INTEGRATIONS_BASE}/definitions/{id}");
         self.client.get(&path, &[]).await
     }
 
+    /// `GET .../integrations/v1/deployed/{instance-id}` - one deployed
+    /// instance (its key, version and parameters).
     pub async fn get_deployed(&self, id: &str) -> Result<Value> {
-        let path = format!("{INTEGRATIONS_BASE}/{id}/deployed");
+        let path = format!("{INTEGRATIONS_BASE}/deployed/{id}");
         self.client.get(&path, &[]).await
     }
 
+    /// `POST .../integrations/metadata/v1` with `{ "metadata": {...} }`
+    /// registers a new deployment and returns its id.
     pub async fn save(&self, body: &Value) -> Result<SaveIntegrationResponse> {
-        self.client.post(INTEGRATIONS_BASE, body).await
+        self.client.post(INTEGRATIONS_METADATA_BASE, body).await
     }
 
     pub async fn update(&self, body: &Value) -> Result<Value> {
         self.client.put(INTEGRATIONS_METADATA_BASE, body).await
     }
 
+    /// `DELETE .../integrations/v1/instances/{instance-id}`.
     pub async fn delete(&self, id: &str) -> Result<DeleteIntegrationResponse> {
-        let path = format!("{INTEGRATIONS_BASE}/{id}");
+        let path = format!("{INTEGRATIONS_BASE}/instances/{id}");
         self.client.delete(&path).await
     }
 
@@ -118,9 +127,14 @@ impl<'a> IntegrationsApi<'a> {
         self.client.post(&path, body).await
     }
 
-    pub async fn get_template(&self) -> Result<Value> {
-        let path = format!("{INTEGRATIONS_BASE}/template");
-        self.client.get(&path, &[]).await
+    /// `GET .../integrations/template/v1?integration_id=...` renders the
+    /// deployment template (e.g. a CloudFormation URL) of a deployed
+    /// instance. The API rejects the call without an id.
+    pub async fn get_template(&self, integration_id: Option<&str>) -> Result<Value> {
+        let params: Vec<(&str, &str)> = integration_id
+            .map(|id| vec![("integration_id", id)])
+            .unwrap_or_default();
+        self.client.get(INTEGRATIONS_TEMPLATE_BASE, &params).await
     }
 }
 
@@ -167,9 +181,12 @@ mod tests {
 
     #[test]
     fn deserialize_save_response() {
-        let json = json!({ "deployment": { "id": "int-001", "name": "AWS Integration" } });
+        let json = json!({ "integrationId": "640bd793-7569-4f61-ae6c-351ad9de1fdd" });
         let resp: SaveIntegrationResponse = serde_json::from_value(json).unwrap();
-        assert_eq!(resp.deployment.unwrap().id.as_deref(), Some("int-001"));
+        assert_eq!(
+            resp.integration_id.as_deref(),
+            Some("640bd793-7569-4f61-ae6c-351ad9de1fdd")
+        );
     }
 
     #[test]

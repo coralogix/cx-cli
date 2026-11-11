@@ -29,8 +29,8 @@ create/update/delete. All e2e tests are `#[ignore]`d, so the default
 
 ### The writable test team
 
-E2E runs against a dedicated team (`cxai-otel-demo`, region `eu2`) with
-endless retention and a continuous feed of `otel-demo` logs, spans and
+E2E runs against a dedicated writable test team (ask the Headless team
+for its key and region) with endless retention and a continuous feed of `otel-demo` logs, spans and
 metrics. The suite may create, update and delete resources there. It must
 never be pointed at a customer or shared team.
 

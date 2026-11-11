@@ -231,7 +231,7 @@ New commands must add tests at all three layers:
 
 E2E tests don't run by default; run them with
 `cargo test --test e2e -- --ignored` (requires `CX_API_KEY` for the
-writable test team `cxai-otel-demo` on `eu2`, plus `CX_E2E_ALLOW_WRITES=1`
+writable test team, `CX_REGION`, plus `CX_E2E_ALLOW_WRITES=1`
 for write tests). CI runs the whole suite on every PR; PRs run in parallel,
 so every test uses `harness::unique_name` and cleans up after itself. See
 [contributing/adding-a-command.md](contributing/adding-a-command.md)

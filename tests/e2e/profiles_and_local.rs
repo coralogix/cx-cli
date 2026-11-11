@@ -59,6 +59,12 @@ pub(crate) fn cx_in_home_with_creds(home: &Path) -> Command {
     cmd
 }
 
+/// A path as a TOML basic-string value: forward slashes on every OS, so
+/// Windows backslashes are not read as escape sequences.
+pub(crate) fn toml_path(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 fn run(cmd: &mut Command) -> (bool, String, String) {
     let output = cmd.output().expect("failed to run cx");
     (
@@ -319,9 +325,16 @@ fn completions_install_then_refresh_in_temp_home() {
     );
 
     // Default path for zsh lives under $HOME, so it lands in the temp HOME.
-    let (ok, _, err) = run(cx_in_home(&home).args(["completions", "install", "zsh"]));
-    assert!(ok, "install zsh failed: {err}");
+    // On Windows `dirs::home_dir` ignores HOME/USERPROFILE, so the default
+    // path cannot be redirected; pass it explicitly there to stay sealed.
     let zsh_path = home.join(".zfunc").join("_cx");
+    let mut install = cx_in_home(&home);
+    install.args(["completions", "install", "zsh"]);
+    if cfg!(windows) {
+        install.arg("--path").arg(&zsh_path);
+    }
+    let (ok, _, err) = run(&mut install);
+    assert!(ok, "install zsh failed: {err}");
     assert!(zsh_path.is_file(), "expected {}", zsh_path.display());
     assert!(err.contains("Installed zsh completions"), "stderr: {err}");
     let config = config_toml(&home);
@@ -366,7 +379,7 @@ fn cleanup_removes_only_stale_result_files() {
     fs::create_dir_all(home.join(".cx")).unwrap();
     fs::write(
         home.join(".cx").join("config.toml"),
-        format!("temp_dir = \"{}/\"\n", spill_dir.display()),
+        format!("temp_dir = \"{}/\"\n", toml_path(&spill_dir)),
     )
     .unwrap();
 

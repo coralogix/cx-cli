@@ -72,7 +72,7 @@ fn spill_home(tag: &str) -> (PathBuf, PathBuf) {
         home.join(".cx").join("config.toml"),
         format!(
             "max_dataprime_direct_output_size = 1\ntemp_dir = \"{}/\"\n",
-            spill_dir.display()
+            crate::profiles_and_local::toml_path(&spill_dir)
         ),
     )
     .unwrap();

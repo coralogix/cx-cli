@@ -35,7 +35,9 @@ pub(crate) fn temp_home(tag: &str) -> PathBuf {
 /// credentials, no `CX_PROFILE`.
 pub(crate) fn cx_in_home(home: &Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
+    // `dirs::home_dir` reads HOME on Unix and USERPROFILE on Windows.
     cmd.env("HOME", home)
+        .env("USERPROFILE", home)
         .env("CX_HOME", home)
         .env_remove("CX_API_KEY")
         .env_remove("CX_REGION")
@@ -48,7 +50,9 @@ pub(crate) fn cx_in_home(home: &Path) -> Command {
 /// `harness::require_creds` (env-only mode: no profile on disk).
 pub(crate) fn cx_in_home_with_creds(home: &Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
+    // `dirs::home_dir` reads HOME on Unix and USERPROFILE on Windows.
     cmd.env("HOME", home)
+        .env("USERPROFILE", home)
         .env("CX_HOME", home)
         .env_remove("CX_PROFILE")
         .current_dir(home);

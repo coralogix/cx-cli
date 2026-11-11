@@ -62,8 +62,22 @@ pub struct ListViewFoldersResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateViewFolderResponse {
-    pub folder: Option<ViewFolder>,
+#[serde(untagged)]
+pub enum CreateViewFolderResponse {
+    /// `{"folder": {...}}` envelope. Listed first: with every `ViewFolder`
+    /// field optional, `Bare` would otherwise swallow the envelope.
+    Wrapped { folder: ViewFolder },
+    /// Bare folder object, as the live API returns it.
+    Bare(ViewFolder),
+}
+
+impl CreateViewFolderResponse {
+    pub fn into_folder(self) -> Option<ViewFolder> {
+        let folder = match self {
+            Self::Wrapped { folder } | Self::Bare(folder) => folder,
+        };
+        Some(folder)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,9 +137,16 @@ impl<'a> ViewsApi<'a> {
         self.client.post(VIEWS_FOLDERS_BASE, body).await
     }
 
+    /// `PUT /folders` (no id in the path): the API identifies the folder by
+    /// the `id` field in the body, which is injected from the CLI argument
+    /// when the file omits it.
     pub async fn replace_folder(&self, id: &str, body: &Value) -> Result<Value> {
-        let path = format!("{VIEWS_FOLDERS_BASE}/{id}");
-        self.client.put(&path, body).await
+        let mut body = body.clone();
+        if let Some(obj) = body.as_object_mut() {
+            obj.entry("id")
+                .or_insert_with(|| Value::String(id.to_string()));
+        }
+        self.client.put(VIEWS_FOLDERS_BASE, &body).await
     }
 
     pub async fn delete_folder(&self, id: &str) -> Result<DeleteViewFolderResponse> {
@@ -188,5 +209,29 @@ mod tests {
             parent_id: None,
         };
         assert_eq!(f.display_name(), "-");
+    }
+}
+
+#[cfg(test)]
+mod create_folder_response_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn create_folder_response_reads_wrapped_shape() {
+        let resp: CreateViewFolderResponse =
+            serde_json::from_value(json!({ "folder": { "id": "f-1", "name": "Infra" } })).unwrap();
+        let folder = resp.into_folder().unwrap();
+        assert_eq!(folder.id.as_deref(), Some("f-1"));
+        assert_eq!(folder.name.as_deref(), Some("Infra"));
+    }
+
+    #[test]
+    fn create_folder_response_reads_bare_shape() {
+        let resp: CreateViewFolderResponse =
+            serde_json::from_value(json!({ "id": "f-2", "name": "Apps" })).unwrap();
+        let folder = resp.into_folder().unwrap();
+        assert_eq!(folder.id.as_deref(), Some("f-2"));
+        assert_eq!(folder.name.as_deref(), Some("Apps"));
     }
 }

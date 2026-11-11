@@ -186,8 +186,8 @@ pub async fn run_search(
 }
 
 #[derive(Serialize)]
-struct SampleRow<'a> {
-    sample: &'a str,
+struct ValueRow<'a> {
+    value: &'a str,
 }
 
 pub async fn run_samples(
@@ -222,13 +222,8 @@ pub async fn run_samples(
         OutputFormat::Json | OutputFormat::Toon => {
             let rows = samples
                 .iter()
-                .map(|(profile, sample)| {
-                    profiled_api_row_to_json(
-                        profile,
-                        &SampleRow { sample },
-                        include_profile,
-                        "sample",
-                    )
+                .map(|(profile, value)| {
+                    profiled_api_row_to_json(profile, &ValueRow { value }, include_profile, "value")
                 })
                 .collect::<Result<Vec<Value>>>()?;
             if output == OutputFormat::Json {
@@ -244,9 +239,9 @@ pub async fn run_samples(
             }
             let rows = samples
                 .iter()
-                .map(|(profile, sample)| vec![profile.clone(), sample.clone()])
+                .map(|(profile, value)| vec![profile.clone(), value.clone()])
                 .collect();
-            render::render_table(&["Sample"], rows, include_profile);
+            render::render_table(&["Value"], rows, include_profile);
         }
     }
     Ok(())

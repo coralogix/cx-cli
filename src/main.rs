@@ -68,34 +68,26 @@ pub enum SearchByValueDataset {
 
 #[derive(Subcommand)]
 enum DatasetsCmd {
-    /// Search a dataset's fields (DataPrime keypaths) and sample their values.
-    Fields {
-        #[command(subcommand)]
-        cmd: FieldsCmd,
-    },
-}
-
-#[derive(Subcommand)]
-enum FieldsCmd {
-    /// Search the fields observed in one or more datasets, with their DataPrime types.
+    /// Search the fields (DataPrime keypaths) observed in one or more datasets, with their
+    /// DataPrime types.
     ///
     /// Repeating --exact, --prefix or --contains means any of its values; different flags must
     /// all hold.
     #[command(after_help = "\
 Examples:
-  cx datasets fields search --contains pod
-  cx datasets fields search --prefix '$d.kubernetes' --prefix '$d.k8s'
-  cx datasets fields search --prefix '$l' --prefix '$m' --dataset logs --dataset spans
-  cx datasets fields search --exact \"\\$d.tags['http.method']\" --label subsystemName=api --start now-24h")]
-    Search(FieldsSearchArgs),
+  cx datasets fields --contains pod
+  cx datasets fields --prefix '$d.kubernetes' --prefix '$d.k8s'
+  cx datasets fields --prefix '$l' --prefix '$m' --dataset logs --dataset spans
+  cx datasets fields --exact \"\\$d.tags['http.method']\" --label subsystemName=api --start now-24h")]
+    Fields(FieldsSearchArgs),
 
     /// Show sample values of one field.
     #[command(after_help = "\
 Examples:
-  cx datasets fields values '$m.severity'
-  cx datasets fields values \"\\$d.tags['http.method']\" --label applicationName=checkout --label applicationName=payments
-  cx datasets fields values '$l.subsystemName' --dataset logs --dataset spans --start now-6h")]
-    Values(FieldValuesArgs),
+  cx datasets field-values '$m.severity'
+  cx datasets field-values \"\\$d.tags['http.method']\" --label applicationName=checkout --label applicationName=payments
+  cx datasets field-values '$l.subsystemName' --dataset logs --dataset spans --start now-6h")]
+    FieldValues(FieldValuesArgs),
 }
 
 #[derive(Args)]
@@ -138,7 +130,7 @@ struct FieldsSearchArgs {
 
 #[derive(Args)]
 struct FieldValuesArgs {
-    /// Field in DataPrime syntax, as `datasets fields search` prints it.
+    /// Field in DataPrime syntax, as `datasets fields` prints it.
     keypath: String,
 
     /// Dataset as 'dataset' (in the default dataspace) or 'dataspace/dataset'. Repeat for
@@ -5557,10 +5549,8 @@ async fn main() -> Result<()> {
                 }
             },
 
-            Commands::Datasets {
-                cmd: DatasetsCmd::Fields { cmd },
-            } => match cmd {
-                FieldsCmd::Search(FieldsSearchArgs {
+            Commands::Datasets { cmd } => match cmd {
+                DatasetsCmd::Fields(FieldsSearchArgs {
                     datasets,
                     exact,
                     prefix,
@@ -5579,7 +5569,7 @@ async fn main() -> Result<()> {
                     };
                     commands::keypaths::run_search(&targets, &request, output).await?;
                 }
-                FieldsCmd::Values(FieldValuesArgs {
+                DatasetsCmd::FieldValues(FieldValuesArgs {
                     keypath,
                     datasets,
                     labels,
@@ -5689,45 +5679,37 @@ mod tests {
         assert!(parse_completions_shell("not-a-shell").is_err());
     }
 
-    fn fields_command(args: &[&str]) -> Result<FieldsCmd, clap::Error> {
-        let cli = Cli::try_parse_from(["cx", "datasets", "fields"].iter().chain(args))?;
+    fn datasets_command(args: &[&str]) -> Result<DatasetsCmd, clap::Error> {
+        let cli = Cli::try_parse_from(["cx", "datasets"].iter().chain(args))?;
         match cli.command {
-            Commands::Datasets {
-                cmd: DatasetsCmd::Fields { cmd },
-            } => Ok(cmd),
-            _ => panic!("not a datasets fields command"),
+            Commands::Datasets { cmd } => Ok(cmd),
+            _ => panic!("not a datasets command"),
         }
     }
 
     #[test]
-    fn datasets_fields_search_takes_the_search_flags() {
-        match fields_command(&["search", "--contains", "pod"]).unwrap() {
-            FieldsCmd::Search(search) => assert_eq!(search.contains, ["pod"]),
-            FieldsCmd::Values(_) => panic!("not a search"),
+    fn datasets_fields_takes_the_search_flags() {
+        match datasets_command(&["fields", "--contains", "pod"]).unwrap() {
+            DatasetsCmd::Fields(search) => assert_eq!(search.contains, ["pod"]),
+            DatasetsCmd::FieldValues(_) => panic!("not a search"),
         }
     }
 
     #[test]
-    fn datasets_fields_requires_a_subcommand() {
-        assert!(fields_command(&[]).is_err());
-        assert!(fields_command(&["--contains", "pod"]).is_err());
-    }
-
-    #[test]
-    fn datasets_fields_values_takes_the_field() {
-        match fields_command(&["values", "$m.severity"]).unwrap() {
-            FieldsCmd::Values(values) => assert_eq!(values.keypath, "$m.severity"),
-            FieldsCmd::Search(_) => panic!("not values"),
+    fn datasets_field_values_takes_the_field() {
+        match datasets_command(&["field-values", "$m.severity"]).unwrap() {
+            DatasetsCmd::FieldValues(values) => assert_eq!(values.keypath, "$m.severity"),
+            DatasetsCmd::Fields(_) => panic!("not field values"),
         }
     }
 
     #[test]
-    fn global_options_work_before_a_fields_subcommand() {
+    fn global_options_work_before_a_datasets_subcommand() {
         for args in [
-            &["-o", "json", "values", "$m.severity"][..],
-            &["--read-only", "search", "--contains", "pod"],
+            &["-o", "json", "field-values", "$m.severity"][..],
+            &["--read-only", "fields", "--contains", "pod"],
         ] {
-            assert!(fields_command(args).is_ok(), "{args:?}");
+            assert!(datasets_command(args).is_ok(), "{args:?}");
         }
     }
 }

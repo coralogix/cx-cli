@@ -602,20 +602,20 @@ async fn list_returns_items_from_mock() {
 Cover at minimum: happy-path list/get, an empty response, a `--name`/filter
 case if your command supports one, and the JSON output path.
 
-### Layer 3 - E2E tests (real test team)
+### Layer 3 - E2E tests (writable test team)
 
-Add a sanity test in `tests/e2e/<your_domain>/mod.rs` that invokes the
-compiled `cx` binary against a real Coralogix test team. The goal is
-**only** to verify that the command runs end-to-end: exits 0, produces
-non-empty stdout, and (for `-o json`) emits valid JSON. Don't assert on
-output content - test team data drifts.
+Add tests in `tests/e2e/<your_domain>/mod.rs` that invoke the compiled
+`cx` binary against the writable Coralogix test team (see
+[development.md](development.md) § "E2E tests"). Every leaf command of the
+new domain must be exercised, including writes. The suite runs on every
+PR, in parallel with other PRs, so follow the rules below exactly.
 
 All e2e tests are `#[ignore]`d, so they don't run in the default
-`cargo test`. CI invokes them via a separate workflow.
+`cargo test`. CI invokes them via `.github/workflows/e2e.yml`.
 
 ```rust
 // tests/e2e/your_domain/mod.rs
-use std::sync::OnceLock;
+use serde_json::json;
 
 use crate::harness;
 
@@ -625,37 +625,43 @@ fn your_domain_list() {
     if harness::require_creds("your_domain_list").is_none() {
         return;
     }
-    harness::run_ok_json(&["your-domain", "list", "-o", "json"]);
+    // The team may have zero items: assert the shape, not the count.
+    let v = harness::run_ok_json(&["your-domain", "list", "-o", "json"]);
+    harness::assert_array_of_objects_with_keys(&v, &["id", "name"]);
 }
 
 #[test]
 #[ignore]
-fn your_domain_get() {
-    if harness::require_creds("your_domain_get").is_none() {
+fn your_domain_lifecycle() {
+    if harness::require_write_creds("your_domain_lifecycle").is_none() {
         return;
     }
-    let Some(id) = discover_your_domain_id() else {
-        eprintln!("[e2e] skipping your_domain_get: no items on test team");
-        return;
-    };
-    harness::run_ok_json(&["your-domain", "get", &id, "-o", "json"]);
-}
+    let name = harness::unique_name("yourdomain");
+    let file = harness::JsonFile::new("yourdomain", &json!({ "name": name }));
 
-/// Discover an id from `your-domain list -o json`. Cached so multiple
-/// tests don't each pay for the list call.
-fn discover_your_domain_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            let stdout = harness::run_ok(&["your-domain", "list", "-o", "json"]);
-            let v = harness::parse_json(&stdout)?;
-            v.as_array()?
-                .iter()
-                .filter_map(|item| item.get("id").and_then(|x| x.as_str()))
-                .next()
-                .map(String::from)
-        })
-        .clone()
+    // create
+    let created = harness::run_write_json(&[
+        "your-domain", "create", "--from-file", file.path(), "-o", "json",
+    ]);
+    let id = harness::id_from_response(&created).expect("create returns an id");
+    let mut cleanup = harness::Cleanup::new(&["your-domain", "delete", &id]);
+
+    // get + list contain exactly what we created
+    let got = harness::run_ok_json(&["your-domain", "get", &id, "-o", "json"]);
+    assert_eq!(got["name"], name);
+    let list = harness::run_ok_json(&["your-domain", "list", "-o", "json"]);
+    assert!(harness::find_by_name(&list, "name", &name).is_some());
+
+    // update, then verify the change is visible
+    let upd = harness::JsonFile::new("yourdomain-upd", &json!({ "id": id, "name": format!("{name}-2") }));
+    harness::run_write_ok(&["your-domain", "update", &id, "--from-file", upd.path()]);
+    let got = harness::run_ok_json(&["your-domain", "get", &id, "-o", "json"]);
+    assert_eq!(got["name"], format!("{name}-2"));
+
+    // delete, then get must fail
+    harness::run_write_ok(&["your-domain", "delete", &id]);
+    cleanup.disarm();
+    harness::run_fail(&["your-domain", "get", &id, "-o", "json"]);
 }
 ```
 
@@ -666,21 +672,33 @@ Then declare the module in `tests/e2e.rs`:
 mod your_domain;
 ```
 
-Discovery helpers stay local to each test module - see
-`discover_alert_id` in `tests/e2e/alerts/mod.rs` for the pattern. They
-should cache via `OnceLock` and skip (return `None`) when the test team
-has no data, not panic.
+Rules (the harness in `tests/e2e/harness.rs` has helpers for each):
 
-**Do not exercise mutating commands** in e2e (create/delete/enable/
-disable) until there's a paired-undo plan - they touch shared test team
-state. Use a comment to mark them as deliberately uncovered, like the
-existing block at the bottom of `tests/e2e/alerts/mod.rs`.
+- **Unique names.** Every created resource is named by
+  `harness::unique_name`. Never hardcode a name, never act on "the first
+  item" of a list.
+- **Own your data.** Update/delete/enable/disable only what the test
+  created. Register `harness::Cleanup` right after create so the resource
+  is removed even when a later assertion panics.
+- **Assert the effect.** After create, `get` must return the name; after
+  update, `get` must show the change; after delete, `get` must fail
+  (`harness::run_fail`).
+- **Singletons.** Settings-style commands without a per-resource id are
+  round-tripped (get, write back the same value, get again). If no safe
+  round-trip exists, add a test that prints `[e2e] not covered: <command>
+  - <reason>` and a comment explaining why.
+- **Sweeper.** If the new domain has a list and a delete, add it to
+  `SWEEPABLES` in `tests/e2e/sweeper.rs` so leftovers from crashed runs are
+  removed.
+- **Fix the CLI, not the test.** When the real API disagrees with the CLI
+  (wrong path or verb, missing id in output, bad deserialization), fix the
+  command and add a unit test for the shape.
 
 ### Running the suites
 
 ```bash
 cargo test                                              # unit + integration
-cargo test --test e2e -- --ignored --test-threads=1     # e2e (needs CX_API_KEY)
+cargo test --test e2e -- --ignored                      # e2e (needs CX_API_KEY + CX_E2E_ALLOW_WRITES)
 cargo clippy                                            # lint
 cargo fmt --check                                       # format check
 ```

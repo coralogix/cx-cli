@@ -59,6 +59,15 @@ pub struct DeleteConnectorResponse {}
 // --- API ---
 
 const CONNECTORS_BASE: &str = "/mgmt/openapi/5/notifications/notification-center/v1/connectors";
+/// Entity types are a sibling of the connectors collection, not nested under
+/// it. A `GET .../connectors/entity-types` is answered with 404 "Connector
+/// with id entity-types not found".
+const ENTITY_TYPES_BASE: &str = "/mgmt/openapi/5/notifications/notification-center/v1/entity-types";
+
+/// Path of the entity-subtypes listing for one entity type (e.g. `ALERTS`).
+pub fn entity_subtypes_path(entity_type: &str) -> String {
+    format!("{ENTITY_TYPES_BASE}/{entity_type}/entity-subtypes")
+}
 
 pub struct ConnectorsApi<'a> {
     client: &'a CxClient,
@@ -97,13 +106,13 @@ impl<'a> ConnectorsApi<'a> {
     }
 
     pub async fn list_entity_types(&self) -> Result<Value> {
-        let path = format!("{CONNECTORS_BASE}/entity-types");
-        self.client.get(&path, &[]).await
+        self.client.get(ENTITY_TYPES_BASE, &[]).await
     }
 
     pub async fn list_entity_subtypes(&self, entity_type: &str) -> Result<Value> {
-        let path = format!("{CONNECTORS_BASE}/entity-types/{entity_type}/subtypes");
-        self.client.get(&path, &[]).await
+        self.client
+            .get(&entity_subtypes_path(entity_type), &[])
+            .await
     }
 }
 
@@ -174,6 +183,15 @@ mod tests {
     fn deserialize_delete_response() {
         let json = json!({});
         let _resp: DeleteConnectorResponse = serde_json::from_value(json).unwrap();
+    }
+
+    #[test]
+    fn entity_subtypes_path_is_sibling_of_connectors() {
+        assert_eq!(
+            entity_subtypes_path("ALERTS"),
+            "/mgmt/openapi/5/notifications/notification-center/v1/entity-types/ALERTS/entity-subtypes"
+        );
+        assert!(!ENTITY_TYPES_BASE.starts_with(CONNECTORS_BASE));
     }
 
     #[test]

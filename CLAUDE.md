@@ -16,7 +16,7 @@ cargo clippy                        # Lint
 cargo test                          # Run all tests
 cargo test <test_name>              # Run a single test
 cargo test -- --ignored             # Run integration tests (filesystem-dependent)
-cargo test --test e2e -- --ignored --test-threads=1   # E2E vs. Coralogix test team (needs CX_API_KEY)
+cargo test --test e2e -- --ignored  # E2E vs. writable test team (needs CX_API_KEY, CX_REGION=eu2, CX_E2E_ALLOW_WRITES=1)
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
@@ -227,12 +227,15 @@ New commands must add tests at all three layers:
 |-------|----------|---------|
 | **Unit** | `src/commands/<command>/api.rs` `#[cfg(test)]` | API response deserialization (mandatory for REST commands) |
 | **Integration** | `tests/<command>/main.rs` (wiremock) | Command runner with mocked HTTP - covers fan-out, merge, render |
-| **E2E** | `tests/e2e/<command>/mod.rs` (`#[ignore]`d) | Real `cx` binary against the Coralogix test team - sanity check exit + output |
+| **E2E** | `tests/e2e/<command>/mod.rs` (`#[ignore]`d) | Real `cx` binary against the writable test team - full create/get/update/delete lifecycle with run-unique names and cleanup |
 
 E2E tests don't run by default; run them with
-`cargo test --test e2e -- --ignored --test-threads=1` (requires
-`CX_API_KEY`). See [contributing/adding-a-command.md](contributing/adding-a-command.md)
-§ "Testing" for templates.
+`cargo test --test e2e -- --ignored` (requires `CX_API_KEY` for the
+writable test team, `CX_REGION`, plus `CX_E2E_ALLOW_WRITES=1`
+for write tests). CI runs the whole suite on every PR; PRs run in parallel,
+so every test uses `harness::unique_name` and cleans up after itself. See
+[contributing/adding-a-command.md](contributing/adding-a-command.md)
+§ "Testing" for the lifecycle template and rules.
 
 - **New skills** - verify skill triggers and reference file completeness
 

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::error::Result;
 
@@ -50,6 +50,16 @@ pub struct CreateActionResponse {
 #[derive(Debug, Deserialize)]
 pub struct DeleteActionResponse {}
 
+/// Build the replace request: a file that already has the `action` envelope
+/// is kept, a bare action (as returned by `actions get`'s inner object) is
+/// wrapped.
+pub fn replace_request_body(body: &Value) -> Value {
+    match body {
+        Value::Object(map) if map.contains_key("action") => body.clone(),
+        _ => json!({ "action": body }),
+    }
+}
+
 // --- API ---
 
 const ACTIONS_BASE: &str = "/mgmt/openapi/5/actions/actions/v2";
@@ -78,9 +88,13 @@ impl<'a> ActionsApi<'a> {
         self.client.post(ACTIONS_BASE, body).await
     }
 
-    pub async fn replace(&self, id: &str, body: &Value) -> Result<Value> {
-        let path = format!("{ACTIONS_BASE}/{id}");
-        self.client.put(&path, body).await
+    /// The API replaces an action with `PUT /actions/actions/v2` and the id
+    /// inside `{"action": {...}}` (`PUT .../v2/{id}` is a 405). See
+    /// [`replace_request_body`].
+    pub async fn replace(&self, body: &Value) -> Result<Value> {
+        self.client
+            .put(ACTIONS_BASE, &replace_request_body(body))
+            .await
     }
 
     pub async fn delete(&self, id: &str) -> Result<DeleteActionResponse> {
@@ -151,6 +165,18 @@ mod tests {
         });
         let resp: CreateActionResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.action.unwrap().id.as_deref(), Some("action-new"));
+    }
+
+    #[test]
+    fn replace_body_wraps_bare_action() {
+        let bare = json!({ "id": "a-1", "name": "n", "url": "https://example.com" });
+        assert_eq!(replace_request_body(&bare), json!({ "action": bare }));
+    }
+
+    #[test]
+    fn replace_body_keeps_envelope() {
+        let wrapped = json!({ "action": { "id": "a-1", "name": "n" } });
+        assert_eq!(replace_request_body(&wrapped), wrapped);
     }
 
     #[test]

@@ -110,6 +110,22 @@ fn integration_metadata(body: &Value, deployment_id: &str) -> Result<Value> {
     }))
 }
 
+/// Build the `POST /integrations/metadata/v1` body for `create`.
+///
+/// Accepts the API shape (`{ "metadata": {...} }`) or the flat shape
+/// (`integrationKey` + `version` + `parameters`/`integrationParameters`), the
+/// same inputs `update` understands.
+fn create_request(body: &Value) -> Result<Value> {
+    if body.get("metadata").is_some() || body.get("integrationKey").is_some() {
+        let metadata = integration_metadata(body, "")?;
+        return Ok(json!({ "metadata": metadata }));
+    }
+    Err(anyhow::anyhow!(
+        "integration JSON must contain `metadata` or `integrationKey` (with `version` and \
+         `parameters`)"
+    ))
+}
+
 fn test_request(body: &Value, deployment_id: Option<&str>) -> Result<Value> {
     if body.get("integrationData").is_some() && body.get("integrationId").is_some() {
         let mut request = body.clone();
@@ -255,36 +271,53 @@ pub async fn run_create(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    let request = create_request(&body)?;
+    let integration_key = request
+        .pointer("/metadata/integrationKey")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let version = request
+        .pointer("/metadata/version")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     eprintln!("{}", "Creating integration...".dimmed());
     let include_profile = targets.len() > 1;
 
     let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
+        let request = request.clone();
         async move {
             let api = IntegrationsApi::new(&t.client);
-            Ok(api.save(&body).await?)
+            Ok(api.save(&request).await?)
         }
     })
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(integration) = resp.deployment {
-            let name = integration.name.clone().unwrap_or_default();
-            render::print_created(
-                "Created",
-                "integration",
-                Some(&name),
-                integration.id.as_deref(),
-                &profile,
-            );
-            let val = rg_to_json(&integration, include_profile, &profile);
-            crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
-                crate::console_url::integrations_url(b)
-            })
-            .await;
-            all_results.push(val);
+        render::print_created(
+            "Created",
+            "integration",
+            Some(&integration_key),
+            resp.integration_id.as_deref(),
+            &profile,
+        );
+        let mut val = json!({
+            "id": resp.integration_id,
+            "integrationKey": integration_key,
+            "version": version,
+        });
+        if include_profile {
+            if let Value::Object(ref mut m) = val {
+                m.insert("profile".to_string(), Value::String(profile.clone()));
+            }
         }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::integrations_url(b)
+        })
+        .await;
+        all_results.push(val);
     }
 
     match output {
@@ -530,7 +563,9 @@ pub async fn run_template(targets: &[Arc<ExecutionTarget>], output: OutputFormat
 
     let per_profile = fan_out(targets, |t| async move {
         let api = IntegrationsApi::new(&t.client);
-        Ok(api.get_template().await?)
+        // The CLI has no way to pass an instance id yet; the API answers 400
+        // without one. Keep the route correct so adding the flag is trivial.
+        Ok(api.get_template(None).await?)
     })
     .await;
 
@@ -563,4 +598,45 @@ pub async fn run_template(targets: &[Arc<ExecutionTarget>], output: OutputFormat
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_request_wraps_flat_shape_in_metadata() {
+        let body = json!({
+            "integrationKey": "K8s-Collector",
+            "version": "0.12.1",
+            "parameters": [{ "key": "CollectorName", "stringValue": "c" }]
+        });
+        let req = create_request(&body).unwrap();
+        assert_eq!(req["metadata"]["integrationKey"], "K8s-Collector");
+        assert_eq!(req["metadata"]["version"], "0.12.1");
+        assert_eq!(
+            req["metadata"]["integrationParameters"]["parameters"][0]["key"],
+            "CollectorName"
+        );
+        assert!(req["metadata"].get("parameters").is_none());
+    }
+
+    #[test]
+    fn create_request_passes_api_shape_through() {
+        let body = json!({
+            "metadata": {
+                "integrationKey": "K8s-Collector",
+                "version": "0.12.1",
+                "integrationParameters": { "parameters": [] }
+            }
+        });
+        let req = create_request(&body).unwrap();
+        assert_eq!(req, body);
+    }
+
+    #[test]
+    fn create_request_rejects_unknown_shape() {
+        let err = create_request(&json!({ "name": "x" })).unwrap_err();
+        assert!(err.to_string().contains("integrationKey"), "{err}");
+    }
 }

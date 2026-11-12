@@ -243,12 +243,15 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
 
 pub async fn run_bulk_delete(targets: &[Arc<ExecutionTarget>], ids: &[String]) -> Result<()> {
     eprintln!("{}", "Bulk deleting rule groups...".dimmed());
-    let body = json!({"ids": ids});
+    if ids.is_empty() {
+        anyhow::bail!("`--ids` must list at least one rule group id");
+    }
+    let ids: Vec<String> = ids.to_vec();
     let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
+        let ids = ids.clone();
         async move {
             let api = RuleGroupsApi::new(&t.client);
-            api.bulk_delete(&body).await?;
+            api.bulk_delete(&ids).await?;
             Ok(())
         }
     })

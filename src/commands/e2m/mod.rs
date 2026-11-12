@@ -326,8 +326,8 @@ pub async fn run_labels_cardinality(
 
     let mut all_json: Vec<Value> = Vec::new();
     for (_profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        for label in resp.labels {
-            all_json.push(label);
+        for day in resp.permutations {
+            all_json.push(day);
         }
     }
 
@@ -366,8 +366,11 @@ pub async fn run_limits(targets: &[Arc<ExecutionTarget>], output: OutputFormat) 
     let mut all_json: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
         let mut v = json!({
-            "limit": resp.limit,
-            "used": resp.used,
+            "limit": resp.effective_limit(),
+            "used": resp.effective_used(),
+            "labels_limit": resp.labels_limit,
+            "permutations_limit": resp.permutations_limit.as_ref().and_then(|p| p.limit),
+            "permutations_used": resp.permutations_limit.as_ref().and_then(|p| p.used),
         });
         if include_profile {
             if let Value::Object(ref mut m) = v {

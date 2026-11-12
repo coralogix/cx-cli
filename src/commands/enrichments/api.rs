@@ -42,6 +42,27 @@ pub struct ListEnrichmentsResponse {
 
 const ENRICHMENTS_BASE: &str = "/mgmt/openapi/5/enrichment-rules/enrichment-rules/v1";
 
+/// Build `enrichment_ids=<a>&enrichment_ids=<b>`. Ids are numeric in
+/// practice; anything outside the URL-unreserved set is percent-encoded.
+pub fn remove_query(ids: &[String]) -> String {
+    fn encode(id: &str) -> String {
+        let mut out = String::with_capacity(id.len());
+        for byte in id.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(byte as char)
+                }
+                other => out.push_str(&format!("%{other:02X}")),
+            }
+        }
+        out
+    }
+    ids.iter()
+        .map(|id| format!("enrichment_ids={}", encode(id)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 pub struct EnrichmentsApi<'a> {
     client: &'a CxClient,
 }
@@ -59,12 +80,18 @@ impl<'a> EnrichmentsApi<'a> {
         self.client.post(ENRICHMENTS_BASE, body).await
     }
 
-    pub async fn remove(&self, body: &Value) -> Result<Value> {
-        self.client.delete_with_body(ENRICHMENTS_BASE, body).await
+    /// `DELETE /v1?enrichment_ids=<id>&enrichment_ids=<id>`. The API takes
+    /// the ids as repeated query parameters and ignores a JSON body.
+    pub async fn remove(&self, ids: &[String]) -> Result<Value> {
+        let path = format!("{ENRICHMENTS_BASE}?{}", remove_query(ids));
+        self.client.delete(&path).await
     }
 
+    /// `PUT /v1/all`: atomic overwrite for all enrichment types. The plain
+    /// `PUT /v1` is the deprecated custom-only variant with a different body.
     pub async fn overwrite(&self, body: &Value) -> Result<Value> {
-        self.client.put(ENRICHMENTS_BASE, body).await
+        let path = format!("{ENRICHMENTS_BASE}/all");
+        self.client.put(&path, body).await
     }
 
     pub async fn limit(&self) -> Result<Value> {
@@ -104,6 +131,16 @@ mod tests {
         let json = json!({});
         let resp: ListEnrichmentsResponse = serde_json::from_value(json).unwrap();
         assert!(resp.enrichments.is_empty());
+    }
+
+    #[test]
+    fn remove_query_repeats_the_parameter_and_encodes() {
+        let ids = vec!["272627".to_string(), "a b&c".to_string()];
+        assert_eq!(
+            remove_query(&ids),
+            "enrichment_ids=272627&enrichment_ids=a%20b%26c"
+        );
+        assert_eq!(remove_query(&[]), "");
     }
 
     #[test]

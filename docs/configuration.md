@@ -287,7 +287,7 @@ saves the secret in the profile file instead.
 | `default_profile` | `"default"` | Profile used when `-p` is not provided |
 | `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `toon`; `agents` accepted as a deprecated alias) |
 | `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `toon` mode before spilling to a temp file. Set to `-1` to disable |
-| `temp_dir` | `"/tmp/"` | Directory for spilled result files |
+| `temp_dir` | OS temp dir (`"/tmp/"` on Linux and macOS) | Directory for spilled result files |
 | `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
 | `strict_fields_validation` | `false` | Reject `cx logs`, `cx spans`, and `cx dataprime query` queries that reference fields missing from the schema (equivalent to always passing `--strict-fields-validation`; `--no-strict-fields-validation` overrides it). Off, such queries run and print a `compileWarning` on stderr |
 | `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |

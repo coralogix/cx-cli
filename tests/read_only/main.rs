@@ -122,3 +122,88 @@ fn read_only_env_yes_blocks_write() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("read-only mode"), "stderr: {stderr}");
 }
+
+fn context_under_read_only(args: &[&str]) -> String {
+    let output = cx()
+        .env_remove("CX_READ_ONLY")
+        .args([
+            "--read-only",
+            "--api-key",
+            "fake",
+            "--region",
+            "http://127.0.0.1:9",
+        ])
+        .args(["context"])
+        .args(args)
+        .output()
+        .expect("failed to run cx");
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn read_only_blocks_context_writes() {
+    let writes: [&[&str]; 5] = [
+        &[
+            "memories",
+            "revert",
+            "x",
+            "--to-revision",
+            "1",
+            "--expected-revision",
+            "2",
+        ],
+        &[
+            "instructions",
+            "revert",
+            "x",
+            "--to-revision",
+            "1",
+            "--expected-revision",
+            "2",
+        ],
+        &[
+            "memories",
+            "update",
+            "x",
+            "--expected-revision",
+            "1",
+            "--title",
+            "T",
+        ],
+        &["instructions", "delete", "x", "--expected-revision", "1"],
+        &[
+            "memories",
+            "create",
+            "--title",
+            "T",
+            "--summary",
+            "S",
+            "--team-wide",
+            "--body-file",
+            "-",
+        ],
+    ];
+    for args in writes {
+        let stderr = context_under_read_only(args);
+        assert!(stderr.contains("read-only mode"), "{args:?}: {stderr}");
+    }
+}
+
+#[test]
+fn read_only_allows_context_reads() {
+    let reads: [&[&str]; 5] = [
+        &["get"],
+        &["history"],
+        &["memories", "list"],
+        &["instructions", "get", "x"],
+        &["memories", "history", "x"],
+    ];
+    for args in reads {
+        let stderr = context_under_read_only(args);
+        assert!(!stderr.contains("read-only mode"), "{args:?}: {stderr}");
+        assert!(
+            stderr.contains("error sending request"),
+            "{args:?}: {stderr}"
+        );
+    }
+}

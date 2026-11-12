@@ -3,6 +3,16 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
+    // The clap command tree needs close to 1 MB of stack in a debug build, the
+    // Windows default for the main thread; other platforms give 8 MB.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let arg = match env::var("CARGO_CFG_TARGET_ENV").as_deref() {
+            Ok("msvc") => "/STACK:8388608",
+            _ => "-Wl,--stack,8388608",
+        };
+        println!("cargo:rustc-link-arg-bins={arg}");
+    }
+
     let skills_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("skills");
     println!("cargo:rerun-if-changed={}", skills_dir.display());
 

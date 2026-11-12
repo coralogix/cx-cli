@@ -26,6 +26,8 @@ mod api_keys;
 mod cases;
 #[path = "e2e/connectors.rs"]
 mod connectors;
+#[path = "e2e/context/mod.rs"]
+mod context;
 #[path = "e2e/contextual_data.rs"]
 mod contextual_data;
 #[path = "e2e/custom_enrichments.rs"]

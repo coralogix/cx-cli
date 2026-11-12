@@ -25,21 +25,25 @@ pub struct TimeRange {
     pub end: String,
 }
 
-/// One condition on a keypath; serializes as `{"prefix": "..."}`, `{"all": {"filters": [...]}}`, ...
+/// One condition on a keypath or a value; serializes as `{"prefix": "..."}`,
+/// `{"all": {"filters": [...]}}`, ... The API's keypath and value filters share this JSON shape.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum KeypathFilter {
+pub enum TextFilter {
     Exact(String),
     Prefix(String),
     Contains(String),
-    All(KeypathFilters),
-    Any(KeypathFilters),
+    All(TextFilters),
+    Any(TextFilters),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct KeypathFilters {
-    pub filters: Vec<KeypathFilter>,
+pub struct TextFilters {
+    pub filters: Vec<TextFilter>,
 }
+
+pub type KeypathFilter = TextFilter;
+pub type ValueFilter = TextFilter;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +89,8 @@ pub struct GetKeypathSamplesRequest {
     pub dimension_filter: Option<DimensionFilter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_filter: Option<ValueFilter>,
 }
 
 /// One found keypath: its DataPrime spelling and the DataPrime types it held.
@@ -99,9 +105,9 @@ pub struct KeypathSearchResult {
 pub struct SearchKeypathsResponse {
     #[serde(default)]
     pub keypaths: Vec<KeypathSearchResult>,
-    /// proto3 JSON omits `false`.
+    /// Every matching keypath is listed. proto3 JSON omits `false`, so a missing field is `false`.
     #[serde(default)]
-    pub truncated: bool,
+    pub complete: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,9 +168,9 @@ mod tests {
         let request = SearchKeypathsRequest {
             datasets: logs(),
             time_range: range(),
-            keypath_filter: Some(KeypathFilter::All(KeypathFilters {
+            keypath_filter: Some(KeypathFilter::All(TextFilters {
                 filters: vec![
-                    KeypathFilter::Any(KeypathFilters {
+                    KeypathFilter::Any(TextFilters {
                         filters: vec![
                             KeypathFilter::Prefix("$d.kubernetes".into()),
                             KeypathFilter::Prefix("$d.k8s".into()),
@@ -237,6 +243,12 @@ mod tests {
                 })],
             })),
             limit: Some(5),
+            value_filter: Some(ValueFilter::Any(TextFilters {
+                filters: vec![
+                    ValueFilter::Prefix("pod-".into()),
+                    ValueFilter::Exact("other".into()),
+                ],
+            })),
         };
         assert_eq!(
             serde_json::to_value(&request).unwrap(),
@@ -247,7 +259,8 @@ mod tests {
                 "dimensionFilter": {"all": {"filters": [
                     {"match": {"keypath": "$l.subsystemName", "value": "api"}}
                 ]}},
-                "limit": 5
+                "limit": 5,
+                "valueFilter": {"any": {"filters": [{"prefix": "pod-"}, {"exact": "other"}]}}
             })
         );
     }
@@ -259,19 +272,19 @@ mod tests {
                 {"keypath": "$d.kubernetes.pod_name", "types": ["string"]},
                 {"keypath": "$d.tags['http.method']", "types": ["number", "string"]}
             ],
-            "truncated": true
+            "complete": true
         }))
         .unwrap();
         assert_eq!(resp.keypaths.len(), 2);
         assert_eq!(resp.keypaths[1].types, ["number", "string"]);
-        assert!(resp.truncated);
+        assert!(resp.complete);
     }
 
     #[test]
     fn deserializes_empty_responses() {
         let search: SearchKeypathsResponse = serde_json::from_value(json!({})).unwrap();
         assert!(search.keypaths.is_empty());
-        assert!(!search.truncated);
+        assert!(!search.complete);
         let samples: GetKeypathSamplesResponse = serde_json::from_value(json!({})).unwrap();
         assert!(samples.samples.is_empty());
     }

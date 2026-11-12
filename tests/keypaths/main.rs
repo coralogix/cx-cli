@@ -8,7 +8,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use coralogix_cli::commands::keypaths::api::{
     GetKeypathSamplesRequest, SearchKeypathsRequest, TimeRange,
 };
-use coralogix_cli::commands::keypaths::{self, keypath_filter, parse_datasets, parse_labels};
+use coralogix_cli::commands::keypaths::{self, parse_datasets, parse_labels, text_filter};
 use coralogix_cli::config::OutputFormat;
 
 fn range() -> TimeRange {
@@ -22,7 +22,7 @@ fn search_request() -> SearchKeypathsRequest {
     SearchKeypathsRequest {
         datasets: parse_datasets(&["logs".into(), "default/spans".into()]).unwrap(),
         time_range: range(),
-        keypath_filter: keypath_filter(
+        keypath_filter: text_filter(
             vec![],
             vec!["$d.kubernetes".into(), "$d.k8s".into()],
             vec!["pod".into()],
@@ -40,6 +40,7 @@ fn samples_request() -> GetKeypathSamplesRequest {
         time_range: range(),
         dimension_filter: None,
         limit: None,
+        value_filter: text_filter(vec![], vec!["ERR".into()], vec![]),
     }
 }
 
@@ -82,18 +83,18 @@ async fn search_sends_the_request_and_renders_keypaths() {
 }
 
 #[tokio::test]
-async fn search_handles_truncated_and_empty_responses() {
+async fn search_handles_incomplete_and_empty_responses() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/schema-store/keypaths/search"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"truncated": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     keypaths::run_search(&targets, &search_request(), OutputFormat::Text)
         .await
-        .expect("an empty, truncated search is not an error");
+        .expect("an empty, incomplete search is not an error");
 }
 
 #[tokio::test]
@@ -122,7 +123,8 @@ async fn samples_sends_the_keypath_and_renders_samples() {
         .and(path("/api/v1/schema-store/keypaths/samples"))
         .and(body_partial_json(json!({
             "datasets": [{"dataspace": "default", "dataset": "logs"}],
-            "keypath": "$m.severity"
+            "keypath": "$m.severity",
+            "valueFilter": {"prefix": "ERR"}
         })))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(json!({"samples": ["ERROR", "INFO"]})),

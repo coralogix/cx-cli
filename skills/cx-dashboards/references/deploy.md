@@ -86,13 +86,21 @@ To update a dashboard that already exists (instead of creating a new one), use t
 
 2. Edit `dashboard.json` (change widgets, queries, filters, etc.). The `id` field must remain intact.
 
-3. Deploy the updated version:
+3. Check the edited file:
+
+   ```bash
+   cx dashboards check --from-file dashboard.json
+   ```
+
+   Fix any issue in a part you edited. If an issue points at a part you did not edit, the fetched JSON came back damaged (for example a table rule property whose `definition` is `{}`): stop and show the user the issues instead of replacing. Do not delete or rewrite those parts to make the check pass, since replacing would make the loss permanent.
+
+4. Deploy the updated version:
 
    ```bash
    cx dashboards replace --from-file dashboard.json --yes
    ```
 
-This is a full replacement - the entire dashboard definition is overwritten, with no conflict check. The `id` field in the JSON determines which dashboard is updated. Do steps 1 to 3 in one go, and do not reuse a `dashboard.json` fetched earlier in the session. If time has passed since step 1, run `get` again into a fresh file, re-apply only the user's edits to that fresh JSON, then run `replace`. Otherwise edits made in the meantime are silently lost.
+This is a full replacement - the entire dashboard definition is overwritten, with no conflict check. The `id` field in the JSON determines which dashboard is updated. Do steps 1 to 4 in one go, and do not reuse a `dashboard.json` fetched earlier in the session. If time has passed since step 1, run `get` again into a fresh file, re-apply only the user's edits to that fresh JSON, then run `replace`. Otherwise edits made in the meantime are silently lost.
 
 Use replace when:
 - The user asks to update, modify, or iterate on an existing dashboard.

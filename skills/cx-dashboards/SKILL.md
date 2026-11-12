@@ -57,10 +57,11 @@ To update an existing dashboard:
 ```bash
 cx dashboards get <dashboard-id> -o json > dashboard.json
 # Edit dashboard.json (change name, modify widgets, etc.)
+cx dashboards check --from-file dashboard.json
 cx dashboards replace --from-file dashboard.json
 ```
 
-`replace` overwrites the whole dashboard with no conflict check, so run `get` right before `replace` and change only what the user asked for in the fetched JSON. Edits made since an older copy was fetched are silently lost.
+`replace` overwrites the whole dashboard with no conflict check, so run `get` right before `replace` and change only what the user asked for in the fetched JSON. Edits made since an older copy was fetched are silently lost. If `check` reports an issue in a part you did not change, the fetched JSON is damaged: stop and tell the user rather than deleting that part to pass the check. Full steps: [`references/deploy.md`](references/deploy.md) section 5.
 
 To duplicate a dashboard as a new copy:
 

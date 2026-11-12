@@ -82,11 +82,15 @@ Examples:
     Fields(FieldsSearchArgs),
 
     /// Show sample values of one field.
+    ///
+    /// Repeating --exact, --prefix or --contains means any of its values. Values are matched
+    /// against the samples Schema Store keeps, not every value in the data.
     #[command(after_help = "\
 Examples:
   cx datasets field-values '$m.severity'
   cx datasets field-values \"\\$d.tags['http.method']\" --label applicationName=checkout --label applicationName=payments
-  cx datasets field-values '$l.subsystemName' --dataset logs --dataset spans --start now-6h")]
+  cx datasets field-values '$l.subsystemName' --dataset logs --dataset spans --start now-6h
+  cx datasets field-values '$d.kubernetes.pod_name' --prefix checkout- --prefix payments-")]
     FieldValues(FieldValuesArgs),
 }
 
@@ -137,6 +141,18 @@ struct FieldValuesArgs {
     /// several (up to 100); results are the union.
     #[arg(long = "dataset", default_value = "logs")]
     datasets: Vec<String>,
+
+    /// Only values that are exactly this (case-insensitive). Repeatable.
+    #[arg(long)]
+    exact: Vec<String>,
+
+    /// Only values starting with this (case-insensitive). Repeatable.
+    #[arg(long)]
+    prefix: Vec<String>,
+
+    /// Only values containing this (case-insensitive). Repeatable.
+    #[arg(long)]
+    contains: Vec<String>,
 
     /// Only values seen with this label value, as 'name=value'. Repeat a name to allow
     /// several values; different names must all match.
@@ -5563,7 +5579,7 @@ async fn main() -> Result<()> {
                     let request = commands::keypaths::api::SearchKeypathsRequest {
                         datasets: commands::keypaths::parse_datasets(&datasets)?,
                         time_range: commands::keypaths::time_range(&start, &end)?,
-                        keypath_filter: commands::keypaths::keypath_filter(exact, prefix, contains),
+                        keypath_filter: commands::keypaths::text_filter(exact, prefix, contains),
                         dimension_filter: commands::keypaths::parse_labels(&labels)?,
                         limit,
                     };
@@ -5572,6 +5588,9 @@ async fn main() -> Result<()> {
                 DatasetsCmd::FieldValues(FieldValuesArgs {
                     keypath,
                     datasets,
+                    exact,
+                    prefix,
+                    contains,
                     labels,
                     start,
                     end,
@@ -5583,6 +5602,7 @@ async fn main() -> Result<()> {
                         time_range: commands::keypaths::time_range(&start, &end)?,
                         dimension_filter: commands::keypaths::parse_labels(&labels)?,
                         limit,
+                        value_filter: commands::keypaths::text_filter(exact, prefix, contains),
                     };
                     commands::keypaths::run_samples(&targets, &request, output).await?;
                 }

@@ -178,22 +178,36 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     Ok(InstallOutcome::Installed)
 }
 
-/// Run the non-interactive install from this version's release tag. If that
-/// fails (for example, the tag does not exist yet), retry once from the
-/// default branch, so a missing tag never blocks the install.
+/// Run the non-interactive install from this version's release tag. If the
+/// tag does not exist yet, retry once from the default branch, so a missing
+/// tag never blocks the install. Any other failure (network, auth, installer)
+/// is returned as is: falling back then would install unpinned skills that
+/// may not match this binary.
 fn run_npx_install(scope: SkillsScope, agents: &[String]) -> Result<std::process::Output> {
     let pinned = pinned_source(CX_VERSION);
     let output = Command::new(npx_program())
         .args(build_install_args(&pinned, scope, agents))
         .output()
         .context("failed to run npx")?;
-    if output.status.success() || pinned == SKILLS_SOURCE {
+    if output.status.success() || pinned == SKILLS_SOURCE || !is_missing_ref(&output) {
         return Ok(output);
     }
     Command::new(npx_program())
         .args(build_install_args(SKILLS_SOURCE, scope, agents))
         .output()
         .context("failed to run npx")
+}
+
+/// True when the installer failed because the git ref (the release tag) does
+/// not exist. Same patterns as the installer's own `isMissingRefError`; git's
+/// message reaches either stream inside the installer's
+/// `SKILLS_GIT_CLONE_FAILED` diagnostic.
+fn is_missing_ref(output: &std::process::Output) -> bool {
+    [&output.stdout, &output.stderr].iter().any(|captured| {
+        let text = String::from_utf8_lossy(captured).to_lowercase();
+        (text.contains("remote branch") && text.contains("not found in upstream origin"))
+            || text.contains("couldn't find remote ref")
+    })
 }
 
 /// The hidden `cx skills auto-refresh` command, started in the background by
@@ -224,9 +238,12 @@ impl RefreshLock {
     const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
     fn acquire() -> Option<Self> {
-        let path = crate::config::config_dir()
-            .ok()?
-            .join("skills-refresh.lock");
+        // `~/.cx` may not exist yet (skills installed with plain `npx`, and
+        // the parent's state write may not have landed), and `create_new`
+        // needs the directory.
+        let dir = crate::config::config_dir().ok()?;
+        std::fs::create_dir_all(&dir).ok()?;
+        let path = dir.join("skills-refresh.lock");
         let stale = std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .ok()
@@ -565,6 +582,45 @@ mod tests {
             global_lock_path(None, home),
             Some(PathBuf::from("/home/u/.agents/.skill-lock.json"))
         );
+    }
+
+    #[cfg(unix)]
+    fn output_with(code: i32, stdout: &str, stderr: &str) -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_release_tag_is_detected() {
+        // Captured from `npx skills add coralogix/cx-cli/skills#v0.0.999`.
+        let stdout = "■  Failed to clone repository\n\
+            │  [SKILLS_GIT_CLONE_FAILED] Failed to clone https://github.com/coralogix/cx-cli.git: \
+            Cloning into '/tmp/skills-x'...\n\
+            │  fatal: Remote branch v0.0.999 not found in upstream origin\n";
+        assert!(is_missing_ref(&output_with(1, stdout, "")));
+        assert!(is_missing_ref(&output_with(
+            1,
+            "",
+            "fatal: couldn't find remote ref refs/tags/v0.0.999"
+        )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn other_install_failures_are_not_a_missing_tag() {
+        for text in [
+            "[SKILLS_GIT_CLONE_TIMEOUT] Clone timed out after 60s",
+            "[SKILLS_GIT_AUTH_FAILED] Authentication failed for https://github.com/coralogix/cx-cli.git",
+            "fatal: unable to access 'https://github.com/coralogix/cx-cli.git/': Could not resolve host: github.com",
+        ] {
+            assert!(!is_missing_ref(&output_with(1, text, "")), "{text}");
+            assert!(!is_missing_ref(&output_with(1, "", text)), "{text}");
+        }
     }
 
     #[test]

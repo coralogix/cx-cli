@@ -459,25 +459,39 @@ fn wait_for(mut done: impl FnMut() -> bool) -> bool {
     false
 }
 
+/// Install a fake `npx` whose tagged (`#vX.Y.Z`) install fails with
+/// `tag_failure` on stdout, and whose untagged install records its arguments
+/// into `args_file`.
 #[cfg(unix)]
-#[test]
-fn install_falls_back_to_default_branch_when_tag_install_fails() {
+fn install_fake_npx_failing_tag(dir: &Path, args_file: &Path, tag_failure: &str) {
     use std::os::unix::fs::PermissionsExt;
-    let home = temp_dir("tag_fallback");
-    let bin = temp_dir("tag_fallback_bin");
-    let args_file = bin.join("args.txt");
-    // Fails for a `#tag` source (a tag that does not exist), works otherwise.
+    assert!(!tag_failure.contains('\''), "no single quotes");
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
          if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
-         case \"$4\" in *#*) exit 1;; esac\n\
+         case \"$4\" in *#*) echo '{tag_failure}'; exit 1;; esac\n\
          echo \"$@\" > \"{}\"\n",
         args_file.display()
     );
-    let npx = bin.join("npx");
+    let npx = dir.join("npx");
     fs::write(&npx, script).unwrap();
     fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn install_falls_back_to_default_branch_when_tag_is_missing() {
+    let home = temp_dir("tag_fallback");
+    let bin = temp_dir("tag_fallback_bin");
+    let args_file = bin.join("args.txt");
+    // The installer's real output for a tag that does not exist.
+    install_fake_npx_failing_tag(
+        &bin,
+        &args_file,
+        "[SKILLS_GIT_CLONE_FAILED] Failed to clone https://github.com/coralogix/cx-cli.git: \
+         fatal: Remote branch v0.0.999 not found in upstream origin",
+    );
 
     cx(&home, &bin)
         .args(["skills", "install", "--global"])
@@ -489,6 +503,31 @@ fn install_falls_back_to_default_branch_when_tag_install_fails() {
         recorded.trim(),
         "-y skills add coralogix/cx-cli/skills --skill * -y -g"
     );
+}
+
+/// A network, auth or installer failure must not install unpinned skills.
+#[cfg(unix)]
+#[test]
+fn install_does_not_fall_back_on_other_tag_failures() {
+    let home = temp_dir("tag_no_fallback");
+    let bin = temp_dir("tag_no_fallback_bin");
+    let args_file = bin.join("args.txt");
+    install_fake_npx_failing_tag(
+        &bin,
+        &args_file,
+        "[SKILLS_GIT_CLONE_TIMEOUT] Clone timed out after 60s",
+    );
+
+    cx(&home, &bin)
+        .args(["skills", "install", "--global"])
+        .assert()
+        .failure();
+
+    assert!(
+        !args_file.exists(),
+        "the default-branch install must not run"
+    );
+    assert_eq!(recorded_skills_version(&home), None);
 }
 
 #[cfg(unix)]
@@ -637,5 +676,29 @@ fn unrecorded_old_skills_refresh_with_auto_detected_agents() {
             "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g",
             env!("CARGO_PKG_VERSION")
         )
+    );
+}
+
+/// Skills installed with plain `npx` leave no `~/.cx`; the refresh must still
+/// take its lock and run instead of quietly exiting.
+#[cfg(unix)]
+#[test]
+fn auto_refresh_runs_without_a_cx_config_dir() {
+    let home = temp_dir("refresh_no_cx_dir");
+    let bin = temp_dir("refresh_no_cx_dir_bin");
+    let args_file = bin.join("args.txt");
+    install_fake_npx(&bin, &args_file, "[]", "[]");
+    assert!(!home.join(".cx").exists());
+
+    cx(&home, &bin)
+        .env("CX_NO_UPDATE_NOTIFIER", "1")
+        .args(["skills", "auto-refresh"])
+        .assert()
+        .success();
+
+    assert!(args_file.exists(), "the refresh install must run");
+    assert!(
+        !home.join(".cx").join("skills-refresh.lock").exists(),
+        "the lock is released after the run"
     );
 }

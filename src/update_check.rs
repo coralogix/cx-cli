@@ -295,8 +295,9 @@ fn print_plain_notice(latest: &str, current: &str, upgrade: &str, skills: &str) 
 #[derive(Debug, PartialEq, Eq)]
 enum SkillsStatus {
     /// Installed for this version or newer, refreshed after this binary was
-    /// built, no cx skills found at all, or the unknown-version notice was
-    /// already shown for this cx version.
+    /// built, or no cx skills found at all.  For display only: also an
+    /// unknown version whose notice was already shown for this cx version
+    /// (see [`without_repeat_unknown_notice`]).
     Current,
     /// cx installed the global skills for an older version, and they were not
     /// refreshed since.
@@ -392,7 +393,26 @@ fn skills_status_with_refresh(state: &VersionCheckCache, current: &str) -> Skill
             SkillsStatus::Refreshing
         }
         RefreshDecision::InProgress => SkillsStatus::Current,
-        _ => status,
+        _ => without_repeat_unknown_notice(
+            status,
+            state.skills_unknown_noticed_for.as_deref(),
+            current,
+        ),
+    }
+}
+
+/// The unknown-version notice shows once per cx version.  This applies only
+/// to what is shown, after the refresh decision: the refresh must still see
+/// `Unknown`, so a failed refresh is retried after [`REFRESH_RETRY_AFTER`].
+fn without_repeat_unknown_notice(
+    status: SkillsStatus,
+    unknown_noticed_for: Option<&str>,
+    current: &str,
+) -> SkillsStatus {
+    if status == SkillsStatus::Unknown && unknown_noticed_for == Some(current) {
+        SkillsStatus::Current
+    } else {
+        status
     }
 }
 
@@ -439,7 +459,6 @@ fn spawn_skills_refresh() -> bool {
 fn skills_status(state: &VersionCheckCache, current: &str) -> SkillsStatus {
     skills_status_with(
         state.skills_installed_for.as_deref(),
-        state.skills_unknown_noticed_for.as_deref(),
         current,
         binary_built_at(),
         crate::commands::skills::global_lock_cx_skills,
@@ -463,7 +482,6 @@ fn binary_built_at() -> DateTime<Utc> {
 /// they were refreshed with `npx skills add` and cx did not record it.
 fn skills_status_with(
     installed_for: Option<&str>,
-    unknown_noticed_for: Option<&str>,
     current: &str,
     built_at: DateTime<Utc>,
     read_lock: impl FnOnce() -> Option<LockedCxSkills>,
@@ -476,7 +494,6 @@ fn skills_status_with(
             _ => SkillsStatus::Outdated,
         },
         Some(_) => SkillsStatus::Current,
-        None if unknown_noticed_for == Some(current) => SkillsStatus::Current,
         None => match read_lock() {
             Some(lock) if refreshed_since_build(&lock) => SkillsStatus::Current,
             Some(_) => SkillsStatus::Unknown,
@@ -601,19 +618,19 @@ mod tests {
     #[test]
     fn skills_older_than_binary_are_outdated() {
         assert_eq!(
-            skills_status_with(Some("0.1.20"), None, "0.1.30", built(), || None),
+            skills_status_with(Some("0.1.20"), "0.1.30", built(), || None),
             SkillsStatus::Outdated
         );
         // Refreshed, but before this binary was built: still outdated.
         assert_eq!(
-            skills_status_with(Some("0.1.20"), None, "0.1.30", built(), || {
+            skills_status_with(Some("0.1.20"), "0.1.30", built(), || {
                 lock_at("2026-09-30T23:59:59Z")
             }),
             SkillsStatus::Outdated
         );
         // A cx skill without a readable time: age unknown, so still outdated.
         assert_eq!(
-            skills_status_with(Some("0.1.20"), None, "0.1.30", built(), || {
+            skills_status_with(Some("0.1.20"), "0.1.30", built(), || {
                 Some(LockedCxSkills {
                     oldest_update: None,
                 })
@@ -627,7 +644,7 @@ mod tests {
         // `npx skills add -g` after this release: cx did not record it, but
         // the lock file shows every cx skill updated after the build.
         assert_eq!(
-            skills_status_with(Some("0.1.20"), None, "0.1.30", built(), || {
+            skills_status_with(Some("0.1.20"), "0.1.30", built(), || {
                 lock_at("2026-10-02T08:00:00Z")
             }),
             SkillsStatus::Current
@@ -637,14 +654,14 @@ mod tests {
     #[test]
     fn skills_for_this_or_newer_version_are_current() {
         assert_eq!(
-            skills_status_with(Some("0.1.30"), None, "0.1.30", built(), || {
+            skills_status_with(Some("0.1.30"), "0.1.30", built(), || {
                 panic!("no lock read")
             }),
             SkillsStatus::Current
         );
         // Downgraded binary: never ask to "update" skills to an older version.
         assert_eq!(
-            skills_status_with(Some("0.2.0"), None, "0.1.30", built(), || {
+            skills_status_with(Some("0.2.0"), "0.1.30", built(), || {
                 panic!("no lock read")
             }),
             SkillsStatus::Current
@@ -654,18 +671,18 @@ mod tests {
     #[test]
     fn unrecorded_skills_depend_on_lock_file() {
         assert_eq!(
-            skills_status_with(None, None, "0.1.30", built(), || {
+            skills_status_with(None, "0.1.30", built(), || {
                 lock_at("2026-09-01T00:00:00Z")
             }),
             SkillsStatus::Unknown
         );
         assert_eq!(
-            skills_status_with(None, None, "0.1.30", built(), || None),
+            skills_status_with(None, "0.1.30", built(), || None),
             SkillsStatus::Current
         );
         // Installed with `npx skills add` after this release: no notice.
         assert_eq!(
-            skills_status_with(None, None, "0.1.30", built(), || {
+            skills_status_with(None, "0.1.30", built(), || {
                 lock_at("2026-10-02T08:00:00Z")
             }),
             SkillsStatus::Current
@@ -674,19 +691,34 @@ mod tests {
 
     #[test]
     fn unknown_skills_notice_shows_once_per_version() {
-        // Already shown for this version: silent, and no lock read.
+        // Already shown for this version: hidden.
         assert_eq!(
-            skills_status_with(None, Some("0.1.30"), "0.1.30", built(), || {
-                panic!("no lock read")
-            }),
+            without_repeat_unknown_notice(SkillsStatus::Unknown, Some("0.1.30"), "0.1.30"),
             SkillsStatus::Current
         );
         // Shown for an older version: show again after the upgrade.
         assert_eq!(
-            skills_status_with(None, Some("0.1.29"), "0.1.30", built(), || {
-                lock_at("2026-09-01T00:00:00Z")
-            }),
+            without_repeat_unknown_notice(SkillsStatus::Unknown, Some("0.1.29"), "0.1.30"),
             SkillsStatus::Unknown
+        );
+        // Only the unknown notice is ever hidden.
+        assert_eq!(
+            without_repeat_unknown_notice(SkillsStatus::Outdated, Some("0.1.30"), "0.1.30"),
+            SkillsStatus::Outdated
+        );
+    }
+
+    #[test]
+    fn unknown_skills_stay_eligible_for_refresh_after_the_notice() {
+        // The notice was shown for this version after a failed refresh. The
+        // status the refresh sees is still Unknown, so the retry can start.
+        let status =
+            skills_status_with(None, "0.1.30", built(), || lock_at("2026-09-01T00:00:00Z"));
+        assert_eq!(status, SkillsStatus::Unknown);
+        let at = now() - chrono::Duration::hours(25);
+        assert_eq!(
+            refresh_decision(&status, || true, Some("0.1.30"), Some(at), "0.1.30", now()),
+            RefreshDecision::Start
         );
     }
 

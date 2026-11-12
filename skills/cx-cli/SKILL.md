@@ -2,7 +2,7 @@
 name: cx-cli
 description: This skill should be used whenever the user runs any cx command, uses the cx CLI, Coralogix CLI, or mentions cx in the context of Coralogix observability. This skill provides cross-cutting concerns like update notifications that apply to all cx commands.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # cx-cli
@@ -15,10 +15,11 @@ Cross-cutting behaviors for all cx CLI commands.
 
 After running any cx command, check for update notices using the channels below (in priority order). If an update is available, finish answering the user's request first, then mention the update once at the end.
 
-There are two kinds of notice:
+There are three kinds of notice:
 
 - **Binary update** — a newer cx version exists. The notice has two parts: the binary upgrade and the skills refresh. Offer both commands, binary first.
 - **Skills-only update** — cx itself is on the newest version, but the installed agent skills are older than it (typical right after `brew upgrade cx`), or cx can't tell which version they are. Offer only the skills refresh command.
+- **Skills refreshing** — the installed skills are older than cx (or cx can't tell their version), and cx is now refreshing them itself in the background (`reason: "refreshing"`). No action is needed: say once that the cx skills are being updated and take effect in a new agent session. Don't offer a command.
 
 ### 1. Primary — toon mode (`-o toon`)
 
@@ -28,7 +29,7 @@ Commands with `--output toon` append a **standalone trailing JSON line** to stdo
 {"_meta":{"update":{"binary":{"current":"0.1.7","latest":"0.2.0","command":"brew upgrade cx"},"skills":{"command":"cx skills install --global","docs":"https://github.com/coralogix/cx-cli#install"}}}}
 ```
 
-Skills-only update (no `binary` key). `reason` is `"outdated"` (cx installed the skills for an older version) or `"unknown_version"` (cx did not install them, so it can't tell their version). `installed_for` is the cx version the skills were installed for, or `null` when unknown:
+Skills-only update (no `binary` key). `reason` is `"outdated"` (cx installed the skills for an older version), `"unknown_version"` (cx did not install them, so it can't tell their version), or `"refreshing"` (cx started the refresh itself; no action needed). `installed_for` is the cx version the skills were installed for, or `null` when unknown:
 
 ```json
 {"_meta":{"update":{"skills":{"command":"cx skills install --global","docs":"https://github.com/coralogix/cx-cli#install","reason":"outdated","installed_for":"0.1.20"}}}}
@@ -58,7 +59,13 @@ A skills-only update, for outdated or unknown-version skills:
 [cx update] cx can't tell which version your cx agent skills are | skills: cx skills install --global
 ```
 
-TTY text mode uses two lines; the second line always names the skills command after `skills:`:
+Skills refreshing (no command, nothing to run):
+
+```
+[cx update] refreshing cx agent skills for cx 0.1.9 in the background
+```
+
+TTY text mode uses two lines; for a binary or skills-only update the second line names the skills command after `skills:`:
 
 ```
 cx 0.2.0 is available (you have 0.1.9).
@@ -82,6 +89,13 @@ Skills-only update:
 >
 > ---
 > Your cx agent skills may be older than your cx version, so some commands may be missing from them. Would you like me to run `<skills command>` to update them?
+
+Skills refreshing:
+
+> [Summarize the command result here]
+>
+> ---
+> cx is updating its agent skills in the background. The new skills apply in a new agent session.
 
 Keep it to one brief closing line. Don't repeat on later commands in the same session.
 

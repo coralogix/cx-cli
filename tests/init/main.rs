@@ -122,7 +122,10 @@ async fn init_writes_profile_then_installs_skills() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli/skills --skill * -y -g"
+        format!(
+            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 
@@ -298,7 +301,10 @@ async fn init_agents_flag_reaches_the_installer() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli/skills --skill * -y -g -a claude-code cursor"
+        format!(
+            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g -a claude-code cursor",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 

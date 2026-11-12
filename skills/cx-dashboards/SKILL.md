@@ -57,10 +57,11 @@ To update an existing dashboard:
 ```bash
 cx dashboards get <dashboard-id> -o json > dashboard.json
 # Edit dashboard.json (change name, modify widgets, etc.)
+cx dashboards check --from-file dashboard.json
 cx dashboards replace --from-file dashboard.json
 ```
 
-`replace` overwrites the whole dashboard with no conflict check, so run `get` right before `replace` and change only what the user asked for in the fetched JSON. Edits made since an older copy was fetched are silently lost.
+`replace` overwrites the whole dashboard with no conflict check, so run `get` right before `replace` and change only what the user asked for in the fetched JSON. Edits made since an older copy was fetched are silently lost. If `check` reports an issue in a part you did not change, the fetched JSON is damaged: stop and tell the user rather than deleting that part to pass the check. Full steps: [`references/deploy.md`](references/deploy.md) section 5.
 
 To duplicate a dashboard as a new copy:
 
@@ -275,7 +276,7 @@ Run this checklist against the final JSON. Fix and re-check if any item fails be
 Phase 6 caught structural issues by hand. This phase runs the whole dashboard through the Coralogix Dashboard Service's strict validator (`CheckDashboard`) — the same validation `create`/`replace` apply on write, plus a superset that compiles every PromQL/DataPrime query and enforces required ids for variables and filters.
 
 1. Run `cx dashboards check --from-file /tmp/cx-dashboard-<slug>.json`.
-2. If the command exits non-zero, the output lists issues with `severity`, `location` (an RFC 6901 JSON Pointer into the dashboard, e.g. `/sections/0/rows/1/widgets/2`), and `message`. Fix each issue in the JSON (loop back to Phase 4), re-run Phase 5 for any query that changed, then re-run this phase.
+2. If the command exits non-zero, the output lists issues with `severity`, `location` (an RFC 6901 JSON Pointer into the dashboard, e.g. `/sections/0/rows/1/widgets/2`), and `message`. Fix each issue in the JSON (loop back to Phase 4), re-run Phase 5 for any query that changed, then re-run this phase. When updating an existing dashboard, an issue in a part you did not change means the fetched JSON is damaged: stop and tell the user instead of fixing it, as in [`references/deploy.md`](references/deploy.md) section 5.
 3. When `check` exits 0 (text output: `Dashboard is valid (no issues)`), proceed to Phase 8.
 
 `check` is read-only — it never persists the dashboard. Warnings (`SEVERITY_WARNING`) print but do not fail the gate; only errors (`SEVERITY_ERROR`) cause a non-zero exit. In multi-profile fan-out, any profile returning errors fails the command.

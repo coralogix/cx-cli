@@ -154,9 +154,24 @@ All commands support three output formats controlled by `--output` / `OutputForm
 
 ### Text
 
-Human-readable output using `tabled` for tabular data and `colored` for severity/status highlighting. Multi-profile queries add a "Profile" column. REST commands use `render::render_table()` which dynamically builds tables via `tabled::builder::Builder` -- the Profile column is conditionally included based on `include_profile`, so no duplicate struct definitions are needed.
+Human-readable output is composed from the shared building blocks in `src/ui.rs`, so every command looks like the same tool:
+
+| Block | Function | Used for |
+|-------|----------|----------|
+| Header | `ui::print_header(left, right, badge)` | Context on the left (`service · errors · last 1h`), the key number on the right, optional `▲ 9.4×` badge, dim rule below |
+| Table | `render::render_table(headers, rows, include_profile)` | Every list command. Borderless, dim `UPPERCASE` headers, two spaces between columns, numeric columns right-aligned |
+| Bar chart | `ui::format_bar_chart(values, labels, height, color)` | Counts over time. Call `ui::downsample` first so the series fits the terminal |
+| Sparkline | `ui::sparkline(values)` | A trend in one table cell |
+| Callout | `ui::print_callout(kind, text)` | `✓` finding, `!` warning, `↗` link, `·` info, printed under a table or chart |
+| Numbers | `ui::fmt_count`, `ui::fmt_compact` | `1,284` in tables and headers, `1.2k` on chart axes |
+
+Colours come from the palette constants in `src/ui.rs` (`ERROR`, `WARN`, `OK`, `ENTITY`, `LINK`). The `colored` crate switches colour off on its own for `NO_COLOR` and non-TTY stdout; the block characters still print, which is fine for pipes.
+
+Multi-profile queries add a "Profile" column: `render::render_table()` prepends it when `include_profile` is true, so no duplicate struct definitions are needed. Do not build tables with `tabled` directly or with `{:<width$}` padding; go through `render_table` so the style stays in one place.
 
 DataPrime commands use custom text renderers (e.g., `render_log_text`) that print `<timestamp> [<severity>] <message>` per row.
+
+Text output is the only place these blocks are used. JSON and TOON output must stay raw data because agents parse them.
 
 ### JSON
 

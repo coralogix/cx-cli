@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tabled::builder::Builder;
 use toon_format::encode_default as toon_encode;
 
 pub mod api;
@@ -16,6 +15,7 @@ use api::{DataprimeApi, QueryGenericResponse};
 use crate::cases_query_rules::check_cases_query_rules;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
+use crate::render;
 use crate::spill::{maybe_spill, transform_for_toon, write_result_file, SpillOutcome};
 use crate::time::parse_timestamp;
 use crate::Tier;
@@ -150,17 +150,17 @@ pub fn run_list(
                 return Ok(());
             }
 
-            let mut builder = Builder::default();
-            builder.push_record(["Name", "Type", "Description"]);
-            for (name, kind, entry) in &items {
-                builder.push_record([
-                    name.clone(),
-                    kind.clone(),
-                    truncate(&first_sentence(&entry.description), 60),
-                ]);
-            }
-            let table = builder.build().to_string();
-            println!("{table}");
+            let rows: Vec<Vec<String>> = items
+                .iter()
+                .map(|(name, kind, entry)| {
+                    vec![
+                        name.clone(),
+                        kind.clone(),
+                        truncate(&first_sentence(&entry.description), 60),
+                    ]
+                })
+                .collect();
+            render::render_table(&["Name", "Type", "Description"], rows, false);
             println!(
                 "\n{} items ({} commands, {} functions)",
                 items.len(),

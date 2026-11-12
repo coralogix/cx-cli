@@ -20,6 +20,7 @@ pub mod serde_helpers;
 pub mod spill;
 pub mod tier;
 pub mod time;
+pub mod ui;
 pub mod update_check;
 pub mod version_cache;
 

@@ -13,7 +13,6 @@
 use anyhow::Result;
 use colored::Colorize;
 use serde_json::Value;
-use tabled::builder::Builder;
 use toon_format::encode_default as toon_encode;
 // ── JSON output ──────────────────────────────────────────────────────────────
 
@@ -121,9 +120,10 @@ pub fn print_console_link(url: &str) {
 /// Each element of `rows` is a `Vec<String>` whose **first** element is the
 /// profile name.  When `include_profile` is false, that first element is
 /// silently skipped.
+///
+/// Styling (no borders, dim uppercase headers, right-aligned numbers) is
+/// shared with every other text block - see [`crate::ui::format_table`].
 pub fn format_table(headers: &[&str], rows: Vec<Vec<String>>, include_profile: bool) -> String {
-    let mut builder = Builder::default();
-
     let header: Vec<String> = if include_profile {
         std::iter::once("Profile".to_string())
             .chain(headers.iter().map(|h| h.to_string()))
@@ -131,18 +131,19 @@ pub fn format_table(headers: &[&str], rows: Vec<Vec<String>>, include_profile: b
     } else {
         headers.iter().map(|h| h.to_string()).collect()
     };
-    builder.push_record(header);
 
-    for row in rows {
-        let record: Vec<String> = if include_profile {
-            row
-        } else {
-            row.into_iter().skip(1).collect()
-        };
-        builder.push_record(record);
-    }
+    let body: Vec<Vec<String>> = rows
+        .into_iter()
+        .map(|row| {
+            if include_profile {
+                row
+            } else {
+                row.into_iter().skip(1).collect()
+            }
+        })
+        .collect();
 
-    builder.build().to_string()
+    crate::ui::format_table(&header, body)
 }
 
 /// Render a text table with an optional "Profile" column.
@@ -224,9 +225,9 @@ mod tests {
             vec!["staging".into(), "bar".into(), "99".into()],
         ];
         let output = format_table(headers, rows, true);
-        assert!(output.contains("Profile"));
-        assert!(output.contains("Name"));
-        assert!(output.contains("Value"));
+        assert!(output.contains("PROFILE"));
+        assert!(output.contains("NAME"));
+        assert!(output.contains("VALUE"));
         assert!(output.contains("prod"));
         assert!(output.contains("staging"));
         assert!(output.contains("foo"));
@@ -241,10 +242,10 @@ mod tests {
             vec!["staging".into(), "bar".into(), "99".into()],
         ];
         let output = format_table(headers, rows, false);
-        assert!(!output.contains("Profile"));
+        assert!(!output.contains("PROFILE"));
         assert!(!output.contains("prod"));
         assert!(!output.contains("staging"));
-        assert!(output.contains("Name"));
+        assert!(output.contains("NAME"));
         assert!(output.contains("foo"));
         assert!(output.contains("42"));
     }

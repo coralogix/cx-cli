@@ -666,7 +666,7 @@ async fn case_notifications_keeps_evidence_url_column_and_prints_no_link() {
 
     let text_stdout = String::from_utf8_lossy(&text.stdout);
     assert!(
-        text_stdout.contains("Evidence URL"),
+        text_stdout.contains("EVIDENCE URL"),
         "text table should have an Evidence URL column: {text_stdout}"
     );
     assert!(

@@ -10,6 +10,7 @@ use crate::config::{
 use crate::keyring_store;
 use crate::oauth;
 use crate::region::{region_from_url, RegionMatch};
+use crate::render;
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 
@@ -408,82 +409,38 @@ pub fn run_list() -> Result<()> {
         return Ok(());
     }
 
-    // Column widths
-    let name_w = entries
+    let rows: Vec<Vec<String>> = entries
         .iter()
-        .map(|(n, _)| n.len())
-        .max()
-        .unwrap_or(4)
-        .max(4);
-    let label_w = entries
-        .iter()
-        .map(|(_, p)| p.label.as_deref().unwrap_or("-").len())
-        .max()
-        .unwrap_or(5)
-        .max(5);
-    let region_w = entries
-        .iter()
-        .map(|(_, p)| p.region.to_string().len())
-        .max()
-        .unwrap_or(6)
-        .max(6);
-    let output_w = 6; // "OUTPUT" header length
+        .map(|(name, profile)| {
+            let auth = match profile.auth {
+                AuthKind::OAuth => "oauth",
+                AuthKind::ApiKey => "api-key",
+            };
+            let is_default = if *name == global_config.default_profile {
+                "yes"
+            } else {
+                ""
+            };
+            vec![
+                String::new(), // profile slot, unused (include_profile = false)
+                name.clone(),
+                profile.label.clone().unwrap_or_else(|| "-".to_string()),
+                profile.region.to_string(),
+                auth.to_string(),
+                profile
+                    .default_output_format
+                    .map(|f| f.as_str().to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                is_default.to_string(),
+            ]
+        })
+        .collect();
 
-    println!(
-        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  DEFAULT",
-        "NAME",
-        "LABEL",
-        "REGION",
-        "AUTH",
-        "OUTPUT",
-        name_w = name_w,
-        label_w = label_w,
-        region_w = region_w,
-        output_w = output_w,
+    render::render_table(
+        &["Name", "Label", "Region", "Auth", "Output", "Default"],
+        rows,
+        false,
     );
-    println!(
-        "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  -------",
-        "-".repeat(name_w),
-        "-".repeat(label_w),
-        "-".repeat(region_w),
-        "--------",
-        "-".repeat(output_w),
-        name_w = name_w,
-        label_w = label_w,
-        region_w = region_w,
-        output_w = output_w,
-    );
-
-    for (name, profile) in &entries {
-        let label = profile.label.as_deref().unwrap_or("-");
-        let region = profile.region.to_string();
-        let auth = match profile.auth {
-            AuthKind::OAuth => "oauth",
-            AuthKind::ApiKey => "api-key",
-        };
-        let output_fmt = profile
-            .default_output_format
-            .map(|f| f.as_str())
-            .unwrap_or("-");
-        let is_default = if *name == global_config.default_profile {
-            "yes"
-        } else {
-            ""
-        };
-        println!(
-            "{:<name_w$}  {:<label_w$}  {:<region_w$}  {:<8}  {:<output_w$}  {}",
-            name,
-            label,
-            region,
-            auth,
-            output_fmt,
-            is_default,
-            name_w = name_w,
-            label_w = label_w,
-            region_w = region_w,
-            output_w = output_w,
-        );
-    }
 
     Ok(())
 }

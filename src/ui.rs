@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(lines[1], "2 ┤▄▄▄█████████");
         assert_eq!(lines[2], "0 └────────────");
         // Labels are 5 wide, bars 3 wide: every second label is dropped.
-        assert_eq!(lines[3], "   10:00  12:00");
+        assert_eq!(lines[3], "   10:00 12:00");
     }
 
     #[test]

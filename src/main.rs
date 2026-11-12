@@ -847,7 +847,7 @@ async fn run_context_entry_cmd(
             fixed,
             filter,
         } => {
-            let all = std::iter::once(pattern).chain(patterns).collect();
+            let all = pattern.into_iter().chain(patterns).collect();
             ctx::run_query(targets, kind, all, fixed, &filter, output).await
         }
         ContextEntryCmd::List { filter } => {
@@ -921,8 +921,9 @@ enum ContextCmd {
 enum ContextEntryCmd {
     /// Search titles, summaries and bodies line by line (case-insensitive).
     Search {
-        /// Regular expression (or fixed string with -F).
-        pattern: String,
+        /// Regular expression (or fixed string with -F). Optional when -e is given.
+        #[arg(required_unless_present = "patterns")]
+        pattern: Option<String>,
 
         /// Another pattern; a line matching any pattern matches. Repeatable.
         #[arg(short = 'e', value_name = "PATTERN")]

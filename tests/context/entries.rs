@@ -100,7 +100,7 @@ async fn list_request_bodies() {
 
 #[tokio::test]
 async fn search_request_bodies() {
-    let cases: [(&[&str], Value); 3] = [
+    let cases: [(&[&str], Value); 4] = [
         (
             &["timeout"],
             json!({ "patterns": ["timeout"], "limit": 50, "offset": 0 }),
@@ -126,6 +126,10 @@ async fn search_request_bodies() {
         (
             &["pool", "--team-wide", "--limit", "200"],
             json!({ "patterns": ["pool"], "team_wide": true, "limit": 200, "offset": 0 }),
+        ),
+        (
+            &["-e", "pool", "-e", "retry"],
+            json!({ "patterns": ["pool", "retry"], "limit": 50, "offset": 0 }),
         ),
     ];
     for (noun, _) in KINDS {

@@ -32,6 +32,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-data-pipeline` | Configure data processing - parsing rules, enrichments, Events2Metrics, recording rules |
 | `cx-platform-admin` | Manage access and security - API keys, roles, users, groups, IP access |
 | `cx-observability-setup` | Set up monitoring - saved views, webhooks, notifications, integrations |
+| `cx-rum-fix-errors` | Fix Coralogix RUM errors in your repo - triage, map the stack to source, check the release, gather context, fix with a regression test |
 | `cx-rum-setup` | Add RUM to a browser or mobile app - RUM API key, SDK install and init, verify events arrive |
 | `cx-cli` | Cross-cutting `cx` behavior that applies to every command, such as update notifications |
 

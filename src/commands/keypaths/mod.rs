@@ -13,8 +13,8 @@ use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTa
 use crate::render;
 use crate::time::parse_timestamp_nanos_at;
 use api::{
-    DimensionFilter, DimensionFilters, DimensionMatch, GetKeypathSamplesRequest, KeypathFilter,
-    KeypathFilters, KeypathSearchResult, KeypathsApi, NamedDataset, SearchKeypathsRequest,
+    DimensionFilter, DimensionFilters, DimensionMatch, GetKeypathSamplesRequest,
+    KeypathSearchResult, KeypathsApi, NamedDataset, SearchKeypathsRequest, TextFilter, TextFilters,
     TimeRange,
 };
 use chrono::Utc;
@@ -78,25 +78,25 @@ pub fn parse_labels(inputs: &[String]) -> Result<Option<DimensionFilter>> {
     })
 }
 
-/// The keypath filter for `--exact`, `--prefix` and `--contains`: repeating a flag means any of
-/// its values, and different flags must all hold.
-pub fn keypath_filter(
+/// The filter for `--exact`, `--prefix` and `--contains`, on keypaths or on values: repeating a flag
+/// means any of its values, and different flags must all hold.
+pub fn text_filter(
     exact: Vec<String>,
     prefixes: Vec<String>,
     contains: Vec<String>,
-) -> Option<KeypathFilter> {
-    let any_of = |values: Vec<String>, condition: fn(String) -> KeypathFilter| {
-        let mut filters: Vec<KeypathFilter> = values.into_iter().map(condition).collect();
+) -> Option<TextFilter> {
+    let any_of = |values: Vec<String>, condition: fn(String) -> TextFilter| {
+        let mut filters: Vec<TextFilter> = values.into_iter().map(condition).collect();
         match filters.len() {
             0 => None,
             1 => filters.pop(),
-            _ => Some(KeypathFilter::Any(KeypathFilters { filters })),
+            _ => Some(TextFilter::Any(TextFilters { filters })),
         }
     };
-    let mut filters: Vec<KeypathFilter> = [
-        any_of(exact, KeypathFilter::Exact),
-        any_of(prefixes, KeypathFilter::Prefix),
-        any_of(contains, KeypathFilter::Contains),
+    let mut filters: Vec<TextFilter> = [
+        any_of(exact, TextFilter::Exact),
+        any_of(prefixes, TextFilter::Prefix),
+        any_of(contains, TextFilter::Contains),
     ]
     .into_iter()
     .flatten()
@@ -104,7 +104,7 @@ pub fn keypath_filter(
     match filters.len() {
         0 => None,
         1 => filters.pop(),
-        _ => Some(KeypathFilter::All(KeypathFilters { filters })),
+        _ => Some(TextFilter::All(TextFilters { filters })),
     }
 }
 
@@ -141,17 +141,17 @@ pub async fn run_search(
     .await;
 
     let mut keypaths: Vec<(String, KeypathSearchResult)> = Vec::new();
-    let mut truncated = false;
+    let mut complete = true;
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        truncated |= resp.truncated;
+        complete &= resp.complete;
         keypaths.extend(resp.keypaths.into_iter().map(|k| (profile.clone(), k)));
     }
     keypaths.sort_by(|(pa, a), (pb, b)| (pa, &a.keypath).cmp(&(pb, &b.keypath)));
 
-    if truncated {
+    if !complete {
         eprintln!(
             "{}",
-            "More fields matched than --limit. Narrow with --prefix, --contains or --label, or raise --limit."
+            "Not every matching field is listed. Narrow with --prefix, --contains or --label, or raise --limit."
                 .yellow()
         );
     }
@@ -360,34 +360,34 @@ mod tests {
 
     #[test]
     fn no_keypath_flags_is_no_filter() {
-        assert_eq!(keypath_filter(vec![], vec![], vec![]), None);
+        assert_eq!(text_filter(vec![], vec![], vec![]), None);
     }
 
     #[test]
     fn one_keypath_flag_is_one_condition() {
         assert_eq!(
-            keypath_filter(vec![], strings(&["$d"]), vec![]),
-            Some(KeypathFilter::Prefix("$d".into()))
+            text_filter(vec![], strings(&["$d"]), vec![]),
+            Some(TextFilter::Prefix("$d".into()))
         );
     }
 
     #[test]
     fn repeated_flags_mean_any_and_different_flags_must_all_hold() {
         assert_eq!(
-            keypath_filter(
+            text_filter(
                 vec![],
                 strings(&["$d.kubernetes", "$d.k8s"]),
                 strings(&["pod"])
             ),
-            Some(KeypathFilter::All(KeypathFilters {
+            Some(TextFilter::All(TextFilters {
                 filters: vec![
-                    KeypathFilter::Any(KeypathFilters {
+                    TextFilter::Any(TextFilters {
                         filters: vec![
-                            KeypathFilter::Prefix("$d.kubernetes".into()),
-                            KeypathFilter::Prefix("$d.k8s".into()),
+                            TextFilter::Prefix("$d.kubernetes".into()),
+                            TextFilter::Prefix("$d.k8s".into()),
                         ]
                     }),
-                    KeypathFilter::Contains("pod".into()),
+                    TextFilter::Contains("pod".into()),
                 ]
             }))
         );

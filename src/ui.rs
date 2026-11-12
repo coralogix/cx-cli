@@ -288,17 +288,21 @@ pub fn downsample(values: &[f64], width: usize) -> Vec<f64> {
 
 /// A vertical bar chart with a y-axis and labelled x-axis.
 ///
-/// * `values` - one column per value; call [`downsample`] first if needed.
-/// * `labels` - `(column index, text)` pairs placed under the x-axis.
-/// * `height` - number of bar rows (3 or 4 reads well).
-/// * `color`  - colour for the bars; axes are always dim.
+/// * `values`    - one bar per value; call [`downsample`] first if needed.
+/// * `labels`    - `(value index, text)` pairs placed under that bar. Labels
+///   that would overlap the previous one are skipped.
+/// * `height`    - number of bar rows (3 or 4 reads well).
+/// * `bar_width` - characters per bar (1 for dense, 4 to 6 for a wide chart).
+/// * `color`     - colour for the bars; axes are always dim.
 pub fn format_bar_chart(
     values: &[f64],
     labels: &[(usize, String)],
     height: usize,
+    bar_width: usize,
     color: Option<Color>,
 ) -> String {
     let height = height.max(1);
+    let bar_width = bar_width.max(1);
     let max = values
         .iter()
         .copied()
@@ -343,6 +347,7 @@ pub fn format_bar_chart(
                     ' '
                 }
             })
+            .flat_map(|ch| std::iter::repeat_n(ch, bar_width))
             .collect();
         lines.push(format!(
             "{:>w$} {}{}",
@@ -353,7 +358,7 @@ pub fn format_bar_chart(
         ));
     }
 
-    let axis_len = values.len().max(1);
+    let axis_len = (values.len() * bar_width).max(1);
     lines.push(format!(
         "{:>w$} {}",
         "0".dimmed(),
@@ -363,13 +368,18 @@ pub fn format_bar_chart(
 
     if !labels.is_empty() {
         let mut axis = vec![' '; label_w + 2 + axis_len + 8];
-        for (pos, text) in labels {
-            let start = label_w + 2 + pos;
+        let mut next_free = 0;
+        for (idx, text) in labels {
+            let start = label_w + 2 + idx * bar_width;
+            if start < next_free {
+                continue; // would overlap the previous label
+            }
             for (j, ch) in text.chars().enumerate() {
                 if start + j < axis.len() {
                     axis[start + j] = ch;
                 }
             }
+            next_free = start + text.chars().count() + 1;
         }
         let axis: String = axis.into_iter().collect();
         lines.push(axis.trim_end().dimmed().to_string());
@@ -559,6 +569,7 @@ mod tests {
             &[0.0, 40.0, 120.0, 60.0, 0.0, 0.0, 0.0, 0.0],
             &[(0, "13:30".into()), (6, "14:30".into())],
             3,
+            1,
             None,
         );
         let lines: Vec<&str> = out.lines().collect();
@@ -573,8 +584,21 @@ mod tests {
     #[test]
     fn bar_chart_all_zero_does_not_divide_by_zero() {
         no_color();
-        let out = format_bar_chart(&[0.0, 0.0], &[], 2, None);
+        let out = format_bar_chart(&[0.0, 0.0], &[], 2, 1, None);
         assert!(out.contains("└──"));
+    }
+
+    #[test]
+    fn bar_chart_widens_bars_and_skips_overlapping_labels() {
+        no_color();
+        let labels: Vec<(usize, String)> = (0..4).map(|i| (i, format!("1{i}:00"))).collect();
+        let out = format_bar_chart(&[1.0, 2.0, 3.0, 4.0], &labels, 2, 3, None);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[0], "4 ┤      ▄▄▄███");
+        assert_eq!(lines[1], "2 ┤▄▄▄█████████");
+        assert_eq!(lines[2], "0 └────────────");
+        // Labels are 5 wide, bars 3 wide: every second label is dropped.
+        assert_eq!(lines[3], "   10:00  12:00");
     }
 
     #[test]

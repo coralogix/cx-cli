@@ -3,12 +3,15 @@
 //!
 //! Owns no skill/agent logic of its own beyond driving the one scope
 //! question (global vs local) and passing flags through to the installer.
+//! Installs are pinned to this version's release tag. `run_auto_refresh` is the
+//! hidden background refresh that the update check starts after an upgrade.
 
 use std::collections::BTreeSet;
 use std::io::IsTerminal;
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use inquire::Select;
 use serde::Deserialize;
 
@@ -24,8 +27,25 @@ pub const SKILLS_SOURCE: &str = "coralogix/cx-cli/skills";
 /// detection matches on this rather than [`SKILLS_SOURCE`].
 const INSTALLED_SOURCE: &str = "coralogix/cx-cli";
 
+/// The running cx version. Installs are pinned to its release tag.
+const CX_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The installer source pinned to the release tag of `version`
+/// (`coralogix/cx-cli/skills#v0.1.31`), so the skills match the binary instead
+/// of the default branch. A pre-release version (`0.1.32-dev`) has no tag, so
+/// it gets the unpinned source.
+fn pinned_source(version: &str) -> String {
+    if version.contains('-') {
+        SKILLS_SOURCE.to_string()
+    } else {
+        format!("{SKILLS_SOURCE}#v{version}")
+    }
+}
+
 /// The command a user can run by hand when cx fails the install.
-const MANUAL_INSTALL_CMD: &str = "npx skills add coralogix/cx-cli/skills";
+fn manual_install_cmd() -> String {
+    format!("npx skills add {}", pinned_source(CX_VERSION))
+}
 
 /// Where to browse the installed skills and read their contents. Shown in the
 /// compact summary as a pointer for manually reviewing what was installed;
@@ -123,8 +143,6 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
         );
     }
 
-    let args = build_install_args(scope, &opts.agents);
-
     // The `-y` installer runs fully non-interactively, so it needs no terminal
     // and its verbose TUI (banner, per-skill table, risk matrix) is pure noise.
     // Capture it and replace it with a one-line summary; only surface the raw
@@ -132,10 +150,7 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     // interactive walk (`run_advanced_install`) keeps full passthrough.
     println!("Installing cx agent skills…");
 
-    let output = Command::new(npx_program())
-        .args(&args)
-        .output()
-        .context("failed to run npx")?;
+    let output = run_npx_install(scope, &opts.agents)?;
     if !output.status.success() {
         // Show the installer's own diagnostics before the retry hint. Node
         // CLIs report errors on either stream, so surface both.
@@ -148,13 +163,118 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
         }
         bail!(
             "skills installer exited with {}.\n\
-             You can retry manually with: {MANUAL_INSTALL_CMD}",
-            output.status
+             You can retry manually with: {}",
+            output.status,
+            manual_install_cmd()
         );
     }
 
     print_install_summary(scope);
+    // Only a global install is recorded: local skills belong to one project,
+    // and the state file is shared by all of them.
+    if scope == SkillsScope::Global {
+        crate::version_cache::record_global_skills_install(&opts.agents);
+    }
     Ok(InstallOutcome::Installed)
+}
+
+/// Run the non-interactive install from this version's release tag. If the
+/// tag does not exist yet, retry once from the default branch, so a missing
+/// tag never blocks the install. Any other failure (network, auth, installer)
+/// is returned as is: falling back then would install unpinned skills that
+/// may not match this binary.
+fn run_npx_install(scope: SkillsScope, agents: &[String]) -> Result<std::process::Output> {
+    let pinned = pinned_source(CX_VERSION);
+    let output = Command::new(npx_program())
+        .args(build_install_args(&pinned, scope, agents))
+        .output()
+        .context("failed to run npx")?;
+    if output.status.success() || pinned == SKILLS_SOURCE || !is_missing_ref(&output) {
+        return Ok(output);
+    }
+    Command::new(npx_program())
+        .args(build_install_args(SKILLS_SOURCE, scope, agents))
+        .output()
+        .context("failed to run npx")
+}
+
+/// True when the installer failed because the git ref (the release tag) does
+/// not exist. Same patterns as the installer's own `isMissingRefError`; git's
+/// message reaches either stream inside the installer's
+/// `SKILLS_GIT_CLONE_FAILED` diagnostic.
+fn is_missing_ref(output: &std::process::Output) -> bool {
+    [&output.stdout, &output.stderr].iter().any(|captured| {
+        let text = String::from_utf8_lossy(captured).to_lowercase();
+        (text.contains("remote branch") && text.contains("not found in upstream origin"))
+            || text.contains("couldn't find remote ref")
+    })
+}
+
+/// The hidden `cx skills auto-refresh` command, started in the background by
+/// the update check after a cx upgrade (see `update_check`). Repeats the
+/// recorded global install (same agents) with this version's skills, with no
+/// output. When no install was recorded (skills from an older cx or plain
+/// `npx`), there are no recorded agents, so the installer auto-detects them,
+/// as `cx skills install --global` does. Exits quietly on any problem: the
+/// update notice is the fallback.
+pub fn run_auto_refresh() -> Result<()> {
+    let Some(_lock) = RefreshLock::acquire() else {
+        return Ok(());
+    };
+    let agents = crate::version_cache::VersionCheckCache::load().skills_agents;
+    let output = run_npx_install(SkillsScope::Global, &agents)?;
+    if output.status.success() {
+        crate::version_cache::record_global_skills_install(&agents);
+    }
+    Ok(())
+}
+
+/// A lock file (`~/.cx/skills-refresh.lock`) so two cx commands that run at
+/// the same time do not start two installs. A lock older than
+/// [`RefreshLock::STALE_AFTER`] is left over from a killed run and is replaced.
+struct RefreshLock(std::path::PathBuf);
+
+impl RefreshLock {
+    const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+    fn acquire() -> Option<Self> {
+        // `~/.cx` may not exist yet (skills installed with plain `npx`, and
+        // the parent's state write may not have landed), and `create_new`
+        // needs the directory.
+        let dir = crate::config::config_dir().ok()?;
+        std::fs::create_dir_all(&dir).ok()?;
+        let path = dir.join("skills-refresh.lock");
+        let stale = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > Self::STALE_AFTER);
+        if stale {
+            let _ = std::fs::remove_file(&path);
+        }
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .ok()?;
+        Some(Self(path))
+    }
+}
+
+impl Drop for RefreshLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// True when an `npx` executable is on `PATH`. A plain directory scan, so it
+/// is cheap enough for the update check, unlike spawning `npx --version`.
+pub fn npx_on_path() -> bool {
+    std::env::var_os("PATH").is_some_and(|path| npx_in(&path))
+}
+
+fn npx_in(path: &std::ffi::OsStr) -> bool {
+    std::env::split_paths(path).any(|dir| dir.join(npx_program()).is_file())
 }
 
 /// The compact success line shown after a non-interactive install, in place of
@@ -185,9 +305,10 @@ fn print_install_summary(scope: SkillsScope) {
 /// Advanced install: run the raw installer with no flags and let the user
 /// walk its full interactive flow (skill/agent selection, scope, method).
 pub fn run_advanced_install() -> Result<()> {
-    println!("Running the skills installer interactively: {MANUAL_INSTALL_CMD}");
+    let source = pinned_source(CX_VERSION);
+    println!("Running the skills installer interactively: npx skills add {source}");
     let status = Command::new(npx_program())
-        .args(["skills", "add", SKILLS_SOURCE])
+        .args(["skills", "add", &source])
         .status()
         .context(
             "failed to run npx - Node.js is required for the skills install \
@@ -196,6 +317,9 @@ pub fn run_advanced_install() -> Result<()> {
     if !status.success() {
         bail!("skills installer exited with {status}");
     }
+    // Not recorded: the installer exits 0 when the user cancels, and the user
+    // may pick local scope or only some skills, so success says nothing about
+    // which skills are now current.
     Ok(())
 }
 
@@ -259,16 +383,88 @@ fn installed_cx_skills(scope: SkillsScope) -> Vec<String> {
         .collect()
 }
 
+/// cx skills listed in the installer's global lock file.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LockedCxSkills {
+    /// The oldest `updatedAt` (else `installedAt`) among them. `None` when any
+    /// of them carries no readable time, so the age is unknown.
+    pub oldest_update: Option<DateTime<Utc>>,
+}
+
+/// The cx skills in the installer's global lock file, or `None` when it lists
+/// none. A plain file read, so it is cheap enough to run after every command,
+/// unlike `npx skills ls`. It also sees skills refreshed with `npx skills add`
+/// directly, which cx does not record.
+pub fn global_lock_cx_skills() -> Option<LockedCxSkills> {
+    let xdg_state_home = std::env::var_os("XDG_STATE_HOME").map(std::path::PathBuf::from);
+    let path = global_lock_path(xdg_state_home, dirs::home_dir())?;
+    let contents = std::fs::read_to_string(path).ok()?;
+    lock_cx_skills(&contents)
+}
+
+/// Same lookup as the installer's `getSkillLockPath`: `$XDG_STATE_HOME` when
+/// set (and not empty), else `~/.agents`.
+fn global_lock_path(
+    xdg_state_home: Option<std::path::PathBuf>,
+    home: Option<std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    match xdg_state_home {
+        Some(xdg) if !xdg.as_os_str().is_empty() => {
+            Some(xdg.join("skills").join(".skill-lock.json"))
+        }
+        _ => home.map(|h| h.join(".agents").join(".skill-lock.json")),
+    }
+}
+
+/// The lock file maps skill names to entries that carry a `source` and
+/// ISO-8601 `installedAt` / `updatedAt` times.
+fn lock_cx_skills(contents: &str) -> Option<LockedCxSkills> {
+    #[derive(Deserialize)]
+    struct Lock {
+        #[serde(default)]
+        skills: std::collections::BTreeMap<String, LockEntry>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LockEntry {
+        source: Option<String>,
+        installed_at: Option<String>,
+        updated_at: Option<String>,
+    }
+    let lock = serde_json::from_str::<Lock>(contents).ok()?;
+    let times: Vec<Option<DateTime<Utc>>> = lock
+        .skills
+        .values()
+        .filter(|entry| entry.source.as_deref() == Some(INSTALLED_SOURCE))
+        .map(|entry| {
+            entry
+                .updated_at
+                .as_deref()
+                .or(entry.installed_at.as_deref())
+                .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t.with_timezone(&Utc))
+        })
+        .collect();
+    if times.is_empty() {
+        return None;
+    }
+    let oldest_update = times
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .and_then(|times| times.into_iter().min());
+    Some(LockedCxSkills { oldest_update })
+}
+
 /// Arguments for the fully non-interactive install.
 ///
 /// The leading `-y` is npx's own auto-approve (first-run package download
 /// prompt); the trailing `-y` is the installer's skip-all-confirmations.
-fn build_install_args(scope: SkillsScope, agents: &[String]) -> Vec<String> {
+fn build_install_args(source: &str, scope: SkillsScope, agents: &[String]) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-y".into(),
         "skills".into(),
         "add".into(),
-        SKILLS_SOURCE.into(),
+        source.into(),
         "--skill".into(),
         "*".into(),
         "-y".into(),
@@ -320,7 +516,7 @@ mod tests {
 
     #[test]
     fn install_args_local_scope() {
-        let args = build_install_args(SkillsScope::Local, &[]);
+        let args = build_install_args(SKILLS_SOURCE, SkillsScope::Local, &[]);
         assert_eq!(
             args,
             ["-y", "skills", "add", SKILLS_SOURCE, "--skill", "*", "-y"]
@@ -329,7 +525,7 @@ mod tests {
 
     #[test]
     fn install_args_global_scope() {
-        let args = build_install_args(SkillsScope::Global, &[]);
+        let args = build_install_args(SKILLS_SOURCE, SkillsScope::Global, &[]);
         assert_eq!(
             args,
             [
@@ -348,6 +544,7 @@ mod tests {
     #[test]
     fn install_args_pass_agents_through() {
         let args = build_install_args(
+            SKILLS_SOURCE,
             SkillsScope::Global,
             &["claude-code".to_string(), "cursor".to_string()],
         );
@@ -367,6 +564,126 @@ mod tests {
                 "cursor"
             ]
         );
+    }
+
+    #[test]
+    fn global_lock_path_prefers_xdg_state_home() {
+        use std::path::PathBuf;
+        let home = Some(PathBuf::from("/home/u"));
+        assert_eq!(
+            global_lock_path(Some(PathBuf::from("/state")), home.clone()),
+            Some(PathBuf::from("/state/skills/.skill-lock.json"))
+        );
+        assert_eq!(
+            global_lock_path(Some(PathBuf::new()), home.clone()),
+            Some(PathBuf::from("/home/u/.agents/.skill-lock.json"))
+        );
+        assert_eq!(
+            global_lock_path(None, home),
+            Some(PathBuf::from("/home/u/.agents/.skill-lock.json"))
+        );
+    }
+
+    #[cfg(unix)]
+    fn output_with(code: i32, stdout: &str, stderr: &str) -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_release_tag_is_detected() {
+        // Captured from `npx skills add coralogix/cx-cli/skills#v0.0.999`.
+        let stdout = "■  Failed to clone repository\n\
+            │  [SKILLS_GIT_CLONE_FAILED] Failed to clone https://github.com/coralogix/cx-cli.git: \
+            Cloning into '/tmp/skills-x'...\n\
+            │  fatal: Remote branch v0.0.999 not found in upstream origin\n";
+        assert!(is_missing_ref(&output_with(1, stdout, "")));
+        assert!(is_missing_ref(&output_with(
+            1,
+            "",
+            "fatal: couldn't find remote ref refs/tags/v0.0.999"
+        )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn other_install_failures_are_not_a_missing_tag() {
+        for text in [
+            "[SKILLS_GIT_CLONE_TIMEOUT] Clone timed out after 60s",
+            "[SKILLS_GIT_AUTH_FAILED] Authentication failed for https://github.com/coralogix/cx-cli.git",
+            "fatal: unable to access 'https://github.com/coralogix/cx-cli.git/': Could not resolve host: github.com",
+        ] {
+            assert!(!is_missing_ref(&output_with(1, text, "")), "{text}");
+            assert!(!is_missing_ref(&output_with(1, "", text)), "{text}");
+        }
+    }
+
+    #[test]
+    fn lock_with_cx_skills_reports_oldest_update() {
+        let lock = r#"{"version":3,"skills":{
+            "other":{"source":"someone/else","updatedAt":"2020-01-01T00:00:00.000Z"},
+            "cx-alerts":{"source":"coralogix/cx-cli","ref":"master",
+                "installedAt":"2026-09-01T10:00:00.000Z","updatedAt":"2026-10-05T08:00:00.000Z"},
+            "cx-cli":{"source":"coralogix/cx-cli","installedAt":"2026-10-01T09:30:00.000Z"}
+        }}"#;
+        let oldest = "2026-10-01T09:30:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert_eq!(
+            lock_cx_skills(lock),
+            Some(LockedCxSkills {
+                oldest_update: Some(oldest)
+            })
+        );
+    }
+
+    #[test]
+    fn lock_with_undated_cx_skill_has_unknown_age() {
+        let lock = r#"{"version":3,"skills":{
+            "cx-alerts":{"source":"coralogix/cx-cli","updatedAt":"2026-10-05T08:00:00.000Z"},
+            "cx-cli":{"source":"coralogix/cx-cli","updatedAt":"not a time"}
+        }}"#;
+        assert_eq!(
+            lock_cx_skills(lock),
+            Some(LockedCxSkills {
+                oldest_update: None
+            })
+        );
+    }
+
+    #[test]
+    fn lock_without_cx_skills_is_not_detected() {
+        assert_eq!(
+            lock_cx_skills(r#"{"version":3,"skills":{"other":{"source":"someone/else"}}}"#),
+            None
+        );
+        assert_eq!(lock_cx_skills(r#"{"version":3}"#), None);
+        assert_eq!(lock_cx_skills("not json"), None);
+    }
+
+    #[test]
+    fn release_versions_pin_to_their_tag() {
+        assert_eq!(pinned_source("0.1.31"), "coralogix/cx-cli/skills#v0.1.31");
+        // Pre-release builds have no tag: use the default branch.
+        assert_eq!(pinned_source("0.1.32-dev"), SKILLS_SOURCE);
+        assert_eq!(
+            build_install_args(&pinned_source("0.1.31"), SkillsScope::Global, &[])[3],
+            "coralogix/cx-cli/skills#v0.1.31"
+        );
+    }
+
+    #[test]
+    fn npx_on_path_scans_path_dirs() {
+        let dir = std::env::temp_dir().join(format!("cx-npx-scan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = std::env::join_paths([&dir]).unwrap();
+        assert!(!npx_in(&path));
+        std::fs::write(dir.join(npx_program()), "").unwrap();
+        assert!(npx_in(&path));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

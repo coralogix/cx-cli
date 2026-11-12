@@ -26,6 +26,8 @@ Or, you can [Install manually](#install-manually).
 brew install cx
 ```
 
+Homebrew builds aren't signed by Coralogix. For credentials only the signed `cx` can read, use the install script below (see [Credentials on macOS](configuration.md#credentials-on-macos)).
+
 Or use the cross-platform install script:
 
 ```bash
@@ -56,7 +58,7 @@ What it asks you:
 |---|---|
 | **Region / Coralogix URL** | **Don't know your region? You don't need to.** Paste the URL you use to reach Coralogix in the browser (e.g. `https://myteam.app.eu2.coralogix.com`) and `cx` works the region out for you. Pick it from the list instead if you do know it, or look yours up in the [Coralogix domain](https://coralogix.com/docs/user-guides/account-management/account-settings/coralogix-domain/) table. A URL `cx` doesn't recognise - a bring-your-own-cloud or private-link deployment - becomes a custom API endpoint instead of an error. |
 | **Sign in** | Opens your browser for [OAuth login](https://coralogix.com/docs/user-guides/account-management/user-management/oauth/). Approve the scopes and choose which team the CLI may access, then come back to the terminal. |
-| **Where should OAuth tokens be stored?** | `file` is preselected and writes tokens into the profile TOML (`0600`). `os-store` is available on Windows, on glibc Linux, and on macOS when this `cx` binary is Developer ID signed. An ad-hoc or unsigned macOS build offers only `file`. On Linux musl builds, `file` is the only storage option. A prompt-free `cx init` also keeps `file`. If you choose `os-store` and that store is unavailable, setup saves the tokens in the profile file instead. |
+| **Where should OAuth tokens be stored?** | On macOS, `os-store` (the Keychain) is preselected. See [Credentials on macOS](configuration.md#credentials-on-macos) for how Homebrew and signed installs differ. On Windows and glibc Linux, `file` is preselected and writes tokens into the profile TOML (`0600`); `os-store` is the other choice. On Linux musl builds, `file` is the only option. If the OS store is unavailable, setup saves the tokens in the profile file instead. |
 | **Where to put the agent skills** | Local to this project (`./`) or global (`~/`). `cx` installs them for you and tells you how to update them later. |
 | **Install shell completions?** | Turns on `<Tab>` completion for `cx`. Pick `zsh`, `bash`, or `fish`, or keep the default and skip it. **Other** lets you name a shell and an install path yourself. Skipped without asking when completions are already installed. |
 

@@ -93,7 +93,7 @@ async fn init_writes_profile_then_installs_skills() {
     let args_file = bin.join("args.txt");
     install_fake_npx(&bin, &args_file);
 
-    cx(&home, &bin)
+    let output = cx(&home, &bin)
         .args([
             "init",
             "--url",
@@ -102,17 +102,46 @@ async fn init_writes_profile_then_installs_skills() {
             "faketoken",
             "--global-skills",
         ])
-        .assert()
-        .success();
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "init should succeed, stderr: {stderr}"
+    );
 
-    // Step 1: prompt-free setup writes the key into the profile file and
-    // pins JSON output. Interactive `cx init` asks and preselects file.
+    // Step 1: prompt-free setup pins JSON output. On macOS the secret goes to
+    // the Keychain (`os_store`); elsewhere it stays in the profile file. A
+    // failed Keychain write falls back to the file and says so.
     let toml = fs::read_to_string(profile_path(&home, "default")).unwrap();
     assert!(toml.contains("auth = \"api_key\""), "profile: {toml}");
-    assert!(
-        toml.contains("credential_storage = \"file\""),
-        "prompt-free setup stores the key in the profile file: {toml}"
-    );
+    if cfg!(target_os = "macos") {
+        if toml.contains("os_store") {
+            assert!(
+                !toml.contains("faketoken"),
+                "Keychain profile must not inline the API key: {toml}"
+            );
+        } else {
+            assert!(
+                stderr.contains("falling back to file"),
+                "macOS setup should use the Keychain or explain the file fallback.\n\
+                 profile: {toml}\nstderr: {stderr}"
+            );
+            assert!(
+                toml.contains("faketoken"),
+                "file fallback should keep the API key: {toml}"
+            );
+        }
+    } else {
+        assert!(
+            toml.contains("credential_storage = \"file\""),
+            "prompt-free setup stores the key in the profile file: {toml}"
+        );
+        assert!(
+            toml.contains("faketoken"),
+            "file profile should inline the API key: {toml}"
+        );
+    }
     assert!(
         toml.contains("default_output_format = \"json\""),
         "quick setup pins json output: {toml}"

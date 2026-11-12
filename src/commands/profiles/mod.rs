@@ -69,64 +69,114 @@ enum RegionChoice {
 
 const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 
-/// `file` is always offered. `os-store` is offered where a keyring backend
-/// exists, except on macOS unless this process is signed with an Apple
-/// Developer ID certificate. An ad-hoc signature makes a Keychain "Always
-/// Allow" expire with the next build.
-fn os_store_offered() -> bool {
-    #[cfg(all(target_os = "linux", target_env = "musl"))]
-    {
-        false
+/// Where the setup prompt is running, for help text and whether `os-store`
+/// exists at all. Linux musl has no keyring backend. macOS always has one:
+/// a Developer ID-signed `cx` uses the Keychain directly, and an unsigned or
+/// ad-hoc build (Homebrew core) uses `/usr/bin/security`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OsStorePlatform {
+    LinuxMusl,
+    Macos { apple_signed: bool },
+    Other,
+}
+
+fn current_os_store_platform() -> OsStorePlatform {
+    if cfg!(all(target_os = "linux", target_env = "musl")) {
+        OsStorePlatform::LinuxMusl
+    } else if cfg!(target_os = "macos") {
+        OsStorePlatform::Macos {
+            apple_signed: apple_developer_id(),
+        }
+    } else {
+        OsStorePlatform::Other
     }
+}
+
+fn apple_developer_id() -> bool {
     #[cfg(target_os = "macos")]
     {
         crate::code_sign::has_apple_developer_id()
     }
-    #[cfg(not(any(target_os = "macos", all(target_os = "linux", target_env = "musl"))))]
+    #[cfg(not(target_os = "macos"))]
     {
-        true
+        false
     }
 }
 
-/// Storage choices for the setup prompt. `file` is first, so it is the default
-/// cursor. `os-store` is appended only when [`os_store_offered`] is true.
-fn credential_storage_options() -> Vec<(&'static str, CredentialStorage)> {
+/// `file` is always offered. `os-store` is offered wherever a credential
+/// backend exists, including unsigned macOS builds.
+fn os_store_offered_on(platform: OsStorePlatform) -> bool {
+    !matches!(platform, OsStorePlatform::LinuxMusl)
+}
+
+/// Storage choices for the setup prompt. `file` is listed first. `os-store` is
+/// appended only when [`os_store_offered_on`] is true. The highlighted default
+/// is [`default_credential_storage`]: `os-store` on macOS, `file` elsewhere.
+fn credential_storage_options_for(
+    platform: OsStorePlatform,
+) -> Vec<(&'static str, CredentialStorage)> {
     let mut options = vec![("file", CredentialStorage::File)];
-    if os_store_offered() {
+    if os_store_offered_on(platform) {
         options.push(("os-store (encrypted)", CredentialStorage::OsStore));
     }
     options
 }
 
+/// Where a newly created profile stores its secret when the user accepts the
+/// default. Existing profiles are not rewritten: an omitted `credential_storage`
+/// key still deserializes as `file`.
+fn default_credential_storage(platform: OsStorePlatform) -> CredentialStorage {
+    match platform {
+        OsStorePlatform::Macos { .. } => CredentialStorage::OsStore,
+        OsStorePlatform::LinuxMusl | OsStorePlatform::Other => CredentialStorage::File,
+    }
+}
+
+fn credential_storage_cursor(platform: OsStorePlatform) -> usize {
+    let preferred = default_credential_storage(platform);
+    credential_storage_options_for(platform)
+        .iter()
+        .position(|(_, storage)| *storage == preferred)
+        .unwrap_or(0)
+}
+
 fn credential_storage_help_message(file_description: &str) -> String {
-    if cfg!(all(target_os = "linux", target_env = "musl")) {
-        format!("Linux musl builds do not have an OS credential store. 'file' {file_description}")
-    } else if cfg!(target_os = "macos") && !os_store_offered() {
-        format!(
-            "'file' {file_description} This build is not Developer ID signed, so the macOS \
-             Keychain is not offered."
-        )
-    } else if cfg!(target_os = "macos") {
-        format!(
-            "'file' {file_description} 'os-store' uses the macOS Keychain. Falls back to file if \
-             the OS store is unavailable."
-        )
-    } else {
-        format!(
-            "'file' {file_description} 'os-store' uses the OS credential store (Windows \
-             Credential Manager, Linux Secret Service). Falls back to file if the OS store is \
-             unavailable."
-        )
+    credential_storage_help(file_description, current_os_store_platform())
+}
+
+fn credential_storage_help(file_description: &str, platform: OsStorePlatform) -> String {
+    match platform {
+        OsStorePlatform::LinuxMusl => {
+            format!(
+                "Linux musl builds do not have an OS credential store. 'file' {file_description}"
+            )
+        }
+        OsStorePlatform::Macos {
+            apple_signed: false,
+        } => format!(
+            "'os-store' is preselected and stores the secret in the macOS Keychain via \
+             /usr/bin/security, so a Homebrew upgrade does not prompt again. Any process running \
+             as your user can read that secret through the same tool. 'file' {file_description} \
+             Falls back to file if the Keychain is unavailable."
+        ),
+        OsStorePlatform::Macos { apple_signed: true } => format!(
+            "'os-store' is preselected and stores the secret in the macOS Keychain with an ACL \
+             tied to this Developer ID-signed cx. 'file' {file_description} Falls back to file \
+             if the Keychain is unavailable."
+        ),
+        OsStorePlatform::Other => format!(
+            "'file' is preselected and {file_description} 'os-store' uses the OS credential store \
+             (Windows Credential Manager, Linux Secret Service). Falls back to file if the OS \
+             store is unavailable."
+        ),
     }
 }
 
 fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
-    let options = credential_storage_options();
+    let platform = current_os_store_platform();
+    let options = credential_storage_options_for(platform);
     let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
-    let cursor = options
-        .iter()
-        .position(|(_, storage)| *storage == CredentialStorage::File)
-        .unwrap_or(0);
+    let cursor = credential_storage_cursor(platform);
     let chosen = Select::new(prompt, labels)
         .with_help_message(help_message)
         .with_starting_cursor(cursor)
@@ -518,10 +568,11 @@ pub struct AddArgs {
     pub disable_olly: bool,
     /// Quick setup: on a terminal, skip the optional prompts (default output
     /// format, label) and apply sensible defaults (JSON output, no label).
-    /// Credential storage is still asked, with file preselected.
-    /// Non-interactive runs store secrets in the profile file. Used by
-    /// `cx init`'s guided flow; `cx profiles add` leaves it `false` and keeps
-    /// its full prompt set.
+    /// Credential storage is still asked. On macOS the prompt preselects
+    /// `os-store`; elsewhere it preselects `file`. A non-interactive run uses
+    /// that same default, and a failed Keychain write falls back to the
+    /// profile file. Used by `cx init`'s guided flow; `cx profiles add` leaves
+    /// it `false` and keeps its full prompt set.
     pub quick: bool,
 }
 
@@ -807,7 +858,8 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
 /// Build an API-key profile from flags alone — no terminal involved. OAuth is
 /// unavailable here (it needs a browser), and consequential values are never
 /// invented: a missing API key or region is an error naming the exact flag to
-/// add. Credentials go to the profile file (the OS store may itself prompt).
+/// add. On macOS the secret goes to the Keychain, falling back to the profile
+/// file if that write fails. Everywhere else it is written to the profile file.
 fn build_profile_non_interactive(
     name: &str,
     api_key: Option<String>,
@@ -832,10 +884,21 @@ fn build_profile_non_interactive(
 
     // Drop OS-store secrets only when this profile's file says they are there.
     delete_os_store_secrets_if_recorded(name);
+    let (credential_storage, api_key, storage_desc) =
+        match default_credential_storage(current_os_store_platform()) {
+            CredentialStorage::OsStore => os_store_or_file_fallback(
+                name,
+                keyring_store::store_secret(name, "api_key", &api_key),
+                api_key,
+                "OS credential store",
+                "profile file",
+            ),
+            CredentialStorage::File => (CredentialStorage::File, Some(api_key), "profile file"),
+        };
     let profile = Profile {
         auth: AuthKind::ApiKey,
-        credential_storage: CredentialStorage::File,
-        api_key: Some(api_key),
+        credential_storage,
+        api_key,
         region,
         label: None,
         oauth_client_id: None,
@@ -849,7 +912,7 @@ fn build_profile_non_interactive(
         cached_team_id: None,
         cached_team_name: None,
     };
-    Ok((profile, "profile file"))
+    Ok((profile, storage_desc))
 }
 
 // ── OAuth configure path ──────────────────────────────────────────────────────
@@ -926,16 +989,17 @@ async fn configure_oauth(
     let tokens = oauth::browser_login(&base_url, &client_id, login).await?;
     println!("Login successful!");
 
-    // Interactive runs (including `cx init`) ask, with file preselected.
-    // Non-interactive runs store tokens in the profile file so a script never
-    // blocks on a keychain dialog. If the OS store is selected but unavailable
-    // (common on Linux without Secret Service), we fall back to file.
+    // Interactive runs (including `cx init`) ask. macOS preselects the Keychain;
+    // other platforms preselect the profile file. A non-interactive run uses
+    // that same default. If the OS store is selected but unavailable (common
+    // on Linux without Secret Service, or a Keychain write that fails), we
+    // fall back to file.
     let credential_storage = if interactive {
         let help_message =
             credential_storage_help_message("stores tokens in the profile config (0600 perms).");
         select_credential_storage("Where should OAuth tokens be stored?", &help_message)?
     } else {
-        CredentialStorage::File
+        default_credential_storage(current_os_store_platform())
     };
 
     // For custom environments, explicitly store the base URL so that token
@@ -1039,9 +1103,9 @@ fn configure_api_key(
             .filter(|s| !s.is_empty())
     };
 
-    // Reached only on a terminal, including `cx init`. File is preselected.
-    // If the OS store is chosen but unavailable, fall back to file so Linux
-    // clients keep working.
+    // Reached only on a terminal, including `cx init`. macOS preselects the
+    // Keychain; other platforms preselect the profile file. If the OS store is
+    // chosen but unavailable, fall back to file.
     let help_message =
         credential_storage_help_message("stores credentials in the profile config (0600 perms).");
     let credential_storage =
@@ -1113,15 +1177,83 @@ mod tests {
     }
 
     #[test]
-    fn credential_storage_default_cursor() {
-        let options = credential_storage_options();
+    fn credential_storage_lists_file_first() {
+        let platform = current_os_store_platform();
+        let options = credential_storage_options_for(platform);
         assert_eq!(options[0].1, CredentialStorage::File);
-        if os_store_offered() {
+        if os_store_offered_on(platform) {
             assert_eq!(options.len(), 2);
             assert_eq!(options[1].1, CredentialStorage::OsStore);
         } else {
             assert_eq!(options.len(), 1);
         }
+    }
+
+    #[test]
+    fn macos_defaults_to_os_store_for_both_signatures() {
+        for apple_signed in [false, true] {
+            let platform = OsStorePlatform::Macos { apple_signed };
+            assert_eq!(
+                default_credential_storage(platform),
+                CredentialStorage::OsStore
+            );
+            let options = credential_storage_options_for(platform);
+            let cursor = credential_storage_cursor(platform);
+            assert_eq!(options[cursor].1, CredentialStorage::OsStore);
+        }
+    }
+
+    #[test]
+    fn non_macos_defaults_to_file() {
+        for platform in [OsStorePlatform::Other, OsStorePlatform::LinuxMusl] {
+            assert_eq!(
+                default_credential_storage(platform),
+                CredentialStorage::File
+            );
+            let options = credential_storage_options_for(platform);
+            let cursor = credential_storage_cursor(platform);
+            assert_eq!(options[cursor].1, CredentialStorage::File);
+        }
+    }
+
+    #[test]
+    fn unsigned_macos_offers_keychain_through_security() {
+        let platform = OsStorePlatform::Macos {
+            apple_signed: false,
+        };
+        assert!(os_store_offered_on(platform));
+        let help = credential_storage_help(
+            "stores credentials in the profile config (0600 perms).",
+            platform,
+        );
+        assert!(help.contains("/usr/bin/security"), "got: {help}");
+        assert!(help.contains("Homebrew"), "got: {help}");
+        assert!(help.contains("preselected"), "got: {help}");
+        assert!(
+            !help.contains("not offered"),
+            "unsigned builds must offer the Keychain, got: {help}"
+        );
+    }
+
+    #[test]
+    fn signed_macos_help_describes_the_signature_acl() {
+        let platform = OsStorePlatform::Macos { apple_signed: true };
+        assert!(os_store_offered_on(platform));
+        let help = credential_storage_help(
+            "stores credentials in the profile config (0600 perms).",
+            platform,
+        );
+        assert!(help.contains("Developer ID-signed"), "got: {help}");
+        assert!(help.contains("preselected"), "got: {help}");
+        assert!(
+            !help.contains("/usr/bin/security"),
+            "signed builds keep direct Keychain access, got: {help}"
+        );
+    }
+
+    #[test]
+    fn linux_musl_offers_only_file() {
+        assert!(!os_store_offered_on(OsStorePlatform::LinuxMusl));
     }
 
     #[test]

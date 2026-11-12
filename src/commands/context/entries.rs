@@ -5,7 +5,7 @@ use colored::Colorize;
 
 use super::api::{self, Entry, IndexLine, Kind, Page, QueryItem, QueryRequest, SearchMatch};
 use super::get::{author_display, day};
-use super::{parse_subjects, print_raw, single_target, subject_list, Paging};
+use super::{print_raw, single_target, subject_list, subjects, Paging};
 use crate::config::OutputFormat;
 use crate::execution::ExecutionTarget;
 
@@ -48,7 +48,7 @@ pub async fn run_query(
     let req = QueryRequest {
         patterns,
         fixed,
-        subjects: parse_subjects(&filter.subjects)?,
+        subjects: subjects::for_read(&filter.subjects)?,
         team_wide: filter.team_wide,
         include_deleted: filter.include_deleted,
         limit: filter.paging.limit,

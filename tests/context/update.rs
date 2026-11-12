@@ -130,7 +130,7 @@ async fn update_reads_then_puts_the_merged_entry() {
 
 #[tokio::test]
 async fn update_scope_transitions_and_source() {
-    let alert = json!([{ "type": "alert", "value": "8f3a" }]);
+    let alert = json!([{ "type": "alert", "value": "8f3a2c1e-5b7d-4e2a-9c1f-0d6b3a4e5f60" }]);
     let cases: [(Value, &[&str], Value); 3] = [
         (
             checkout(),
@@ -140,7 +140,7 @@ async fn update_scope_transitions_and_source() {
         ),
         (
             json!([]),
-            &["--subject", "alert:8f3a"],
+            &["--subject", "alert:8f3a2c1e-5b7d-4e2a-9c1f-0d6b3a4e5f60"],
             json!({ "title": "Pool size", "summary": "Check it first.", "body": "Old body.\n",
                     "subjects": alert, "source": "case 42", "expected_revision": 2 }),
         ),

@@ -110,6 +110,20 @@ pub struct TeamRevisionItem {
     pub current_revision: u64,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct SubjectTypeCount {
+    #[serde(rename = "type")]
+    pub subject_type: String,
+    pub memories: u64,
+    pub instructions: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SubjectTypes {
+    pub types: Vec<SubjectTypeCount>,
+    pub total: u64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Page<T> {
     pub items: Vec<T>,
@@ -397,6 +411,11 @@ pub async fn team_history(
         ErrorScope::default(),
     )
     .await
+}
+
+pub async fn subject_types(client: &CxClient) -> Result<Reply<SubjectTypes>> {
+    let path = format!("{BASE}/subject-types");
+    call(client, Method::GET, &path, &[], None, ErrorScope::default()).await
 }
 
 pub async fn query_entries(

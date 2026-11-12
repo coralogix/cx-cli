@@ -11,7 +11,7 @@ description: >
   "undo a context change". Not for unrelated code or local-machine
   troubleshooting, or for the agent's personal memory.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   internal: "true"
 ---
 
@@ -28,7 +28,7 @@ A Coralogix team shares one pool of entries, written by teammates and their agen
 - A **memory** is factual: something observed or learned earlier, true when it was written. Use it to decide what to check; verify it against current data before relying on it.
 - An **instruction** is guidance from the team. It may state facts, and it may also say what to do or avoid. Follow the instructions that apply to the task.
 
-Each entry is attached to **subjects**, or is **team-wide**. A subject is `type:value` (`service:checkout`, `alert:<definition ID>`, `host:ip-10-0-1-17`), or a type alone (`service`) for knowledge about all of that type.
+Each entry is attached to one or more **subjects**, or is **team-wide**. A subject is `type:value` (`alert:<definition ID>`, `dataset:default/logs`, `host:i-0abc1234def567890`), or a type alone (`alert`) for knowledge about all of that type.
 
 ## Reading
 
@@ -46,7 +46,7 @@ cx context memories get <ID>
 One read rarely finds everything. Read again with subjects that turn up during the work, and search by symptom, error text or component name:
 
 ```bash
-cx context get host:ip-10-0-1-17 ip:10.0.1.17
+cx context get host:i-0abc1234def567890 ip:10.0.1.17
 cx context memories search timeout -e 'connection pool' -e retry
 cx context instructions search -F 'checkout-db'
 cx context memories list --subject service:checkout
@@ -105,11 +105,18 @@ Search before saving. A new observation is a new memory; never merge conflicting
 
 ## Subjects
 
-- Type names and IDs exactly as `cx` shows them: `service:checkout`, `dataset:logs`.
-- An alert by its definition ID; a case by its UUID (`cx cases get CASE-123` resolves the short form).
-- Things without a Coralogix ID as open types: `ip:10.0.1.17`, `host:ip-10-0-1-17`.
-- A type alone (`--subject service`) only for knowledge about all of them.
-- `--team-wide` only on purpose.
+A lookup matches a subject exactly as a string, so the value has to be the same every time.
+
+- **Coralogix entities** have a fixed type and one ID: `alert` (definition UUID), `case` (UUID), `dataset` (`dataspace/dataset`), `dashboard`, `slo`. Get the ID from `cx`; never use a name. `cx` refuses a write whose value cannot be that ID and tells you how to find it.
+- **Anything else** is a free subject: `service:checkout`, `host:i-0abc1234def567890`, `ip:10.2.0.7`. Reuse a type the team already uses before coining one.
+
+```bash
+cx context subjects        # types in use, and the Coralogix types with their ID form
+```
+
+`references/subjects.md` lists each Coralogix type with how to get its ID, and the naming advice for services.
+
+A type alone (`--subject alert`) is for knowledge about all of that type. `--team-wide` only on purpose.
 
 ## Instructions
 
@@ -142,3 +149,7 @@ cx context history --since now-7d --kind memory
 ```
 
 `update` keeps the content fields not given; `--change-note` applies to that revision only. `--subject` replaces all subjects, `--team-wide` removes them, `--no-source` clears the source. The same commands exist under `cx context instructions`.
+
+## Additional resources
+
+- **`references/subjects.md`** - Known subject types, their ID form and how to find each ID; free subjects.

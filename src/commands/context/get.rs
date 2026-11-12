@@ -5,7 +5,7 @@ use colored::Colorize;
 use serde_json::Value;
 
 use super::api::{self, Author, ContextRequest, ContextResponse};
-use super::{parse_subjects, print_raw, single_target, subject_list};
+use super::{print_raw, single_target, subject_list, subjects};
 use crate::config::OutputFormat;
 use crate::execution::ExecutionTarget;
 
@@ -26,7 +26,7 @@ pub async fn run_get(
 ) -> Result<()> {
     let target = single_target(targets)?;
     let req = ContextRequest {
-        subjects: parse_subjects(subjects)?,
+        subjects: subjects::for_read(subjects)?,
         limit,
         offset,
     };

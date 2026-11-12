@@ -904,6 +904,9 @@ enum ContextCmd {
         filter: commands::context::HistoryFilter,
     },
 
+    /// List the subject types in use and the Coralogix types with their ID form.
+    Subjects,
+
     /// Search, read and change memories.
     Memories {
         #[command(subcommand)]
@@ -5716,6 +5719,9 @@ async fn main() -> Result<()> {
                     }
                     ContextCmd::History { filter } => {
                         commands::context::run_team_history(&targets, &filter, output).await?;
+                    }
+                    ContextCmd::Subjects => {
+                        commands::context::run_subjects(&targets, output).await?;
                     }
                 }
             }

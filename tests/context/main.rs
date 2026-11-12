@@ -5,6 +5,7 @@ mod entries;
 mod fixture;
 mod get;
 mod history;
+mod subjects;
 mod update;
 
 use fixture::{completion_candidates, cx, request_count, run, stderr, Home};

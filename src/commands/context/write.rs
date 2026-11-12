@@ -5,7 +5,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use colored::Colorize;
 
 use super::api::{self, CreateRequest, Entry, EntryContent, Kind, Receipt, Subject, UpdateRequest};
-use super::{parse_subjects, print_raw, single_target, subject_list};
+use super::{print_raw, single_target, subject_list, subjects};
 use crate::config::OutputFormat;
 use crate::execution::ExecutionTarget;
 use crate::safety::confirm_destructive;
@@ -75,7 +75,7 @@ pub async fn run_create(
     output: OutputFormat,
 ) -> Result<()> {
     let target = single_target(targets)?;
-    let subjects = parse_subjects(&args.subjects)?;
+    let subjects = subjects::for_write(&args.subjects)?;
     confirm_destructive(
         &format!(
             "Create {} {} '{}'?",
@@ -215,7 +215,7 @@ pub async fn run_update(
     output: OutputFormat,
 ) -> Result<()> {
     let target = single_target(targets)?;
-    let subjects = parse_subjects(&args.subjects)?;
+    let subjects = subjects::for_write(&args.subjects)?;
     confirm_destructive(
         &format!("Update {} {id}?", kind.singular()),
         confirmation.yes,

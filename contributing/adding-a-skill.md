@@ -87,6 +87,7 @@ Language-level references (DataPrime syntax, PromQL guidelines) and telemetry-pi
 | `skills/shared/metrics-querying.md` | Metrics CLI workflow (search → query → range), common patterns, principles |
 | `skills/shared/rum-querying.md` | RUM `rum.events` dataset, event types, error detection, web vitals queries |
 | `skills/shared/rum-fields.md` | Complete RUM field catalog by event type (`rum.events` dataset, `$d.*`) |
+| `skills/shared/rum-browser-init.md` | Coralogix browser RUM SDK init options, runtime API, init location per framework |
 
 ### Skill-local reference files
 
@@ -99,6 +100,8 @@ Some reference files are unique to one skill and do not belong in `skills/shared
 | `cx-dashboards` | `widget-templates.md` | Widget JSON templates for all widget types |
 | `cx-dashboards` | `verification.md` | Live-verification procedure for dashboard queries |
 | `cx-dashboards` | `deploy.md` | Dashboard deployment procedure via `cx dashboards create` |
+| `cx-rum-migrate` | `sentry-mapping.md`, `datadog-mapping.md` | Sentry / Datadog browser SDK → Coralogix feature mapping |
+| `cx-rum-migrate` | `sourcemaps.md`, `verification.md` | Source-map upload replacement; post-migration checks |
 
 ### Naming and linking
 

@@ -250,6 +250,8 @@ async fn scope_flags_conflict() {
             "--body-file",
             "-",
         ],
+        &["context", "memories", "search"],
+        &["context", "memories", "search", "-F"],
     ];
     for args in cases {
         let output = run(&home, &server, "text", args);

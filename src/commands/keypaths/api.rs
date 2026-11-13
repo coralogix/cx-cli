@@ -105,9 +105,6 @@ pub struct KeypathSearchResult {
 pub struct SearchKeypathsResponse {
     #[serde(default)]
     pub keypaths: Vec<KeypathSearchResult>,
-    /// Every matching keypath is listed. proto3 JSON omits `false`, so a missing field is `false`.
-    #[serde(default)]
-    pub complete: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -271,20 +268,17 @@ mod tests {
             "keypaths": [
                 {"keypath": "$d.kubernetes.pod_name", "types": ["string"]},
                 {"keypath": "$d.tags['http.method']", "types": ["number", "string"]}
-            ],
-            "complete": true
+            ]
         }))
         .unwrap();
         assert_eq!(resp.keypaths.len(), 2);
         assert_eq!(resp.keypaths[1].types, ["number", "string"]);
-        assert!(resp.complete);
     }
 
     #[test]
     fn deserializes_empty_responses() {
         let search: SearchKeypathsResponse = serde_json::from_value(json!({})).unwrap();
         assert!(search.keypaths.is_empty());
-        assert!(!search.complete);
         let samples: GetKeypathSamplesResponse = serde_json::from_value(json!({})).unwrap();
         assert!(samples.samples.is_empty());
     }

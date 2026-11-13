@@ -141,20 +141,10 @@ pub async fn run_search(
     .await;
 
     let mut keypaths: Vec<(String, KeypathSearchResult)> = Vec::new();
-    let mut complete = true;
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        complete &= resp.complete;
         keypaths.extend(resp.keypaths.into_iter().map(|k| (profile.clone(), k)));
     }
     keypaths.sort_by(|(pa, a), (pb, b)| (pa, &a.keypath).cmp(&(pb, &b.keypath)));
-
-    if !complete {
-        eprintln!(
-            "{}",
-            "Not every matching field is listed. Narrow with --prefix, --contains or --label, or raise --limit."
-                .yellow()
-        );
-    }
 
     match output {
         OutputFormat::Json | OutputFormat::Toon => {

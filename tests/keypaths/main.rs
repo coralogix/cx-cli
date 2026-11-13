@@ -83,7 +83,7 @@ async fn search_sends_the_request_and_renders_keypaths() {
 }
 
 #[tokio::test]
-async fn search_handles_incomplete_and_empty_responses() {
+async fn search_handles_an_empty_response() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/schema-store/keypaths/search"))
@@ -94,7 +94,7 @@ async fn search_handles_incomplete_and_empty_responses() {
     let targets = vec![common::test_target("test-profile", &server.uri())];
     keypaths::run_search(&targets, &search_request(), OutputFormat::Text)
         .await
-        .expect("an empty, incomplete search is not an error");
+        .expect("an empty search is not an error");
 }
 
 #[tokio::test]

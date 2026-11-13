@@ -38,7 +38,7 @@ Before querying, load the reference files for the chosen pillar:
 
 ## Safety
 
-All query commands (`cx logs`, `cx spans`, `cx metrics`, `cx dataprime`, `cx search-fields`) are read-only and work in `--read-only` mode. They never modify data and can be run freely without `--yes`.
+All query commands (`cx logs`, `cx spans`, `cx metrics`, `cx dataprime`, `cx search-fields`, `cx datasets`) are read-only and work in `--read-only` mode. They never modify data and can be run freely without `--yes`.
 
 ---
 
@@ -94,7 +94,20 @@ cx search-fields "grpc.status.UNAVAILABLE" -s value --dataset spans
 cx search-fields "eu-west-1" -s value --dataset all
 ```
 
-**Requirements:** `cx search-fields` needs a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add <name>`.
+When you know part of a field's name, list the fields a dataset actually has with `cx datasets fields`. It works on any dataset (`--dataset logs`, `--dataset spans`, `--dataset system/engine.queries`) and returns each field as a DataPrime keypath with its types, ready to paste into a query. Then check real values with `cx datasets field-values` before writing a filter:
+
+```bash
+cx datasets fields --contains amount --start now-24h
+cx datasets fields --prefix '$d.kubernetes' --dataset spans
+cx datasets fields --prefix '$l' --prefix '$m'
+cx datasets field-values '$d.payment.status' --label applicationName=checkout
+```
+
+Repeating `--exact`, `--prefix` or `--contains` means any of the values; different flags must all hold. Some combinations are rejected with an error that names the problem; split them into separate searches. The time range is at most 7 days.
+
+Use `cx search-fields` to find fields by meaning or by a value they hold; use `cx datasets fields` to find them by name.
+
+**Requirements:** `cx search-fields` and `cx datasets` need a Coralogix API key or OAuth on the active profile. If credentials are missing, prompt the user to run `cx profiles add <name>`.
 
 If matching fields are found:
 - For **logs**: load `references/dataprime-reference.md` + `references/logs-querying.md`
@@ -141,6 +154,8 @@ Do not stop after one failed attempt. Try at least two pillars before concluding
 | `cx search-fields "<value>" -s value --dataset logs` | Find log fields that contain a known value | When you know a value but not which log field holds it — also reveals field type from the returned values |
 | `cx search-fields "<value>" -s value --dataset spans` | Find span fields that contain a known value | When you know a value but not which span attribute holds it |
 | `cx search-fields "<value>" -s value --dataset all` | Same, across logs and spans | When you want to search across both logs and spans at once |
+| `cx datasets fields --contains <text>` | List a dataset's fields by name, with their DataPrime types | When you know part of the field name, or for datasets other than logs and spans |
+| `cx datasets field-values '<keypath>'` | Show sample values of one field | Before filtering on a field, to see its real values and spelling |
 | `cx spans "filter $l.serviceName == '<service>'" --limit 10` | Search spans by service | When investigating a specific service |
 | `cx dataprime list` | List DataPrime commands/functions | When building log or span queries |
 | `cx dashboards search "<description>"` | Find existing dashboards by natural-language description | Before creating a new dashboard — check if one already exists |

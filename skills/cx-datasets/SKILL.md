@@ -67,7 +67,7 @@ text output is the copy-pasteable `source` argument.
 
    ```bash
    cx dataprime query --source default/checkoutservice_dataset 'filter $d.severity == ERROR'
-   cx dataprime query --source system/labs.limitViolations 'filter timestamp > now()-1h'
+   cx dataprime query --source system/labs.limitViolations 'filter $m.timestamp > now()-1h'
    ```
 
    `--source` is a `cx dataprime query` flag — `cx logs` and `cx spans` always

@@ -126,13 +126,26 @@ fn credential_storage_options_for(
 /// default. Existing profiles are not rewritten: an omitted `credential_storage`
 /// key still deserializes as `file`.
 fn default_credential_storage(platform: OsStorePlatform) -> CredentialStorage {
-    if std::env::var("CX_CREDENTIAL_STORAGE").as_deref() == Ok("file") {
-        return CredentialStorage::File;
+    if let Some(storage) = credential_storage_override() {
+        return storage;
     }
     match platform {
         OsStorePlatform::Macos { .. } => CredentialStorage::OsStore,
         OsStorePlatform::LinuxMusl | OsStorePlatform::Other => CredentialStorage::File,
     }
+}
+
+/// Explicit setup storage override. This is intentionally limited to `file`:
+/// it gives CI and coding agents a way to avoid touching an OS credential store.
+fn credential_storage_override() -> Option<CredentialStorage> {
+    credential_storage_override_from(std::env::var("CX_CREDENTIAL_STORAGE").ok().as_deref())
+}
+
+fn credential_storage_override_from(value: Option<&str>) -> Option<CredentialStorage> {
+    if value == Some("file") {
+        return Some(CredentialStorage::File);
+    }
+    None
 }
 
 fn credential_storage_cursor(platform: OsStorePlatform) -> usize {
@@ -176,6 +189,9 @@ fn credential_storage_help(file_description: &str, platform: OsStorePlatform) ->
 }
 
 fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
+    if let Some(storage) = credential_storage_override() {
+        return Ok(storage);
+    }
     let platform = current_os_store_platform();
     let options = credential_storage_options_for(platform);
     let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
@@ -1190,6 +1206,17 @@ mod tests {
         } else {
             assert_eq!(options.len(), 1);
         }
+    }
+
+    #[test]
+    fn credential_storage_file_override_is_explicit() {
+        assert_eq!(
+            credential_storage_override_from(Some("file")),
+            Some(CredentialStorage::File)
+        );
+        assert_eq!(credential_storage_override_from(Some("os-store")), None);
+        assert_eq!(credential_storage_override_from(Some("FILE")), None);
+        assert_eq!(credential_storage_override_from(None), None);
     }
 
     #[test]

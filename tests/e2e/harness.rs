@@ -300,7 +300,11 @@ pub fn require_write_creds(test_name: &str) -> Option<()> {
         );
         return None;
     }
-    let Ok(expected) = std::env::var("CX_E2E_TEAM_ID") else {
+    // An unset repository variable reaches the job as an empty string.
+    let Some(expected) = std::env::var("CX_E2E_TEAM_ID")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    else {
         // On a developer machine this is a skip. In CI it must fail: with
         // every write test skipping, the suite would pass without testing.
         assert!(

@@ -17,8 +17,10 @@
 //! no second channel for the password. A secret that does not fit, or that
 //! contains a newline, is rejected here; callers fall back to the profile file.
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
@@ -30,6 +32,11 @@ pub(crate) const SECURITY_PATH: &str = "/usr/bin/security";
 /// Apple's Security tool), including the terminating NUL. The command text
 /// and its trailing newline have to fit in the remaining bytes.
 const INTERACTIVE_LINE_MAX: usize = 4095;
+
+/// A headless invocation must not wait forever for a Keychain dialog that it
+/// cannot show or answer. Interactive terminals keep waiting so users can
+/// approve a legitimate first-use prompt.
+const HEADLESS_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// `errSecItemNotFound` (-25300), truncated to a process exit status.
 const EXIT_ITEM_NOT_FOUND: i32 = 44;
@@ -98,6 +105,9 @@ impl SecurityRunner for SystemSecurityRunner {
             .write_all(command.stdin.as_bytes())
             .with_context(|| format!("failed to write to {} stdin", command.program))?;
         drop(stdin);
+        if !std::io::stdin().is_terminal() {
+            return wait_for_headless_command(child, command.program);
+        }
         let output = child
             .wait_with_output()
             .with_context(|| format!("failed to wait for {}", command.program))?;
@@ -106,6 +116,45 @@ impl SecurityRunner for SystemSecurityRunner {
             stdout: output.stdout,
             stderr: output.stderr,
         })
+    }
+}
+
+fn wait_for_headless_command(child: std::process::Child, program: &str) -> Result<SecurityOutput> {
+    wait_for_command_until(child, program, HEADLESS_COMMAND_TIMEOUT)
+}
+
+fn wait_for_command_until(
+    mut child: std::process::Child,
+    program: &str,
+    timeout: Duration,
+) -> Result<SecurityOutput> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child
+            .try_wait()
+            .with_context(|| format!("failed to wait for {program}"))?
+            .is_some()
+        {
+            let output = child
+                .wait_with_output()
+                .with_context(|| format!("failed to collect output from {program}"))?;
+            return Ok(SecurityOutput {
+                status: output.status.code().unwrap_or(1),
+                stdout: output.stdout,
+                stderr: output.stderr,
+            });
+        }
+        if Instant::now() >= deadline {
+            child
+                .kill()
+                .with_context(|| format!("failed to stop timed-out {program}"))?;
+            let _ = child.wait();
+            bail!(
+                "{program} did not finish within {} seconds in a non-interactive session",
+                timeout.as_secs()
+            );
+        }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -455,6 +504,22 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("keychain is locked"), "got: {message}");
         assert!(!message.contains(secret), "got: {message}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn headless_command_timeout_stops_the_security_process() {
+        let child = Command::new("sh")
+            .args(["-c", "sleep 60"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let err = wait_for_command_until(child, "security", Duration::from_millis(1)).unwrap_err();
+        assert!(
+            err.to_string().contains("did not finish within"),
+            "timeout should describe the headless failure: {err}"
+        );
     }
 
     /// Port of `split_line` in Apple's `security.c`. The quoting tests use it

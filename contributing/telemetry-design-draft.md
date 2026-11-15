@@ -1,7 +1,10 @@
 # cx CLI telemetry — draft
 
-Status: draft for discussion. Nothing here is implemented. The collector config has
-not been run through `otelcol validate`.
+Status: draft. The CLI side (section 1) is implemented in `src/telemetry/`. The
+collector config (section 2) passes `otelcol validate` and a local end-to-end run
+against `otel/opentelemetry-collector-contrib:0.165.0`: see
+`scripts/telemetry-collector/config.yaml` (a copy of section 2; keep them in sync) and
+`scripts/telemetry-collector-check.sh`. Sections 3 and 4 are not done.
 
 ```
 cx command → local spool → HTTPS POST (OTLP/HTTP JSON) → API gateway (open path)
@@ -155,7 +158,8 @@ processors:
         - 'time_unix_nano > UnixNano(Now()) + 300000000000'
         # --- cli.command ---
         - 'attributes["event.name"] == "cli.command" and (attributes["cx.command.path"] == nil or not IsMatch(attributes["cx.command.path"], "^[a-z0-9-]{1,32}( [a-z0-9-]{1,32}){0,3}$"))'
-        - 'attributes["cx.command.flags"] != nil and not IsMatch(attributes["cx.command.flags"], "^(--[a-z0-9-]{1,40}(,--[a-z0-9-]{1,40}){0,29})?$")'
+        # RE2 rejects nested repeat counts over 1000, so the list is `*` plus a length cap (30 flags).
+        - 'attributes["cx.command.flags"] != nil and (not IsMatch(attributes["cx.command.flags"], "^(--[a-z0-9-]{1,40}(,--[a-z0-9-]{1,40})*)?$") or Len(attributes["cx.command.flags"]) > 1289)'
         - 'attributes["cx.outcome"] != nil and not IsMatch(attributes["cx.outcome"], "^(success|error|cancelled)$")'
         - 'attributes["cx.error.class"] != nil and not IsMatch(attributes["cx.error.class"], "^(none|auth|permission|api|timeout|http|json|io|query_stream|usage)$")'
         - 'attributes["cx.http.status_class"] != nil and not IsMatch(attributes["cx.http.status_class"], "^(none|2xx|4xx|5xx)$")'
@@ -169,7 +173,7 @@ processors:
         - 'attributes["cx.auth.method"] != nil and not IsMatch(attributes["cx.auth.method"], "^(oauth|api_key)$")'
         - 'attributes["cx.credential.store"] != nil and not IsMatch(attributes["cx.credential.store"], "^(keychain|file)$")'
         - 'attributes["cx.skills.scope"] != nil and not IsMatch(attributes["cx.skills.scope"], "^(global|local)$")'
-        - 'attributes["cx.skills.names"] != nil and not IsMatch(attributes["cx.skills.names"], "^[a-z0-9-]{1,48}(,[a-z0-9-]{1,48}){0,29}$")'
+        - 'attributes["cx.skills.names"] != nil and (not IsMatch(attributes["cx.skills.names"], "^[a-z0-9-]{1,48}(,[a-z0-9-]{1,48})*$") or Len(attributes["cx.skills.names"]) > 1469)'
         - 'attributes["cx.version.latest"] != nil and not IsMatch(attributes["cx.version.latest"], "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,4}$")'
         - 'attributes["cx.version.previous"] != nil and not IsMatch(attributes["cx.version.previous"], "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,4}$")'
         - 'attributes["cx.confirm.result"] != nil and not IsMatch(attributes["cx.confirm.result"], "^(accepted|declined|skipped_yes|non_interactive)$")'

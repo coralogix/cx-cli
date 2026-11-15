@@ -66,6 +66,9 @@ endpoint until M6, so after this plan ships, telemetry stays a silent no-op for 
     install ID. That function has no other callers today.
   - There is no Ctrl-C handler. `cancelled` is used when an inquire prompt is
     cancelled or interrupted.
+  - Found by `otelcol validate` (3.3): RE2 rejects the nested repeat counts in the
+    `cx.command.flags` and `cx.skills.names` patterns (`{1,40}` inside `{0,29}` is
+    over its limit of 1000). The list is now `*`, plus a `Len()` cap.
 
 ## Diagrams
 
@@ -337,7 +340,7 @@ is known and is bounded at 400 ms in total.
   - A local command sends nothing.
 - **Dependencies:** 1.4, 2.1, 3.1
 
-### 3.3 [ ] Check against a real collector
+### 3.3 [x] Check against a real collector *(completed 2026-11-15)*
 - **Files:** `scripts/telemetry-collector-check.sh` (with the collector config it uses)
 - **What:** Run `otel/opentelemetry-collector-contrib` in Docker with the spec's
   section-2 config, swapping the `coralogix` exporter for `debug` and a `file`

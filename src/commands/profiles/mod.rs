@@ -126,6 +126,9 @@ fn credential_storage_options_for(
 /// default. Existing profiles are not rewritten: an omitted `credential_storage`
 /// key still deserializes as `file`.
 fn default_credential_storage(platform: OsStorePlatform) -> CredentialStorage {
+    if std::env::var("CX_CREDENTIAL_STORAGE").as_deref() == Ok("file") {
+        return CredentialStorage::File;
+    }
     match platform {
         OsStorePlatform::Macos { .. } => CredentialStorage::OsStore,
         OsStorePlatform::LinuxMusl | OsStorePlatform::Other => CredentialStorage::File,

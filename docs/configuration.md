@@ -502,13 +502,15 @@ There are three ways to enable it, listed from narrowest to broadest scope:
 
 ## Environment variables
 
-Environment variables override profile file values:
+Most environment variables override profile file values; `CX_CREDENTIAL_STORAGE`
+only controls where new profiles store credentials:
 
 | Variable | Overrides |
 |---|---|
 | `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
+| `CX_CREDENTIAL_STORAGE=file` | Setup default only: forces new profiles created by `cx init` or `cx profiles add` to store credentials in the profile file. Useful for headless CI and coding agents that must not access an OS credential store. |
 | `CX_HTTP_TIMEOUT` | HTTP request deadline in seconds (equivalent to `--http-timeout`) |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |

@@ -16,44 +16,27 @@ fn temp_home() -> PathBuf {
 
 fn cx(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("cx").expect("cx binary should build");
-    cmd.env("CX_HOME", home);
+    cmd.env("CX_HOME", home)
+        // The login Keychain is per macOS user, not per CX_HOME. Keep tests
+        // hermetic and never overwrite a developer's real cx credentials.
+        .env("CX_CREDENTIAL_STORAGE", "file");
     // `profiles add` reads CX_API_KEY; a key exported in the user's shell
     // must not be used in tests.
     cmd.env_remove("CX_API_KEY");
     cmd
 }
 
-/// Non-interactive profile creation stores the API key in the profile file on
-/// every platform except macOS, where the Keychain is the default. A failed
-/// Keychain write falls back to the file and says so on stderr.
+/// Test commands explicitly force file storage so they cannot modify the
+/// developer's login Keychain on macOS.
 fn assert_new_api_key_storage(profile: &str, stderr: &str, key: &str) {
-    if cfg!(target_os = "macos") {
-        if profile.contains("os_store") {
-            assert!(
-                !profile.contains(key),
-                "macOS Keychain profile must not inline the API key: {profile}"
-            );
-        } else {
-            assert!(
-                stderr.contains("falling back to file"),
-                "macOS setup should use the Keychain or explain the file fallback.\n\
-                 profile: {profile}\nstderr: {stderr}"
-            );
-            assert!(
-                profile.contains(key),
-                "file fallback should keep the API key in the profile: {profile}"
-            );
-        }
-    } else {
-        assert!(
-            profile.contains(key),
-            "profile should store the API key in the file, got: {profile}"
-        );
-        assert!(
-            !profile.contains("os_store"),
-            "non-macOS default stays file, got: {profile}"
-        );
-    }
+    assert!(
+        profile.contains(key),
+        "profile should store the API key in the file, got: {profile}"
+    );
+    assert!(
+        profile.contains("credential_storage = \"file\""),
+        "test storage override should keep the profile file-backed: {profile}\nstderr: {stderr}"
+    );
 }
 
 fn load_profile_toml(home: &std::path::Path, name: &str) -> String {
@@ -625,9 +608,10 @@ fn add_existing_profile_with_force_overwrites() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "should succeed, stderr: {stderr}");
     let profile = load_profile_toml(&tmp, "default");
+    assert_new_api_key_storage(&profile, &stderr, "new-key");
     assert!(
-        profile.contains("new-key") && profile.contains("\"eu2\""),
-        "profile should be overwritten, got: {profile}"
+        profile.contains("\"eu2\""),
+        "profile should be overwritten with region eu2, got: {profile}"
     );
 }
 

@@ -237,16 +237,15 @@ fn interactive_command(line: &str) -> Result<SecurityCommand> {
 
 /// Quote one argument the way `security -i`'s `split_line` unquotes it.
 ///
-/// Double quotes, with `\` and `"` escaped. Newlines and NULs cannot be
-/// carried: the parser splits on lines and on C strings.
+/// Double quotes, with `\` and `"` escaped. Values must be printable ASCII:
+/// `security find-generic-password -w` renders a value containing any other
+/// byte as hexadecimal, so it could not be read back faithfully. Newlines and
+/// NULs also cannot be carried because the parser splits on lines and C strings.
 fn quote_arg(value: &str) -> Result<String> {
-    if value
-        .chars()
-        .any(|ch| ch == '\n' || ch == '\r' || ch == '\0')
-    {
+    if !value.bytes().all(|byte| (b' '..=b'~').contains(&byte)) {
         bail!(
-            "cannot pass this value to {SECURITY_PATH}: it contains a newline or NUL, \
-             which the interactive parser cannot carry"
+            "cannot pass this value to {SECURITY_PATH}: it contains a non-printable or \
+             non-ASCII character, which cannot be read back faithfully"
         );
     }
     let mut quoted = String::with_capacity(value.len() + 2);
@@ -416,7 +415,18 @@ mod tests {
         let runner = ScriptedRunner::new(vec![]);
         let err = store(&runner, "cx-cli:prod", "api_key", "line\nbreak").unwrap_err();
         assert!(
-            err.to_string().contains("newline"),
+            err.to_string().contains("non-printable"),
+            "error should name the limitation, got: {err}"
+        );
+        assert!(runner.calls().is_empty());
+    }
+
+    #[test]
+    fn store_rejects_non_ascii_without_running_security() {
+        let runner = ScriptedRunner::new(vec![]);
+        let err = store(&runner, "cx-cli:prod", "api_key", "café").unwrap_err();
+        assert!(
+            err.to_string().contains("non-ASCII"),
             "error should name the limitation, got: {err}"
         );
         assert!(runner.calls().is_empty());

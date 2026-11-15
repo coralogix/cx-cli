@@ -386,9 +386,17 @@ fn installed_cx_skills(scope: SkillsScope) -> Vec<String> {
 /// cx skills listed in the installer's global lock file.
 #[derive(Debug, PartialEq, Eq)]
 pub struct LockedCxSkills {
-    /// The oldest `updatedAt` (else `installedAt`) among them. `None` when any
-    /// of them carries no readable time, so the age is unknown.
-    pub oldest_update: Option<DateTime<Utc>>,
+    pub skills: Vec<LockedCxSkill>,
+}
+
+/// One cx skill in the installer's global lock file.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LockedCxSkill {
+    /// The git ref it was installed from: a release tag such as `v0.1.31`
+    /// for pinned installs, `None` for the default branch.
+    pub git_ref: Option<String>,
+    /// `updatedAt`, else `installedAt`. `None` when neither is readable.
+    pub updated: Option<DateTime<Utc>>,
 }
 
 /// The cx skills in the installer's global lock file, or `None` when it lists
@@ -416,8 +424,8 @@ fn global_lock_path(
     }
 }
 
-/// The lock file maps skill names to entries that carry a `source` and
-/// ISO-8601 `installedAt` / `updatedAt` times.
+/// The lock file maps skill names to entries that carry a `source`, an
+/// optional `ref`, and ISO-8601 `installedAt` / `updatedAt` times.
 fn lock_cx_skills(contents: &str) -> Option<LockedCxSkills> {
     #[derive(Deserialize)]
     struct Lock {
@@ -428,31 +436,27 @@ fn lock_cx_skills(contents: &str) -> Option<LockedCxSkills> {
     #[serde(rename_all = "camelCase")]
     struct LockEntry {
         source: Option<String>,
+        #[serde(rename = "ref")]
+        git_ref: Option<String>,
         installed_at: Option<String>,
         updated_at: Option<String>,
     }
     let lock = serde_json::from_str::<Lock>(contents).ok()?;
-    let times: Vec<Option<DateTime<Utc>>> = lock
+    let skills: Vec<LockedCxSkill> = lock
         .skills
-        .values()
+        .into_values()
         .filter(|entry| entry.source.as_deref() == Some(INSTALLED_SOURCE))
-        .map(|entry| {
-            entry
+        .map(|entry| LockedCxSkill {
+            updated: entry
                 .updated_at
                 .as_deref()
                 .or(entry.installed_at.as_deref())
                 .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
-                .map(|t| t.with_timezone(&Utc))
+                .map(|t| t.with_timezone(&Utc)),
+            git_ref: entry.git_ref,
         })
         .collect();
-    if times.is_empty() {
-        return None;
-    }
-    let oldest_update = times
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .and_then(|times| times.into_iter().min());
-    Some(LockedCxSkills { oldest_update })
+    (!skills.is_empty()).then_some(LockedCxSkills { skills })
 }
 
 /// Arguments for the fully non-interactive install.
@@ -623,33 +627,36 @@ mod tests {
         }
     }
 
-    #[test]
-    fn lock_with_cx_skills_reports_oldest_update() {
-        let lock = r#"{"version":3,"skills":{
-            "other":{"source":"someone/else","updatedAt":"2020-01-01T00:00:00.000Z"},
-            "cx-alerts":{"source":"coralogix/cx-cli","ref":"master",
-                "installedAt":"2026-09-01T10:00:00.000Z","updatedAt":"2026-10-05T08:00:00.000Z"},
-            "cx-cli":{"source":"coralogix/cx-cli","installedAt":"2026-10-01T09:30:00.000Z"}
-        }}"#;
-        let oldest = "2026-10-01T09:30:00Z".parse::<DateTime<Utc>>().unwrap();
-        assert_eq!(
-            lock_cx_skills(lock),
-            Some(LockedCxSkills {
-                oldest_update: Some(oldest)
-            })
-        );
+    fn time(t: &str) -> Option<DateTime<Utc>> {
+        Some(t.parse().unwrap())
     }
 
     #[test]
-    fn lock_with_undated_cx_skill_has_unknown_age() {
+    fn lock_lists_each_cx_skill_with_ref_and_time() {
         let lock = r#"{"version":3,"skills":{
-            "cx-alerts":{"source":"coralogix/cx-cli","updatedAt":"2026-10-05T08:00:00.000Z"},
-            "cx-cli":{"source":"coralogix/cx-cli","updatedAt":"not a time"}
+            "other":{"source":"someone/else","updatedAt":"2020-01-01T00:00:00.000Z"},
+            "cx-alerts":{"source":"coralogix/cx-cli","ref":"v0.1.31",
+                "installedAt":"2026-09-01T10:00:00.000Z","updatedAt":"2026-10-05T08:00:00.000Z"},
+            "cx-cli":{"source":"coralogix/cx-cli","installedAt":"2026-10-01T09:30:00.000Z"},
+            "cx-slos":{"source":"coralogix/cx-cli","updatedAt":"not a time"}
         }}"#;
         assert_eq!(
             lock_cx_skills(lock),
             Some(LockedCxSkills {
-                oldest_update: None
+                skills: vec![
+                    LockedCxSkill {
+                        git_ref: Some("v0.1.31".into()),
+                        updated: time("2026-10-05T08:00:00Z"),
+                    },
+                    LockedCxSkill {
+                        git_ref: None,
+                        updated: time("2026-10-01T09:30:00Z"),
+                    },
+                    LockedCxSkill {
+                        git_ref: None,
+                        updated: None,
+                    },
+                ]
             })
         );
     }

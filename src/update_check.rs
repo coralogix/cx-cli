@@ -38,7 +38,7 @@ use chrono::{DateTime, Utc};
 use colored::Colorize;
 use serde_json::{json, Value};
 
-use crate::commands::skills::LockedCxSkills;
+use crate::commands::skills::{LockedCxSkill, LockedCxSkills};
 use crate::config::OutputFormat;
 use crate::install_method;
 use crate::safety::env_is_truthy;
@@ -477,28 +477,46 @@ fn binary_built_at() -> DateTime<Utc> {
 /// `read_lock` runs only when it can change the result, so the lock-file read
 /// is skipped for every user whose recorded install is current.
 ///
-/// Skills come from the repo's default branch, so skills that the lock file
-/// shows as all updated after `built_at` already match this binary, even when
-/// they were refreshed with `npx skills add` and cx did not record it.
+/// The lock file can show that the skills already match this binary even when
+/// cx did not record the install (see [`skill_matches_binary`]).
 fn skills_status_with(
     installed_for: Option<&str>,
     current: &str,
     built_at: DateTime<Utc>,
     read_lock: impl FnOnce() -> Option<LockedCxSkills>,
 ) -> SkillsStatus {
-    let refreshed_since_build =
-        |lock: &LockedCxSkills| lock.oldest_update.is_some_and(|t| t >= built_at);
+    let lock_matches = |lock: &LockedCxSkills| {
+        lock.skills
+            .iter()
+            .all(|skill| skill_matches_binary(skill, current, built_at))
+    };
     match installed_for {
         Some(v) if is_newer(current, v) => match read_lock() {
-            Some(lock) if refreshed_since_build(&lock) => SkillsStatus::Current,
+            Some(lock) if lock_matches(&lock) => SkillsStatus::Current,
             _ => SkillsStatus::Outdated,
         },
         Some(_) => SkillsStatus::Current,
         None => match read_lock() {
-            Some(lock) if refreshed_since_build(&lock) => SkillsStatus::Current,
+            Some(lock) if lock_matches(&lock) => SkillsStatus::Current,
             Some(_) => SkillsStatus::Unknown,
             None => SkillsStatus::Current,
         },
+    }
+}
+
+/// A skill installed from a release tag matches when the tag is this version
+/// or newer; its install time says nothing, because an older cx can install
+/// its own older tag after this binary was built.  A skill from the default
+/// branch (`npx skills add` with no tag) matches when it was updated after
+/// this binary was built.
+fn skill_matches_binary(skill: &LockedCxSkill, current: &str, built_at: DateTime<Utc>) -> bool {
+    match skill
+        .git_ref
+        .as_deref()
+        .filter(|r| parse_version(r).is_some())
+    {
+        Some(tag) => !is_newer(current, tag),
+        None => skill.updated.is_some_and(|t| t >= built_at),
     }
 }
 
@@ -608,10 +626,18 @@ mod tests {
         "2026-10-01T00:00:00Z".parse().unwrap()
     }
 
-    /// A lock file whose oldest cx skill was updated at `t`.
+    /// A lock file with one cx skill from the default branch, updated at `t`.
     fn lock_at(t: &str) -> Option<LockedCxSkills> {
+        lock_with(None, Some(t))
+    }
+
+    /// A lock file with one cx skill installed from `git_ref`, updated at `t`.
+    fn lock_with(git_ref: Option<&str>, t: Option<&str>) -> Option<LockedCxSkills> {
         Some(LockedCxSkills {
-            oldest_update: Some(t.parse().unwrap()),
+            skills: vec![LockedCxSkill {
+                git_ref: git_ref.map(String::from),
+                updated: t.map(|t| t.parse().unwrap()),
+            }],
         })
     }
 
@@ -630,11 +656,7 @@ mod tests {
         );
         // A cx skill without a readable time: age unknown, so still outdated.
         assert_eq!(
-            skills_status_with(Some("0.1.20"), "0.1.30", built(), || {
-                Some(LockedCxSkills {
-                    oldest_update: None,
-                })
-            }),
+            skills_status_with(Some("0.1.20"), "0.1.30", built(), || lock_with(None, None)),
             SkillsStatus::Outdated
         );
     }
@@ -648,6 +670,60 @@ mod tests {
                 lock_at("2026-10-02T08:00:00Z")
             }),
             SkillsStatus::Current
+        );
+    }
+
+    #[test]
+    fn older_release_tag_installed_after_build_is_outdated() {
+        // An older cx installed its own release tag after this binary was
+        // built (for example its auto-refresh, days after this release).
+        assert_eq!(
+            skills_status_with(Some("0.1.29"), "0.1.30", built(), || {
+                lock_with(Some("v0.1.29"), Some("2026-10-02T08:00:00Z"))
+            }),
+            SkillsStatus::Outdated
+        );
+        assert_eq!(
+            skills_status_with(None, "0.1.30", built(), || {
+                lock_with(Some("v0.1.29"), Some("2026-10-02T08:00:00Z"))
+            }),
+            SkillsStatus::Unknown
+        );
+        // Tagged for this version or newer: current, whatever the time.
+        assert_eq!(
+            skills_status_with(Some("0.1.29"), "0.1.30", built(), || {
+                lock_with(Some("v0.1.30"), None)
+            }),
+            SkillsStatus::Current
+        );
+        // A branch name is not a release tag: the time decides.
+        assert_eq!(
+            skills_status_with(Some("0.1.29"), "0.1.30", built(), || {
+                lock_with(Some("master"), Some("2026-10-02T08:00:00Z"))
+            }),
+            SkillsStatus::Current
+        );
+    }
+
+    #[test]
+    fn every_cx_skill_must_match() {
+        let mixed = || {
+            Some(LockedCxSkills {
+                skills: vec![
+                    LockedCxSkill {
+                        git_ref: None,
+                        updated: Some("2026-10-02T08:00:00Z".parse().unwrap()),
+                    },
+                    LockedCxSkill {
+                        git_ref: Some("v0.1.29".into()),
+                        updated: Some("2026-10-02T08:00:00Z".parse().unwrap()),
+                    },
+                ],
+            })
+        };
+        assert_eq!(
+            skills_status_with(Some("0.1.29"), "0.1.30", built(), mixed),
+            SkillsStatus::Outdated
         );
     }
 

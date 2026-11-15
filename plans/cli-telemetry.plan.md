@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | draft |
+| Status | in-progress |
 | Created | 2026-11-15 |
 | Ticket | [HEA-36](https://linear.app/coralogix/issue/HEA-36/add-client-telemetry-to-the-cli) |
 | Branch | claude/telemetry-design-milestones-397571 |
@@ -140,7 +140,7 @@ With any opt-out set, no event is built and no spool file is created.
 | `~/.cx/telemetry-spool.jsonl` | file | — | one JSON event per line, max 500 lines, 7 days |
 | `telemetry_notice_shown` | bool in `~/.cx/state.json` | absent | set once the notice has been printed |
 
-### 1.1 [ ] Event model
+### 1.1 [x] Event model *(completed 2026-11-15)*
 - **Files:** `src/telemetry/mod.rs`, `src/telemetry/event.rs`, `src/lib.rs`
 - **What:** Define the event types and attribute enums from the spec's "Event schema"
   section: eight event names, the command set, and the resource attributes.
@@ -159,7 +159,7 @@ With any opt-out set, no event is built and no spool file is created.
   - An unknown field is ignored and never re-serialized.
 - **Dependencies:** None
 
-### 1.2 [ ] Command sanitization from ArgMatches
+### 1.2 [x] Command sanitization from ArgMatches *(completed 2026-11-15)*
 - **Files:** `src/telemetry/event.rs`
 - **What:** Build `cx.command.path` and `cx.command.flags` by walking
   `clap::ArgMatches` alongside the `clap::Command` tree.

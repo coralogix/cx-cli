@@ -338,6 +338,45 @@ impl TryFrom<String> for CommandFlags {
     }
 }
 
+/// The subcommand path and the long flag names given on the command line, read
+/// from names only: no accessor that returns an argument's value is called.
+/// `cmd` is the tree `matches` was parsed with (a fresh, unbuilt copy is fine).
+/// Flags set from env vars or defaults are not included. The path is `None`
+/// when no subcommand was given.
+pub fn command_identity(
+    cmd: &clap::Command,
+    matches: &clap::ArgMatches,
+) -> (Option<CommandPath>, CommandFlags) {
+    use clap::parser::ValueSource;
+
+    let mut names = Vec::new();
+    let mut flags = Vec::new();
+    let (mut cmd, mut matches) = (cmd, matches);
+    loop {
+        // Global args given after a subcommand are propagated up to the root's
+        // matches, so the root level sees them too; duplicates are collapsed.
+        flags.extend(
+            cmd.get_arguments()
+                .filter(|arg| {
+                    matches.value_source(arg.get_id().as_str()) == Some(ValueSource::CommandLine)
+                })
+                .filter_map(|arg| arg.get_long()),
+        );
+        let Some((name, sub_matches)) = matches.subcommand() else {
+            break;
+        };
+        let Some(sub_cmd) = cmd.find_subcommand(name) else {
+            break;
+        };
+        names.push(name);
+        (cmd, matches) = (sub_cmd, sub_matches);
+    }
+    (
+        CommandPath::from_names(names),
+        CommandFlags::from_long_names(flags),
+    )
+}
+
 /// Installed skill names joined by commas, e.g. `cx-alerts,cx-slos`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String")]
@@ -677,5 +716,82 @@ mod tests {
         assert!(matches!(r.os_type, "darwin" | "linux" | "windows"));
         assert!(matches!(r.host_arch, "arm64" | "amd64"));
         assert!(r.install_id.is_nil());
+    }
+
+    fn test_cli() -> clap::Command {
+        use clap::{Arg, ArgAction, Command};
+        Command::new("cx")
+            .arg(Arg::new("profile").long("profile").global(true))
+            .arg(
+                Arg::new("yes")
+                    .long("yes")
+                    .global(true)
+                    .action(ArgAction::SetTrue),
+            )
+            .subcommand(
+                Command::new("alerts").subcommand(
+                    Command::new("list")
+                        .arg(Arg::new("limit").long("limit"))
+                        .arg(Arg::new("order-by").long("order-by").default_value("name"))
+                        .arg(Arg::new("query")),
+                ),
+            )
+            .subcommand(Command::new("cleanup"))
+    }
+
+    fn identity(args: &[&str]) -> (Option<String>, String) {
+        let matches = test_cli().try_get_matches_from(args).unwrap();
+        let (path, flags) = command_identity(&test_cli(), &matches);
+        (path.map(|p| p.0), flags.0)
+    }
+
+    #[test]
+    fn command_identity_never_contains_values() {
+        let secret = "SENTINEL-sk-live-123";
+        let args = [
+            "cx",
+            "alerts",
+            "list",
+            "--limit",
+            secret,
+            secret,
+            "--profile",
+            secret,
+        ];
+        let matches = test_cli().try_get_matches_from(args).unwrap();
+        let (path, flags) = command_identity(&test_cli(), &matches);
+        let event = Event {
+            kind: EventKind::Command(CommandEvent {
+                path: path.unwrap(),
+                flags,
+                ..match command_event().kind {
+                    EventKind::Command(c) => c,
+                    _ => unreachable!(),
+                }
+            }),
+            ..command_event()
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(!json.contains("SENTINEL"), "value leaked: {json}");
+        assert!(json.contains(r#""cx.command.path":"alerts list""#));
+        assert!(json.contains(r#""cx.command.flags":"--limit,--profile""#));
+    }
+
+    #[test]
+    fn command_identity_paths_and_flag_order() {
+        assert_eq!(
+            identity(&["cx", "--yes", "alerts", "list", "--limit", "5"]),
+            (Some("alerts list".into()), "--limit,--yes".into())
+        );
+        assert_eq!(
+            identity(&["cx", "alerts", "list", "--yes", "--limit=5"]),
+            (Some("alerts list".into()), "--limit,--yes".into())
+        );
+        // A default value is not a flag the user gave.
+        assert_eq!(
+            identity(&["cx", "cleanup"]),
+            (Some("cleanup".into()), String::new())
+        );
+        assert_eq!(identity(&["cx"]), (None, String::new()));
     }
 }

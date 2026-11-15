@@ -68,7 +68,8 @@ endpoint until M6, so after this plan ships, telemetry stays a silent no-op for 
     cancelled or interrupted.
   - Found by `otelcol validate` (3.3): RE2 rejects the nested repeat counts in the
     `cx.command.flags` and `cx.skills.names` patterns (`{1,40}` inside `{0,29}` is
-    over its limit of 1000). The list is now `*`, plus a `Len()` cap.
+    over its limit of 1000). The list is now `*`, and the 30-item cap is
+    `Len(Split(..., ",")) > 30`.
 
 ## Diagrams
 

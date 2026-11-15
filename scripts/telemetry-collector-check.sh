@@ -27,6 +27,7 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
+trap 'exit 1' INT TERM # run the EXIT trap on Ctrl-C or kill too
 
 [ -x "$CX" ] || { echo "cx binary not found at $CX (run cargo build)"; exit 1; }
 mkdir -p "$WORK/out" "$WORK/home/project"
@@ -67,7 +68,8 @@ class H(http.server.BaseHTTPRequestHandler):
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 ' "$STUB_PORT" &
 STUB_PID=$!
-trap 'kill $STUB_PID 2>/dev/null; wait $STUB_PID 2>/dev/null; cleanup' EXIT
+disown "$STUB_PID" # no "Terminated" line when it is killed
+trap 'kill $STUB_PID 2>/dev/null; cleanup' EXIT
 # A fake npx for `cx skills install`: lists nothing, installs successfully.
 mkdir -p "$WORK/bin"
 printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 10.0.0; exit 0; fi\nif [ "$3" = "ls" ]; then echo "[]"; fi\nexit 0\n' \
@@ -135,8 +137,13 @@ echo "bad enum:          $(post "$(request "$(base 33333333-3333-4333-8333-33333
 echo "stale timestamp:   $(post "$(request "$(base 44444444-4444-4444-8444-444444444444 '')" "$((now - 8 * 86400 * 1000000000))" $INSTALL)")"
 echo "wrong type:        $(post "$(request "$(base 55555555-5555-4555-8555-555555555555 ',{"key":"cx.duration_ms","value":{"stringValue":"12"}}')" "$now" $INSTALL)")"
 echo "bad install id:    $(post "$(request "$(base 66666666-6666-4666-8666-666666666666 '')" "$now" not-a-uuid)")"
+# Extra attributes go through variables: bash 3.2 mangles \" inside nested $(...).
+flags31=$(python3 -c 'print(",".join("--f%d" % i for i in range(31)))')
+extra=",{\"key\":\"cx.command.flags\",\"value\":{\"stringValue\":\"$flags31\"}}"
+echo "31 flags:          $(post "$(request "$(base 88888888-8888-4888-8888-888888888888 "$extra")" "$now" $INSTALL)")"
 big=$(python3 -c 'print("x" * 70000)')
-echo "body over 64 KiB:  $(post "$(request "$(base 77777777-7777-4777-8777-777777777777 ",{\"key\":\"cx.query\",\"value\":{\"stringValue\":\"$big\"}}")" "$now" $INSTALL)")"
+extra=",{\"key\":\"cx.query\",\"value\":{\"stringValue\":\"$big\"}}"
+echo "body over 64 KiB:  $(post "$(request "$(base 77777777-7777-4777-8777-777777777777 "$extra")" "$now" $INSTALL)")"
 sleep 2
 
 # ── Assertions over what the collector exported ───────────────────────────────
@@ -164,7 +171,7 @@ for res, attrs, r in records:
 # What the CLI recorded (inspect-mode run) vs what the collector exported.
 expected = [json.loads(l) for l in open(expected_path)]
 exported = [a for _, a, _ in records if a.get("cx.invocation.id", "").count("-") == 4
-            and not a["cx.invocation.id"][:4] in {"2222", "3333", "4444", "5555", "6666", "7777"}]
+            and not a["cx.invocation.id"][:4] in {"2222", "3333", "4444", "5555", "6666", "7777", "8888"}]
 want = Counter(e["event.name"] for e in expected)
 got = Counter(a["event.name"] for a in exported)
 print("recorded:", dict(sorted(want.items())))
@@ -178,7 +185,7 @@ for name in want:
     assert sent == kept, f"{name}: collector changed the attribute keys: {sent} vs {kept}"
 print("all 8 event kinds exported with every attribute kept")
 
-bad = [a for _, a, _ in records if a.get("cx.invocation.id", "").startswith(("3333", "4444", "5555", "6666", "7777"))]
+bad = [a for _, a, _ in records if a.get("cx.invocation.id", "").startswith(("3333", "4444", "5555", "6666", "7777", "8888"))]
 assert not bad, f"bad records exported: {bad}"
 kept = [a for _, a, _ in records if a.get("cx.invocation.id") == good]
 assert len(kept) == 1 and "cx.query" not in kept[0], kept

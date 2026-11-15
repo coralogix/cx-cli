@@ -132,10 +132,18 @@ fn api_keys_lifecycle() {
         "-o",
         "json",
     ]);
+    // Mask the key value in the Actions log before anything else can print
+    // it (text/TOON `get` output, a later panic message).
+    harness::mask_in_ci(created["value"].as_str().unwrap_or_default());
     let id = created["key_id"]
         .as_str()
         .map(str::to_string)
-        .unwrap_or_else(|| panic!("api key create returned no key_id: {created}"));
+        .unwrap_or_else(|| {
+            panic!(
+                "api key create returned no key_id: {}",
+                harness::redact(&created.to_string())
+            )
+        });
     assert_eq!(created["name"], name);
     assert!(
         created["value"].as_str().is_some_and(|v| !v.is_empty()),
@@ -209,10 +217,18 @@ fn api_keys_admin_lifecycle() {
         "-o",
         "json",
     ]);
+    // Mask the key value in the Actions log before anything else can print
+    // it (text/TOON `get` output, a later panic message).
+    harness::mask_in_ci(created["value"].as_str().unwrap_or_default());
     let id = created["key_id"]
         .as_str()
         .map(str::to_string)
-        .unwrap_or_else(|| panic!("api key create returned no key_id: {created}"));
+        .unwrap_or_else(|| {
+            panic!(
+                "api key create returned no key_id: {}",
+                harness::redact(&created.to_string())
+            )
+        });
     let mut cleanup = harness::Cleanup::new(&["iam", "api-keys", "delete", &id]);
 
     // admin list contains it

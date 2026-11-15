@@ -538,7 +538,6 @@ Examples:
   cx e2m create --from-file e2m.json
   cx e2m update --from-file e2m.json
   cx e2m delete <e2m-id>
-  cx e2m labels-cardinality
   cx e2m limits")]
     E2m {
         #[command(subcommand)]
@@ -1841,18 +1840,11 @@ enum E2mCmd {
         /// E2M definition ID.
         id: String,
     },
-    /// Get E2M labels cardinality (label permutations per day) for a draft query.
-    LabelsCardinality {
-        /// E2M-style JSON file; its logsQuery/spansQuery (lucene, application and subsystem filters) is evaluated. Use '-' for stdin. metricLabels cannot be sent through the REST gateway and are ignored.
-        #[arg(long)]
-        from_file: Option<String>,
-        /// Lucene query to evaluate (default `*`). Overrides the file's lucene.
-        #[arg(long)]
-        query: Option<String>,
-        /// Evaluate against spans instead of logs.
-        #[arg(long)]
-        spans: bool,
-    },
+    /// Get E2M labels cardinality. Hidden: the REST gateway cannot accept the
+    /// draft's metric labels, so the forecast is always empty; the command
+    /// exits with an error that points to the UI until that changes.
+    #[command(hide = true)]
+    LabelsCardinality,
     /// Get E2M limits.
     Limits,
 }
@@ -2289,7 +2281,6 @@ Examples:
   cx ai-center custom-evaluations list
   cx ai-center custom-evaluations list-for-application <application-id>
   cx ai-center custom-evaluations create --from-file policy.json
-  cx ai-center custom-evaluations delete <evaluation-id>
   cx ai-center custom-evaluations add <evaluation-id> <application-id>
   cx ai-center custom-evaluations remove <evaluation-id> <application-id>")]
     CustomEvaluations {
@@ -2398,11 +2389,6 @@ enum CustomEvaluationsCmd {
         /// Path to JSON file with the partial update. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
-        /// Custom evaluation UUID.
-        id: String,
-    },
-    /// Delete a custom evaluation policy by UUID [requires --yes].
-    Delete {
         /// Custom evaluation UUID.
         id: String,
     },
@@ -4414,19 +4400,13 @@ async fn main() -> Result<()> {
                     )?;
                     commands::e2m::run_delete(&targets, &id).await?;
                 }
-                E2mCmd::LabelsCardinality {
-                    from_file,
-                    query,
-                    spans,
-                } => {
-                    commands::e2m::run_labels_cardinality(
-                        &targets,
-                        from_file.as_deref(),
-                        query.as_deref(),
-                        spans,
-                        output,
-                    )
-                    .await?;
+                E2mCmd::LabelsCardinality => {
+                    anyhow::bail!(
+                        "`cx e2m labels-cardinality` is not available through the REST API yet: \
+                         the gateway cannot accept the draft's metric labels, so the forecast \
+                         would always be empty. Forecast cardinality in the Coralogix UI \
+                         (Events2Metrics create flow) for now."
+                    );
                 }
                 E2mCmd::Limits => {
                     commands::e2m::run_limits(&targets, output).await?;
@@ -4858,15 +4838,6 @@ async fn main() -> Result<()> {
                             &targets, &id, &from_file, output,
                         )
                         .await?;
-                    }
-                    CustomEvaluationsCmd::Delete { id } => {
-                        confirm_destructive(
-                            &format!("Delete custom evaluation '{id}'?"),
-                            yes,
-                            agent_mode,
-                        )?;
-                        commands::ai_center::run_custom_evaluations_delete(&targets, &id, output)
-                            .await?;
                     }
                     CustomEvaluationsCmd::Add {
                         evaluation_id,

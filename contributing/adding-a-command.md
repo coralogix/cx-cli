@@ -698,7 +698,7 @@ Rules (the harness in `tests/e2e/harness.rs` has helpers for each):
 
 ```bash
 cargo test                                              # unit + integration
-cargo test --test e2e -- --ignored                      # e2e (needs CX_API_KEY + CX_E2E_ALLOW_WRITES)
+cargo test --test e2e -- --ignored                      # e2e (needs CX_API_KEY, CX_E2E_ALLOW_WRITES, CX_E2E_TEAM_ID)
 cargo clippy                                            # lint
 cargo fmt --check                                       # format check
 ```

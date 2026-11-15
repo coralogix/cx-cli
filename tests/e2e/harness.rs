@@ -330,27 +330,51 @@ pub fn require_write_creds(test_name: &str) -> Option<()> {
     Some(())
 }
 
+/// An API client for `CX_API_KEY`/`CX_REGION`, for the few cleanups that
+/// have no CLI command on purpose (custom evaluations: "no delete by
+/// design" in the AI Center skill).
+pub fn api_client() -> coralogix_cli::api_client::CxClient {
+    let api_key = std::env::var("CX_API_KEY").expect("CX_API_KEY is set");
+    let region: coralogix_cli::config::Region = std::env::var("CX_REGION")
+        .expect("CX_REGION is set")
+        .parse()
+        .expect("CX_REGION is a known region");
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+    coralogix_cli::api_client::CxClient::new(region.api_endpoint(), &api_key)
+        .expect("build API client")
+}
+
+/// Run an async API call to completion on a private runtime.
+pub fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+    tokio::runtime::Runtime::new()
+        .expect("tokio runtime")
+        .block_on(fut)
+}
+
+/// Ask the GitHub Actions runner to mask `secret` in every later log line,
+/// whatever format it appears in. Written straight to the process stdout,
+/// which libtest does not capture, so it reaches the runner even when the
+/// test later fails. A no-op outside Actions.
+pub fn mask_in_ci(secret: &str) {
+    if secret.is_empty() || std::env::var_os("GITHUB_ACTIONS").is_none() {
+        return;
+    }
+    use std::io::Write as _;
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "::add-mask::{secret}");
+    let _ = out.flush();
+}
+
 /// Team id of `CX_API_KEY`, from `GET /identity/whoami`. Resolved once per
 /// process; a lookup failure panics because writes must never proceed on
 /// an unknown team.
 fn resolved_team_id() -> &'static str {
     static TEAM: OnceLock<String> = OnceLock::new();
     TEAM.get_or_init(|| {
-        let api_key = std::env::var("CX_API_KEY").expect("CX_API_KEY is set in write mode");
-        let region: coralogix_cli::config::Region = std::env::var("CX_REGION")
-            .expect("CX_REGION is set in write mode")
-            .parse()
-            .expect("CX_REGION is a known region");
-        // reqwest with rustls-no-provider needs an explicit crypto provider;
-        // `.ok()` tolerates one already installed by another test.
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .ok();
-        let client = coralogix_cli::api_client::CxClient::new(region.api_endpoint(), &api_key)
-            .expect("build API client");
-        tokio::runtime::Runtime::new()
-            .expect("tokio runtime")
-            .block_on(coralogix_cli::identity::resolve_team_id(&client))
+        let client = api_client();
+        block_on(coralogix_cli::identity::resolve_team_id(&client))
             .expect("resolve the team id of CX_API_KEY via /identity/whoami")
     })
 }

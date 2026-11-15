@@ -293,7 +293,7 @@ fn ai_center_custom_evaluations_lifecycle() {
     ]);
     let id = harness::id_from_response(&created)
         .unwrap_or_else(|| panic!("custom evaluation create returned no id: {created}"));
-    let mut cleanup = harness::Cleanup::new(&["ai-center", "custom-evaluations", "delete", &id]);
+    let mut cleanup = CustomEvaluationCleanup::new(&id);
 
     // list contains it by name
     let list = harness::run_ok_json(&["ai-center", "custom-evaluations", "list", "-o", "json"]);
@@ -398,15 +398,58 @@ fn ai_center_custom_evaluations_lifecycle() {
         "--yes",
     ]);
 
-    // delete, then the policy is gone from the list and a second delete fails
-    harness::run_write_ok(&["ai-center", "custom-evaluations", "delete", &id]);
+    // The CLI has no `custom-evaluations delete` by design (see the AI
+    // Center skill), so the policy is removed through the API; the list
+    // must then no longer show it.
+    delete_custom_evaluation(&id).expect("delete the custom evaluation through the API");
     cleanup.disarm();
     let list = harness::run_ok_json(&["ai-center", "custom-evaluations", "list", "-o", "json"]);
     assert!(
         harness::find_by_name(&list, "name", &name).is_none(),
         "deleted policy {name} should disappear from the list: {list}"
     );
-    harness::run_fail(&["ai-center", "custom-evaluations", "delete", &id, "--yes"]);
+}
+
+/// `DELETE /mgmt/openapi/5/ai/custom-evaluations/v3/{id}`: the API has the
+/// endpoint, the CLI deliberately does not expose it.
+pub(crate) fn delete_custom_evaluation(id: &str) -> Result<(), String> {
+    let client = harness::api_client();
+    let path = format!("/mgmt/openapi/5/ai/custom-evaluations/v3/{id}");
+    harness::block_on(client.delete::<serde_json::Value>(&path))
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Drop guard that deletes a custom evaluation through the API, so a failed
+/// assertion never leaves one behind.
+struct CustomEvaluationCleanup {
+    id: String,
+    armed: bool,
+}
+
+impl CustomEvaluationCleanup {
+    fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            armed: true,
+        }
+    }
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CustomEvaluationCleanup {
+    fn drop(&mut self) {
+        if self.armed {
+            if let Err(e) = delete_custom_evaluation(&self.id) {
+                eprintln!(
+                    "[e2e] cleanup: could not delete custom evaluation {}: {e}",
+                    self.id
+                );
+            }
+        }
+    }
 }
 
 /// `model-pricing set` is team-wide: a safe idempotent round-trip writes the

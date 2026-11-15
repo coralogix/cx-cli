@@ -139,11 +139,6 @@ const SWEEPABLES: &[Sweepable] = &[
         list: &["iam", "groups", "list"],
         delete: &["iam", "groups", "delete"],
     },
-    Sweepable {
-        label: "custom evaluations",
-        list: &["ai-center", "custom-evaluations", "list"],
-        delete: &["ai-center", "custom-evaluations", "delete"],
-    },
 ];
 // Not sweepable: AI Center evaluations carry no name (only application,
 // subsystem, target), so a leaked one cannot be told apart from a real one.
@@ -388,6 +383,32 @@ fn sweep_nested_kinds() -> (usize, usize) {
                     file.path(),
                 ],
             );
+        }
+    }
+
+    // Custom evaluations: the CLI has no delete by design, so stale ones go
+    // through the API (same helper the lifecycle test uses).
+    if let Some(v) = list(&["ai-center", "custom-evaluations", "list"]) {
+        for item in items(&v) {
+            let (Some(name), Some(id)) = (
+                str_field(&item, &["name"]).map(str::to_string),
+                id_field(&item),
+            ) else {
+                continue;
+            };
+            if !sweeps(&name) {
+                continue;
+            }
+            match crate::ai_center::delete_custom_evaluation(&id) {
+                Ok(()) => {
+                    eprintln!("[sweep] deleted stale custom evaluation '{name}' ({id})");
+                    swept += 1;
+                }
+                Err(e) => {
+                    eprintln!("[sweep] FAILED to delete stale custom evaluation '{name}': {e}");
+                    failed += 1;
+                }
+            }
         }
     }
 

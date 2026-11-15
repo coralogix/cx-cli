@@ -7,9 +7,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::ai_center::{
     run_add_policy, run_applications_get, run_applications_list, run_coverage,
-    run_custom_evaluations_delete, run_custom_evaluations_for_application,
-    run_custom_evaluations_list, run_evaluations_delete, run_evaluations_list,
-    run_model_pricing_get, run_model_pricing_set, run_remove_policy,
+    run_custom_evaluations_for_application, run_custom_evaluations_list, run_evaluations_delete,
+    run_evaluations_list, run_model_pricing_get, run_model_pricing_set, run_remove_policy,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -189,22 +188,6 @@ async fn evaluations_delete_uses_delete_verb() {
     run_evaluations_delete(&targets, "e-1", OutputFormat::Json)
         .await
         .expect("evaluations delete should succeed");
-}
-
-#[tokio::test]
-async fn custom_evaluations_delete_uses_delete_verb_on_id_path() {
-    let server = MockServer::start().await;
-    Mock::given(method("DELETE"))
-        .and(path(format!("{AI}/custom-evaluations/v3/c-1")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_custom_evaluations_delete(&targets, "c-1", OutputFormat::Json)
-        .await
-        .expect("custom-evaluations delete should succeed");
 }
 
 #[tokio::test]

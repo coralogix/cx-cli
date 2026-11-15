@@ -30,7 +30,7 @@ Use this skill when configuring how Coralogix processes, enriches, and transform
 | `cx parsing-rules` | `list`, `get`, `create`, `update`, `delete`, `bulk-delete`, `usage-limits` | Manage log parsing rules |
 | `cx enrichments` | `list`, `add`, `remove`, `overwrite`, `limit`, `settings` | Manage enrichment rules |
 | `cx enrichments custom` | `list`, `get`, `create`, `update`, `delete`, `search` | Manage custom enrichment tables |
-| `cx e2m` | `list`, `get`, `create`, `update`, `delete`, `labels-cardinality`, `limits` | Manage Events2Metrics definitions |
+| `cx e2m` | `list`, `get`, `create`, `update`, `delete`, `limits` | Manage Events2Metrics definitions |
 | `cx recording-rules` | `list`, `get`, `create`, `update`, `delete` | Manage Prometheus recording rule groups |
 
 Key flags:
@@ -198,10 +198,10 @@ Choose `logs2metrics` vs `spans2metrics`, the source field(s) + aggregations, an
 
 ```bash
 cx e2m limits -o json              # account E2M count limit + used
-cx e2m labels-cardinality -o json  # see caveat below
+# cx e2m labels-cardinality is NOT available through the REST API (see caveat below)
 ```
 
-The labels-cardinality endpoint is a **draft forecast** — given proposed labels + query it returns the per-day distinct-permutation count over the last 7 days, so you can size a design before creating it. **But the REST gateway cannot accept the labels** (`cx e2m labels-cardinality --from-file <e2m.json>` sends the query; `metricLabels` are rejected with 400 in every encoding), so the answer is always an empty list. Forecast via the UI or estimate permutations manually (product of distinct label values) and set `permutationsLimit`. Never use high-cardinality fields (IDs, raw URLs, IPs) as labels. Note the forecast only sees Frequent-Search (High-tier) data.
+The labels-cardinality endpoint is a **draft forecast** — given proposed labels + query it returns the per-day distinct-permutation count over the last 7 days, so you can size a design before creating it. **But the REST gateway cannot accept the labels** (every encoding of `metricLabels` is rejected with 400), so the answer would always be an empty list. `cx e2m labels-cardinality` is therefore hidden and exits with an error that says so. Forecast via the UI or estimate permutations manually (product of distinct label values) and set `permutationsLimit`. Never use high-cardinality fields (IDs, raw URLs, IPs) as labels. Note the forecast only sees Frequent-Search (High-tier) data.
 
 ### 3. Template from an existing definition
 

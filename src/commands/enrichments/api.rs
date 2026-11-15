@@ -42,8 +42,6 @@ pub struct ListEnrichmentsResponse {
 
 const ENRICHMENTS_BASE: &str = "/mgmt/openapi/5/enrichment-rules/enrichment-rules/v1";
 
-/// Build `enrichment_ids=<a>&enrichment_ids=<b>`. Ids are numeric in
-/// practice; anything outside the URL-unreserved set is percent-encoded.
 /// Request path for a remove. A bare `DELETE /v1` with no `enrichment_ids`
 /// is documented as "delete all enrichments", so an empty list is refused
 /// here (the handler checks too) instead of being sent.
@@ -56,6 +54,8 @@ pub fn remove_path(ids: &[String]) -> Result<String> {
     Ok(format!("{ENRICHMENTS_BASE}?{}", remove_query(ids)))
 }
 
+/// Build `enrichment_ids=<a>&enrichment_ids=<b>`. Ids are numeric in
+/// practice; anything outside the URL-unreserved set is percent-encoded.
 pub fn remove_query(ids: &[String]) -> String {
     fn encode(id: &str) -> String {
         let mut out = String::with_capacity(id.len());

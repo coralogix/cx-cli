@@ -12,33 +12,6 @@ use crate::harness;
 use crate::logs::{query_json, query_stdout, run_with_429_retry};
 use crate::profiles_and_local::{cx_in_home_with_creds, temp_home, TempHome};
 
-#[test]
-#[ignore]
-fn alerts_list_text() {
-    if harness::require_creds("alerts_list_text").is_none() {
-        return;
-    }
-    harness::run_ok_nonempty(&["alerts", "list", "-o", "text"]);
-}
-
-#[test]
-#[ignore]
-fn alerts_list_json() {
-    if harness::require_creds("alerts_list_json").is_none() {
-        return;
-    }
-    harness::run_ok_json(&["alerts", "list", "-o", "json"]);
-}
-
-#[test]
-#[ignore]
-fn alerts_list_agents() {
-    if harness::require_creds("alerts_list_agents").is_none() {
-        return;
-    }
-    harness::run_ok_nonempty(&["alerts", "list", "-o", "toon"]);
-}
-
 /// The same logs query in all three formats.
 #[test]
 #[ignore]

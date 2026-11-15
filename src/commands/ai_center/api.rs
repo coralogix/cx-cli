@@ -2,9 +2,8 @@
 //!
 //! The proto (`com/coralogixapis/ai/v3`) annotates paths like `/ai/applications/v3`,
 //! but openapi-facade serves them under the management gateway mount `/mgmt/openapi/5`
-//! (the mount every management command uses) — hence the [`AI_BASE`] prefix. Evaluations
-//! and custom-evaluation policies can be deleted; there is deliberately no delete for
-//! applications or pricing.
+//! (the mount every management command uses) — hence the [`AI_BASE`] prefix. There is
+//! deliberately no delete for custom-evaluation policies, applications, or pricing.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -171,13 +170,6 @@ impl<'a> AiCenterApi<'a> {
     pub async fn update_custom_evaluation(&self, id: &str, body: &Value) -> Result<Value> {
         self.client
             .patch(&format!("{AI_BASE}/custom-evaluations/v3/{id}"), body)
-            .await
-    }
-
-    /// DELETE /ai/custom-evaluations/v3/{id} — delete a custom evaluation (policy).
-    pub async fn delete_custom_evaluation(&self, id: &str) -> Result<Value> {
-        self.client
-            .delete(&format!("{AI_BASE}/custom-evaluations/v3/{id}"))
             .await
     }
 

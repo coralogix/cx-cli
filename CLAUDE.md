@@ -16,7 +16,7 @@ cargo clippy                        # Lint
 cargo test                          # Run all tests
 cargo test <test_name>              # Run a single test
 cargo test -- --ignored             # Run integration tests (filesystem-dependent)
-cargo test --test e2e -- --ignored  # E2E vs. writable test team (needs CX_API_KEY, CX_REGION=eu2, CX_E2E_ALLOW_WRITES=1)
+cargo test --test e2e -- --ignored  # E2E vs. writable test team (needs CX_API_KEY, CX_REGION, CX_E2E_ALLOW_WRITES=1, CX_E2E_TEAM_ID)
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
@@ -231,8 +231,9 @@ New commands must add tests at all three layers:
 
 E2E tests don't run by default; run them with
 `cargo test --test e2e -- --ignored` (requires `CX_API_KEY` for the
-writable test team, `CX_REGION`, plus `CX_E2E_ALLOW_WRITES=1`
-for write tests). CI runs the whole suite on every PR; PRs run in parallel,
+writable test team, `CX_REGION`, plus `CX_E2E_ALLOW_WRITES=1` and
+`CX_E2E_TEAM_ID` for write tests; writes refuse to run unless the key
+belongs to that team). CI runs the whole suite on every PR; PRs run in parallel,
 so every test uses `harness::unique_name` and cleans up after itself. See
 [contributing/adding-a-command.md](contributing/adding-a-command.md)
 § "Testing" for the lifecycle template and rules.

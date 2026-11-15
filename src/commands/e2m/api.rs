@@ -64,55 +64,6 @@ pub struct ReplaceE2mResponse {
 #[derive(Debug, Deserialize)]
 pub struct DeleteE2mResponse {}
 
-/// The draft query sent to `GET /labels/v2/cardinalities`: the `logsQuery`
-/// or `spansQuery` half of an E2M definition, flattened to the gateway's
-/// dotted query parameters (`logs_query.lucene`,
-/// `logs_query.applicationname_filters`, ...).
-///
-/// The request also has a repeated `metric_labels` message, but the
-/// management REST gateway cannot encode a repeated message as query
-/// parameters (every spelling answers `400 ... unsupported message type
-/// "com.coralogixapis.events2metrics.v2.MetricLabel"`, and a GET body is
-/// ignored). So only the query reaches the API, which then computes the
-/// permutations of no labels and answers an empty list. Labels from an
-/// E2M file are therefore dropped with a note.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CardinalityQuery {
-    /// Evaluate against spans (`spans_query`) instead of logs (`logs_query`).
-    pub spans: bool,
-    /// Lucene filter; empty means match all (`*`).
-    pub lucene: String,
-    pub applications: Vec<String>,
-    pub subsystems: Vec<String>,
-}
-
-impl CardinalityQuery {
-    pub fn params(&self) -> Vec<(String, String)> {
-        let prefix = if self.spans {
-            "spans_query"
-        } else {
-            "logs_query"
-        };
-        let lucene = if self.lucene.trim().is_empty() {
-            "*"
-        } else {
-            self.lucene.as_str()
-        };
-        let mut params = vec![(format!("{prefix}.lucene"), lucene.to_string())];
-        params.extend(
-            self.applications
-                .iter()
-                .map(|a| (format!("{prefix}.applicationname_filters"), a.clone())),
-        );
-        params.extend(
-            self.subsystems
-                .iter()
-                .map(|s| (format!("{prefix}.subsystemname_filters"), s.clone())),
-        );
-        params
-    }
-}
-
 /// `GET /labels/v2/cardinalities` answers `{"permutations": [{day, permutations}]}`.
 /// The older `labels` key is still accepted.
 #[derive(Debug, Deserialize)]
@@ -191,26 +142,6 @@ impl<'a> E2mApi<'a> {
     pub async fn delete(&self, id: &str) -> Result<DeleteE2mResponse> {
         let path = format!("{E2M_BASE}/{id}");
         self.client.delete(&path).await
-    }
-
-    /// `GET /labels/v2/cardinalities?<query params>`. The endpoint rejects a
-    /// request without a query (`400`, `query` is required); see
-    /// [`CardinalityQuery`] for what can and cannot be sent.
-    pub async fn labels_cardinality(
-        &self,
-        query: &CardinalityQuery,
-    ) -> Result<E2mLabelsCardinalityResponse> {
-        let params = query.params();
-        let params: Vec<(&str, &str)> = params
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
-        self.client
-            .get(
-                "/mgmt/openapi/5/events2metrics/labels/v2/cardinalities",
-                &params,
-            )
-            .await
     }
 
     pub async fn limits(&self) -> Result<E2mLimitsResponse> {
@@ -327,40 +258,6 @@ mod tests {
         let perms = resp.permutations_limit.unwrap();
         assert_eq!(perms.limit, Some(10000000));
         assert_eq!(perms.used, Some(0));
-    }
-
-    #[test]
-    fn cardinality_query_params_follow_the_gateway_spelling() {
-        let q = CardinalityQuery::default();
-        assert_eq!(
-            q.params(),
-            vec![("logs_query.lucene".to_string(), "*".to_string())]
-        );
-
-        let q = CardinalityQuery {
-            spans: true,
-            lucene: "status:500".to_string(),
-            applications: vec!["otel-demo".to_string()],
-            subsystems: vec!["cart".to_string(), "frontend".to_string()],
-        };
-        assert_eq!(
-            q.params(),
-            vec![
-                ("spans_query.lucene".to_string(), "status:500".to_string()),
-                (
-                    "spans_query.applicationname_filters".to_string(),
-                    "otel-demo".to_string()
-                ),
-                (
-                    "spans_query.subsystemname_filters".to_string(),
-                    "cart".to_string()
-                ),
-                (
-                    "spans_query.subsystemname_filters".to_string(),
-                    "frontend".to_string()
-                ),
-            ]
-        );
     }
 
     #[test]

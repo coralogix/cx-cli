@@ -77,8 +77,6 @@ pub struct DeleteRuleGroupResponse {}
 const RULE_GROUPS_BASE: &str = "/mgmt/openapi/5/parsing-rules/rule-groups/v1";
 const PARSING_RULES_LIMITS_BASE: &str = "/mgmt/openapi/5/parsing-rules/limits/v1";
 
-/// Build `group_ids=<a>&group_ids=<b>`. Ids are UUIDs in practice; anything
-/// outside the URL-unreserved set is percent-encoded.
 /// Request path for a bulk delete. A bare `DELETE /v1` with no `group_ids`
 /// is documented as "delete all rule groups", so an empty list is refused
 /// here (the handler checks too) instead of being sent.
@@ -91,6 +89,8 @@ pub fn bulk_delete_path(ids: &[String]) -> Result<String> {
     Ok(format!("{RULE_GROUPS_BASE}?{}", bulk_delete_query(ids)))
 }
 
+/// Build `group_ids=<a>&group_ids=<b>`. Ids are UUIDs in practice; anything
+/// outside the URL-unreserved set is percent-encoded.
 pub fn bulk_delete_query(ids: &[String]) -> String {
     fn encode(id: &str) -> String {
         let mut out = String::with_capacity(id.len());

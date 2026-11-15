@@ -40,7 +40,8 @@ Set credentials one of two ways:
 # Option A - environment
 export CX_API_KEY=cxtp_...
 export CX_REGION=eu2
-export CX_E2E_ALLOW_WRITES=1     # write tests are skipped without it
+export CX_E2E_ALLOW_WRITES=1     # write tests are skipped without it ...
+export CX_E2E_TEAM_ID=<team id>  # ... and refuse to run unless the key belongs to this team
 
 # Option B - .env file in the repo root (gitignored)
 cp .env.example .env
@@ -73,11 +74,19 @@ depend on shared state:
   the delete even when an assertion panics.
 - Global, singleton settings (retention, archive target, TCO settings,
   model pricing, ...) are only round-tripped: read, write the same value
-  back, read again. Anything that cannot be round-tripped safely is
-  listed as `[e2e] not covered: ...` in the test file with the reason.
+  back, read again. Anything that cannot be round-tripped safely is in the
+  table below.
+- Write tests check the target before the first write: `CX_API_KEY` must
+  come from the environment or `.env` (never the `~/.cx` profile), and
+  `CX_E2E_TEAM_ID` must equal the team the key resolves to. A mismatch
+  fails the test; a missing id skips locally and fails in CI.
 - `tests/e2e/sweeper.rs` lists every resource type and deletes
   `cx-e2e-*` names from other runs older than two hours. CI runs it before
-  the suite, so a crashed runner never leaves garbage behind for long.
+  the suite, so a crashed runner never leaves garbage behind for long. The
+  same sweeper runs again as the job's last step with
+  `CX_E2E_SWEEP_MODE=run`, deleting everything that carries the current
+  run id whatever its age, so a cancelled job (whose drop guards never ran)
+  still cleans up.
 
 ### Commands the suite deliberately does not exercise
 
@@ -102,9 +111,11 @@ off this list only with a safe, repeatable way to run it.
 pull request (code paths only) and every push to `master`. Different PRs
 run in parallel; a new push to the same PR cancels its older run. The
 workflow reads the repository secret `CX_E2E_WRITE_API_KEY` (an API key of
-the writable test team with full permissions); the region is set in the
-workflow file. The older `CX_E2E_API_KEY` secret (read-only team) is no
-longer used.
+the writable test team with full permissions) and the repository variable
+`CX_E2E_TEAM_ID` (that team's id; without it every write test fails in
+CI); the region is set in the workflow file. The job ends with a step that
+runs even on cancel and removes the run's own resources. The older
+`CX_E2E_API_KEY` secret (read-only team) is no longer used.
 
 ## DataPrime documentation bundle
 

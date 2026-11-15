@@ -2,8 +2,10 @@
 # Runs the CLI telemetry collector config (contributing/telemetry-design-draft.md
 # § 2, copied to scripts/telemetry-collector/config.yaml) in Docker, with the
 # Coralogix exporter swapped for a file (local.yaml). Then:
-#   1. a real `cx` binary records events and flushes them to the collector;
-#      every one must be exported, with service.name = cx-cli;
+#   1. a real `cx` binary runs a scenario covering all eight event kinds
+#      against a stub API and flushes to the collector; every event it records
+#      (learned from the same scenario in CX_TELEMETRY=log mode) must be
+#      exported with all its attributes, with service.name = cx-cli;
 #   2. hand-made bad requests are posted; none may be exported, and an unknown
 #      attribute must be stripped.
 #
@@ -47,21 +49,60 @@ done
 
 # ── 1. Real CLI events ────────────────────────────────────────────────────────
 echo "== real cx events"
-cx() {
-  env -u CX_API_KEY -u CX_REGION -u CX_PROFILE -u CX_TELEMETRY -u DO_NOT_TRACK \
-    HOME="$WORK/home" CX_HOME="$WORK/home" CX_NO_UPDATE_NOTIFIER=1 \
-    CX_TELEMETRY_ENDPOINT="$ENDPOINT" "$CX" "$@" >/dev/null 2>&1 || true
+# A stub Coralogix API: every GET answers an empty PromQL result, so
+# `metrics query` succeeds; anything else gets 501.
+STUB_PORT=$((PORT + 1))
+python3 -c '
+import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[]}}"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *args):
+        pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+' "$STUB_PORT" &
+STUB_PID=$!
+trap 'kill $STUB_PID 2>/dev/null; wait $STUB_PID 2>/dev/null; cleanup' EXIT
+# A fake npx for `cx skills install`: lists nothing, installs successfully.
+mkdir -p "$WORK/bin"
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 10.0.0; exit 0; fi\nif [ "$3" = "ls" ]; then echo "[]"; fi\nexit 0\n' \
+  >"$WORK/bin/npx"
+chmod +x "$WORK/bin/npx"
+
+# The same scenario runs twice: in inspect mode (CX_TELEMETRY=log), to learn
+# which events the CLI records, and for real against the collector. All eight
+# event kinds occur. $1: home dir, $2: log | on.
+scenario() {
+  local home=$1 mode=$2
+  mkdir -p "$home/project"
+  # An upgrade (version_changed) with a newer release cached (update_notice).
+  printf '{"last_checked_at":"%s","latest_binary":"99.0.0","last_run_version":"0.0.1"}' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$home/state.json.seed"
+  mkdir -p "$home/.cx" && mv "$home/state.json.seed" "$home/.cx/state.json"
+  run_cx() {
+    local telemetry=()
+    if [ "$mode" = log ]; then telemetry=(CX_TELEMETRY=log); else telemetry=(CX_TELEMETRY_ENDPOINT="$ENDPOINT"); fi
+    (cd "$home/project" && env -u CX_API_KEY -u CX_REGION -u CX_PROFILE -u CX_TELEMETRY \
+      -u DO_NOT_TRACK -u CX_NO_UPDATE_NOTIFIER -u CX_TELEMETRY_ENDPOINT \
+      HOME="$home" CX_HOME="$home" CX_CREDENTIAL_STORAGE=file "${telemetry[@]}" "$@" \
+      >/dev/null 2>>"$home/stderr.txt") || true
+  }
+  run_cx "$CX" dataprime list --name SENTINEL_SECRET   # first_run, version_changed, command
+  run_cx "$CX" alertz list                             # parse_error
+  run_cx "$CX" profiles add check --api-key k --url "http://127.0.0.1:$STUB_PORT"  # profile_added (flushes)
+  run_cx env PATH="$WORK/bin" "$CX" skills install --global  # skills_install
+  run_cx "$CX" alerts delete abc --yes                 # confirm (flushes)
+  run_cx "$CX" metrics query up                        # first_query_succeeded (flushes)
 }
-# Local commands only spool. A profile whose API is unreachable still builds
-# execution targets, so `alerts list` fails but flushes everything.
-cx dataprime list --name SENTINEL_SECRET
-cx schema
-cx alertz list
-mkdir -p "$WORK/home/.cx/profiles"
-printf 'auth = "api_key"\ncredential_storage = "file"\napi_key = "k"\nregion = "http://127.0.0.1:1"\n' \
-  >"$WORK/home/.cx/profiles/check.toml"
-printf 'default_profile = "check"\n' >"$WORK/home/.cx/config.toml"
-cx alerts list
+scenario "$WORK/log-home" log
+scenario "$WORK/home" on
+grep '^cx telemetry: ' "$WORK/log-home/stderr.txt" | sed 's/^cx telemetry: //' >"$WORK/expected.jsonl"
+[ ! -s "$WORK/home/.cx/telemetry-spool.jsonl" ] || { echo "events left unsent in the spool"; exit 1; }
 sleep 2
 
 # ── 2. Bad requests ───────────────────────────────────────────────────────────
@@ -100,9 +141,12 @@ sleep 2
 
 # ── Assertions over what the collector exported ───────────────────────────────
 echo "== exported"
-python3 - "$OUT" "$GOOD" <<'EOF'
+python3 - "$OUT" "$GOOD" "$WORK/expected.jsonl" <<'EOF'
 import json, sys
-path, good = sys.argv[1], sys.argv[2]
+from collections import Counter
+path, good, expected_path = sys.argv[1], sys.argv[2], sys.argv[3]
+RESOURCE_KEYS = {"service.name", "service.version", "os.type", "host.arch", "cx.install.id", "cx.install.method"}
+
 records = []
 for line in open(path):
     for rl in json.loads(line)["resourceLogs"]:
@@ -112,17 +156,27 @@ for line in open(path):
                 attrs = {a["key"]: next(iter(a["value"].values())) for a in r.get("attributes", [])}
                 records.append((res, attrs, r))
 
-cli = [a for _, a, _ in records if a.get("cx.invocation.id") != good]
-names = [a["event.name"] for a in cli]
-print(f"cx events exported: {names}")
 for res, attrs, r in records:
     assert res["service.name"]["stringValue"] == "cx-cli", res
     assert r.get("body", {}).get("stringValue", "") == "", r
     assert "SENTINEL_SECRET" not in json.dumps(attrs)
-assert sorted(names) == sorted(["cli.first_run", "cli.command", "cli.command", "cli.parse_error", "cli.command"]), names
-cmd = {a["cx.command.path"]: a for a in cli if a["event.name"] == "cli.command"}
-assert set(cmd) == {"dataprime list", "schema", "alerts list"}, cmd
-print("alerts list:", {k: v for k, v in cmd["alerts list"].items() if k.startswith("cx.") and k != "cx.invocation.id"})
+
+# What the CLI recorded (inspect-mode run) vs what the collector exported.
+expected = [json.loads(l) for l in open(expected_path)]
+exported = [a for _, a, _ in records if a.get("cx.invocation.id", "").count("-") == 4
+            and not a["cx.invocation.id"][:4] in {"2222", "3333", "4444", "5555", "6666", "7777"}]
+want = Counter(e["event.name"] for e in expected)
+got = Counter(a["event.name"] for a in exported)
+print("recorded:", dict(sorted(want.items())))
+print("exported:", dict(sorted(got.items())))
+assert len(want) == 8, f"scenario must cover all 8 event kinds: {sorted(want)}"
+assert got == want, "every recorded event must be exported"
+for name in want:
+    keys = lambda events: {frozenset(k for k in e if k not in RESOURCE_KEYS | {"time_unix_nano"}) for e in events}
+    sent = keys(e for e in expected if e["event.name"] == name)
+    kept = keys(a for a in exported if a["event.name"] == name)
+    assert sent == kept, f"{name}: collector changed the attribute keys: {sent} vs {kept}"
+print("all 8 event kinds exported with every attribute kept")
 
 bad = [a for _, a, _ in records if a.get("cx.invocation.id", "").startswith(("3333", "4444", "5555", "6666", "7777"))]
 assert not bad, f"bad records exported: {bad}"

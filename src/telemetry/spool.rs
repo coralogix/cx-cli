@@ -105,9 +105,21 @@ pub fn take(spool: &Path, token: &str) -> Taken {
     let mut files = Vec::new();
     let mine = with_suffix(spool, &format!(".{token}{SENDING_SUFFIX}"));
     if fs::rename(spool, &mine).is_ok() {
+        // A rename keeps the modified time of the last append. Restamp it so
+        // the file's age is the flush's age, or another process could take
+        // this in-progress flush for an abandoned one.
+        let _ = fs::File::options()
+            .append(true)
+            .open(&mine)
+            .and_then(|f| f.set_modified(SystemTime::now()));
         files.push(mine);
     }
-    files.extend(abandoned(spool));
+    let taken_already = files.clone();
+    files.extend(
+        abandoned(spool)
+            .into_iter()
+            .filter(|f| !taken_already.contains(f)),
+    );
 
     let contents: String = files
         .iter()
@@ -239,5 +251,49 @@ mod tests {
         assert!(taken.events.is_empty());
         taken.finish(&spool, &[]);
         assert!(!spool.exists());
+    }
+
+    fn age(path: &Path, by: Duration) {
+        let file = fs::File::options().append(true).open(path).unwrap();
+        file.set_modified(SystemTime::now() - by).unwrap();
+    }
+
+    #[test]
+    fn spool_last_written_long_ago_is_read_once() {
+        let spool = temp_spool("old_spool");
+        append(&spool, &[event_at(now_nanos())]).unwrap();
+        age(&spool, Duration::from_secs(600));
+
+        let taken = take(&spool, "t");
+        assert_eq!(taken.events.len(), 1, "not read again as abandoned");
+        // Another process flushing now must not take this in-progress file.
+        assert!(take(&spool, "other").events.is_empty());
+        taken.finish(&spool, &[]);
+    }
+
+    #[test]
+    fn abandoned_sending_files_are_picked_up_after_a_minute() {
+        let spool = temp_spool("abandoned");
+        let fresh = with_suffix(&spool, ".young.sending");
+        let stale = with_suffix(&spool, ".dead.sending");
+        for file in [&fresh, &stale] {
+            append(file, &[event_at(now_nanos())]).unwrap();
+        }
+        age(&stale, ABANDONED_AFTER + Duration::from_secs(5));
+
+        let taken = take(&spool, "t");
+        assert_eq!(taken.events.len(), 1, "only the stale file is taken");
+        taken.finish(&spool, &[]);
+        assert!(!stale.exists() && fresh.exists());
+    }
+
+    #[test]
+    fn append_compacts_an_oversized_spool() {
+        let spool = temp_spool("compact");
+        let now = now_nanos();
+        let events: Vec<Event> = (0..3000).map(|i| event_at(now - 3000 + i)).collect();
+        append(&spool, &events).unwrap();
+        let lines = fs::read_to_string(&spool).unwrap().lines().count();
+        assert_eq!(lines, MAX_LINES);
     }
 }

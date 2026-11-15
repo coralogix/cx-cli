@@ -22,22 +22,21 @@ pub const SMALL_LIMIT: &str = "10";
 /// into the test process so the `cx` subprocess inherits them. Returns
 /// `None` (after printing a skip message) if no credentials were found.
 pub fn require_creds(test_name: &str) -> Option<()> {
-    static INIT: OnceLock<bool> = OnceLock::new();
-    let ok = *INIT.get_or_init(|| {
+    let ok = *CREDS.get_or_init(|| {
         if std::env::var("CX_API_KEY").is_ok() {
             ensure_region();
-            return true;
+            return CredSource::Env;
         }
         let _ = dotenvy::dotenv();
         if std::env::var("CX_API_KEY").is_ok() {
             ensure_region();
-            return true;
+            return CredSource::Env;
         }
         if has_default_profile() {
-            return true;
+            return CredSource::Profile;
         }
-        false
-    });
+        CredSource::None
+    }) != CredSource::None;
     if !ok {
         eprintln!(
             "[e2e] skipping {test_name}: no CX_API_KEY in env or .env and no ~/.cx profile found"
@@ -46,6 +45,17 @@ pub fn require_creds(test_name: &str) -> Option<()> {
     }
     Some(())
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CredSource {
+    /// `CX_API_KEY` from the environment or `.env`.
+    Env,
+    /// Only `~/.cx/profiles/default.toml`: a developer's own team.
+    Profile,
+    None,
+}
+
+static CREDS: OnceLock<CredSource> = OnceLock::new();
 
 fn has_default_profile() -> bool {
     dirs::home_dir()
@@ -85,11 +95,11 @@ pub fn run_ok(args: &[&str]) -> Vec<u8> {
     println!("\n$ cx {}", args.join(" "));
     if !stdout.is_empty() {
         println!("--- stdout ---");
-        println!("{}", String::from_utf8_lossy(&stdout));
+        println!("{}", redact(&String::from_utf8_lossy(&stdout)));
     }
     if !stderr.is_empty() {
         println!("--- stderr ---");
-        println!("{stderr}");
+        println!("{}", redact(&stderr));
     }
 
     assert!(
@@ -266,15 +276,72 @@ pub fn writes_allowed() -> bool {
         .unwrap_or(false)
 }
 
-/// Like [`require_creds`], but also requires write mode. Prints a skip line
-/// and returns `None` otherwise.
+/// Like [`require_creds`], but also requires write mode, and proves the
+/// writes go to the intended team before the first one happens:
+///
+/// - credentials must come from `CX_API_KEY` (env or `.env`); the
+///   `~/.cx` default profile is never used for writes, because that is a
+///   developer's own team;
+/// - `CX_E2E_TEAM_ID` must be set and must equal the team id the API key
+///   resolves to via `GET /identity/whoami`. A mismatch fails the test
+///   loudly instead of skipping, so a wrong key can never pass silently.
+///
+/// Prints a skip line and returns `None` when writes are not enabled.
 pub fn require_write_creds(test_name: &str) -> Option<()> {
     require_creds(test_name)?;
     if !writes_allowed() {
         eprintln!("[e2e] skipping {test_name}: set CX_E2E_ALLOW_WRITES=1 to run write tests");
         return None;
     }
+    if CREDS.get().copied() != Some(CredSource::Env) {
+        eprintln!(
+            "[e2e] skipping {test_name}: write tests need CX_API_KEY in the env or .env, \
+             never the ~/.cx default profile"
+        );
+        return None;
+    }
+    let Ok(expected) = std::env::var("CX_E2E_TEAM_ID") else {
+        // On a developer machine this is a skip. In CI it must fail: with
+        // every write test skipping, the suite would pass without testing.
+        assert!(
+            std::env::var_os("GITHUB_ACTIONS").is_none(),
+            "CX_E2E_TEAM_ID is not set in CI (repository variable missing); write tests cannot run"
+        );
+        eprintln!("[e2e] skipping {test_name}: set CX_E2E_TEAM_ID to the writable test team's id");
+        return None;
+    };
+    let actual = resolved_team_id();
+    assert_eq!(
+        actual.trim(),
+        expected.trim(),
+        "CX_API_KEY belongs to team {actual}, but CX_E2E_TEAM_ID is {expected}: refusing to write"
+    );
     Some(())
+}
+
+/// Team id of `CX_API_KEY`, from `GET /identity/whoami`. Resolved once per
+/// process; a lookup failure panics because writes must never proceed on
+/// an unknown team.
+fn resolved_team_id() -> &'static str {
+    static TEAM: OnceLock<String> = OnceLock::new();
+    TEAM.get_or_init(|| {
+        let api_key = std::env::var("CX_API_KEY").expect("CX_API_KEY is set in write mode");
+        let region: coralogix_cli::config::Region = std::env::var("CX_REGION")
+            .expect("CX_REGION is set in write mode")
+            .parse()
+            .expect("CX_REGION is a known region");
+        // reqwest with rustls-no-provider needs an explicit crypto provider;
+        // `.ok()` tolerates one already installed by another test.
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .ok();
+        let client = coralogix_cli::api_client::CxClient::new(region.api_endpoint(), &api_key)
+            .expect("build API client");
+        tokio::runtime::Runtime::new()
+            .expect("tokio runtime")
+            .block_on(coralogix_cli::identity::resolve_team_id(&client))
+            .expect("resolve the team id of CX_API_KEY via /identity/whoami")
+    })
 }
 
 /// Identifier shared by every test in one process. `CX_E2E_RUN_ID` wins
@@ -411,13 +478,27 @@ pub fn run_raw(args: &[&str]) -> Output {
     println!("\n$ cx {}", args.join(" "));
     if !output.stdout.is_empty() {
         println!("--- stdout ---");
-        println!("{}", String::from_utf8_lossy(&output.stdout));
+        println!("{}", redact(&String::from_utf8_lossy(&output.stdout)));
     }
     if !output.stderr.is_empty() {
         println!("--- stderr ---");
-        println!("{}", String::from_utf8_lossy(&output.stderr));
+        println!("{}", redact(&String::from_utf8_lossy(&output.stderr)));
     }
     output
+}
+
+/// Hide secret-looking JSON string fields in echoed output. The repo is
+/// public and libtest prints captured output of failed tests into the
+/// Actions log, so a created API key must never appear there.
+pub fn redact(text: &str) -> String {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(
+            r#"(?i)("(?:value|api_key|apiKey|token|access_token|accessToken|refresh_token|refreshToken|secret|password)"\s*:\s*)"[^"]*""#,
+        )
+        .expect("valid regex")
+    });
+    re.replace_all(text, r#"$1"<redacted>""#).into_owned()
 }
 
 /// Run `cx <args>` and assert it exits non-zero. Returns stderr as text.

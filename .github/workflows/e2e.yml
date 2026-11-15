@@ -35,6 +35,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
+      # dorny/paths-filter reads the PR's changed files through the API.
+      pull-requests: read
     steps:
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -70,23 +72,42 @@ jobs:
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: cargo test --locked --test e2e --no-run
 
+      # Leftovers from crashed runs older than two hours. `--nocapture` so the
+      # `[sweep]` lines are visible; the sweeper emits a ::warning:: when it
+      # finds anything.
       - name: Sweep stale resources from crashed runs
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         env:
           CX_API_KEY: ${{ secrets.CX_E2E_WRITE_API_KEY }}
           CX_REGION: eu2
+          CX_E2E_TEAM_ID: ${{ vars.CX_E2E_TEAM_ID }}
           CX_E2E_ALLOW_WRITES: "1"
           CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
-        run: cargo test --locked --test e2e sweep_stale_e2e_resources -- --ignored --exact sweeper::sweep_stale_e2e_resources
+        run: cargo test --locked --test e2e sweep_stale_e2e_resources -- --ignored --exact sweeper::sweep_stale_e2e_resources --nocapture
 
       - name: Run e2e suite
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         env:
           CX_API_KEY: ${{ secrets.CX_E2E_WRITE_API_KEY }}
           CX_REGION: eu2
+          CX_E2E_TEAM_ID: ${{ vars.CX_E2E_TEAM_ID }}
           CX_E2E_ALLOW_WRITES: "1"
           CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
           CX_E2E_SKIP_OLLY: ${{ vars.CX_E2E_SKIP_OLLY || '' }}
         # Tests are independent (unique names, own cleanup), so they run in
         # parallel. The sweeper is excluded here because it already ran.
         run: cargo test --locked --test e2e -- --ignored --test-threads=4 --skip sweep_stale_e2e_resources
+
+      # A cancelled job (new push to the same PR) kills the test process, so
+      # drop guards never run. This step runs on cancel too and deletes every
+      # resource that carries this run's id, whatever its age.
+      - name: Remove this run's resources
+        if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.code == 'true')
+        env:
+          CX_API_KEY: ${{ secrets.CX_E2E_WRITE_API_KEY }}
+          CX_REGION: eu2
+          CX_E2E_TEAM_ID: ${{ vars.CX_E2E_TEAM_ID }}
+          CX_E2E_ALLOW_WRITES: "1"
+          CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
+          CX_E2E_SWEEP_MODE: run
+        run: cargo test --locked --test e2e sweep_stale_e2e_resources -- --ignored --exact sweeper::sweep_stale_e2e_resources --nocapture

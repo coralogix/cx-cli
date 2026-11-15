@@ -7,6 +7,11 @@
 //! only names produced by `unique_name` in a *different* run that are older
 //! than [`MAX_AGE`], and deletes those. Resources from the current run and
 //! anything not named `cx-e2e-...` are never touched.
+//!
+//! With `CX_E2E_SWEEP_MODE=run` it instead deletes every `cx-e2e-*` resource
+//! that carries the *current* run id, whatever its age. CI runs that mode in
+//! a final `if: always()` step, so a cancelled job (whose drop guards never
+//! ran) still cleans up after itself.
 
 use std::time::Duration;
 
@@ -135,11 +140,34 @@ const SWEEPABLES: &[Sweepable] = &[
         delete: &["iam", "groups", "delete"],
     },
     Sweepable {
-        label: "ai-center evaluations",
-        list: &["ai-center", "evaluations", "list"],
-        delete: &["ai-center", "evaluations", "delete"],
+        label: "custom evaluations",
+        list: &["ai-center", "custom-evaluations", "list"],
+        delete: &["ai-center", "custom-evaluations", "delete"],
     },
 ];
+// Not sweepable: AI Center evaluations carry no name (only application,
+// subsystem, target), so a leaked one cannot be told apart from a real one.
+// Their lifecycle test retries across free slots and fails loudly when the
+// pool is exhausted.
+
+/// Which names this sweep removes: stale ones from other runs (default) or
+/// everything from the current run (`CX_E2E_SWEEP_MODE=run`).
+fn sweeps(name: &str) -> bool {
+    let run_mode = std::env::var("CX_E2E_SWEEP_MODE").as_deref() == Ok("run");
+    if run_mode {
+        name.starts_with(harness::E2E_NAME_PREFIX) && name.contains(harness::run_id())
+    } else {
+        harness::is_stale_e2e_name(name, MAX_AGE)
+    }
+}
+
+/// `::warning::` on GitHub Actions, plain stderr elsewhere.
+fn warn(msg: &str) {
+    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+        println!("::warning::{msg}");
+    }
+    eprintln!("[sweep] WARNING: {msg}");
+}
 
 fn str_field<'a>(item: &'a Value, keys: &[&str]) -> Option<&'a str> {
     keys.iter()
@@ -194,7 +222,7 @@ fn sweep_stale_e2e_resources() {
             else {
                 continue;
             };
-            if !harness::is_stale_e2e_name(name, MAX_AGE) {
+            if !sweeps(name) {
                 continue;
             }
             let Some(id) = id_field(&item) else {
@@ -213,7 +241,157 @@ fn sweep_stale_e2e_resources() {
             }
         }
     }
+    let (s2, f2) = sweep_nested_kinds();
+    swept += s2;
+    failed += f2;
     eprintln!("[sweep] done: {swept} deleted, {failed} failed");
+    if swept > 0 || failed > 0 {
+        warn(&format!(
+            "e2e sweeper found leftovers: {swept} deleted, {failed} could not be deleted"
+        ));
+    }
+}
+
+/// Resource kinds whose list is nested or whose identity is not a `name`:
+/// enrichment rules (identified by `fieldName`), integration instances and
+/// contextual-data instances (identified by a parameter), and extension
+/// deployments (identified by the application scope). Returns
+/// `(deleted, failed)`.
+fn sweep_nested_kinds() -> (usize, usize) {
+    let mut swept = 0;
+    let mut failed = 0;
+    let mut del = |label: &str, name: &str, args: &[&str]| {
+        let mut full: Vec<&str> = args.to_vec();
+        full.push("--yes");
+        if harness::run_raw(&full).status.success() {
+            eprintln!("[sweep] deleted stale {label} '{name}'");
+            swept += 1;
+        } else {
+            eprintln!("[sweep] FAILED to delete stale {label} '{name}'");
+            failed += 1;
+        }
+    };
+    let list = |args: &[&str]| -> Option<Value> {
+        let mut full: Vec<&str> = args.to_vec();
+        full.extend(["-o", "json"]);
+        let out = harness::run_raw(&full);
+        out.status
+            .success()
+            .then(|| harness::parse_json(&out.stdout))?
+    };
+    let param = |item: &Value, key: &str| -> Option<String> {
+        item.get("parameters")?
+            .as_array()?
+            .iter()
+            .find(|p| p.get("key").and_then(Value::as_str) == Some(key))?
+            .get("stringValue")?
+            .as_str()
+            .map(str::to_string)
+    };
+
+    // Enrichment rules: `{"enrichments": [{id, fieldName, ...}]}`; removed
+    // by id through `enrichments remove --from-file {"enrichmentIds": [..]}`.
+    if let Some(v) = list(&["enrichments", "list"]) {
+        for item in items(&v) {
+            let (Some(field), Some(id)) = (
+                item.get("fieldName").and_then(Value::as_str),
+                item.get("id").and_then(Value::as_u64),
+            ) else {
+                continue;
+            };
+            if sweeps(field) {
+                let file = harness::JsonFile::new(
+                    "sweep-enr",
+                    &serde_json::json!({ "enrichmentIds": [id] }),
+                );
+                del(
+                    "enrichment rule",
+                    field,
+                    &["enrichments", "remove", "--from-file", file.path()],
+                );
+            }
+        }
+    }
+
+    // Integration instances of the type the lifecycle deploys, identified by
+    // their `CollectorName` parameter.
+    if let Some(v) = list(&["integrations", "get", "K8s-Collector"]) {
+        let registered = v
+            .pointer("/integrationDetail/default/registered")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for item in registered {
+            let (Some(name), Some(id)) = (param(&item, "CollectorName"), id_field(&item)) else {
+                continue;
+            };
+            if sweeps(&name) {
+                del(
+                    "integration instance",
+                    &name,
+                    &["integrations", "delete", &id],
+                );
+            }
+        }
+    }
+
+    // Contextual-data instances, identified by `IntegrationName`.
+    if let Some(v) = list(&[
+        "integrations",
+        "contextual-data",
+        "get",
+        "StatusPage-Tracker",
+    ]) {
+        let instances = v
+            .get("instances")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for item in instances {
+            let (Some(name), Some(id)) = (param(&item, "IntegrationName"), id_field(&item)) else {
+                continue;
+            };
+            if sweeps(&name) {
+                del(
+                    "contextual-data instance",
+                    &name,
+                    &["integrations", "contextual-data", "delete", &id],
+                );
+            }
+        }
+    }
+
+    // Extension deployments, identified by the run-unique application scope
+    // the lifecycle sets; undeployed by id.
+    if let Some(v) = list(&["integrations", "extensions", "deployed"]) {
+        for item in items(&v) {
+            let apps: Vec<&str> = item
+                .get("applications")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let Some(app) = apps.iter().find(|a| sweeps(a)) else {
+                continue;
+            };
+            let Some(id) = id_field(&item) else {
+                continue;
+            };
+            let file = harness::JsonFile::new("sweep-ext", &serde_json::json!({ "id": id }));
+            del(
+                "extension deployment",
+                app,
+                &[
+                    "integrations",
+                    "extensions",
+                    "undeploy",
+                    "--from-file",
+                    file.path(),
+                ],
+            );
+        }
+    }
+
+    (swept, failed)
 }
 
 // ── Pure helpers (no network) ───────────────────────────────────────────────
@@ -248,4 +426,14 @@ fn stale_detection_respects_run_id_and_age() {
         harness::is_stale_e2e_name("cx-e2e-probe-DELETEME", MAX_AGE),
         "unstamped cx-e2e names are leftovers"
     );
+}
+
+#[test]
+fn redact_hides_secret_fields_only() {
+    let text = r#"{"id": "k-1", "name": "cx-e2e-key", "value": "cxtp_abc", "apiKey": "x"}"#;
+    let out = harness::redact(text);
+    assert!(out.contains(r#""name": "cx-e2e-key""#));
+    assert!(out.contains(r#""value": "<redacted>""#));
+    assert!(out.contains(r#""apiKey": "<redacted>""#));
+    assert!(!out.contains("cxtp_abc"));
 }

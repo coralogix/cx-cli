@@ -159,7 +159,7 @@ while IFS=$'\t' read -r adds dels p; do
     if printf '%s\n' "$ws_only_files" | grep -qxF "$p"; then notes+=("ws-only"); fi
     if [[ "$p" =~ ^skills/[^/]+/references/([^/]+)$ ]]; then
         ref="${BASH_REMATCH[1]}"
-        if [[ -f "skills/shared/$ref" ]] && printf '%s\n' "$shared_changed" | grep -qxF "$ref"; then
+        if git cat-file -e "$HEAD:skills/shared/$ref" 2>/dev/null && printf '%s\n' "$shared_changed" | grep -qxF "$ref"; then
             notes+=("generated"); fp="yes"
         fi
     fi

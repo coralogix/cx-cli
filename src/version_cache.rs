@@ -79,13 +79,17 @@ impl VersionCheckCache {
 /// The value is generated only when missing and persisted best-effort in the
 /// existing `~/.cx/state.json` cache file.
 pub fn installation_id() -> String {
+    installation_id_created().0
+}
+
+/// Like [`installation_id`], also saying whether this call created and saved
+/// it: true exactly once per install, on its first run.
+pub fn installation_id_created() -> (String, bool) {
     let mut state = VersionCheckCache::load();
     let was_missing = state.installation_id.is_none();
     let installation_id = state.ensure_installation_id();
-    if was_missing {
-        let _ = state.save();
-    }
-    installation_id
+    let created = was_missing && state.save().is_ok();
+    (installation_id, created)
 }
 
 #[cfg(test)]

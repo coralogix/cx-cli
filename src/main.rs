@@ -18,6 +18,7 @@ use coralogix_cli::execution::build_targets;
 use coralogix_cli::onboarding;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
+use coralogix_cli::telemetry;
 use coralogix_cli::update_check;
 use coralogix_cli::Tier;
 
@@ -3378,13 +3379,36 @@ struct ProfilingFlameGraphArgs {
     top_functions: usize,
 }
 
+/// Returned by [`run`] in place of `std::process::exit(1)` once the message is
+/// printed, so [`main`] still records telemetry before exiting with code 1.
+#[derive(Debug)]
+struct SilentExit;
+
+impl std::fmt::Display for SilentExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("exit 1")
+    }
+}
+
+impl std::error::Error for SilentExit {}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Handle shell completions before any stdout output.
+    // Handle shell completions before any stdout or stderr output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.
     CompleteEnv::with_factory(Cli::command).complete();
 
+    telemetry::begin();
+    let result = run().await;
+    telemetry::finish(&result);
+    if result.as_ref().is_err_and(|e| e.is::<SilentExit>()) {
+        std::process::exit(1);
+    }
+    result
+}
+
+async fn run() -> Result<()> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
@@ -3402,7 +3426,13 @@ async fn main() -> Result<()> {
         std::env::args().nth(1).as_deref(),
         Some("profiles" | "profile")
     ) {
-        let profile_matches = ProfilesCli::command().get_matches();
+        let profile_matches = ProfilesCli::command()
+            .try_get_matches()
+            .unwrap_or_else(|e| {
+                telemetry::record_parse_error(&e);
+                e.exit()
+            });
+        telemetry::set_command(&ProfilesCli::command(), &profile_matches);
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
@@ -3450,7 +3480,11 @@ async fn main() -> Result<()> {
         );
     }
 
-    let matches = cmd.get_matches();
+    let matches = cmd.try_get_matches().unwrap_or_else(|e| {
+        telemetry::record_parse_error(&e);
+        e.exit()
+    });
+    telemetry::set_command(&Cli::command(), &matches);
     let cli = Cli::from_arg_matches(&matches)?;
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
@@ -3729,7 +3763,7 @@ async fn main() -> Result<()> {
                 // would dump the anyhow config-resolution chain (with a second,
                 // contradicting `cx profiles add` instruction) after the
                 // guidance. The two lines above are the entire first-run story.
-                std::process::exit(1);
+                return Err(SilentExit.into());
             }
             // The error already names the fix (for example `cx profiles add
             // <name>`). Exit here instead of returning it: propagating it
@@ -3738,7 +3772,7 @@ async fn main() -> Result<()> {
             // specific instruction already in the error. `{:?}` keeps a
             // single copy of the cause chain (parse errors, and so on).
             eprintln!("Configuration error: {error:?}");
-            std::process::exit(1);
+            return Err(SilentExit.into());
         }
     };
 
@@ -3747,6 +3781,7 @@ async fn main() -> Result<()> {
         no_console_link,
         cli.http_timeout.map(std::time::Duration::from_secs),
     )?;
+    telemetry::set_targets(output, &targets);
     let agent_mode = safety::is_agent_mode();
 
     // Report onboarding for any profile whose report hasn't gone through yet
@@ -5557,5 +5592,35 @@ mod tests {
     #[test]
     fn parse_completions_shell_rejects_garbage() {
         assert!(parse_completions_shell("not-a-shell").is_err());
+    }
+
+    /// Telemetry sends command and flag names only if they match the
+    /// collector's patterns (`[a-z0-9-]`); anything else would be silently
+    /// left out of `cx.command.path` / `cx.command.flags`.
+    #[test]
+    fn every_command_and_flag_name_is_a_valid_telemetry_name() {
+        use coralogix_cli::telemetry::event::{CommandFlags, CommandPath};
+        fn walk(cmd: &clap::Command, path: &mut Vec<String>) {
+            for arg in cmd.get_arguments() {
+                if let Some(long) = arg.get_long() {
+                    assert_eq!(
+                        CommandFlags::from_long_names([long]).as_str(),
+                        format!("--{long}"),
+                        "flag --{long} under `{}`",
+                        path.join(" ")
+                    );
+                }
+            }
+            for sub in cmd.get_subcommands() {
+                let name = sub.get_name();
+                path.push(name.to_string());
+                let valid = CommandPath::from_names([name]).is_some_and(|p| p.as_str() == name);
+                assert!(valid, "command `{}`", path.join(" "));
+                walk(sub, path);
+                path.pop();
+            }
+        }
+        walk(&Cli::command(), &mut Vec::new());
+        walk(&ProfilesCli::command(), &mut Vec::new());
     }
 }

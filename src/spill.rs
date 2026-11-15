@@ -120,6 +120,7 @@ fn write_to_temp(content: &str, temp_dir: &str) -> Result<PathBuf> {
     let path = Path::new(temp_dir).join(&filename);
     std::fs::write(&path, content)
         .with_context(|| format!("Failed to write results to {}", path.display()))?;
+    crate::telemetry::mark_spilled();
     Ok(path)
 }
 

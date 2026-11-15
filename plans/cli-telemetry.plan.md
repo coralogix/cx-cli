@@ -237,7 +237,7 @@ Currently `main` returns from nine places and exits from two more, and nothing r
 what ran. After this milestone every path ends in one place, which records a
 `cli.command` event.
 
-### 2.1 [ ] Invocation record and main wrapper
+### 2.1 [x] Invocation record and main wrapper *(completed 2026-11-15)*
 - **Files:** `src/main.rs`, `src/telemetry/mod.rs`
 - **What:** Add a process-wide invocation record: invocation UUID, start time,
   command path, flags, output format, profile count, spilled, team id, and a
@@ -256,7 +256,7 @@ what ran. After this milestone every path ends in one place, which records a
   - The full existing suite passes.
 - **Dependencies:** 1.2, 1.4
 
-### 2.2 [ ] Outcome details
+### 2.2 [x] Outcome details *(completed 2026-11-15)*
 - **Files:** `src/main.rs`, `src/telemetry/mod.rs`, `src/spill.rs`
 - **What:** Fill in the remaining `cli.command` attributes:
   - `cx.http.status_class` from the `CxError::Api` status (`2xx` on success for
@@ -270,7 +270,7 @@ what ran. After this milestone every path ends in one place, which records a
   - A 200 gives `success` and `2xx`.
 - **Dependencies:** 2.1
 
-### 2.3 [ ] Parse errors and first run
+### 2.3 [x] Parse errors and first run *(completed 2026-11-15)*
 - **Files:** `src/main.rs`, `src/telemetry/mod.rs`, `src/version_cache.rs`
 - **What:** Switch both parse sites to `try_get_matches`.
   - On error, record `cli.parse_error` with `cx.parse.kind` mapped from clap's error

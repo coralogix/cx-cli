@@ -298,7 +298,17 @@ mod tests {
     fn append_compacts_an_oversized_spool() {
         let spool = temp_spool("compact");
         let now = now_nanos();
-        let events: Vec<Event> = (0..3000).map(|i| event_at(now - 3000 + i)).collect();
+        // ~1 MB, well past COMPACT_ABOVE_BYTES whatever the line length (the
+        // agent name varies by environment).
+        let events: Vec<Event> = (0..6000).map(|i| event_at(now - 6000 + i)).collect();
+        let size: usize = events
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap().len() + 1)
+            .sum();
+        assert!(
+            size as u64 > COMPACT_ABOVE_BYTES * 3 / 2,
+            "test spool too small: {size}"
+        );
         append(&spool, &events).unwrap();
         let lines = fs::read_to_string(&spool).unwrap().lines().count();
         assert_eq!(lines, MAX_LINES);

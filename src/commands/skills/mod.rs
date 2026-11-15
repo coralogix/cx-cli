@@ -9,6 +9,7 @@
 use std::collections::BTreeSet;
 use std::io::IsTerminal;
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -27,6 +28,11 @@ pub const SKILLS_SOURCE: &str = "coralogix/cx-cli/skills";
 /// detection matches on this rather than [`SKILLS_SOURCE`].
 const INSTALLED_SOURCE: &str = "coralogix/cx-cli";
 
+/// The vercel-labs installer package, pinned so a new installer release never
+/// runs on users' machines untested, now that cx also runs it on its own
+/// after an upgrade. Bump it on purpose, after trying the new version.
+pub const SKILLS_PACKAGE: &str = "skills@1.8.1";
+
 /// The running cx version. Installs are pinned to its release tag.
 const CX_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -44,7 +50,7 @@ fn pinned_source(version: &str) -> String {
 
 /// The command a user can run by hand when cx fails the install.
 fn manual_install_cmd() -> String {
-    format!("npx skills add {}", pinned_source(CX_VERSION))
+    format!("npx {SKILLS_PACKAGE} add {}", pinned_source(CX_VERSION))
 }
 
 /// Where to browse the installed skills and read their contents. Shown in the
@@ -150,7 +156,7 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     // interactive walk (`run_advanced_install`) keeps full passthrough.
     println!("Installing cx agent skills…");
 
-    let output = run_npx_install(scope, &opts.agents)?;
+    let output = run_npx_install(scope, &opts.agents, Run::Foreground)?;
     if !output.status.success() {
         // Show the installer's own diagnostics before the retry hint. Node
         // CLIs report errors on either stream, so surface both.
@@ -178,24 +184,123 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     Ok(InstallOutcome::Installed)
 }
 
+/// How the installer runs: attached to the user's terminal, or inside the
+/// detached `cx skills auto-refresh`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Run {
+    Foreground,
+    Background,
+}
+
+/// How long the background refresh lets the installer run before it stops it.
+/// Shorter than [`RefreshLock::STALE_AFTER`], so a stopped run never overlaps
+/// the next one.
+const BACKGROUND_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 /// Run the non-interactive install from this version's release tag. If the
 /// tag does not exist yet, retry once from the default branch, so a missing
 /// tag never blocks the install. Any other failure (network, auth, installer)
 /// is returned as is: falling back then would install unpinned skills that
 /// may not match this binary.
-fn run_npx_install(scope: SkillsScope, agents: &[String]) -> Result<std::process::Output> {
+fn run_npx_install(
+    scope: SkillsScope,
+    agents: &[String],
+    run: Run,
+) -> Result<std::process::Output> {
+    let install = |source: &str| {
+        let mut cmd = Command::new(npx_program());
+        cmd.args(build_install_args(source, scope, agents));
+        match run {
+            Run::Foreground => cmd.output().context("failed to run npx"),
+            Run::Background => output_in_background(cmd, BACKGROUND_TIMEOUT),
+        }
+    };
     let pinned = pinned_source(CX_VERSION);
-    let output = Command::new(npx_program())
-        .args(build_install_args(&pinned, scope, agents))
-        .output()
-        .context("failed to run npx")?;
+    let output = install(&pinned)?;
     if output.status.success() || pinned == SKILLS_SOURCE || !is_missing_ref(&output) {
         return Ok(output);
     }
-    Command::new(npx_program())
-        .args(build_install_args(SKILLS_SOURCE, scope, agents))
-        .output()
-        .context("failed to run npx")
+    install(SKILLS_SOURCE)
+}
+
+/// Run `cmd` with its output captured, for the background refresh:
+/// - with no console window on Windows (`npx.cmd` runs through `cmd.exe`, and
+///   the detached refresh has no console to share, so Windows would open one);
+/// - in its own process group on Unix, so a stop also ends the node processes
+///   that `npx` starts;
+/// - stopped after `timeout`, so an installer that hangs (a proxy, a registry
+///   login prompt) does not stay forever.
+fn output_in_background(mut cmd: Command, timeout: Duration) -> Result<std::process::Output> {
+    use std::io::Read;
+    use std::process::Stdio;
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to run npx")?;
+    // Read both pipes while waiting, so a full pipe never blocks the child.
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as _));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as _));
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            stop_process_tree(&mut child);
+            bail!(
+                "skills installer did not finish within {}s",
+                timeout.as_secs()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    Ok(std::process::Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
+}
+
+/// Stop `child` and everything it started.
+fn stop_process_tree(child: &mut std::process::Child) {
+    let pid = child.id().to_string();
+    #[cfg(unix)]
+    let _ = Command::new("kill")
+        .args(["-KILL", "--", &format!("-{pid}")])
+        .status();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// True when the installer failed because the git ref (the release tag) does
@@ -222,7 +327,7 @@ pub fn run_auto_refresh() -> Result<()> {
         return Ok(());
     };
     let agents = crate::version_cache::VersionCheckCache::load().skills_agents;
-    let output = run_npx_install(SkillsScope::Global, &agents)?;
+    let output = run_npx_install(SkillsScope::Global, &agents, Run::Background)?;
     if output.status.success() {
         crate::version_cache::record_global_skills_install(&agents);
     }
@@ -306,9 +411,9 @@ fn print_install_summary(scope: SkillsScope) {
 /// walk its full interactive flow (skill/agent selection, scope, method).
 pub fn run_advanced_install() -> Result<()> {
     let source = pinned_source(CX_VERSION);
-    println!("Running the skills installer interactively: npx skills add {source}");
+    println!("Running the skills installer interactively: npx {SKILLS_PACKAGE} add {source}");
     let status = Command::new(npx_program())
-        .args(["skills", "add", &source])
+        .args([SKILLS_PACKAGE, "add", &source])
         .status()
         .context(
             "failed to run npx - Node.js is required for the skills install \
@@ -360,7 +465,7 @@ struct LsSkill {
 /// the installer's default is symlink, which preserves it.
 fn installed_cx_skills(scope: SkillsScope) -> Vec<String> {
     let mut cmd = Command::new(npx_program());
-    cmd.args(["-y", "skills", "ls"]);
+    cmd.args(["-y", SKILLS_PACKAGE, "ls"]);
     if scope == SkillsScope::Global {
         cmd.arg("-g");
     }
@@ -466,7 +571,7 @@ fn lock_cx_skills(contents: &str) -> Option<LockedCxSkills> {
 fn build_install_args(source: &str, scope: SkillsScope, agents: &[String]) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-y".into(),
-        "skills".into(),
+        SKILLS_PACKAGE.into(),
         "add".into(),
         source.into(),
         "--skill".into(),
@@ -523,7 +628,15 @@ mod tests {
         let args = build_install_args(SKILLS_SOURCE, SkillsScope::Local, &[]);
         assert_eq!(
             args,
-            ["-y", "skills", "add", SKILLS_SOURCE, "--skill", "*", "-y"]
+            [
+                "-y",
+                SKILLS_PACKAGE,
+                "add",
+                SKILLS_SOURCE,
+                "--skill",
+                "*",
+                "-y"
+            ]
         );
     }
 
@@ -534,7 +647,7 @@ mod tests {
             args,
             [
                 "-y",
-                "skills",
+                SKILLS_PACKAGE,
                 "add",
                 SKILLS_SOURCE,
                 "--skill",
@@ -556,7 +669,7 @@ mod tests {
             args,
             [
                 "-y",
-                "skills",
+                SKILLS_PACKAGE,
                 "add",
                 SKILLS_SOURCE,
                 "--skill",
@@ -586,6 +699,42 @@ mod tests {
             global_lock_path(None, home),
             Some(PathBuf::from("/home/u/.agents/.skill-lock.json"))
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn background_run_stops_a_hung_installer_and_its_children() {
+        let pid_file = std::env::temp_dir().join(format!("cx-hung-{}", std::process::id()));
+        let mut cmd = Command::new("sh");
+        // A child that would outlive its parent, like the node process npx starts.
+        cmd.args([
+            "-c",
+            &format!("sleep 30 & echo $! > {}; wait", pid_file.display()),
+        ]);
+        let started = std::time::Instant::now();
+        let err = output_in_background(cmd, Duration::from_millis(500)).unwrap_err();
+        assert!(err.to_string().contains("did not finish"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        let grandchild = std::fs::read_to_string(&pid_file).unwrap();
+        let _ = std::fs::remove_file(&pid_file);
+        let alive = Command::new("kill")
+            .args(["-0", grandchild.trim()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success();
+        assert!(!alive, "the installer's child must be stopped too");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn background_run_returns_the_installer_output() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo out; echo err >&2; exit 3"]);
+        let output = output_in_background(cmd, Duration::from_secs(10)).unwrap();
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout, b"out\n");
+        assert_eq!(output.stderr, b"err\n");
     }
 
     #[cfg(unix)]

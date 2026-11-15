@@ -50,7 +50,7 @@ fn install_fake_npx(dir: &Path, args_file: &Path, project_json: &str, global_jso
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then\n\
+         if [ \"$2\" = \"skills@1.8.1\" ] && [ \"$3\" = \"ls\" ]; then\n\
            for a in \"$@\"; do\n\
              if [ \"$a\" = \"-g\" ]; then echo '{global_json}'; exit 0; fi\n\
            done\n\
@@ -121,7 +121,7 @@ fn install_global_runs_fully_noninteractive_command() {
     assert_eq!(
         recorded.trim(),
         format!(
-            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g",
+            "-y skills@1.8.1 add coralogix/cx-cli/skills#v{} --skill * -y -g",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -152,7 +152,7 @@ fn install_local_with_agents_passes_them_through() {
     assert_eq!(
         recorded.trim(),
         format!(
-            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -a claude-code cursor",
+            "-y skills@1.8.1 add coralogix/cx-cli/skills#v{} --skill * -y -a claude-code cursor",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -177,7 +177,7 @@ fn install_interactive_runs_the_raw_installer() {
     assert_eq!(
         recorded.trim(),
         format!(
-            "skills add coralogix/cx-cli/skills#v{}",
+            "skills@1.8.1 add coralogix/cx-cli/skills#v{}",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -263,7 +263,7 @@ fn noninteractive_install_hides_installer_output_and_summarizes() {
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '{ls_json}'; exit 0; fi\n\
+         if [ \"$2\" = \"skills@1.8.1\" ] && [ \"$3\" = \"ls\" ]; then echo '{ls_json}'; exit 0; fi\n\
          echo 'BANNER_LINE_SHOULD_BE_HIDDEN'; exit 0\n"
     );
     let npx = bin.join("npx");
@@ -297,7 +297,7 @@ fn noninteractive_install_failure_surfaces_installer_stderr() {
 
     let script = "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         if [ \"$2\" = \"skills@1.8.1\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
          echo 'INSTALLER_BOOM' 1>&2; exit 1\n";
     let npx = bin.join("npx");
     fs::write(&npx, script).unwrap();
@@ -326,7 +326,7 @@ fn noninteractive_install_failure_surfaces_installer_stdout() {
 
     let script = "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         if [ \"$2\" = \"skills@1.8.1\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
          echo 'INSTALLER_STDOUT_BOOM'; exit 1\n";
     let npx = bin.join("npx");
     fs::write(&npx, script).unwrap();
@@ -469,7 +469,7 @@ fn install_fake_npx_failing_tag(dir: &Path, args_file: &Path, tag_failure: &str)
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         if [ \"$2\" = \"skills@1.8.1\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
          case \"$4\" in *#*) echo '{tag_failure}'; exit 1;; esac\n\
          echo \"$@\" > \"{}\"\n",
         args_file.display()
@@ -501,7 +501,7 @@ fn install_falls_back_to_default_branch_when_tag_is_missing() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli/skills --skill * -y -g"
+        "-y skills@1.8.1 add coralogix/cx-cli/skills --skill * -y -g"
     );
 }
 
@@ -585,7 +585,7 @@ fn outdated_global_skills_refresh_in_the_background() {
     assert_eq!(
         recorded.trim(),
         format!(
-            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g -a cursor",
+            "-y skills@1.8.1 add coralogix/cx-cli/skills#v{} --skill * -y -g -a cursor",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -673,7 +673,7 @@ fn unrecorded_old_skills_refresh_with_auto_detected_agents() {
     assert_eq!(
         recorded.trim(),
         format!(
-            "-y skills add coralogix/cx-cli/skills#v{} --skill * -y -g",
+            "-y skills@1.8.1 add coralogix/cx-cli/skills#v{} --skill * -y -g",
             env!("CARGO_PKG_VERSION")
         )
     );

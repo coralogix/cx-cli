@@ -22,6 +22,10 @@ pub struct VersionCheckCache {
     /// Optional so existing state files continue to deserialize. A UUID is
     /// generated and persisted on the next command invocation when absent.
     pub installation_id: Option<String>,
+
+    /// Set once the telemetry notice has been printed (see `telemetry::consent`).
+    #[serde(default)]
+    pub telemetry_notice_shown: bool,
 }
 
 impl VersionCheckCache {

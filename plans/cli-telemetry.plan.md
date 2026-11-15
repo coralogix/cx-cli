@@ -176,7 +176,7 @@ With any opt-out set, no event is built and no spool file is created.
   - Flags set from env vars are not included.
 - **Dependencies:** 1.1
 
-### 1.3 [ ] Consent and first-run notice
+### 1.3 [x] Consent and first-run notice *(completed 2026-11-15)*
 - **Files:** `src/telemetry/consent.rs`, `src/config.rs`, `src/version_cache.rs`, `src/update_check.rs`
 - **What:** One function returning `Off`, `Log` or `On`, from the env vars and the
   new `telemetry` config key. `On` also requires an endpoint.
@@ -193,7 +193,7 @@ With any opt-out set, no event is built and no spool file is created.
   - Existing state files without the new fields still deserialize.
 - **Dependencies:** 1.1
 
-### 1.4 [ ] Spool and inspect mode
+### 1.4 [x] Spool and inspect mode *(completed 2026-11-15)*
 - **Files:** `src/telemetry/spool.rs`, `src/telemetry/mod.rs`
 - **What:** `record(event)`:
   - In `Log` mode, print `cx telemetry: <event JSON>` to stderr.

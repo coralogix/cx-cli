@@ -42,8 +42,7 @@ pub async fn fetch_if_stale() {
         return;
     }
 
-    let mut state = VersionCheckCache::load();
-    if !state.check_is_stale() {
+    if !VersionCheckCache::load().check_is_stale() {
         return;
     }
 
@@ -55,17 +54,19 @@ pub async fn fetch_if_stale() {
         return;
     };
 
-    if let Some(v) = fetch_latest_binary(&client).await {
-        state.latest_binary = Some(v);
-    }
+    let latest = fetch_latest_binary(&client).await;
 
+    // Reload after the fetch: the command may have written other fields
+    // (installation id, telemetry state) meanwhile, and saving a copy loaded
+    // before the fetch would undo them.
+    let mut state = VersionCheckCache::load();
+    if latest.is_some() {
+        state.latest_binary = latest;
+    }
     // Always update the timestamp, even when fetches fail (e.g. GitHub is
     // unreachable).  This prevents hammering the API on every command during
     // an outage — we accept missing one 24 h window rather than spamming.
     state.last_checked_at = Some(Utc::now());
-    state.installation_id = VersionCheckCache::load()
-        .installation_id
-        .or(state.installation_id);
     let _ = state.save();
 }
 

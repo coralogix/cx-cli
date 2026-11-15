@@ -235,6 +235,11 @@ pub struct Config {
     #[serde(default)]
     pub no_console_link: bool,
 
+    /// Usage telemetry. `false` opts out, like `CX_TELEMETRY=0` or
+    /// `DO_NOT_TRACK=1`.
+    #[serde(default = "default_true")]
+    pub telemetry: bool,
+
     /// Shell completion scripts installed and tracked by `cx completions install`.
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -279,6 +284,7 @@ impl Default for Config {
             read_only: false,
             strict_fields_validation: false,
             no_console_link: false,
+            telemetry: true,
             managed_completions: vec![],
         }
     }

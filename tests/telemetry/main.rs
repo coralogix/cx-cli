@@ -655,3 +655,41 @@ fn update_notice_is_recorded_with_a_strict_version_only() {
         }
     }
 }
+
+// ── Review follow-ups ─────────────────────────────────────────────────────────
+
+#[test]
+fn config_opt_out_holds_when_another_key_is_invalid() {
+    let home = temp_home();
+    fs::create_dir_all(home.join(".cx")).unwrap();
+    // read_only must be a bool, so the full config fails to parse.
+    fs::write(
+        home.join(".cx").join("config.toml"),
+        "telemetry = false\nread_only = \"yes\"\n",
+    )
+    .unwrap();
+    let r = run(cx(&home)
+        .env("CX_TELEMETRY_ENDPOINT", DEAD_ENDPOINT)
+        .args(["schema"]));
+    assert!(!spool(&home).exists(), "{}", r.stderr);
+    assert!(!r.stderr.contains("collects usage data"));
+}
+
+#[test]
+fn upgrading_an_existing_install_is_not_a_first_run() {
+    let home = temp_home();
+    // A state file written by a version before telemetry: no installation id.
+    write_state(&home, serde_json::json!({ "latest_binary": null }));
+    let r = run(log_mode(&home).args(["dataprime", "list"]));
+    assert!(r.named("cli.first_run").is_empty(), "{}", r.stderr);
+    assert_eq!(r.command_event()["cx.command.path"], "dataprime list");
+}
+
+#[test]
+fn mistyped_profile_is_a_usage_error() {
+    let home = temp_home();
+    write_profile(&home, "real", "http://127.0.0.1:1", "");
+    let r = run(log_mode(&home).args(["--profile", "nope", "alerts", "list"]));
+    assert_eq!(r.code, 1);
+    assert_eq!(r.command_event()["cx.error.class"], "usage");
+}

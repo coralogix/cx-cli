@@ -82,10 +82,6 @@ chmod +x "$WORK/bin/npx"
 scenario() {
   local home=$1 mode=$2
   mkdir -p "$home/project"
-  # An upgrade (version_changed) with a newer release cached (update_notice).
-  printf '{"last_checked_at":"%s","latest_binary":"99.0.0","last_run_version":"0.0.1"}' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$home/state.json.seed"
-  mkdir -p "$home/.cx" && mv "$home/state.json.seed" "$home/.cx/state.json"
   run_cx() {
     local telemetry=()
     if [ "$mode" = log ]; then telemetry=(CX_TELEMETRY=log); else telemetry=(CX_TELEMETRY_ENDPOINT="$ENDPOINT"); fi
@@ -94,8 +90,18 @@ scenario() {
       HOME="$home" CX_HOME="$home" CX_CREDENTIAL_STORAGE=file "${telemetry[@]}" "$@" \
       >/dev/null 2>>"$home/stderr.txt") || true
   }
-  run_cx "$CX" dataprime list --name SENTINEL_SECRET   # first_run, version_changed, command
-  run_cx "$CX" alertz list                             # parse_error
+  run_cx "$CX" dataprime list --name SENTINEL_SECRET   # first_run (fresh home), command
+  # Pretend the install was upgraded (version_changed) and a newer release is
+  # cached (update_notice), keeping the install id the first run created.
+  python3 -c '
+import datetime, json, sys
+path = sys.argv[1]
+state = json.load(open(path))
+state.update(last_run_version="0.0.1", latest_binary="99.0.0",
+             last_checked_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+json.dump(state, open(path, "w"))
+' "$home/.cx/state.json"
+  run_cx "$CX" alertz list                             # version_changed, parse_error
   run_cx "$CX" profiles add check --api-key k --url "http://127.0.0.1:$STUB_PORT"  # profile_added (flushes)
   run_cx env PATH="$WORK/bin" "$CX" skills install --global  # skills_install
   run_cx "$CX" alerts delete abc --yes                 # confirm (flushes)

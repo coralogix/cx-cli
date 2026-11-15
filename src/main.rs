@@ -3397,17 +3397,29 @@ impl std::error::Error for SilentExit {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     // Handle shell completions before any stdout or stderr output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.
     CompleteEnv::with_factory(Cli::command).complete();
 
-    telemetry::begin();
-    let result = run().await;
-    telemetry::finish(&result);
-    telemetry::flush().await;
+    // What `#[tokio::main]` builds, but with a bounded shutdown: a DNS lookup
+    // runs on a blocking thread that a timeout can't stop, and dropping the
+    // runtime would wait for it, so a flush cut off at its 400 ms budget
+    // could still hold the process open for seconds.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to build the tokio runtime");
+    let result = runtime.block_on(async {
+        telemetry::begin();
+        let result = run().await;
+        telemetry::finish(&result);
+        telemetry::flush().await;
+        result
+    });
+    runtime.shutdown_timeout(std::time::Duration::from_millis(100));
+
     if result.as_ref().is_err_and(|e| e.is::<SilentExit>()) {
         std::process::exit(1);
     }

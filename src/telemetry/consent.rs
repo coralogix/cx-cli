@@ -27,12 +27,32 @@ pub enum Mode {
 /// endpoint.
 pub fn mode() -> Mode {
     let env = |var| std::env::var(var).ok();
+    let config = crate::config::config_file()
+        .ok()
+        .map(|path| std::fs::read_to_string(path).map_err(|e| e.kind()));
     decide(
         env("CX_TELEMETRY").as_deref(),
         env("DO_NOT_TRACK").as_deref(),
-        crate::config::load_config().map_or(true, |c| c.telemetry),
+        config_allows(config),
         env("CX_TELEMETRY_ENDPOINT").or(BUILD_ENDPOINT.map(str::to_string)),
     )
+}
+
+/// The `telemetry` key alone, so an error elsewhere in config.toml (or a key
+/// from a newer cx) can't turn an opt-out back on. A config that exists but
+/// can't be read or parsed counts as an opt-out: it may hold one.
+fn config_allows(config: Option<Result<String, std::io::ErrorKind>>) -> bool {
+    let raw = match config {
+        None | Some(Err(std::io::ErrorKind::NotFound)) => return true,
+        Some(Err(_)) => return false,
+        Some(Ok(raw)) => raw,
+    };
+    match raw.parse::<toml::Table>() {
+        Ok(table) => table
+            .get("telemetry")
+            .is_none_or(|v| v.as_bool() == Some(true)),
+        Err(_) => false,
+    }
 }
 
 /// `CX_TELEMETRY` is the most specific switch, so it wins either way; then any
@@ -62,17 +82,21 @@ fn decide(
     }
 }
 
-/// Print the notice once, on stderr. Returns whether recording may go ahead:
-/// false when the notice cannot be marked as shown, so no event is ever
-/// recorded without the user having seen it.
+/// Print the notice once, on stderr. Returns whether recording may go ahead.
+/// The flag is saved first and the notice printed only if that worked: where
+/// `~/.cx` is read-only nothing can be recorded anyway, and the notice must
+/// not repeat on every run.
 pub fn ensure_notice_shown() -> bool {
     let mut state = VersionCheckCache::load();
     if state.telemetry_notice_shown {
         return true;
     }
-    eprintln!("{NOTICE}");
     state.telemetry_notice_shown = true;
-    state.save().is_ok()
+    if state.save().is_err() {
+        return false;
+    }
+    eprintln!("{NOTICE}");
+    true
 }
 
 #[cfg(test)]
@@ -104,6 +128,27 @@ mod tests {
         assert_eq!(decide(Some("log"), Some("1"), false, None), Mode::Log);
         // An unrecognised value does not opt out on its own.
         assert_eq!(decide(Some("1"), None, true, ep()), on());
+    }
+
+    #[test]
+    fn config_opt_out_survives_other_config_errors() {
+        let file = |s: &str| Some(Ok(s.to_string()));
+        assert!(config_allows(None));
+        assert!(config_allows(Some(Err(std::io::ErrorKind::NotFound))));
+        assert!(config_allows(file("read_only = true\n")));
+        assert!(config_allows(file("telemetry = true\n")));
+        assert!(!config_allows(file("telemetry = false\n")));
+        // A bad value for another key breaks the Config parse, not this one.
+        assert!(!config_allows(file(
+            "telemetry = false\nread_only = \"yes\"\n"
+        )));
+        // Not a bool: read as an opt-out rather than guessed on.
+        assert!(!config_allows(file("telemetry = \"false\"\n")));
+        // Unparseable or unreadable: it may hold an opt-out.
+        assert!(!config_allows(file("telemetry = = false")));
+        assert!(!config_allows(Some(Err(
+            std::io::ErrorKind::PermissionDenied
+        ))));
     }
 
     #[test]

@@ -25,7 +25,7 @@ use event::{
 use uuid::Uuid;
 
 use crate::config::OutputFormat;
-use crate::error::CxError;
+use crate::error::{CxError, Explained};
 use crate::execution::ExecutionTarget;
 
 static MODE: OnceLock<Mode> = OnceLock::new();
@@ -98,14 +98,14 @@ fn log_line(event: &Event) -> String {
 
 // ── Per-run lifecycle, driven by `main` ───────────────────────────────────────
 
-/// Start timing the run. Records `cli.first_run` when this run created the
-/// install id, and `cli.version_changed` on the first run of a new version.
+/// Start timing the run. Records `cli.first_run` on a new install's first
+/// run, and `cli.version_changed` on the first run of a new version.
 pub fn begin() {
     invocation().start = Some(Instant::now());
     if off() {
         return;
     }
-    if crate::version_cache::installation_id_created().1 {
+    if crate::version_cache::installation_id_first_run().1 {
         record(EventKind::FirstRun);
     }
     let current = env!("CARGO_PKG_VERSION");
@@ -149,7 +149,8 @@ pub fn set_targets(output: OutputFormat, targets: &[Arc<ExecutionTarget>]) {
     };
     let mut inv = invocation();
     inv.output_format = Some(output);
-    inv.profile_count = u32::try_from(targets.len()).unwrap_or(u32::MAX);
+    // The collector drops counts above 50; report 50 for more.
+    inv.profile_count = u32::try_from(targets.len().min(50)).unwrap_or(50);
     inv.team_id = team_id;
     inv.network = true;
 }
@@ -304,7 +305,11 @@ fn classify(result: &anyhow::Result<()>, network: bool) -> (Outcome, ErrorClass,
     if cancelled {
         return (Outcome::Cancelled, ErrorClass::None, StatusClass::None);
     }
-    let (class, status) = match err.chain().find_map(|e| e.downcast_ref::<CxError>()) {
+    let cx_error = err.chain().find_map(|e| {
+        e.downcast_ref::<CxError>()
+            .or_else(|| e.downcast_ref::<Explained>().map(|x| &x.cause))
+    });
+    let (class, status) = match cx_error {
         Some(CxError::Auth(_)) => (ErrorClass::Auth, StatusClass::Client4xx),
         Some(CxError::Permission(_)) => (ErrorClass::Permission, StatusClass::Client4xx),
         Some(CxError::Api { status, .. }) => (ErrorClass::Api, StatusClass::from_status(*status)),
@@ -312,14 +317,14 @@ fn classify(result: &anyhow::Result<()>, network: bool) -> (Outcome, ErrorClass,
         Some(CxError::Timeout) => (ErrorClass::Timeout, StatusClass::None),
         Some(CxError::Http(_)) => (ErrorClass::Http, StatusClass::None),
         Some(CxError::Json(_)) => (ErrorClass::Json, StatusClass::None),
-        Some(CxError::Io(_)) => (ErrorClass::Io, StatusClass::None),
+        Some(CxError::Io(e)) => (io_class(e), StatusClass::None),
         Some(CxError::QueryStream(_)) => (ErrorClass::QueryStream, StatusClass::None),
         // Not a CxError: an untyped I/O or HTTP error, else a usage or
         // configuration error raised with `bail!`.
         None => {
             let class = err.chain().find_map(|e| {
-                if e.is::<std::io::Error>() {
-                    Some(ErrorClass::Io)
+                if let Some(io) = e.downcast_ref::<std::io::Error>() {
+                    Some(io_class(io))
                 } else {
                     e.downcast_ref::<reqwest::Error>().map(|r| {
                         if r.is_timeout() {
@@ -334,6 +339,16 @@ fn classify(result: &anyhow::Result<()>, network: bool) -> (Outcome, ErrorClass,
         }
     };
     (Outcome::Error, class, status)
+}
+
+/// A file the user named that doesn't exist (a mistyped `--profile`, a wrong
+/// path) is a usage error; other I/O errors are `io`.
+fn io_class(err: &std::io::Error) -> ErrorClass {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        ErrorClass::Usage
+    } else {
+        ErrorClass::Io
+    }
 }
 
 /// Record `cli.parse_error` for a clap error. Help and version requests are
@@ -379,10 +394,26 @@ mod tests {
         let auth: anyhow::Result<()> = Err(CxError::Auth("bad key".into()).into());
         assert_eq!(classify(&auth, true).1, ErrorClass::Auth);
 
+        let explained: anyhow::Result<()> = Err(Explained {
+            message: "authentication failed — bad key".into(),
+            cause: CxError::Auth("bad key".into()),
+        }
+        .into());
+        assert_eq!(
+            classify(&explained, true),
+            (Outcome::Error, ErrorClass::Auth, StatusClass::Client4xx)
+        );
+
         let io: anyhow::Result<()> =
             Err(anyhow::Error::from(std::io::Error::other("disk"))
                 .context("writing the result file"));
         assert_eq!(classify(&io, false).1, ErrorClass::Io);
+
+        let missing: anyhow::Result<()> = Err(anyhow::Error::from(std::io::Error::from(
+            std::io::ErrorKind::NotFound,
+        ))
+        .context("Profile 'nope' not found"));
+        assert_eq!(classify(&missing, false).1, ErrorClass::Usage);
 
         let usage: anyhow::Result<()> = Err(anyhow!("Cannot combine --profile with --api-key"));
         assert_eq!(classify(&usage, false).1, ErrorClass::Usage);

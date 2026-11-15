@@ -64,7 +64,14 @@ impl VersionCheckCache {
             std::fs::create_dir_all(parent)?;
         }
         let contents = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, contents)?;
+        // Write a unique temp file, then rename it over the state file, so a
+        // concurrent `cx` never reads a half-written file (and falls back to
+        // defaults, wiping every field on its next save).
+        let tmp = path.with_extension(format!("json.{}.tmp", Uuid::new_v4()));
+        std::fs::write(&tmp, contents)?;
+        std::fs::rename(&tmp, &path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })?;
         Ok(())
     }
 
@@ -88,17 +95,20 @@ impl VersionCheckCache {
 /// The value is generated only when missing and persisted best-effort in the
 /// existing `~/.cx/state.json` cache file.
 pub fn installation_id() -> String {
-    installation_id_created().0
+    installation_id_first_run().0
 }
 
-/// Like [`installation_id`], also saying whether this call created and saved
-/// it: true exactly once per install, on its first run.
-pub fn installation_id_created() -> (String, bool) {
+/// Like [`installation_id`], also saying whether this is the install's first
+/// run: `state.json` did not exist and was created now. An existing state file
+/// without an id (written by versions before telemetry) is an upgrade, not a
+/// new install.
+pub fn installation_id_first_run() -> (String, bool) {
+    let existed = VersionCheckCache::path().is_some_and(|p| p.exists());
     let mut state = VersionCheckCache::load();
     let was_missing = state.installation_id.is_none();
     let installation_id = state.ensure_installation_id();
-    let created = was_missing && state.save().is_ok();
-    (installation_id, created)
+    let saved = was_missing && state.save().is_ok();
+    (installation_id, !existed && saved)
 }
 
 #[cfg(test)]

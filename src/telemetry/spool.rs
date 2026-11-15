@@ -31,11 +31,24 @@ pub fn path() -> Option<PathBuf> {
         .map(|d| d.join("telemetry-spool.jsonl"))
 }
 
-/// Append events as a single write, so concurrent appenders don't
-/// interleave.
+/// Append events, compacting the spool once it grows past
+/// [`COMPACT_ABOVE_BYTES`].
 pub fn append(spool: &Path, events: &[Event]) -> io::Result<()> {
+    if write_lines(spool, events)? > COMPACT_ABOVE_BYTES {
+        // Through take/finish, like a flush, so concurrent appends and
+        // flushes are neither lost nor duplicated.
+        let taken = take(spool, &uuid::Uuid::new_v4().to_string());
+        let kept = taken.events.clone();
+        taken.finish(spool, &kept);
+    }
+    Ok(())
+}
+
+/// Append events as a single write, so concurrent appenders don't
+/// interleave. Returns the spool's size afterwards.
+fn write_lines(spool: &Path, events: &[Event]) -> io::Result<u64> {
     if events.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     let mut lines = String::new();
     for event in events {
@@ -47,23 +60,7 @@ pub fn append(spool: &Path, events: &[Event]) -> io::Result<()> {
     }
     let mut file = OpenOptions::new().create(true).append(true).open(spool)?;
     file.write_all(lines.as_bytes())?;
-    if file.metadata()?.len() > COMPACT_ABOVE_BYTES {
-        compact(spool)?;
-    }
-    Ok(())
-}
-
-/// Rewrite the spool keeping only what [`parse`] keeps.
-fn compact(spool: &Path) -> io::Result<()> {
-    let kept = parse(&fs::read_to_string(spool)?, now_nanos());
-    let tmp = with_suffix(spool, ".compact");
-    let mut lines = String::new();
-    for event in &kept {
-        lines.push_str(&serde_json::to_string(event)?);
-        lines.push('\n');
-    }
-    fs::write(&tmp, lines)?;
-    fs::rename(tmp, spool)
+    Ok(file.metadata()?.len())
 }
 
 /// Valid, unexpired events, oldest first, at most the newest [`MAX_LINES`].
@@ -89,7 +86,8 @@ pub struct Taken {
 impl Taken {
     /// Put `unsent` back in the spool, then delete the `.sending` files.
     pub fn finish(self, spool: &Path, unsent: &[Event]) {
-        if append(spool, unsent).is_err() {
+        // At most MAX_LINES events, so no compaction is needed.
+        if write_lines(spool, unsent).is_err() {
             // Keep the `.sending` files: the next flush retries them.
             return;
         }
@@ -104,22 +102,17 @@ impl Taken {
 pub fn take(spool: &Path, token: &str) -> Taken {
     let mut files = Vec::new();
     let mine = with_suffix(spool, &format!(".{token}{SENDING_SUFFIX}"));
-    if fs::rename(spool, &mine).is_ok() {
-        // A rename keeps the modified time of the last append. Restamp it so
-        // the file's age is the flush's age, or another process could take
-        // this in-progress flush for an abandoned one.
-        let _ = fs::File::options()
-            .append(true)
-            .open(&mine)
-            .and_then(|f| f.set_modified(SystemTime::now()));
+    if claim(spool, &mine) {
         files.push(mine);
     }
-    let taken_already = files.clone();
-    files.extend(
-        abandoned(spool)
-            .into_iter()
-            .filter(|f| !taken_already.contains(f)),
-    );
+    // Claim abandoned files by renaming them too: if two processes see the
+    // same one, only the rename that wins reads it.
+    for (i, file) in abandoned(spool).into_iter().enumerate() {
+        let claimed = with_suffix(spool, &format!(".{token}-{i}{SENDING_SUFFIX}"));
+        if claim(&file, &claimed) {
+            files.push(claimed);
+        }
+    }
 
     let contents: String = files
         .iter()
@@ -130,6 +123,20 @@ pub fn take(spool: &Path, token: &str) -> Taken {
         events: parse(&contents, now_nanos()),
         files,
     }
+}
+
+/// Rename `from` to `to`, then restamp it: a rename keeps the modified time
+/// of the last write, and the age must be this flush's, or another process
+/// could take the in-progress flush for an abandoned one.
+fn claim(from: &Path, to: &Path) -> bool {
+    if fs::rename(from, to).is_err() {
+        return false;
+    }
+    let _ = fs::File::options()
+        .append(true)
+        .open(to)
+        .and_then(|f| f.set_modified(SystemTime::now()));
+    true
 }
 
 /// `.sending` files next to `spool` older than [`ABANDONED_AFTER`]. A younger

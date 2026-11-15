@@ -122,3 +122,31 @@ async fn list_send_data_keys_fails_when_both_sources_fail() {
         .await
         .is_err());
 }
+
+#[tokio::test]
+async fn admin_set_status_posts_per_key_updates() {
+    use wiremock::matchers::body_json;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/aaa/api-keys/v3/all/status"))
+        .and(body_json(json!({
+            "updates": [
+                { "keyId": "key-1", "active": false },
+                { "keyId": "key-2", "active": false }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    coralogix_cli::commands::api_keys::run_admin_set_status(
+        &targets,
+        &["key-1".to_string(), "key-2".to_string()],
+        false,
+    )
+    .await
+    .expect("run_admin_set_status should succeed");
+}

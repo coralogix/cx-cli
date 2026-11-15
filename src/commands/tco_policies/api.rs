@@ -99,6 +99,9 @@ pub struct TcoSettingsResponse {
 
 const TCO_POLICIES_BASE: &str = "/mgmt/openapi/5/dataplans/policies/v1";
 const TCO_POLICY_SETTINGS_BASE: &str = "/mgmt/openapi/5/dataplans/policy-settings/v1";
+/// The replace endpoint is only served under this misspelled path (see the
+/// "Replace Policy Settings" API reference); `policy-settings` answers 405.
+const TCO_POLICY_SETTINGS_REPLACE: &str = "/mgmt/openapi/5/dataplans/policiy-settings/v1";
 
 pub struct TcoPoliciesApi<'a> {
     client: &'a CxClient,
@@ -146,7 +149,7 @@ impl<'a> TcoPoliciesApi<'a> {
     }
 
     pub async fn replace_settings(&self, body: &Value) -> Result<Value> {
-        self.client.put(TCO_POLICY_SETTINGS_BASE, body).await
+        self.client.post(TCO_POLICY_SETTINGS_REPLACE, body).await
     }
 }
 

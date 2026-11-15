@@ -538,7 +538,6 @@ Examples:
   cx e2m create --from-file e2m.json
   cx e2m update --from-file e2m.json
   cx e2m delete <e2m-id>
-  cx e2m labels-cardinality
   cx e2m limits")]
     E2m {
         #[command(subcommand)]
@@ -1841,7 +1840,10 @@ enum E2mCmd {
         /// E2M definition ID.
         id: String,
     },
-    /// Get E2M labels cardinality.
+    /// Get E2M labels cardinality. Hidden: the REST gateway cannot accept the
+    /// draft's metric labels, so the forecast is always empty; the command
+    /// exits with an error that points to the UI until that changes.
+    #[command(hide = true)]
     LabelsCardinality,
     /// Get E2M limits.
     Limits,
@@ -1932,7 +1934,7 @@ enum EnrichmentsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Overwrite all enrichment rules from a JSON file [requires --yes].
+    /// Replace ALL enrichment rules from a JSON file; custom enrichment tables the file does not reference are deleted too [requires --yes].
     Overwrite {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1981,7 +1983,7 @@ enum CustomEnrichmentsCmd {
         /// Custom enrichment table ID.
         id: String,
     },
-    /// Search data in a custom enrichment table.
+    /// Search rows in a custom enrichment table (downloads every table's full content, then filters locally).
     Search {
         /// Custom enrichment table ID.
         #[arg(long)]
@@ -2039,8 +2041,12 @@ enum IntegrationsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Get integration template.
-    Template,
+    /// Get the deployment template of a deployed integration.
+    Template {
+        /// Deployed integration (instance) ID, as listed by `integrations get <key>`.
+        #[arg(long)]
+        integration_id: String,
+    },
     /// Manage extensions.
     #[command(after_help = "\
 Examples:
@@ -4395,7 +4401,12 @@ async fn main() -> Result<()> {
                     commands::e2m::run_delete(&targets, &id).await?;
                 }
                 E2mCmd::LabelsCardinality => {
-                    commands::e2m::run_labels_cardinality(&targets, output).await?;
+                    anyhow::bail!(
+                        "`cx e2m labels-cardinality` is not available through the REST API yet: \
+                         the gateway cannot accept the draft's metric labels, so the forecast \
+                         would always be empty. Forecast cardinality in the Coralogix UI \
+                         (Events2Metrics create flow) for now."
+                    );
                 }
                 E2mCmd::Limits => {
                     commands::e2m::run_limits(&targets, output).await?;
@@ -4473,7 +4484,11 @@ async fn main() -> Result<()> {
                     commands::enrichments::run_remove(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Overwrite { from_file } => {
-                    confirm_destructive("Overwrite enrichment rules?", yes, agent_mode)?;
+                    confirm_destructive(
+                        "Overwrite ALL enrichment rules? Custom enrichment tables the file does not reference are deleted too.",
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Limit => {
@@ -4549,8 +4564,9 @@ async fn main() -> Result<()> {
                     )
                     .await?;
                 }
-                IntegrationsCmd::Template => {
-                    commands::integrations::run_template(&targets, output).await?;
+                IntegrationsCmd::Template { integration_id } => {
+                    commands::integrations::run_template(&targets, &integration_id, output)
+                        .await?;
                 }
                 IntegrationsCmd::Extensions { cmd } => match cmd {
                     ExtensionsCmd::List => {

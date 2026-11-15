@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error::Result;
+use crate::error::{CxError, Result};
 
 use crate::api_client::CxClient;
 use crate::serde_helpers::string_or_number;
@@ -117,20 +117,78 @@ impl<'a> ExtensionsApi<'a> {
         self.client.get(&path, &[]).await
     }
 
+    /// `PUT .../extensions/v1/deployed?id=..&version=..&item_ids=..` deploys an
+    /// extension. The gateway reads the deployment from the query string and
+    /// ignores a JSON body, so the user's JSON is turned into query params.
     pub async fn deploy(&self, body: &Value) -> Result<Value> {
-        let path = format!("{EXTENSIONS_BASE}/deploy");
-        self.client.post(&path, body).await
+        let path = format!("{EXTENSIONS_BASE}/deployed?{}", deployment_query(body)?);
+        self.client.put(&path, &serde_json::json!({})).await
     }
 
+    /// `POST .../extensions/v1/deployed?id=..&version=..&item_ids=..` updates a
+    /// deployed extension (same query shape as [`Self::deploy`]).
     pub async fn update(&self, body: &Value) -> Result<Value> {
-        let path = format!("{EXTENSIONS_BASE}/update");
-        self.client.post(&path, body).await
+        let path = format!("{EXTENSIONS_BASE}/deployed?{}", deployment_query(body)?);
+        self.client.post(&path, &serde_json::json!({})).await
     }
 
+    /// `DELETE .../extensions/v1/deployed` with `{ "id", "keptExtensionItems" }`
+    /// undeploys an extension.
     pub async fn undeploy(&self, body: &Value) -> Result<Value> {
-        let path = format!("{EXTENSIONS_BASE}/undeploy");
-        self.client.post(&path, body).await
+        let path = format!("{EXTENSIONS_BASE}/deployed");
+        self.client.delete_with_body(&path, body).await
     }
+}
+
+/// Turn a deployment JSON (`id`, `version`, `itemIds`/`item_ids`,
+/// `applications`, `subsystems`, or the same under `extensionDeployment`)
+/// into the query string the deploy/update routes expect. Repeated keys
+/// carry the list values.
+pub fn deployment_query(body: &Value) -> Result<String> {
+    let deployment = body.get("extensionDeployment").unwrap_or(body);
+    let mut qs = url::form_urlencoded::Serializer::new(String::new());
+    let mut has_id = false;
+    for (field, keys) in [
+        ("id", &["id"][..]),
+        ("version", &["version"][..]),
+        ("item_ids", &["itemIds", "item_ids"][..]),
+        ("applications", &["applications"][..]),
+        ("subsystems", &["subsystems"][..]),
+    ] {
+        let Some(value) = keys.iter().find_map(|k| deployment.get(*k)) else {
+            continue;
+        };
+        match value {
+            Value::String(s) => {
+                has_id |= field == "id";
+                qs.append_pair(field, s);
+            }
+            Value::Array(items) => {
+                for item in items {
+                    if let Some(s) = item.as_str() {
+                        qs.append_pair(field, s);
+                    }
+                }
+            }
+            Value::Null => {}
+            other => {
+                return Err(invalid_input(format!(
+                    "extension deployment field `{field}` must be a string or array, got {other}"
+                )))
+            }
+        }
+    }
+    if !has_id {
+        return Err(invalid_input(
+            "extension deployment JSON must contain `id` (and `version`, `itemIds`)",
+        ));
+    }
+    Ok(qs.finish())
+}
+
+/// The user's deployment JSON is malformed; surface it as a JSON error.
+fn invalid_input(msg: impl std::fmt::Display) -> CxError {
+    CxError::Json(<serde_json::Error as serde::de::Error>::custom(msg))
 }
 
 // --- Tests ---
@@ -201,6 +259,36 @@ mod tests {
         let json = json!({ "id": "Ext", "itemIds": ["a", "b"] });
         let ext: DeployedExtension = serde_json::from_value(json).unwrap();
         assert_eq!(ext.deployed_item_count(), Some(2));
+    }
+
+    #[test]
+    fn deployment_query_encodes_lists_as_repeated_keys() {
+        let qs = deployment_query(&json!({
+            "id": "ChecklyObservability",
+            "version": "0.1.0",
+            "itemIds": ["a", "b"],
+            "applications": ["app one"],
+            "subsystems": []
+        }))
+        .unwrap();
+        assert_eq!(
+            qs,
+            "id=ChecklyObservability&version=0.1.0&item_ids=a&item_ids=b&applications=app+one"
+        );
+    }
+
+    #[test]
+    fn deployment_query_accepts_wrapped_and_snake_case() {
+        let qs = deployment_query(&json!({
+            "extensionDeployment": { "id": "X", "version": "1", "item_ids": ["i"] }
+        }))
+        .unwrap();
+        assert_eq!(qs, "id=X&version=1&item_ids=i");
+    }
+
+    #[test]
+    fn deployment_query_requires_id() {
+        assert!(deployment_query(&json!({ "version": "1" })).is_err());
     }
 
     #[test]

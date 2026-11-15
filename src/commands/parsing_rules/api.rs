@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error::Result;
+use crate::error::{CxError, Result};
 
 use crate::api_client::CxClient;
 use crate::serde_helpers::string_or_number;
@@ -15,6 +15,8 @@ pub struct RuleGroup {
     pub id: Option<String>,
     pub name: Option<String>,
     pub rules: Option<Vec<Value>>,
+    /// The v1 API nests rules as `ruleSubgroups[].rules[]`.
+    pub rule_subgroups: Option<Vec<Value>>,
     pub enabled: Option<bool>,
     pub order: Option<u32>,
     pub creator: Option<String>,
@@ -26,8 +28,25 @@ impl RuleGroup {
         self.name.as_deref().unwrap_or("-")
     }
 
+    /// Number of rules: direct `rules` plus every `ruleSubgroups[].rules`.
     pub fn rules_count(&self) -> usize {
-        self.rules.as_ref().map(|r| r.len()).unwrap_or(0)
+        let direct = self.rules.as_ref().map(|r| r.len()).unwrap_or(0);
+        let nested: usize = self
+            .rule_subgroups
+            .as_ref()
+            .map(|subgroups| {
+                subgroups
+                    .iter()
+                    .map(|sg| {
+                        sg.get("rules")
+                            .and_then(Value::as_array)
+                            .map(|r| r.len())
+                            .unwrap_or(0)
+                    })
+                    .sum()
+            })
+            .unwrap_or(0);
+        direct + nested
     }
 }
 
@@ -57,6 +76,39 @@ pub struct DeleteRuleGroupResponse {}
 
 const RULE_GROUPS_BASE: &str = "/mgmt/openapi/5/parsing-rules/rule-groups/v1";
 const PARSING_RULES_LIMITS_BASE: &str = "/mgmt/openapi/5/parsing-rules/limits/v1";
+
+/// Request path for a bulk delete. A bare `DELETE /v1` with no `group_ids`
+/// is documented as "delete all rule groups", so an empty list is refused
+/// here (the handler checks too) instead of being sent.
+pub fn bulk_delete_path(ids: &[String]) -> Result<String> {
+    if ids.is_empty() {
+        return Err(CxError::InvalidArgument(
+            "bulk delete needs at least one rule group id; a request without ids would delete every rule group".to_string(),
+        ));
+    }
+    Ok(format!("{RULE_GROUPS_BASE}?{}", bulk_delete_query(ids)))
+}
+
+/// Build `group_ids=<a>&group_ids=<b>`. Ids are UUIDs in practice; anything
+/// outside the URL-unreserved set is percent-encoded.
+pub fn bulk_delete_query(ids: &[String]) -> String {
+    fn encode(id: &str) -> String {
+        let mut out = String::with_capacity(id.len());
+        for byte in id.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(byte as char)
+                }
+                other => out.push_str(&format!("%{other:02X}")),
+            }
+        }
+        out
+    }
+    ids.iter()
+        .map(|id| format!("group_ids={}", encode(id)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
 
 pub struct RuleGroupsApi<'a> {
     client: &'a CxClient,
@@ -90,9 +142,11 @@ impl<'a> RuleGroupsApi<'a> {
         self.client.delete(&path).await
     }
 
-    pub async fn bulk_delete(&self, body: &Value) -> Result<Value> {
-        let path = format!("{RULE_GROUPS_BASE}/bulk-delete");
-        self.client.post(&path, body).await
+    /// `DELETE /v1?group_ids=<id>&group_ids=<id>`. The API takes the ids
+    /// as repeated query parameters; there is no `/bulk-delete` resource.
+    /// See [`bulk_delete_path`] for why an empty list is refused.
+    pub async fn bulk_delete(&self, ids: &[String]) -> Result<Value> {
+        self.client.delete(&bulk_delete_path(ids)?).await
     }
 
     pub async fn usage_limits(&self) -> Result<Value> {
@@ -148,11 +202,38 @@ mod tests {
     }
 
     #[test]
+    fn bulk_delete_query_repeats_the_parameter_and_encodes() {
+        let ids = vec![
+            "6096268d-b840-4c3f-9406-12b32b9efb6a".to_string(),
+            "a b".to_string(),
+        ];
+        assert_eq!(
+            bulk_delete_query(&ids),
+            "group_ids=6096268d-b840-4c3f-9406-12b32b9efb6a&group_ids=a%20b"
+        );
+        assert_eq!(bulk_delete_query(&[]), "");
+    }
+
+    #[test]
+    fn bulk_delete_path_refuses_empty_ids() {
+        let err = bulk_delete_path(&[]).unwrap_err();
+        assert!(
+            matches!(err, CxError::InvalidArgument(_)),
+            "expected InvalidArgument, got {err:?}"
+        );
+        assert!(err.to_string().contains("at least one rule group id"));
+
+        let path = bulk_delete_path(&["rg-1".to_string()]).unwrap();
+        assert_eq!(path, format!("{RULE_GROUPS_BASE}?group_ids=rg-1"));
+    }
+
+    #[test]
     fn display_missing_fields() {
         let rg = RuleGroup {
             id: None,
             name: None,
             rules: None,
+            rule_subgroups: None,
             enabled: None,
             order: None,
             creator: None,
@@ -160,5 +241,21 @@ mod tests {
         };
         assert_eq!(rg.display_name(), "-");
         assert_eq!(rg.rules_count(), 0);
+    }
+
+    /// The v1 API nests rules under `ruleSubgroups[].rules[]`.
+    #[test]
+    fn rules_count_includes_subgroups() {
+        let json = json!({
+            "id": "rg-1",
+            "name": "Severity Rules",
+            "ruleSubgroups": [
+                { "order": 1, "rules": [{"name": "a"}, {"name": "b"}] },
+                { "order": 2, "rules": [{"name": "c"}] },
+                { "order": 3 }
+            ]
+        });
+        let rg: RuleGroup = serde_json::from_value(json).unwrap();
+        assert_eq!(rg.rules_count(), 3);
     }
 }

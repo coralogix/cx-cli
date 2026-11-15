@@ -74,3 +74,30 @@ async fn get_e2m_by_id() {
         .await
         .expect("run_get should succeed");
 }
+
+// ── limits / labels-cardinality against the real v2 wire shapes ─────────────
+
+/// `GET /limits/v2` nests the definition cap under `metricsLimit`.
+#[tokio::test]
+async fn limits_reads_nested_metrics_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/events2metrics/limits/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "companyId": "1234567",
+            "labelsLimit": 6,
+            "permutationsLimit": { "limit": 10000000, "used": 0 },
+            "metricsLimit": { "limit": 300, "used": 2 }
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    coralogix_cli::commands::e2m::run_limits(std::slice::from_ref(&target), OutputFormat::Json)
+        .await
+        .expect("run_limits json should succeed");
+    coralogix_cli::commands::e2m::run_limits(&[target], OutputFormat::Text)
+        .await
+        .expect("run_limits text should succeed");
+}

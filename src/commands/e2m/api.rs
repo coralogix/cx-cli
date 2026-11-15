@@ -64,18 +64,49 @@ pub struct ReplaceE2mResponse {
 #[derive(Debug, Deserialize)]
 pub struct DeleteE2mResponse {}
 
+/// `GET /labels/v2/cardinalities` answers `{"permutations": [{day, permutations}]}`.
+/// The older `labels` key is still accepted.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct E2mLabelsCardinalityResponse {
-    #[serde(default)]
-    pub labels: Vec<Value>,
+    #[serde(default, alias = "labels")]
+    pub permutations: Vec<Value>,
 }
 
+/// A `{limit, used}` pair inside the limits response.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LimitUsage {
+    pub limit: Option<u64>,
+    pub used: Option<u64>,
+}
+
+/// `GET /limits/v2` answers
+/// `{companyId, labelsLimit, permutationsLimit: {limit, used}, metricsLimit: {limit, used}}`.
+/// `metricsLimit` is the number of E2M definitions the team may have. The
+/// flat `limit`/`used` pair is kept for older payloads.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct E2mLimitsResponse {
     pub limit: Option<u64>,
     pub used: Option<u64>,
+    pub labels_limit: Option<u64>,
+    pub permutations_limit: Option<LimitUsage>,
+    pub metrics_limit: Option<LimitUsage>,
+}
+
+impl E2mLimitsResponse {
+    /// E2M definition limit: flat `limit`, else `metricsLimit.limit`.
+    pub fn effective_limit(&self) -> Option<u64> {
+        self.limit
+            .or_else(|| self.metrics_limit.as_ref().and_then(|m| m.limit))
+    }
+
+    /// E2M definitions in use: flat `used`, else `metricsLimit.used`.
+    pub fn effective_used(&self) -> Option<u64> {
+        self.used
+            .or_else(|| self.metrics_limit.as_ref().and_then(|m| m.used))
+    }
 }
 
 // --- API ---
@@ -111,15 +142,6 @@ impl<'a> E2mApi<'a> {
     pub async fn delete(&self, id: &str) -> Result<DeleteE2mResponse> {
         let path = format!("{E2M_BASE}/{id}");
         self.client.delete(&path).await
-    }
-
-    pub async fn labels_cardinality(&self) -> Result<E2mLabelsCardinalityResponse> {
-        self.client
-            .get(
-                "/mgmt/openapi/5/events2metrics/labels/v2/cardinalities",
-                &[],
-            )
-            .await
     }
 
     pub async fn limits(&self) -> Result<E2mLimitsResponse> {
@@ -215,6 +237,41 @@ mod tests {
         let resp: E2mLimitsResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.limit, Some(100));
         assert_eq!(resp.used, Some(42));
+        assert_eq!(resp.effective_limit(), Some(100));
+        assert_eq!(resp.effective_used(), Some(42));
+    }
+
+    /// The real v2 API shape.
+    #[test]
+    fn deserialize_limits_response_nested() {
+        let json = json!({
+            "companyId": "1234567",
+            "labelsLimit": 6,
+            "permutationsLimit": { "limit": 10000000, "used": 0 },
+            "metricsLimit": { "limit": 300, "used": 2 }
+        });
+        let resp: E2mLimitsResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.limit, None);
+        assert_eq!(resp.effective_limit(), Some(300));
+        assert_eq!(resp.effective_used(), Some(2));
+        assert_eq!(resp.labels_limit, Some(6));
+        let perms = resp.permutations_limit.unwrap();
+        assert_eq!(perms.limit, Some(10000000));
+        assert_eq!(perms.used, Some(0));
+    }
+
+    #[test]
+    fn deserialize_labels_cardinality_response() {
+        let json = json!({ "permutations": [{ "day": "2026-11-10", "permutations": 3 }] });
+        let resp: E2mLabelsCardinalityResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.permutations.len(), 1);
+
+        let legacy = json!({ "labels": [{ "name": "app" }] });
+        let resp: E2mLabelsCardinalityResponse = serde_json::from_value(legacy).unwrap();
+        assert_eq!(resp.permutations.len(), 1);
+
+        let empty: E2mLabelsCardinalityResponse = serde_json::from_value(json!({})).unwrap();
+        assert!(empty.permutations.is_empty());
     }
 
     #[test]

@@ -97,7 +97,7 @@ Use this skill when setting up or configuring the observability stack - saved vi
 | `cx integrations update <id> --from-file` | Update an integration |
 | `cx integrations delete <id>` | Delete an integration |
 | `cx integrations test --from-file` | Test integration config |
-| `cx integrations template` | Get integration template |
+| `cx integrations template --integration-id <deployed-id>` | Get the template of a deployed (managed) integration |
 | `cx integrations definition <id>` | Get integration definition |
 | `cx integrations deployed <id>` | Get deployed integration |
 | `cx integrations extensions list` | List available extensions |

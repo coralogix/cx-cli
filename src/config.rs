@@ -203,7 +203,8 @@ pub struct Config {
     pub max_dataprime_direct_output_size: Option<usize>,
 
     /// Directory used to store temporary result files when the output exceeds
-    /// `max_dataprime_direct_output_size`. Defaults to `/tmp/`.
+    /// `max_dataprime_direct_output_size`. Defaults to `/tmp/` on Unix and
+    /// the OS temp directory on Windows.
     #[serde(default = "default_temp_dir")]
     pub temp_dir: String,
 
@@ -259,8 +260,18 @@ fn default_max_dataprime_direct_output_size() -> Option<usize> {
     Some(100 * 1024) // 100 KiB
 }
 
+/// `/tmp/` on Unix (unchanged, and what the docs say), the OS temp
+/// directory on Windows, where `/tmp/` does not exist.
 fn default_temp_dir() -> String {
-    "/tmp/".to_string()
+    if cfg!(windows) {
+        let mut dir = std::env::temp_dir().to_string_lossy().into_owned();
+        if !dir.ends_with(std::path::MAIN_SEPARATOR) {
+            dir.push(std::path::MAIN_SEPARATOR);
+        }
+        dir
+    } else {
+        "/tmp/".to_string()
+    }
 }
 
 impl Default for Config {
@@ -328,11 +339,12 @@ pub struct StoredOAuthTokens {
 /// A named profile storing credentials and endpoint info.
 ///
 /// `credential_storage` selects where secrets live for both auth modes:
-///   - `"file"` (default): API keys / OAuth tokens are written inline in the
-///     TOML, which is created with `0600` permissions.
-///   - `"os_store"`: secrets are stored in the OS credential store
-///     (macOS Keychain, Windows Credential Manager, etc.) and the inline
-///     fields are absent from the TOML.
+///   - `"file"` (the value when the key is omitted, so existing profiles stay
+///     file-based, and the setup default off macOS): API keys / OAuth tokens
+///     are written inline in the TOML, which is created with `0600` permissions.
+///   - `"os_store"` (the setup default on macOS): secrets are stored in the OS
+///     credential store (macOS Keychain, Windows Credential Manager, etc.) and
+///     the inline fields are absent from the TOML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     /// Authentication method for this profile.

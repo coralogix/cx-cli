@@ -498,6 +498,17 @@ pub async fn run_admin_delete(targets: &[Arc<ExecutionTarget>], ids: &[String]) 
     Ok(())
 }
 
+/// Body for `POST /api-keys/v3/all/status`: the API takes one `{keyId, active}`
+/// entry per key (not a flat `keyIds` + `isActive` pair).
+fn admin_status_body(ids: &[String], active: bool) -> Value {
+    json!({
+        "updates": ids
+            .iter()
+            .map(|id| json!({ "keyId": id, "active": active }))
+            .collect::<Vec<_>>()
+    })
+}
+
 pub async fn run_admin_set_status(
     targets: &[Arc<ExecutionTarget>],
     ids: &[String],
@@ -508,7 +519,7 @@ pub async fn run_admin_set_status(
         "{}",
         format!("{action} {} API key(s)...", ids.len()).dimmed()
     );
-    let body = json!({ "keyIds": ids, "isActive": active });
+    let body = admin_status_body(ids, active);
 
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
@@ -548,6 +559,18 @@ mod tests {
 
     fn preset(name: &str, permissions: &[&str]) -> Value {
         json!({ "name": name, "permissions": permissions })
+    }
+
+    #[test]
+    fn admin_status_body_uses_per_key_updates() {
+        let ids = vec!["k1".to_string(), "k2".to_string()];
+        assert_eq!(
+            admin_status_body(&ids, false),
+            json!({ "updates": [
+                { "keyId": "k1", "active": false },
+                { "keyId": "k2", "active": false }
+            ] })
+        );
     }
 
     #[test]

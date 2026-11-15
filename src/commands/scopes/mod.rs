@@ -155,6 +155,9 @@ pub async fn run_get(
             all_results.push(val);
         }
     }
+    if all_results.is_empty() {
+        anyhow::bail!("Scope {id} not found");
+    }
 
     match output {
         OutputFormat::Json => render::render_json_auto(&all_results)?,

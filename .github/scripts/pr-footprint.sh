@@ -83,8 +83,8 @@ classify_domain() {
 }
 
 # --- collect numstat for the full diff and for the whitespace-insensitive diff
-numstat="$(git diff --numstat "$MERGE_BASE" "$HEAD" --)"
-numstat_w="$(git diff -w --numstat "$MERGE_BASE" "$HEAD" --)"
+numstat="$(git diff --no-renames --numstat "$MERGE_BASE" "$HEAD" --)"
+numstat_w="$(git diff --no-renames -w --numstat "$MERGE_BASE" "$HEAD" --)"
 
 if [[ -z "$numstat" ]]; then
     echo "no changes between $BASE and $HEAD" >&2
@@ -107,7 +107,7 @@ shared_changed="$(printf '%s\n' "$numstat" | cut -f3 | grep '^skills/shared/' | 
 
 # Did the version line of Cargo.toml change?
 version_bump=false
-if git diff "$MERGE_BASE" "$HEAD" -- Cargo.toml | grep -qE '^[+-]version = "'; then
+if git diff --no-renames "$MERGE_BASE" "$HEAD" -- Cargo.toml | grep -qE '^[+-]version = "'; then
     version_bump=true
 fi
 

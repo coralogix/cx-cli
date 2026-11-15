@@ -257,7 +257,8 @@ one as written, inside `$S/head`, with the same read-only environment.
 
 ## Part 6: Report
 
-Print the report to the terminal. Also save it to `$S/report.md`. With
+Print the report to the terminal. Also save it to `$S/report.md` (with
+`--no-drive`, part 4 never set `S`: use `mkdir -p /tmp/pr-review-<n>`). With
 `--comment`, post the summary as one PR comment and each BLOCKER and FIX SOON
 as an inline comment on the first line of the hunk it concerns.
 
@@ -284,6 +285,10 @@ sets a merge policy; it never replaces the verdict.
 | PR template sections missing | +1 |
 | Diff over 500 / over 1500 lines | +1 / +2 |
 | Author not an org member, or CLA unsigned | +2 / +1 |
+
+A same-repo PR (`headRefName` without a fork prefix in `gh pr view`) comes
+from someone with write access: count the author as an org member without
+an API lookup. The CLA state is the `license/cla` line of `gh pr checks`.
 
 | Score | Tier | What the human does |
 |-------|------|---------------------|
@@ -350,6 +355,9 @@ finding, no finding without evidence, no praise, no restating the diff.
 git worktree remove --force "$S/head"; git worktree remove --force "$S/base"
 git update-ref -d refs/pr-review/<n>
 ```
+
+Skip this when part 4 was skipped: there are no worktrees, and the CI
+runner is thrown away with its refs.
 
 Leave `$S/report.md` and the two binaries in place; they are in the scratchpad
 and cost nothing.

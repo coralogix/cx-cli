@@ -4,8 +4,8 @@
 # or gets a push. The skill reads the PR, checks the file footprint, reads the code,
 # and reads CI results (incl. the E2E check). It does not build or run the binary
 # here (--no-drive), so no Rust toolchain and no Coralogix credentials are needed.
-# The last step fails the job when the review posted for this exact commit says
-# BLOCK; that is the status check to require in the ruleset later.
+# The last step fails the job unless the review posted for this exact commit says
+# PASS; that is the status check to require in the ruleset later.
 #
 # No issue_comment trigger on purpose: checking out PR code in a comment-triggered
 # (privileged) workflow is a CodeQL high-severity pattern. Re-runs happen on push.
@@ -33,14 +33,26 @@ jobs:
       checks: read
       actions: read
     steps:
-      - name: Checkout the PR head
-        uses: actions/checkout@v6
+      # pull_request checks out the merge commit of the PR into master; the skill
+      # fetches the PR head itself as refs/pr-review/<n>.
+      - name: Checkout the PR merge commit
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
+      # The classifier comes from the base branch, so a PR cannot change the
+      # script that scores it. The skill is restored from master by the action.
+      - name: Take the footprint script from the base branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p /tmp/pr-review
+          git show "$BASE_SHA:.github/scripts/pr-footprint.sh" > /tmp/pr-review/pr-footprint.sh
+          chmod +x /tmp/pr-review/pr-footprint.sh
+
       - name: Run the pr-review skill
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         env:
           GH_TOKEN: ${{ github.token }}
         with:
@@ -52,32 +64,36 @@ jobs:
           claude_args: |
             --max-turns 60
             --disallowedTools WebFetch,WebSearch
-            --allowedTools "Read,Glob,Grep,Write,mcp__github_inline_comment__create_inline_comment,Bash(mkdir:*),Bash(grep:*),Bash(git fetch:*),Bash(git diff:*),Bash(git show:*),Bash(git grep:*),Bash(git log:*),Bash(git merge-base:*),Bash(git cat-file:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr comment:*),Bash(gh run view:*),Bash(.github/scripts/pr-footprint.sh:*),Bash(jq:*)"
+            --allowedTools "Read,Glob,Grep,Write,mcp__github_inline_comment__create_inline_comment,Bash(mkdir:*),Bash(grep:*),Bash(git fetch:*),Bash(git diff:*),Bash(git show:*),Bash(git grep:*),Bash(git log:*),Bash(git merge-base:*),Bash(git cat-file:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr comment:*),Bash(gh run view:*),Bash(/tmp/pr-review/pr-footprint.sh:*),Bash(jq:*)"
           prompt: |
             Run the /pr-review skill in .claude/skills/pr-review/SKILL.md
             for PR #${{ github.event.pull_request.number }} with --no-drive --comment.
-            Post the full report as one PR comment with `gh pr comment`, and each
-            BLOCKER or FIX SOON as an inline comment. Put this line directly after
-            the Verdict line of the report, exactly:
+            Use /tmp/pr-review/pr-footprint.sh as the footprint script (same
+            arguments as in the skill). Post the full report as one PR comment
+            with `gh pr comment`, and each BLOCKER or FIX SOON as an inline
+            comment. Put this line directly after the Verdict line of the
+            report, exactly:
             **Commit:** `${{ github.event.pull_request.head.sha }}`
             Do not edit files. Do not commit.
 
-      - name: Fail the job on BLOCK
+      - name: Require a PASS verdict for this commit
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # Only the workflow's own comment, only for this commit: a comment by
-          # anyone else, or a report for an older push, never passes the gate.
+          # Only the workflow's own comment, only for this commit, and only its
+          # Verdict line: a comment by anyone else, a report for an older push, or
+          # the words "BLOCK"/"PASS" quoted inside a finding never decide the gate.
           body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
             --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"# PR Review:\")) and (.body | contains(\"$SHA\")))] | last | .body // \"\"")"
           if [ -z "$body" ]; then
             echo "::error::No review was posted for commit $SHA. Read the skill step log."
             exit 1
           fi
-          if printf '%s' "$body" | grep -q 'Verdict: 🔴 BLOCK'; then
-            echo "::error::The review verdict is BLOCK. Read the PR comment."
-            exit 1
-          fi
-          echo "Review verdict is PASS for $SHA."
+          verdict="$(printf '%s\n' "$body" | grep -m1 '^\*\*Verdict:' || true)"
+          case "$verdict" in
+            '**Verdict: 🟢 PASS**'*) echo "Review verdict is PASS for $SHA." ;;
+            '**Verdict: 🔴 BLOCK**'*) echo "::error::The review verdict is BLOCK. Read the PR comment."; exit 1 ;;
+            *) echo "::error::No recognisable Verdict line in the review (got: '$verdict'). Failing closed."; exit 1 ;;
+          esac

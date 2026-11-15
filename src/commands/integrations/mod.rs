@@ -557,15 +557,24 @@ pub async fn run_test(
     Ok(())
 }
 
-pub async fn run_template(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
-    eprintln!("{}", "Fetching integration template...".dimmed());
+pub async fn run_template(
+    targets: &[Arc<ExecutionTarget>],
+    integration_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching integration template for {integration_id}...").dimmed()
+    );
     let include_profile = targets.len() > 1;
+    let integration_id = integration_id.to_string();
 
-    let per_profile = fan_out(targets, |t| async move {
-        let api = IntegrationsApi::new(&t.client);
-        // The CLI has no way to pass an instance id yet; the API answers 400
-        // without one. Keep the route correct so adding the flag is trivial.
-        Ok(api.get_template(None).await?)
+    let per_profile = fan_out(targets, |t| {
+        let integration_id = integration_id.clone();
+        async move {
+            let api = IntegrationsApi::new(&t.client);
+            Ok(api.get_template(Some(&integration_id)).await?)
+        }
     })
     .await;
 

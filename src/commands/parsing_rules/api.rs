@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error::Result;
+use crate::error::{CxError, Result};
 
 use crate::api_client::CxClient;
 use crate::serde_helpers::string_or_number;
@@ -79,6 +79,18 @@ const PARSING_RULES_LIMITS_BASE: &str = "/mgmt/openapi/5/parsing-rules/limits/v1
 
 /// Build `group_ids=<a>&group_ids=<b>`. Ids are UUIDs in practice; anything
 /// outside the URL-unreserved set is percent-encoded.
+/// Request path for a bulk delete. A bare `DELETE /v1` with no `group_ids`
+/// is documented as "delete all rule groups", so an empty list is refused
+/// here (the handler checks too) instead of being sent.
+pub fn bulk_delete_path(ids: &[String]) -> Result<String> {
+    if ids.is_empty() {
+        return Err(CxError::InvalidArgument(
+            "bulk delete needs at least one rule group id; a request without ids would delete every rule group".to_string(),
+        ));
+    }
+    Ok(format!("{RULE_GROUPS_BASE}?{}", bulk_delete_query(ids)))
+}
+
 pub fn bulk_delete_query(ids: &[String]) -> String {
     fn encode(id: &str) -> String {
         let mut out = String::with_capacity(id.len());
@@ -132,9 +144,9 @@ impl<'a> RuleGroupsApi<'a> {
 
     /// `DELETE /v1?group_ids=<id>&group_ids=<id>`. The API takes the ids
     /// as repeated query parameters; there is no `/bulk-delete` resource.
+    /// See [`bulk_delete_path`] for why an empty list is refused.
     pub async fn bulk_delete(&self, ids: &[String]) -> Result<Value> {
-        let path = format!("{RULE_GROUPS_BASE}?{}", bulk_delete_query(ids));
-        self.client.delete(&path).await
+        self.client.delete(&bulk_delete_path(ids)?).await
     }
 
     pub async fn usage_limits(&self) -> Result<Value> {
@@ -200,6 +212,19 @@ mod tests {
             "group_ids=6096268d-b840-4c3f-9406-12b32b9efb6a&group_ids=a%20b"
         );
         assert_eq!(bulk_delete_query(&[]), "");
+    }
+
+    #[test]
+    fn bulk_delete_path_refuses_empty_ids() {
+        let err = bulk_delete_path(&[]).unwrap_err();
+        assert!(
+            matches!(err, CxError::InvalidArgument(_)),
+            "expected InvalidArgument, got {err:?}"
+        );
+        assert!(err.to_string().contains("at least one rule group id"));
+
+        let path = bulk_delete_path(&["rg-1".to_string()]).unwrap();
+        assert_eq!(path, format!("{RULE_GROUPS_BASE}?group_ids=rg-1"));
     }
 
     #[test]

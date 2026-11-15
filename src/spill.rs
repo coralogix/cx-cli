@@ -182,15 +182,15 @@ fn short_hash(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use serde_json::json;
+
     #[test]
     fn cleanup_of_missing_temp_dir_removes_nothing() {
         let dir = std::env::temp_dir().join("cx_spill_test_never_created_dir");
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(super::cleanup_old_files(dir.to_str().unwrap()).unwrap(), 0);
+        assert_eq!(cleanup_old_files(dir.to_str().unwrap()).unwrap(), 0);
     }
-
-    use super::*;
-    use serde_json::json;
 
     #[test]
     fn short_hash_is_eight_chars() {

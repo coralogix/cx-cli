@@ -10,7 +10,7 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use api::{E2mApi, E2mDefinition};
+use api::{CardinalityQuery, E2mApi, E2mDefinition};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -312,15 +312,88 @@ pub async fn run_delete(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()
     Ok(())
 }
 
+/// Build the cardinality query from an E2M-style JSON body: the
+/// `logsQuery` (or `spansQuery`) object with its `lucene`,
+/// `applicationnameFilters` and `subsystemnameFilters`. Returns the query
+/// and whether the body carried `metricLabels` that cannot be sent (see
+/// [`CardinalityQuery`]).
+pub fn cardinality_query_from_body(body: &Value) -> Result<(CardinalityQuery, bool)> {
+    let (spans, query) = match (body.get("logsQuery"), body.get("spansQuery")) {
+        (Some(q), _) => (false, q),
+        (None, Some(q)) => (true, q),
+        (None, None) => anyhow::bail!(
+            "the file must contain `logsQuery` or `spansQuery` (the shape of an E2M definition)"
+        ),
+    };
+    fn strings(v: Option<&Value>) -> Vec<String> {
+        v.and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+    let has_labels = body
+        .get("metricLabels")
+        .and_then(Value::as_array)
+        .is_some_and(|l| !l.is_empty());
+    Ok((
+        CardinalityQuery {
+            spans,
+            lucene: query
+                .get("lucene")
+                .and_then(Value::as_str)
+                .unwrap_or("*")
+                .to_string(),
+            applications: strings(query.get("applicationnameFilters")),
+            subsystems: strings(query.get("subsystemnameFilters")),
+        },
+        has_labels,
+    ))
+}
+
+/// `from_file` seeds the query from an E2M definition; `--query` and
+/// `--spans` override the file's lucene and data source.
 pub async fn run_labels_cardinality(
     targets: &[Arc<ExecutionTarget>],
+    from_file: Option<&str>,
+    lucene: Option<&str>,
+    spans: bool,
     output: OutputFormat,
 ) -> Result<()> {
+    let mut query = match from_file {
+        Some(path) => {
+            let body = read_from_file(path)?;
+            let (query, has_labels) = cardinality_query_from_body(&body)?;
+            if has_labels {
+                eprintln!(
+                    "{}",
+                    "Note: `metricLabels` are not sent. The management REST gateway cannot take \
+                     E2M metric labels as query parameters, so the API evaluates the query with \
+                     no labels."
+                        .yellow()
+                );
+            }
+            query
+        }
+        None => CardinalityQuery::default(),
+    };
+    if let Some(lucene) = lucene {
+        query.lucene = lucene.to_string();
+    }
+    if spans {
+        query.spans = true;
+    }
     eprintln!("{}", "Fetching E2M labels cardinality...".dimmed());
 
-    let per_profile = fan_out(targets, |t| async move {
-        let api = E2mApi::new(&t.client);
-        Ok(api.labels_cardinality().await?)
+    let per_profile = fan_out(targets, |t| {
+        let query = query.clone();
+        async move {
+            let api = E2mApi::new(&t.client);
+            Ok(api.labels_cardinality(&query).await?)
+        }
     })
     .await;
 
@@ -416,4 +489,49 @@ pub async fn run_limits(targets: &[Arc<ExecutionTarget>], output: OutputFormat) 
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cardinality_query_from_logs_body_maps_filters_and_flags_labels() {
+        let body = json!({
+            "logsQuery": {
+                "lucene": "status:500",
+                "applicationnameFilters": ["otel-demo"],
+                "subsystemnameFilters": ["cart"],
+                "severityFilters": []
+            },
+            "metricLabels": [{ "targetLabel": "app", "sourceField": "x" }]
+        });
+        let (q, has_labels) = cardinality_query_from_body(&body).unwrap();
+        assert!(has_labels);
+        assert_eq!(
+            q,
+            CardinalityQuery {
+                spans: false,
+                lucene: "status:500".to_string(),
+                applications: vec!["otel-demo".to_string()],
+                subsystems: vec!["cart".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn cardinality_query_from_spans_body_defaults_lucene() {
+        let body = json!({ "spansQuery": {} });
+        let (q, has_labels) = cardinality_query_from_body(&body).unwrap();
+        assert!(!has_labels);
+        assert!(q.spans);
+        assert_eq!(q.lucene, "*");
+        assert!(q.applications.is_empty());
+    }
+
+    #[test]
+    fn cardinality_query_rejects_body_without_query() {
+        let err = cardinality_query_from_body(&json!({ "name": "x" })).unwrap_err();
+        assert!(err.to_string().contains("logsQuery"));
+    }
 }

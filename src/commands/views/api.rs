@@ -88,6 +88,17 @@ pub struct DeleteViewFolderResponse {}
 const VIEWS_BASE: &str = "/mgmt/openapi/5/data-exploration/views/v1/views";
 const VIEWS_FOLDERS_BASE: &str = "/mgmt/openapi/5/data-exploration/views/v1/folders";
 
+/// Build the folder replace request. The id from the command line always
+/// wins over one in the file, so `cx views folders update <id>` edits the
+/// folder the user named even when the file was exported from another one.
+pub fn replace_folder_body(id: &str, body: &Value) -> Value {
+    let mut out = body.clone();
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert("id".to_string(), Value::String(id.to_string()));
+    }
+    out
+}
+
 pub struct ViewsApi<'a> {
     client: &'a CxClient,
 }
@@ -138,15 +149,11 @@ impl<'a> ViewsApi<'a> {
     }
 
     /// `PUT /folders` (no id in the path): the API identifies the folder by
-    /// the `id` field in the body, which is injected from the CLI argument
-    /// when the file omits it.
+    /// the `id` field in the body. See [`replace_folder_body`].
     pub async fn replace_folder(&self, id: &str, body: &Value) -> Result<Value> {
-        let mut body = body.clone();
-        if let Some(obj) = body.as_object_mut() {
-            obj.entry("id")
-                .or_insert_with(|| Value::String(id.to_string()));
-        }
-        self.client.put(VIEWS_FOLDERS_BASE, &body).await
+        self.client
+            .put(VIEWS_FOLDERS_BASE, &replace_folder_body(id, body))
+            .await
     }
 
     pub async fn delete_folder(&self, id: &str) -> Result<DeleteViewFolderResponse> {
@@ -161,6 +168,21 @@ impl<'a> ViewsApi<'a> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn replace_folder_body_sets_and_overrides_id() {
+        let bare = json!({ "name": "Infra" });
+        let out = replace_folder_body("f-cli", &bare);
+        assert_eq!(out["id"], "f-cli");
+        assert_eq!(out["name"], "Infra");
+
+        let stale = json!({ "id": "f-file", "name": "Infra" });
+        let out = replace_folder_body("f-cli", &stale);
+        assert_eq!(
+            out["id"], "f-cli",
+            "the positional id must win over the file id"
+        );
+    }
 
     #[test]
     fn deserialize_list_response() {

@@ -203,8 +203,8 @@ pub struct Config {
     pub max_dataprime_direct_output_size: Option<usize>,
 
     /// Directory used to store temporary result files when the output exceeds
-    /// `max_dataprime_direct_output_size`. Defaults to the OS temp directory
-    /// (`/tmp/` on Linux and macOS).
+    /// `max_dataprime_direct_output_size`. Defaults to `/tmp/` on Unix and
+    /// the OS temp directory on Windows.
     #[serde(default = "default_temp_dir")]
     pub temp_dir: String,
 
@@ -253,14 +253,18 @@ fn default_max_dataprime_direct_output_size() -> Option<usize> {
     Some(100 * 1024) // 100 KiB
 }
 
-/// The OS temp directory (`/tmp/` on Linux and macOS, `%TEMP%` on Windows),
-/// with a trailing separator so it reads like the documented `/tmp/`.
+/// `/tmp/` on Unix (unchanged, and what the docs say), the OS temp
+/// directory on Windows, where `/tmp/` does not exist.
 fn default_temp_dir() -> String {
-    let mut dir = std::env::temp_dir().to_string_lossy().into_owned();
-    if !dir.ends_with(std::path::MAIN_SEPARATOR) {
-        dir.push(std::path::MAIN_SEPARATOR);
+    if cfg!(windows) {
+        let mut dir = std::env::temp_dir().to_string_lossy().into_owned();
+        if !dir.ends_with(std::path::MAIN_SEPARATOR) {
+            dir.push(std::path::MAIN_SEPARATOR);
+        }
+        dir
+    } else {
+        "/tmp/".to_string()
     }
-    dir
 }
 
 impl Default for Config {

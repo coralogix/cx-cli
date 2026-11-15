@@ -6,7 +6,7 @@ mod common;
 
 use serde_json::json;
 use uuid::Uuid;
-use wiremock::matchers::{body_json, method, path};
+use wiremock::matchers::{body_json, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::integrations::{
@@ -290,6 +290,7 @@ async fn definition_deployed_delete_and_template_use_documented_routes() {
         .await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/integrations/template/v1"))
+        .and(query_param("integration_id", "inst-1"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(json!({ "templateUrl": "https://example.com/t.yaml" })),
@@ -312,7 +313,7 @@ async fn definition_deployed_delete_and_template_use_documented_routes() {
     run_delete(std::slice::from_ref(&target), "inst-1")
         .await
         .expect("delete should succeed");
-    run_template(&[target], OutputFormat::Json)
+    run_template(&[target], "inst-1", OutputFormat::Json)
         .await
         .expect("template should succeed");
 }

@@ -285,15 +285,13 @@ pub async fn run_update(
 
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, group) in report_errors_and_collect_successes(per_profile)? {
-        {
-            let name = group.display_name().to_string();
-            eprintln!(
-                "{}",
-                format!("Updated recording rule group '{name}' (ID: {id}) in profile '{profile}'.")
-                    .green()
-            );
-            all_results.push(group_to_json(&group, include_profile, &profile));
-        }
+        let name = group.display_name().to_string();
+        eprintln!(
+            "{}",
+            format!("Updated recording rule group '{name}' (ID: {id}) in profile '{profile}'.")
+                .green()
+        );
+        all_results.push(group_to_json(&group, include_profile, &profile));
     }
 
     match output {

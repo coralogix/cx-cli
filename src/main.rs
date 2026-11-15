@@ -1841,8 +1841,18 @@ enum E2mCmd {
         /// E2M definition ID.
         id: String,
     },
-    /// Get E2M labels cardinality.
-    LabelsCardinality,
+    /// Get E2M labels cardinality (label permutations per day) for a draft query.
+    LabelsCardinality {
+        /// E2M-style JSON file; its logsQuery/spansQuery (lucene, application and subsystem filters) is evaluated. Use '-' for stdin. metricLabels cannot be sent through the REST gateway and are ignored.
+        #[arg(long)]
+        from_file: Option<String>,
+        /// Lucene query to evaluate (default `*`). Overrides the file's lucene.
+        #[arg(long)]
+        query: Option<String>,
+        /// Evaluate against spans instead of logs.
+        #[arg(long)]
+        spans: bool,
+    },
     /// Get E2M limits.
     Limits,
 }
@@ -1932,7 +1942,7 @@ enum EnrichmentsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Overwrite all enrichment rules from a JSON file [requires --yes].
+    /// Replace ALL enrichment rules from a JSON file; custom enrichment tables the file does not reference are deleted too [requires --yes].
     Overwrite {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -1981,7 +1991,7 @@ enum CustomEnrichmentsCmd {
         /// Custom enrichment table ID.
         id: String,
     },
-    /// Search data in a custom enrichment table.
+    /// Search rows in a custom enrichment table (downloads every table's full content, then filters locally).
     Search {
         /// Custom enrichment table ID.
         #[arg(long)]
@@ -2039,8 +2049,12 @@ enum IntegrationsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Get integration template.
-    Template,
+    /// Get the deployment template of a deployed integration.
+    Template {
+        /// Deployed integration (instance) ID, as listed by `integrations get <key>`.
+        #[arg(long)]
+        integration_id: String,
+    },
     /// Manage extensions.
     #[command(after_help = "\
 Examples:
@@ -2275,6 +2289,7 @@ Examples:
   cx ai-center custom-evaluations list
   cx ai-center custom-evaluations list-for-application <application-id>
   cx ai-center custom-evaluations create --from-file policy.json
+  cx ai-center custom-evaluations delete <evaluation-id>
   cx ai-center custom-evaluations add <evaluation-id> <application-id>
   cx ai-center custom-evaluations remove <evaluation-id> <application-id>")]
     CustomEvaluations {
@@ -2383,6 +2398,11 @@ enum CustomEvaluationsCmd {
         /// Path to JSON file with the partial update. Use '-' for stdin.
         #[arg(long, default_value = "-")]
         from_file: String,
+        /// Custom evaluation UUID.
+        id: String,
+    },
+    /// Delete a custom evaluation policy by UUID [requires --yes].
+    Delete {
         /// Custom evaluation UUID.
         id: String,
     },
@@ -4394,8 +4414,19 @@ async fn main() -> Result<()> {
                     )?;
                     commands::e2m::run_delete(&targets, &id).await?;
                 }
-                E2mCmd::LabelsCardinality => {
-                    commands::e2m::run_labels_cardinality(&targets, output).await?;
+                E2mCmd::LabelsCardinality {
+                    from_file,
+                    query,
+                    spans,
+                } => {
+                    commands::e2m::run_labels_cardinality(
+                        &targets,
+                        from_file.as_deref(),
+                        query.as_deref(),
+                        spans,
+                        output,
+                    )
+                    .await?;
                 }
                 E2mCmd::Limits => {
                     commands::e2m::run_limits(&targets, output).await?;
@@ -4473,7 +4504,11 @@ async fn main() -> Result<()> {
                     commands::enrichments::run_remove(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Overwrite { from_file } => {
-                    confirm_destructive("Overwrite enrichment rules?", yes, agent_mode)?;
+                    confirm_destructive(
+                        "Overwrite ALL enrichment rules? Custom enrichment tables the file does not reference are deleted too.",
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Limit => {
@@ -4549,8 +4584,9 @@ async fn main() -> Result<()> {
                     )
                     .await?;
                 }
-                IntegrationsCmd::Template => {
-                    commands::integrations::run_template(&targets, output).await?;
+                IntegrationsCmd::Template { integration_id } => {
+                    commands::integrations::run_template(&targets, &integration_id, output)
+                        .await?;
                 }
                 IntegrationsCmd::Extensions { cmd } => match cmd {
                     ExtensionsCmd::List => {
@@ -4822,6 +4858,15 @@ async fn main() -> Result<()> {
                             &targets, &id, &from_file, output,
                         )
                         .await?;
+                    }
+                    CustomEvaluationsCmd::Delete { id } => {
+                        confirm_destructive(
+                            &format!("Delete custom evaluation '{id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::ai_center::run_custom_evaluations_delete(&targets, &id, output)
+                            .await?;
                     }
                     CustomEvaluationsCmd::Add {
                         evaluation_id,

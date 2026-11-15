@@ -78,7 +78,6 @@ fn validate_create_body(body: &Value) -> Result<()> {
     Ok(())
 }
 
-/// Shallow validation of the UpdateCustomEnrichment request body.
 /// Reduce the `POST /all/contents` answer (every table, full content) to the
 /// rows of table `id` that contain `query` (case-insensitive). The first
 /// line of the table is its header and is returned separately.

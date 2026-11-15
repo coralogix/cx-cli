@@ -102,8 +102,8 @@ async fn limits_reads_nested_metrics_limit() {
         .expect("run_limits text should succeed");
 }
 
-/// The cardinality endpoint requires a query; the CLI sends a match-all
-/// logs query and reads the `permutations` list.
+/// The cardinality endpoint requires a query; without inputs the CLI sends
+/// a match-all logs query and reads the `permutations` list.
 #[tokio::test]
 async fn labels_cardinality_sends_a_query() {
     use wiremock::matchers::query_param;
@@ -122,7 +122,66 @@ async fn labels_cardinality_sends_a_query() {
         .await;
 
     let target = common::test_target("test-profile", &server.uri());
-    coralogix_cli::commands::e2m::run_labels_cardinality(&[target], OutputFormat::Json)
-        .await
-        .expect("run_labels_cardinality should succeed");
+    coralogix_cli::commands::e2m::run_labels_cardinality(
+        &[target],
+        None,
+        None,
+        false,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_labels_cardinality should succeed");
+}
+
+/// `--from-file` flattens the E2M file's query to the gateway's dotted
+/// parameters; `--query` overrides the file's lucene.
+#[tokio::test]
+async fn labels_cardinality_from_file_flattens_the_query() {
+    use wiremock::matchers::query_param;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/mgmt/openapi/5/events2metrics/labels/v2/cardinalities",
+        ))
+        .and(query_param("logs_query.lucene", "status:500"))
+        .and(query_param(
+            "logs_query.applicationname_filters",
+            "otel-demo",
+        ))
+        .and(query_param("logs_query.subsystemname_filters", "cart"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "permutations": [] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let file = std::env::temp_dir().join(format!(
+        "cx_e2m_cardinality_test_{}.json",
+        std::process::id()
+    ));
+    std::fs::write(
+        &file,
+        json!({
+            "logsQuery": {
+                "lucene": "ignored",
+                "applicationnameFilters": ["otel-demo"],
+                "subsystemnameFilters": ["cart"]
+            },
+            "metricLabels": [{ "targetLabel": "app", "sourceField": "x" }]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let target = common::test_target("test-profile", &server.uri());
+    let result = coralogix_cli::commands::e2m::run_labels_cardinality(
+        &[target],
+        Some(file.to_str().unwrap()),
+        Some("status:500"),
+        false,
+        OutputFormat::Json,
+    )
+    .await;
+    let _ = std::fs::remove_file(&file);
+    result.expect("run_labels_cardinality with a file should succeed");
 }

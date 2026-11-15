@@ -651,6 +651,39 @@ pub async fn run_custom_evaluations_update(
     emit_objects(&all, include_profile, output, "No result.")
 }
 
+pub async fn run_custom_evaluations_delete(
+    targets: &[Arc<ExecutionTarget>],
+    id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", format!("Deleting custom evaluation {id}...").dimmed());
+    let include_profile = targets.len() > 1;
+    let id = id.to_string();
+
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = AiCenterApi::new(&t.client);
+            Ok(api.delete_custom_evaluation(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+            crate::console_url::ai_center_evaluations_url(b)
+        })
+        .await;
+        all.push(val);
+    }
+    eprintln!("{}", "Deleted custom evaluation.".green());
+    emit_objects(&all, include_profile, output, "No result.")
+}
+
 pub async fn run_add_policy(
     targets: &[Arc<ExecutionTarget>],
     evaluation_id: &str,

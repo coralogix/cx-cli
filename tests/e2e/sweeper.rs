@@ -457,4 +457,12 @@ fn redact_hides_secret_fields_only() {
     assert!(out.contains(r#""value": "<redacted>""#));
     assert!(out.contains(r#""apiKey": "<redacted>""#));
     assert!(!out.contains("cxtp_abc"));
+    // Key-shaped tokens are hidden in any format (text tables, TOON).
+    let text = "| Value | cxtp_abcdefghijklmnopqrstuvwxyz0123 |\nvalue: cxup_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
+    let out = harness::redact(text);
+    assert!(
+        !out.contains("cxtp_abc") && !out.contains("cxup_ABC"),
+        "{out}"
+    );
+    assert_eq!(out.matches("cx??_<redacted>").count(), 2);
 }

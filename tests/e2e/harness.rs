@@ -522,18 +522,25 @@ pub fn run_raw(args: &[&str]) -> Output {
     output
 }
 
-/// Hide secret-looking JSON string fields in echoed output. The repo is
-/// public and libtest prints captured output of failed tests into the
-/// Actions log, so a created API key must never appear there.
+/// Hide secrets in echoed output, in any format. The repo is public and
+/// libtest prints captured output of failed tests into the Actions log, so
+/// no API key may appear there. Two passes: secret-looking JSON string
+/// fields, then any Coralogix key-shaped token (`cxtp_…`, `cxup_…`, ...),
+/// which also covers text tables and TOON.
 pub fn redact(text: &str) -> String {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
+    static FIELD: OnceLock<regex::Regex> = OnceLock::new();
+    static TOKEN: OnceLock<regex::Regex> = OnceLock::new();
+    let field = FIELD.get_or_init(|| {
         regex::Regex::new(
             r#"(?i)("(?:value|api_key|apiKey|token|access_token|accessToken|refresh_token|refreshToken|secret|password)"\s*:\s*)"[^"]*""#,
         )
         .expect("valid regex")
     });
-    re.replace_all(text, r#"$1"<redacted>""#).into_owned()
+    let token = TOKEN.get_or_init(|| {
+        regex::Regex::new(r"\bcx[a-z]{2}_[A-Za-z0-9_-]{20,}").expect("valid regex")
+    });
+    let pass1 = field.replace_all(text, r#"$1"<redacted>""#);
+    token.replace_all(&pass1, "cx??_<redacted>").into_owned()
 }
 
 /// Run `cx <args>` and assert it exits non-zero. Returns stderr as text.

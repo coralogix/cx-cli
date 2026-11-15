@@ -139,30 +139,6 @@ fn enrichments_rules_lifecycle() {
     );
 }
 
-/// `overwrite` (`PUT /enrichment-rules/v1/all`) is not exercised here.
-///
-/// It replaces every enrichment rule of the team, and, as verified against
-/// the test team on 2026-11-11, it also deletes every custom enrichment
-/// table that the new set does not reference. An "idempotent" round-trip
-/// (list, overwrite with the same set, list again) is therefore not safe
-/// while other tests run: any table created by a parallel test between the
-/// `list` and the `overwrite` is destroyed. The HTTP path and body shape
-/// are covered by the wiremock test `overwrite_puts_to_all` in
-/// `tests/enrichments/main.rs`; the CLI's body validation is unit-tested
-/// in `src/commands/enrichments/mod.rs`.
-#[test]
-#[ignore]
-fn enrichments_overwrite_not_covered() {
-    if harness::require_write_creds("enrichments_overwrite_not_covered").is_none() {
-        return;
-    }
-    eprintln!(
-        "[e2e] not covered: enrichments overwrite — the atomic overwrite endpoint also \
-         deletes every custom enrichment table the new set does not reference, so a \
-         round-trip would destroy tables created concurrently by other tests"
-    );
-}
-
 #[test]
 #[ignore]
 fn enrichments_remove_rejects_bad_body() {

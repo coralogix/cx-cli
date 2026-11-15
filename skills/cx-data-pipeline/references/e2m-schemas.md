@@ -188,7 +188,7 @@ cx e2m labels-cardinality -o json  # see caveat below
 
 - `cx e2m limits` reports the E2M **count** limit and how many are used (the underlying API also tracks labels/permutations/metrics caps).
 - **The labels-cardinality endpoint is a draft forecast tool.** Given a proposed query + `metricLabels`, the backend runs a cardinality aggregation over the **last 7 days** of the company's logs/spans and returns the distinct label-permutation count **per day** for exactly that draft design — so you can size a design *before* creating it. With no labels supplied it returns an empty result.
-- **CLI limitation:** `cx e2m labels-cardinality` currently takes **no arguments**, so it sends no draft and returns an **empty list** — it does not expose the forecast yet (it would need `--metric-labels`/`--query`). Until then, forecast a draft via the **Coralogix UI** (the create flow calls this endpoint with your labels+query), or estimate manually (below) as a rough check.
+- **CLI limitation:** `cx e2m labels-cardinality --from-file <e2m.json>` (or `--query <lucene>`, `--spans`) sends the draft query, but the REST gateway cannot accept `metricLabels` (it answers 400 for every encoding), so the forecast always comes back as an empty list. Forecast a draft via the **Coralogix UI** (the create flow calls this endpoint with your labels+query), or estimate manually (below) as a rough check.
 - **The forecast only sees Frequent-Search (High-tier) data** — it queries the hot `*_newlogs*` index. For a Medium-tier (archive) source it will undercount, so treat manual estimates as the floor.
 
 **Manual estimate (rough fallback) — sizing a 2-label design:**

@@ -4,7 +4,6 @@
 //! private action needs a user. Names are capped at 50 characters, so the
 //! name slug is short (`act`) and the rename suffix is two characters.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::harness;
@@ -24,23 +23,6 @@ fn actions_list() {
 
 #[test]
 #[ignore]
-fn actions_get() {
-    if harness::require_creds("actions_get").is_none() {
-        return;
-    }
-    let id = match discover_action_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("[e2e] skipping actions_get: no actions available on test team");
-            return;
-        }
-    };
-    let v = harness::run_ok_json(&["webhooks", "actions", "get", &id, "-o", "json"]);
-    harness::assert_get_response(&v, &["id", "name"]);
-}
-
-#[test]
-#[ignore]
 fn actions_get_nonexistent_fails() {
     if harness::require_creds("actions_get_nonexistent_fails").is_none() {
         return;
@@ -53,25 +35,6 @@ fn actions_get_nonexistent_fails() {
         "-o",
         "json",
     ]);
-}
-
-fn discover_action_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            harness::require_creds("actions_discover")?;
-            let stdout = harness::run_ok(&["webhooks", "actions", "list", "-o", "json"]);
-            let v = harness::parse_json(&stdout)?;
-            v.as_array()?
-                .iter()
-                .find(|item| !harness::is_e2e_item(item))
-                .and_then(|item| item.get("id"))
-                .map(|x| match x {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string().trim_matches('"').to_string(),
-                })
-        })
-        .clone()
 }
 
 /// Bare action body (create takes it flat; replace wraps it in `action`).

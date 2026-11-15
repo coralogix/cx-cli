@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use crate::harness;
 use serde_json::{json, Value};
 
@@ -18,23 +16,6 @@ fn slos_list() {
     harness::assert_array_of_objects_with_keys(&v, &["id", "name", "target"]);
 }
 
-#[test]
-#[ignore]
-fn slos_get() {
-    if harness::require_creds("slos_get").is_none() {
-        return;
-    }
-    let id = match discover_slo_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("[e2e] skipping slos_get: no SLOs available on test team");
-            return;
-        }
-    };
-    let v = harness::run_ok_json(&["slos", "get", &id, "-o", "json"]);
-    harness::assert_get_response(&v, &["slo"]);
-}
-
 /// `get` of an unknown id must fail, not print an empty SLO.
 #[test]
 #[ignore]
@@ -47,25 +28,6 @@ fn slos_get_unknown_id_fails() {
         stderr.contains("404") || stderr.to_lowercase().contains("not found"),
         "expected a not-found error: {stderr}"
     );
-}
-
-fn discover_slo_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            harness::require_creds("slos_discover")?;
-            let stdout = harness::run_ok(&["slos", "list", "-o", "json"]);
-            let v = harness::parse_json(&stdout)?;
-            v.as_array()?
-                .iter()
-                .find(|item| !harness::is_e2e_item(item))
-                .and_then(|item| item.get("id"))
-                .map(|x| match x {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string().trim_matches('"').to_string(),
-                })
-        })
-        .clone()
 }
 
 // ── Write lifecycle (writable e2e team) ──────────────────────────────────────

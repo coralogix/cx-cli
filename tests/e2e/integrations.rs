@@ -75,28 +75,6 @@ fn integrations_definition() {
 
 #[test]
 #[ignore]
-fn integrations_template_without_id_is_rejected_by_api() {
-    if harness::require_creds("integrations_template_without_id_is_rejected_by_api").is_none() {
-        return;
-    }
-    // `cx integrations template` has no way to pass a deployed instance id
-    // yet, and the template route requires one. The API answers 400 (not a
-    // 404 for a wrong path), which proves the route is correct. Untracked
-    // integrations have no template anyway, so a full round-trip needs a
-    // CloudFormation/ARM deployment with real cloud parameters.
-    let stderr = harness::run_fail(&["integrations", "template", "-o", "json"]);
-    assert!(
-        stderr.contains("(400)"),
-        "template without an id should be a 400 from the API: {stderr}"
-    );
-    eprintln!(
-        "[e2e] not covered: integrations template (success path) — the command cannot pass \
-         --integration-id and untracked integrations have no template"
-    );
-}
-
-#[test]
-#[ignore]
 fn integrations_unknown_instance_paths_fail() {
     if harness::require_creds("integrations_unknown_instance_paths_fail").is_none() {
         return;
@@ -104,6 +82,20 @@ fn integrations_unknown_instance_paths_fail() {
     let bogus = "00000000-0000-0000-0000-000000000000";
     let stderr = harness::run_fail(&["integrations", "deployed", bogus, "-o", "json"]);
     assert!(stderr.contains("(404)"), "deployed unknown: {stderr}");
+    // `template --integration-id` reaches the instance lookup: the API names
+    // the missing instance, which proves the id is sent as `integration_id`.
+    let stderr = harness::run_fail(&[
+        "integrations",
+        "template",
+        "--integration-id",
+        bogus,
+        "-o",
+        "json",
+    ]);
+    assert!(
+        stderr.contains(&format!("(404): Not Found: Integration not found: {bogus}")),
+        "template unknown: {stderr}"
+    );
     if harness::require_write_creds("integrations_unknown_instance_paths_fail").is_some() {
         let stderr = harness::run_fail(&["integrations", "delete", bogus, "--yes"]);
         assert!(stderr.contains("(404)"), "delete unknown: {stderr}");
@@ -252,6 +244,28 @@ fn integrations_lifecycle() {
     eprintln!(
         "[e2e] not covered: integrations test (success path) — only managed integrations with \
          real third-party credentials can be tested"
+    );
+
+    // template: the id reaches the API (it found our instance), but an
+    // untracked integration has no deployment template, so the API answers
+    // a clean 400 naming the reason. Only managed cloud integrations
+    // (CloudFormation/ARM, with real cloud parameters) render a template.
+    let stderr = harness::run_fail(&[
+        "integrations",
+        "template",
+        "--integration-id",
+        &id,
+        "-o",
+        "json",
+    ]);
+    assert!(
+        stderr.contains("(400)")
+            && stderr.contains("Operation is not supported for this integration"),
+        "template on an untracked integration should be a clean 400: {stderr}"
+    );
+    eprintln!(
+        "[e2e] not covered: integrations template (success path) — the API has no template for \
+         untracked integrations such as {LIFECYCLE_KEY}; it needs a managed cloud deployment"
     );
 
     // text + toon renderers on a known resource

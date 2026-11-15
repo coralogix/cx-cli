@@ -555,7 +555,9 @@ fn dashboards_folders_lifecycle() {
     let extra_id = harness::find_by_name(&list, "name", &extra_name)
         .and_then(|r| r["id"].as_str().map(String::from))
         .unwrap_or_else(|| panic!("folder list should contain {extra_name}: {list}"));
+    let mut extra_cleanup = harness::Cleanup::new(&["dashboards", "folders", "delete", &extra_id]);
     harness::run_write_ok(&["dashboards", "folders", "delete", &extra_id]);
+    extra_cleanup.disarm();
 
     // delete child, then parent; a second delete must fail; list no longer has them
     harness::run_write_ok(&["dashboards", "folders", "delete", &child_id]);

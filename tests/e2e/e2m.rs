@@ -31,16 +31,76 @@ fn e2m_limits() {
     harness::run_ok_nonempty(&["e2m", "limits", "-o", "toon"]);
 }
 
+/// `labels-cardinality` is the draft forecast behind the E2M create flow:
+/// query + labels in, distinct label permutations per day out. The
+/// management REST gateway cannot encode the repeated `metric_labels`
+/// message as query parameters (every spelling is a 400 `unsupported
+/// message type`, and a GET body is ignored), so only the query reaches
+/// the API, which then evaluates no labels and always answers `[]`. The
+/// test proves every input path is accepted (defaults, E2M file, --query,
+/// --spans) and the response shape holds; a non-empty forecast is not
+/// reachable through this route, so it is not asserted.
 #[test]
 #[ignore]
 fn e2m_labels_cardinality() {
     if harness::require_creds("e2m_labels_cardinality").is_none() {
         return;
     }
-    // The CLI takes no draft labels, so the API answers an empty list; the
-    // call itself must succeed.
+    // defaults: match-all logs query
     let v = harness::run_ok_json(&["e2m", "labels-cardinality", "-o", "json"]);
     harness::assert_array_of_objects_with_keys(&v, &["day", "permutations"]);
+
+    // an E2M-style file whose query matches the team's live data, with a
+    // real label; `--query` overrides the file's lucene
+    let file = harness::JsonFile::new(
+        "card",
+        &json!({
+            "logsQuery": {
+                "lucene": "*",
+                "applicationnameFilters": ["otel-demo"],
+                "subsystemnameFilters": [],
+                "severityFilters": []
+            },
+            "metricLabels": [
+                { "targetLabel": "app", "sourceField": "coralogix.metadata.applicationName" }
+            ]
+        }),
+    );
+    let v = harness::run_ok_json(&[
+        "e2m",
+        "labels-cardinality",
+        "--from-file",
+        file.path(),
+        "--query",
+        "*",
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["day", "permutations"]);
+
+    // spans source
+    let v = harness::run_ok_json(&[
+        "e2m",
+        "labels-cardinality",
+        "--spans",
+        "--query",
+        "*",
+        "-o",
+        "json",
+    ]);
+    harness::assert_array_of_objects_with_keys(&v, &["day", "permutations"]);
+    harness::run_ok(&["e2m", "labels-cardinality"]);
+    harness::run_ok(&["e2m", "labels-cardinality", "-o", "toon"]);
+
+    // a file without a query is rejected before any request
+    let bad = harness::JsonFile::new("card-bad", &json!({ "name": "no query here" }));
+    let stderr = harness::run_fail(&["e2m", "labels-cardinality", "--from-file", bad.path()]);
+    assert!(stderr.contains("logsQuery"), "bad file: {stderr}");
+
+    eprintln!(
+        "[e2e] not covered: e2m labels-cardinality (non-empty forecast) — the REST gateway \
+         cannot take metric labels, so the API always answers an empty list"
+    );
 }
 
 // ── Write lifecycle (writable e2e team) ──────────────────────────────────────

@@ -79,10 +79,17 @@ fn data_archive_metrics_validate_current_config() {
     assert!(v.is_object(), "validate should answer a JSON object: {v}");
 }
 
-/// All writes to the metrics archive singleton live in ONE test so they run
-/// sequentially: `update` (same config written back) and `disable`/`enable`.
-/// Another PR's run may interleave with this one, so the state asserts after
-/// a write are retried for a short while instead of read once.
+/// The only write to the metrics archive singleton: `update` with the
+/// current S3 target written back. Another PR's run may interleave with this
+/// one, so the state assert after the write is retried for a short while
+/// instead of read once.
+///
+/// `disable`/`enable` are deliberately NOT exercised here. They are a
+/// team-global toggle, and a panic or a cancelled CI run between `disable`
+/// and `enable` would leave the shared team's metrics archive disabled.
+/// Later runs would then hit the "currently disabled" guard below and skip
+/// silently, hiding the breakage. A dedicated team or a manual run is the
+/// place for that pair.
 #[test]
 #[ignore]
 fn data_archive_metrics_write_roundtrips() {
@@ -99,7 +106,7 @@ fn data_archive_metrics_write_roundtrips() {
     if before["disabled"] != json!(false) {
         // Never enable an archive somebody disabled on purpose, and do not
         // write to a config in an unknown state.
-        eprintln!("[e2e] not covered: archive metrics update/disable/enable — metrics archive is currently disabled, leaving it alone");
+        eprintln!("[e2e] not covered: archive metrics update — metrics archive is currently disabled, leaving it alone");
         return;
     }
 
@@ -123,36 +130,7 @@ fn data_archive_metrics_write_roundtrips() {
         metrics_config()
     );
 
-    // disable, then enable. The flag is team-global and synchronous; a
-    // parallel run's `enable` can land between our `disable` and the
-    // read-back, so the disable+check pair is retried a few times.
-    let disabled = harness::eventually(3, Duration::from_secs(1), || {
-        harness::run_write_ok(&["archive", "metrics", "disable"]);
-        (metrics_config()["disabled"] == json!(true)).then_some(())
-    });
-    assert!(disabled.is_some(), "disable should set disabled=true");
-    harness::run_write_ok(&["archive", "metrics", "enable"]);
-    let restored = harness::eventually(10, Duration::from_secs(2), || {
-        (metrics_config() == before).then_some(())
-    });
-    assert!(
-        restored.is_some(),
-        "disable+enable must restore the configuration: {}",
-        metrics_config()
-    );
-}
-
-/// `archive metrics create` configures a tenant's metrics archive from
-/// scratch. The test team already has a live S3 configuration, and the
-/// create call replaces it (it is not an idempotent write like `update`),
-/// so it is not exercised against the shared team.
-#[test]
-#[ignore]
-fn data_archive_metrics_create_not_covered() {
-    if harness::require_creds("data_archive_metrics_create_not_covered").is_none() {
-        return;
-    }
-    eprintln!("[e2e] not covered: archive metrics create — would replace the team's live metrics archive configuration");
+    eprintln!("[e2e] not covered: archive metrics disable/enable — an interrupted run between disable and enable would leave the shared team's metrics archive disabled");
 }
 
 #[test]

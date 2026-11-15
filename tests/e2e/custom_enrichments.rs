@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use crate::harness;
 use serde_json::{json, Value};
 
@@ -13,42 +11,6 @@ fn custom_enrichments_list() {
     // lifecycle test below creates its own, so only the shape is asserted.
     let v = harness::run_ok_json(&["enrichments", "custom", "list", "-o", "json"]);
     harness::assert_array_of_objects_with_keys(&v, &["id", "name"]);
-}
-
-#[test]
-#[ignore]
-fn custom_enrichments_get() {
-    if harness::require_creds("custom_enrichments_get").is_none() {
-        return;
-    }
-    let id = match discover_custom_enrichment_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("[e2e] skipping custom_enrichments_get: no custom enrichments on test team");
-            return;
-        }
-    };
-    let v = harness::run_ok_json(&["enrichments", "custom", "get", &id, "-o", "json"]);
-    harness::assert_get_response(&v, &["id", "name"]);
-}
-
-fn discover_custom_enrichment_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            harness::require_creds("custom_enrichments_discover")?;
-            let stdout = harness::run_ok(&["enrichments", "custom", "list", "-o", "json"]);
-            let v = harness::parse_json(&stdout)?;
-            v.as_array()?
-                .iter()
-                .find(|item| !harness::is_e2e_item(item))
-                .and_then(|item| item.get("id"))
-                .map(|x| match x {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string().trim_matches('"').to_string(),
-                })
-        })
-        .clone()
 }
 
 // ── Write lifecycle (writable e2e team) ──────────────────────────────────────

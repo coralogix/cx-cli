@@ -6,7 +6,6 @@
 //! `webhooks test` really delivers once: example.com answers 405, which the
 //! API reports as a `failure` payload with exit 0. Nobody is notified.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::harness;
@@ -22,23 +21,6 @@ fn webhooks_list() {
     // creates its own, so only the shape is asserted here.
     let v = harness::run_ok_json(&["webhooks", "list", "-o", "json"]);
     harness::assert_array_of_objects_with_keys(&v, &["id", "name", "type"]);
-}
-
-#[test]
-#[ignore]
-fn webhooks_get() {
-    if harness::require_creds("webhooks_get").is_none() {
-        return;
-    }
-    let id = match discover_webhook_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("[e2e] skipping webhooks_get: no webhooks available on test team");
-            return;
-        }
-    };
-    let v = harness::run_ok_json(&["webhooks", "get", &id, "-o", "json"]);
-    harness::assert_get_response(&v, &["id", "name"]);
 }
 
 #[test]
@@ -74,25 +56,6 @@ fn webhooks_get_nonexistent_fails() {
         "-o",
         "json",
     ]);
-}
-
-fn discover_webhook_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            harness::require_creds("webhooks_discover")?;
-            let stdout = harness::run_ok(&["webhooks", "list", "-o", "json"]);
-            let v = harness::parse_json(&stdout)?;
-            v.as_array()?
-                .iter()
-                .find(|item| !harness::is_e2e_item(item))
-                .and_then(|item| item.get("id"))
-                .map(|x| match x {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string().trim_matches('"').to_string(),
-                })
-        })
-        .clone()
 }
 
 /// A random-looking RFC 4122 v4 shaped id. The generic webhook config needs

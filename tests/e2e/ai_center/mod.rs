@@ -293,9 +293,7 @@ fn ai_center_custom_evaluations_lifecycle() {
     ]);
     let id = harness::id_from_response(&created)
         .unwrap_or_else(|| panic!("custom evaluation create returned no id: {created}"));
-    // The CLI has no `custom-evaluations delete`; the API does. Remove the
-    // policy through the API on the way out (also on panic).
-    let _cleanup = CustomEvaluationCleanup { id: id.clone() };
+    let mut cleanup = harness::Cleanup::new(&["ai-center", "custom-evaluations", "delete", &id]);
 
     // list contains it by name
     let list = harness::run_ok_json(&["ai-center", "custom-evaluations", "list", "-o", "json"]);
@@ -399,6 +397,16 @@ fn ai_center_custom_evaluations_lifecycle() {
         upd.path(),
         "--yes",
     ]);
+
+    // delete, then the policy is gone from the list and a second delete fails
+    harness::run_write_ok(&["ai-center", "custom-evaluations", "delete", &id]);
+    cleanup.disarm();
+    let list = harness::run_ok_json(&["ai-center", "custom-evaluations", "list", "-o", "json"]);
+    assert!(
+        harness::find_by_name(&list, "name", &name).is_none(),
+        "deleted policy {name} should disappear from the list: {list}"
+    );
+    harness::run_fail(&["ai-center", "custom-evaluations", "delete", &id, "--yes"]);
 }
 
 /// `model-pricing set` is team-wide: a safe idempotent round-trip writes the
@@ -494,53 +502,4 @@ fn discover_application() -> Option<App> {
         .find(|a| a.application == "otel-demo")
         .or(apps.first())
         .cloned()
-}
-
-/// Deletes a custom evaluation through the management API on drop. The CLI
-/// has no `custom-evaluations delete` (see the report), so the test calls
-/// `DELETE /mgmt/openapi/5/ai/custom-evaluations/v3/{id}` with curl using
-/// the same `CX_API_KEY`/`CX_REGION` the `cx` subprocess uses.
-struct CustomEvaluationCleanup {
-    id: String,
-}
-
-impl Drop for CustomEvaluationCleanup {
-    fn drop(&mut self) {
-        let (Ok(key), Ok(region)) = (std::env::var("CX_API_KEY"), std::env::var("CX_REGION"))
-        else {
-            eprintln!(
-                "[e2e] cleanup: CX_API_KEY/CX_REGION not in env; custom evaluation {} left behind",
-                self.id
-            );
-            return;
-        };
-        let host = match region.as_str() {
-            "stg1" => "https://api.stg1.coralogix.net".to_string(),
-            r => format!("https://api.{r}.coralogix.com"),
-        };
-        let url = format!("{host}/mgmt/openapi/5/ai/custom-evaluations/v3/{}", self.id);
-        let out = std::process::Command::new("curl")
-            .args([
-                "-s",
-                "-o",
-                "/dev/null",
-                "-w",
-                "%{http_code}",
-                "-X",
-                "DELETE",
-            ])
-            .arg("-H")
-            .arg(format!("Authorization: Bearer {key}"))
-            .arg(&url)
-            .output();
-        match out {
-            Ok(o) if String::from_utf8_lossy(&o.stdout).starts_with('2') => {}
-            Ok(o) => eprintln!(
-                "[e2e] cleanup: DELETE custom evaluation {} returned HTTP {}",
-                self.id,
-                String::from_utf8_lossy(&o.stdout)
-            ),
-            Err(e) => eprintln!("[e2e] cleanup: could not run curl: {e}"),
-        }
-    }
 }

@@ -103,21 +103,6 @@ fn users_get_nonexistent_fails() {
     harness::run_fail(&["iam", "users", "get", "1", "-o", "json"]);
 }
 
-/// `iam users create`, `iam users update` and `iam users set-status` are not
-/// exercised: creating a user sends a real invitation e-mail, and update /
-/// set-status act on real team members (set-status INACTIVE locks a person
-/// out). There is no throw-away user on the test team to target safely.
-#[test]
-#[ignore]
-fn users_write_commands_not_covered() {
-    if harness::require_creds("users_write_commands_not_covered").is_none() {
-        return;
-    }
-    eprintln!("[e2e] not covered: iam users create — invites a real e-mail address");
-    eprintln!("[e2e] not covered: iam users update — modifies a real team member");
-    eprintln!("[e2e] not covered: iam users set-status — can lock a real team member out");
-}
-
 fn discover_user() -> Option<Value> {
     static CACHE: OnceLock<Option<Value>> = OnceLock::new();
     CACHE

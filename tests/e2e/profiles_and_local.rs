@@ -21,14 +21,31 @@ use crate::harness;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// A fresh, empty directory to use as `$HOME` for one test.
-pub(crate) fn temp_home(tag: &str) -> PathBuf {
+/// A fresh, empty directory to use as `$HOME` for one test. Removed on
+/// drop, so no `cx_e2e_*` directories (some holding a real API key in a
+/// profile file) survive a `cargo test`.
+pub(crate) struct TempHome(PathBuf);
+
+impl std::ops::Deref for TempHome {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+pub(crate) fn temp_home(tag: &str) -> TempHome {
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
     let pid = std::process::id();
     let dir = std::env::temp_dir().join(format!("cx_e2e_{tag}_{pid}_{id}"));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    dir
+    TempHome(dir)
 }
 
 /// A `cx` invocation sealed into `home`: no developer profile, no inherited
@@ -192,17 +209,6 @@ fn profiles_lifecycle_in_temp_home() {
     let (ok, out, _) = run(cx_in_home(&home).args(["profiles", "list"]));
     assert!(ok);
     assert!(out.contains("No profiles configured"), "stdout: {out}");
-}
-
-/// `cx profiles list` inherits the developer's config; this only asserts the
-/// command runs. The real assertions live in `profiles_lifecycle_in_temp_home`.
-#[test]
-#[ignore]
-fn profiles_list() {
-    if harness::require_creds("profiles_list").is_none() {
-        return;
-    }
-    harness::run_ok_nonempty(&["profiles", "list"]);
 }
 
 // ── init ─────────────────────────────────────────────────────────────────────
@@ -414,16 +420,6 @@ fn cleanup_removes_only_stale_result_files() {
     assert!(out.contains("No stale result files found"), "stdout: {out}");
 }
 
-/// `cx cleanup` against the developer's own config only has to run.
-#[test]
-#[ignore]
-fn cleanup() {
-    if harness::require_creds("cleanup").is_none() {
-        return;
-    }
-    harness::run_ok_nonempty(&["cleanup"]);
-}
-
 // ── skills ───────────────────────────────────────────────────────────────────
 
 /// The installer needs `npx`, so with an empty PATH the only acceptable
@@ -435,7 +431,7 @@ fn skills_install_without_npx_reports_helpful_error() {
     let home = temp_home("skills");
     let empty_path = temp_home("skills_empty_path");
     let (ok, _, err) = run(cx_in_home(&home)
-        .env("PATH", &empty_path)
+        .env("PATH", &*empty_path)
         .args(["skills", "install", "--global"]));
     assert!(!ok, "skills install must fail without npx");
     assert!(

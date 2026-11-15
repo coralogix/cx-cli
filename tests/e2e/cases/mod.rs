@@ -69,23 +69,38 @@ fn cases_notifications() {
     harness::assert_array(&v);
 }
 
-/// Every verb must reach the API and surface its 404 for an unknown case.
-/// This is the only cases coverage that runs without a seeded case.
+/// Every verb must reach the API and surface its 404 for an unknown case,
+/// with the service's own message (not just the status), so a wrong route
+/// that happens to 404 cannot pass. The messages were captured from the
+/// real API with the CLI. This is the only cases coverage that runs
+/// without a seeded case.
 #[test]
 #[ignore]
 fn cases_commands_reject_unknown_case() {
     if harness::require_creds("cases_commands_reject_unknown_case").is_none() {
         return;
     }
-    let read_only: &[&[&str]] = &[
-        &["cases", "get", UNKNOWN_CASE],
-        &["cases", "events", "list", UNKNOWN_CASE],
-        &["cases", "events", "get", UNKNOWN_CASE],
-        &["cases", "notifications", UNKNOWN_CASE],
+    let case_not_found =
+        format!("API request failed (404): Not Found: Case {UNKNOWN_CASE} not found");
+    let read_only: &[(&[&str], &str)] = &[
+        (&["cases", "get", UNKNOWN_CASE], &case_not_found),
+        (&["cases", "events", "list", UNKNOWN_CASE], &case_not_found),
+        (
+            &["cases", "events", "get", UNKNOWN_CASE],
+            "API request failed (404): Not Found: Event not found",
+        ),
+        (
+            &["cases", "notifications", UNKNOWN_CASE],
+            "API request failed (404): Not Found: One or more cases not found",
+        ),
     ];
-    for args in read_only {
+    for (args, expected) in read_only {
         let stderr = harness::run_fail(args);
-        assert!(stderr.contains("(404)"), "cx {}: {stderr}", args.join(" "));
+        assert!(
+            stderr.contains(expected),
+            "cx {}: expected {expected:?} in stderr:\n{stderr}",
+            args.join(" ")
+        );
     }
 
     if harness::require_write_creds("cases_commands_reject_unknown_case").is_none() {
@@ -93,6 +108,7 @@ fn cases_commands_reject_unknown_case() {
     }
     // Writes on a non-existent case cannot change anything; `--yes` only
     // skips the prompt. Resolve/close are included for the same reason.
+    // Every write verb answers the same `Case <id> not found`.
     let writes: &[&[&str]] = &[
         &["cases", "update", UNKNOWN_CASE, "--title", "cx-e2e"],
         &[
@@ -115,14 +131,21 @@ fn cases_commands_reject_unknown_case() {
         let mut full = args.to_vec();
         full.push("--yes");
         let stderr = harness::run_fail(&full);
-        assert!(stderr.contains("(404)"), "cx {}: {stderr}", args.join(" "));
+        assert!(
+            stderr.contains(&case_not_found),
+            "cx {}: expected {case_not_found:?} in stderr:\n{stderr}",
+            args.join(" ")
+        );
     }
     // `assign` resolves the e-mail against the team directory before the
     // case lookup, so it needs a real teammate to reach the 404.
     if let Some(user) = discover_assignee() {
         let stderr =
             harness::run_fail(&["cases", "assign", UNKNOWN_CASE, "--user", &user, "--yes"]);
-        assert!(stderr.contains("(404)"), "cx cases assign: {stderr}");
+        assert!(
+            stderr.contains(&case_not_found),
+            "cx cases assign: expected {case_not_found:?} in stderr:\n{stderr}"
+        );
     } else {
         eprintln!(
             "[e2e] not covered: cases assign — no teammate e-mail found via `iam users search`"
@@ -132,6 +155,11 @@ fn cases_commands_reject_unknown_case() {
 
 /// Paired-undo write round-trip on a seeded case. Every change is reverted,
 /// and the case is never resolved or closed (those have no undo).
+///
+/// This is a manual test: it only runs when `CX_TEST_CASE_ID` names a real
+/// case, and it is not parallel-safe by design. Two runs on the same case
+/// would interleave acknowledge/priority/title changes and restore each
+/// other's state, so never point two concurrent runs at one case id.
 #[test]
 #[ignore]
 fn cases_write_roundtrip() {

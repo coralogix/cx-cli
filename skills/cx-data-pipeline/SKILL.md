@@ -201,7 +201,7 @@ cx e2m limits -o json              # account E2M count limit + used
 cx e2m labels-cardinality -o json  # see caveat below
 ```
 
-The labels-cardinality endpoint is a **draft forecast** — given proposed labels + query it returns the per-day distinct-permutation count over the last 7 days, so you can size a design before creating it. **But `cx e2m labels-cardinality` currently takes no arguments**, so it sends no draft and returns an empty list (a CLI gap — it can't forecast yet). Until that's wired up, forecast via the UI or estimate permutations manually (product of distinct label values) and set `permutationsLimit`. Never use high-cardinality fields (IDs, raw URLs, IPs) as labels. Note the forecast only sees Frequent-Search (High-tier) data.
+The labels-cardinality endpoint is a **draft forecast** — given proposed labels + query it returns the per-day distinct-permutation count over the last 7 days, so you can size a design before creating it. **But the REST gateway cannot accept the labels** (`cx e2m labels-cardinality --from-file <e2m.json>` sends the query; `metricLabels` are rejected with 400 in every encoding), so the answer is always an empty list. Forecast via the UI or estimate permutations manually (product of distinct label values) and set `permutationsLimit`. Never use high-cardinality fields (IDs, raw URLs, IPs) as labels. Note the forecast only sees Frequent-Search (High-tier) data.
 
 ### 3. Template from an existing definition
 

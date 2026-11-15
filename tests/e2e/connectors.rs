@@ -8,7 +8,6 @@
 //! 405 back, which the API reports as a `failure` payload with exit 0. No
 //! person or system is notified.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::harness;
@@ -89,23 +88,6 @@ fn connectors_list() {
 
 #[test]
 #[ignore]
-fn connectors_get() {
-    if harness::require_creds("connectors_get").is_none() {
-        return;
-    }
-    let id = match discover_connector_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("[e2e] skipping connectors_get: no connectors available on test team");
-            return;
-        }
-    };
-    let v = harness::run_ok_json(&["notifications", "connectors", "get", &id, "-o", "json"]);
-    harness::assert_get_response(&v, &["id", "name"]);
-}
-
-#[test]
-#[ignore]
 fn connectors_types() {
     if harness::require_creds("connectors_types").is_none() {
         return;
@@ -178,25 +160,6 @@ fn connectors_get_nonexistent_fails() {
         "-o",
         "json",
     ]);
-}
-
-fn discover_connector_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            harness::require_creds("connectors_discover")?;
-            let stdout = harness::run_ok(&["notifications", "connectors", "list", "-o", "json"]);
-            let v = harness::parse_json(&stdout)?;
-            v.as_array()?
-                .iter()
-                .find(|item| !harness::is_e2e_item(item))
-                .and_then(|item| item.get("id"))
-                .map(|x| match x {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string().trim_matches('"').to_string(),
-                })
-        })
-        .clone()
 }
 
 // ── Connector lifecycle (writable e2e team) ─────────────────────────────────
@@ -419,21 +382,6 @@ fn presets_lifecycle() {
     harness::run_write_ok(&["notifications", "presets", "delete", &id]);
     cleanup.disarm();
     harness::run_fail(&["notifications", "presets", "get", &id, "-o", "json"]);
-}
-
-#[test]
-#[ignore]
-fn presets_set_default_not_covered() {
-    // `presets set-default <id>` changes the team-wide default preset for
-    // the preset's connector type + entity type. A safe round-trip needs the
-    // current default first (API: `presets:getDefaultSummary`), but no cx
-    // command exposes it: `presets list` reports `is_default: null` for
-    // every preset. Without a way to read and restore the original, running
-    // set-default could leave a concurrent PR run (or a human) with a
-    // different default, so it is not exercised.
-    eprintln!(
-        "[e2e] not covered: notifications presets set-default — no cx command reads the current default preset, so the original cannot be restored"
-    );
 }
 
 // ── Notification testing ────────────────────────────────────────────────────

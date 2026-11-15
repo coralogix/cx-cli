@@ -6,7 +6,6 @@
 //! deletes the router before the connector: the API refuses to delete a
 //! connector that a router still references.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::connectors::{create_generic_https_connector, GENERIC_HTTPS_PRESET};
@@ -27,23 +26,6 @@ fn routers_list() {
 
 #[test]
 #[ignore]
-fn routers_get() {
-    if harness::require_creds("routers_get").is_none() {
-        return;
-    }
-    let id = match discover_router_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("[e2e] skipping routers_get: no routers available on test team");
-            return;
-        }
-    };
-    let v = harness::run_ok_json(&["notifications", "routers", "get", &id, "-o", "json"]);
-    harness::assert_get_response(&v, &["id", "name"]);
-}
-
-#[test]
-#[ignore]
 fn routers_get_nonexistent_fails() {
     if harness::require_creds("routers_get_nonexistent_fails").is_none() {
         return;
@@ -56,25 +38,6 @@ fn routers_get_nonexistent_fails() {
         "-o",
         "json",
     ]);
-}
-
-fn discover_router_id() -> Option<String> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            harness::require_creds("routers_discover")?;
-            let stdout = harness::run_ok(&["notifications", "routers", "list", "-o", "json"]);
-            let v = harness::parse_json(&stdout)?;
-            v.as_array()?
-                .iter()
-                .find(|item| !harness::is_e2e_item(item))
-                .and_then(|item| item.get("id"))
-                .map(|x| match x {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string().trim_matches('"').to_string(),
-                })
-        })
-        .clone()
 }
 
 /// Router body: one P1 rule targeting `connector_id`, labelled with our
@@ -183,11 +146,12 @@ fn routers_lifecycle() {
         "--yes",
     ]);
 
-    // delete router, then get must fail (a second delete is idempotent,
-    // exit 0)
+    // delete router, then get must fail; Notification Center deletes are
+    // idempotent, so a second delete still exits 0
     harness::run_write_ok(&["notifications", "routers", "delete", &id]);
     cleanup.disarm();
     harness::run_fail(&["notifications", "routers", "get", &id, "-o", "json"]);
+    harness::run_write_ok(&["notifications", "routers", "delete", &id]);
 
     // now the connector can go
     harness::run_write_ok(&["notifications", "connectors", "delete", &connector_id]);

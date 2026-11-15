@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::harness;
 use crate::logs::{query_json, query_stdout, run_with_429_retry};
-use crate::profiles_and_local::{cx_in_home_with_creds, temp_home};
+use crate::profiles_and_local::{cx_in_home_with_creds, temp_home, TempHome};
 
 #[test]
 #[ignore]
@@ -63,7 +63,7 @@ fn logs_text_json_toon() {
 }
 
 /// Writes a config with a 1-byte direct-output limit so any row spills.
-fn spill_home(tag: &str) -> (PathBuf, PathBuf) {
+fn spill_home(tag: &str) -> (TempHome, PathBuf) {
     let home = temp_home(tag);
     let spill_dir = home.join("spill");
     fs::create_dir_all(&spill_dir).unwrap();

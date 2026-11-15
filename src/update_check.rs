@@ -118,6 +118,7 @@ pub fn maybe_print_notice(output: OutputFormat) {
 
     if let Some(latest) = state.latest_binary.as_deref() {
         if is_newer(latest, current) {
+            crate::telemetry::update_notice(latest);
             let upgrade = install_method::binary_upgrade_command(&install_method::detect());
 
             if output == OutputFormat::Toon || !std::io::stderr().is_terminal() {
@@ -191,6 +192,9 @@ pub fn maybe_print_toon_meta() {
     if let Some(meta) = build_meta_block() {
         if let Ok(s) = serde_json::to_string(&json!({ "_meta": meta })) {
             println!("{s}");
+            if let Some(latest) = meta["update"]["binary"]["latest"].as_str() {
+                crate::telemetry::update_notice(latest);
+            }
         }
     }
 }

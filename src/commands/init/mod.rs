@@ -47,6 +47,7 @@ use crate::commands::{completions, profiles, skills};
 use crate::config::{self, has_managed_completions, list_profile_names};
 use crate::identity;
 use crate::region::{region_from_url, RegionMatch};
+use crate::telemetry::event::OnboardingStep;
 
 /// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
@@ -84,6 +85,7 @@ pub struct InitArgs {
 pub async fn run_init(args: InitArgs) -> Result<()> {
     // Talks to the Coralogix API, so telemetry may flush afterwards.
     crate::telemetry::mark_network();
+    crate::telemetry::onboarding(OnboardingStep::InitStarted, None, None);
     let InitArgs {
         url,
         region,
@@ -221,6 +223,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
 
     // ── Done ────────────────────────────────────────────────────────────────────
     print_success(verified);
+    crate::telemetry::onboarding(OnboardingStep::InitCompleted, None, None);
     Ok(())
 }
 

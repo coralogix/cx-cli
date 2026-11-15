@@ -12,6 +12,8 @@ use anyhow::{bail, Context, Result};
 use inquire::Select;
 use serde::Deserialize;
 
+use crate::telemetry::event::{EventKind, Outcome, SkillNames, SkillsScope as TelemetryScope};
+
 /// The source passed to `skills add`. Points at the repo's user-facing
 /// `skills/` subdirectory, not the repo root: `--skill '*'` installs every
 /// `SKILL.md` the installer discovers, and the repo root also carries the
@@ -108,6 +110,28 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
         },
     };
 
+    let result = install_in_scope(scope, &opts);
+    let (outcome, names) = match &result {
+        Ok((_, names)) => (Outcome::Success, names.as_slice()),
+        Err(_) => (Outcome::Error, [].as_slice()),
+    };
+    crate::telemetry::record(EventKind::SkillsInstall {
+        scope: match scope {
+            SkillsScope::Global => TelemetryScope::Global,
+            SkillsScope::Local => TelemetryScope::Local,
+        },
+        outcome,
+        names: SkillNames::from_names(names.iter().map(String::as_str)),
+    });
+    result.map(|(outcome, _)| outcome)
+}
+
+/// The install once the scope is known. Also returns the installed cx skill
+/// names, when detection found them, for telemetry.
+fn install_in_scope(
+    scope: SkillsScope,
+    opts: &InstallOptions,
+) -> Result<(InstallOutcome, Vec<String>)> {
     // The single already-installed probe (npx spawns are slow — seconds on a
     // cold first run — so callers must not duplicate it). Detection is scoped
     // to the scope we're about to install into, so skills present in the
@@ -115,7 +139,7 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
     let installed = installed_cx_skills(scope);
     if !installed.is_empty() {
         if opts.skip_if_installed {
-            return Ok(InstallOutcome::AlreadyInstalled);
+            return Ok((InstallOutcome::AlreadyInstalled, installed));
         }
         println!(
             "cx agent skills already installed ({}) - reinstalling to update.",
@@ -153,20 +177,22 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
         );
     }
 
-    print_install_summary(scope);
-    Ok(InstallOutcome::Installed)
+    let installed = print_install_summary(scope);
+    Ok((InstallOutcome::Installed, installed))
 }
 
 /// The compact success line shown after a non-interactive install, in place of
 /// the installer's verbose output. Points at the skill listing so the user can
 /// review what was installed, since the installer's verbose output was hidden.
-fn print_install_summary(scope: SkillsScope) {
+/// Returns the installed cx skill names.
+fn print_install_summary(scope: SkillsScope) -> Vec<String> {
     let scope_label = match scope {
         SkillsScope::Global => "global",
         SkillsScope::Local => "local",
     };
     // Re-query so the count reflects what's actually on disk now.
-    let count = installed_cx_skills(scope).len();
+    let installed = installed_cx_skills(scope);
+    let count = installed.len();
     if count > 0 {
         println!(
             "✓ Installed {count} cx agent skills ({scope_label}). \
@@ -180,6 +206,7 @@ fn print_install_summary(scope: SkillsScope) {
              Browse them at: {SKILLS_REVIEW_URL}"
         );
     }
+    installed
 }
 
 /// Advanced install: run the raw installer with no flags and let the user

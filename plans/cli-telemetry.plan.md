@@ -378,13 +378,13 @@ then a first query prints the onboarding steps in order.
 
 | Event | Hook | Attributes |
 |---|---|---|
-| `cli.onboarding` | `commands/init/mod.rs::run_init`, `commands/profiles/mod.rs::run_add`, `oauth.rs::browser_login`, `main` wrapper | `cx.onboarding.step`, `cx.auth.method`, `cx.credential.store` |
+| `cli.onboarding` | `commands/init/mod.rs::run_init`, `commands/profiles/mod.rs::run_add` and `configure_oauth` (around `browser_login`, so re-logins of existing profiles are not funnel steps), `telemetry::finish` | `cx.onboarding.step`, `cx.auth.method`, `cx.credential.store` |
 | `cli.skills_install` | `commands/skills/mod.rs::run_install` | `cx.skills.scope`, `cx.outcome`, `cx.skills.names` |
 | `cli.confirm` | `safety.rs::confirm_destructive` | `cx.confirm.result` |
 | `cli.update_notice` | `update_check.rs` notice printers | `cx.version.latest` |
 | `cli.version_changed` | `main` wrapper, compared with a version stored in the state file | `cx.version.previous` |
 
-### 4.1 [ ] Onboarding events
+### 4.1 [x] Onboarding events *(completed 2026-11-15)*
 - **Files:** `src/commands/init/mod.rs`, `src/commands/profiles/mod.rs`, `src/oauth.rs`, `src/main.rs`, `src/version_cache.rs`
 - **What:** Record the seven onboarding steps from the spec where they happen, with
   the auth method and credential store where known. Record `first_query_succeeded`
@@ -395,7 +395,7 @@ then a first query prints the onboarding steps in order.
   - A second successful query does not emit `first_query_succeeded` again.
 - **Dependencies:** 2.1
 
-### 4.2 [ ] Skills, confirm and update events
+### 4.2 [x] Skills, confirm and update events *(completed 2026-11-15)*
 - **Files:** `src/commands/skills/mod.rs`, `src/safety.rs`, `src/update_check.rs`, `src/main.rs`, `src/version_cache.rs`
 - **What:** Record the remaining four events from the Deliverable Spec.
   - Skill names come from the installer's lock file, filtered to this repo's source

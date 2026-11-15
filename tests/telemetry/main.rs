@@ -500,3 +500,158 @@ async fn one_request_carries_at_most_50_events() {
     // 60 seeded + this run's first_run and command, minus 50 sent.
     assert_eq!(spool_lines(&home).len(), 12);
 }
+
+// ── Funnel and lifecycle events ───────────────────────────────────────────────
+
+fn onboarding_steps(r: &Run) -> Vec<String> {
+    r.named("cli.onboarding")
+        .iter()
+        .map(|e| e["cx.onboarding.step"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn init_records_the_onboarding_funnel_in_order() {
+    use std::os::unix::fs::PermissionsExt;
+    let server = MockServer::start().await;
+    let home = temp_home();
+    // A fake npx: `skills ls` lists nothing, `skills add` succeeds.
+    let bin = home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let npx = bin.join("npx");
+    fs::write(
+        &npx,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 10.0.0; exit 0; fi\n\
+         if [ \"$3\" = \"ls\" ]; then echo '[]'; fi\nexit 0\n",
+    )
+    .unwrap();
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let r = run(log_mode(&home)
+        .env("PATH", &bin)
+        .env("CX_CREDENTIAL_STORAGE", "file")
+        .args([
+            "init",
+            "--url",
+            &server.uri(),
+            "--api-key",
+            "k",
+            "--global-skills",
+        ]));
+    assert_eq!(r.code, 0, "{}", r.stderr);
+
+    assert_eq!(
+        onboarding_steps(&r),
+        ["init_started", "profile_added", "init_completed"]
+    );
+    let added = &r.named("cli.onboarding")[1];
+    assert_eq!(added["cx.auth.method"], "api_key");
+    assert_eq!(added["cx.credential.store"], "file");
+
+    let skills = r.named("cli.skills_install");
+    assert_eq!(skills.len(), 1, "{}", r.stderr);
+    assert_eq!(skills[0]["cx.skills.scope"], "global");
+    assert_eq!(skills[0]["cx.outcome"], "success");
+
+    let command = r.command_event();
+    assert_eq!(command["cx.command.path"], "init");
+    assert_eq!(
+        command["cx.http.status_class"], "2xx",
+        "init is a network command"
+    );
+}
+
+#[tokio::test]
+async fn first_query_succeeded_is_recorded_once() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/metrics/api/v1/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "success",
+            "data": { "resultType": "vector", "result": [] }
+        })))
+        .mount(&server)
+        .await;
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), "");
+
+    let first = run(log_mode(&home).args(["metrics", "query", "up", "-o", "json"]));
+    assert_eq!(first.code, 0, "{}", first.stderr);
+    assert_eq!(onboarding_steps(&first), ["first_query_succeeded"]);
+    let second = run(log_mode(&home).args(["metrics", "query", "up", "-o", "json"]));
+    assert!(onboarding_steps(&second).is_empty());
+}
+
+#[tokio::test]
+async fn yes_on_a_confirmed_command_records_skipped_yes() {
+    let server = MockServer::start().await;
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), "");
+
+    let r = run(log_mode(&home).args(["alerts", "delete", "abc", "--yes"]));
+    let confirms = r.named("cli.confirm");
+    assert_eq!(confirms.len(), 1, "{}", r.stderr);
+    assert_eq!(confirms[0]["cx.confirm.result"], "skipped_yes");
+}
+
+#[test]
+fn non_interactive_confirm_is_recorded() {
+    let home = temp_home();
+    write_profile(&home, "mock", "http://127.0.0.1:1", "");
+    // No --yes and no terminal: the prompt is refused before any request.
+    let r = run(log_mode(&home).args(["alerts", "delete", "abc"]));
+    assert_ne!(r.code, 0);
+    let confirms = r.named("cli.confirm");
+    assert_eq!(confirms[0]["cx.confirm.result"], "non_interactive");
+}
+
+fn write_state(home: &Path, state: Value) {
+    fs::create_dir_all(home.join(".cx")).unwrap();
+    fs::write(home.join(".cx").join("state.json"), state.to_string()).unwrap();
+}
+
+#[test]
+fn version_change_is_recorded_once() {
+    let home = temp_home();
+    write_state(
+        &home,
+        serde_json::json!({
+            "installation_id": "3f0e6c1a-9b7d-4c55-8e21-5a6f0d2b7c90",
+            "last_run_version": "0.0.1"
+        }),
+    );
+    let first = run(log_mode(&home).args(["dataprime", "list"]));
+    let changed = first.named("cli.version_changed");
+    assert_eq!(changed.len(), 1, "{}", first.stderr);
+    assert_eq!(changed[0]["cx.version.previous"], "0.0.1");
+    assert!(first.named("cli.first_run").is_empty(), "not a new install");
+
+    let second = run(log_mode(&home).args(["dataprime", "list"]));
+    assert!(second.named("cli.version_changed").is_empty());
+}
+
+#[test]
+fn update_notice_is_recorded_with_a_strict_version_only() {
+    for (latest, expected) in [("99.0.0", Some("99.0.0")), ("99.0.0-evil text", None)] {
+        let home = temp_home();
+        write_state(
+            &home,
+            serde_json::json!({
+                "last_checked_at": chrono::Utc::now().to_rfc3339(),
+                "latest_binary": latest
+            }),
+        );
+        let r = run(log_mode(&home)
+            .env_remove("CX_NO_UPDATE_NOTIFIER")
+            .args(["dataprime", "list"]));
+        let notices = r.named("cli.update_notice");
+        match expected {
+            Some(v) => {
+                assert_eq!(notices.len(), 1, "{latest}: {}", r.stderr);
+                assert_eq!(notices[0]["cx.version.latest"], v);
+            }
+            None => assert!(notices.is_empty(), "{latest} must not be sent"),
+        }
+    }
+}

@@ -18,8 +18,9 @@ use std::time::Instant;
 
 use consent::Mode;
 use event::{
-    CommandEvent, CommandFlags, CommandPath, ErrorClass, Event, EventKind, Outcome, ParseKind,
-    Resource, StatusClass, TeamId, MAX_DURATION_MS,
+    AuthMethod, CommandEvent, CommandFlags, CommandPath, ConfirmResult, CredentialStore,
+    ErrorClass, Event, EventKind, OnboardingStep, Outcome, ParseKind, Resource, StatusClass,
+    TeamId, Version, MAX_DURATION_MS,
 };
 use uuid::Uuid;
 
@@ -44,6 +45,8 @@ struct Invocation {
     spilled: bool,
     /// The command talked to the Coralogix API, so it may also flush.
     network: bool,
+    /// The user declined a prompt; the outcome is `cancelled`.
+    cancelled: bool,
 }
 
 fn invocation() -> MutexGuard<'static, Invocation> {
@@ -96,11 +99,25 @@ fn log_line(event: &Event) -> String {
 // ── Per-run lifecycle, driven by `main` ───────────────────────────────────────
 
 /// Start timing the run. Records `cli.first_run` when this run created the
-/// install id.
+/// install id, and `cli.version_changed` on the first run of a new version.
 pub fn begin() {
     invocation().start = Some(Instant::now());
-    if !off() && crate::version_cache::installation_id_created().1 {
+    if off() {
+        return;
+    }
+    if crate::version_cache::installation_id_created().1 {
         record(EventKind::FirstRun);
+    }
+    let current = env!("CARGO_PKG_VERSION");
+    let mut state = crate::version_cache::VersionCheckCache::load();
+    if state.last_run_version.as_deref() != Some(current) {
+        let previous = state.last_run_version.replace(current.to_string());
+        // Recorded only once the new version is saved, so it fires once.
+        if state.save().is_ok() {
+            if let Some(previous) = previous.as_deref().and_then(Version::parse) {
+                record(EventKind::VersionChanged { previous });
+            }
+        }
     }
 }
 
@@ -140,6 +157,40 @@ pub fn set_targets(output: OutputFormat, targets: &[Arc<ExecutionTarget>]) {
 /// The command wrote its output to a file instead of stdout.
 pub fn mark_spilled() {
     invocation().spilled = true;
+}
+
+/// The user declined a prompt, so the command's outcome is `cancelled`.
+pub fn mark_cancelled() {
+    invocation().cancelled = true;
+}
+
+/// Record a `cli.onboarding` step.
+pub fn onboarding(
+    step: OnboardingStep,
+    auth_method: Option<AuthMethod>,
+    credential_store: Option<CredentialStore>,
+) {
+    record(EventKind::Onboarding {
+        step,
+        auth_method,
+        credential_store,
+    });
+}
+
+/// Record how a risky-command confirmation was resolved.
+pub fn confirm(result: ConfirmResult) {
+    if result == ConfirmResult::Declined {
+        mark_cancelled();
+    }
+    record(EventKind::Confirm { result });
+}
+
+/// Record that an update notice for `latest` was shown. `latest` comes from
+/// the GitHub or Homebrew API, so only a strict `MAJOR.MINOR.PATCH` is sent.
+pub fn update_notice(latest: &str) {
+    if let Some(latest) = Version::parse(latest) {
+        record(EventKind::UpdateNotice { latest });
+    }
 }
 
 /// The command talks to the Coralogix API without building execution targets
@@ -185,7 +236,11 @@ pub fn finish(result: &anyhow::Result<()>) {
         let Some(path) = inv.path.clone() else {
             return;
         };
-        let (outcome, error_class, status_class) = classify(result, inv.network);
+        let (outcome, error_class, status_class) = if inv.cancelled {
+            (Outcome::Cancelled, ErrorClass::None, StatusClass::None)
+        } else {
+            classify(result, inv.network)
+        };
         CommandEvent {
             path,
             flags: inv.flags.clone(),
@@ -202,7 +257,30 @@ pub fn finish(result: &anyhow::Result<()>) {
             spilled: inv.spilled,
         }
     };
+    let first_query = event.outcome == Outcome::Success && is_query(event.path.as_str());
     record(EventKind::Command(event));
+    if first_query {
+        record_first_query();
+    }
+}
+
+/// Commands that run a telemetry query: the end of the onboarding funnel.
+fn is_query(path: &str) -> bool {
+    matches!(
+        path,
+        "logs" | "spans" | "metrics query" | "metrics query-range" | "dataprime query"
+    )
+}
+
+fn record_first_query() {
+    let mut state = crate::version_cache::VersionCheckCache::load();
+    if state.first_query_succeeded {
+        return;
+    }
+    state.first_query_succeeded = true;
+    if state.save().is_ok() {
+        onboarding(OnboardingStep::FirstQuerySucceeded, None, None);
+    }
 }
 
 fn classify(result: &anyhow::Result<()>, network: bool) -> (Outcome, ErrorClass, StatusClass) {
@@ -311,5 +389,21 @@ mod tests {
 
         let cancelled: anyhow::Result<()> = Err(inquire::InquireError::OperationCanceled.into());
         assert_eq!(classify(&cancelled, false).0, Outcome::Cancelled);
+    }
+
+    #[test]
+    fn query_commands_end_the_funnel() {
+        for path in [
+            "logs",
+            "spans",
+            "metrics query",
+            "metrics query-range",
+            "dataprime query",
+        ] {
+            assert!(is_query(path), "{path}");
+        }
+        for path in ["metrics search", "dataprime list", "alerts list", "init"] {
+            assert!(!is_query(path), "{path}");
+        }
     }
 }

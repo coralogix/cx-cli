@@ -114,9 +114,14 @@ pub fn prompt_optional_text(
 }
 
 pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<()> {
+    use crate::telemetry::{self, event::ConfirmResult};
     if yes {
+        telemetry::confirm(ConfirmResult::SkippedYes);
         eprintln!("[auto-approved via --yes] {action}");
         return Ok(());
+    }
+    if agent_mode || !std::io::stdin().is_terminal() {
+        telemetry::confirm(ConfirmResult::NonInteractive);
     }
     if agent_mode {
         bail!(
@@ -131,8 +136,13 @@ pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<
              Pass --yes to skip the confirmation prompt."
         );
     }
-    let confirmed = Confirm::new(action).with_default(false).prompt()?;
-    if !confirmed {
+    let confirmed = Confirm::new(action).with_default(false).prompt();
+    telemetry::confirm(match confirmed {
+        Ok(true) => ConfirmResult::Accepted,
+        // No, Esc or Ctrl-C.
+        _ => ConfirmResult::Declined,
+    });
+    if !confirmed? {
         bail!("Cancelled.");
     }
     Ok(())

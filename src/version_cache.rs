@@ -26,6 +26,15 @@ pub struct VersionCheckCache {
     /// Set once the telemetry notice has been printed (see `telemetry::consent`).
     #[serde(default)]
     pub telemetry_notice_shown: bool,
+
+    /// The `cx` version of the last run, to record `cli.version_changed`.
+    #[serde(default)]
+    pub last_run_version: Option<String>,
+
+    /// Set once a query command has succeeded, to record the onboarding step
+    /// `first_query_succeeded` once per install.
+    #[serde(default)]
+    pub first_query_succeeded: bool,
 }
 
 impl VersionCheckCache {

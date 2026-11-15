@@ -3381,8 +3381,9 @@ struct ProfilingFlameGraphArgs {
 
 /// Returned by [`run`] in place of `std::process::exit(1)` once the message is
 /// printed, so [`main`] still records telemetry before exiting with code 1.
+/// Carries the error already shown, so telemetry classifies the real cause.
 #[derive(Debug)]
-struct SilentExit;
+struct SilentExit(anyhow::Error);
 
 impl std::fmt::Display for SilentExit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -3390,7 +3391,11 @@ impl std::fmt::Display for SilentExit {
     }
 }
 
-impl std::error::Error for SilentExit {}
+impl std::error::Error for SilentExit {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref())
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -3764,7 +3769,9 @@ async fn run() -> Result<()> {
                 // would dump the anyhow config-resolution chain (with a second,
                 // contradicting `cx profiles add` instruction) after the
                 // guidance. The two lines above are the entire first-run story.
-                return Err(SilentExit.into());
+                // Not the resolution error: a missing profile file is a setup
+                // state, not an I/O failure.
+                return Err(SilentExit(anyhow::anyhow!("no profile is configured")).into());
             }
             // The error already names the fix (for example `cx profiles add
             // <name>`). Exit here instead of returning it: propagating it
@@ -3773,7 +3780,7 @@ async fn run() -> Result<()> {
             // specific instruction already in the error. `{:?}` keeps a
             // single copy of the cause chain (parse errors, and so on).
             eprintln!("Configuration error: {error:?}");
-            return Err(SilentExit.into());
+            return Err(SilentExit(error).into());
         }
     };
 

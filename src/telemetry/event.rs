@@ -219,6 +219,15 @@ pub enum AuthMethod {
     ApiKey,
 }
 
+impl From<crate::config::AuthKind> for AuthMethod {
+    fn from(kind: crate::config::AuthKind) -> Self {
+        match kind {
+            crate::config::AuthKind::OAuth => Self::Oauth,
+            crate::config::AuthKind::ApiKey => Self::ApiKey,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialStore {

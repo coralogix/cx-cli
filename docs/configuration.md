@@ -302,10 +302,11 @@ does not change when you upgrade `cx`, so you are not asked again after an
 upgrade. Any process running as your user can also read those credentials by
 invoking the same tool. Very long secrets are saved in the profile file
 instead. In a non-interactive session, `cx` waits at most five seconds for
-`/usr/bin/security`; a blocked Keychain prompt then falls back to the profile
-file. For CI and coding agents, prefer `CX_API_KEY` and `CX_REGION`, or set
-`CX_CREDENTIAL_STORAGE=file` when a profile must be created. See [Environment
-variables](#environment-variables).
+`/usr/bin/security`. When setup is saving credentials, a blocked Keychain
+prompt then falls back to the profile file; when reading an existing Keychain
+credential, it returns an error instead. For CI and coding agents, prefer
+`CX_API_KEY` and `CX_REGION`, or set `CX_CREDENTIAL_STORAGE=file` when a
+profile must be created. See [Environment variables](#environment-variables).
 
 ### Move a file profile to the Keychain
 

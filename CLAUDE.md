@@ -172,6 +172,7 @@ The `.claude/skills/` directory contains workflow skills for agents developing c
 | `/add-skill` | "add a skill", "create a skill" | End-to-end workflow for creating a user-facing skill |
 | `/run-tests` | "run tests", "cargo test", "check CI" | Run tests, clippy, fmt - full verification |
 | `/create-pr` | "create a PR", "open a pull request" | Create GitHub PR with auto-generated summary |
+| `/pr-review` | "review PR 123", "review this PR", "check PR scope" | Full PR review: scope check via `.github/scripts/pr-footprint.sh`, static review, build + drive changed commands read-only, verdict report |
 
 ### Skill Coverage
 

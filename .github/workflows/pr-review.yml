@@ -1,0 +1,95 @@
+# Automated PR review with the repo's /pr-review skill (.claude/skills/pr-review).
+#
+# Runs when a same-repo PR leaves draft, on every push to a non-draft PR, and when
+# a user with write access comments "@claude review". The skill reads the PR, checks
+# the file footprint, reads the code, and reads CI results (incl. the E2E check).
+# It does not build or run the binary here (--no-drive), so no Rust toolchain and
+# no Coralogix credentials are needed. The last step fails the job when the posted
+# verdict is BLOCK; that is the status check to require in the ruleset later.
+name: PR Review
+
+on:
+  pull_request:
+    types: [ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: |
+      (github.event_name == 'pull_request'
+        && github.event.pull_request.draft == false
+        && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && contains(github.event.comment.body, '@claude review'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Resolve the PR number and refuse fork PRs
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          if [ "$(gh pr view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json isCrossRepository --jq .isCrossRepository)" = "true" ]; then
+            echo "::notice::Fork PR: the review needs repository secrets, skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the PR head
+        if: steps.pr.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: refs/pull/${{ steps.pr.outputs.number }}/head
+
+      - name: Run the pr-review skill
+        if: steps.pr.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          allowed_bots: ""
+          allowed_non_write_users: ""
+          show_full_output: true
+          claude_args: |
+            --max-turns 60
+            --disallowedTools WebFetch,WebSearch
+            --allowedTools "Read,Glob,Grep,Write,mcp__github_inline_comment__create_inline_comment,Bash(git fetch:*),Bash(git diff:*),Bash(git show:*),Bash(git grep:*),Bash(git log:*),Bash(git merge-base:*),Bash(git cat-file:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr comment:*),Bash(gh run view:*),Bash(.github/scripts/pr-footprint.sh:*),Bash(jq:*)"
+          prompt: |
+            Run the /pr-review skill in .claude/skills/pr-review/SKILL.md
+            for PR #${{ steps.pr.outputs.number }} with --no-drive --comment.
+            Post the full report as one PR comment with `gh pr comment`, and each
+            BLOCKER or FIX SOON as an inline comment. Do not edit files. Do not commit.
+
+      - name: Fail the job on BLOCK
+        if: steps.pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("# PR Review:"))] | last | .body // ""')"
+          if [ -z "$body" ]; then
+            echo "::error::No review comment was posted. Read the skill step log."
+            exit 1
+          fi
+          if printf '%s' "$body" | grep -q 'Verdict: 🔴 BLOCK'; then
+            echo "::error::The review verdict is BLOCK. Read the PR comment."
+            exit 1
+          fi
+          echo "Review verdict is PASS."

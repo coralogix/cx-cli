@@ -48,7 +48,13 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           mkdir -p /tmp/pr-review
-          git show "$BASE_SHA:.github/scripts/pr-footprint.sh" > /tmp/pr-review/pr-footprint.sh
+          if git cat-file -e "$BASE_SHA:.github/scripts/pr-footprint.sh" 2>/dev/null; then
+            git show "$BASE_SHA:.github/scripts/pr-footprint.sh" > /tmp/pr-review/pr-footprint.sh
+          else
+            # Only while the script is not on the base branch yet (the PR that adds it).
+            echo "::warning::pr-footprint.sh is not on the base branch; using the PR's copy."
+            cp .github/scripts/pr-footprint.sh /tmp/pr-review/pr-footprint.sh
+          fi
           chmod +x /tmp/pr-review/pr-footprint.sh
 
       - name: Run the pr-review skill

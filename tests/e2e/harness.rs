@@ -102,8 +102,15 @@ pub fn run_ok(args: &[&str]) -> Vec<u8> {
         println!("{}", redact(&stderr));
     }
 
+    // Only hard errors count. A `warning:` line is something the CLI
+    // recovered from on purpose (e.g. the infra availability pre-check
+    // answering 503 while the command itself succeeded).
+    let hard_errors = stderr
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("warning:"))
+        .any(|l| l.contains("API request failed"));
     assert!(
-        !stderr.contains("API request failed"),
+        !hard_errors,
         "cx {} returned API errors on stderr:\n{stderr}",
         args.join(" ")
     );

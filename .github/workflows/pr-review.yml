@@ -32,7 +32,6 @@ jobs:
       pull-requests: write
       checks: read
       actions: read
-      id-token: write
     steps:
       - name: Checkout the PR head
         uses: actions/checkout@v6

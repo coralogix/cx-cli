@@ -148,6 +148,20 @@ fn credential_storage_override_from(value: Option<&str>) -> Option<CredentialSto
     None
 }
 
+fn warn_invalid_credential_storage_override() {
+    if let Some(warning) = invalid_credential_storage_override_warning(
+        std::env::var("CX_CREDENTIAL_STORAGE").ok().as_deref(),
+    ) {
+        eprintln!("{warning}");
+    }
+}
+
+fn invalid_credential_storage_override_warning(value: Option<&str>) -> Option<String> {
+    value.filter(|value| *value != "file").map(|value| {
+        format!("Warning: ignoring CX_CREDENTIAL_STORAGE={value:?}; only \"file\" is supported.")
+    })
+}
+
 fn credential_storage_cursor(platform: OsStorePlatform) -> usize {
     let preferred = default_credential_storage(platform);
     credential_storage_options_for(platform)
@@ -609,6 +623,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         quick,
     } = args;
     let oauth = oauth || signup;
+    warn_invalid_credential_storage_override();
 
     // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
     // secret expanding to nothing) as missing, so it's prompted for or errors
@@ -1217,6 +1232,19 @@ mod tests {
         assert_eq!(credential_storage_override_from(Some("os-store")), None);
         assert_eq!(credential_storage_override_from(Some("FILE")), None);
         assert_eq!(credential_storage_override_from(None), None);
+    }
+
+    #[test]
+    fn invalid_credential_storage_override_warns() {
+        assert_eq!(invalid_credential_storage_override_warning(None), None);
+        assert_eq!(
+            invalid_credential_storage_override_warning(Some("file")),
+            None
+        );
+        assert_eq!(
+            invalid_credential_storage_override_warning(Some("FILE")).as_deref(),
+            Some("Warning: ignoring CX_CREDENTIAL_STORAGE=\"FILE\"; only \"file\" is supported.")
+        );
     }
 
     #[test]

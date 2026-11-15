@@ -287,6 +287,11 @@ omits the key, stays file-based. Upgrading `cx` does not move it. If the
 Keychain write fails, setup saves the secret in the profile file instead and
 prints a warning.
 
+For CI, coding agents, or any setup that must not open the Keychain, set
+`CX_CREDENTIAL_STORAGE=file`. It skips the credential-storage prompt and makes
+new profiles file-backed on every platform. `file` is the only accepted value;
+an unrecognised value prints a warning and is ignored.
+
 Which Keychain path `cx` uses depends on the signature of the binary you are
 running, not on a separate setting.
 
@@ -296,8 +301,11 @@ certificate. Those builds read and write the Keychain through Apple's
 does not change when you upgrade `cx`, so you are not asked again after an
 upgrade. Any process running as your user can also read those credentials by
 invoking the same tool. Very long secrets are saved in the profile file
-instead. For CI and coding agents, prefer `CX_API_KEY` and `CX_REGION`. See
-[Environment variables](#environment-variables).
+instead. In a non-interactive session, `cx` waits at most five seconds for
+`/usr/bin/security`; a blocked Keychain prompt then falls back to the profile
+file. For CI and coding agents, prefer `CX_API_KEY` and `CX_REGION`, or set
+`CX_CREDENTIAL_STORAGE=file` when a profile must be created. See [Environment
+variables](#environment-variables).
 
 ### Move a file profile to the Keychain
 
@@ -337,6 +345,9 @@ curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 Release archives are listed under [Installation reference](#installation-reference).
+The five-second non-interactive timeout applies only to the unsigned
+`/usr/bin/security` path. Signed builds use the native Keychain API and may
+show the normal first-use approval prompt.
 
 > Note: `brew install coralogix/tap/cx` installs the same Homebrew build as `brew install cx`, so it uses `/usr/bin/security`. For the signed build, use the install script above.
 

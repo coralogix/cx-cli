@@ -20,22 +20,20 @@ Or, you can [Install manually](#install-manually).
 
 ### 1. Install the CLI
 
-**macOS / Linux** - Homebrew is the recommended route on macOS:
-
-```bash
-brew install cx
-```
-
-Homebrew builds aren't signed by Coralogix. For credentials only the signed `cx` can read, use the install script below (see [Credentials on macOS](configuration.md#credentials-on-macos)).
-
-Or use the cross-platform install script:
+**macOS / Linux.** The install script is the recommended route. It installs the Coralogix-signed build:
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 If your security policy blocks piped shell scripts, use a signed release binary
-instead - see [Installation reference](configuration.md#installation-reference).
+instead. See [Installation reference](configuration.md#installation-reference).
+
+Homebrew, Cargo, and Nix also work. Those builds aren't signed by Coralogix and use `/usr/bin/security`, so any process running as your user can read the credentials ([Credentials on macOS](configuration.md#credentials-on-macos)).
+
+```bash
+brew install cx
+```
 
 **Windows** - download
 [`cx-x86_64-pc-windows-msvc.zip`](https://github.com/coralogix/cx-cli/releases/latest/download/cx-x86_64-pc-windows-msvc.zip)
@@ -58,7 +56,7 @@ What it asks you:
 |---|---|
 | **Region / Coralogix URL** | **Don't know your region? You don't need to.** Paste the URL you use to reach Coralogix in the browser (e.g. `https://myteam.app.eu2.coralogix.com`) and `cx` works the region out for you. Pick it from the list instead if you do know it, or look yours up in the [Coralogix domain](https://coralogix.com/docs/user-guides/account-management/account-settings/coralogix-domain/) table. A URL `cx` doesn't recognise - a bring-your-own-cloud or private-link deployment - becomes a custom API endpoint instead of an error. |
 | **Sign in** | Opens your browser for [OAuth login](https://coralogix.com/docs/user-guides/account-management/user-management/oauth/). Approve the scopes and choose which team the CLI may access, then come back to the terminal. |
-| **Where should OAuth tokens be stored?** | On macOS, `os-store` (the Keychain) is preselected. See [Credentials on macOS](configuration.md#credentials-on-macos) for how Homebrew and signed installs differ. On Windows and glibc Linux, `file` is preselected and writes tokens into the profile TOML (`0600`); `os-store` is the other choice. On Linux musl builds, `file` is the only option. If the OS store is unavailable, setup saves the tokens in the profile file instead. |
+| **Where should OAuth tokens be stored?** | On macOS, `os-store` (the Keychain) is preselected. See [Credentials on macOS](configuration.md#credentials-on-macos) for how the signed build differs from Homebrew, Cargo, and Nix. On Windows and glibc Linux, `file` is preselected and writes tokens into the profile TOML (`0600`); `os-store` is the other choice. On Linux musl builds, `file` is the only option. If the OS store is unavailable, setup saves the tokens in the profile file instead. |
 | **Where to put the agent skills** | Local to this project (`./`) or global (`~/`). `cx` installs them for you and tells you how to update them later. |
 | **Install shell completions?** | Turns on `<Tab>` completion for `cx`. Pick `zsh`, `bash`, or `fish`, or keep the default and skip it. **Other** lets you name a shell and an install path yourself. Skipped without asking when completions are already installed. |
 

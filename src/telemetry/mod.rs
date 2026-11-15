@@ -6,10 +6,11 @@
 //!
 //! `main` drives the per-run `cli.command` event: [`begin`] at start,
 //! [`set_command`] after parsing, [`set_targets`] once profiles resolve, and
-//! [`finish`] with the result.
+//! [`finish`] with the result, then [`flush`].
 
 pub mod consent;
 pub mod event;
+pub mod send;
 pub mod spool;
 
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock};
@@ -139,6 +140,38 @@ pub fn set_targets(output: OutputFormat, targets: &[Arc<ExecutionTarget>]) {
 /// The command wrote its output to a file instead of stdout.
 pub fn mark_spilled() {
     invocation().spilled = true;
+}
+
+/// The command talks to the Coralogix API without building execution targets
+/// (`cx init`, `cx profiles add`), so it may flush too.
+pub fn mark_network() {
+    invocation().network = true;
+}
+
+/// Send up to [`send::MAX_BATCH`] spooled events, oldest first, within
+/// [`send::BUDGET`]. Only commands that already used the network flush, so a
+/// local command never waits on telemetry. Any HTTP response removes the
+/// batch; a network error or timeout puts it back for the next flush.
+pub async fn flush() {
+    let Mode::On { endpoint } = mode() else {
+        return;
+    };
+    if !invocation().network {
+        return;
+    }
+    let Some(spool) = spool::path() else {
+        return;
+    };
+    let mut taken = spool::take(&spool, &INVOCATION_ID.to_string());
+    let mut batch = std::mem::take(&mut taken.events);
+    let mut unsent = batch.split_off(batch.len().min(send::MAX_BATCH));
+    if !batch.is_empty() {
+        let resource = Resource::current(&crate::version_cache::installation_id());
+        if !send::post(endpoint, &send::encode(&resource, &batch)).await {
+            unsent.extend(batch);
+        }
+    }
+    taken.finish(&spool, &unsent);
 }
 
 /// Record `cli.command` for the run that produced `result`. Nothing is

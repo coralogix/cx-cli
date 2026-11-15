@@ -314,3 +314,189 @@ fn on_mode_prints_notice_once_and_spools_local_commands() {
         .collect();
     assert_eq!(names, ["cli.first_run", "cli.command", "cli.command"]);
 }
+
+// ── Flush ─────────────────────────────────────────────────────────────────────
+
+/// A mock serving the alerts API and a collector at `/v1/logs` answering
+/// `collector`.
+async fn api_and_collector(collector: ResponseTemplate) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "alertDefs": [] })),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/logs"))
+        .respond_with(collector)
+        .mount(&server)
+        .await;
+    server
+}
+
+async fn collector_requests(server: &MockServer) -> Vec<wiremock::Request> {
+    server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| r.url.path() == "/v1/logs")
+        .collect()
+}
+
+fn on_mode(home: &Path, server: &MockServer) -> Command {
+    let mut cmd = cx(home);
+    cmd.env("CX_TELEMETRY_ENDPOINT", format!("{}/v1/logs", server.uri()));
+    cmd
+}
+
+fn spool_lines(home: &Path) -> Vec<Value> {
+    fs::read_to_string(spool(home))
+        .unwrap_or_default()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+fn sending_files(home: &Path) -> usize {
+    fs::read_dir(home.join(".cx"))
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".sending")
+        })
+        .count()
+}
+
+fn record_names(body: &Value) -> Vec<String> {
+    body["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            r["attributes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|kv| kv["key"] == "event.name")
+                .unwrap()["value"]["stringValue"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn network_command_posts_otlp_and_empties_spool() {
+    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), "");
+
+    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
+    assert_eq!(r.code, 0, "{}", r.stderr);
+
+    let requests = collector_requests(&server).await;
+    assert_eq!(requests.len(), 1);
+    let req = &requests[0];
+    assert!(req.headers.get("authorization").is_none(), "no auth header");
+    assert!(req.headers["user-agent"]
+        .to_str()
+        .unwrap()
+        .starts_with("cx-cli/"));
+    let body: Value = serde_json::from_slice(&req.body).unwrap();
+    let resource = &body["resourceLogs"][0]["resource"]["attributes"];
+    assert!(resource.as_array().unwrap().contains(
+        &serde_json::json!({ "key": "service.name", "value": { "stringValue": "cx-cli" } })
+    ));
+    assert_eq!(record_names(&body), ["cli.first_run", "cli.command"]);
+
+    assert!(!spool(&home).exists(), "spool emptied");
+    assert_eq!(sending_files(&home), 0);
+}
+
+#[tokio::test]
+async fn any_http_status_ends_the_batch() {
+    let server = api_and_collector(ResponseTemplate::new(500)).await;
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), "");
+
+    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
+    assert_eq!(r.code, 0);
+    assert_eq!(collector_requests(&server).await.len(), 1);
+    assert!(
+        spool_lines(&home).is_empty(),
+        "rejected batch is not retried"
+    );
+}
+
+#[tokio::test]
+async fn slow_collector_never_delays_the_command() {
+    let server =
+        api_and_collector(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(10)))
+            .await;
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), "");
+
+    let started = std::time::Instant::now();
+    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
+    let elapsed = started.elapsed();
+
+    assert_eq!(r.code, 0);
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "took {elapsed:?}"
+    );
+    let names: Vec<Value> = spool_lines(&home)
+        .into_iter()
+        .map(|e| e["event.name"].clone())
+        .collect();
+    assert_eq!(names, ["cli.first_run", "cli.command"], "events kept");
+    assert_eq!(sending_files(&home), 0);
+}
+
+#[tokio::test]
+async fn local_commands_never_send() {
+    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
+    assert_eq!(r.code, 0);
+    assert!(collector_requests(&server).await.is_empty());
+    assert_eq!(spool_lines(&home).len(), 2);
+}
+
+#[tokio::test]
+async fn one_request_carries_at_most_50_events() {
+    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), "");
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let seeded: String = (0..60u64)
+        .map(|i| {
+            format!(
+                "{{\"time_unix_nano\":{},\"event.name\":\"cli.first_run\",\"cx.invocation.id\":\"{}\",\"cx.agent\":\"direct\",\"cx.ci\":false,\"cx.tty\":false}}\n",
+                now - 1_000_000 + i,
+                uuid::Uuid::new_v4()
+            )
+        })
+        .collect();
+    fs::write(spool(&home), seeded).unwrap();
+
+    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
+    assert_eq!(r.code, 0);
+    let requests = collector_requests(&server).await;
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(record_names(&body).len(), 50);
+    // 60 seeded + this run's first_run and command, minus 50 sent.
+    assert_eq!(spool_lines(&home).len(), 12);
+}

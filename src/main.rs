@@ -3402,6 +3402,7 @@ async fn main() -> Result<()> {
     telemetry::begin();
     let result = run().await;
     telemetry::finish(&result);
+    telemetry::flush().await;
     if result.as_ref().is_err_and(|e| e.is::<SilentExit>()) {
         std::process::exit(1);
     }

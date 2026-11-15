@@ -308,7 +308,7 @@ is known and is bounded at 400 ms in total.
 |---|---|---|---|
 | `$CX_TELEMETRY_ENDPOINT` | POST | OTLP/HTTP JSON `resourceLogs`, max 50 records, `Content-Type: application/json` | any status: batch removed; network error or timeout: batch kept |
 
-### 3.1 [ ] OTLP JSON encoding
+### 3.1 [x] OTLP JSON encoding *(completed 2026-11-15)*
 - **Files:** `src/telemetry/send.rs`
 - **What:** Turn a batch of events into the OTLP logs JSON body shown in the spec's
   example:
@@ -321,7 +321,7 @@ is known and is bounded at 400 ms in total.
   spec's example request.
 - **Dependencies:** 1.1
 
-### 3.2 [ ] Bounded flush
+### 3.2 [x] Bounded flush *(completed 2026-11-15)*
 - **Files:** `src/telemetry/send.rs`, `src/telemetry/mod.rs`, `src/main.rs`
 - **What:** `flush()` takes up to 50 spooled events and POSTs them with a plain
   `reqwest` client.

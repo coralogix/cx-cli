@@ -610,6 +610,8 @@ pub struct AddArgs {
 }
 
 pub async fn run_add(args: AddArgs) -> Result<()> {
+    // Talks to the Coralogix API, so telemetry may flush afterwards.
+    crate::telemetry::mark_network();
     let AddArgs {
         name,
         url,

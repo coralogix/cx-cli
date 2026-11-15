@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | in-progress |
+| Status | complete (M1–M4) |
 | Created | 2026-11-15 |
 | Ticket | [HEA-36](https://linear.app/coralogix/issue/HEA-36/add-client-telemetry-to-the-cli) |
 | Branch | claude/telemetry-design-milestones-397571 |

@@ -34,6 +34,8 @@ Before querying, load the reference files for the chosen pillar:
 | RUM (frontend) | `references/dataprime-reference.md` + `references/rum-querying.md` + `references/rum-fields.md` |
 | DataPrime syntax only | `references/dataprime-reference.md` |
 
+**RUM hard rule:** always query RUM with `cx dataprime query --source rum.events` first (fields directly under `$d.*`), even if you haven't loaded the reference files. Only if that returns no rows (after widening the range) fall back to legacy RUM logs: `cx logs` with `$l.subsystemname == 'cx_rum'` and fields under `$d.cx_rum.*`. Say which source the answer came from.
+
 ---
 
 ## Safety

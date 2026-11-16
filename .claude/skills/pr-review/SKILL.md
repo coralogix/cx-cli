@@ -374,8 +374,11 @@ finding, no finding without evidence, no praise, no restating the diff.
 The CI gate reads only this result, and fails when it disagrees with the
 report's Verdict line, with the blocker count, or with the tier table above.
 In CI, do not post the summary comment yourself: the workflow posts
-`report` and adds the `**Commit:**` line. CI has no shell for the footprint
-script; read its output from the file the prompt names.
+`report` and adds the `**Commit:**` line. CI has no git. The workflow writes
+the footprint, the diff, the commits, and the PR's files to the paths the
+prompt names. Read them with Read, Grep, and Glob instead of the git commands
+in this skill. For example, search `tests/e2e` in the PR's files with Grep
+instead of `git grep`.
 
 ## Cleanup
 

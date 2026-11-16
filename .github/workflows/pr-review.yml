@@ -6,30 +6,31 @@
 # here (--no-drive), so no Rust toolchain and no Coralogix credentials are needed.
 # Claude returns a JSON result (--json-schema): verdict, blockers, tier, score, and
 # the report text. The gate reads that result, not comment text, posts the report,
-# and fails the job unless it says PASS; that is the status check to require in the
-# ruleset later. The job then labels the PR with the human-review tier, like the
-# "baz approved" label.
+# and fails the job unless it says PASS. The job then labels the PR with the
+# human-review tier, like the "baz approved" label.
+#
+# pull_request_target: GitHub runs this file, the skill, and the footprint script
+# from master, never from the PR, so a PR cannot change the review that judges it.
+# The PR code is never checked out or run. It is fetched as git objects only.
 #
 # Prompt injection: the diff and PR text are untrusted input to Claude. So Claude
-# gets no file writes, no shell, and no command that runs a program or reads files
-# outside git objects: no Write/Edit, no `git diff` (--no-index reads any file), no
-# `git fetch`/`git grep` (--upload-pack / -O run programs), no `gh pr comment`
-# (--body-file reads any file), no jq. The footprint is computed before Claude runs
-# and stored root-owned. Git config is root-owned, so `--output` cannot plant a
-# config that runs a program. Reads of /proc and the runner's own files are denied,
-# and secrets are scrubbed from Claude's subprocess environment.
+# gets no file writes and no git at all (git show/log/diff can write files with
+# --output). Before Claude runs, the workflow writes the PR's files, the diff, the
+# commit list, and the footprint to /opt/pr-review, root-owned and read-only, and
+# Claude reads them with Read/Grep. Its only commands are read-only gh calls.
+# Reads of /proc and the runner's own files are denied, Claude's commands run in a
+# sandbox, and secrets are scrubbed from their environment.
 #
-# No issue_comment trigger on purpose: checking out PR code in a comment-triggered
-# (privileged) workflow is a CodeQL high-severity pattern. Re-runs happen on push.
+# No issue_comment trigger on purpose: re-runs happen on push.
 name: PR Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, ready_for_review, synchronize]
 
 jobs:
   review:
-    # Same-repo PRs only: forks get no secrets.
+    # Same-repo PRs only. Required: pull_request_target gives secrets to forks too.
     if: |
       github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
@@ -60,16 +61,16 @@ jobs:
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR}/labels/${l// /%20}" >/dev/null 2>&1 || true
           done
 
-      # pull_request checks out the merge commit of the PR into master.
-      - name: Checkout the PR merge commit
+      # The base commit, never the PR code.
+      - name: Checkout the base branch
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      # Everything that needs a shell runs here, before Claude, and its output is
-      # root-owned so Claude cannot change it. The classifier comes from the base
-      # branch, so a PR cannot change the script that scores it.
+      # Everything that needs git runs here, before Claude, with trusted code from
+      # the base commit. The output is root-owned so Claude cannot change it.
       - name: Prepare the review inputs
         env:
           PR: ${{ github.event.pull_request.number }}
@@ -78,23 +79,28 @@ jobs:
         run: |
           # The secret scrub runs Claude's commands in a sandbox, which needs these.
           sudo apt-get install -y -qq bubblewrap socat >/dev/null
-          git fetch --no-tags -q origin "+refs/pull/${PR}/head:refs/pr-review/${PR}"
-          if [ "$(git rev-parse "refs/pr-review/${PR}")" != "$HEAD_SHA" ]; then
+          head="refs/pr-review/${PR}"
+          git fetch --no-tags -q origin "+refs/pull/${PR}/head:${head}"
+          if [ "$(git rev-parse "$head")" != "$HEAD_SHA" ]; then
             echo "::error::The PR head moved during the run. The next push reruns the review."; exit 1
           fi
-          tmp="$(mktemp -d)"
-          if git cat-file -e "$BASE_SHA:.github/scripts/pr-footprint.sh" 2>/dev/null; then
-            git show "$BASE_SHA:.github/scripts/pr-footprint.sh" > "$tmp/pr-footprint.sh"
-          else
-            # Only while the script is not on the base branch yet (the PR that adds it).
-            echo "::warning::pr-footprint.sh is not on the base branch; using the PR's copy."
-            git show "$HEAD_SHA:.github/scripts/pr-footprint.sh" > "$tmp/pr-footprint.sh"
-          fi
-          bash "$tmp/pr-footprint.sh" "$BASE_SHA" "refs/pr-review/${PR}" > "$tmp/footprint.txt" 2>&1
-          sudo install -d -o root -g root -m 0755 /opt/pr-review
-          sudo install -o root -g root -m 0444 "$tmp/footprint.txt" /opt/pr-review/footprint.txt
-          sudo install -o root -g root -m 0444 /dev/null /opt/pr-review/gitconfig
-          sudo chown root:root .git/config && sudo chmod 0444 .git/config
+          out="$(mktemp -d)"
+          bash .github/scripts/pr-footprint.sh "$BASE_SHA" "$head" > "$out/footprint.txt" 2>&1
+          git diff --no-color --no-ext-diff --no-textconv "${BASE_SHA}...${head}" > "$out/diff.patch"
+          git log --no-color --format='%H %an%n    %s' "${BASE_SHA}..${head}" > "$out/commits.txt"
+          # The PR's files. Not git archive: export-ignore in the PR's .gitattributes
+          # could hide files from the review. Symlinks become text files, so Claude
+          # cannot follow one to a runner file.
+          git worktree add -q --detach "$out/head" "$head"
+          rm "$out/head/.git"
+          find "$out/head" -type l | while IFS= read -r l; do
+            t="$(readlink "$l")"; rm "$l"; printf 'symlink to: %s\n' "$t" > "$l"
+          done
+          git worktree prune
+          sudo rm -rf /opt/pr-review
+          sudo cp -r "$out" /opt/pr-review
+          sudo chown -R root:root /opt/pr-review
+          sudo chmod -R a-w,a+rX /opt/pr-review
           cat /opt/pr-review/footprint.txt
 
       - name: Run the pr-review skill
@@ -102,9 +108,6 @@ jobs:
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         env:
           GH_TOKEN: ${{ github.token }}
-          # Only the root-owned, empty global config; no system config.
-          GIT_CONFIG_GLOBAL: /opt/pr-review/gitconfig
-          GIT_CONFIG_NOSYSTEM: "1"
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}
@@ -115,18 +118,22 @@ jobs:
             --max-turns 60
             --json-schema '{"type":"object","additionalProperties":false,"properties":{"verdict":{"type":"string","enum":["PASS","BLOCK"]},"blockers":{"type":"integer","minimum":0},"tier":{"type":"string","enum":["auto","glance","review"]},"score":{"type":"integer","minimum":0,"maximum":10},"report":{"type":"string","minLength":1,"maxLength":60000}},"required":["verdict","blockers","tier","score","report"]}'
             --disallowedTools "WebFetch,WebSearch,Write,Edit,MultiEdit,NotebookEdit,Read(//proc/**),Read(//sys/**),Read(//home/runner/work/_temp/**),Read(//home/runner/actions-runner/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**)"
-            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(git show:*),Bash(git log:*),Bash(git diff-tree:*),Bash(git merge-base:*),Bash(git cat-file:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh run view:*)"
+            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh run view:*)"
           prompt: |
             Run the /pr-review skill in .claude/skills/pr-review/SKILL.md
             for PR #${{ github.event.pull_request.number }} with --no-drive.
-            The workflow already did the shell work of Part 1:
-            - The PR head is fetched as refs/pr-review/${{ github.event.pull_request.number }}
-              (commit ${{ github.event.pull_request.head.sha }}); the base is
-              ${{ github.event.pull_request.base.sha }}.
-            - The footprint output is in /opt/pr-review/footprint.txt. Read it;
-              do not run the script.
-            Read code with `git show <ref>:<path>`, `git log`, `git diff-tree -p`,
-            and `gh pr diff`. Post each BLOCKER or FIX SOON as an inline comment.
+            The working directory is the base commit
+            ${{ github.event.pull_request.base.sha }}, not the PR.
+            You have no git. The workflow already did the git work of Part 1,
+            for the PR head ${{ github.event.pull_request.head.sha }}:
+            - /opt/pr-review/footprint.txt: the footprint output.
+            - /opt/pr-review/diff.patch: the PR diff against the merge base.
+            - /opt/pr-review/commits.txt: the PR commits.
+            - /opt/pr-review/head/: the PR's files. Symlinks are text files that
+              start with "symlink to:".
+            Read them with Read, Grep, and Glob. Use `gh pr view`, `gh pr diff`,
+            `gh pr checks`, and `gh run view` for PR and CI data.
+            Post each BLOCKER or FIX SOON as an inline comment.
             Do not post the summary comment yourself: put the full report in the
             `report` field of the structured result described under "Structured
             result (CI)" in the skill, and the workflow posts it.
@@ -170,8 +177,10 @@ jobs:
 
           # 3. The report people read must show the same verdict. The workflow,
           #    not Claude, posts it, with the commit line added here.
-          jq -r .report <<<"$RESULT" > /tmp/report.md
-          line="$(grep -m1 '^\*\*Verdict:' /tmp/report.md || true)"
+          # mktemp, not a fixed /tmp path that Claude's sandbox could plant first.
+          report="$(mktemp)"; comment="$(mktemp)"
+          jq -r .report <<<"$RESULT" > "$report"
+          line="$(grep -m1 '^\*\*Verdict:' "$report" || true)"
           case "$line" in
             "**Verdict: 🟢 PASS**"*) shown=PASS ;;
             "**Verdict: 🔴 BLOCK**"*) shown=BLOCK ;;
@@ -179,8 +188,8 @@ jobs:
           esac
           [ "$shown" = "$verdict" ] || fail "The report says '$shown' but the structured result says '$verdict'."
           awk -v sha="$SHA" '{print} !done && /^\*\*Verdict:/ {print "**Commit:** `" sha "`"; done=1}' \
-            /tmp/report.md > /tmp/comment.md
-          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/comment.md >/dev/null
+            "$report" > "$comment"
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$comment" >/dev/null
 
           # 4. Label and summary, then the verdict decides the check.
           if [ "$verdict" = BLOCK ]; then label="review: blocked"

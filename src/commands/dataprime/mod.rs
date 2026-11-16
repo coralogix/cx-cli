@@ -439,6 +439,17 @@ pub fn render_results(
     Ok(())
 }
 
+/// RUM lives in the `rum.events` dataset; `cx_rum` is the legacy logs subsystem
+/// that agents still reach for from training data. Steer them back.
+fn rum_source_warning(query: &str) -> Option<String> {
+    query.to_ascii_lowercase().contains("cx_rum").then(|| {
+        "[RUM query warning] RUM data lives in the `rum.events` dataset, not in logs under \
+         `cx_rum`. Re-run with: cx dataprime query --source rum.events '<query>' \
+         (fields sit directly under $d.*, with no cx_rum prefix or subsystem filter)."
+            .to_string()
+    })
+}
+
 /// Run a generic DataPrime query across all targets with fan-out, merge, and render.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_query(
@@ -476,7 +487,8 @@ pub async fn run_query(
     })
     .await;
 
-    let merged = merge_results(per_profile, include_profile, cases_warning.as_deref())?;
+    let mut merged = merge_results(per_profile, include_profile, cases_warning.as_deref())?;
+    merged.warnings.extend(rum_source_warning(&query));
     if options.extended_information {
         match output {
             OutputFormat::Text => {
@@ -748,6 +760,16 @@ category: ["Commands reference", "test"]
             result.is_err(),
             "must bail when every profile in the fan-out failed"
         );
+    }
+
+    #[test]
+    fn rum_warning_only_for_cx_rum_queries() {
+        assert!(rum_source_warning("filter $l.subsystemname == 'CX_RUM'").is_some());
+        assert!(
+            rum_source_warning("source logs | filter $d.cx_rum.event_context.type == 'error'")
+                .is_some()
+        );
+        assert!(rum_source_warning("filter $d.event_context.type == 'error'").is_none());
     }
 
     // ── check_cases_query_rules integration via merge_results ────────────────

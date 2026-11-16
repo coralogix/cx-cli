@@ -383,7 +383,9 @@ Examples:
 Examples:
   cx logs 'filter $m.severity == ERROR'
   cx logs 'filter $d.message ~ \"timeout\"' --start now-6h --tier archive
-  cx logs 'filter $l.applicationname == \"api\"' --limit 200 -o json")]
+  cx logs 'filter $l.applicationname == \"api\"' --limit 200 -o json
+
+RUM (frontend) data is not in logs. Use: cx dataprime query --source rum.events '<query>'")]
     Logs {
         /// DataPrime query string. e.g. 'filter $m.severity == ERROR'
         query: String,

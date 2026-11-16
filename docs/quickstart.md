@@ -20,11 +20,11 @@ Or, you can [Install manually](#install-manually).
 
 ### 1. Install the CLI
 
-**macOS** - Homebrew builds are not signed by Coralogix. They store credentials
-through `/usr/bin/security`, so any process running as your macOS user can read
-them without a prompt.
-
-**Security note:** To limit Keychain credential access to the Coralogix-signed
+**macOS** - If you choose `os-store` for credentials, Homebrew's binary is not
+Coralogix Developer ID-signed, so it uses `/usr/bin/security` rather than
+direct Keychain access. This avoids a new Keychain prompt after each Homebrew
+upgrade, but any process running as your macOS user can read the credentials
+without a prompt. To limit Keychain credential access to the Coralogix-signed
 `cx`, prefer the signed install script:
 
 ```bash

@@ -36,12 +36,12 @@ Ground rules:
 
 If `cx --version` already works, **upgrade it first** (`brew upgrade cx`, or rerun the install script below), even when the user only wants to sign in: older versions don't complete setup, and lack `cx init --signup`. Otherwise detect the OS (`uname -s`; on Windows, `$env:OS` in PowerShell) and ask the user which method they prefer when more than one fits.
 
-**macOS** - Homebrew builds store credentials through `/usr/bin/security`, so
-any process running as the user can read them without a prompt.
-
-**Security note:** When the user wants Keychain credentials only the
-Coralogix-signed `cx` can read, prefer the signed install script (x86_64 and
-arm64, latest release):
+**macOS** - If the user chooses `os-store` for credentials, Homebrew's binary
+is not Coralogix Developer ID-signed, so it uses `/usr/bin/security` rather
+than direct Keychain access. This avoids a new Keychain prompt after each
+Homebrew upgrade, but any process running as the user can read the credentials
+without a prompt. To limit Keychain credential access to the Coralogix-signed
+`cx`, prefer the signed install script (x86_64 and arm64, latest release):
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh

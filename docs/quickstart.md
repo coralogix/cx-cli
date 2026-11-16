@@ -20,12 +20,9 @@ Or, you can [Install manually](#install-manually).
 
 ### 1. Install the CLI
 
-**macOS** - If you choose `os-store` for credentials, Homebrew's binary is not
-Coralogix Developer ID-signed, so it uses `/usr/bin/security` rather than
-direct Keychain access. This avoids a new Keychain prompt after each Homebrew
-upgrade, but any process running as your macOS user can read the credentials
-without a prompt. To limit Keychain credential access to the Coralogix-signed
-`cx`, prefer the signed install script:
+**macOS** - use the install script. It installs the Coralogix Developer
+ID-signed binary. Credentials are stored in the Keychain with access limited
+to that signed `cx`:
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
@@ -35,18 +32,27 @@ If your security policy blocks piped shell scripts, use a signed release binary
 instead - see
 [Installation reference](configuration.md#installation-reference).
 
-Homebrew is also available:
+Use Homebrew only if you want it, or the script can't be used:
 
 ```bash
 brew install cx
 ```
 
-See [Credentials on macOS](configuration.md#credentials-on-macos) for details.
+Homebrew builds aren't Coralogix-signed, so credentials are stored in the
+Keychain via `/usr/bin/security`. Upgrades don't trigger new Keychain prompts,
+but any process running as your macOS user can read those credentials. See
+[Credentials on macOS](configuration.md#credentials-on-macos).
 
-**Linux** - use the cross-platform install script:
+**Linux** - use the install script:
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Homebrew is an alternative:
+
+```bash
+brew install cx
 ```
 
 **Windows** - download

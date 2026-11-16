@@ -3382,20 +3382,9 @@ struct ProfilingFlameGraphArgs {
 /// Returned by [`run`] in place of `std::process::exit(1)` once the message is
 /// printed, so [`main`] still records telemetry before exiting with code 1.
 /// Carries the error already shown, so telemetry classifies the real cause.
-#[derive(Debug)]
-struct SilentExit(anyhow::Error);
-
-impl std::fmt::Display for SilentExit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("exit 1")
-    }
-}
-
-impl std::error::Error for SilentExit {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.0.as_ref())
-    }
-}
+#[derive(Debug, thiserror::Error)]
+#[error("exit 1")]
+struct SilentExit(#[source] anyhow::Error);
 
 fn main() -> Result<()> {
     // Handle shell completions before any stdout or stderr output.

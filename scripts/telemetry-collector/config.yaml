@@ -50,7 +50,6 @@ processors:
         - 'attributes["cx.auth.method"] != nil and not IsMatch(attributes["cx.auth.method"], "^(oauth|api_key)$")'
         - 'attributes["cx.credential.store"] != nil and not IsMatch(attributes["cx.credential.store"], "^(keychain|file)$")'
         - 'attributes["cx.skills.scope"] != nil and not IsMatch(attributes["cx.skills.scope"], "^(global|local)$")'
-        - 'attributes["cx.skills.names"] != nil and (not IsMatch(attributes["cx.skills.names"], "^[a-z0-9-]{1,48}(,[a-z0-9-]{1,48})*$") or Len(Split(attributes["cx.skills.names"], ",")) > 30)'
         - 'attributes["cx.version.latest"] != nil and not IsMatch(attributes["cx.version.latest"], "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,4}$")'
         - 'attributes["cx.version.previous"] != nil and not IsMatch(attributes["cx.version.previous"], "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,4}$")'
         - 'attributes["cx.confirm.result"] != nil and not IsMatch(attributes["cx.confirm.result"], "^(accepted|declined|skipped_yes|non_interactive)$")'
@@ -66,7 +65,7 @@ processors:
           - set(attributes["service.name"], "cx-cli")
       - context: log
         statements:
-          - keep_keys(attributes, ["event.name", "cx.invocation.id", "cx.agent", "cx.ci", "cx.tty", "cx.team.id", "cx.command.path", "cx.command.flags", "cx.outcome", "cx.error.class", "cx.http.status_class", "cx.duration_ms", "cx.output.format", "cx.profile.count", "cx.spilled", "cx.parse.kind", "cx.onboarding.step", "cx.auth.method", "cx.credential.store", "cx.skills.scope", "cx.skills.names", "cx.version.latest", "cx.version.previous", "cx.confirm.result"])
+          - keep_keys(attributes, ["event.name", "cx.invocation.id", "cx.agent", "cx.ci", "cx.tty", "cx.team.id", "cx.command.path", "cx.command.flags", "cx.outcome", "cx.error.class", "cx.http.status_class", "cx.duration_ms", "cx.output.format", "cx.profile.count", "cx.spilled", "cx.parse.kind", "cx.onboarding.step", "cx.auth.method", "cx.credential.store", "cx.skills.scope", "cx.version.latest", "cx.version.previous", "cx.confirm.result"])
           - set(body, "")
           - set(observed_time, Now())
           - set(severity_text, "INFO")

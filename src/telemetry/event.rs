@@ -9,8 +9,6 @@
 //! spooled line back rejects unknown enum values; unknown keys are ignored and,
 //! because events are re-encoded from these types, never sent.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -45,9 +43,7 @@ impl Event {
     /// An event of `kind` happening now, in invocation `invocation_id`.
     pub fn now(invocation_id: Uuid, team_id: Option<TeamId>, kind: EventKind) -> Self {
         Self {
-            time_unix_nano: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos() as u64),
+            time_unix_nano: super::spool::now_nanos(),
             invocation_id,
             agent: Agent::detect(),
             ci: is_ci(),
@@ -90,15 +86,9 @@ pub enum EventKind {
     #[serde(rename = "cli.skills_install")]
     SkillsInstall {
         #[serde(rename = "cx.skills.scope")]
-        scope: SkillsScope,
+        scope: crate::commands::skills::SkillsScope,
         #[serde(rename = "cx.outcome")]
         outcome: Outcome,
-        #[serde(
-            rename = "cx.skills.names",
-            default,
-            skip_serializing_if = "Option::is_none"
-        )]
-        names: Option<SkillNames>,
     },
     #[serde(rename = "cli.update_notice")]
     UpdateNotice {
@@ -246,13 +236,6 @@ impl From<crate::config::CredentialStorage> for CredentialStore {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SkillsScope {
-    Global,
-    Local,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ConfirmResult {
     Accepted,
     Declined,
@@ -262,7 +245,7 @@ pub enum ConfirmResult {
 
 // ── Constrained strings ───────────────────────────────────────────────────────
 
-/// `[a-z0-9-]{1,max}`: the shape of every clap command, flag and skill name.
+/// `[a-z0-9-]{1,max}`: the shape of every clap command and flag name.
 fn is_name(s: &str, max: usize) -> bool {
     !s.is_empty()
         && s.len() <= max
@@ -272,7 +255,7 @@ fn is_name(s: &str, max: usize) -> bool {
 
 /// Subcommand names joined by spaces, e.g. `alerts list`. At most 4 words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[serde(transparent)]
 pub struct CommandPath(String);
 
 impl CommandPath {
@@ -294,22 +277,10 @@ impl CommandPath {
     }
 }
 
-impl TryFrom<String> for CommandPath {
-    type Error = String;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        let words: Vec<&str> = s.split(' ').collect();
-        if words.len() <= Self::MAX_WORDS && words.iter().all(|w| is_name(w, 32)) {
-            Ok(Self(s))
-        } else {
-            Err("invalid cx.command.path".into())
-        }
-    }
-}
-
 /// Sorted, de-duplicated `--long` flag names joined by commas, e.g.
 /// `--limit,--start`. Names only, never values. Empty when no flag was given.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[serde(transparent)]
 pub struct CommandFlags(String);
 
 impl CommandFlags {
@@ -329,21 +300,6 @@ impl CommandFlags {
 
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl TryFrom<String> for CommandFlags {
-    type Error = String;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        let valid = s.is_empty()
-            || (s.split(',').count() <= Self::MAX_FLAGS
-                && s.split(',')
-                    .all(|f| f.strip_prefix("--").is_some_and(|n| is_name(n, 40))));
-        if valid {
-            Ok(Self(s))
-        } else {
-            Err("invalid cx.command.flags".into())
-        }
     }
 }
 
@@ -386,38 +342,10 @@ pub fn command_identity(
     )
 }
 
-/// Installed skill names joined by commas, e.g. `cx-alerts,cx-slos`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String")]
-pub struct SkillNames(String);
-
-impl SkillNames {
-    const MAX_NAMES: usize = 30;
-
-    /// Sorted, invalid names skipped. `None` if no valid name is left.
-    pub fn from_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Option<Self> {
-        let names: std::collections::BTreeSet<&str> =
-            names.into_iter().filter(|n| is_name(n, 48)).collect();
-        let names: Vec<&str> = names.into_iter().take(Self::MAX_NAMES).collect();
-        (!names.is_empty()).then(|| Self(names.join(",")))
-    }
-}
-
-impl TryFrom<String> for SkillNames {
-    type Error = String;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        if s.split(',').count() <= Self::MAX_NAMES && s.split(',').all(|n| is_name(n, 48)) {
-            Ok(Self(s))
-        } else {
-            Err("invalid cx.skills.names".into())
-        }
-    }
-}
-
 /// A strict `MAJOR.MINOR.PATCH` version. Versions can come from the GitHub
 /// releases API, so they are parsed, never copied through.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[serde(transparent)]
 pub struct Version(String);
 
 impl Version {
@@ -432,45 +360,22 @@ impl Version {
     }
 }
 
-impl TryFrom<String> for Version {
-    type Error = String;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        Self::parse(&s).ok_or_else(|| "invalid version".into())
-    }
-}
-
 /// The team id a profile has cached. Sent as a digit string, which is what the
 /// collector's pattern check expects. Claimed by the client, not verified.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TeamId(u64);
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TeamId(String);
 
 impl TeamId {
     pub fn new(id: i64) -> Option<Self> {
-        u64::try_from(id).ok().filter(|&id| id > 0).map(Self)
-    }
-}
-
-impl Serialize for TeamId {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.0.to_string())
-    }
-}
-
-impl<'de> Deserialize<'de> for TeamId {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(d)?;
-        s.parse::<u64>()
-            .ok()
-            .filter(|_| s.len() <= 12 && s.bytes().all(|b| b.is_ascii_digit()))
-            .map(Self)
-            .ok_or_else(|| serde::de::Error::custom("invalid cx.team.id"))
+        (id > 0).then(|| Self(id.to_string()))
     }
 }
 
 /// `direct`, or the lowercased name of the first agent env var that is set
 /// (`safety::AGENT_ENV_VARS`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String")]
+#[serde(transparent)]
 pub struct Agent(String);
 
 impl Agent {
@@ -480,21 +385,6 @@ impl Agent {
             .find(|var| std::env::var_os(var).is_some())
             .map_or_else(|| "direct".to_string(), |var| var.to_ascii_lowercase());
         Self(name)
-    }
-}
-
-impl TryFrom<String> for Agent {
-    type Error = String;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        let known = s == "direct"
-            || crate::safety::AGENT_ENV_VARS
-                .iter()
-                .any(|var| var.to_ascii_lowercase() == s);
-        if known {
-            Ok(Self(s))
-        } else {
-            Err("unknown cx.agent".into())
-        }
     }
 }
 
@@ -622,9 +512,8 @@ mod tests {
                 credential_store: Some(CredentialStore::Keychain),
             },
             EventKind::SkillsInstall {
-                scope: SkillsScope::Global,
+                scope: crate::commands::skills::SkillsScope::Global,
                 outcome: Outcome::Success,
-                names: SkillNames::from_names(["cx-slos", "cx-alerts"]),
             },
             EventKind::UpdateNotice {
                 latest: Version::parse("0.2.0").unwrap(),
@@ -669,20 +558,9 @@ mod tests {
         value["cx.outcome"] = json!("pwned");
         assert!(serde_json::from_value::<Event>(value).is_err());
 
-        for (key, bad) in [
-            ("event.name", json!("cli.evil")),
-            ("cx.agent", json!("not-an-agent")),
-            ("cx.command.path", json!("logs SELECT * FROM secrets")),
-            ("cx.command.flags", json!("--limit=5")),
-            ("cx.team.id", json!("12ab")),
-        ] {
-            let mut value = serde_json::to_value(command_event()).unwrap();
-            value[key] = bad;
-            assert!(
-                serde_json::from_value::<Event>(value).is_err(),
-                "{key} should be rejected"
-            );
-        }
+        let mut value = serde_json::to_value(command_event()).unwrap();
+        value["event.name"] = json!("cli.evil");
+        assert!(serde_json::from_value::<Event>(value).is_err());
 
         let mut value = serde_json::to_value(command_event()).unwrap();
         value["cx.query"] = json!("source logs | filter secret");

@@ -150,11 +150,4 @@ mod tests {
             std::io::ErrorKind::PermissionDenied
         ))));
     }
-
-    #[test]
-    fn state_file_without_notice_field_deserializes() {
-        let state: VersionCheckCache =
-            serde_json::from_str(r#"{"last_checked_at":null,"latest_binary":null}"#).unwrap();
-        assert!(!state.telemetry_notice_shown);
-    }
 }

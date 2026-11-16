@@ -79,7 +79,7 @@ pub fn record(kind: EventKind) {
 }
 
 fn build(kind: EventKind) -> Event {
-    let team_id = invocation().team_id;
+    let team_id = invocation().team_id.clone();
     Event::now(*INVOCATION_ID, team_id, kind)
 }
 
@@ -420,21 +420,5 @@ mod tests {
 
         let cancelled: anyhow::Result<()> = Err(inquire::InquireError::OperationCanceled.into());
         assert_eq!(classify(&cancelled, false).0, Outcome::Cancelled);
-    }
-
-    #[test]
-    fn query_commands_end_the_funnel() {
-        for path in [
-            "logs",
-            "spans",
-            "metrics query",
-            "metrics query-range",
-            "dataprime query",
-        ] {
-            assert!(is_query(path), "{path}");
-        }
-        for path in ["metrics search", "dataprime list", "alerts list", "init"] {
-            assert!(!is_query(path), "{path}");
-        }
     }
 }

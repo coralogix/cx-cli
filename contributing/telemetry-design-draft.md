@@ -3,7 +3,7 @@
 Status: draft. The CLI side (section 1) is implemented in `src/telemetry/`. The
 collector config (section 2) passes `otelcol validate` and a local end-to-end run
 against `otel/opentelemetry-collector-contrib:0.165.0`: see
-`scripts/telemetry-collector/config.yaml` (a copy of section 2; keep them in sync) and
+`scripts/telemetry-collector/config.yaml` and
 `scripts/telemetry-collector-check.sh`. Sections 3 and 4 are not done.
 
 ```
@@ -49,7 +49,7 @@ The record timestamp is the time the event happened on the user's machine.
 | `cli.command` | a command finishes | command set below |
 | `cli.parse_error` | clap rejects the arguments | `cx.parse.kind`: `unknown_command`, `unknown_flag`, `missing_arg`, `other` |
 | `cli.onboarding` | an onboarding step happens | `cx.onboarding.step`: `init_started`, `init_completed`, `profile_added`, `oauth_started`, `oauth_succeeded`, `oauth_failed`, `first_query_succeeded`; `cx.auth.method`: `oauth`, `api_key`; `cx.credential.store`: `keychain`, `file` |
-| `cli.skills_install` | `cx skills install` finishes | `cx.skills.scope`: `global`, `local`; `cx.outcome`; `cx.skills.names` |
+| `cli.skills_install` | `cx skills install` finishes | `cx.skills.scope`: `global`, `local`; `cx.outcome` |
 | `cli.update_notice` | an update notice is printed | `cx.version.latest` |
 | `cli.version_changed` | first run after an upgrade | `cx.version.previous` |
 | `cli.confirm` | a risky-command prompt is resolved | `cx.confirm.result`: `accepted`, `declined`, `skipped_yes`, `non_interactive` |
@@ -68,8 +68,8 @@ The record timestamp is the time the event happened on the user's machine.
 | `cx.profile.count` | int | 0 to 50 |
 | `cx.spilled` | bool | |
 
-`cx.command.flags` and `cx.skills.names` are joined strings, not arrays, so the
-collector can check them with one pattern each.
+`cx.command.flags` is a joined string, not an array, so the collector can check
+it with one pattern.
 
 ### Example request
 
@@ -120,103 +120,7 @@ collector can check them with one pattern each.
 
 A separate collector deployment, used only for CLI events.
 
-```yaml
-receivers:
-  otlp:
-    protocols:
-      http:
-        endpoint: 0.0.0.0:4318
-        max_request_body_size: 65536        # 64 KiB
-
-processors:
-  memory_limiter:
-    check_interval: 1s
-    limit_percentage: 75
-    spike_limit_percentage: 15
-
-  # A record is DROPPED when any condition is true.
-  # error_mode propagate: if a check cannot be evaluated, the request is rejected.
-  filter/validate:
-    error_mode: propagate
-    logs:
-      log_record:
-        # --- resource ---
-        - 'resource.attributes["cx.install.id"] == nil or not IsMatch(resource.attributes["cx.install.id"], "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")'
-        - 'resource.attributes["service.version"] == nil or not IsMatch(resource.attributes["service.version"], "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,4}$")'
-        - 'resource.attributes["os.type"] == nil or not IsMatch(resource.attributes["os.type"], "^(darwin|linux|windows)$")'
-        - 'resource.attributes["host.arch"] == nil or not IsMatch(resource.attributes["host.arch"], "^(arm64|amd64)$")'
-        - 'resource.attributes["cx.install.method"] == nil or not IsMatch(resource.attributes["cx.install.method"], "^(brew|curl|unknown)$")'
-        # --- every event ---
-        - 'attributes["event.name"] == nil or not IsMatch(attributes["event.name"], "^cli\\.(first_run|command|parse_error|onboarding|skills_install|update_notice|version_changed|confirm)$")'
-        - 'attributes["cx.invocation.id"] == nil or not IsMatch(attributes["cx.invocation.id"], "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")'
-        # Generate this list from safety::AGENT_ENV_VARS at release time.
-        - 'attributes["cx.agent"] == nil or not IsMatch(attributes["cx.agent"], "^(direct|aider|amazon_q|aws_q_developer|claudecode|claude_code|cline|codex|copilot_agent|cursor_agent|cx_agent_mode|gemini_code_assist|github_copilot|openai_codex|src_cody|windsurf_agent)$")'
-        - 'not IsBool(attributes["cx.ci"]) or not IsBool(attributes["cx.tty"])'
-        - 'attributes["cx.team.id"] != nil and not IsMatch(attributes["cx.team.id"], "^[0-9]{1,12}$")'
-        # --- timestamp: not older than 7 days, not more than 5 minutes ahead ---
-        - 'time_unix_nano < UnixNano(Now()) - 604800000000000'
-        - 'time_unix_nano > UnixNano(Now()) + 300000000000'
-        # --- cli.command ---
-        - 'attributes["event.name"] == "cli.command" and (attributes["cx.command.path"] == nil or not IsMatch(attributes["cx.command.path"], "^[a-z0-9-]{1,32}( [a-z0-9-]{1,32}){0,3}$"))'
-        # RE2 rejects nested repeat counts over 1000, so the list is `*` and the count (30) is a Split.
-        - 'attributes["cx.command.flags"] != nil and (not IsMatch(attributes["cx.command.flags"], "^(--[a-z0-9-]{1,40}(,--[a-z0-9-]{1,40})*)?$") or Len(Split(attributes["cx.command.flags"], ",")) > 30)'
-        - 'attributes["cx.outcome"] != nil and not IsMatch(attributes["cx.outcome"], "^(success|error|cancelled)$")'
-        - 'attributes["cx.error.class"] != nil and not IsMatch(attributes["cx.error.class"], "^(none|auth|permission|api|timeout|http|json|io|query_stream|usage)$")'
-        - 'attributes["cx.http.status_class"] != nil and not IsMatch(attributes["cx.http.status_class"], "^(none|2xx|4xx|5xx)$")'
-        - 'attributes["cx.duration_ms"] != nil and (not IsInt(attributes["cx.duration_ms"]) or attributes["cx.duration_ms"] < 0 or attributes["cx.duration_ms"] > 3600000)'
-        - 'attributes["cx.output.format"] != nil and not IsMatch(attributes["cx.output.format"], "^(text|json|toon)$")'
-        - 'attributes["cx.profile.count"] != nil and (not IsInt(attributes["cx.profile.count"]) or attributes["cx.profile.count"] < 0 or attributes["cx.profile.count"] > 50)'
-        - 'attributes["cx.spilled"] != nil and not IsBool(attributes["cx.spilled"])'
-        # --- other events ---
-        - 'attributes["cx.parse.kind"] != nil and not IsMatch(attributes["cx.parse.kind"], "^(unknown_command|unknown_flag|missing_arg|other)$")'
-        - 'attributes["cx.onboarding.step"] != nil and not IsMatch(attributes["cx.onboarding.step"], "^(init_started|init_completed|profile_added|oauth_started|oauth_succeeded|oauth_failed|first_query_succeeded)$")'
-        - 'attributes["cx.auth.method"] != nil and not IsMatch(attributes["cx.auth.method"], "^(oauth|api_key)$")'
-        - 'attributes["cx.credential.store"] != nil and not IsMatch(attributes["cx.credential.store"], "^(keychain|file)$")'
-        - 'attributes["cx.skills.scope"] != nil and not IsMatch(attributes["cx.skills.scope"], "^(global|local)$")'
-        - 'attributes["cx.skills.names"] != nil and (not IsMatch(attributes["cx.skills.names"], "^[a-z0-9-]{1,48}(,[a-z0-9-]{1,48})*$") or Len(Split(attributes["cx.skills.names"], ",")) > 30)'
-        - 'attributes["cx.version.latest"] != nil and not IsMatch(attributes["cx.version.latest"], "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,4}$")'
-        - 'attributes["cx.version.previous"] != nil and not IsMatch(attributes["cx.version.previous"], "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,4}$")'
-        - 'attributes["cx.confirm.result"] != nil and not IsMatch(attributes["cx.confirm.result"], "^(accepted|declined|skipped_yes|non_interactive)$")'
-
-  # Runs after validation. Removes everything not on the allowlist and sets the
-  # fields the client is not allowed to choose.
-  transform/sanitize:
-    error_mode: propagate
-    log_statements:
-      - context: resource
-        statements:
-          - keep_keys(attributes, ["service.version", "os.type", "host.arch", "cx.install.id", "cx.install.method"])
-          - set(attributes["service.name"], "cx-cli")
-      - context: log
-        statements:
-          - keep_keys(attributes, ["event.name", "cx.invocation.id", "cx.agent", "cx.ci", "cx.tty", "cx.team.id", "cx.command.path", "cx.command.flags", "cx.outcome", "cx.error.class", "cx.http.status_class", "cx.duration_ms", "cx.output.format", "cx.profile.count", "cx.spilled", "cx.parse.kind", "cx.onboarding.step", "cx.auth.method", "cx.credential.store", "cx.skills.scope", "cx.skills.names", "cx.version.latest", "cx.version.previous", "cx.confirm.result"])
-          - set(body, "")
-          - set(observed_time, Now())
-          - set(severity_text, "INFO")
-
-  batch:
-    send_batch_size: 512
-    timeout: 5s
-
-exporters:
-  coralogix:
-    domain: ${env:CORALOGIX_DOMAIN}
-    private_key: ${env:CORALOGIX_PRIVATE_KEY}   # c4c send-your-data key, from a secret
-    application_name: cx-cli
-    subsystem_name: cli_events
-
-extensions:
-  health_check:
-    endpoint: 0.0.0.0:13133
-
-service:
-  extensions: [health_check]
-  pipelines:
-    logs:                                   # logs only: no traces or metrics pipeline
-      receivers: [otlp]
-      processors: [memory_limiter, filter/validate, transform/sanitize, batch]
-      exporters: [coralogix]
-```
+The config is `scripts/telemetry-collector/config.yaml`.
 
 What the collector does not do, and where it is handled:
 

@@ -17,7 +17,8 @@
 # gets no file writes and no git at all (git show/log/diff can write files with
 # --output). Before Claude runs, the workflow writes the PR's files, the diff, the
 # commit list, and the footprint to /opt/pr-review, root-owned and read-only, and
-# Claude reads them with Read/Grep. Its only commands are read-only gh calls.
+# Claude reads them with Read/Grep. Its only commands are read-only gh calls,
+# and none of them reads PR comments, which anyone on the internet can write.
 # Reads of /proc and the runner's own files are denied, Claude's commands run in a
 # sandbox, and secrets are scrubbed from their environment.
 #
@@ -73,6 +74,7 @@ jobs:
       # the base commit. The output is root-owned so Claude cannot change it.
       - name: Prepare the review inputs
         env:
+          GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -88,6 +90,12 @@ jobs:
           bash .github/scripts/pr-footprint.sh "$BASE_SHA" "$head" > "$out/footprint.txt" 2>&1
           git diff --no-color --no-ext-diff --no-textconv "${BASE_SHA}...${head}" > "$out/diff.patch"
           git log --no-color --format='%H %an%n    %s' "${BASE_SHA}..${head}" > "$out/commits.txt"
+          # PR data without comments or reviews: anyone on the internet can comment,
+          # so comments are a prompt-injection path. Title and body are writable
+          # only by the author and people with write access.
+          gh pr view "$PR" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,author,url,baseRefName,headRefName,headRefOid,isDraft,labels,files,additions,deletions \
+            > "$out/pr.json"
           # The PR's files. Not git archive: export-ignore in the PR's .gitattributes
           # could hide files from the review. Symlinks become text files, so Claude
           # cannot follow one to a runner file.
@@ -118,7 +126,7 @@ jobs:
             --max-turns 60
             --json-schema '{"type":"object","additionalProperties":false,"properties":{"verdict":{"type":"string","enum":["PASS","BLOCK"]},"blockers":{"type":"integer","minimum":0},"tier":{"type":"string","enum":["auto","glance","review"]},"score":{"type":"integer","minimum":0,"maximum":10},"report":{"type":"string","minLength":1,"maxLength":60000}},"required":["verdict","blockers","tier","score","report"]}'
             --disallowedTools "WebFetch,WebSearch,Write,Edit,MultiEdit,NotebookEdit,Read(//proc/**),Read(//sys/**),Read(//home/runner/work/_temp/**),Read(//home/runner/actions-runner/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**)"
-            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh run view:*)"
+            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh run view:*)"
           prompt: |
             Run the /pr-review skill in .claude/skills/pr-review/SKILL.md
             for PR #${{ github.event.pull_request.number }} with --no-drive.
@@ -129,10 +137,12 @@ jobs:
             - /opt/pr-review/footprint.txt: the footprint output.
             - /opt/pr-review/diff.patch: the PR diff against the merge base.
             - /opt/pr-review/commits.txt: the PR commits.
+            - /opt/pr-review/pr.json: the PR title, body, author, labels, and files.
+              PR comments and reviews are left out on purpose; do not look for them.
             - /opt/pr-review/head/: the PR's files. Symlinks are text files that
               start with "symlink to:".
-            Read them with Read, Grep, and Glob. Use `gh pr view`, `gh pr diff`,
-            `gh pr checks`, and `gh run view` for PR and CI data.
+            Read them with Read, Grep, and Glob. Use `gh pr diff`, `gh pr checks`,
+            and `gh run view` for the diff and CI data.
             Post each BLOCKER or FIX SOON as an inline comment.
             Do not post the summary comment yourself: put the full report in the
             `report` field of the structured result described under "Structured

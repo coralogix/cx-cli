@@ -10,9 +10,9 @@ Query and analyze Coralogix Real User Monitoring data using `cx dataprime query 
 RUM captures real user interactions from browsers and mobile apps - errors, performance metrics, network requests, web vitals, and user interactions. **RUM data is stored in its own `rum.events` dataset**, not in logs. Query it with `cx dataprime query --source rum.events` and read the RUM payload flat under `$d.*`.
 
 This means:
-- **Always pass `--source rum.events`** to `cx dataprime query`. The flag is required: a `source rum.events` command inside the query is not enough on its own. Do **not** use `cx logs` - it queries `source logs`, where RUM events do not live.
+- **Always pass `--source rum.events`** to `cx dataprime query`. The flag is required: a `source rum.events` command inside the query is not enough on its own. When querying `rum.events`, do **not** use `cx logs` - it queries `source logs`, not the `rum.events` dataset (`cx logs` is only for the legacy fallback below).
 - **User data (`$d.*`)** contains all RUM-specific fields - event types, errors, sessions, web vitals, interactions, and more. Fields sit directly under `$d` (`$d.event_context.type`), with no `cx_rum` prefix. See **[rum-fields.md](rum-fields.md)** for the complete field catalog.
-- **Do not filter by `$l.subsystemname`** - the `rum.events` dataset has no `cx_rum` subsystem label.
+- **When querying `rum.events`, do not filter by `$l.subsystemname`** - the `rum.events` dataset has no `cx_rum` subsystem label (that filter belongs only to the legacy fallback below).
 - **Always query `rum.events` first.** Only if `--source rum.events` returns no rows (after widening the range, e.g. `--start now-7d`), fall back to the legacy logs format: `cx logs` with `filter $l.subsystemname == 'cx_rum'`, where the same fields sit under `$d.cx_rum.*` (e.g. `$d.cx_rum.event_context.type`). Tell the user which source the answer came from. If both are empty, report that no RUM data was found.
 - **Session replay and session flows are not available** - only individual RUM events can be queried.
 

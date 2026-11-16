@@ -76,6 +76,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          # The secret scrub runs Claude's commands in a sandbox, which needs these.
+          sudo apt-get install -y -qq bubblewrap socat >/dev/null
           git fetch --no-tags -q origin "+refs/pull/${PR}/head:refs/pr-review/${PR}"
           if [ "$(git rev-parse "refs/pr-review/${PR}")" != "$HEAD_SHA" ]; then
             echo "::error::The PR head moved during the run. The next push reruns the review."; exit 1

@@ -439,13 +439,13 @@ pub fn render_results(
     Ok(())
 }
 
-/// RUM lives in the `rum.events` dataset; `cx_rum` is the legacy logs subsystem
-/// that agents still reach for from training data. Steer them back.
+/// RUM lives in the `rum.events` dataset; `cx_rum` logs are the legacy format,
+/// valid only as a fallback. Remind agents to try `rum.events` first.
 fn rum_source_warning(query: &str) -> Option<String> {
     query.to_ascii_lowercase().contains("cx_rum").then(|| {
-        "[RUM query warning] RUM data lives in the `rum.events` dataset, not in logs under \
-         `cx_rum`. Re-run with: cx dataprime query --source rum.events '<query>' \
-         (fields sit directly under $d.*, with no cx_rum prefix or subsystem filter)."
+        "[RUM query warning] `cx_rum` logs are the legacy RUM format. Query the `rum.events` \
+         dataset first: cx dataprime query --source rum.events '<query>' (fields directly \
+         under $d.*, no cx_rum prefix). Use cx_rum logs only if rum.events has no data."
             .to_string()
     })
 }

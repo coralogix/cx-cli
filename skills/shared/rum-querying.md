@@ -13,7 +13,7 @@ This means:
 - **Always pass `--source rum.events`** to `cx dataprime query`. The flag is required: a `source rum.events` command inside the query is not enough on its own. Do **not** use `cx logs` - it queries `source logs`, where RUM events do not live.
 - **User data (`$d.*`)** contains all RUM-specific fields - event types, errors, sessions, web vitals, interactions, and more. Fields sit directly under `$d` (`$d.event_context.type`), with no `cx_rum` prefix. See **[rum-fields.md](rum-fields.md)** for the complete field catalog.
 - **Do not filter by `$l.subsystemname`** - the `rum.events` dataset has no `cx_rum` subsystem label.
-- **Never fall back to `source logs` or `cx_rum`.** If `--source rum.events` returns no rows for the time range, report that no RUM data was found (optionally suggest widening the range); do not re-query logs.
+- **Always query `rum.events` first.** Only if `--source rum.events` returns no rows (after widening the range, e.g. `--start now-7d`), fall back to the legacy logs format: `cx logs` with `filter $l.subsystemname == 'cx_rum'`, where the same fields sit under `$d.cx_rum.*` (e.g. `$d.cx_rum.event_context.type`). Tell the user which source the answer came from. If both are empty, report that no RUM data was found.
 - **Session replay and session flows are not available** - only individual RUM events can be queried.
 
 ---
@@ -213,4 +213,4 @@ If a query returns no results, change **one thing at a time**. Keep the query wi
 3. **Extend the time range**: widen gradually from your current window (e.g. `now-24h` → `now-7d` → `now-30d`)
 4. **Try the other tier**: add `--tier frequent` or `--tier archive`, whichever the query did not use
 
-If `cx dataprime query --source rum.events 'limit 10'` returns nothing across a wide window, the account has no RUM data for that period - report that instead of searching `source logs`.
+If `cx dataprime query --source rum.events 'limit 10'` returns nothing across a wide window, fall back to legacy RUM logs: `cx logs "filter \$l.subsystemname == 'cx_rum'" --start now-7d --limit 10` (fields under `$d.cx_rum.*`). If that is empty too, report that the account has no RUM data for that period.

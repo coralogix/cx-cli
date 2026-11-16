@@ -20,22 +20,40 @@ Or, you can [Install manually](#install-manually).
 
 ### 1. Install the CLI
 
-**macOS / Linux** - Homebrew is the recommended route on macOS:
-
-```bash
-brew install cx
-```
-
-Homebrew builds aren't signed by Coralogix. For credentials only the signed `cx` can read, use the install script below (see [Credentials on macOS](configuration.md#credentials-on-macos)).
-
-Or use the cross-platform install script:
+**macOS** - use the install script. It installs the Coralogix Developer
+ID-signed binary. Credentials are stored in the Keychain with access limited
+to that signed `cx`:
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 If your security policy blocks piped shell scripts, use a signed release binary
-instead - see [Installation reference](configuration.md#installation-reference).
+instead - see
+[Installation reference](configuration.md#installation-reference).
+
+Use Homebrew only if you want it, or the script can't be used:
+
+```bash
+brew install cx
+```
+
+Homebrew builds aren't Coralogix-signed, so credentials are stored in the
+Keychain via `/usr/bin/security`. Upgrades don't trigger new Keychain prompts,
+but any process running as your macOS user can read those credentials. See
+[Credentials on macOS](configuration.md#credentials-on-macos).
+
+**Linux** - use the install script:
+
+```bash
+curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Homebrew is an alternative:
+
+```bash
+brew install cx
+```
 
 **Windows** - download
 [`cx-x86_64-pc-windows-msvc.zip`](https://github.com/coralogix/cx-cli/releases/latest/download/cx-x86_64-pc-windows-msvc.zip)
@@ -74,7 +92,9 @@ start. To switch either off, set `olly_enabled` or `allow_risky_commands` to
 `cx init` is idempotent: on a machine that already has a profile it skips the
 profile step, and on one that already has the skills it skips the install. Nothing
 is re-prompted or overwritten. To reconfigure a profile later use
-`cx profiles add --force`; to pull the latest skills use `cx skills install`.
+`cx profiles add --force`; to reinstall the skills use `cx skills install`. After a
+cx upgrade, cx updates global skills by itself in the background (turn this off
+with `auto_update_skills = false` in `~/.cx/config.toml`).
 
 For CI, containers, and coding agents, spell the whole thing out and the run is
 prompt-free:

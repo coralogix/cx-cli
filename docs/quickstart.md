@@ -20,22 +20,34 @@ Or, you can [Install manually](#install-manually).
 
 ### 1. Install the CLI
 
-**macOS / Linux** - Homebrew is the recommended route on macOS:
+**macOS** - Homebrew builds are not signed by Coralogix. They store credentials
+through `/usr/bin/security`, so any process running as your macOS user can read
+them without a prompt.
 
-```bash
-brew install cx
-```
-
-Homebrew builds aren't signed by Coralogix. For credentials only the signed `cx` can read, use the install script below (see [Credentials on macOS](configuration.md#credentials-on-macos)).
-
-Or use the cross-platform install script:
+**Security note:** To limit Keychain credential access to the Coralogix-signed
+`cx`, prefer the signed install script:
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 If your security policy blocks piped shell scripts, use a signed release binary
-instead - see [Installation reference](configuration.md#installation-reference).
+instead - see
+[Installation reference](configuration.md#installation-reference).
+
+Homebrew is also available:
+
+```bash
+brew install cx
+```
+
+See [Credentials on macOS](configuration.md#credentials-on-macos) for details.
+
+**Linux** - use the cross-platform install script:
+
+```bash
+curl -fsSL https://get.coralogix.dev/cli | sh
+```
 
 **Windows** - download
 [`cx-x86_64-pc-windows-msvc.zip`](https://github.com/coralogix/cx-cli/releases/latest/download/cx-x86_64-pc-windows-msvc.zip)

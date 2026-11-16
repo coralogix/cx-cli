@@ -22,6 +22,35 @@ pub struct VersionCheckCache {
     /// Optional so existing state files continue to deserialize. A UUID is
     /// generated and persisted on the next command invocation when absent.
     pub installation_id: Option<String>,
+
+    /// The `cx` version that last ran `cx skills install --global` successfully.
+    ///
+    /// The skills ship from the same repo as the binary, so the CLI version is
+    /// the skills version. Only global installs are recorded: a local install
+    /// belongs to one project, and this file is shared by all of them. `None`
+    /// means cx never installed global skills (or did so before this field
+    /// existed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_installed_for: Option<String>,
+
+    /// The `cx` version that last showed the "unknown skills version" notice.
+    /// That notice shows once per cx version, because cx cannot tell whether
+    /// skills it did not install are old.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_unknown_noticed_for: Option<String>,
+
+    /// The agents passed to that global install (`--agent`). Empty means the
+    /// installer auto-detected them. The background refresh repeats them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills_agents: Vec<String>,
+
+    /// The `cx` version for which the background skills refresh last started,
+    /// and when. Limits it to one attempt per version per day, so a failing
+    /// refresh (offline, installer error) does not run after every command.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_refresh_attempted_for: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills_refresh_attempted_at: Option<DateTime<Utc>>,
 }
 
 impl VersionCheckCache {
@@ -68,6 +97,30 @@ impl VersionCheckCache {
             .get_or_insert_with(|| Uuid::new_v4().to_string())
             .clone()
     }
+}
+
+/// Record a successful global skills install for the running `cx` version,
+/// with the agents it targeted.
+pub fn record_global_skills_install(agents: &[String]) {
+    let mut state = VersionCheckCache::load();
+    state.skills_installed_for = Some(env!("CARGO_PKG_VERSION").to_string());
+    state.skills_agents = agents.to_vec();
+    let _ = state.save();
+}
+
+/// Record that the background skills refresh started for `version` now.
+pub fn record_skills_refresh_attempt(version: &str) {
+    let mut state = VersionCheckCache::load();
+    state.skills_refresh_attempted_for = Some(version.to_string());
+    state.skills_refresh_attempted_at = Some(Utc::now());
+    let _ = state.save();
+}
+
+/// Record that the "unknown skills version" notice was shown for `version`.
+pub fn record_skills_unknown_noticed(version: &str) {
+    let mut state = VersionCheckCache::load();
+    state.skills_unknown_noticed_for = Some(version.to_string());
+    let _ = state.save();
 }
 
 /// Returns the stable random identifier for this local CLI installation.
@@ -129,5 +182,32 @@ mod tests {
         let state: VersionCheckCache =
             serde_json::from_str(r#"{"last_checked_at":null,"latest_binary":null}"#).unwrap();
         assert!(state.installation_id.is_none());
+        assert!(state.skills_installed_for.is_none());
+        assert!(state.skills_unknown_noticed_for.is_none());
+    }
+
+    #[test]
+    fn skills_fields_round_trip() {
+        let state = VersionCheckCache {
+            skills_installed_for: Some("0.1.30".into()),
+            skills_unknown_noticed_for: Some("0.1.29".into()),
+            skills_agents: vec!["cursor".into()],
+            skills_refresh_attempted_for: Some("0.1.30".into()),
+            skills_refresh_attempted_at: Some(Utc::now()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let reloaded: VersionCheckCache = serde_json::from_str(&json).unwrap();
+        assert_eq!(reloaded.skills_installed_for.as_deref(), Some("0.1.30"));
+        assert_eq!(
+            reloaded.skills_unknown_noticed_for.as_deref(),
+            Some("0.1.29")
+        );
+        assert_eq!(reloaded.skills_agents, vec!["cursor".to_string()]);
+        assert_eq!(
+            reloaded.skills_refresh_attempted_for.as_deref(),
+            Some("0.1.30")
+        );
+        assert!(reloaded.skills_refresh_attempted_at.is_some());
     }
 }

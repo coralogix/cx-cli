@@ -92,7 +92,9 @@ start. To switch either off, set `olly_enabled` or `allow_risky_commands` to
 `cx init` is idempotent: on a machine that already has a profile it skips the
 profile step, and on one that already has the skills it skips the install. Nothing
 is re-prompted or overwritten. To reconfigure a profile later use
-`cx profiles add --force`; to pull the latest skills use `cx skills install`.
+`cx profiles add --force`; to reinstall the skills use `cx skills install`. After a
+cx upgrade, cx updates global skills by itself in the background (turn this off
+with `auto_update_skills = false` in `~/.cx/config.toml`).
 
 For CI, containers, and coding agents, spell the whole thing out and the run is
 prompt-free:

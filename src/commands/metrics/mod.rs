@@ -657,13 +657,21 @@ pub async fn run_get_labels(
                 render::print_no_results("No labels found.");
                 return Ok(());
             }
-            // Labels table doesn't use profile column - it's a flat list
-            let rows: Vec<Vec<String>> = all_labels.iter().map(|(_, l)| vec![l.clone()]).collect();
-            render::render_table(&["Label"], rows, false);
+            render::render_table(&["Label"], labels_text_rows(&all_labels), include_profile);
         }
     }
 
     Ok(())
+}
+
+/// Rows for the labels table. `render_table` always reads the first cell as
+/// the profile name (and drops it when single-profile), so each row carries
+/// the profile first and the label second.
+fn labels_text_rows(all_labels: &[(String, String)]) -> Vec<Vec<String>> {
+    all_labels
+        .iter()
+        .map(|(profile, label)| vec![profile.clone(), label.clone()])
+        .collect()
 }
 
 #[cfg(test)]

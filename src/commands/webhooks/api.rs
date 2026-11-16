@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::error::Result;
 
@@ -44,6 +44,20 @@ pub struct ListWebhooksResponse {
 #[derive(Debug, Deserialize)]
 pub struct DeleteWebhookResponse {}
 
+/// Build the replace request. A file that already has the `data` envelope is
+/// kept; a file holding only the inner webhook data is wrapped. The id from
+/// the command line always wins over one in the file, so `cx webhooks update
+/// <id>` edits the webhook the user named.
+pub fn update_request_body(id: &str, body: &Value) -> Value {
+    let mut out = if body.get("data").is_some() {
+        body.clone()
+    } else {
+        json!({ "data": body })
+    };
+    out["id"] = json!(id);
+    out
+}
+
 // --- API ---
 
 const WEBHOOKS_BASE: &str = "/mgmt/openapi/5/integrations/webhooks/v1";
@@ -75,9 +89,12 @@ impl<'a> WebhooksApi<'a> {
         self.client.post(WEBHOOKS_BASE, body).await
     }
 
+    /// The API replaces a webhook with `PUT /webhooks/v1` and the id in the
+    /// body (`PUT /webhooks/v1/{id}` is a 405). See [`update_request_body`].
     pub async fn update(&self, id: &str, body: &Value) -> Result<Value> {
-        let path = format!("{WEBHOOKS_BASE}/{id}");
-        self.client.put(&path, body).await
+        self.client
+            .put(WEBHOOKS_BASE, &update_request_body(id, body))
+            .await
     }
 
     pub async fn delete(&self, id: &str) -> Result<DeleteWebhookResponse> {
@@ -85,9 +102,12 @@ impl<'a> WebhooksApi<'a> {
         self.client.delete(&path).await
     }
 
+    /// Testing an existing webhook is a `GET` (a `POST` is a 405). The
+    /// response carries `{"success": {}}` or `{"failure": {...}}` with status
+    /// 200 either way; a delivery failure is data, not an error.
     pub async fn test(&self, id: &str) -> Result<Value> {
         let path = format!("{WEBHOOKS_BASE}/{id}/test");
-        self.client.post(&path, &serde_json::json!({})).await
+        self.client.get(&path, &[]).await
     }
 
     pub async fn list_types(&self) -> Result<Value> {
@@ -120,6 +140,22 @@ mod tests {
         let json = json!({ "deployed": [] });
         let resp: ListWebhooksResponse = serde_json::from_value(json).unwrap();
         assert!(resp.deployed.is_empty());
+    }
+
+    #[test]
+    fn update_body_wraps_bare_data_and_sets_id() {
+        let bare = json!({ "name": "n", "type": "GENERIC", "url": "https://example.com" });
+        let out = update_request_body("wh-1", &bare);
+        assert_eq!(out["id"], "wh-1");
+        assert_eq!(out["data"], bare);
+    }
+
+    #[test]
+    fn update_body_keeps_envelope_and_overrides_id() {
+        let wrapped = json!({ "id": "stale", "data": { "name": "n" } });
+        let out = update_request_body("wh-2", &wrapped);
+        assert_eq!(out["id"], "wh-2");
+        assert_eq!(out["data"]["name"], "n");
     }
 
     #[test]

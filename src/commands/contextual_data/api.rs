@@ -117,9 +117,11 @@ impl<'a> ContextualDataApi<'a> {
         self.client.post(CONTEXTUAL_DATA_BASE, body).await
     }
 
-    pub async fn update(&self, id: &str, body: &Value) -> Result<Value> {
-        let path = format!("{CONTEXTUAL_DATA_BASE}/{id}");
-        self.client.put(&path, body).await
+    /// `PUT .../contextual-data/v1` with `{ "integrationId", "metadata" }`.
+    /// Not every integration type accepts updates (push-based ones answer 400).
+    pub async fn update(&self, id: &str, metadata: &Value) -> Result<Value> {
+        let body = serde_json::json!({ "integrationId": id, "metadata": metadata });
+        self.client.put(CONTEXTUAL_DATA_BASE, &body).await
     }
 
     pub async fn delete(&self, id: &str) -> Result<DeleteContextualDataResponse> {

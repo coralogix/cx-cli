@@ -97,3 +97,33 @@ async fn get_tco_settings() {
         .await
         .expect("run_settings should succeed");
 }
+
+#[tokio::test]
+async fn settings_update_posts_to_replace_endpoint() {
+    use wiremock::matchers::body_json;
+
+    let server = MockServer::start().await;
+    let body = json!({
+        "logsPolicySettings": { "defaultPriority": "PRIORITY_TYPE_HIGH" },
+        "spansPolicySettings": { "defaultPriority": "PRIORITY_TYPE_HIGH" }
+    });
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/dataplans/policiy-settings/v1"))
+        .and(body_json(&body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let file = std::env::temp_dir().join(format!("cx-tco-settings-{}.json", std::process::id()));
+    std::fs::write(&file, body.to_string()).unwrap();
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let result = coralogix_cli::commands::tco_policies::run_settings_update(
+        &targets,
+        file.to_str().unwrap(),
+        OutputFormat::Json,
+    )
+    .await;
+    let _ = std::fs::remove_file(&file);
+    result.expect("run_settings_update should succeed");
+}

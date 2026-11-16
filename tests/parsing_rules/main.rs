@@ -73,3 +73,28 @@ async fn usage_limits_from_mock() {
         .await
         .expect("run_usage_limits should succeed");
 }
+
+/// `bulk-delete` is `DELETE /v1` with repeated `group_ids` query parameters;
+/// there is no `/bulk-delete` resource (it answers 405).
+#[tokio::test]
+async fn bulk_delete_sends_ids_as_query_params() {
+    use wiremock::matchers::query_param;
+
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/mgmt/openapi/5/parsing-rules/rule-groups/v1"))
+        .and(query_param("group_ids", "rg-001"))
+        .and(query_param("group_ids", "rg-002"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let target = common::test_target("test-profile", &server.uri());
+    coralogix_cli::commands::parsing_rules::run_bulk_delete(
+        &[target],
+        &["rg-001".to_string(), "rg-002".to_string()],
+    )
+    .await
+    .expect("run_bulk_delete should succeed");
+}

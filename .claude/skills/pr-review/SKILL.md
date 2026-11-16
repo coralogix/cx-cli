@@ -111,14 +111,25 @@ or `sensitive`.
   are FIX SOON.
 - `version-bump` rows are BLOCKER unless the PR is a release PR whose title says
   so. Releases ship separately from features.
+- Security notes make a row `sensitive` on any path. Read every matching line.
+  - `secret-like`: BLOCKER, even when explained, unless the value is clearly a
+    fake inside a test. A real key in a public repo is leaked the moment it is
+    pushed; say "rotate the key", not only "remove the line".
+  - `pipe-to-shell`: BLOCKER unless the URL is a Coralogix-owned host and the
+    PR says why. The official installer is not flagged.
+  - `safety-bypass`: BLOCKER unless explained. A shipped skill that tells an
+    agent to pass `--yes` skips the confirmation for risky commands.
+  - `new-crate`: name the crate and who publishes it. BLOCKER unless Key
+    Decisions explains it; `cargo deny` checks licenses, not intent.
 
 Severity for an **unexplained** row:
 
 | Row | Severity | Why |
 |-----|----------|-----|
-| `sensitive` (`src/safety.rs`, `src/config.rs`, `src/api_client.rs`, `src/execution.rs`, `.github/`, `CODEOWNERS`, `deny.toml`, release files) | BLOCKER | Security, governance, or release surface |
+| `sensitive`: domain `security` (credentials, auth, endpoints, update and install hints, `build.rs`, `.cargo/`, the e2e harness and sweeper, `.claude/`, `.codex/`, `AGENTS.md`, `scripts/`, `.github/`, `CODEOWNERS`, `deny.toml`, release files) or any security note | BLOCKER | Security, governance, or release surface. The full list is `SECURITY_RE` and `SENSITIVE_RE` in `pr-footprint.sh` |
 | `judge` in another command's directory, `skills/shared/`, `core`, or a new dependency in `Cargo.toml` | FIX SOON | Expands blast radius beyond X |
-| `judge` docs or dev-tooling edits related to X | none | Explain in the report, no finding |
+| `judge` with domain `other` | FIX SOON | A file the classifier does not know. Say what it does; if it handles keys, network, or process execution, treat it as `sensitive` and add it to `SECURITY_RE` in a separate PR |
+| `judge` docs edits related to X | none | Explain in the report, no finding |
 | `ws-only`, comment-only, rename-only hunks outside the footprint | CLEANUP | Noise for reviewers and `git blame` |
 
 Exception: a `CODEOWNERS` row that only adds the new command's directories is

@@ -115,10 +115,13 @@ jobs:
             (.verdict | IN("PASS","BLOCK")) and (.tier | IN("auto","glance","review"))
             and (.blockers | type == "number" and . >= 0)
             and (.score | type == "number" and . >= 0 and . <= 10)' >/dev/null 2>&1 \
-            || fail "No valid structured result from the review (got: '${RESULT:0:200}')."
+            || { got="$(printf '%s' "${RESULT:0:200}" | tr -c '[:alnum:] {}":,._-' '?')"
+                 fail "No valid structured result from the review (got: '$got')."; }
           verdict="$(jq -r .verdict <<<"$RESULT")"; blockers="$(jq -r .blockers <<<"$RESULT")"
           tier="$(jq -r .tier <<<"$RESULT")"; score="$(jq -r .score <<<"$RESULT")"
-          echo "Structured result: $RESULT"
+          # Print the parsed fields, never the raw text: a line in Claude's output
+          # that starts with "::" would run as a workflow command.
+          echo "Structured result: verdict=$verdict blockers=$blockers tier=$tier score=$score"
 
           # 2. The result must agree with itself: blockers mean BLOCK, BLOCK means
           #    tier review, and the tier follows the score table in the skill.

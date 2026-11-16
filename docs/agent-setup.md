@@ -34,18 +34,20 @@ Ground rules:
 
 ### Step 1: Install the CLI
 
-If `cx --version` already works, **upgrade it first** (`brew upgrade cx`, or rerun the install script below), even when the user only wants to sign in: older versions don't complete setup, and lack `cx init --signup`. Otherwise detect the OS (`uname -s`; on Windows, `$env:OS` in PowerShell) and ask the user which method they prefer when more than one fits.
+If `cx --version` already works, **upgrade it first**, even when the user only wants to sign in: older versions don't complete setup, and lack `cx init --signup`. If it was installed with Homebrew (`brew list --formula cx` succeeds, or `~/.cx/install-method` contains `brew`), run `brew upgrade cx`. Otherwise rerun the install script below.
 
-**macOS** (Homebrew, recommended) or **Linux** with Homebrew:
+On macOS and Linux, install with the script. Do not ask which method they prefer. Use Homebrew only if the user asks for it or already installed via brew.
 
-```bash
-brew install cx
-```
-
-**macOS / Linux** install script (x86_64 and arm64, latest release):
+**macOS / Linux** (recommended). The script installs the Coralogix-signed build (x86_64 and arm64, latest release):
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Homebrew, Cargo, and Nix builds aren't signed by Coralogix and use `/usr/bin/security`, so any process running as the user can read the credentials. See [Credentials on macOS](configuration.md#credentials-on-macos). If a security policy blocks piped scripts, use the signed release archives at https://github.com/coralogix/cx-cli/releases/latest. If the user asks for Homebrew:
+
+```bash
+brew install cx
 ```
 
 **Windows** (PowerShell; the install script doesn't support Windows). The zip holds a single `cx.exe`:
@@ -60,7 +62,7 @@ if ($userPath -notlike "*$dir*") { [Environment]::SetEnvironmentVariable('Path',
 $env:Path += ";$dir"
 ```
 
-**Any OS with Rust:** `cargo install coralogix-cli`. If a security policy blocks piped scripts, use the signed release archives and checksums at https://github.com/coralogix/cx-cli/releases/latest.
+**Cargo, only if the user asks:** `cargo install coralogix-cli`.
 
 Confirm with `cx --version`. `PATH` changes may need a new shell.
 

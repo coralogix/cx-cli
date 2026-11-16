@@ -4,8 +4,10 @@
 # or gets a push. The skill reads the PR, checks the file footprint, reads the code,
 # and reads CI results (incl. the E2E check). It does not build or run the binary
 # here (--no-drive), so no Rust toolchain and no Coralogix credentials are needed.
-# The last step fails the job unless the review posted for this exact commit says
-# PASS; that is the status check to require in the ruleset later.
+# Claude also returns a small JSON result (--json-schema): verdict, blockers, tier,
+# score. The gate reads that result, not the comment text, and fails the job unless
+# it says PASS; that is the status check to require in the ruleset later. The job
+# then labels the PR with the human-review tier, like the "baz approved" label.
 #
 # No issue_comment trigger on purpose: checking out PR code in a comment-triggered
 # (privileged) workflow is a CodeQL high-severity pattern. Re-runs happen on push.
@@ -33,6 +35,17 @@ jobs:
       checks: read
       actions: read
     steps:
+      # A label always describes the latest commit: drop the old one first, so a
+      # failed or cancelled run leaves no label instead of a stale one.
+      - name: Remove the previous review label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          for l in "review: auto" "review: glance" "review: human" "review: blocked"; do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR}/labels/${l// /%20}" >/dev/null 2>&1 || true
+          done
+
       # pull_request checks out the merge commit of the PR into master; the skill
       # fetches the PR head itself as refs/pr-review/<n>.
       - name: Checkout the PR merge commit
@@ -58,6 +71,7 @@ jobs:
           chmod +x /tmp/pr-review/pr-footprint.sh
 
       - name: Run the pr-review skill
+        id: claude
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         env:
           GH_TOKEN: ${{ github.token }}
@@ -69,6 +83,7 @@ jobs:
           show_full_output: true
           claude_args: |
             --max-turns 60
+            --json-schema '{"type":"object","additionalProperties":false,"properties":{"verdict":{"type":"string","enum":["PASS","BLOCK"]},"blockers":{"type":"integer","minimum":0},"tier":{"type":"string","enum":["auto","glance","review"]},"score":{"type":"integer","minimum":0,"maximum":10}},"required":["verdict","blockers","tier","score"]}'
             --disallowedTools WebFetch,WebSearch
             --allowedTools "Read,Glob,Grep,Write,mcp__github_inline_comment__create_inline_comment,Bash(mkdir:*),Bash(grep:*),Bash(git fetch:*),Bash(git diff:*),Bash(git show:*),Bash(git grep:*),Bash(git log:*),Bash(git merge-base:*),Bash(git cat-file:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr comment:*),Bash(gh run view:*),Bash(/tmp/pr-review/pr-footprint.sh:*),Bash(jq:*)"
           prompt: |
@@ -80,26 +95,69 @@ jobs:
             comment. Put this line directly after the Verdict line of the
             report, exactly:
             **Commit:** `${{ github.event.pull_request.head.sha }}`
+            Return the structured result described under "Structured result
+            (CI)" in the skill. It must match the posted report.
             Do not edit files. Do not commit.
 
       - name: Require a PASS verdict for this commit
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
+          RESULT: ${{ steps.claude.outputs.structured_output }}
         run: |
-          # Only the workflow's own comment, only for this commit, and only its
-          # Verdict line: a comment by anyone else, a report for an older push, or
-          # the words "BLOCK"/"PASS" quoted inside a finding never decide the gate.
-          body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
-            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"# PR Review:\")) and (.body | contains(\"$SHA\")))] | last | .body // \"\"")"
-          if [ -z "$body" ]; then
-            echo "::error::No review was posted for commit $SHA. Read the skill step log."
-            exit 1
-          fi
-          verdict="$(printf '%s\n' "$body" | grep -m1 '^\*\*Verdict:' || true)"
-          case "$verdict" in
-            '**Verdict: 🟢 PASS**'*) echo "Review verdict is PASS for $SHA." ;;
-            '**Verdict: 🔴 BLOCK**'*) echo "::error::The review verdict is BLOCK. Read the PR comment."; exit 1 ;;
-            *) echo "::error::No recognisable Verdict line in the review (got: '$verdict'). Failing closed."; exit 1 ;;
+          fail() { echo "::error::$1"; echo "**Review gate failed:** $1" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+
+          # 1. The structured result decides. The action already validated it
+          #    against the schema; check it again so a missing result fails closed.
+          printf '%s' "$RESULT" | jq -e '
+            (.verdict | IN("PASS","BLOCK")) and (.tier | IN("auto","glance","review"))
+            and (.blockers | type == "number" and . >= 0)
+            and (.score | type == "number" and . >= 0 and . <= 10)' >/dev/null 2>&1 \
+            || fail "No valid structured result from the review (got: '${RESULT:0:200}')."
+          verdict="$(jq -r .verdict <<<"$RESULT")"; blockers="$(jq -r .blockers <<<"$RESULT")"
+          tier="$(jq -r .tier <<<"$RESULT")"; score="$(jq -r .score <<<"$RESULT")"
+          echo "Structured result: $RESULT"
+
+          # 2. The result must agree with itself: blockers mean BLOCK, BLOCK means
+          #    tier review, and the tier follows the score table in the skill.
+          if [ "$blockers" -gt 0 ] && [ "$verdict" != BLOCK ]; then fail "PASS with $blockers blockers."; fi
+          if [ "$verdict" = BLOCK ] && [ "$blockers" -eq 0 ]; then fail "BLOCK with 0 blockers."; fi
+          if [ "$verdict" = BLOCK ]; then want=review
+          elif [ "$score" -le 2 ]; then want=auto
+          elif [ "$score" -le 5 ]; then want=glance
+          else want=review; fi
+          [ "$tier" = "$want" ] || fail "Tier '$tier' does not match score $score and verdict $verdict (expected '$want')."
+
+          # 3. The report people read must show the same verdict. Only the
+          #    workflow's own comment for this commit counts.
+          body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate --slurp \
+            | jq -r --arg sha "$SHA" '[.[][] | select(.user.login == "github-actions[bot]"
+                and (.body | startswith("# PR Review:")) and (.body | contains($sha)))] | last | .body // ""')"
+          [ -n "$body" ] || fail "No review comment was posted for commit $SHA."
+          line="$(printf '%s\n' "$body" | grep -m1 '^\*\*Verdict:' || true)"
+          case "$line" in
+            "**Verdict: 🟢 PASS**"*) shown=PASS ;;
+            "**Verdict: 🔴 BLOCK**"*) shown=BLOCK ;;
+            *) shown="unknown" ;;
           esac
+          [ "$shown" = "$verdict" ] || fail "The comment says '$shown' but the structured result says '$verdict'."
+
+          # 4. Label and summary, then the verdict decides the check.
+          if [ "$verdict" = BLOCK ]; then label="review: blocked"
+          elif [ "$tier" = review ]; then label="review: human"
+          else label="review: $tier"; fi
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+          echo "**Review:** verdict $verdict, tier $tier, score $score of 10, $blockers blockers. Commit \`$SHA\`." >> "$GITHUB_STEP_SUMMARY"
+          [ "$verdict" = PASS ] || { echo "::error::The review verdict is BLOCK. Read the PR comment."; exit 1; }
+          echo "Review verdict is PASS for $SHA."
+
+      # Runs after a BLOCK too. No label when the gate could not trust the result.
+      - name: Label the PR with the review result
+        if: always() && steps.gate.outputs.label != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          LABEL: ${{ steps.gate.outputs.label }}
+        run: gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/labels" -f "labels[]=$LABEL" >/dev/null

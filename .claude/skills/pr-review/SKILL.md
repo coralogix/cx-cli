@@ -349,6 +349,19 @@ Missing or empty sections: <list or none>
 Rules for the text: one claim per bullet, a file and line on every code
 finding, no finding without evidence, no praise, no restating the diff.
 
+**Structured result (CI).** When the run asks for a JSON result
+(`--json-schema`), return the same decision the report shows:
+
+| Field | Value |
+|-------|-------|
+| `verdict` | `PASS` or `BLOCK`, as on the Verdict line |
+| `blockers` | the number of bullets under **Blockers** |
+| `tier` | `auto`, `glance`, or `review`, as on the Human review line |
+| `score` | the score N from the Human review line, 0 to 10 |
+
+The CI gate reads only this result, and fails when it disagrees with the
+report's Verdict line, with the blocker count, or with the tier table above.
+
 ## Cleanup
 
 ```bash

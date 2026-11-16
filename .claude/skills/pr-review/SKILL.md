@@ -369,9 +369,13 @@ finding, no finding without evidence, no praise, no restating the diff.
 | `blockers` | the number of bullets under **Blockers** |
 | `tier` | `auto`, `glance`, or `review`, as on the Human review line |
 | `score` | the score N from the Human review line, 0 to 10 |
+| `report` | the full summary comment, in the format above |
 
 The CI gate reads only this result, and fails when it disagrees with the
 report's Verdict line, with the blocker count, or with the tier table above.
+In CI, do not post the summary comment yourself: the workflow posts
+`report` and adds the `**Commit:**` line. CI has no shell for the footprint
+script; read its output from the file the prompt names.
 
 ## Cleanup
 

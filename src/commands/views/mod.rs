@@ -399,7 +399,7 @@ pub async fn run_folders_create(
     .await;
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
-        if let Some(folder) = resp.folder {
+        if let Some(folder) = resp.into_folder() {
             eprintln!(
                 "{}",
                 format!(

@@ -78,21 +78,31 @@ Then emit the summary defined in the main `SKILL.md` § "Output format for the u
 
 To update a dashboard that already exists (instead of creating a new one), use the replace workflow:
 
-1. Get the current definition:
+1. Get the current definition, and keep an untouched copy to compare against in step 3:
 
    ```bash
    cx dashboards get <dashboard-id> -o json > dashboard.json
+   cp dashboard.json dashboard.orig.json
    ```
 
 2. Edit `dashboard.json` (change widgets, queries, filters, etc.). The `id` field must remain intact.
 
-3. Deploy the updated version:
+3. Check the edited file, and diff it against the untouched copy:
+
+   ```bash
+   cx dashboards check --from-file dashboard.json
+   diff <(jq -S . dashboard.orig.json) <(jq -S . dashboard.json)
+   ```
+
+   Fix any issue whose `location` falls in a part the diff shows you changed. If an issue points at a part the diff does not show as changed, the fetched JSON came back damaged (for example a table rule property whose `definition` is `{}`): stop and show the user the issues instead of replacing. Do not delete or rewrite those parts to make the check pass, since replacing would make the loss permanent.
+
+4. Deploy the updated version:
 
    ```bash
    cx dashboards replace --from-file dashboard.json --yes
    ```
 
-This is a full replacement - the entire dashboard definition is overwritten. The `id` field in the JSON determines which dashboard is updated.
+This is a full replacement - the entire dashboard definition is overwritten, with no conflict check. The `id` field in the JSON determines which dashboard is updated. Do steps 1 to 4 in one go, and do not reuse a `dashboard.json` fetched earlier in the session. If time has passed since step 1, run `get` again into a fresh file, copy it to a fresh `dashboard.orig.json`, re-apply only the user's edits to that fresh JSON, run step 3 on it again, then run `replace`. Otherwise edits made in the meantime are silently lost.
 
 Use replace when:
 - The user asks to update, modify, or iterate on an existing dashboard.

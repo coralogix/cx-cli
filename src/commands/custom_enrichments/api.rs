@@ -95,11 +95,21 @@ impl<'a> CustomEnrichmentsApi<'a> {
         self.client.delete(&path).await
     }
 
+    /// `POST /v1/all/contents` is the only search endpoint the API has. It
+    /// answers every table's definition and full textual content
+    /// (`{"customEnrichmentsData": [{definition, textual}]}`), so the caller
+    /// filters by table id and query text. The `searchClauses` body is sent
+    /// for forward compatibility; the service ignores it today.
     pub async fn search(&self, id: &str, query: &str) -> Result<Value> {
-        let path = format!("{CUSTOM_ENRICHMENTS_BASE}/{id}/search");
-        self.client
-            .post(&path, &serde_json::json!({"query": query}))
-            .await
+        let path = format!("{CUSTOM_ENRICHMENTS_BASE}/all/contents");
+        let id_value = match id.parse::<u64>() {
+            Ok(n) => Value::from(n),
+            Err(_) => Value::from(id),
+        };
+        let body = serde_json::json!({
+            "searchClauses": [{ "customEnrichmentId": id_value, "searchQuery": query }]
+        });
+        self.client.post(&path, &body).await
     }
 }
 

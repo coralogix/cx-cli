@@ -58,8 +58,9 @@ impl<'a> RetentionsApi<'a> {
         self.client.get(RETENTIONS_BASE, &[]).await
     }
 
+    /// The retention-tags gateway only accepts `POST` here (`PUT` answers 405).
     pub async fn update(&self, body: &Value) -> Result<Value> {
-        self.client.put(RETENTIONS_BASE, body).await
+        self.client.post(RETENTIONS_BASE, body).await
     }
 
     pub async fn activate(&self) -> Result<Value> {

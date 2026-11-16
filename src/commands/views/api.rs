@@ -62,8 +62,22 @@ pub struct ListViewFoldersResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateViewFolderResponse {
-    pub folder: Option<ViewFolder>,
+#[serde(untagged)]
+pub enum CreateViewFolderResponse {
+    /// `{"folder": {...}}` envelope. Listed first: with every `ViewFolder`
+    /// field optional, `Bare` would otherwise swallow the envelope.
+    Wrapped { folder: ViewFolder },
+    /// Bare folder object, as the live API returns it.
+    Bare(ViewFolder),
+}
+
+impl CreateViewFolderResponse {
+    pub fn into_folder(self) -> Option<ViewFolder> {
+        let folder = match self {
+            Self::Wrapped { folder } | Self::Bare(folder) => folder,
+        };
+        Some(folder)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +87,17 @@ pub struct DeleteViewFolderResponse {}
 
 const VIEWS_BASE: &str = "/mgmt/openapi/5/data-exploration/views/v1/views";
 const VIEWS_FOLDERS_BASE: &str = "/mgmt/openapi/5/data-exploration/views/v1/folders";
+
+/// Build the folder replace request. The id from the command line always
+/// wins over one in the file, so `cx views folders update <id>` edits the
+/// folder the user named even when the file was exported from another one.
+pub fn replace_folder_body(id: &str, body: &Value) -> Value {
+    let mut out = body.clone();
+    if let Some(obj) = out.as_object_mut() {
+        obj.insert("id".to_string(), Value::String(id.to_string()));
+    }
+    out
+}
 
 pub struct ViewsApi<'a> {
     client: &'a CxClient,
@@ -123,9 +148,12 @@ impl<'a> ViewsApi<'a> {
         self.client.post(VIEWS_FOLDERS_BASE, body).await
     }
 
+    /// `PUT /folders` (no id in the path): the API identifies the folder by
+    /// the `id` field in the body. See [`replace_folder_body`].
     pub async fn replace_folder(&self, id: &str, body: &Value) -> Result<Value> {
-        let path = format!("{VIEWS_FOLDERS_BASE}/{id}");
-        self.client.put(&path, body).await
+        self.client
+            .put(VIEWS_FOLDERS_BASE, &replace_folder_body(id, body))
+            .await
     }
 
     pub async fn delete_folder(&self, id: &str) -> Result<DeleteViewFolderResponse> {
@@ -140,6 +168,21 @@ impl<'a> ViewsApi<'a> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn replace_folder_body_sets_and_overrides_id() {
+        let bare = json!({ "name": "Infra" });
+        let out = replace_folder_body("f-cli", &bare);
+        assert_eq!(out["id"], "f-cli");
+        assert_eq!(out["name"], "Infra");
+
+        let stale = json!({ "id": "f-file", "name": "Infra" });
+        let out = replace_folder_body("f-cli", &stale);
+        assert_eq!(
+            out["id"], "f-cli",
+            "the positional id must win over the file id"
+        );
+    }
 
     #[test]
     fn deserialize_list_response() {
@@ -188,5 +231,29 @@ mod tests {
             parent_id: None,
         };
         assert_eq!(f.display_name(), "-");
+    }
+}
+
+#[cfg(test)]
+mod create_folder_response_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn create_folder_response_reads_wrapped_shape() {
+        let resp: CreateViewFolderResponse =
+            serde_json::from_value(json!({ "folder": { "id": "f-1", "name": "Infra" } })).unwrap();
+        let folder = resp.into_folder().unwrap();
+        assert_eq!(folder.id.as_deref(), Some("f-1"));
+        assert_eq!(folder.name.as_deref(), Some("Infra"));
+    }
+
+    #[test]
+    fn create_folder_response_reads_bare_shape() {
+        let resp: CreateViewFolderResponse =
+            serde_json::from_value(json!({ "id": "f-2", "name": "Apps" })).unwrap();
+        let folder = resp.into_folder().unwrap();
+        assert_eq!(folder.id.as_deref(), Some("f-2"));
+        assert_eq!(folder.name.as_deref(), Some("Apps"));
     }
 }

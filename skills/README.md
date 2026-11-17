@@ -102,8 +102,8 @@ Both failure modes name the fix, and neither leaves a half-installed state:
   the prompt, so name the scope explicitly.
 
 A failed skills install never blocks onboarding: inside `cx init` it downgrades to
-a warning. The `cx` commands still run without skills, but coding agents lose most
-of their cx knowledge, so install Node.js and run `cx skills install` afterwards.
+a warning. Coding agents use `cx` much better with the skills, so install Node.js
+and run `cx skills install` afterwards.
 
 On Windows, `npx` resolves through its `.cmd` shim, so no extra setup is needed.
 

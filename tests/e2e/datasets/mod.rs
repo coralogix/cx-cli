@@ -83,8 +83,7 @@ fn datasets_field_values() {
     harness::assert_array_of_objects_with_keys(&v, &["value"]);
 }
 
-/// The server caps the time range at 7 days; a wider range must fail with
-/// the API's 400, not succeed with partial results.
+/// The server caps the time range at 7 days and answers a wider range with a 400.
 #[test]
 #[ignore]
 fn datasets_fields_rejects_range_over_seven_days() {
@@ -94,7 +93,7 @@ fn datasets_fields_rejects_range_over_seven_days() {
     let stderr = harness::run_fail(&[
         "datasets", "fields", "--prefix", "$l", "--start", "now-8d", "-o", "json",
     ]);
-    // Match the API error, not any 400 (an OAuth refresh failure is also a 400).
+    // An OAuth refresh failure is also a 400, so match the API's error text.
     assert!(
         stderr.contains("API request failed (400"),
         "expected an API 400 for an 8-day range, got: {stderr}"

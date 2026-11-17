@@ -29,6 +29,15 @@ pub fn parse_timestamp_epoch_seconds(input: &str) -> Result<i64> {
     Ok(parse_datetime(input)?.timestamp())
 }
 
+/// Parse the same time expressions as [`parse_timestamp`], cut down to the
+/// whole minute (`2024-01-01T12:34:00Z`). For APIs (like SLO status) that
+/// reject seconds.
+pub fn parse_timestamp_whole_minute(input: &str) -> Result<String> {
+    Ok(parse_datetime(input)?
+        .format("%Y-%m-%dT%H:%M:00Z")
+        .to_string())
+}
+
 fn parse_datetime(input: &str) -> Result<DateTime<Utc>> {
     let trimmed = input.trim();
 
@@ -155,6 +164,21 @@ mod tests {
     fn invalid_expression_errors() {
         assert!(parse_timestamp("yesterday").is_err());
         assert!(parse_timestamp("now+1h").is_err());
+    }
+
+    #[test]
+    fn whole_minute_drops_seconds() {
+        assert_eq!(
+            parse_timestamp_whole_minute("2026-11-01T10:15:42.137Z").unwrap(),
+            "2026-11-01T10:15:00Z"
+        );
+    }
+
+    #[test]
+    fn whole_minute_accepts_the_relative_forms_too() {
+        let ts = parse_timestamp_whole_minute("now-4h").unwrap();
+        assert!(ts.ends_with(":00Z"), "got: {ts}");
+        assert_eq!(ts.len(), 20);
     }
 
     // ── parse_timestamp_epoch_seconds ────────────────────────────────────────

@@ -449,3 +449,45 @@ the deployed config only while the service auto-deploys from that branch, as
 |---|---|---|
 | old | new | accepted. The config only ever adds |
 | new | old (the release gate was bypassed) | records with an unknown event name or enum value are dropped. Unknown attributes are stripped and the record is kept. The CLI sees a 200 either way and nothing breaks for the user |
+
+### 5.3 `cx.team.id` is optional
+
+`cx.team.id` is present only when the run used exactly one profile, with that
+profile's own stored credentials, and the profile file already has
+`cached_team_id`. That field is written after an OAuth sign-in or a successful
+whoami lookup. So every event before sign-in, every local command, every
+multi-profile run and every run with `CX_API_KEY` has no team id.
+
+Audit of every place that touches it:
+
+| Place | Assumes it is present? |
+|---|---|
+| Event model (`event.rs`): `Option<TeamId>`, skipped when `None`, defaults to `None` when read | no |
+| OTLP encoder (`send.rs`): an absent key gives no attribute | no |
+| Collector validation: `attributes["cx.team.id"] != nil and not IsMatch(...)` | no |
+| Collector `keep_keys`: lists the key, keeps the record without it | no |
+| Spec, section 1: "string, optional" | no |
+
+Gaps, fixed in 8.2:
+
+1. `scripts/telemetry-collector-check.sh` never sends an event that has a team
+   id. Its profile is created with `--api-key` against a stub, so
+   `cached_team_id` is never set. The script must write `cached_team_id` into
+   the profile file for one run and assert that the collector exports those
+   events with `cx.team.id`, next to the ones without it.
+2. The unit test `team_id_is_a_string_and_one_record_per_event` checks the
+   record that has a team id. It does not assert that the second record has no
+   `cx.team.id` key. Add that assert.
+3. Events recorded before `set_targets` in the same run (`cli.first_run`,
+   `cli.version_changed`) never carry a team id, even for a signed-in user.
+   This is accepted, not fixed.
+
+Rules for the dashboards (none exist yet):
+
+- Never filter on `cx.team.id` being present. Events without it go in an
+  "unknown" group.
+- Count users and installs by `cx.install.id`, not by team.
+- The onboarding funnel is keyed on `cx.install.id`. To show a team for the
+  early steps, join to the first later event from the same install that has a
+  team id.
+- Per-team numbers are lower bounds.

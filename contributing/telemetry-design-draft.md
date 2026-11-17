@@ -4,7 +4,9 @@ Status: draft. The CLI side (section 1) is implemented in `src/telemetry/`. The
 collector config (section 2) passes `otelcol validate` and a local end-to-end run
 against `otel/opentelemetry-collector-contrib:0.165.0`: see
 `scripts/telemetry-collector/config.yaml` and
-`scripts/telemetry-collector-check.sh`. Sections 3 and 4 are not done.
+`scripts/telemetry-collector-check.sh`. Sections 3 and 4 are not done. Section 5
+holds the decisions from the 2026-11-16 design review. They are not implemented
+yet, and where they differ from sections 1 to 4, section 5 wins.
 
 ```
 cx command → local spool → HTTPS POST (OTLP/HTTP JSON) → API gateway (open path)
@@ -115,6 +117,9 @@ it with one pattern.
 - Any HTTP response means the batch is finished and removed from the spool.
 - A network failure keeps the batch until it is older than 7 days.
 - At most 50 events per request.
+
+As built, only commands that use the network send, in-process, within 400 ms.
+Section 5.1 replaces that with a sender sub-process.
 
 ## 2. Collector config
 
@@ -277,3 +282,131 @@ Before the first deploy:
 - `error_mode: propagate` on the validation processors is deliberate. The internal
   OTTL skill recommends `ignore` for production, but with `ignore` a check that
   errors keeps the record, which lets bad data through. Confirm with Observability.
+
+## 5. Design review decisions (2026-11-16)
+
+### 5.1 Sender sub-process
+
+`cx` no longer sends events itself. It appends the event to the spool, starts a
+detached sender and exits. No command waits on the network for telemetry. Local
+commands send too, so users who are not signed in yet are counted.
+
+**How the sender starts**
+
+- The sender is `cx __telemetry-send`: the same binary, started from
+  `std::env::current_exe()`.
+- `main` checks `argv[1]` for that name before completions, clap and the runtime.
+  It is not a clap subcommand, so it is absent from help, `cx schema` and shell
+  completions, and it runs no update check and records no telemetry.
+- The spawn is the one `update_check::spawn_skills_refresh` already uses on
+  master: stdin, stdout and stderr are null, with its own process group on Unix
+  and `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` on Windows. Both callers
+  share one helper. (This branch must merge master first to get it.)
+- The sender reads the consent mode and the endpoint itself, the same way `cx`
+  does. An opt-out set after the spawn still stops it.
+
+**When it starts**
+
+- At the end of the run, right after `cli.command` is appended, so this run's
+  event goes out with this sender.
+- Also before clap exits on a parse error, which never reaches the end of `main`.
+- Only in `On` mode. With any opt-out there is no spool and no sender.
+- Starting it at the beginning of the run was rejected: the spawn costs the same
+  either way, and this run's event would wait for the next run.
+
+**One sender at a time**
+
+- Lock: `~/.cx/telemetry-sender.lock`, an OS advisory lock taken with
+  `std::fs::File::try_lock` (in std since Rust 1.89; the toolchain is 1.96.1).
+- The sender takes the lock first and exits if it is held.
+- The parent tries the lock before spawning. If it is held, it does not spawn.
+  If it is free, it releases it and spawns.
+- Two parents can both see a free lock and both spawn. The second sender finds
+  the lock held and exits. That costs one short process, never a double send.
+- The kernel frees the lock when the sender dies, so there is no stale-lock age
+  rule. This is why the lock is not the age-based `RefreshLock` used for skills.
+- If the lock cannot be taken for any other reason (for example a file system
+  without lock support), nothing is sent.
+- The `.sending` claim in `spool.rs` stays as it is. It still protects against
+  an append during a send, and a sender that is killed leaves a `.sending` file
+  that the next sender picks up after 60 s.
+
+**Backoff**
+
+There is no backoff file today. The sender adds one: `~/.cx/telemetry-backoff`,
+an empty file.
+
+- The sender touches it when the batch is kept (see below) and deletes it after
+  a batch is accepted.
+- The parent does not spawn while the file is younger than 15 minutes.
+- Result: with the collector unreachable, one sender per 15 minutes per machine.
+
+**What ends a batch**
+
+| Result | Batch | Backoff |
+|---|---|---|
+| HTTP 429 or 503 | kept | yes |
+| Any other HTTP status | removed | no |
+| Network error or timeout | kept | yes |
+
+This changes the "any HTTP response" rule in section 1: with a per-IP rate limit
+(5.5), a 429 means the collector did not look at the batch.
+
+**Timeouts**
+
+- Connect 5 s, whole request 10 s.
+- The sender sends batches of 50 until the spool is empty: at most 10 requests,
+  because the spool holds at most 500 events.
+- Lifetime cap 30 s, enforced by a watchdog thread that exits the process. A DNS
+  lookup runs on a blocking thread that a request timeout cannot stop. The cap
+  stays below the 60 s after which a `.sending` file counts as abandoned.
+
+**The runtime shutdown in `main`**
+
+The bounded 100 ms `shutdown_timeout` was added only for the in-process flush.
+With no flush it is removed, and `main` goes back to `#[tokio::main]` as on
+master, with the wrapper logic (`begin`, `run`, `finish`, spawn) inside it.
+
+**Removed from the command path**
+
+`telemetry::flush`, `mark_network`, the `network` gate on flushing, and
+`send::BUDGET`. `Invocation.network` stays, because `cx.http.status_class`
+uses it.
+
+**CI, containers and sandboxes**
+
+The sender is started in every environment, including when `CI` is set. There is
+no special case.
+
+| Environment | What happens | Checked |
+|---|---|---|
+| Parent exits at once | the sender keeps running | yes, macOS and Linux |
+| `out=$(cx ...)` or a pipe | the caller does not wait for the sender, because it holds no stdio | yes, macOS |
+| Container where `cx` is PID 1 | the kernel kills the sender when `cx` exits. The event stays in the spool. It is lost with the container unless `~/.cx` is a mount | yes, Linux |
+| CI runner | the sender has until the job ends. GitHub Actions kills leftover processes at the end of the job | not checked |
+| Sandbox with no network | network error, then backoff: one sender per 15 minutes | by design |
+| Sandbox that forbids new processes | the spawn fails and the error is ignored. Events wait in the spool for up to 7 days | by design |
+
+**Cost to the command**
+
+Measured with a throwaway spike that spawns a detached child 200 times and times
+the `spawn()` call in the parent.
+
+| OS | Child binary | Median | p95 |
+|---|---|---|---|
+| macOS 26, Apple M4 Pro | `cx` release build, 10 MB | 0.4 ms | 0.8 ms |
+| macOS 26, Apple M4 Pro | `cx` debug build, 99 MB | 1.4 ms | 2.1 ms |
+| Linux 6.12 arm64 (Docker Desktop VM) | 100 MB binary on local disk | 0.2 ms | 0.6 ms |
+| Linux 6.12 arm64 (Docker Desktop VM) | small binary on a bind mount | 1.7 ms | 2.9 ms |
+| Windows | | not measured | not measured |
+
+The parent's lock check (open, `try_lock`, close) costs 14 µs on macOS and 1 µs
+on Linux.
+
+The cost to a command is one spawn plus one lock check: about 0.5 ms on a
+release build, and under 3 ms at p95 in every case measured. Before, it was up
+to 400 ms. 8.6 holds the implementation to 5 ms at p95.
+
+Windows could not be measured on the machines available. `CreateProcess` is
+slower than `fork`/`exec`, so the number must be measured on the `windows-latest`
+runner (already in `test.yml`) before 8.1 is accepted.

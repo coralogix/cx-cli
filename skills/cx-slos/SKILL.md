@@ -23,6 +23,7 @@ definitions, judge whether they are healthy, and manage their lifecycle.
 |---|---|
 | `cx slos list` | List all SLO definitions |
 | `cx slos get <id>` | Get a single SLO by ID |
+| `cx slos status <id> [<id>...]` | Compliance and remaining error budget for one or more SLOs |
 | `cx slos create --from-file <path>` | Create an SLO from a JSON definition [requires `--yes`] |
 | `cx slos update --from-file <path>` | Replace an SLO definition from JSON [requires `--yes`] |
 | `cx slos delete <id>` | Delete an SLO [requires `--yes`] |
@@ -54,7 +55,30 @@ cx slos list -o json | jq '[.[] | {name, targetThresholdPercentage, sloType, slo
 cx slos get <slo-id> -o json
 ```
 
-Compare the live attainment against `targetThresholdPercentage` to judge whether
+```bash
+# Status over the SLO's own window, then over the last 4 hours
+cx slos status <slo-id>
+cx slos status <slo-id> <slo-id> --last 4h -o json
+
+# Explicit window, one permutation, what-if target
+cx slos status <slo-id> --from now-7d --to now-1d
+cx slos status <slo-id> --grouping-key service,api --target 99.9
+```
+
+`status` returns `lowest_compliance` and `lowest_remaining_error_budget` as ratios
+from 0 to 1 — the lowest value across the matching permutations — plus the window
+actually used (`effective_from`, `effective_to`) and `complete_data`.
+
+- `--last 4h` or `--from`/`--to` set the window; times are cut to the whole minute and
+  the server rejects windows over its limit. `--last` cannot be combined with `--from`/`--to`.
+- `--grouping-key label,value` (repeatable) narrows to permutations with that label
+  value; the label must be one of the SLO's grouping labels.
+- **`0` and `0` with `complete_data: false` is not a breach verdict** — it means no
+  events in the window (or an unknown label value), or every event failed.
+- An SLO that fails is reported on stderr; the rest still print. The command fails
+  only when every SLO failed.
+
+Compare the compliance against `targetThresholdPercentage` to judge whether
 the SLO is healthy or burning error budget. A **request-based** SLO measures the
 fraction of good events; a **window-based** SLO measures the fraction of good time
 windows. After triage, pivot to the `cx-telemetry-querying` skill to find the root

@@ -380,7 +380,7 @@ no special case.
 
 | Environment | What happens | Checked |
 |---|---|---|
-| Parent exits at once | the sender keeps running | yes, macOS and Linux |
+| Parent exits at once | the sender keeps running | yes, macOS, Linux and Windows |
 | `out=$(cx ...)` or a pipe | the caller does not wait for the sender, because it holds no stdio | yes, macOS |
 | Container where `cx` is PID 1 | the kernel kills the sender when `cx` exits. The event stays in the spool. It is lost with the container unless `~/.cx` is a mount | yes, Linux |
 | CI runner | the sender has until the job ends. GitHub Actions kills leftover processes at the end of the job | not checked |
@@ -398,18 +398,20 @@ the `spawn()` call in the parent.
 | macOS 26, Apple M4 Pro | `cx` debug build, 99 MB | 1.4 ms | 2.1 ms |
 | Linux 6.12 arm64 (Docker Desktop VM) | 100 MB binary on local disk | 0.2 ms | 0.6 ms |
 | Linux 6.12 arm64 (Docker Desktop VM) | small binary on a bind mount | 1.7 ms | 2.9 ms |
-| Windows | | not measured | not measured |
+| Linux x86_64, GitHub `ubuntu-latest` | `cx` 0.1.34 release, 16 MB | 0.1 ms | 0.1 ms |
+| Windows x86_64, GitHub `windows-latest` | `cx` 0.1.34 release, 21 MB | 1.4 ms | 1.5 ms |
 
-The parent's lock check (open, `try_lock`, close) costs 14 µs on macOS and 1 µs
-on Linux.
+The parent's lock check (open, `try_lock`, close) costs 14 µs on macOS, 21 µs
+on Windows and 1 to 3 µs on Linux.
 
-The cost to a command is one spawn plus one lock check: about 0.5 ms on a
-release build, and under 3 ms at p95 in every case measured. Before, it was up
-to 400 ms. 8.6 holds the implementation to 5 ms at p95.
+The cost to a command is one spawn plus one lock check: 0.1 ms on Linux, about
+0.5 ms on macOS and 1.4 ms on Windows with a release build, and under 3 ms at
+p95 in every case measured. Before, it was up to 400 ms. 8.6 holds the
+implementation to 5 ms at p95.
 
-Windows could not be measured on the machines available. `CreateProcess` is
-slower than `fork`/`exec`, so the number must be measured on the `windows-latest`
-runner (already in `test.yml`) before 8.1 is accepted.
+One outlier: the first spawn of the freshly downloaded `cx.exe` on Windows took
+82 ms, once in 600 spawns. That is most likely the antivirus scan of a new
+binary, so it can happen on the first run after an install or upgrade.
 
 ### 5.2 CLI and collector deployment dependency
 

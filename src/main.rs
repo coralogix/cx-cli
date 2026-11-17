@@ -3439,12 +3439,20 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Handle shell completions before any stdout or stderr output.
-    // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
-    // completion scripts and exits. Otherwise it is a no-op.
-    CompleteEnv::with_factory(Cli::command).complete();
-
-    let result = run_recorded();
+    // On its own thread, for the stack: a debug build needs about 1 MB, which
+    // is all the main thread has on Windows.
+    let cli = std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            // Handle shell completions before any stdout or stderr output.
+            // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this
+            // generates completion scripts and exits. Otherwise it is a no-op.
+            CompleteEnv::with_factory(Cli::command).complete();
+            run_recorded()
+        })?;
+    let result = cli
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
     if result.as_ref().is_err_and(|e| e.is::<SilentExit>()) {
         std::process::exit(1);
     }

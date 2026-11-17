@@ -40,9 +40,52 @@ jobs:
           fi
           echo "Version match confirmed."
 
+  # The collector must already run the config this release needs
+  # (contributing/telemetry-design-draft.md § 5.2). Checks the CLI's events
+  # against the config copy on the collector service repo's default branch.
+  # Skipped until that repo exists: set the TELEMETRY_COLLECTOR_REPO variable
+  # (owner/name), TELEMETRY_COLLECTOR_CONFIG_PATH and the
+  # TELEMETRY_COLLECTOR_REPO_TOKEN secret together with CX_TELEMETRY_ENDPOINT.
+  telemetry-contract:
+    name: Telemetry contract (deployed collector config)
+    needs: verify-version
+    runs-on: ubuntu-latest
+    env:
+      COLLECTOR_REPO: ${{ vars.TELEMETRY_COLLECTOR_REPO }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: env.COLLECTOR_REPO != ''
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: env.COLLECTOR_REPO != ''
+        with:
+          repository: ${{ env.COLLECTOR_REPO }}
+          token: ${{ secrets.TELEMETRY_COLLECTOR_REPO_TOKEN }}
+          path: collector-service
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: env.COLLECTOR_REPO != ''
+        with:
+          toolchain: "1.96.1"
+
+      - name: Install Linux system dependencies
+        if: env.COLLECTOR_REPO != ''
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
+      # A debug build: the script reads events through CX_TELEMETRY=log.
+      - name: Check CLI events against the deployed collector config
+        if: env.COLLECTOR_REPO != ''
+        env:
+          CONFIG: collector-service/${{ vars.TELEMETRY_COLLECTOR_CONFIG_PATH }}
+        run: |
+          cargo build --locked
+          scripts/telemetry-collector-check.sh
+
   build:
     name: Build (${{ matrix.target }})
-    needs: verify-version
+    needs: [verify-version, telemetry-contract]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

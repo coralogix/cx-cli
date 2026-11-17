@@ -1,6 +1,9 @@
 //! Integration tests for client telemetry: the real `cx` binary in a sealed
-//! home dir, inspected through `CX_TELEMETRY=log` (events on stderr) or the
-//! spool file.
+//! home dir, inspected through `CX_TELEMETRY=log` (events on stderr, debug
+//! builds only), the spool file, or a mock collector.
+
+// The log-mode tests and their helpers exist only in debug builds.
+#![cfg_attr(not(debug_assertions), allow(dead_code))]
 
 use assert_cmd::Command;
 use serde_json::Value;
@@ -87,6 +90,7 @@ impl Run {
     }
 }
 
+#[cfg(debug_assertions)]
 fn log_mode(home: &Path) -> Command {
     let mut cmd = cx(home);
     cmd.env("CX_TELEMETRY", "log");
@@ -113,6 +117,7 @@ fn spool(home: &Path) -> PathBuf {
 
 // ── cli.command ───────────────────────────────────────────────────────────────
 
+#[cfg(debug_assertions)]
 #[test]
 fn local_command_emits_one_command_event_without_values() {
     let home = temp_home();
@@ -134,6 +139,7 @@ fn local_command_emits_one_command_event_without_values() {
     );
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn flags_from_env_vars_are_not_reported() {
     let home = temp_home();
@@ -143,6 +149,7 @@ fn flags_from_env_vars_are_not_reported() {
     assert_eq!(r.command_event()["cx.command.flags"], "");
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn no_profile_guidance_is_unchanged_and_recorded() {
     let home = temp_home();
@@ -158,6 +165,7 @@ fn no_profile_guidance_is_unchanged_and_recorded() {
     assert_eq!(event["cx.error.class"], "usage");
 }
 
+#[cfg(debug_assertions)]
 #[tokio::test]
 async fn api_command_outcomes() {
     let cases = [
@@ -195,6 +203,7 @@ async fn api_command_outcomes() {
 
 // ── cli.parse_error ───────────────────────────────────────────────────────────
 
+#[cfg(debug_assertions)]
 #[test]
 fn parse_errors_keep_clap_output_and_exit_code() {
     for (args, kind) in [
@@ -215,6 +224,7 @@ fn parse_errors_keep_clap_output_and_exit_code() {
     }
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn help_and_version_are_not_parse_errors() {
     let home = temp_home();
@@ -228,6 +238,7 @@ fn help_and_version_are_not_parse_errors() {
 
 // ── cli.first_run ─────────────────────────────────────────────────────────────
 
+#[cfg(debug_assertions)]
 #[test]
 fn first_run_is_recorded_once_per_install() {
     let home = temp_home();
@@ -269,6 +280,8 @@ fn opt_outs_build_nothing() {
             !spool(&home).exists(),
             "{var}={value} config_off={config_off}"
         );
+        // The parent's lock check creates this file, so no check, no sender.
+        assert!(!home.join(".cx").join("telemetry-sender.lock").exists());
         assert!(!r.stderr.contains("collects usage data"));
     }
 }
@@ -289,6 +302,12 @@ fn on_mode_prints_notice_once_and_spools_local_commands() {
     let first = run(first
         .env("CX_TELEMETRY_ENDPOINT", DEAD_ENDPOINT)
         .args(["dataprime", "list"]));
+    // The first run's sender fails, puts the events back and backs off.
+    assert!(
+        wait_until(|| backoff(&home).exists()),
+        "sender never backed off"
+    );
+    // So the second run starts no sender, and nothing touches the spool.
     let mut second = cx(&home);
     let second = run(second
         .env("CX_TELEMETRY_ENDPOINT", DEAD_ENDPOINT)
@@ -303,11 +322,7 @@ fn on_mode_prints_notice_once_and_spools_local_commands() {
     assert!(!second.stderr.contains("collects usage data"));
     assert!(!first.stdout.is_empty(), "command output is unchanged");
 
-    let lines: Vec<Value> = fs::read_to_string(spool(&home))
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
+    let lines = spool_lines(&home);
     let names: Vec<&str> = lines
         .iter()
         .map(|e| e["event.name"].as_str().unwrap())
@@ -315,11 +330,11 @@ fn on_mode_prints_notice_once_and_spools_local_commands() {
     assert_eq!(names, ["cli.first_run", "cli.command", "cli.command"]);
 }
 
-// ── Flush ─────────────────────────────────────────────────────────────────────
+// ── Sender ────────────────────────────────────────────────────────────────────
 
 /// A mock serving the alerts API and a collector at `/v1/logs` answering
 /// `collector`.
-async fn api_and_collector(collector: ResponseTemplate) -> MockServer {
+async fn api_and_collector(collector: impl wiremock::Respond + 'static) -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
@@ -346,10 +361,49 @@ async fn collector_requests(server: &MockServer) -> Vec<wiremock::Request> {
         .collect()
 }
 
+/// Every record the collector received, as `(event.name, cx.invocation.id)`.
+async fn collector_records(server: &MockServer) -> Vec<(String, String)> {
+    let attr = |record: &Value, key: &str| {
+        record["attributes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|kv| kv["key"] == key)
+            .unwrap()["value"]["stringValue"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    collector_requests(server)
+        .await
+        .iter()
+        .flat_map(|req| {
+            let body: Value = serde_json::from_slice(&req.body).unwrap();
+            body["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| (attr(r, "event.name"), attr(r, "cx.invocation.id")))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 fn on_mode(home: &Path, server: &MockServer) -> Command {
     let mut cmd = cx(home);
     cmd.env("CX_TELEMETRY_ENDPOINT", format!("{}/v1/logs", server.uri()));
     cmd
+}
+
+/// The sender sub-process, run in the foreground.
+fn sender(home: &Path, server: &MockServer) -> Command {
+    let mut cmd = on_mode(home, server);
+    cmd.arg("__telemetry-send");
+    cmd
+}
+
+fn backoff(home: &Path) -> PathBuf {
+    home.join(".cx").join("telemetry-backoff")
 }
 
 fn spool_lines(home: &Path) -> Vec<Value> {
@@ -360,49 +414,80 @@ fn spool_lines(home: &Path) -> Vec<Value> {
         .collect()
 }
 
-fn sending_files(home: &Path) -> usize {
+fn sending_files(home: &Path) -> Vec<PathBuf> {
     fs::read_dir(home.join(".cx"))
         .unwrap()
-        .filter(|e| {
-            e.as_ref()
-                .unwrap()
-                .file_name()
-                .to_string_lossy()
-                .ends_with(".sending")
-        })
-        .count()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.to_string_lossy().ends_with(".sending"))
+        .collect()
 }
 
-fn record_names(body: &Value) -> Vec<String> {
-    body["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
-        .as_array()
-        .unwrap()
+/// Events on disk, in the spool or claimed by a sender. A set, because a
+/// rename between the two reads would count a line twice.
+fn kept_events(home: &Path) -> std::collections::BTreeSet<String> {
+    let mut files = vec![spool(home)];
+    files.extend(sending_files(home));
+    files
         .iter()
-        .map(|r| {
-            r["attributes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|kv| kv["key"] == "event.name")
-                .unwrap()["value"]["stringValue"]
-                .as_str()
-                .unwrap()
-                .to_string()
+        .flat_map(|f| {
+            fs::read_to_string(f)
+                .unwrap_or_default()
+                .lines()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
         })
         .collect()
 }
 
+/// Poll for something the detached sender does, for up to 10 s.
+fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
+    for _ in 0..200 {
+        if condition() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    false
+}
+
+async fn wait_for_requests(server: &MockServer, count: usize) {
+    for _ in 0..200 {
+        if collector_requests(server).await.len() >= count {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the collector never got {count} request(s)");
+}
+
+fn seed_spool(home: &Path, count: u64) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let seeded: String = (0..count)
+        .map(|i| {
+            format!(
+                "{{\"time_unix_nano\":{},\"event.name\":\"cli.first_run\",\"cx.invocation.id\":\"{}\",\"cx.agent\":\"direct\",\"cx.ci\":false,\"cx.tty\":false}}\n",
+                now - 1_000_000 + i,
+                uuid::Uuid::new_v4()
+            )
+        })
+        .collect();
+    fs::create_dir_all(home.join(".cx")).unwrap();
+    fs::write(spool(home), seeded).unwrap();
+}
+
 #[tokio::test]
-async fn network_command_posts_otlp_and_empties_spool() {
+async fn local_command_delivers_its_events() {
     let server = api_and_collector(ResponseTemplate::new(200)).await;
     let home = temp_home();
-    write_profile(&home, "mock", &server.uri(), "");
 
-    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
+    let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
     assert_eq!(r.code, 0, "{}", r.stderr);
+    wait_for_requests(&server, 1).await;
 
     let requests = collector_requests(&server).await;
-    assert_eq!(requests.len(), 1);
     let req = &requests[0];
     assert!(req.headers.get("authorization").is_none(), "no auth header");
     assert!(req.headers["user-agent"]
@@ -414,31 +499,39 @@ async fn network_command_posts_otlp_and_empties_spool() {
     assert!(resource.as_array().unwrap().contains(
         &serde_json::json!({ "key": "service.name", "value": { "stringValue": "cx-cli" } })
     ));
-    assert_eq!(record_names(&body), ["cli.first_run", "cli.command"]);
+    let names: Vec<String> = collector_records(&server)
+        .await
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(names, ["cli.first_run", "cli.command"]);
 
-    assert!(!spool(&home).exists(), "spool emptied");
-    assert_eq!(sending_files(&home), 0);
-}
-
-#[tokio::test]
-async fn any_http_status_ends_the_batch() {
-    let server = api_and_collector(ResponseTemplate::new(500)).await;
-    let home = temp_home();
-    write_profile(&home, "mock", &server.uri(), "");
-
-    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
-    assert_eq!(r.code, 0);
-    assert_eq!(collector_requests(&server).await.len(), 1);
     assert!(
-        spool_lines(&home).is_empty(),
-        "rejected batch is not retried"
+        wait_until(|| kept_events(&home).is_empty()),
+        "spool emptied"
     );
+    assert!(!backoff(&home).exists());
 }
 
 #[tokio::test]
-async fn slow_collector_never_delays_the_command() {
+async fn parse_error_is_delivered() {
+    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    let r = run(on_mode(&home, &server).args(["alertz", "list"]));
+    assert_ne!(r.code, 0);
+    wait_for_requests(&server, 1).await;
+    let names: Vec<String> = collector_records(&server)
+        .await
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(names, ["cli.first_run", "cli.parse_error"]);
+}
+
+#[tokio::test]
+async fn hung_collector_never_delays_the_command() {
     let server =
-        api_and_collector(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(10)))
+        api_and_collector(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(60)))
             .await;
     let home = temp_home();
     write_profile(&home, "mock", &server.uri(), "");
@@ -452,53 +545,178 @@ async fn slow_collector_never_delays_the_command() {
         elapsed < std::time::Duration::from_secs(3),
         "took {elapsed:?}"
     );
-    let names: Vec<Value> = spool_lines(&home)
-        .into_iter()
-        .map(|e| e["event.name"].clone())
-        .collect();
-    assert_eq!(names, ["cli.first_run", "cli.command"], "events kept");
-    assert_eq!(sending_files(&home), 0);
+    wait_for_requests(&server, 1).await;
+    assert_eq!(kept_events(&home).len(), 2, "events kept while unanswered");
 }
 
 #[tokio::test]
-async fn local_commands_never_send() {
-    let server = api_and_collector(ResponseTemplate::new(200)).await;
-    let home = temp_home();
-    let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
-    assert_eq!(r.code, 0);
-    assert!(collector_requests(&server).await.is_empty());
-    assert_eq!(spool_lines(&home).len(), 2);
+async fn sender_status_decides_whether_the_batch_is_kept() {
+    for (status, kept) in [
+        (200, false),
+        (400, false),
+        (500, false),
+        (429, true),
+        (503, true),
+    ] {
+        let server = api_and_collector(ResponseTemplate::new(status)).await;
+        let home = temp_home();
+        seed_spool(&home, 3);
+
+        assert_eq!(run(&mut sender(&home, &server)).code, 0);
+        assert_eq!(collector_requests(&server).await.len(), 1, "{status}");
+        assert_eq!(
+            spool_lines(&home).len(),
+            if kept { 3 } else { 0 },
+            "{status}"
+        );
+        assert_eq!(backoff(&home).exists(), kept, "{status}");
+        assert!(sending_files(&home).is_empty(), "{status}");
+
+        // While backing off, a command starts no sender.
+        let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
+        assert_eq!(r.code, 0);
+        if kept {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            assert_eq!(collector_requests(&server).await.len(), 1, "{status}");
+        } else {
+            wait_for_requests(&server, 2).await;
+        }
+    }
 }
 
 #[tokio::test]
-async fn one_request_carries_at_most_50_events() {
+async fn sender_posts_batches_of_50_until_the_spool_is_empty() {
     let server = api_and_collector(ResponseTemplate::new(200)).await;
     let home = temp_home();
-    write_profile(&home, "mock", &server.uri(), "");
+    seed_spool(&home, 120);
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64;
-    let seeded: String = (0..60u64)
-        .map(|i| {
-            format!(
-                "{{\"time_unix_nano\":{},\"event.name\":\"cli.first_run\",\"cx.invocation.id\":\"{}\",\"cx.agent\":\"direct\",\"cx.ci\":false,\"cx.tty\":false}}\n",
-                now - 1_000_000 + i,
-                uuid::Uuid::new_v4()
-            )
+    assert_eq!(run(&mut sender(&home, &server)).code, 0);
+    let sizes: Vec<usize> = collector_requests(&server)
+        .await
+        .iter()
+        .map(|req| {
+            let body: Value = serde_json::from_slice(&req.body).unwrap();
+            body["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+                .as_array()
+                .unwrap()
+                .len()
         })
         .collect();
-    fs::write(spool(&home), seeded).unwrap();
+    assert_eq!(sizes, [50, 50, 20]);
+    assert!(kept_events(&home).is_empty());
+}
 
-    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
-    assert_eq!(r.code, 0);
-    let requests = collector_requests(&server).await;
-    assert_eq!(requests.len(), 1);
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(record_names(&body).len(), 50);
-    // 60 seeded + this run's first_run and command, minus 50 sent.
-    assert_eq!(spool_lines(&home).len(), 12);
+#[tokio::test]
+async fn sender_honours_an_opt_out_set_after_the_spawn() {
+    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    seed_spool(&home, 3);
+
+    assert_eq!(run(sender(&home, &server).env("CX_TELEMETRY", "0")).code, 0);
+    assert!(collector_requests(&server).await.is_empty());
+    assert_eq!(spool_lines(&home).len(), 3);
+}
+
+#[tokio::test]
+async fn sender_exits_when_another_holds_the_lock() {
+    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    seed_spool(&home, 3);
+    let lock = fs::File::create(home.join(".cx").join("telemetry-sender.lock")).unwrap();
+    lock.try_lock().unwrap();
+
+    assert_eq!(run(&mut sender(&home, &server)).code, 0);
+    // Nor does a command start one.
+    assert_eq!(
+        run(on_mode(&home, &server).args(["dataprime", "list"])).code,
+        0
+    );
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert!(collector_requests(&server).await.is_empty());
+
+    drop(lock);
+    assert_eq!(run(&mut sender(&home, &server)).code, 0);
+    // 3 seeded + the command's first_run and command.
+    assert_eq!(collector_records(&server).await.len(), 5);
+}
+
+/// Answers 200 after [`Arrivals::DELAY`] and records when each request came.
+struct Arrivals(std::sync::Arc<std::sync::Mutex<Vec<std::time::Instant>>>);
+
+impl Arrivals {
+    const DELAY: std::time::Duration = std::time::Duration::from_millis(100);
+}
+
+impl wiremock::Respond for Arrivals {
+    fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
+        self.0.lock().unwrap().push(std::time::Instant::now());
+        ResponseTemplate::new(200).set_delay(Self::DELAY)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_runs_send_one_at_a_time_and_each_event_once() {
+    let arrivals = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let server = api_and_collector(Arrivals(arrivals.clone())).await;
+    let home = temp_home();
+    let commands = |records: &[(String, String)]| {
+        records
+            .iter()
+            .filter(|(name, _)| name == "cli.command")
+            .count()
+    };
+
+    // One run first, so the install id exists and `first_run` is out.
+    assert_eq!(
+        run(on_mode(&home, &server).args(["dataprime", "list"])).code,
+        0
+    );
+    let mut runs = 1;
+    wait_for_requests(&server, 1).await;
+
+    let threads: Vec<_> = (0..20)
+        .map(|_| {
+            let mut cmd = on_mode(&home, &server);
+            std::thread::spawn(move || run(cmd.args(["dataprime", "list"])).code)
+        })
+        .collect();
+    for thread in threads {
+        assert_eq!(thread.join().unwrap(), 0);
+        runs += 1;
+    }
+
+    // A run that saw the lock held, just as that sender was leaving, leaves
+    // its event for the next run's sender. So run again until all are in.
+    'delivered: loop {
+        for _ in 0..60 {
+            if commands(&collector_records(&server).await) >= runs {
+                break 'delivered;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert!(runs < 30, "events were never delivered");
+        assert_eq!(
+            run(on_mode(&home, &server).args(["dataprime", "list"])).code,
+            0
+        );
+        runs += 1;
+    }
+
+    let records = collector_records(&server).await;
+    assert_eq!(commands(&records), runs);
+    let unique: std::collections::BTreeSet<_> = records.iter().collect();
+    assert_eq!(unique.len(), records.len(), "an event arrived twice");
+
+    // A sender waits for each answer, so two requests closer together than
+    // the answer delay came from two senders posting at once.
+    let arrivals = arrivals.lock().unwrap();
+    for pair in arrivals.windows(2) {
+        let gap = pair[1].duration_since(pair[0]);
+        assert!(
+            gap >= Arrivals::DELAY - std::time::Duration::from_millis(5),
+            "two senders posted at once ({gap:?} apart)"
+        );
+    }
 }
 
 // ── Funnel and lifecycle events ───────────────────────────────────────────────
@@ -511,6 +729,7 @@ fn onboarding_steps(r: &Run) -> Vec<String> {
 }
 
 #[cfg(unix)]
+#[cfg(debug_assertions)]
 #[tokio::test]
 async fn init_records_the_onboarding_funnel_in_order() {
     use std::os::unix::fs::PermissionsExt;
@@ -562,6 +781,7 @@ async fn init_records_the_onboarding_funnel_in_order() {
     );
 }
 
+#[cfg(debug_assertions)]
 #[tokio::test]
 async fn first_query_succeeded_is_recorded_once() {
     let server = MockServer::start().await;
@@ -583,6 +803,7 @@ async fn first_query_succeeded_is_recorded_once() {
     assert!(onboarding_steps(&second).is_empty());
 }
 
+#[cfg(debug_assertions)]
 #[tokio::test]
 async fn yes_on_a_confirmed_command_records_skipped_yes() {
     let server = MockServer::start().await;
@@ -595,6 +816,7 @@ async fn yes_on_a_confirmed_command_records_skipped_yes() {
     assert_eq!(confirms[0]["cx.confirm.result"], "skipped_yes");
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn non_interactive_confirm_is_recorded() {
     let home = temp_home();
@@ -611,6 +833,7 @@ fn write_state(home: &Path, state: Value) {
     fs::write(home.join(".cx").join("state.json"), state.to_string()).unwrap();
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn version_change_is_recorded_once() {
     let home = temp_home();
@@ -631,6 +854,7 @@ fn version_change_is_recorded_once() {
     assert!(second.named("cli.version_changed").is_empty());
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn update_notice_is_recorded_with_a_strict_version_only() {
     for (latest, expected) in [("99.0.0", Some("99.0.0")), ("99.0.0-evil text", None)] {
@@ -675,6 +899,7 @@ fn config_opt_out_holds_when_another_key_is_invalid() {
     assert!(!r.stderr.contains("collects usage data"));
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn upgrading_an_existing_install_is_not_a_first_run() {
     let home = temp_home();
@@ -685,6 +910,7 @@ fn upgrading_an_existing_install_is_not_a_first_run() {
     assert_eq!(r.command_event()["cx.command.path"], "dataprime list");
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn mistyped_profile_is_a_usage_error() {
     let home = temp_home();

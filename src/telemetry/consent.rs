@@ -17,7 +17,8 @@ Details: https://github.com/coralogix/cx-cli/blob/master/docs/telemetry.md \
 pub enum Mode {
     /// No event is built.
     Off,
-    /// Each event is printed to stderr; nothing is stored or sent.
+    /// Each event is printed to stderr; nothing is stored or sent. Debug
+    /// builds only.
     Log,
     /// Events are spooled and sent to `endpoint`.
     On { endpoint: String },
@@ -66,7 +67,9 @@ fn decide(
     let lower = |v: Option<&str>| v.map(|v| v.trim().to_ascii_lowercase());
     match lower(cx_telemetry).as_deref() {
         Some("0" | "false" | "off" | "no") => return Mode::Off,
-        Some("log") => return Mode::Log,
+        // Release builds have no Log mode. `log` still means "send nothing".
+        Some("log") if cfg!(debug_assertions) => return Mode::Log,
+        Some("log") => return Mode::Off,
         _ => {}
     }
     if matches!(
@@ -123,11 +126,22 @@ mod tests {
         // No endpoint (source and dev builds) means off.
         assert_eq!(decide(None, None, true, None), Mode::Off);
         assert_eq!(decide(None, None, true, Some(" ".into())), Mode::Off);
-        // Inspect mode works on any build and sends nothing.
-        assert_eq!(decide(Some("log"), None, true, None), Mode::Log);
-        assert_eq!(decide(Some("log"), Some("1"), false, None), Mode::Log);
         // An unrecognised value does not opt out on its own.
         assert_eq!(decide(Some("1"), None, true, ep()), on());
+    }
+
+    #[test]
+    fn log_mode_exists_only_in_debug_builds() {
+        let expected = if cfg!(debug_assertions) {
+            Mode::Log
+        } else {
+            Mode::Off
+        };
+        // Never `On`, whatever the build: `log` means nothing is sent.
+        let ep = || Some("https://collector".to_string());
+        assert_eq!(decide(Some("log"), None, true, ep()), expected);
+        assert_eq!(decide(Some("LOG"), None, true, None), expected);
+        assert_eq!(decide(Some("log"), Some("1"), false, None), expected);
     }
 
     #[test]

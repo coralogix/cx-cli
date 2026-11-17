@@ -6,7 +6,8 @@
 //!
 //! `main` drives the per-run `cli.command` event: [`begin`] at start,
 //! [`set_command`] after parsing, [`set_targets`] once profiles resolve, and
-//! [`finish`] with the result, then [`flush`].
+//! [`finish`] with the result, then [`spawn_sender`]. No command waits on the
+//! network for telemetry: a detached `cx __telemetry-send` does the sending.
 
 pub mod consent;
 pub mod event;
@@ -43,7 +44,7 @@ struct Invocation {
     profile_count: u32,
     team_id: Option<TeamId>,
     spilled: bool,
-    /// The command talked to the Coralogix API, so it may also flush.
+    /// The command talked to the Coralogix API (for `cx.http.status_class`).
     network: bool,
     /// The user declined a prompt; the outcome is `cancelled`.
     cancelled: bool,
@@ -195,35 +196,29 @@ pub fn update_notice(latest: &str) {
 }
 
 /// The command talks to the Coralogix API without building execution targets
-/// (`cx init`, `cx profiles add`), so it may flush too.
+/// (`cx init`, `cx profiles add`).
 pub fn mark_network() {
     invocation().network = true;
 }
 
-/// Send up to [`send::MAX_BATCH`] spooled events, oldest first, within
-/// [`send::BUDGET`]. Only commands that already used the network flush, so a
-/// local command never waits on telemetry. Any HTTP response removes the
-/// batch; a network error or timeout puts it back for the next flush.
-pub async fn flush() {
-    let Mode::On { endpoint } = mode() else {
-        return;
-    };
-    if !invocation().network {
+/// Start the detached sender for the spooled events, unless one is already
+/// running or the last one backed off. Costs one lock check and one spawn;
+/// every failure is ignored and leaves the events in the spool.
+pub fn spawn_sender() {
+    if !matches!(mode(), Mode::On { .. }) {
         return;
     }
     let Some(spool) = spool::path() else {
         return;
     };
-    let mut taken = spool::take(&spool, &INVOCATION_ID.to_string());
-    let mut batch = std::mem::take(&mut taken.events);
-    let mut unsent = batch.split_off(batch.len().min(send::MAX_BATCH));
-    if !batch.is_empty() {
-        let resource = Resource::current(&crate::version_cache::installation_id());
-        if !send::post(endpoint, &send::encode(&resource, &batch)).await {
-            unsent.extend(batch);
-        }
+    if !spool.exists() || send::backing_off(&spool) {
+        return;
     }
-    taken.finish(&spool, &unsent);
+    // Free now: release it and let the sender take it. Two runs can both get
+    // here; the second sender finds the lock held and exits.
+    if send::lock(&spool).is_some() {
+        crate::update_check::spawn_detached(&[send::SENDER_ARG]);
+    }
 }
 
 /// Record `cli.command` for the run that produced `result`. Nothing is
@@ -365,6 +360,8 @@ pub fn record_parse_error(err: &clap::Error) {
         _ => ParseKind::Other,
     };
     record(EventKind::ParseError { kind });
+    // clap exits right after this, so the end of `main` is never reached.
+    spawn_sender();
 }
 
 #[cfg(test)]

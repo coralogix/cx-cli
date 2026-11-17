@@ -1,19 +1,110 @@
-//! OTLP/HTTP JSON encoding and the one POST to the collector.
+//! OTLP/HTTP JSON encoding and the sender sub-process, `cx __telemetry-send`,
+//! which posts the spool to the collector after the command has exited.
 //!
 //! No OTel SDK: the body is the `resourceLogs` JSON the collector's OTLP
 //! receiver accepts, built from the flat event JSON. No auth header is sent;
 //! the collector path is open and validates every record itself.
 
+use std::fs::{self, File};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
+use super::consent::{self, Mode};
 use super::event::{Event, Resource};
+use super::spool;
 
-/// Total time a flush may add to a command, connect included.
-pub const BUDGET: Duration = Duration::from_millis(400);
+/// `argv[1]` of the sender sub-process.
+pub const SENDER_ARG: &str = "__telemetry-send";
 /// Records per request.
 pub const MAX_BATCH: usize = 50;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+/// The sender exits after this long whatever it is doing. Below the 60 s
+/// after which a `.sending` file counts as abandoned.
+const LIFETIME: Duration = Duration::from_secs(30);
+/// After a kept batch, no sender is started for this long.
+const BACKOFF: Duration = Duration::from_secs(15 * 60);
+
+fn sibling(spool: &Path, name: &str) -> PathBuf {
+    spool.with_file_name(name)
+}
+
+/// The one-sender-at-a-time lock, next to `spool`: an OS advisory lock, freed
+/// by the kernel when the holder exits. `None` when another process holds it
+/// or it can't be taken at all, in which case nothing is sent.
+pub fn lock(spool: &Path) -> Option<File> {
+    let file = File::options()
+        .create(true)
+        .append(true)
+        .open(sibling(spool, "telemetry-sender.lock"))
+        .ok()?;
+    file.try_lock().ok()?;
+    Some(file)
+}
+
+/// The last sender kept its batch less than [`BACKOFF`] ago.
+pub fn backing_off(spool: &Path) -> bool {
+    fs::metadata(sibling(spool, "telemetry-backoff"))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age < BACKOFF)
+}
+
+/// The sender sub-process: send the spool in batches of [`MAX_BATCH`] until
+/// it is empty or a batch is kept. Reads the consent mode itself, so an
+/// opt-out set after the spawn still stops it. Records no telemetry.
+pub fn run_sender() {
+    let Mode::On { endpoint } = consent::mode() else {
+        return;
+    };
+    let Some(spool) = spool::path() else {
+        return;
+    };
+    let Some(_lock) = lock(&spool) else {
+        return;
+    };
+    // A DNS lookup runs on a blocking thread no request timeout can stop.
+    std::thread::spawn(|| {
+        std::thread::sleep(LIFETIME);
+        std::process::exit(0);
+    });
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return;
+    };
+    runtime.block_on(drain(&endpoint, &spool));
+}
+
+async fn drain(endpoint: &str, spool: &Path) {
+    let resource = Resource::current(&crate::version_cache::installation_id());
+    let backoff = sibling(spool, "telemetry-backoff");
+    let token = uuid::Uuid::new_v4().to_string();
+    loop {
+        let mut taken = spool::take(spool, &token);
+        let mut batch = std::mem::take(&mut taken.events);
+        let mut unsent = batch.split_off(batch.len().min(MAX_BATCH));
+        if batch.is_empty() {
+            taken.finish(spool, &[]);
+            return;
+        }
+        let done = post(endpoint, &encode(&resource, &batch)).await;
+        if !done {
+            unsent.extend(batch);
+        }
+        taken.finish(spool, &unsent);
+        if !done {
+            let _ = fs::write(&backoff, "");
+            return;
+        }
+        let _ = fs::remove_file(&backoff);
+    }
+}
 
 /// The OTLP logs request body for `events`, all sharing `resource`.
 pub fn encode(resource: &Resource, events: &[Event]) -> Value {
@@ -60,19 +151,23 @@ fn attributes(map: Map<String, Value>) -> Vec<Value> {
         .collect()
 }
 
-/// POST `body` within [`BUDGET`]. True when the collector answered at all:
-/// any HTTP status ends the batch, since retrying a request the collector
-/// rejected would only be rejected again. False on a network error or
-/// timeout, so the batch is kept for the next flush.
-pub async fn post(endpoint: &str, body: &Value) -> bool {
+/// POST `body`. True when the batch is finished: the collector answered, and
+/// retrying a request it rejected would only be rejected again. False when
+/// the batch must be kept: a network error or timeout, or HTTP 429 or 503,
+/// which mean the collector did not look at it.
+async fn post(endpoint: &str, body: &Value) -> bool {
     let Ok(client) = reqwest::Client::builder()
         .user_agent(concat!("cx-cli/", env!("CARGO_PKG_VERSION")))
-        .timeout(BUDGET)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
         .build()
     else {
         return false;
     };
-    client.post(endpoint).json(body).send().await.is_ok()
+    match client.post(endpoint).json(body).send().await {
+        Ok(response) => !matches!(response.status().as_u16(), 429 | 503),
+        Err(_) => false,
+    }
 }
 
 #[cfg(test)]
@@ -198,6 +293,14 @@ mod tests {
             .find(|kv| kv["key"] == "cx.team.id")
             .unwrap();
         assert_eq!(team["value"], json!({ "stringValue": "4015532" }));
+        assert!(
+            records[1]["attributes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|kv| kv["key"] != "cx.team.id"),
+            "no team id means no attribute"
+        );
         assert!(records[0].get("body").is_none());
     }
 }

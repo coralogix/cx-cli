@@ -83,7 +83,6 @@ pub struct InitArgs {
 
 /// Orchestrate the onboarding chain: profile → skills → success.
 pub async fn run_init(args: InitArgs) -> Result<()> {
-    // Talks to the Coralogix API, so telemetry may flush afterwards.
     crate::telemetry::mark_network();
     crate::telemetry::onboarding(OnboardingStep::InitStarted, None, None);
     let InitArgs {

@@ -3429,31 +3429,34 @@ struct ProfilingFlameGraphArgs {
 struct SilentExit(#[source] anyhow::Error);
 
 fn main() -> Result<()> {
+    // The detached telemetry sender (`telemetry::spawn_sender`). Not a clap
+    // subcommand, so it is absent from help, `cx schema` and completions.
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|a| a == telemetry::send::SENDER_ARG)
+    {
+        telemetry::send::run_sender();
+        return Ok(());
+    }
+
     // Handle shell completions before any stdout or stderr output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.
     CompleteEnv::with_factory(Cli::command).complete();
 
-    // What `#[tokio::main]` builds, but with a bounded shutdown: a DNS lookup
-    // runs on a blocking thread that a timeout can't stop, and dropping the
-    // runtime would wait for it, so a flush cut off at its 400 ms budget
-    // could still hold the process open for seconds.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to build the tokio runtime");
-    let result = runtime.block_on(async {
-        telemetry::begin();
-        let result = run().await;
-        telemetry::finish(&result);
-        telemetry::flush().await;
-        result
-    });
-    runtime.shutdown_timeout(std::time::Duration::from_millis(100));
-
+    let result = run_recorded();
     if result.as_ref().is_err_and(|e| e.is::<SilentExit>()) {
         std::process::exit(1);
     }
+    result
+}
+
+#[tokio::main]
+async fn run_recorded() -> Result<()> {
+    telemetry::begin();
+    let result = run().await;
+    telemetry::finish(&result);
+    telemetry::spawn_sender();
     result
 }
 

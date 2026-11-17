@@ -428,12 +428,18 @@ fn auto_refresh_allowed() -> bool {
 /// Start `cx skills auto-refresh` as a detached process with no terminal
 /// output, so the user's command neither waits for it nor shows its output.
 fn spawn_skills_refresh() -> bool {
+    spawn_detached(&["skills", "auto-refresh"])
+}
+
+/// Start this `cx` binary again with `args`, detached: no shared stdio, and
+/// it outlives this process. True when the process started.
+pub(crate) fn spawn_detached(args: &[&str]) -> bool {
     use std::process::{Command, Stdio};
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
     let mut cmd = Command::new(exe);
-    cmd.args(["skills", "auto-refresh"])
+    cmd.args(args)
         .env("CX_NO_UPDATE_NOTIFIER", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())

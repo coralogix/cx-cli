@@ -2,15 +2,16 @@
 
 Status: draft. The CLI side (section 1) is implemented in `src/telemetry/`. The
 collector config (section 2) passes `otelcol validate` and a local end-to-end run
-against `otel/opentelemetry-collector-contrib:0.165.0`: see
+against the custom collector image built from `scripts/telemetry-collector/`: see
 `scripts/telemetry-collector/config.yaml` and
 `scripts/telemetry-collector-check.sh`. Sections 3 and 4 are not done. Section 5
-holds the decisions from the 2026-11-16 design review. They are not implemented
-yet, and where they differ from sections 1 to 4, section 5 wins.
+holds the decisions from the 2026-11-16 design review. They are implemented, and
+where they differ from sections 1 to 4, section 5 wins.
 
 ```
-cx command → local spool → HTTPS POST (OTLP/HTTP JSON) → API gateway (open path)
-           → dedicated OTel collector (validate, relabel) → c4c
+cx command → local spool → detached sender → HTTPS POST (OTLP/HTTP JSON)
+           → API gateway (open path)
+           → dedicated OTel collector (rate limit, validate, relabel) → c4c
 ```
 
 ## 1. Event schema
@@ -114,12 +115,12 @@ it with one pattern.
 ### Client rules
 
 - The CLI builds the JSON with `serde_json` and sends it with `reqwest`. No OTel SDK.
-- Any HTTP response means the batch is finished and removed from the spool.
+- HTTP 429 and 503 keep the batch. Any other HTTP response means the batch is
+  finished and removed from the spool.
 - A network failure keeps the batch until it is older than 7 days.
 - At most 50 events per request.
-
-As built, only commands that use the network send, in-process, within 400 ms.
-Section 5.1 replaces that with a sender sub-process.
+- No command sends. A detached sender sub-process does, after the command has
+  exited (section 5.1).
 
 ## 2. Collector config
 
@@ -330,6 +331,8 @@ commands send too, so users who are not signed in yet are counted.
 - The `.sending` claim in `spool.rs` stays as it is. It still protects against
   an append during a send, and a sender that is killed leaves a `.sending` file
   that the next sender picks up after 60 s.
+- The parent also skips the spawn when there is no spool file, so a run that
+  recorded nothing (`cx --help`) starts no process.
 
 **Backoff**
 
@@ -369,9 +372,10 @@ master, with the wrapper logic (`begin`, `run`, `finish`, spawn) inside it.
 
 **Removed from the command path**
 
-`telemetry::flush`, `mark_network`, the `network` gate on flushing, and
-`send::BUDGET`. `Invocation.network` stays, because `cx.http.status_class`
-uses it.
+`telemetry::flush`, the `network` gate on flushing, and `send::BUDGET`.
+`Invocation.network` and `mark_network` stay, because `cx.http.status_class`
+uses them: `cx init` and `cx profiles add` call the API without building
+execution targets.
 
 **CI, containers and sandboxes**
 
@@ -406,8 +410,22 @@ on Windows and 1 to 3 µs on Linux.
 
 The cost to a command is one spawn plus one lock check: 0.1 ms on Linux, about
 0.5 ms on macOS and 1.4 ms on Windows with a release build, and under 3 ms at
-p95 in every case measured. Before, it was up to 400 ms. 8.6 holds the
-implementation to 5 ms at p95.
+p95 in every case measured. Before, it was up to 400 ms.
+
+**As built** (macOS 26, Apple M4 Pro, release build, `cx dataprime list`, 40
+runs each, wall time of the whole command). Before every run any sender was
+killed and the backoff file removed, so every run paid for a spawn.
+
+| Scenario | Median | p95 |
+|---|---|---|
+| Telemetry off | 10.4 ms | 10.8 ms |
+| Collector refuses the connection | 10.8 ms | 11.1 ms |
+| Collector accepts and never answers | 11.0 ms | 11.5 ms |
+| DNS stalls (a `.local` name, 5 s mDNS timeout) | 10.9 ms | 11.7 ms |
+
+Telemetry adds 0.4 to 0.6 ms at the median and under 1 ms at p95, whatever the
+collector does. That includes building the event and appending it to the
+spool. With the in-process flush, the DNS case took about 700 ms.
 
 One outlier: the first spawn of the freshly downloaded `cx.exe` on Windows took
 82 ms, once in 600 spawns. That is most likely the antivirus scan of a new
@@ -438,8 +456,18 @@ So the two must be released in order.
 | `release.yml`, new step before the build matrix | fetches the config copy from the collector service repo's default branch and runs the same script with it | a release cut before the collector has the new config |
 
 Both run on `ubuntu-latest`, which has Docker. Both use a debug build of `cx`,
-because the script reads events through the Log mode (5.4). The release step
-needs a token that can read the collector service repo.
+because the script reads events through the Log mode (5.4). The script takes
+the config to check from `CONFIG`.
+
+The release job is skipped until the collector service repo exists. M6 turns
+it on, together with `CX_TELEMETRY_ENDPOINT`, by setting the repository
+variables `TELEMETRY_COLLECTOR_REPO` (`owner/name`) and
+`TELEMETRY_COLLECTOR_CONFIG_PATH`, and the secret
+`TELEMETRY_COLLECTOR_REPO_TOKEN`, a token that can read that repo.
+
+The script learns what the CLI sends from its own scenario, which must cover
+every event kind. A new event kind needs a line in the scenario, or the check
+does not see it.
 
 The release step compares against the service repo's default branch. That is
 the deployed config only while the service auto-deploys from that branch, as
@@ -470,7 +498,7 @@ Audit of every place that touches it:
 | Collector `keep_keys`: lists the key, keeps the record without it | no |
 | Spec, section 1: "string, optional" | no |
 
-Gaps, fixed in 8.2:
+Gaps (1 and 2 are fixed):
 
 1. `scripts/telemetry-collector-check.sh` never sends an event that has a team
    id. Its profile is created with `--api-key` against a stub, so
@@ -556,9 +584,9 @@ The image holds only what the config uses: the `otlp` receiver; the
 `memory_limiter`, `batch`, `filter`, `transform` and `ratelimit` processors; the
 `coralogix` exporter (plus `file` and `debug` for the local check); the
 `health_check` extension; the `env` and `file` config providers. It is 61 MB,
-against 484 MB for contrib. The `ocb` manifest and the Dockerfile go in
-`scripts/telemetry-collector/` in 8.4, and the check script switches to this
-image.
+against 484 MB for contrib. The `ocb` manifest (`builder.yaml`) and the
+Dockerfile are in `scripts/telemetry-collector/`, and the check script builds
+and uses this image.
 
 **Config** (changes to `scripts/telemetry-collector/config.yaml`):
 
@@ -614,6 +642,11 @@ and without `local.yaml`.
 **What a limited client gets:** HTTP 429 with `Retry-After: 1`. Nothing from
 that request is exported. The sender keeps the batch and backs off for 15
 minutes (5.1).
+
+`scripts/telemetry-collector-check.sh` runs a burst on every PR: 400 requests
+from one address must get at least one 429, 5 from a second address must all
+pass, and the number of records exported must equal the number of requests
+accepted.
 
 **Burst test** (custom image, local, 400 requests in 0.5 s):
 

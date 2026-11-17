@@ -8,7 +8,7 @@
 //! To send, the spool is renamed to a unique `.sending` file first, so a
 //! concurrent `cx` appending to the spool cannot lose events. The `.sending`
 //! file is deleted after the send. One left behind by a killed process is
-//! picked up by the next flush once it is older than a minute.
+//! picked up by the next sender once it is older than a minute.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -21,7 +21,7 @@ pub const MAX_LINES: usize = 500;
 const MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const ABANDONED_AFTER: Duration = Duration::from_secs(60);
 /// Compact on append once the file is past this size, so a user who only
-/// runs local commands (which never flush) has a bounded spool.
+/// cannot reach the collector has a bounded spool.
 const COMPACT_ABOVE_BYTES: u64 = 512 * 1024;
 const SENDING_SUFFIX: &str = ".sending";
 

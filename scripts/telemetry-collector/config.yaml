@@ -4,12 +4,26 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
         max_request_body_size: 65536        # 64 KiB
+        include_metadata: true              # request headers become client metadata, for ratelimit/ip
 
 processors:
   memory_limiter:
     check_interval: 1s
     limit_percentage: 75
     spike_limit_percentage: 15
+
+  # Per source IP: 10 requests/s, burst 300. Over the limit the request is
+  # rejected with HTTP 429 and nothing is exported. Not in otelcol-contrib:
+  # github.com/elastic/opentelemetry-collector-components/processor/ratelimitprocessor.
+  # The key is the whole header value, so it must be a header the gateway sets
+  # itself. Do not key on x-forwarded-for: a client can send its own.
+  # Buckets are per collector replica and are never evicted.
+  ratelimit/ip:
+    metadata_keys: [x-envoy-external-address]
+    strategy: requests
+    rate: 10
+    burst: 300
+    throttle_behavior: error
 
   # A record is DROPPED when any condition is true.
   # error_mode propagate: if a check cannot be evaluated, the request is rejected.
@@ -90,5 +104,5 @@ service:
   pipelines:
     logs:                                   # logs only: no traces or metrics pipeline
       receivers: [otlp]
-      processors: [memory_limiter, filter/validate, transform/sanitize, batch]
+      processors: [memory_limiter, ratelimit/ip, filter/validate, transform/sanitize, batch]
       exporters: [coralogix]

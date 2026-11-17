@@ -136,6 +136,15 @@ fn slos_lifecycle() {
     harness::run_ok_nonempty(&["slos", "list"]);
     harness::run_ok_nonempty(&["slos", "list", "-o", "toon"]);
 
+    // status: a fresh SLO has no events yet, so only the shape is stable
+    let status = harness::run_ok_json(&["slos", "status", &id, "--last", "1h", "-o", "json"]);
+    assert_eq!(status[0]["id"], id, "status should echo the id: {status}");
+    assert_eq!(status[0]["name"], name);
+    assert!(
+        status[0]["lowest_compliance"].is_number(),
+        "status should carry a compliance ratio: {status}"
+    );
+
     // delete, then get must fail; a second delete must fail too
     harness::run_write_ok(&["slos", "delete", &id]);
     cleanup.disarm();
@@ -151,6 +160,20 @@ fn slos_delete_unknown_id_fails() {
         return;
     }
     let stderr = harness::run_fail(&["slos", "delete", UNKNOWN_SLO_ID, "--yes"]);
+    assert!(
+        stderr.contains("404") || stderr.to_lowercase().contains("not found"),
+        "expected a not-found error: {stderr}"
+    );
+}
+
+/// `status` of an unknown id must fail, not print an empty report.
+#[test]
+#[ignore]
+fn slos_status_unknown_id_fails() {
+    if harness::require_creds("slos_status_unknown_id_fails").is_none() {
+        return;
+    }
+    let stderr = harness::run_fail(&["slos", "status", UNKNOWN_SLO_ID, "-o", "json"]);
     assert!(
         stderr.contains("404") || stderr.to_lowercase().contains("not found"),
         "expected a not-found error: {stderr}"

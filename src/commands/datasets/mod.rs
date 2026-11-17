@@ -1,4 +1,6 @@
 pub mod api;
+pub mod fields;
+pub mod fields_api;
 
 use std::sync::Arc;
 

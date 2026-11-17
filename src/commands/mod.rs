@@ -21,7 +21,6 @@ pub mod infra;
 pub mod init;
 pub mod integrations;
 pub mod ip_access;
-pub mod keypaths;
 pub mod logs;
 pub mod metrics;
 pub mod notification_testing;

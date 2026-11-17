@@ -104,6 +104,38 @@ pub struct BatchGetSlosResponse {
     pub not_found_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SloStatus {
+    pub computed_at: Option<String>,
+    pub effective_from: Option<String>,
+    pub effective_to: Option<String>,
+    #[serde(default)]
+    pub lowest_compliance: f64,
+    #[serde(default)]
+    pub lowest_remaining_error_budget: f64,
+    #[serde(default)]
+    pub effective_window_complete_data: bool,
+}
+
+impl SloStatus {
+    pub fn is_no_data_or_total_failure(&self) -> bool {
+        self.lowest_compliance == 0.0
+            && self.lowest_remaining_error_budget == 0.0
+            && !self.effective_window_complete_data
+    }
+}
+
+// --- Request types ---
+
+#[derive(Debug, Default, Clone)]
+pub struct SloStatusQuery {
+    pub grouping_key_values: Vec<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub target_threshold_percentage: Option<f64>,
+}
+
 // --- API ---
 
 const SLO_BASE: &str = "/mgmt/openapi/5/slo/slos/v1";
@@ -142,6 +174,26 @@ impl<'a> SlosApi<'a> {
     pub async fn batch_get(&self, ids: &[&str]) -> Result<BatchGetSlosResponse> {
         let params: Vec<(&str, &str)> = ids.iter().map(|id| ("ids", *id)).collect();
         let path = format!("{SLO_BASE}/all/list");
+        self.client.get(&path, &params).await
+    }
+
+    pub async fn status(&self, id: &str, query: &SloStatusQuery) -> Result<SloStatus> {
+        let target = query
+            .target_threshold_percentage
+            .map(|target| target.to_string());
+        let params: Vec<(&str, &str)> = query
+            .grouping_key_values
+            .iter()
+            .map(|pair| ("grouping_key_value", pair.as_str()))
+            .chain(query.from.as_deref().map(|from| ("from", from)))
+            .chain(query.to.as_deref().map(|to| ("to", to)))
+            .chain(
+                target
+                    .as_deref()
+                    .map(|target| ("target_threshold_percentage", target)),
+            )
+            .collect();
+        let path = format!("{SLO_BASE}/{id}/status");
         self.client.get(&path, &params).await
     }
 }
@@ -185,6 +237,40 @@ mod tests {
         assert_eq!(resp.slos[0].target_threshold_percentage, Some(99.9));
         assert_eq!(resp.slos[0].slo_type.as_deref(), Some("SLO_TYPE_REQUEST"));
         assert_eq!(resp.slos[1].id.as_deref(), Some("slo-002"));
+    }
+
+    #[test]
+    fn deserialize_status_response() {
+        let json = json!({
+            "computedAt": "2026-11-17T10:00:00Z",
+            "effectiveFrom": "2026-11-17T06:00:00Z",
+            "effectiveTo": "2026-11-17T09:52:00Z",
+            "lowestCompliance": 0.9995,
+            "lowestRemainingErrorBudget": 0.5,
+            "effectiveWindowCompleteData": true
+        });
+
+        let status: SloStatus = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            status.effective_from.as_deref(),
+            Some("2026-11-17T06:00:00Z")
+        );
+        assert_eq!(status.lowest_compliance, 0.9995);
+        assert_eq!(status.lowest_remaining_error_budget, 0.5);
+        assert!(status.effective_window_complete_data);
+        assert!(!status.is_no_data_or_total_failure());
+    }
+
+    #[test]
+    fn status_without_events_is_no_data_or_total_failure() {
+        let json = json!({
+            "lowestCompliance": 0,
+            "lowestRemainingErrorBudget": 0,
+            "effectiveWindowCompleteData": false
+        });
+
+        let status: SloStatus = serde_json::from_value(json).unwrap();
+        assert!(status.is_no_data_or_total_failure());
     }
 
     #[test]

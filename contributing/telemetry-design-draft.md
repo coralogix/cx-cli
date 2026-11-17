@@ -410,3 +410,42 @@ to 400 ms. 8.6 holds the implementation to 5 ms at p95.
 Windows could not be measured on the machines available. `CreateProcess` is
 slower than `fork`/`exec`, so the number must be measured on the `windows-latest`
 runner (already in `test.yml`) before 8.1 is accepted.
+
+### 5.2 CLI and collector deployment dependency
+
+The collector knows every event name, attribute and enum value. A CLI that
+sends something the collector does not know has that record dropped, silently.
+So the two must be released in order.
+
+**The rule**
+
+1. `scripts/telemetry-collector/config.yaml` in this repo is the only source of
+   the collector config. The collector service carries a copy in its configMap
+   and never edits it by hand.
+2. Schema changes only add: a new event, a new attribute, a new enum value.
+   Nothing is removed or narrowed, because old CLI versions keep sending the old
+   shape for as long as they are installed.
+3. The collector is deployed first. A CLI release that needs a config change
+   ships only after that config is live.
+
+**Where it is enforced**
+
+| Place | Check | Catches |
+|---|---|---|
+| `test.yml`, new `telemetry-contract` job on every PR | runs `scripts/telemetry-collector-check.sh` with the config in the PR | a CLI change that adds an event or value without updating the config |
+| `release.yml`, new step before the build matrix | fetches the config copy from the collector service repo's default branch and runs the same script with it | a release cut before the collector has the new config |
+
+Both run on `ubuntu-latest`, which has Docker. Both use a debug build of `cx`,
+because the script reads events through the Log mode (5.4). The release step
+needs a token that can read the collector service repo.
+
+The release step compares against the service repo's default branch. That is
+the deployed config only while the service auto-deploys from that branch, as
+`auto_deploy` in section 3 sets up.
+
+**Old and new versions**
+
+| CLI | Collector | Result |
+|---|---|---|
+| old | new | accepted. The config only ever adds |
+| new | old (the release gate was bypassed) | records with an unknown event name or enum value are dropped. Unknown attributes are stripped and the record is kept. The CLI sees a 200 either way and nothing breaks for the user |

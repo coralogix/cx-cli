@@ -75,8 +75,8 @@ actually used (`effective_from`, `effective_to`) and `complete_data`.
   value; the label must be one of the SLO's grouping labels.
 - **`0` and `0` with `complete_data: false` is not a breach verdict** — it means no
   events in the window (or an unknown label value), or every event failed.
-- An SLO that fails is reported on stderr; the rest still print. The command fails
-  only when every SLO failed.
+- If any SLO fails (unknown id, bad label, window too long), the command fails and
+  prints nothing; the error names each failed SLO. Fix the input and rerun.
 
 Compare the compliance against `targetThresholdPercentage` to judge whether
 the SLO is healthy or burning error budget. A **request-based** SLO measures the

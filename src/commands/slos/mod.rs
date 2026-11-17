@@ -256,15 +256,11 @@ pub async fn run_status(
         let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
         let names: HashMap<String, String> = api
             .batch_get(&id_refs)
-            .await
-            .map(|response| {
-                response
-                    .slos
-                    .into_iter()
-                    .filter_map(|slo| Some((slo.id?, slo.name?)))
-                    .collect()
-            })
-            .unwrap_or_default();
+            .await?
+            .slos
+            .into_iter()
+            .filter_map(|slo| Some((slo.id?, slo.name?)))
+            .collect();
 
         let mut statuses = Vec::with_capacity(ids.len());
         let mut failures = Vec::new();
@@ -278,22 +274,16 @@ pub async fn run_status(
                 Err(error) => failures.push(format!("SLO '{id}': {error}")),
             }
         }
-        if statuses.is_empty() {
+        if !failures.is_empty() {
             bail!("{}", failures.join("; "));
         }
-        Ok((statuses, failures))
+        Ok(statuses)
     })
     .await;
 
     let mut all_json: Vec<Value> = Vec::new();
     let mut all_items: Vec<(String, NamedSloStatus)> = Vec::new();
-    for (profile, (statuses, failures)) in report_errors_and_collect_successes(per_profile)? {
-        for failure in failures {
-            eprintln!(
-                "{}",
-                format!("error from profile '{profile}': {failure}").red()
-            );
-        }
+    for (profile, statuses) in report_errors_and_collect_successes(per_profile)? {
         for status in statuses {
             all_json.push(status.to_json(include_profile, &profile));
             all_items.push((profile.clone(), status));

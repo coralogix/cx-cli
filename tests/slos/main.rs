@@ -189,7 +189,7 @@ async fn status_last_sets_only_the_window_start() {
 }
 
 #[tokio::test]
-async fn status_keeps_going_when_one_slo_fails() {
+async fn status_fails_when_one_slo_fails() {
     let server = MockServer::start().await;
     mount_names(&server).await;
 
@@ -207,36 +207,14 @@ async fn status_keeps_going_when_one_slo_fails() {
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_status(
+    let error = run_status(
         &targets,
         &["slo-001".to_string(), "slo-missing".to_string()],
         &SloStatusQuery::default(),
         OutputFormat::Json,
     )
     .await
-    .expect("one good SLO is enough");
-}
-
-#[tokio::test]
-async fn status_fails_when_every_slo_fails() {
-    let server = MockServer::start().await;
-    mount_names(&server).await;
-
-    Mock::given(method("GET"))
-        .and(path("/mgmt/openapi/5/slo/slos/v1/slo-missing/status"))
-        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message": "not found"})))
-        .mount(&server)
-        .await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    let error = run_status(
-        &targets,
-        &["slo-missing".to_string()],
-        &SloStatusQuery::default(),
-        OutputFormat::Json,
-    )
-    .await
-    .expect_err("no SLO succeeded");
+    .expect_err("one failed SLO fails the command");
 
     assert!(format!("{error:#}").contains("slo-missing"));
 }

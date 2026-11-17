@@ -83,7 +83,8 @@ fn preflight(
     if !npx_available {
         return Preflight::Fail(
             "Node.js/npx is required to install the cx agent skills.\n\
-             Install Node.js (https://nodejs.org) and rerun, or skip the skills install."
+             Coding agents use cx much worse without these skills.\n\
+             Install Node.js (https://nodejs.org), then run `cx skills install`."
                 .to_string(),
         );
     }
@@ -410,6 +411,8 @@ mod tests {
             panic!("expected Fail");
         };
         assert!(message.contains("Node.js"));
+        assert!(message.contains("cx skills install"));
+        assert!(!message.contains("skip"));
     }
 
     #[test]

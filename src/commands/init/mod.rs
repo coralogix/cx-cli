@@ -185,7 +185,11 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
                      Update them anytime with `cx skills install`."
                 );
             }
-            Err(error) => eprintln!("warning: skipped the agent-skills install: {error:#}"),
+            Err(error) => eprintln!(
+                "warning: skipped the agent-skills install: {error:#}\n\
+                 Coding agents need these skills to use cx well. \
+                 Fix the issue above, then run `cx skills install`."
+            ),
         }
     }
 

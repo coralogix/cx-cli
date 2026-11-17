@@ -17,12 +17,20 @@
 #     project checks before it dispatches.
 #   * No Coralogix credential lives here. The e2e tests are #[ignore]d, so this
 #     job never talks to a Coralogix tenant. The e2e suite runs on the PR.
-#   * Claude has no network, no git and no gh. Dependencies are fetched before
-#     it starts and cargo then runs offline, so a prompt cannot pull a crate.
+#   * Claude has no git and no gh, and the tools that reach the network are
+#     refused. cargo runs offline, so it cannot pull a crate that is not
+#     already in Cargo.lock, and the gate refuses a change to Cargo.toml.
+#     This is not a sandbox: cargo build, cargo test and cargo run execute
+#     code the agent wrote, and that code can reach the network. What keeps
+#     the job safe is that only a person with write access can start it, that
+#     the job holds no credential worth stealing, and that the diff is gated.
 #     The workflow does the commit, the push and the PR, not Claude.
 #   * Claude cannot edit the files that govern it. A diff that touches
-#     .github/ (except .github/demos/), CODEOWNERS, deny.toml or the crate
-#     version fails the run and opens no PR.
+#     .github/ outside .github/demos/, .claude/, .codex/, .cargo/, scripts/,
+#     CODEOWNERS, deny.toml, build.rs, install.sh, rust-toolchain.toml,
+#     Cargo.toml, Cargo.lock, CLAUDE.md, AGENTS.md or the e2e harness fails
+#     the run and opens no PR. The e2e harness matters because the e2e suite
+#     runs the head of the pull request with write credentials.
 #   * The branch is always agent/<ticket>. The push token is a GitHub App
 #     installation token, minted per run, scoped to this repository, and valid
 #     for one hour.
@@ -70,9 +78,10 @@ jobs:
       # Keep the Anthropic key and the runner's own secrets out of the
       # environment of every command Claude runs.
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
-      # Read here so a step can test whether the webhook is configured: the
-      # secrets context is not available in a step-level `if`.
-      FACTORY_HOOK: ${{ secrets.CX_FACTORY_WEBHOOK }}
+      # Whether the webhook is set, never its value. The secrets context is
+      # not available in a step-level `if`, and a job-level value would be
+      # readable by the agent-written code that cargo test runs.
+      HAS_HOOK: ${{ secrets.CX_FACTORY_WEBHOOK != '' }}
     steps:
       # ------------------------------------------------------------------ input
       - name: Check the ticket id
@@ -106,9 +115,13 @@ jobs:
           toolchain: "1.96.1"
           components: clippy, rustfmt
 
+      # Restore only. This job runs code the agent wrote, through build.rs and
+      # through cargo test, and that code can write to target/ and ~/.cargo.
+      # Saving would publish those artifacts to the master cache scope, which
+      # every branch of this repository can read.
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          cache-on-failure: false
+          save-if: false
 
       # Everything cargo needs is on disk before Claude starts. From here on
       # cargo is offline, so the agent cannot add a dependency and cannot reach
@@ -155,8 +168,8 @@ jobs:
           claude_args: |
             --max-turns 120
             --json-schema '{"type":"object","additionalProperties":false,"properties":{"outcome":{"type":"string","enum":["implemented","needs_clarification","not_feasible"]},"summary":{"type":"string","minLength":1,"maxLength":4000},"question":{"type":"string","maxLength":2000},"pr_title":{"type":"string","maxLength":70},"pr_body":{"type":"string","maxLength":60000},"commands":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":200}}},"required":["outcome","summary"]}'
-            --disallowedTools "WebFetch,WebSearch,Bash(git:*),Bash(gh:*),Bash(curl:*),Bash(wget:*),Bash(ssh:*),Bash(sudo:*),Bash(nc:*),Read(//proc/**),Read(//sys/**),Read(//home/runner/work/_temp/**),Read(//home/runner/actions-runner/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**),Read(//home/runner/.cargo/credentials*)"
-            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(cargo fmt:*),Bash(cargo clippy:*),Bash(cargo test:*),Bash(cargo build:*),Bash(cargo run:*),Bash(ls:*),Bash(find:*),Bash(wc:*),Bash(rg:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(git:*),Bash(gh:*),Bash(curl:*),Bash(wget:*),Bash(ssh:*),Bash(sudo:*),Bash(nc:*),Bash(find:*),Bash(xargs:*),Bash(env:*),Bash(printenv:*),Read(//proc/**),Read(//sys/**),Read(//home/runner/work/_temp/**),Read(//home/runner/actions-runner/**),Read(//home/runner/runners/**),Read(//home/runner/.config/**),Read(//home/runner/.cargo/credentials*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(cargo fmt:*),Bash(cargo clippy:*),Bash(cargo test:*),Bash(cargo build:*),Bash(cargo run:*),Bash(ls:*),Bash(wc:*),Bash(rg:*)"
           prompt: |
             You are implementing one Linear ticket in this repository, the cx CLI.
 
@@ -257,24 +270,53 @@ jobs:
       # ---------------------------------------------------------------- the gate
       - name: Check what the agent touched
         if: steps.result.outputs.outcome == 'implemented'
+        shell: bash
         run: |
           fail() { echo "::error::$1"; exit 1; }
-          changed="$(git status --porcelain=v1 | awk '{print $NF}' | sort -u)"
-          if [ -z "$changed" ]; then
-            fail "The agent reported 'implemented' but changed nothing."
-          fi
-          # The agent may not change the rules that govern it, the dependency
-          # policy, the owners, or the released version.
-          forbidden="$(printf '%s\n' "$changed" \
-            | grep -P '^(\.github/(?!demos/)|CODEOWNERS$|deny\.toml$)' || true)"
+
+          # NUL-delimited and unquoted, so a path that holds a space cannot
+          # hide from the gate. A rename record is "XY<space>new\0old\0", so
+          # both halves are collected.
+          changed=()
+          want_old=0
+          while IFS= read -r -d '' rec; do
+            if [ "$want_old" -eq 1 ]; then
+              changed+=("$rec"); want_old=0; continue
+            fi
+            [ -n "$rec" ] || continue
+            changed+=("${rec:3}")
+            case "${rec:0:2}" in R*|C*) want_old=1 ;; esac
+            # -uall, because git otherwise collapses a new directory to one
+            # entry and the files inside it would never meet the pattern.
+          done < <(git status --porcelain=v1 -z -uall)
+          [ "${#changed[@]}" -gt 0 ] \
+            || fail "The agent reported 'implemented' but changed nothing."
+
+          # Tier 1, refused. The rules that govern the agent, the build and the
+          # supply chain, and the e2e harness that holds the write credentials
+          # to one team. E2E runs the head of the pull request, so a change
+          # here would run with those credentials before a person reads it.
+          deny='^(\.github/(?!demos/)|\.claude/|\.codex/|\.cargo/|scripts/'
+          deny="$deny|CODEOWNERS$|deny\.toml$|build\.rs$|install\.sh$"
+          deny="$deny|rust-toolchain\.toml$|Cargo\.toml$|Cargo\.lock$"
+          deny="$deny|CLAUDE\.md$|AGENTS\.md$"
+          deny="$deny|tests/e2e/(harness|sweeper)\.rs$|tests/e2e/common/)"
+          forbidden="$(printf '%s\n' "${changed[@]}" | grep -P "$deny" || true)"
           if [ -n "$forbidden" ]; then
-            fail "The diff touches files the agent may not change: $(echo "$forbidden" | tr '\n' ' ')"
+            fail "The diff touches files the agent may not change: $(printf '%s ' $forbidden)"
           fi
-          if git diff -U0 -- Cargo.toml | grep -qE '^\+version *='; then
-            fail "The diff bumps the crate version."
+
+          # Tier 2, allowed but announced. A command may legitimately need
+          # safety.rs or config.rs. The pull request says so, and pr-review
+          # raises the same paths, so a person looks at them on purpose.
+          sensitive="$(printf '%s\n' "${changed[@]}" | grep -P '^src/(safety|config|api_client|execution|oauth|keyring_store|macos_security|code_sign|identity|region|onboarding|update_check|install_method)\.rs$' || true)"
+          if [ -n "$sensitive" ]; then
+            printf '%s\n' "$sensitive" > "$RUNNER_TEMP/sensitive.txt"
+            echo "::warning::The diff touches security-sensitive files: $(printf '%s ' $sensitive)"
           fi
+
           echo "Files changed:"
-          printf '%s\n' "$changed" | sed 's/^/  /'
+          printf '  %s\n' "${changed[@]}"
 
       - name: Format, lint and test
         if: steps.result.outputs.outcome == 'implemented'
@@ -349,8 +391,9 @@ jobs:
       # One event to n8n, which owns the Slack and the Linear credentials. A
       # missing or failing webhook never fails the run: the work is already done.
       - name: Tell n8n what happened
-        if: always() && env.FACTORY_HOOK != ''
+        if: always() && env.HAS_HOOK == 'true'
         env:
+          FACTORY_HOOK: ${{ secrets.CX_FACTORY_WEBHOOK }}
           TICKET: ${{ inputs.ticket }}
           SLACK: ${{ inputs.slack_thread }}
           OUTCOME: ${{ steps.result.outputs.outcome }}

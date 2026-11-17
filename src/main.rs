@@ -5628,14 +5628,14 @@ async fn main() -> Result<()> {
                     end,
                     limit,
                 }) => {
-                    let request = commands::keypaths::api::SearchKeypathsRequest {
-                        datasets: commands::keypaths::parse_datasets(&datasets)?,
-                        time_range: commands::keypaths::time_range(&start, &end)?,
-                        keypath_filter: commands::keypaths::text_filter(exact, prefix, contains),
-                        dimension_filter: commands::keypaths::parse_labels(&labels)?,
+                    let request = commands::datasets::fields_api::SearchKeypathsRequest {
+                        datasets: commands::datasets::fields::parse_datasets(&datasets)?,
+                        time_range: commands::datasets::fields::time_range(&start, &end)?,
+                        keypath_filter: commands::datasets::fields::text_filter(exact, prefix, contains),
+                        dimension_filter: commands::datasets::fields::parse_labels(&labels)?,
                         limit,
                     };
-                    commands::keypaths::run_search(&targets, &request, output).await?;
+                    commands::datasets::fields::run_search(&targets, &request, output).await?;
                 }
                 DatasetsCmd::FieldValues(FieldValuesArgs {
                     keypath,
@@ -5648,15 +5648,15 @@ async fn main() -> Result<()> {
                     end,
                     limit,
                 }) => {
-                    let request = commands::keypaths::api::GetKeypathSamplesRequest {
-                        datasets: commands::keypaths::parse_datasets(&datasets)?,
+                    let request = commands::datasets::fields_api::GetKeypathSamplesRequest {
+                        datasets: commands::datasets::fields::parse_datasets(&datasets)?,
                         keypath,
-                        time_range: commands::keypaths::time_range(&start, &end)?,
-                        dimension_filter: commands::keypaths::parse_labels(&labels)?,
+                        time_range: commands::datasets::fields::time_range(&start, &end)?,
+                        dimension_filter: commands::datasets::fields::parse_labels(&labels)?,
                         limit,
-                        value_filter: commands::keypaths::text_filter(exact, prefix, contains),
+                        value_filter: commands::datasets::fields::text_filter(exact, prefix, contains),
                     };
-                    commands::keypaths::run_samples(&targets, &request, output).await?;
+                    commands::datasets::fields::run_samples(&targets, &request, output).await?;
                 }
             },
 

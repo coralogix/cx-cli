@@ -1,14 +1,12 @@
-#[path = "../common/mod.rs"]
-mod common;
-
+use crate::common;
 use serde_json::json;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::keypaths::api::{
+use coralogix_cli::commands::datasets::fields::{self, parse_datasets, parse_labels, text_filter};
+use coralogix_cli::commands::datasets::fields_api::{
     GetKeypathSamplesRequest, SearchKeypathsRequest, TimeRange,
 };
-use coralogix_cli::commands::keypaths::{self, parse_datasets, parse_labels, text_filter};
 use coralogix_cli::config::OutputFormat;
 
 fn range() -> TimeRange {
@@ -76,7 +74,7 @@ async fn search_sends_the_request_and_renders_keypaths() {
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
-        keypaths::run_search(&targets, &search_request(), output)
+        fields::run_search(&targets, &search_request(), output)
             .await
             .expect("run_search should succeed");
     }
@@ -92,7 +90,7 @@ async fn search_handles_an_empty_response() {
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    keypaths::run_search(&targets, &search_request(), OutputFormat::Text)
+    fields::run_search(&targets, &search_request(), OutputFormat::Text)
         .await
         .expect("an empty search is not an error");
 }
@@ -110,7 +108,7 @@ async fn search_surfaces_a_rejected_request() {
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    let error = keypaths::run_search(&targets, &search_request(), OutputFormat::Json)
+    let error = fields::run_search(&targets, &search_request(), OutputFormat::Json)
         .await
         .expect_err("a 400 must fail the command");
     assert!(format!("{error:#}").contains("1000"), "{error:#}");
@@ -135,7 +133,7 @@ async fn samples_sends_the_keypath_and_renders_samples() {
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     for output in [OutputFormat::Json, OutputFormat::Toon, OutputFormat::Text] {
-        keypaths::run_samples(&targets, &samples_request(), output)
+        fields::run_samples(&targets, &samples_request(), output)
             .await
             .expect("run_samples should succeed");
     }
@@ -151,7 +149,7 @@ async fn samples_handles_an_empty_response() {
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    keypaths::run_samples(&targets, &samples_request(), OutputFormat::Text)
+    fields::run_samples(&targets, &samples_request(), OutputFormat::Text)
         .await
         .expect("no samples is not an error");
 }
@@ -175,7 +173,7 @@ async fn fan_out_merges_profiles() {
         common::test_target("first", &first.uri()),
         common::test_target("second", &second.uri()),
     ];
-    keypaths::run_search(&targets, &search_request(), OutputFormat::Json)
+    fields::run_search(&targets, &search_request(), OutputFormat::Json)
         .await
         .expect("multi-profile search should succeed");
 }

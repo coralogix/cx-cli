@@ -5,18 +5,16 @@ use colored::Colorize;
 use serde::Serialize;
 use serde_json::Value;
 
-pub mod api;
-
+use super::fields_api::{
+    DimensionFilter, DimensionFilters, DimensionMatch, GetKeypathSamplesRequest,
+    KeypathSearchResult, KeypathsApi, NamedDataset, SearchKeypathsRequest, TextFilter, TextFilters,
+    TimeRange,
+};
 use crate::commands::dashboards::profiled_api_row_to_json;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
 use crate::time::parse_timestamp_nanos_at;
-use api::{
-    DimensionFilter, DimensionFilters, DimensionMatch, GetKeypathSamplesRequest,
-    KeypathSearchResult, KeypathsApi, NamedDataset, SearchKeypathsRequest, TextFilter, TextFilters,
-    TimeRange,
-};
 use chrono::Utc;
 
 const DEFAULT_DATASPACE: &str = "default";

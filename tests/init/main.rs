@@ -70,7 +70,7 @@ fn install_fake_npx(dir: &Path, args_file: &Path) {
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
+         if [ \"$2\" = \"skills@1.8.1\" ] && [ \"$3\" = \"ls\" ]; then echo '[]'; exit 0; fi\n\
          echo \"$@\" > \"{}\"\n",
         args_file.display()
     );
@@ -134,7 +134,10 @@ async fn init_writes_profile_then_installs_skills() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli/skills --skill * -y -g"
+        format!(
+            "-y skills@1.8.1 add coralogix/cx-cli/skills#v{} --skill * -y -g",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 
@@ -310,7 +313,10 @@ async fn init_agents_flag_reaches_the_installer() {
     let recorded = fs::read_to_string(&args_file).unwrap();
     assert_eq!(
         recorded.trim(),
-        "-y skills add coralogix/cx-cli/skills --skill * -y -g -a claude-code cursor"
+        format!(
+            "-y skills@1.8.1 add coralogix/cx-cli/skills#v{} --skill * -y -g -a claude-code cursor",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 
@@ -489,7 +495,7 @@ async fn init_skips_skills_when_already_installed() {
     let script = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then echo \"10.0.0\"; exit 0; fi\n\
-         if [ \"$2\" = \"skills\" ] && [ \"$3\" = \"ls\" ]; then \
+         if [ \"$2\" = \"skills@1.8.1\" ] && [ \"$3\" = \"ls\" ]; then \
            echo '[{{\"name\":\"cx-alerts\",\"source\":\"coralogix/cx-cli\"}}]'; exit 0; fi\n\
          echo \"$@\" > \"{}\"\n",
         args_file.display()

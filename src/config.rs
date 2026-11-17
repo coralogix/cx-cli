@@ -240,6 +240,13 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub telemetry: bool,
 
+    /// After a cx upgrade, refresh the global cx agent skills in the
+    /// background (`cx skills install --global` with the recorded agents, or
+    /// auto-detected agents when cx did not record the install). Only for
+    /// global cx skills that are older than this cx, and only with `npx`.
+    #[serde(default = "default_true")]
+    pub auto_update_skills: bool,
+
     /// Shell completion scripts installed and tracked by `cx completions install`.
     /// Only files recorded here are touched by `cx completions refresh`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -285,6 +292,7 @@ impl Default for Config {
             strict_fields_validation: false,
             no_console_link: false,
             telemetry: true,
+            auto_update_skills: true,
             managed_completions: vec![],
         }
     }

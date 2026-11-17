@@ -34,18 +34,36 @@ Ground rules:
 
 ### Step 1: Install the CLI
 
-If `cx --version` already works, **upgrade it first** (`brew upgrade cx`, or rerun the install script below), even when the user only wants to sign in: older versions don't complete setup, and lack `cx init --signup`. Otherwise detect the OS (`uname -s`; on Windows, `$env:OS` in PowerShell) and ask the user which method they prefer when more than one fits.
+If `cx --version` already works, **upgrade it first**, even when the user only wants to sign in: older versions don't complete setup, and lack `cx init --signup`. Upgrade with the method that installed it: rerun the install script, or `brew upgrade cx` when Homebrew installed it. Otherwise detect the OS (`uname -s`; on Windows, `$env:OS` in PowerShell). On macOS, use the install script unless the user asks for Homebrew.
 
-**macOS** (Homebrew, recommended) or **Linux** with Homebrew:
+**macOS** - use the install script (x86_64 and arm64, latest release). It
+installs the Coralogix Developer ID-signed binary. Credentials are stored in
+the Keychain with access limited to that signed `cx`:
+
+```bash
+curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Use Homebrew only if the user asks for it, or the script can't be used:
 
 ```bash
 brew install cx
 ```
 
-**macOS / Linux** install script (x86_64 and arm64, latest release):
+Homebrew builds aren't Coralogix-signed, so credentials are stored in the
+Keychain via `/usr/bin/security`. Upgrades don't trigger new Keychain prompts,
+but any process running as the user can read those credentials.
+
+**Linux** - use the install script:
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Homebrew is an alternative:
+
+```bash
+brew install cx
 ```
 
 **Windows** (PowerShell; the install script doesn't support Windows). The zip holds a single `cx.exe`:

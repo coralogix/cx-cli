@@ -84,6 +84,11 @@ jobs:
             [A-Z][A-Z]*-[0-9]*) ;;
             *) echo "::error::'$TICKET' is not a Linear ticket id like HEA-151."; exit 1 ;;
           esac
+          # Capitals, digits and the hyphen only. The id reaches a branch name,
+          # a file name and a step summary, so nothing else is allowed through.
+          case "$TICKET" in
+            *[!A-Z0-9-]*) echo "::error::The ticket id has characters that are not allowed."; exit 1 ;;
+          esac
           if [ ${#TICKET} -gt 20 ]; then
             echo "::error::Ticket id too long."; exit 1
           fi
@@ -118,14 +123,12 @@ jobs:
         env:
           TICKET: ${{ inputs.ticket }}
           BRIEF: ${{ inputs.brief }}
-          SLACK: ${{ inputs.slack_thread }}
         run: |
           # The secret scrub runs Claude's commands in a sandbox, which needs these.
           sudo apt-get install -y -qq bubblewrap socat >/dev/null
           out="$(mktemp -d)"
           {
             printf 'Linear ticket: %s\n' "$TICKET"
-            if [ -n "$SLACK" ]; then printf 'Slack thread: %s\n' "$SLACK"; fi
             printf '\n--- ticket text ---\n%s\n' "$BRIEF"
           } > "$out/brief.txt"
           sudo rm -rf /opt/cx-factory
@@ -145,7 +148,10 @@ jobs:
           github_token: ${{ github.token }}
           allowed_bots: ""
           allowed_non_write_users: ""
-          show_full_output: true
+          # false on purpose. This repository is public, so the job log is
+          # public. The transcript would publish the ticket text and every file
+          # the agent read. The structured result and the diff are enough.
+          show_full_output: false
           claude_args: |
             --max-turns 120
             --json-schema '{"type":"object","additionalProperties":false,"properties":{"outcome":{"type":"string","enum":["implemented","needs_clarification","not_feasible"]},"summary":{"type":"string","minLength":1,"maxLength":4000},"question":{"type":"string","maxLength":2000},"pr_title":{"type":"string","maxLength":70},"pr_body":{"type":"string","maxLength":60000},"commands":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":200}}},"required":["outcome","summary"]}'
@@ -213,6 +219,7 @@ jobs:
         id: result
         env:
           RESULT: ${{ steps.claude.outputs.structured_output }}
+          TICKET: ${{ inputs.ticket }}
         run: |
           fail() { echo "::error::$1"; echo "**Implement failed:** $1" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
           printf '%s' "$RESULT" | jq -e '
@@ -229,7 +236,7 @@ jobs:
           jq -r '.pr_title // ""' <<<"$RESULT" > "$RUNNER_TEMP/pr_title.txt"
           jq -r '.pr_body  // ""' <<<"$RESULT" > "$RUNNER_TEMP/pr_body.md"
           {
-            echo "### ${{ inputs.ticket }}: $outcome"
+            echo "### ${TICKET}: $outcome"
             echo
             cat "$RUNNER_TEMP/summary.md"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -298,7 +305,6 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           TICKET: ${{ inputs.ticket }}
-          SLACK: ${{ inputs.slack_thread }}
           ACTOR: ${{ github.actor }}
         run: |
           branch="agent/${TICKET}"
@@ -326,7 +332,6 @@ jobs:
             echo
             echo "---"
             echo "Ticket: ${TICKET}"
-            if [ -n "$SLACK" ]; then echo "Slack thread: ${SLACK}"; fi
             echo "Dispatched by: @${ACTOR}"
             echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo

@@ -131,7 +131,7 @@ What the collector does not do, and where it is handled:
 
 | Gap | Handled by |
 |---|---|
-| Per-IP rate limit | API gateway rate limit on the route (to confirm) |
+| Per-IP rate limit | a `ratelimit` processor in a custom collector image (section 5.5) |
 | Duplicate events | deduplicate on `cx.invocation.id` + `event.name` in c4c queries |
 | "This flag belongs to this command" | not checked. Flag and command names are pattern-limited only |
 | Verified `team_id` | not available on an open path. `cx.team.id` is client-claimed |
@@ -230,8 +230,9 @@ environmentVariables:
 ingress:
   rateLimitDefinitions:
     - name: cli-telemetry
-      unit: minute
-      requestsPerUnit: 600            # placeholder
+      unit: second
+      requestsPerUnit: 100            # global ceiling; the per-IP limit is in the collector (5.5)
+      shadowed: true                  # required field; start in shadow mode
   endpoints:
     - name: api-v2-cli-telemetry
       protocol: http
@@ -267,8 +268,8 @@ Before the first deploy:
 
 ## 4. Open questions
 
-- Does the gateway rate limit work per source IP on an unauthenticated endpoint? The
-  schema only shows `userLevelScope`, which suggests per-user limits.
+- Does the gateway forward `x-envoy-external-address` to the service, and is the
+  route limit on an unauthenticated endpoint one shared bucket? (5.5)
 - Which cluster hosts the collector, and what fixed hostname does the CLI use before
   the user has a region?
 - Who owns the collector deployment?
@@ -277,8 +278,7 @@ Before the first deploy:
 - Can an `application` deployable run with only `container.image` and no build? The
   only repo that ships a collector as its own deployable
   (`eng-onlineboutique-demo/otelcollector`) builds an image with the config copied in.
-- Which `otelcontribcol` tag to pin? Ask the Observability team, who own the
-  existing collectors.
+- Can the platform build and host the custom collector image from 5.5?
 - `error_mode: propagate` on the validation processors is deliberate. The internal
   OTTL skill recommends `ignore` for production, but with `ignore` a check that
   errors keeps the record, which lets bad data through. Confirm with Observability.
@@ -536,3 +536,109 @@ start sending because the mode was removed.
    `CX_TELEMETRY=log`.
 
 No new command is added for this.
+
+### 5.5 Collector rate limit, per source IP
+
+**Mechanism:** Elastic's `ratelimit` processor
+(`github.com/elastic/opentelemetry-collector-components/processor/ratelimitprocessor`
+v0.81.0, built against collector v0.165.0), first in the pipeline after
+`memory_limiter`.
+
+The stock `otel/opentelemetry-collector-contrib:0.165.0` image has no rate
+limiter. `otelcol components` lists none, and the config below fails `validate`
+on it with `unknown type: "ratelimit"`. So the collector becomes a custom image
+built with `ocb`. This answers two open questions in section 4: the deployable
+does build an image, and the tag to pin is ours.
+
+The image holds only what the config uses: the `otlp` receiver; the
+`memory_limiter`, `batch`, `filter`, `transform` and `ratelimit` processors; the
+`coralogix` exporter (plus `file` and `debug` for the local check); the
+`health_check` extension; the `env` and `file` config providers. It is 61 MB,
+against 484 MB for contrib. The `ocb` manifest and the Dockerfile go in
+`scripts/telemetry-collector/` in 8.4, and the check script switches to this
+image.
+
+**Config** (changes to `scripts/telemetry-collector/config.yaml`):
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        include_metadata: true    # request headers become client metadata
+
+processors:
+  ratelimit/ip:
+    metadata_keys: [x-envoy-external-address]
+    strategy: requests
+    rate: 10                      # per second, per key
+    burst: 300
+    throttle_behavior: error      # reject with HTTP 429
+
+service:
+  pipelines:
+    logs:
+      processors: [memory_limiter, ratelimit/ip, filter/validate, transform/sanitize, batch]
+```
+
+With these changes the full config passes `validate` on the custom image, with
+and without `local.yaml`.
+
+**The client IP**
+
+- The peer address the collector sees is the gateway, so it cannot be the key.
+- The key is the `x-envoy-external-address` header, which the edge Envoy sets
+  to the client address it trusts.
+- `x-forwarded-for` must not be the key. The processor uses the whole header
+  value, and Envoy appends to whatever the client sent. A client that sends its
+  own `X-Forwarded-For` gets a new bucket on every request. Tested: keyed on
+  XFF, 400 requests with client-chosen prefixes all passed.
+- Requests without the header share one bucket.
+- Not checked: that the Coralogix gateway forwards `x-envoy-external-address`
+  to the service. M6 captures the real headers on cx10 before the limit is
+  relied on. If the header is missing, only the `metadata_keys` line changes.
+
+**The numbers**
+
+- 10 requests per second per IP, sustained. One install sends about one request
+  per command. A few hundred users behind one NAT, each running a command every
+  30 to 60 s, stay under it.
+- Burst 300, refilled in 30 s. This covers a CI fan-out or an agent burst.
+- Worst case from one IP: 10 requests × 50 records = 500 records per second per
+  replica. The daily quota on application `cx-cli` in c4c is the backstop.
+- Buckets are per replica, so with 2 replicas the real limit is up to twice
+  these numbers.
+
+**What a limited client gets:** HTTP 429 with `Retry-After: 1`. Nothing from
+that request is exported. The sender keeps the batch and backs off for 15
+minutes (5.1).
+
+**Burst test** (custom image, local, 400 requests in 0.5 s):
+
+| Step | Result |
+|---|---|
+| 400 requests from `203.0.113.7` | 304 × 200, 96 × 429 |
+| 5 requests from `198.51.100.9` right after | 5 × 200 |
+| 5 more from `203.0.113.7` | 5 × 429 |
+| Records exported | 314, so a rejected request exports nothing |
+
+**Known limits of the processor**
+
+- Its stability level is `development`.
+- Buckets are never evicted, so memory grows with the number of distinct IPs.
+  Not measured. `memory_limiter` and the pod memory limit bound it; a restart
+  clears it.
+- It logs one error line per rejected request.
+
+**With the gateway's route limit**
+
+- The v2 `networking` schema has no per-IP scope. `RateLimit` has only
+  `userLevelScope` (`userId`, `userAccountId` or null). So the gateway cannot
+  limit per source IP, and the collector does it.
+- On a route with no user, the route limit is presumably one bucket shared by
+  everyone. This is read from the schema, not tested.
+- So the route limit is a global ceiling, set well above expected total traffic:
+  100 requests per second, replacing the 600 per minute placeholder in section
+  3, which one client could use up for everyone.
+- `shadowed` is a required field of `RateLimit` and is missing from the block in
+  section 3. The route limit starts with `shadowed: true`.

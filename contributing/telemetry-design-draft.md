@@ -150,12 +150,20 @@ Decision: deploy ours as a plain service (not the platform chart). It needs one
 receiver, two processors and one exporter, so the cluster-collection chart is more
 than we need.
 
+Decided:
+
+- **Owner:** cxai.
+- **Repo:** private. `coralogix/cx-cli` is public, and these files name internal
+  registries, namespaces, secrets and rate limits. The service is a folder with
+  its own `meta.yaml` in `coralogix/cx-cli-onboarding-service`. A new private
+  repo is used only if the platform does not accept two deployables there.
+
 The layout copies `coralogix/cx-cli-onboarding-service`, the existing cxai service
 with a public route. Field names were checked against the live v2 schemas. The files
 have not been rendered by pipeline-handler or applied.
 
 ```
-cx-cli-telemetry-collector/          # new repo, or a folder in an existing cxai repo
+cx-cli-telemetry-collector/          # a folder in coralogix/cx-cli-onboarding-service
 ├── meta.yaml
 └── platform/defaults/
     ├── workloads/defaults.yaml
@@ -273,7 +281,6 @@ Before the first deploy:
   route limit on an unauthenticated endpoint one shared bucket? (5.5)
 - Which cluster hosts the collector, and what fixed hostname does the CLI use before
   the user has a region?
-- Who owns the collector deployment?
 - Is a client-claimed `team_id` acceptable, or is a second authenticated endpoint
   needed?
 - Can an `application` deployable run with only `container.image` and no build? The
@@ -461,7 +468,7 @@ the config to check from `CONFIG`.
 
 The release job is skipped until the collector service repo exists. M6 turns
 it on, together with `CX_TELEMETRY_ENDPOINT`, by setting the repository
-variables `TELEMETRY_COLLECTOR_REPO` (`owner/name`) and
+variables `TELEMETRY_COLLECTOR_REPO` (`coralogix/cx-cli-onboarding-service`) and
 `TELEMETRY_COLLECTOR_CONFIG_PATH`, and the secret
 `TELEMETRY_COLLECTOR_REPO_TOKEN`, a token that can read that repo.
 

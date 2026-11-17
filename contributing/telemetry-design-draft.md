@@ -491,3 +491,48 @@ Rules for the dashboards (none exist yet):
   early steps, join to the first later event from the same install that has a
   team id.
 - Per-team numbers are lower bounds.
+
+### 5.4 Log mode only in debug builds
+
+**The flag:** `cfg!(debug_assertions)`. The Log mode exists in debug builds
+(`cargo build`, `cargo run`, `cargo test`) and not in release builds
+(`cargo build --release`, which is what `release.yml` ships).
+
+A cargo feature was rejected. `cargo test` builds the binary in the dev
+profile, so with `debug_assertions` the integration tests keep working with no
+change to CI. A feature would need `--features` on every test command and
+`required-features` on the test target.
+
+**On a release build, `CX_TELEMETRY=log` means off.** Today an unknown value
+does not opt out. Someone who set `log` to make sure nothing is sent must not
+start sending because the mode was removed.
+
+**Tests**
+
+- `tests/telemetry/main.rs` keeps using `CX_TELEMETRY=log`. The log-mode tests
+  get `#[cfg(debug_assertions)]`, so `cargo test --release` skips them and does
+  not fail.
+- One new unit test on `consent::decide` covers both builds: `log` gives `Log`
+  with debug assertions and `Off` without.
+- `scripts/telemetry-collector-check.sh` needs a debug binary. It exits with a
+  clear message if the binary ignores the Log mode.
+
+**For users and reviewers on a release build**
+
+1. `docs/telemetry.md` (M5) lists every field and every value.
+2. To see the real bytes, point the endpoint at a local listener. The runtime
+   `CX_TELEMETRY_ENDPOINT` already overrides the built-in one:
+
+   ```bash
+   nc -l 4318
+   ```
+
+   ```bash
+   CX_TELEMETRY_ENDPOINT=http://localhost:4318/v1/logs cx logs --limit 1
+   ```
+
+   The listener prints the exact request the collector would get, and nothing
+   reaches Coralogix. `docs/telemetry.md` documents this in place of
+   `CX_TELEMETRY=log`.
+
+No new command is added for this.

@@ -77,6 +77,17 @@ main() {
         fi
     fi
 
+    # A Homebrew link here (common on Intel Macs, where /usr/local/bin is
+    # Homebrew's bin) points into Homebrew's own files. Copying over it would
+    # change Homebrew's copy behind its back, so stop and let the user choose.
+    if [ -L "${install_dir}/${BINARY_NAME}" ] && is_brew_path "${install_dir}/${BINARY_NAME}"; then
+        err "${install_dir}/${BINARY_NAME} belongs to Homebrew. This script does not replace it."
+        err "Choose one:"
+        err "  brew upgrade cx      # keep Homebrew and update it"
+        err "  brew uninstall cx    # remove Homebrew's cx, then run this script again"
+        exit 1
+    fi
+
     if [ -w "$install_dir" ]; then
         cp "${TMPDIR_CLEANUP}/${BINARY_NAME}" "${install_dir}/${BINARY_NAME}"
     else
@@ -101,7 +112,76 @@ main() {
             ;;
     esac
 
+    # Another cx earlier on PATH (often a Homebrew install) hides this one:
+    # running `cx` would still start the old copy. Never report plain success
+    # in that case.
+    local installed first
+    installed="${install_dir}/${BINARY_NAME}"
+    first="$(first_on_path "$BINARY_NAME" || true)"
+    if [ -n "$first" ] && ! [ "$first" -ef "$installed" ]; then
+        warn_shadowed "$installed" "$first" "$version"
+        say "${BINARY_NAME} v${version} is installed, but '${BINARY_NAME}' still runs ${first}."
+        say "Fix the PATH problem above, open a new shell, then run '${BINARY_NAME} --version'."
+        return 0
+    fi
+
     say "Done! Run '${BINARY_NAME} --help' to get started."
+}
+
+# Print the first executable named $1 on PATH, the one a new shell runs.
+# Empty PATH entries mean the current directory.
+first_on_path() {
+    local IFS=: dir
+    for dir in $PATH; do
+        [ -n "$dir" ] || dir="."
+        if [ -f "${dir}/$1" ] && [ -x "${dir}/$1" ]; then
+            printf '%s\n' "${dir}/$1"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Print every executable named $1 on PATH, in PATH order.
+all_on_path() {
+    local IFS=: dir
+    for dir in $PATH; do
+        [ -n "$dir" ] || dir="."
+        if [ -f "${dir}/$1" ] && [ -x "${dir}/$1" ]; then
+            printf '%s\n' "${dir}/$1"
+        fi
+    done
+}
+
+# True when $1 is a Homebrew-managed file or a link into Homebrew's Cellar.
+is_brew_path() {
+    local target
+    case "$1" in
+        */Cellar/*|/opt/homebrew/*|/home/linuxbrew/*|*/.linuxbrew/*) return 0 ;;
+    esac
+    target="$(readlink "$1" 2>/dev/null || true)"
+    case "$target" in
+        *Cellar/*) return 0 ;;
+    esac
+    return 1
+}
+
+warn_shadowed() {
+    local installed="$1" first="$2" version="$3" first_version path
+    first_version="$(CX_NO_UPDATE_NOTIFIER=1 "$first" --version 2>/dev/null | head -n 1 || true)"
+    warn "Another ${BINARY_NAME} comes first on your PATH, so it runs instead of v${version}:"
+    warn "  ${first}${first_version:+ (${first_version})}"
+    warn "All ${BINARY_NAME} binaries on your PATH, in the order your shell checks them:"
+    all_on_path "$BINARY_NAME" | while IFS= read -r path; do
+        warn "  ${path}"
+    done
+    if is_brew_path "$first"; then
+        warn "That ${BINARY_NAME} comes from Homebrew. Choose one:"
+        warn "  brew uninstall cx                        # keep the new ${installed}"
+        warn "  brew upgrade cx && rm '${installed}'     # keep Homebrew"
+    else
+        warn "Remove ${first}, or put $(dirname "$installed") before $(dirname "$first") in PATH."
+    fi
 }
 
 # Follow the releases/latest redirect instead of api.github.com (60 req/h per IP).

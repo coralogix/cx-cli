@@ -1,48 +1,54 @@
 //! Detect how `cx` was installed so we can suggest the right upgrade command.
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum InstallMethod {
     Brew,
     Curl,
     Unknown,
 }
 
-/// Detect install method by reading a marker file or inspecting the binary path.
+/// Detect install method from the running binary's path and a marker file.
 ///
 /// Order of checks:
-/// 1. `~/.cx/install-method` contains "brew" → `Brew`  (written by Homebrew formula)
-/// 2. `~/.cx/install-method` contains "curl" → `Curl`  (written by `install.sh`)
-/// 3. Binary lives in a Homebrew prefix → `Brew`  (fallback for existing installs)
+/// 1. Binary lives in a Homebrew prefix → `Brew`
+/// 2. `~/.cx/install-method` contains "brew" → `Brew`
+/// 3. `~/.cx/install-method` contains "curl" → `Curl`  (written by `install.sh`)
 /// 4. Anything else → `Unknown`
+///
+/// The path comes first because the marker is one file shared by every copy
+/// of `cx`. When a user has both a Homebrew `cx` and a script-installed `cx`,
+/// `install.sh` writes "curl", and a marker-first check would tell the
+/// Homebrew copy to rerun the script, which cannot upgrade it.
 ///
 /// Windows-specific package managers (Scoop, Chocolatey, winget) are not yet
 /// detected; Windows users get the `Unknown` fallback with a docs URL.
 pub fn detect() -> InstallMethod {
-    // Prefer marker file (written by install.sh or Homebrew formula).
-    if let Ok(cx_dir) = crate::config::config_dir() {
-        let marker = cx_dir.join("install-method");
-        if let Ok(content) = std::fs::read_to_string(marker) {
-            match content.trim() {
-                "brew" => return InstallMethod::Brew,
-                "curl" => return InstallMethod::Curl,
-                _ => {}
-            }
-        }
-    }
+    let exe = std::env::current_exe().ok();
+    let marker = crate::config::config_dir()
+        .ok()
+        .and_then(|dir| std::fs::read_to_string(dir.join("install-method")).ok());
+    detect_from(
+        exe.as_deref().map(|p| p.to_string_lossy()).as_deref(),
+        marker.as_deref(),
+    )
+}
 
-    // Fallback: detect Homebrew by binary path (for users who installed before
-    // the formula wrote the marker file).
-    if let Ok(exe) = std::env::current_exe() {
-        let path = exe.to_string_lossy();
-        if path.contains("/opt/homebrew/")
-            || path.contains("/usr/local/Cellar/")
-            || path.contains("/usr/local/opt/")
-            || path.contains("/home/linuxbrew/")
-        {
-            return InstallMethod::Brew;
-        }
+fn detect_from(exe: Option<&str>, marker: Option<&str>) -> InstallMethod {
+    if exe.is_some_and(is_brew_path) {
+        return InstallMethod::Brew;
     }
+    match marker.map(str::trim) {
+        Some("brew") => InstallMethod::Brew,
+        Some("curl") => InstallMethod::Curl,
+        _ => InstallMethod::Unknown,
+    }
+}
 
-    InstallMethod::Unknown
+fn is_brew_path(path: &str) -> bool {
+    path.contains("/opt/homebrew/")
+        || path.contains("/usr/local/Cellar/")
+        || path.contains("/usr/local/opt/")
+        || path.contains("/home/linuxbrew/")
 }
 
 /// Return the one-liner that upgrades the `cx` binary.
@@ -93,5 +99,37 @@ mod tests {
     #[test]
     fn skills_upgrade_command_is_global_install() {
         assert_eq!(skills_upgrade_command(), "cx skills install --global");
+    }
+
+    #[test]
+    fn brew_binary_wins_over_curl_marker() {
+        // Both installs exist; install.sh wrote "curl", but this is the
+        // Homebrew copy, so it must suggest `brew upgrade cx`.
+        let m = detect_from(
+            Some("/opt/homebrew/Cellar/cx/0.1.28/bin/cx"),
+            Some("curl\n"),
+        );
+        assert_eq!(m, InstallMethod::Brew);
+    }
+
+    #[test]
+    fn script_binary_uses_curl_marker() {
+        let m = detect_from(Some("/Users/me/.local/bin/cx"), Some("curl"));
+        assert_eq!(m, InstallMethod::Curl);
+    }
+
+    #[test]
+    fn linuxbrew_binary_without_marker_is_brew() {
+        let m = detect_from(Some("/home/linuxbrew/.linuxbrew/bin/cx"), None);
+        assert_eq!(m, InstallMethod::Brew);
+    }
+
+    #[test]
+    fn unknown_without_marker_or_brew_path() {
+        assert_eq!(
+            detect_from(Some("/usr/bin/cx"), None),
+            InstallMethod::Unknown
+        );
+        assert_eq!(detect_from(None, Some("other")), InstallMethod::Unknown);
     }
 }

@@ -682,6 +682,7 @@ Examples:
 Examples:
   cx slos list
   cx slos get <slo-id>
+  cx slos status <slo-id> --last 4h
   cx slos create --from-file slo.json
   cx slos update --from-file slo.json
   cx slos delete <slo-id>")]
@@ -2864,6 +2865,41 @@ enum SlosCmd {
     Get {
         /// SLO ID (UUID).
         id: String,
+    },
+    /// Show compliance and remaining error budget for one or more SLOs.
+    #[command(after_help = "\
+Examples:
+  cx slos status <slo-id>
+  cx slos status <slo-id> <slo-id> --last 4h -o json
+  cx slos status <slo-id> --from now-7d --to now-1d
+  cx slos status <slo-id> --grouping-key service,api --target 99.9
+
+Without --last or --from the SLO's own window is used. Times are cut to the whole minute.
+Compliance and remaining budget are the lowest across the matching permutations.")]
+    Status {
+        /// SLO IDs (UUID).
+        #[arg(required = true)]
+        ids: Vec<String>,
+
+        /// Window length back from now, e.g. `4h` or `7d`.
+        #[arg(long, conflicts_with_all = ["from", "to"])]
+        last: Option<String>,
+
+        /// Start of the window. Accepts `now-4h` or ISO-8601.
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End of the window (default: latest available minute). Accepts `now-1d` or ISO-8601.
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Only permutations matching `label,value`. Repeatable.
+        #[arg(long = "grouping-key")]
+        grouping_keys: Vec<String>,
+
+        /// What-if target percentage (0-100) instead of the SLO's own target.
+        #[arg(long)]
+        target: Option<f64>,
     },
     /// Create an SLO from a JSON definition file [requires --yes].
     #[command(after_help = "\
@@ -5179,6 +5215,23 @@ async fn main() -> Result<()> {
                 }
                 SlosCmd::Get { id } => {
                     commands::slos::run_get(&targets, &id, output).await?;
+                }
+                SlosCmd::Status {
+                    ids,
+                    last,
+                    from,
+                    to,
+                    grouping_keys,
+                    target,
+                } => {
+                    let query = commands::slos::api::SloStatusQuery::from_flags(
+                        last.as_deref(),
+                        from.as_deref(),
+                        to.as_deref(),
+                        grouping_keys,
+                        target,
+                    )?;
+                    commands::slos::run_status(&targets, &ids, &query, output).await?;
                 }
                 SlosCmd::Create { from_file } => {
                     confirm_destructive("Create a new SLO?", yes, agent_mode)?;

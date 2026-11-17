@@ -2,10 +2,11 @@
 mod common;
 
 use serde_json::json;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::slos::{run_get, run_list};
+use coralogix_cli::commands::slos::api::SloStatusQuery;
+use coralogix_cli::commands::slos::{run_get, run_list, run_status};
 use coralogix_cli::config::OutputFormat;
 
 #[tokio::test]
@@ -93,4 +94,149 @@ async fn get_slo_by_id() {
     run_get(&targets, "slo-001", OutputFormat::Json)
         .await
         .expect("run_get should succeed");
+}
+
+fn status_body() -> serde_json::Value {
+    json!({
+        "computedAt": "2026-11-17T10:00:00Z",
+        "effectiveFrom": "2026-11-01T00:00:00Z",
+        "effectiveTo": "2026-11-15T00:00:00Z",
+        "lowestCompliance": 0.9995,
+        "lowestRemainingErrorBudget": 0.5,
+        "effectiveWindowCompleteData": true
+    })
+}
+
+async fn mount_names(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1/all/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "slos": [{"id": "slo-001", "name": "API Availability"}]
+        })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn status_sends_window_slice_and_target() {
+    let server = MockServer::start().await;
+    mount_names(&server).await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1/slo-001/status"))
+        .and(query_param("from", "2026-11-01T00:00:00Z"))
+        .and(query_param("to", "2026-11-15T00:00:00Z"))
+        .and(query_param("grouping_key_value", "service,api"))
+        .and(query_param("target_threshold_percentage", "99.5"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(status_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let query = SloStatusQuery::from_flags(
+        None,
+        Some("2026-11-01T00:00:42Z"),
+        Some("2026-11-15T00:00:00Z"),
+        vec!["service,api".to_string()],
+        Some(99.5),
+    )
+    .expect("flags should parse");
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    run_status(
+        &targets,
+        &["slo-001".to_string()],
+        &query,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_status should succeed");
+}
+
+#[tokio::test]
+async fn status_without_flags_leaves_the_window_to_the_server() {
+    let server = MockServer::start().await;
+    mount_names(&server).await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1/slo-001/status"))
+        .and(query_param_is_missing("from"))
+        .and(query_param_is_missing("to"))
+        .and(query_param_is_missing("target_threshold_percentage"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(status_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    run_status(
+        &targets,
+        &["slo-001".to_string()],
+        &SloStatusQuery::default(),
+        OutputFormat::Text,
+    )
+    .await
+    .expect("run_status should succeed");
+}
+
+#[tokio::test]
+async fn status_last_sets_only_the_window_start() {
+    let query = SloStatusQuery::from_flags(Some("4h"), None, None, Vec::new(), None)
+        .expect("flags should parse");
+
+    assert!(query.from.is_some_and(|from| from.ends_with(":00Z")));
+    assert!(query.to.is_none());
+}
+
+#[tokio::test]
+async fn status_keeps_going_when_one_slo_fails() {
+    let server = MockServer::start().await;
+    mount_names(&server).await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1/slo-001/status"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(status_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1/slo-missing/status"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message": "not found"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    run_status(
+        &targets,
+        &["slo-001".to_string(), "slo-missing".to_string()],
+        &SloStatusQuery::default(),
+        OutputFormat::Json,
+    )
+    .await
+    .expect("one good SLO is enough");
+}
+
+#[tokio::test]
+async fn status_fails_when_every_slo_fails() {
+    let server = MockServer::start().await;
+    mount_names(&server).await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/slo/slos/v1/slo-missing/status"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message": "not found"})))
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let error = run_status(
+        &targets,
+        &["slo-missing".to_string()],
+        &SloStatusQuery::default(),
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("no SLO succeeded");
+
+    assert!(format!("{error:#}").contains("slo-missing"));
 }

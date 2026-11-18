@@ -73,10 +73,25 @@ actually used (`effective_from`, `effective_to`) and `complete_data`.
   the server rejects windows over its limit. `--last` cannot be combined with `--from`/`--to`.
 - `--grouping-key label,value` (repeatable) narrows to permutations with that label
   value; the label must be one of the SLO's grouping labels.
-- **`0` and `0` with `complete_data: false` is not a breach verdict** — it means no
-  events in the window (or an unknown label value), or every event failed.
 - If any SLO fails (unknown id, bad label, window too long), the command fails and
   prints nothing; the error names each failed SLO. Fix the input and rerun.
+
+**`0` and `0` has two meanings.** Either the window has no events (or the label value
+is unknown), or some permutation failed every event, which is a real breach.
+`complete_data` does not tell them apart. Before reporting a breach, count the SLO's
+events: use `effective_to` as `--time` and the window length as the range.
+
+```bash
+# Request-based SLO (type REQUEST in `cx slos list`)
+cx metrics query 'sum(sum_over_time(cx:slo:request:total_events{slo_id="<slo-id>"}[4h]))' --time <effective_to>
+
+# Window-based SLO (type WINDOW)
+cx metrics query 'sum(count_over_time(cx:slo:window{slo_id="<slo-id>"}[4h]))' --time <effective_to>
+```
+
+- Empty result or `0`: no events. Report "no data", not a breach.
+- Positive number: events exist, so the zero is real and the SLO is breached.
+- With `--grouping-key label,value`, add `label="value"` to the selector.
 
 Compare the compliance against `targetThresholdPercentage` to judge whether
 the SLO is healthy or burning error budget. A **request-based** SLO measures the

@@ -48,8 +48,8 @@ impl NamedSloStatus {
         let mut v = json!({
             "id": self.id,
             "name": self.name,
-            "lowest_compliance": self.status.lowest_compliance,
-            "lowest_remaining_error_budget": self.status.lowest_remaining_error_budget,
+            "lowest_compliance_percentage": ratio_to_percentage(self.status.lowest_compliance),
+            "lowest_remaining_error_budget_percentage": ratio_to_percentage(self.status.lowest_remaining_error_budget),
             "effective_from": self.status.effective_from,
             "effective_to": self.status.effective_to,
             "computed_at": self.status.computed_at,
@@ -62,6 +62,10 @@ impl NamedSloStatus {
         }
         v
     }
+}
+
+fn ratio_to_percentage(ratio: f64) -> f64 {
+    (ratio * 100.0 * 1e6).round() / 1e6
 }
 
 fn display_ratio_as_percentage(ratio: f64) -> String {

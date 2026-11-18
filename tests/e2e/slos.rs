@@ -141,8 +141,8 @@ fn slos_lifecycle() {
     assert_eq!(status[0]["id"], id, "status should echo the id: {status}");
     assert_eq!(status[0]["name"], name);
     assert!(
-        status[0]["lowest_compliance"].is_number(),
-        "status should carry a compliance ratio: {status}"
+        status[0]["lowest_compliance_percentage"].is_number(),
+        "status should carry a compliance percentage: {status}"
     );
 
     // delete, then get must fail; a second delete must fail too

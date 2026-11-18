@@ -65,9 +65,10 @@ cx slos status <slo-id> --from now-7d --to now-1d
 cx slos status <slo-id> --grouping-key service,api --target 99.9
 ```
 
-`status` returns `lowest_compliance` and `lowest_remaining_error_budget` as ratios
-from 0 to 1 — the lowest value across the matching permutations — plus the window
-actually used (`effective_from`, `effective_to`) and `complete_data`.
+`status` returns `lowest_compliance_percentage` and
+`lowest_remaining_error_budget_percentage`, both from 0 to 100 — the lowest value
+across the matching permutations — plus the window actually used (`effective_from`,
+`effective_to`) and `complete_data`.
 
 - `--last 4h` or `--from`/`--to` set the window; times are cut to the whole minute and
   the server rejects windows over its limit. `--last` cannot be combined with `--from`/`--to`.
@@ -93,8 +94,8 @@ cx metrics query 'sum(count_over_time(cx:slo:window{slo_id="<slo-id>"}[4h]))' --
 - Positive number: events exist, so the zero is real and the SLO is breached.
 - With `--grouping-key label,value`, add `label="value"` to the selector.
 
-Compare the compliance against `targetThresholdPercentage` to judge whether
-the SLO is healthy or burning error budget. A **request-based** SLO measures the
+Compare `lowest_compliance_percentage` against `target` from `cx slos list -o json`
+(both are percentages) to judge whether the SLO is healthy or burning error budget. A **request-based** SLO measures the
 fraction of good events; a **window-based** SLO measures the fraction of good time
 windows. After triage, pivot to the `cx-telemetry-querying` skill to find the root
 cause of a breach in logs, spans, or metrics.

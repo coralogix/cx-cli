@@ -10,6 +10,23 @@ description: Fleet/aggregate analytics across many cases via the `system/labs.ca
 This skill covers two things and only two things: (1) the schema of `system/labs.cases.state_updates`, and (2) the case-counting conventions (1h minimum window, dedupe per `caseId`).
 Use the schema in this skill to know **what fields exist and what they mean**, and use `dataprime` to know **how to shape the query around them**.
 
+## Running these queries with the CLI
+
+Every query below runs through `cx dataprime query`. Set the window with `--start` / `--end` (relative like `now-7d` or ISO 8601). There is no `--from` flag, and the default window is only the last hour.
+
+```bash
+cx dataprime query "source system/labs.cases.state_updates
+  | groupby caseId aggregate
+      max_by(\$m.timestamp, caseNumber) as caseNumber,
+      max_by(\$m.timestamp, title) as title,
+      max_by(\$m.timestamp, status) as status,
+      max_by(\$m.timestamp, priority) as priority" --start now-24h
+```
+
+Wrap the query in double quotes. String literals inside it use single quotes, and `$m` / `$d` must be escaped as `\$m` / `\$d` so the shell does not expand them. Add `-o json` when you need to parse the result.
+
+**Keep the collapse narrow — it is the expensive step.** Every case has a row per state change plus an hourly heartbeat, so a 30-day window holds many rows per case. `dedupeby caseId` and `max_by($m.timestamp, $d)` both carry whole documents through the shuffle and can run for tens of seconds or time out. Collapse with one `max_by($m.timestamp, <field>) as <field>` per field you actually need, as above. This is how the Cases service's own list query works. Put filters on fields that are the same on every row of a case (`caseId`, `caseNumber`, generic indicator type) **before** the collapse, so fewer rows reach it. See Rule 2.
+
 ## Dataset: `system/labs.cases.state_updates`
 Data for this dataset is only available from June 8th, 2026 onward. If a query requests earlier dates, inform the user that data starts from this date and adjust the query window accordingly.
 A single events dataset that captures every state-change emitted by the Cases service, plus periodic **heartbeat** events for cases that are still active but otherwise inactive (so an open case still shows up inside a query window even when nothing happened to it). All queries in this skill target this dataset.
@@ -195,6 +212,79 @@ Per-element fields:
 | `state` | `TRIGGERED` (still firing) / `RESOLVED` / `NO_DATA` (signal dropped, **not** a recovery) / `MUTED`. |
 | `triggeredAt` / `resolvedAt` | Indicator-side timing (different from case-level resolution). |
 
+#### Generic indicators — non-alert sources
+
+`indicators.genericIndicators[]` — indicators from a source that is not a Coralogix alert. This is where a case's non-alert provenance lives; there is **no top-level `source` field on a case**, so this array is the only way to tell what opened it.
+
+| Field | Meaning |
+|---|---|
+| `indicatorType` | The non-alert source type. Current values: `ERROR_TRACKING` and `OLLY_SCHEDULED_TASK`. The set grows as new sources are onboarded, so treat any other value as a new source, not an error, and discover what's live with `distinct gi.indicatorType`. |
+| `externalId` | The originating system's stable key for the problem. It is also the dedup key: one unresolved case per `(team, indicatorType, externalId)`, and a recurrence reopens rather than forking. |
+| `instanceId` | The indicator's own UUID. |
+| `status` | `TRIGGERED` / `RESOLVED`. |
+| `priority` | `P1`–`P5`, indicator-side (independent of case priority). |
+| `labels` | Flat `{key: value}` map. |
+| `metadata` | **Free-form JSON object**, shaped by the producing system — not a string map, so values may be nested objects, numbers or lists. Deliberately separate from `labels` so source provenance does not pollute the routing namespace. |
+| `entityLinks` | `vec[{url: string}]`: a list of objects, each with a single `url` field pointing at the originating entity. Read it as `gi.entityLinks[0].url`, not as a list of strings. |
+| `lastTriggeredAt` / `lastResolvedAt` | Indicator-side timing. |
+
+`metadata` is set at creation and there is no API to change it afterwards, so treat it as a fixed record of where the case came from.
+
+**Cases opened by a given non-alert source, most recent first:**
+
+```
+source system/labs.cases.state_updates
+  | explode indicators.genericIndicators into gi original preserve
+  | filter gi.indicatorType == 'ERROR_TRACKING'
+  | groupby caseId aggregate
+      max_by($m.timestamp, caseNumber) as caseNumber,
+      max_by($m.timestamp, title) as title,
+      max_by($m.timestamp, status) as status,
+      max_by($m.timestamp, priority) as priority,
+      max_by($m.timestamp, createdAt) as createdAt,
+      max_by($m.timestamp, gi.externalId) as dedup_key,
+      max_by($m.timestamp, gi.metadata) as source_metadata
+  | orderby createdAt desc
+```
+
+The explode and filter come **before** the collapse on purpose. A case's indicators are fixed at creation, so every row of a case carries the same `indicatorType`. Filtering first is therefore safe, and it drops every other case before the expensive per-case collapse. The collapse still runs, so the heartbeat rows that the explode duplicates are counted once.
+
+To narrow further, reach into the metadata (`filter gi.metadata.<key> == '<value>'`) — but confirm the key name from a sample row first, since the shape is owned by the producer, not by this schema.
+
+#### Case relationships (parent / child)
+
+`relationship` — the case's place in a parent-child hierarchy. **Absent entirely for a standalone case**, so test for null before reading it.
+
+| Shape | Meaning |
+|---|---|
+| `{"type": "PARENT"}` | This case is a parent. Its children are **not** inlined — find them by querying for cases whose `relationship.parentCaseId` is this `caseId`. |
+| `{"type": "CHILD", "parentCaseId": "<uuid>"}` | This case is a child of that case. |
+
+Note the discriminator is **`type`**, not `$type` — unlike `metadata.change`, `assignee` and `closedBy`, which use `$type`. This is the easiest thing to get wrong here.
+
+Structural guarantees, which make these queries simpler than they look: a case has **at most one parent**, is **either a parent or a child but never both**, and a parent has **at most 100 children**. The hierarchy is therefore exactly one level deep and cannot contain cycles.
+
+**A parent and its children in one result:**
+
+```
+source system/labs.cases.state_updates
+  | filter caseId == '<parent-uuid>' || relationship.parentCaseId == '<parent-uuid>'
+  | groupby caseId aggregate
+      max_by($m.timestamp, caseNumber) as caseNumber,
+      max_by($m.timestamp, title) as title,
+      max_by($m.timestamp, status) as status,
+      max_by($m.timestamp, priority) as priority,
+      max_by($m.timestamp, relationship) as relationship
+  | filter caseId == '<parent-uuid>' || relationship.parentCaseId == '<parent-uuid>'
+  | create rel from relationship.type
+```
+
+The filter appears twice on purpose. The first one narrows the scan to rows that were ever linked to this parent. The second runs on each case's latest state, which drops a child that has since been unlinked.
+
+**Linking is not visible as its own event.** A link emits a state-update on both cases with `metadata.trigger == 'caseUpdated'` and no `metadata.change`, so you cannot find "when was this linked" by filtering on a trigger. Detect links from the current `relationship` value, or by diffing it across rows ordered by `$m.timestamp`.
+
+`muteStatus` is the related signal: linking a case as a child mutes it by default, and a child muted that way records a mute source of `AUTOMATIC_LINKING`.
+
 #### Permutations & labels (routing / attribution)
 
 `permutations` — the actual observed label combinations that produced this case. Each element of `permutations` is a **permutation-group**: a list of `{key, value, permutationIndex}` objects representing one real co-occurring set of key/value pairs.
@@ -223,6 +313,19 @@ Per-element fields:
 #### Other fields
 
 `aiSummary` is a pre-computed string. Treat it as one input among many — never the source of truth.
+
+Also present on every row, and worth knowing because they are easy to miss:
+
+| Field | Meaning |
+|---|---|
+| `caseUrl` | Deep link to the case in the console. Prefer it over building a URL by hand. |
+| `labelsFlat` | The case's labels as flat `key=value` strings, which is usually easier to filter on than the nested `labels` map. |
+| `muteStatus` | Whether notifications are suppressed, and why. A child case muted by linking records a source of `AUTOMATIC_LINKING`. |
+| `resolutionCode` | The structured reason a case was resolved, alongside the free-text `resolutionDetails.resolutionReason`. |
+| `lastReactivatedAt` | Set when a resolved case was reopened by a recurrence of the same indicator. Non-null means this case has fired more than once. |
+| `ollyAnalysis` | Olly's stored analysis of the case, when one has been generated. |
+| `schemaVersion` | Payload version. Check it before relying on a field this reference does not list. |
+
 `$m.timestamp` is the **event timestamp** (when the state-update was emitted) and is what you order by. `createdAt` (or `$d.createdAt`) is the **case creation time**.
 
 ## Hard rules (ALWAYS apply)
@@ -237,7 +340,18 @@ The minimum window is `1h`. If the user asks for a shorter window, expand it to 
 
 ### Rule 2 — Always collapse to one row per `caseId`
 
-Before counting, listing, or aggregating, you MUST reduce the stream to one row per case so each case is counted at most once. Use one of these two equivalent patterns:
+Before counting, listing, or aggregating, you MUST reduce the stream to one row per case so each case is counted at most once.
+
+**Preferred — `groupby` with one `max_by` per needed field:**
+
+```dataprime
+| groupby caseId aggregate
+    max_by($m.timestamp, status) as status,
+    max_by($m.timestamp, priority) as priority,
+    max_by($m.timestamp, createdAt) as createdAt
+```
+
+This moves only the named columns through the shuffle. The Cases service lists cases this way. Patterns A and B below carry the whole document per row, which is fine for a short window or a single team, but on 30-day windows they can take tens of seconds or time out. Use them only when you genuinely need most of the payload.
 
 **Pattern A — `groupby` keeping the latest event per case:**
 
@@ -281,9 +395,12 @@ This works because most lifecycle triggers fire **once per case** in the normal 
 
 **Always dedup before you do anything else** (bucket, explode, aggregate). Because heartbeats repeat the full event payload — including nested arrays like `kpiBreaches.breachedKpis` and `indicators.alerts` — any operation on raw events inflates row counts by the number of heartbeats per case. This causes double-counting and can OOM on large windows.
 
-The only exception is a trigger-filtered query (Rule 3), where `filter metadata.trigger == '...'` already excludes heartbeats.
+There are two exceptions:
 
-Do not be clever or try to do it in one pass: the first command after `source` is the per-case dedup keyed on `caseId` alone, then add buckets, explodes, filters, and a separate final `groupby`.
+- A trigger-filtered query (Rule 3), where `filter metadata.trigger == '...'` already excludes heartbeats.
+- A **narrowing filter on a field that is identical on every row of a case**, such as `caseId`, `caseNumber`, or a generic indicator's `indicatorType` (indicators are fixed at creation). This kind of filter should go *before* the collapse, so the collapse sees fewer rows, and the same applies to the `explode` it needs. Because the per-case collapse still follows, the heartbeat inflation cancels out. A field that changes over a case's life (`status`, `priority`, `relationship`, `assignee`) is different: a stale row can match even when the case's latest state does not. A pre-filter on such a field can still narrow the scan, but only if the same filter is repeated after the collapse.
+
+Do not be clever or try to do it in one pass. Apart from the narrowing filters above, the first command after `source` is the per-case dedup keyed on `caseId` alone. Buckets, explodes, filters and a separate final `groupby` come after it.
 
 - Don't fold a bucket into the dedup key: `| groupby day, caseId aggregate ...`. Dedup on `caseId` alone first, then bucket off `latest`/`last_seen`.
 - Don't rely on `caseId` inside an aggregate without dedup: `| groupby kpiType, breachStatus aggregate distinct_count(caseId)` still scans heartbeats; dedup first.

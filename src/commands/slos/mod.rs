@@ -3,8 +3,9 @@ pub mod api;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 use colored::Colorize;
+use futures::future::try_join_all;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
@@ -238,22 +239,20 @@ pub async fn run_status(
             .filter_map(|slo| Some((slo.id?, slo.name?)))
             .collect();
 
-        let mut statuses = Vec::with_capacity(ids.len());
-        let mut failures = Vec::new();
-        for id in ids {
-            match api.status(id, query).await {
-                Ok(status) => statuses.push(NamedSloStatus {
-                    id: id.clone(),
-                    name: names.get(id).cloned(),
-                    status,
-                }),
-                Err(error) => failures.push(format!("SLO '{id}': {error}")),
-            }
-        }
-        if !failures.is_empty() {
-            bail!("{}", failures.join("; "));
-        }
-        Ok(statuses)
+        let api = &api;
+        let names = &names;
+        try_join_all(ids.iter().map(|id| async move {
+            let status = api
+                .status(id, query)
+                .await
+                .map_err(|error| anyhow!("SLO '{id}': {error}"))?;
+            Ok(NamedSloStatus {
+                id: id.clone(),
+                name: names.get(id).cloned(),
+                status,
+            })
+        }))
+        .await
     })
     .await;
 

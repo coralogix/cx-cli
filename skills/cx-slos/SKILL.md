@@ -74,7 +74,7 @@ actually used (`effective_from`, `effective_to`) and `complete_data`.
 - `--grouping-key label,value` (repeatable) narrows to permutations with that label
   value; the label must be one of the SLO's grouping labels.
 - If any SLO fails (unknown id, bad label, window too long), the command fails and
-  prints nothing; the error names each failed SLO. Fix the input and rerun.
+  prints nothing; the error names the first failed SLO. Fix the input and rerun.
 
 **`0` and `0` has two meanings.** Either the window has no events (or the label value
 is unknown), or some permutation failed every event, which is a real breach.

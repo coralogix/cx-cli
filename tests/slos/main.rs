@@ -187,7 +187,6 @@ async fn status_fails_when_one_slo_fails() {
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/slo/slos/v1/slo-001/status"))
         .respond_with(ResponseTemplate::new(200).set_body_json(status_body()))
-        .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("GET"))

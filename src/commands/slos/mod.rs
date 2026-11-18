@@ -292,8 +292,14 @@ pub async fn run_status(
                         item.name.clone().unwrap_or_else(|| "-".to_string()),
                         display_ratio_as_percentage(item.status.lowest_compliance),
                         display_ratio_as_percentage(item.status.lowest_remaining_error_budget),
-                        item.status.effective_from.clone().unwrap_or_default(),
-                        item.status.effective_to.clone().unwrap_or_default(),
+                        item.status
+                            .effective_from
+                            .clone()
+                            .unwrap_or_else(|| "-".to_string()),
+                        item.status
+                            .effective_to
+                            .clone()
+                            .unwrap_or_else(|| "-".to_string()),
                         render::bool_display(Some(item.status.effective_window_complete_data)),
                     ]
                 })

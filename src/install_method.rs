@@ -23,7 +23,7 @@ pub enum InstallMethod {
 /// Windows-specific package managers (Scoop, Chocolatey, winget) are not yet
 /// detected; Windows users get the `Unknown` fallback with a docs URL.
 pub fn detect() -> InstallMethod {
-    let exe = std::env::current_exe().ok();
+    let exe = std::env::current_exe().ok().map(resolve_links);
     let marker = crate::config::config_dir()
         .ok()
         .and_then(|dir| std::fs::read_to_string(dir.join("install-method")).ok());
@@ -44,11 +44,21 @@ fn detect_from(exe: Option<&str>, marker: Option<&str>) -> InstallMethod {
     }
 }
 
+/// Follow links to the real file. On macOS, `current_exe()` returns the path
+/// used to start the program. On Intel Macs Homebrew's `cx` starts as
+/// `/usr/local/bin/cx`, a link into `/usr/local/Cellar/`, and only the real
+/// path shows it is Homebrew's.
+fn resolve_links(path: std::path::PathBuf) -> std::path::PathBuf {
+    std::fs::canonicalize(&path).unwrap_or(path)
+}
+
+/// Keep in sync with `is_brew_path` in `install.sh`.
 fn is_brew_path(path: &str) -> bool {
-    path.contains("/opt/homebrew/")
-        || path.contains("/usr/local/Cellar/")
+    path.contains("/Cellar/")
+        || path.contains("/opt/homebrew/")
         || path.contains("/usr/local/opt/")
         || path.contains("/home/linuxbrew/")
+        || path.contains("/.linuxbrew/")
 }
 
 /// Return the one-liner that upgrades the `cx` binary.
@@ -131,5 +141,32 @@ mod tests {
             InstallMethod::Unknown
         );
         assert_eq!(detect_from(None, Some("other")), InstallMethod::Unknown);
+    }
+
+    #[test]
+    fn intel_homebrew_cellar_path_is_brew() {
+        let m = detect_from(Some("/usr/local/Cellar/cx/0.1.28/bin/cx"), Some("curl"));
+        assert_eq!(m, InstallMethod::Brew);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_into_cellar_resolves_to_brew() {
+        // Intel Mac layout: /usr/local/bin/cx -> ../Cellar/cx/<v>/bin/cx.
+        let root = std::env::temp_dir().join(format!("cx-install-method-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let real_dir = root.join("Cellar/cx/0.1.28/bin");
+        let bin_dir = root.join("bin");
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::write(real_dir.join("cx"), "").unwrap();
+        std::os::unix::fs::symlink("../Cellar/cx/0.1.28/bin/cx", bin_dir.join("cx")).unwrap();
+
+        let link = bin_dir.join("cx");
+        assert!(!is_brew_path(&link.to_string_lossy()));
+        let resolved = resolve_links(link);
+        let m = detect_from(Some(&resolved.to_string_lossy()), Some("curl"));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(m, InstallMethod::Brew);
     }
 }

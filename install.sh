@@ -154,6 +154,7 @@ all_on_path() {
 }
 
 # True when $1 is a Homebrew-managed file or a link into Homebrew's Cellar.
+# Keep in sync with is_brew_path in src/install_method.rs.
 is_brew_path() {
     local target
     case "$1" in

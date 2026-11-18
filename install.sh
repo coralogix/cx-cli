@@ -81,10 +81,12 @@ main() {
     # Homebrew's bin) points into Homebrew's own files. Copying over it would
     # change Homebrew's copy behind its back, so stop and let the user choose.
     if [ -L "${install_dir}/${BINARY_NAME}" ] && is_brew_path "${install_dir}/${BINARY_NAME}"; then
-        err "${install_dir}/${BINARY_NAME} belongs to Homebrew. This script does not replace it."
-        err "Choose one:"
-        err "  brew uninstall cx    # preferred: remove Homebrew's cx, then run this script again"
-        err "  brew upgrade cx      # keep Homebrew and update it"
+        note ""
+        note "${BINARY_NAME} is already installed with Homebrew at ${install_dir}/${BINARY_NAME}."
+        note "This script does not replace a Homebrew install. Run one of these:"
+        note ""
+        options "brew uninstall cx && curl -fsSL https://get.coralogix.dev/cli | sh" "preferred: switch to this installer" \
+            "brew upgrade cx" "or keep Homebrew and update it"
         exit 1
     fi
 
@@ -119,9 +121,8 @@ main() {
     installed="${install_dir}/${BINARY_NAME}"
     first="$(first_on_path "$BINARY_NAME" || true)"
     if [ -n "$first" ] && ! [ "$first" -ef "$installed" ]; then
-        warn_shadowed "$installed" "$first" "$version"
-        say "${BINARY_NAME} v${version} is installed, but '${BINARY_NAME}' still runs ${first}."
-        say "Fix the PATH problem above, open a new shell, then run '${BINARY_NAME} --version'."
+        warn_shadowed "$installed" "$first"
+        say "Then open a new shell and run '${BINARY_NAME} --version'."
         return 0
     fi
 
@@ -142,17 +143,6 @@ first_on_path() {
     return 1
 }
 
-# Print every executable named $1 on PATH, in PATH order.
-all_on_path() {
-    local IFS=: dir
-    for dir in $PATH; do
-        [ -n "$dir" ] || dir="."
-        if [ -f "${dir}/$1" ] && [ -x "${dir}/$1" ]; then
-            printf '%s\n' "${dir}/$1"
-        fi
-    done
-}
-
 # True when $1 is a Homebrew-managed file or a link into Homebrew's Cellar.
 # Keep in sync with is_brew_path in src/install_method.rs.
 is_brew_path() {
@@ -168,21 +158,33 @@ is_brew_path() {
 }
 
 warn_shadowed() {
-    local installed="$1" first="$2" version="$3" first_version path
+    local installed="$1" first="$2" first_version
     first_version="$(CX_NO_UPDATE_NOTIFIER=1 "$first" --version 2>/dev/null | head -n 1 || true)"
-    warn "Another ${BINARY_NAME} comes first on your PATH, so it runs instead of v${version}:"
-    warn "  ${first}${first_version:+ (${first_version})}"
-    warn "All ${BINARY_NAME} binaries on your PATH, in the order your shell checks them:"
-    all_on_path "$BINARY_NAME" | while IFS= read -r path; do
-        warn "  ${path}"
-    done
+    note ""
+    note "Another ${BINARY_NAME} is already installed at ${first}${first_version:+ (${first_version})}, and your shell runs it first."
+    note "To use the new ${BINARY_NAME}, run one of these:"
+    note ""
     if is_brew_path "$first"; then
-        warn "That ${BINARY_NAME} comes from Homebrew. Choose one:"
-        warn "  brew uninstall cx                        # preferred: keep the new ${installed}"
-        warn "  brew upgrade cx && rm '${installed}'     # keep Homebrew"
+        options "brew uninstall cx" "preferred: keep the new ${installed}" \
+            "brew upgrade cx && rm '${installed}'" "or keep Homebrew"
     else
-        warn "Remove ${first}, or put $(dirname "$installed") before $(dirname "$first") in PATH."
+        options "rm '${first}'" "remove the other ${BINARY_NAME}" \
+            "export PATH=\"$(dirname "$installed"):\$PATH\"" "or add this line to your shell profile"
     fi
+    note ""
+}
+
+# A message line for the user, on stderr, with no prefix.
+note() {
+    printf '%s\n' "$*" >&2
+}
+
+# Two commands the user can copy, each with a short comment.
+# Arguments: command1 comment1 command2 comment2. Comments line up.
+options() {
+    local width="${#1}"
+    if [ "${#3}" -gt "$width" ]; then width="${#3}"; fi
+    printf "  %-${width}s  # %s\n" "$1" "$2" "$3" "$4" >&2
 }
 
 # Follow the releases/latest redirect instead of api.github.com (60 req/h per IP).

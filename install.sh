@@ -143,12 +143,14 @@ first_on_path() {
     return 1
 }
 
-# True when $1 is a Homebrew-managed file or a link into Homebrew's Cellar.
+# True when $1 is in Homebrew's Cellar or is a link into it. Homebrew's bin/
+# entries are links into the Cellar, so a plain file that this script put in
+# a Homebrew folder is not mistaken for a Homebrew install.
 # Keep in sync with is_brew_path in src/install_method.rs.
 is_brew_path() {
     local target
     case "$1" in
-        */Cellar/*|/opt/homebrew/*|/home/linuxbrew/*|*/.linuxbrew/*) return 0 ;;
+        */Cellar/*) return 0 ;;
     esac
     target="$(readlink "$1" 2>/dev/null || true)"
     case "$target" in

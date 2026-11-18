@@ -10,7 +10,7 @@ pub enum InstallMethod {
 /// Detect install method from the running binary's path and a marker file.
 ///
 /// Order of checks:
-/// 1. Binary lives in a Homebrew prefix → `Brew`
+/// 1. Binary resolves into a Homebrew `Cellar` folder → `Brew`
 /// 2. `~/.cx/install-method` contains "brew" → `Brew`
 /// 3. `~/.cx/install-method` contains "curl" → `Curl`  (written by `install.sh`)
 /// 4. Anything else → `Unknown`
@@ -52,13 +52,13 @@ fn resolve_links(path: std::path::PathBuf) -> std::path::PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
 
-/// Keep in sync with `is_brew_path` in `install.sh`.
+/// Homebrew keeps every formula's files under `<prefix>/Cellar/`, and its
+/// `bin/` and `opt/` entries are links into it. Callers resolve links first,
+/// so matching `/Cellar/` alone finds every Homebrew `cx`, and a plain file
+/// that the script put in a Homebrew folder such as `/opt/homebrew/bin` is
+/// not mistaken for one. Keep in sync with `is_brew_path` in `install.sh`.
 fn is_brew_path(path: &str) -> bool {
     path.contains("/Cellar/")
-        || path.contains("/opt/homebrew/")
-        || path.contains("/usr/local/opt/")
-        || path.contains("/home/linuxbrew/")
-        || path.contains("/.linuxbrew/")
 }
 
 /// Return the one-liner that upgrades the `cx` binary.
@@ -130,7 +130,10 @@ mod tests {
 
     #[test]
     fn linuxbrew_binary_without_marker_is_brew() {
-        let m = detect_from(Some("/home/linuxbrew/.linuxbrew/bin/cx"), None);
+        let m = detect_from(
+            Some("/home/linuxbrew/.linuxbrew/Cellar/cx/0.1.28/bin/cx"),
+            None,
+        );
         assert_eq!(m, InstallMethod::Brew);
     }
 
@@ -168,5 +171,12 @@ mod tests {
         let m = detect_from(Some(&resolved.to_string_lossy()), Some("curl"));
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(m, InstallMethod::Brew);
+    }
+
+    #[test]
+    fn script_copy_in_homebrew_folder_uses_marker() {
+        // CX_INSTALL_DIR=/opt/homebrew/bin: a plain file, not a Homebrew link.
+        let m = detect_from(Some("/opt/homebrew/bin/cx"), Some("curl"));
+        assert_eq!(m, InstallMethod::Curl);
     }
 }

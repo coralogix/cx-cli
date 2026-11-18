@@ -185,11 +185,10 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
                      Update them anytime with `cx skills install`."
                 );
             }
-            Err(error) => eprintln!(
-                "warning: skipped the agent-skills install: {error:#}\n\
-                 Coding agents use cx much better with these skills. \
-                 Fix the issue above, then run `cx skills install`."
-            ),
+            // Every `run_install` error already ends with its own retry
+            // instruction (missing Node.js, missing scope, installer failure),
+            // scoped to the flag chosen here, so init adds nothing to it.
+            Err(error) => eprintln!("warning: skipped the agent-skills install: {error:#}"),
         }
     }
 

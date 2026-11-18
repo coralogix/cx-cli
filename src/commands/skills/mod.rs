@@ -53,6 +53,18 @@ fn manual_install_cmd() -> String {
     format!("npx {SKILLS_PACKAGE} add {}", pinned_source(CX_VERSION))
 }
 
+/// The `cx skills install` command to repeat an install, carrying the scope
+/// the user already chose (`--global`/`--local`) so the retry works in a
+/// shell without a terminal, where the scope question cannot be asked. With
+/// no scope yet, the plain command, which asks interactively.
+pub fn install_command(scope: Option<SkillsScope>) -> String {
+    match scope {
+        Some(SkillsScope::Global) => "cx skills install --global".to_string(),
+        Some(SkillsScope::Local) => "cx skills install --local".to_string(),
+        None => "cx skills install".to_string(),
+    }
+}
+
 /// Where to browse the installed skills and read their contents. Shown in the
 /// compact summary as a pointer for manually reviewing what was installed;
 /// the installer's own verbose output (including its security-risk table) is
@@ -107,12 +119,12 @@ fn preflight(
     stdin_is_terminal: bool,
 ) -> Preflight {
     if !npx_available {
-        return Preflight::Fail(
+        return Preflight::Fail(format!(
             "Node.js/npx is required to install the cx agent skills.\n\
              Coding agents use cx much better with these skills.\n\
-             Install Node.js (https://nodejs.org), then run `cx skills install`."
-                .to_string(),
-        );
+             Install Node.js (https://nodejs.org), then run `{}`.",
+            install_command(scope)
+        ));
     }
     if scope.is_none() && !stdin_is_terminal {
         return Preflight::Fail(
@@ -170,8 +182,9 @@ pub fn run_install(opts: InstallOptions) -> Result<InstallOutcome> {
         }
         bail!(
             "skills installer exited with {}.\n\
-             You can retry manually with: {}",
+             Retry with `{}`, or run the installer directly: {}",
             output.status,
+            install_command(Some(scope)),
             manual_install_cmd()
         );
     }
@@ -884,8 +897,39 @@ mod tests {
             panic!("expected Fail");
         };
         assert!(message.contains("Node.js"));
-        assert!(message.contains("cx skills install"));
+        assert!(message.contains("`cx skills install`"));
         assert!(!message.contains("skip"));
+    }
+
+    /// The retry hint keeps the scope the user already chose, so a coding
+    /// agent (no terminal, so no scope question) can follow it as written.
+    #[test]
+    fn preflight_no_npx_hint_keeps_the_chosen_scope() {
+        for (scope, expected) in [
+            (SkillsScope::Global, "`cx skills install --global`"),
+            (SkillsScope::Local, "`cx skills install --local`"),
+        ] {
+            let Preflight::Fail(message) = preflight(false, Some(scope), false) else {
+                panic!("expected Fail");
+            };
+            assert!(
+                message.contains(expected),
+                "expected {expected} in: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn install_command_names_the_scope_flag() {
+        assert_eq!(
+            install_command(Some(SkillsScope::Global)),
+            "cx skills install --global"
+        );
+        assert_eq!(
+            install_command(Some(SkillsScope::Local)),
+            "cx skills install --local"
+        );
+        assert_eq!(install_command(None), "cx skills install");
     }
 
     #[test]

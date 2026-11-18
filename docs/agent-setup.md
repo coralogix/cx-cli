@@ -218,6 +218,6 @@ Setup ends at Step 6. Suggest these to the user, but don't run any of them until
 | `OAuth sign-up timed out after 30 minutes` | If signup finished, rerun without `--signup`. Otherwise start Step 4b again. |
 | The signup link lands on a login page | The region is closed to new accounts (`us1`/`eu1`). Pick one from the Step 3 table. |
 | `cx init` exits non-zero after sign-in | The credential check failed, usually because of the wrong region. See Step 5. |
-| `warning: skipped the agent-skills install` | Node.js/`npx` is missing. Coding agents use `cx` much better with the skills. Install Node.js, then run `cx skills install`. |
+| `warning: skipped the agent-skills install` | Node.js/`npx` is missing. Coding agents use `cx` much better with the skills. Install Node.js, then run the command the warning names (`cx skills install --global` or `--local`, matching `<skills-flag>`). |
 | `cx iam api-keys create` asks for confirmation | Non-interactive runs need `--yes`, passed only after the user approves. |
 | `Permission denied` on `get`/`create` | The user's role lacks `DATA-INGEST-API-KEYS:MANAGE`. Ask an admin, or create the key in **Settings → API Keys** (type Send Your Data, preset `SendData`). |

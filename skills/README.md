@@ -21,6 +21,7 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-ai-center` | Investigate GenAI applications and agents - behavior, prompts/responses, quality, hallucinations, guardrails, token cost - and manage AI Center config |
 | `cx-coding-agents` | Analyze AI Center Coding Agents data for Claude Code, Codex, Cursor, Gemini CLI, and Copilot CLI - usage, cost, tokens, sessions, tools, code impact |
 | `cx-search-dashboard` | Find existing dashboards and widgets by natural-language description or by the fields they query |
+| `cx-datasets` | Discover queryable datasets - fully qualified `<dataspace>/<dataset>` names for DataPrime sources, with DPXL filtering |
 
 ### Workflow
 
@@ -109,10 +110,29 @@ On Windows, `npx` resolves through its `.cmd` shim, so no extra setup is needed.
 
 ### Updating your skills
 
-`cx skills install` always reinstalls, which is how you pull in skills that have
-changed since you set up. (`cx init` deliberately does not — it skips the step
-when skills are already present, so re-running it never overwrites anything.) If
-you're not sure whether yours are current, run:
+The skills always match your cx version: `cx skills install` installs them from
+the release tag of the cx you run (for example `v0.1.33`), not from the default
+branch. So you get newer skills by upgrading cx.
+
+**After a cx upgrade, cx updates global skills by itself.** The first cx command
+after the upgrade (any command) starts the update in the background and prints
+one line:
+
+```
+[cx update] refreshing cx agent skills for cx 0.1.33 in the background
+```
+
+The command doesn't wait for it. Your agent gets the new skills in its next
+session. This covers global skills installed with `cx skills install --global`,
+`cx init`, an older cx, or `npx` directly. It needs `npx` on your `PATH`. If the
+update can't run or fails, cx prints the command to run instead, and tries again
+the next day. Local (per-project) skills are not updated automatically.
+
+To turn it off, set `auto_update_skills = false` in `~/.cx/config.toml`, or set
+`CX_NO_SKILLS_AUTO_UPDATE=1`. cx then only tells you when your skills are older
+than cx.
+
+To update by hand at any time, run:
 
 ```bash
 cx skills install
@@ -124,13 +144,18 @@ It prints what it found before replacing it, for example:
 cx agent skills already installed (14 skills: cx-alerts, cx-cases, cx-dashboards, ...) - reinstalling to update.
 ```
 
-Ask your coding agent to "update my Coralogix skills" and this is the command it
-should reach for.
+`cx init` deliberately doesn't reinstall: it skips the step when skills are
+already present, so re-running it never overwrites anything. Ask your coding agent
+to "update my Coralogix skills" and `cx skills install` is the command it should
+reach for.
 
 ### Installing without the CLI
 
 The CLI wraps the [`skills`](https://github.com/vercel-labs/skills) installer, which
-you can also drive directly:
+you can also drive directly. Without a `#v<version>` tag, these install the
+newest skills from the default branch, which can mention commands your cx version
+doesn't have yet. cx doesn't undo such an install: it updates those skills at your
+next cx upgrade.
 
 ```bash
 npx skills add coralogix/cx-cli/skills                         # all skills

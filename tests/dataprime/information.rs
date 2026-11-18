@@ -563,3 +563,41 @@ async fn extended_text_preserves_result_rendering_across_commands_and_profiles()
         }
     }
 }
+
+#[tokio::test]
+async fn cx_rum_warning_goes_to_stderr_and_never_into_stdout() {
+    let ndjson = json!({"result": {"results": [{"metadata": [], "labels": [], "userData": "{\"message\":\"hello\"}"}]}}).to_string();
+    for extended in [false, true] {
+        for format in ["json", "toon", "text"] {
+            for (query, expect_warning) in [
+                ("filter $l.subsystemname == 'cx_rum'", true),
+                ("filter $d.event_context.type == 'error'", false),
+            ] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .and(path("/api/v1/dataprime/query"))
+                    .respond_with(ResponseTemplate::new(200).set_body_string(&ndjson))
+                    .mount(&server)
+                    .await;
+                let mut args = vec!["logs", query, "-o", format];
+                if extended {
+                    args.push("--extended-information");
+                }
+                let output = invoke(&server, &args, &["test"]).await;
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                assert!(output.status.success(), "{stderr}");
+                assert_eq!(
+                    stderr.contains("[RUM query warning]"),
+                    expect_warning,
+                    "{format} extended={extended}: {stderr}"
+                );
+                assert!(!stdout.contains("RUM query warning"), "{stdout}");
+                if format == "json" {
+                    serde_json::from_str::<Value>(&stdout)
+                        .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {stdout}"));
+                }
+            }
+        }
+    }
+}

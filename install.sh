@@ -83,8 +83,8 @@ main() {
     if [ -L "${install_dir}/${BINARY_NAME}" ] && is_brew_path "${install_dir}/${BINARY_NAME}"; then
         err "${install_dir}/${BINARY_NAME} belongs to Homebrew. This script does not replace it."
         err "Choose one:"
+        err "  brew uninstall cx    # preferred: remove Homebrew's cx, then run this script again"
         err "  brew upgrade cx      # keep Homebrew and update it"
-        err "  brew uninstall cx    # remove Homebrew's cx, then run this script again"
         exit 1
     fi
 
@@ -178,7 +178,7 @@ warn_shadowed() {
     done
     if is_brew_path "$first"; then
         warn "That ${BINARY_NAME} comes from Homebrew. Choose one:"
-        warn "  brew uninstall cx                        # keep the new ${installed}"
+        warn "  brew uninstall cx                        # preferred: keep the new ${installed}"
         warn "  brew upgrade cx && rm '${installed}'     # keep Homebrew"
     else
         warn "Remove ${first}, or put $(dirname "$installed") before $(dirname "$first") in PATH."

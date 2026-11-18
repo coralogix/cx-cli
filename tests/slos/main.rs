@@ -180,15 +180,6 @@ async fn status_without_flags_leaves_the_window_to_the_server() {
 }
 
 #[tokio::test]
-async fn status_last_sets_only_the_window_start() {
-    let query = SloStatusQuery::from_flags(Some("4h"), None, None, Vec::new(), None)
-        .expect("flags should parse");
-
-    assert!(query.from.is_some_and(|from| from.ends_with(":00Z")));
-    assert!(query.to.is_none());
-}
-
-#[tokio::test]
 async fn status_fails_when_one_slo_fails() {
     let server = MockServer::start().await;
     mount_names(&server).await;

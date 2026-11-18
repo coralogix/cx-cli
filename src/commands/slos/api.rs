@@ -299,6 +299,15 @@ mod tests {
     }
 
     #[test]
+    fn status_last_sets_only_the_window_start() {
+        let query = SloStatusQuery::from_flags(Some("4h"), None, None, Vec::new(), None)
+            .expect("flags should parse");
+
+        assert!(query.from.is_some_and(|from| from.ends_with(":00Z")));
+        assert!(query.to.is_none());
+    }
+
+    #[test]
     fn status_last_error_names_the_flag_and_the_input() {
         let error = SloStatusQuery::from_flags(Some("now-4h"), None, None, Vec::new(), None)
             .expect_err("--last takes a bare duration");

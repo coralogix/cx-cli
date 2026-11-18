@@ -170,35 +170,78 @@ Decided:
   repo is used only if the platform does not accept two deployables there.
 
 The layout copies `coralogix/cx-cli-onboarding-service`, the existing cxai service
-with a public route. Field names were checked against the live v2 schemas. The files
-have not been rendered by pipeline-handler or applied.
+with a public route. The snippets below follow the files in that repo's PR 11
+(not merged or deployed yet). That repo is the place to read the exact files.
 
 ```
 cx-cli-telemetry-collector/          # a folder in coralogix/cx-cli-onboarding-service
 ├── meta.yaml
+├── Dockerfile                       # builds the image; the config is copied into it
+├── builder.yaml                     # copy of scripts/telemetry-collector/builder.yaml
+├── config.yaml                      # copy of scripts/telemetry-collector/config.yaml
+├── metrics.yaml                     # owned by that repo: the collector's own metrics
 └── platform/defaults/
     ├── workloads/defaults.yaml
-    ├── configMap/defaults.yaml
     ├── envVars/defaults.yaml
-    └── networking/defaults.yaml
+    ├── envVars/staging.yaml
+    ├── networking/defaults.yaml
+    └── observability/defaults.yaml
 ```
+
+There is no configMap. The platform builds the image from the Dockerfile, and
+the Dockerfile copies `config.yaml` and `metrics.yaml` into it.
 
 `meta.yaml`
 
 ```yaml
 name: cx-cli-telemetry-collector
-deployable_type: application        # to confirm: no code to build, image comes from workloads
+deployable_type: application
 lifecycle_status: development
 namespace: ai
 enabled: true
 cx_metadata:
   cx_feature_id: ai
   cx_service_rnd_owner_id: cxai
-auto_deploy:
-  - cx10
+multiarch: true
+# No auto_deploy yet: the first deploy needs the CX_SEND_DATA_KEY secret.
 deploy_envs:
   - cx10                            # staging first; the production cluster is an open question
 platform_features_version: v2
+```
+
+`Dockerfile`
+
+The build stage is the same as `scripts/telemetry-collector/Dockerfile`. The
+final stage differs: it is the internal `ubi9-minimal` base image (the one the
+platform's own collector image uses, with a CA bundle), not `scratch`, and the
+config is inside the image:
+
+```dockerfile
+FROM <internal registry>/ubi9-minimal:latest
+COPY --from=build /build/out/cx-telemetry-otelcol /otelcol
+COPY config.yaml metrics.yaml /etc/otelcol/
+USER 10001
+EXPOSE 4318 8888 13133
+ENTRYPOINT ["/otelcol"]
+CMD ["--config=/etc/otelcol/config.yaml", "--config=/etc/otelcol/metrics.yaml"]
+```
+
+`metrics.yaml`
+
+An overlay merged over `config.yaml`. The collector serves its own metrics on
+localhost only by default. Prometheus scrapes the pod IP, so the overlay makes
+it listen on all interfaces, port 8888:
+
+```yaml
+service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
 ```
 
 `platform/defaults/workloads/defaults.yaml`
@@ -206,11 +249,8 @@ platform_features_version: v2
 ```yaml
 # yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/workloads/schema
 kind: deployment
-replicas: 2
-container:
-  image: '{CX_CONTAINER_REPOSITORY}/otelcontribcol:<pinned tag>'   # the mirrored image the platform collectors use
-  args:
-    - --config=/etc/otelcol/config.yaml
+replicas: 2                         # the per-IP limit is per replica, so it is doubled (5.5)
+container:                          # no image or args: the platform builds the Dockerfile
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 500m, memory: 512Mi }
@@ -221,26 +261,25 @@ container:
       httpGet: { path: /, port: 13133 }
 ```
 
-`platform/defaults/configMap/defaults.yaml`
-
-```yaml
-# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/configMap/schema
-mountPath: /etc/otelcol
-data:
-  - fileName: config.yaml
-    data: |
-      # the collector config from section 2
-```
-
 `platform/defaults/envVars/defaults.yaml`
 
 ```yaml
 # yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/envVars/schema
 environmentVariables:
-  CORALOGIX_DOMAIN: <c4c domain for this environment>   # c4c-staging for cx10
-  CORALOGIX_PRIVATE_KEY:
+  CORALOGIX_PRIVATE_KEY:              # the name config.yaml reads
     secretKeyRef:
-      key: CORALOGIX_PRIVATE_KEY      # name omitted: defaults to the service-level external secret
+      key: CX_SEND_DATA_KEY           # the name in the service secret
+```
+
+`platform/defaults/envVars/staging.yaml`
+
+`CORALOGIX_DOMAIN` is not in the defaults. It is set per environment type, so a
+new environment fails to start instead of sending to the wrong team.
+
+```yaml
+# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/envVars/schema?partial=true
+environmentVariables:
+  CORALOGIX_DOMAIN: <domain of the c4c-staging team>
 ```
 
 `platform/defaults/networking/defaults.yaml`
@@ -268,23 +307,43 @@ ingress:
       authentication:
         authTypes:
           - unauthenticated: {}
+      # Without this, `usage.type: mgmt` puts the route at
+      # /mgmt/api/v2/cli-telemetry and the CLI's posts get a 404.
+      legacyEndpointFeatures:
+        migration: true
 ports:
   - name: otlp-http
     port: 4318
     protocol: TCP
     targetPort: 4318
+  - name: metrics                     # the collector's own metrics; no gateway endpoint
+    port: 8888
+    protocol: TCP
+    targetPort: 8888
+```
+
+`platform/defaults/observability/defaults.yaml`
+
+```yaml
+# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/observability/schema
+serviceMonitor:
+  endpoints:
+    - port: metrics                   # default path /metrics, default 60 s interval
+      scrapeTimeout: 10s
 ```
 
 Differences from the onboarding service's route: `unauthenticated` instead of
-`userToken`, an exact path match, no `signAuthContext`, and no retries. The
-onboarding route also sets `legacyEndpointFeatures.migration: true`; whether a new
-endpoint needs that is not known.
+`userToken`, an exact path match, no `signAuthContext`, and no retries. Like the
+onboarding route it sets `legacyEndpointFeatures.migration: true`: with
+`usage.type: mgmt` the platform prepends `/mgmt/` to the path unless that flag
+is set, and the CLI posts to `/api/v2/cli-telemetry`.
 
 Before the first deploy:
 
-- Create a c4c-staging send-your-data key and store it in the service's secret.
+- Create a c4c-staging send-your-data key and store it in the service's secret
+  as `CX_SEND_DATA_KEY`.
 - Set a daily quota for application `cx-cli` in that c4c team.
-- Run the config through `otelcol validate` with the pinned image.
+- Run the config through `otelcol validate` with the built image.
 
 ## 4. Open questions
 
@@ -294,9 +353,6 @@ Before the first deploy:
   the user has a region?
 - Is a client-claimed `team_id` acceptable, or is a second authenticated endpoint
   needed?
-- Can an `application` deployable run with only `container.image` and no build? The
-  only repo that ships a collector as its own deployable
-  (`eng-onlineboutique-demo/otelcollector`) builds an image with the config copied in.
 - Can the platform build and host the custom collector image from 5.5?
 - `error_mode: propagate` on the validation processors is deliberate. The internal
   OTTL skill recommends `ignore` for production, but with `ignore` a check that
@@ -462,8 +518,8 @@ So the two must be released in order.
 **The rule**
 
 1. `scripts/telemetry-collector/config.yaml` in this repo is the only source of
-   the collector config. The collector service carries a copy in its configMap
-   and never edits it by hand. The copies of `config.yaml` and `builder.yaml`
+   the collector config. The collector service carries a copy, built into its
+   image, and never edits it by hand. The copies of `config.yaml` and `builder.yaml`
    are in `coralogix/cx-cli-onboarding-service` under
    `cx-cli-telemetry-collector/`. Nothing copies them automatically: a change
    to either file here is copied there by hand

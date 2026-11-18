@@ -115,8 +115,9 @@ it with one pattern.
 ### Client rules
 
 - The CLI builds the JSON with `serde_json` and sends it with `reqwest`. No OTel SDK.
-- HTTP 429 and 503 keep the batch. Any other HTTP response means the batch is
-  finished and removed from the spool.
+- A 2xx, or a 4xx other than 408 and 429, means the batch is finished and
+  removed from the spool. Any other HTTP response keeps it. Redirects are not
+  followed.
 - A network failure keeps the batch until it is older than 7 days.
 - At most 50 events per request.
 - No command sends. A detached sender sub-process does, after the command has
@@ -355,12 +356,14 @@ an empty file.
 
 | Result | Batch | Backoff |
 |---|---|---|
-| HTTP 429 or 503 | kept | yes |
-| Any other HTTP status | removed | no |
+| HTTP 2xx, or 4xx other than 408 and 429 | removed | no |
+| Any other HTTP status (3xx, 408, 429, 5xx) | kept | yes |
 | Network error or timeout | kept | yes |
 
-This changes the "any HTTP response" rule in section 1: with a per-IP rate limit
-(5.5), a 429 means the collector did not look at the batch.
+A kept status is one that does not show the collector looked at the batch: a
+429 from the per-IP rate limit (5.5), or a 502/504 from the gateway while the
+collector is down. Redirects are not followed: following one re-sends the POST
+as a GET with no body, possibly to another host.
 
 **Timeouts**
 
@@ -540,9 +543,9 @@ profile, so with `debug_assertions` the integration tests keep working with no
 change to CI. A feature would need `--features` on every test command and
 `required-features` on the test target.
 
-**On a release build, `CX_TELEMETRY=log` means off.** Today an unknown value
-does not opt out. Someone who set `log` to make sure nothing is sent must not
-start sending because the mode was removed.
+**On a release build, `CX_TELEMETRY=log` means off.** Any value other than
+`1`, `true`, `on`, `yes` or empty opts out, so someone who set `log` to make
+sure nothing is sent does not start sending because the mode was removed.
 
 **Tests**
 

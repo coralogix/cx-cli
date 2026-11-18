@@ -56,8 +56,10 @@ fn config_allows(config: Option<Result<String, std::io::ErrorKind>>) -> bool {
     }
 }
 
-/// `CX_TELEMETRY` is the most specific switch, so it wins either way; then any
-/// opt-out; then telemetry needs somewhere to send to.
+/// `CX_TELEMETRY` can only turn telemetry off (or to `log`): an "on" value
+/// does not override another opt-out. A value it does not know is an opt-out,
+/// so a typo or `disabled` never sends. Then any other opt-out; then telemetry
+/// needs somewhere to send to.
 fn decide(
     cx_telemetry: Option<&str>,
     do_not_track: Option<&str>,
@@ -66,11 +68,11 @@ fn decide(
 ) -> Mode {
     let lower = |v: Option<&str>| v.map(|v| v.trim().to_ascii_lowercase());
     match lower(cx_telemetry).as_deref() {
-        Some("0" | "false" | "off" | "no") => return Mode::Off,
-        // Release builds have no Log mode. `log` still means "send nothing".
+        // Unset, or set but empty (`CX_TELEMETRY=`).
+        None | Some("" | "1" | "true" | "on" | "yes") => {}
         Some("log") if cfg!(debug_assertions) => return Mode::Log,
-        Some("log") => return Mode::Off,
-        _ => {}
+        // Release builds have no Log mode. `log` still means "send nothing".
+        Some(_) => return Mode::Off,
     }
     if matches!(
         lower(do_not_track).as_deref(),
@@ -126,8 +128,16 @@ mod tests {
         // No endpoint (source and dev builds) means off.
         assert_eq!(decide(None, None, true, None), Mode::Off);
         assert_eq!(decide(None, None, true, Some(" ".into())), Mode::Off);
-        // An unrecognised value does not opt out on its own.
-        assert_eq!(decide(Some("1"), None, true, ep()), on());
+        // An unrecognised value is an opt-out.
+        for off in ["disabled", "none", "n", "2", "of"] {
+            assert_eq!(decide(Some(off), None, true, ep()), Mode::Off, "{off}");
+        }
+        for allowed in ["1", "true", "ON", "yes", "", " "] {
+            assert_eq!(decide(Some(allowed), None, true, ep()), on(), "{allowed}");
+            // An "on" value does not override another opt-out.
+            let off = decide(Some(allowed), Some("1"), true, ep());
+            assert_eq!(off, Mode::Off, "{allowed}");
+        }
     }
 
     #[test]

@@ -258,8 +258,9 @@ fn first_run_is_recorded_once_per_install() {
 
 #[test]
 fn opt_outs_build_nothing() {
-    let opt_outs: [(&str, &str, bool); 3] = [
+    let opt_outs: [(&str, &str, bool); 4] = [
         ("CX_TELEMETRY", "0", false),
+        ("CX_TELEMETRY", "disabled", false),
         ("DO_NOT_TRACK", "1", false),
         ("", "", true), // telemetry = false in config.toml
     ];
@@ -554,11 +555,19 @@ async fn sender_status_decides_whether_the_batch_is_kept() {
     for (status, kept) in [
         (200, false),
         (400, false),
-        (500, false),
+        // Not followed: the collector is asked once and the batch is kept.
+        (302, true),
+        (408, true),
         (429, true),
+        (500, true),
+        (502, true),
         (503, true),
     ] {
-        let server = api_and_collector(ResponseTemplate::new(status)).await;
+        // The header only matters for the 302: a followed redirect would show
+        // up as a second request.
+        let server =
+            api_and_collector(ResponseTemplate::new(status).insert_header("Location", "/v1/logs"))
+                .await;
         let home = temp_home();
         seed_spool(&home, 3);
 

@@ -151,23 +151,31 @@ fn attributes(map: Map<String, Value>) -> Vec<Value> {
         .collect()
 }
 
-/// POST `body`. True when the batch is finished: the collector answered, and
-/// retrying a request it rejected would only be rejected again. False when
-/// the batch must be kept: a network error or timeout, or HTTP 429 or 503,
-/// which mean the collector did not look at it.
+/// POST `body`. True when the batch is finished: the collector took it (2xx)
+/// or rejected it (4xx), and a rejected request would only be rejected again.
+/// False when the batch must be kept: a network error or timeout, or a
+/// response that does not show the collector looked at it (a redirect, 408,
+/// 429, or any 5xx, which a gateway in front of the collector also returns).
 async fn post(endpoint: &str, body: &Value) -> bool {
     let Ok(client) = reqwest::Client::builder()
         .user_agent(concat!("cx-cli/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
+        // A followed redirect re-sends the POST as a bodyless GET, possibly
+        // to another host.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
     else {
         return false;
     };
     match client.post(endpoint).json(body).send().await {
-        Ok(response) => !matches!(response.status().as_u16(), 429 | 503),
+        Ok(response) => batch_finished(response.status().as_u16()),
         Err(_) => false,
     }
+}
+
+fn batch_finished(status: u16) -> bool {
+    matches!(status, 200..=299 | 400..=499) && !matches!(status, 408 | 429)
 }
 
 #[cfg(test)]

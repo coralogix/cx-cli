@@ -5,7 +5,7 @@ use crate::error::Result;
 
 use crate::api_client::CxClient;
 use crate::serde_helpers::string_or_number;
-use crate::time::parse_timestamp_whole_minute;
+use crate::time::{parse_timestamp_whole_minute, whole_minute_before_now};
 
 // --- Response types ---
 
@@ -145,15 +145,16 @@ impl SloStatusQuery {
         grouping_key_values: Vec<String>,
         target_threshold_percentage: Option<f64>,
     ) -> anyhow::Result<Self> {
-        let from = last
-            .map(|last| format!("now-{last}"))
-            .or_else(|| from.map(str::to_string));
+        let from = match last {
+            Some(last) => Some(
+                whole_minute_before_now(last)
+                    .map_err(|error| anyhow::anyhow!("--last: {error}"))?,
+            ),
+            None => from.map(parse_timestamp_whole_minute).transpose()?,
+        };
         Ok(Self {
             grouping_key_values,
-            from: from
-                .as_deref()
-                .map(parse_timestamp_whole_minute)
-                .transpose()?,
+            from,
             to: to.map(parse_timestamp_whole_minute).transpose()?,
             target_threshold_percentage,
         })
@@ -295,6 +296,17 @@ mod tests {
 
         let status: SloStatus = serde_json::from_value(json).unwrap();
         assert!(status.is_no_data_or_total_failure());
+    }
+
+    #[test]
+    fn status_last_error_names_the_flag_and_the_input() {
+        let error = SloStatusQuery::from_flags(Some("now-4h"), None, None, Vec::new(), None)
+            .expect_err("--last takes a bare duration");
+
+        let message = error.to_string();
+        assert!(message.starts_with("--last: "), "got: {message}");
+        assert!(message.contains("'now-4h'"), "got: {message}");
+        assert!(!message.contains("now-now-4h"), "got: {message}");
     }
 
     #[test]

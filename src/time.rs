@@ -33,9 +33,25 @@ pub fn parse_timestamp_epoch_seconds(input: &str) -> Result<i64> {
 /// whole minute (`2024-01-01T12:34:00Z`). For APIs (like SLO status) that
 /// reject seconds.
 pub fn parse_timestamp_whole_minute(input: &str) -> Result<String> {
-    Ok(parse_datetime(input)?
-        .format("%Y-%m-%dT%H:%M:00Z")
-        .to_string())
+    Ok(format_whole_minute(parse_datetime(input)?))
+}
+
+/// The instant one duration (`4h`, `7d`, `1h30m`) before now, cut down to the
+/// whole minute like [`parse_timestamp_whole_minute`].
+pub fn whole_minute_before_now(duration: &str) -> Result<String> {
+    let std_duration = humantime::parse_duration(duration.trim()).map_err(|error| {
+        anyhow::anyhow!(
+            "Could not parse duration '{duration}': {error}. \
+             Examples: '1h', '30m', '3d', '1w'."
+        )
+    })?;
+    Ok(format_whole_minute(
+        Utc::now() - chrono::Duration::from_std(std_duration)?,
+    ))
+}
+
+fn format_whole_minute(dt: DateTime<Utc>) -> String {
+    dt.format("%Y-%m-%dT%H:%M:00Z").to_string()
 }
 
 fn parse_datetime(input: &str) -> Result<DateTime<Utc>> {

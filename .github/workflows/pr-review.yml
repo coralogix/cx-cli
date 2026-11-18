@@ -66,7 +66,10 @@ jobs:
       - name: Checkout the base branch
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          # github.sha: the master commit this workflow runs from. Not
+          # pull_request.base.sha, which is master at the PR's last push and can
+          # be older than the footprint script and the skill.
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -76,7 +79,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # The secret scrub runs Claude's commands in a sandbox, which needs these.
@@ -131,7 +134,7 @@ jobs:
             Run the /pr-review skill in .claude/skills/pr-review/SKILL.md
             for PR #${{ github.event.pull_request.number }} with --no-drive.
             The working directory is the base commit
-            ${{ github.event.pull_request.base.sha }}, not the PR.
+            ${{ github.sha }} on master, not the PR.
             You have no git. The workflow already did the git work of Part 1,
             for the PR head ${{ github.event.pull_request.head.sha }}:
             - /opt/pr-review/footprint.txt: the footprint output.

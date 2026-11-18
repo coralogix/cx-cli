@@ -48,6 +48,14 @@ fn parse_completions_shell(value: &str) -> Result<Shell, String> {
     }
 }
 
+fn parse_target_percentage(value: &str) -> Result<f64, String> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|target| (0.0..=100.0).contains(target))
+        .ok_or_else(|| format!("'{value}' is not a percentage from 0 to 100"))
+}
+
 /// How `search-fields` searches: by semantic description or by value content.
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum SearchType {
@@ -2898,7 +2906,7 @@ Compliance and remaining budget are the lowest across the matching permutations.
         grouping_keys: Vec<String>,
 
         /// What-if target percentage (0-100) instead of the SLO's own target.
-        #[arg(long)]
+        #[arg(long, value_parser = parse_target_percentage)]
         target: Option<f64>,
     },
     /// Create an SLO from a JSON definition file [requires --yes].
@@ -5633,6 +5641,15 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_target_percentage_keeps_decimals_and_rejects_out_of_range() {
+        assert_eq!(parse_target_percentage("99.9").unwrap(), 99.9);
+        assert_eq!(parse_target_percentage("100").unwrap(), 100.0);
+        assert!(parse_target_percentage("100.1").is_err());
+        assert!(parse_target_percentage("-1").is_err());
+        assert!(parse_target_percentage("NaN").is_err());
+    }
 
     #[test]
     fn parse_completions_shell_accepts_supported_shells() {

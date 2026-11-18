@@ -681,4 +681,28 @@ mod tests {
         );
         assert_eq!(identity(&["cx"]), (None, String::new()));
     }
+
+    #[test]
+    fn collector_config_allows_every_agent_name() {
+        let config = include_str!("../../scripts/telemetry-collector/config.yaml");
+        let line = config
+            .lines()
+            .find(|l| l.contains(r#"IsMatch(attributes["cx.agent"]"#))
+            .expect("cx.agent condition in the collector config");
+        let (_, rest) = line.split_once("\"^(").unwrap();
+        let (list, _) = rest.split_once(")$\"").unwrap();
+        let allowed: Vec<&str> = list.split('|').collect();
+
+        let mut names = vec!["direct".to_string()];
+        names.extend(
+            crate::safety::AGENT_ENV_VARS
+                .iter()
+                .map(|v| v.to_ascii_lowercase()),
+        );
+        assert_eq!(
+            allowed, names,
+            "scripts/telemetry-collector/config.yaml must allow `direct` plus safety::AGENT_ENV_VARS; \
+             update it and copy it to the collector service repo"
+        );
+    }
 }

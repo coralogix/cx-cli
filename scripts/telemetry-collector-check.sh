@@ -8,7 +8,8 @@
 #      be exported with all its attributes, with service.name = cx-cli;
 #   2. every event kind is posted with and without cx.team.id; all must pass;
 #   3. hand-made bad requests are posted; none may be exported, and an unknown
-#      attribute must be stripped;
+#      attribute must be stripped; a record with a wrong client clock is
+#      exported with the time of receipt;
 #   4. a burst from one source IP must be limited while another IP passes.
 #
 # Usage: scripts/telemetry-collector-check.sh [path/to/cx]   (default: target/debug/cx)
@@ -178,7 +179,6 @@ echo "== bad requests"
 GOOD=22222222-2222-4222-8222-222222222222
 echo "unknown attribute (kept, stripped): $(post "$(request "$(base $GOOD ',{"key":"cx.query","value":{"stringValue":"SECRET-QUERY"}}')" "$now" $INSTALL)")"
 echo "bad enum:          $(post "$(request "$(base 33333333-3333-4333-8333-333333333333 ',{"key":"cx.outcome","value":{"stringValue":"pwned"}}')" "$now" $INSTALL)")"
-echo "stale timestamp:   $(post "$(request "$(base 44444444-4444-4444-8444-444444444444 '')" "$((now - 8 * 86400 * 1000000000))" $INSTALL)")"
 echo "wrong type:        $(post "$(request "$(base 55555555-5555-4555-8555-555555555555 ',{"key":"cx.duration_ms","value":{"stringValue":"12"}}')" "$now" $INSTALL)")"
 echo "bad install id:    $(post "$(request "$(base 66666666-6666-4666-8666-666666666666 '')" "$now" not-a-uuid)")"
 flags31=$(python3 -c 'print(",".join("--f%d" % i for i in range(31)))')
@@ -187,6 +187,13 @@ echo "31 flags:          $(post "$(request "$(base 88888888-8888-4888-8888-88888
 big=$(python3 -c 'print("x" * 70000)')
 extra=",{\"key\":\"cx.query\",\"value\":{\"stringValue\":\"$big\"}}"
 echo "body over 64 KiB:  $(post "$(request "$(base 77777777-7777-4777-8777-777777777777 "$extra")" "$now" $INSTALL)")"
+
+# ── Wrong client clock ───────────────────────────────────────────────────────
+# Kept, with the time of receipt as the timestamp.
+echo "== wrong clock"
+echo "8 days old:        $(post "$(request "$(base 44444444-4444-4444-8444-444444444444 '')" "$((now - 8 * 86400 * 1000000000))" $INSTALL)")"
+echo "6 minutes ahead:   $(post "$(request "$(base 44444444-5555-4444-8444-444444444444 '')" "$((now + 360 * 1000000000))" $INSTALL)")"
+echo "1 hour old (kept as sent): $(post "$(request "$(base 44444444-6666-4444-8444-444444444444 '')" "$((now - 3600 * 1000000000))" $INSTALL)")"
 
 # ── 4. Per-IP rate limit ──────────────────────────────────────────────────────
 # 10 requests/s with burst 300 per x-envoy-external-address. One process on one
@@ -218,10 +225,10 @@ sleep 2
 
 # ── Assertions over what the collector exported ───────────────────────────────
 echo "== exported"
-python3 - "$OUT" "$GOOD" "$WORK/expected.jsonl" "$(cat "$WORK/burst-accepted")" <<'EOF'
+python3 - "$OUT" "$GOOD" "$WORK/expected.jsonl" "$(cat "$WORK/burst-accepted")" "$now" <<'EOF'
 import json, sys
 from collections import Counter
-path, good, expected_path, burst_accepted = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+path, good, expected_path, burst_accepted, now = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
 RESOURCE_KEYS = {"service.name", "service.version", "os.type", "host.arch", "cx.install.id", "cx.install.method"}
 HAND_MADE = ("2222", "3333", "4444", "5555", "6666", "7777", "8888", "9999", "aaaa")
 
@@ -265,11 +272,18 @@ assert with_team == without == sorted(want), f"with: {with_team}, without: {with
 assert len(made) == 16, "the bad team id must be dropped"
 print("every event kind exported with and without cx.team.id")
 
-bad = [a for _, a, _ in records if a.get("cx.invocation.id", "").startswith(("3333", "4444", "5555", "6666", "7777", "8888"))]
+bad = [a for _, a, _ in records if a.get("cx.invocation.id", "").startswith(("3333", "5555", "6666", "7777", "8888"))]
 assert not bad, f"bad records exported: {bad}"
 kept = [a for _, a, _ in records if a.get("cx.invocation.id") == good]
 assert len(kept) == 1 and "cx.query" not in kept[0], kept
 print("bad requests: none exported; unknown attribute stripped")
+
+MINUTE = 60 * 10**9
+clock = {a["cx.invocation.id"][9:13]: int(r["timeUnixNano"]) for _, a, r in records if a.get("cx.invocation.id", "").startswith("4444")}
+assert sorted(clock) == ["4444", "5555", "6666"], f"a wrong client clock must not drop the event: {clock}"
+assert abs(clock["4444"] - now) < MINUTE and abs(clock["5555"] - now) < MINUTE, f"out-of-range times become the time of receipt: {clock}"
+assert clock["6666"] == now - 60 * MINUTE, f"an in-range time is kept: {clock}"
+print("wrong clock: events kept, stamped with the time of receipt")
 
 burst = [a for _, a, _ in records if a.get("cx.invocation.id", "").startswith("aaaa")]
 assert len(burst) == burst_accepted, f"a rejected request must export nothing: {len(burst)} vs {burst_accepted}"

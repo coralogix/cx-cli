@@ -40,13 +40,12 @@ processors:
         # --- every event ---
         - 'attributes["event.name"] == nil or not IsMatch(attributes["event.name"], "^cli\\.(first_run|command|parse_error|onboarding|skills_install|update_notice|version_changed|confirm)$")'
         - 'attributes["cx.invocation.id"] == nil or not IsMatch(attributes["cx.invocation.id"], "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")'
-        # Generate this list from safety::AGENT_ENV_VARS at release time.
+        # `direct` plus safety::AGENT_ENV_VARS in lowercase. The unit test
+        # collector_config_allows_every_agent_name (src/telemetry/event.rs)
+        # fails when this list and the CLI's differ.
         - 'attributes["cx.agent"] == nil or not IsMatch(attributes["cx.agent"], "^(direct|aider|amazon_q|aws_q_developer|claudecode|claude_code|cline|codex|copilot_agent|cursor_agent|cx_agent_mode|gemini_code_assist|github_copilot|openai_codex|src_cody|windsurf_agent)$")'
         - 'not IsBool(attributes["cx.ci"]) or not IsBool(attributes["cx.tty"])'
         - 'attributes["cx.team.id"] != nil and not IsMatch(attributes["cx.team.id"], "^[0-9]{1,12}$")'
-        # --- timestamp: not older than 7 days, not more than 5 minutes ahead ---
-        - 'time_unix_nano < UnixNano(Now()) - 604800000000000'
-        - 'time_unix_nano > UnixNano(Now()) + 300000000000'
         # --- cli.command ---
         - 'attributes["event.name"] == "cli.command" and (attributes["cx.command.path"] == nil or not IsMatch(attributes["cx.command.path"], "^[a-z0-9-]{1,32}( [a-z0-9-]{1,32}){0,3}$"))'
         # RE2 rejects nested repeat counts over 1000, so the list is `*` and the count (30) is a Split.
@@ -82,6 +81,10 @@ processors:
           - keep_keys(attributes, ["event.name", "cx.invocation.id", "cx.agent", "cx.ci", "cx.tty", "cx.team.id", "cx.command.path", "cx.command.flags", "cx.outcome", "cx.error.class", "cx.http.status_class", "cx.duration_ms", "cx.output.format", "cx.profile.count", "cx.spilled", "cx.parse.kind", "cx.onboarding.step", "cx.auth.method", "cx.credential.store", "cx.skills.scope", "cx.version.latest", "cx.version.previous", "cx.confirm.result"])
           - set(body, "")
           - set(observed_time, Now())
+          # The record time is the client's clock. A wrong clock must not lose
+          # the event: outside 7 days back to 5 minutes ahead, use the time of
+          # receipt instead.
+          - set(time, Now()) where time_unix_nano < UnixNano(Now()) - 604800000000000 or time_unix_nano > UnixNano(Now()) + 300000000000
           - set(severity_text, "INFO")
 
   batch:

@@ -42,7 +42,11 @@ body is empty.
 | `cx.tty` | bool | |
 | `cx.team.id` | string, optional | digits only. Claimed by the client, not verified |
 
-The record timestamp is the time the event happened on the user's machine.
+The record timestamp is the time the event happened on the user's machine. The
+collector keeps it when it is between 7 days in the past and 5 minutes in the
+future. Outside that range the client clock is taken to be wrong and the
+collector sets the timestamp to the time of receipt. The event is kept either
+way.
 
 ### Events
 
@@ -459,7 +463,12 @@ So the two must be released in order.
 
 1. `scripts/telemetry-collector/config.yaml` in this repo is the only source of
    the collector config. The collector service carries a copy in its configMap
-   and never edits it by hand.
+   and never edits it by hand. The copies of `config.yaml` and `builder.yaml`
+   are in `coralogix/cx-cli-onboarding-service` under
+   `cx-cli-telemetry-collector/`. Nothing copies them automatically: a change
+   to either file here is copied there by hand
+   (`scripts/telemetry-collector/README.md`). The release check below fails
+   when the `config.yaml` copy is behind.
 2. Schema changes only add: a new event, a new attribute, a new enum value.
    Nothing is removed or narrowed, because old CLI versions keep sending the old
    shape for as long as they are installed.
@@ -600,7 +609,8 @@ does build an image, and the tag to pin is ours.
 
 The image holds only what the config uses: the `otlp` receiver; the
 `memory_limiter`, `batch`, `filter`, `transform` and `ratelimit` processors; the
-`coralogix` exporter (plus `file` and `debug` for the local check); the
+`coralogix` exporter (plus `file` and `debug`, which only the local runs put in
+a pipeline; they are in the deployed binary too, unused); the
 `health_check` extension; the `env` and `file` config providers. It is 61 MB,
 against 484 MB for contrib. The `ocb` manifest (`builder.yaml`) and the
 Dockerfile are in `scripts/telemetry-collector/`, and the check script builds

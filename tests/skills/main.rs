@@ -561,9 +561,13 @@ fn outdated_global_skills_refresh_in_the_background() {
     )
     .unwrap();
 
+    // Telemetry on, to a port nothing listens on: events stay on disk.
     let output = cx(&home, &bin)
         .env_remove("CX_NO_UPDATE_NOTIFIER")
         .env_remove("CX_NO_SKILLS_AUTO_UPDATE")
+        .env_remove("DO_NOT_TRACK")
+        .env("CX_TELEMETRY", "1")
+        .env("CX_TELEMETRY_ENDPOINT", "http://127.0.0.1:9/v1/logs")
         .arg("cleanup")
         .output()
         .expect("failed to run cx");
@@ -588,6 +592,26 @@ fn outdated_global_skills_refresh_in_the_background() {
             "-y skills@1.8.1 add coralogix/cx-cli/skills#v{} --skill * -y -g -a cursor",
             env!("CARGO_PKG_VERSION")
         )
+    );
+
+    // The user ran `cleanup`, not the refresh: only `cleanup` is recorded.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let recorded_events: String = fs::read_dir(home.join(".cx"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|file| {
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            name.starts_with("telemetry-spool") || name.ends_with(".sending")
+        })
+        .map(|file| fs::read_to_string(file).unwrap_or_default())
+        .collect();
+    assert!(
+        recorded_events.contains(r#""cx.command.path":"cleanup""#),
+        "{recorded_events}"
+    );
+    assert!(
+        !recorded_events.contains("auto-refresh"),
+        "{recorded_events}"
     );
 
     // Now current: the next command is silent.

@@ -6,8 +6,10 @@
 //!
 //! Events serialize flat, keyed by their OTLP attribute names, so the JSON that
 //! `CX_TELEMETRY=log` prints and the spool stores is what gets sent. Reading a
-//! spooled line back rejects unknown enum values; unknown keys are ignored and,
-//! because events are re-encoded from these types, never sent.
+//! spooled line back rejects unknown enum values and any string that fails the
+//! check it was built with, so an edited spool cannot carry free text; unknown
+//! keys are ignored and, because events are re-encoded from these types, never
+//! sent.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -253,10 +255,28 @@ fn is_name(s: &str, max: usize) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
+/// Deserializing a constrained string (reading a spool line back) accepts
+/// only what `$build` would have produced from it.
+macro_rules! checked_string {
+    ($type:ident, $build:expr) => {
+        impl TryFrom<String> for $type {
+            type Error = &'static str;
+
+            fn try_from(s: String) -> Result<Self, Self::Error> {
+                let build: fn(&str) -> Option<$type> = $build;
+                build(&s)
+                    .filter(|built| built.0 == s)
+                    .ok_or(concat!("not a valid ", stringify!($type)))
+            }
+        }
+    };
+}
+
 /// Subcommand names joined by spaces, e.g. `alerts list`. At most 4 words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String")]
 pub struct CommandPath(String);
+checked_string!(CommandPath, |s| CommandPath::from_names(s.split(' ')));
 
 impl CommandPath {
     const MAX_WORDS: usize = 4;
@@ -280,8 +300,11 @@ impl CommandPath {
 /// Sorted, de-duplicated `--long` flag names joined by commas, e.g.
 /// `--limit,--start`. Names only, never values. Empty when no flag was given.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String")]
 pub struct CommandFlags(String);
+checked_string!(CommandFlags, |s| Some(CommandFlags::from_long_names(
+    s.split(',').filter_map(|flag| flag.strip_prefix("--"))
+)));
 
 impl CommandFlags {
     const MAX_FLAGS: usize = 30;
@@ -300,6 +323,12 @@ impl CommandFlags {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// A value no command line can produce, for size-limit tests.
+    #[cfg(test)]
+    pub(crate) fn unchecked(flags: String) -> Self {
+        Self(flags)
     }
 }
 
@@ -345,8 +374,9 @@ pub fn command_identity(
 /// A strict `MAJOR.MINOR.PATCH` version. Versions can come from the GitHub
 /// releases API, so they are parsed, never copied through.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String")]
 pub struct Version(String);
+checked_string!(Version, Version::parse);
 
 impl Version {
     pub fn parse(s: &str) -> Option<Self> {
@@ -363,8 +393,9 @@ impl Version {
 /// The team id a profile has cached. Sent as a digit string, which is what the
 /// collector's pattern check expects. Claimed by the client, not verified.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String")]
 pub struct TeamId(String);
+checked_string!(TeamId, |s| s.parse().ok().and_then(TeamId::new));
 
 impl TeamId {
     pub fn new(id: i64) -> Option<Self> {
@@ -375,10 +406,20 @@ impl TeamId {
 /// `direct`, or the lowercased name of the first agent env var that is set
 /// (`safety::AGENT_ENV_VARS`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String")]
 pub struct Agent(String);
+checked_string!(Agent, |s| Agent::names().find(|name| name == s).map(Agent));
 
 impl Agent {
+    /// Every value `cx.agent` can have.
+    fn names() -> impl Iterator<Item = String> {
+        std::iter::once("direct".to_string()).chain(
+            crate::safety::AGENT_ENV_VARS
+                .iter()
+                .map(|var| var.to_ascii_lowercase()),
+        )
+    }
+
     pub fn detect() -> Self {
         let name = crate::safety::AGENT_ENV_VARS
             .iter()
@@ -569,6 +610,37 @@ mod tests {
         assert!(!line.contains("cx.query") && !line.contains("secret"));
     }
 
+    /// A hand-edited spool line: each constrained string is checked again
+    /// when the line is read back.
+    #[test]
+    fn edited_spool_values_are_rejected() {
+        for (key, bad) in [
+            ("cx.command.path", json!("logs; rm -rf /")),
+            ("cx.command.path", json!("a b c d e")),
+            ("cx.command.path", json!("")),
+            ("cx.command.flags", json!("--limit,free text")),
+            ("cx.command.flags", json!("limit")),
+            ("cx.command.flags", json!("--b,--a")),
+            ("cx.agent", json!("someone@example.com")),
+            ("cx.agent", json!("CLAUDE_CODE")),
+            ("cx.team.id", json!("my-team")),
+            ("cx.team.id", json!("007")),
+            ("cx.team.id", json!("-5")),
+        ] {
+            let mut value = serde_json::to_value(command_event()).unwrap();
+            value[key] = bad.clone();
+            let read = serde_json::from_value::<Event>(value);
+            assert!(read.is_err(), "{key} = {bad} was accepted");
+        }
+        let version = |v: &str| {
+            serde_json::from_value::<EventKind>(
+                json!({ "event.name": "cli.update_notice", "cx.version.latest": v }),
+            )
+        };
+        assert!(version("0.2.0").is_ok());
+        assert!(version("0.2.0-beta; drop").is_err());
+    }
+
     #[test]
     fn constrained_strings() {
         assert_eq!(
@@ -693,12 +765,7 @@ mod tests {
         let (list, _) = rest.split_once(")$\"").unwrap();
         let allowed: Vec<&str> = list.split('|').collect();
 
-        let mut names = vec!["direct".to_string()];
-        names.extend(
-            crate::safety::AGENT_ENV_VARS
-                .iter()
-                .map(|v| v.to_ascii_lowercase()),
-        );
+        let names: Vec<String> = Agent::names().collect();
         assert_eq!(
             allowed, names,
             "scripts/telemetry-collector/config.yaml must allow `direct` plus safety::AGENT_ENV_VARS; \

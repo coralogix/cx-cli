@@ -53,9 +53,9 @@ way.
 | `event.name` | When | Extra attributes |
 |---|---|---|
 | `cli.first_run` | `~/.cx/state.json` is created | none |
-| `cli.command` | a command finishes | command set below |
+| `cli.command` | a command the user ran finishes (not the background `cx skills auto-refresh`, which records nothing) | command set below |
 | `cli.parse_error` | clap rejects the arguments | `cx.parse.kind`: `unknown_command`, `unknown_flag`, `missing_arg`, `other` |
-| `cli.onboarding` | an onboarding step happens | `cx.onboarding.step`: `init_started`, `init_completed`, `profile_added`, `oauth_started`, `oauth_succeeded`, `oauth_failed`, `first_query_succeeded`; `cx.auth.method`: `oauth`, `api_key`; `cx.credential.store`: `keychain`, `file` |
+| `cli.onboarding` | an onboarding step happens | `cx.onboarding.step`: `init_started`, `init_completed`, `profile_added`, `oauth_started`, `oauth_succeeded`, `oauth_failed`, `first_query_succeeded`; `cx.auth.method`: `oauth`, `api_key`; `cx.credential.store`: `keychain`, `file`. `profile_added` is for a new profile only, not for one that is overwritten |
 | `cli.skills_install` | `cx skills install` finishes | `cx.skills.scope`: `global`, `local`; `cx.outcome` |
 | `cli.update_notice` | an update notice is printed | `cx.version.latest` |
 | `cli.version_changed` | first run after an upgrade | `cx.version.previous` |
@@ -69,7 +69,7 @@ way.
 | `cx.command.flags` | string | sorted flag names joined by commas, e.g. `--limit,--start`. Names only |
 | `cx.outcome` | string | `success`, `error`, `cancelled` |
 | `cx.error.class` | string | `none`, `auth`, `permission`, `api`, `timeout`, `http`, `json`, `io`, `query_stream`, `usage` |
-| `cx.http.status_class` | string | `none`, `2xx`, `4xx`, `5xx` |
+| `cx.http.status_class` | string | `none`, `2xx`, `4xx`, `5xx`: the class of the highest HTTP status the Coralogix API answered with in this run. `none` when it answered nothing |
 | `cx.duration_ms` | int | 0 to 3,600,000 |
 | `cx.output.format` | string | `text`, `json`, `toon` |
 | `cx.profile.count` | int | 0 to 50 |
@@ -77,6 +77,15 @@ way.
 
 `cx.command.flags` is a joined string, not an array, so the collector can check
 it with one pattern.
+
+`cx.http.status_class` is observed, not inferred from the outcome. A fan-out
+that succeeds overall although one profile got a 500 reports `success` with
+`5xx`. An error raised before any request (a malformed API key) reports `none`.
+
+**Known limit: interrupted runs.** `cli.command` is recorded when the command
+returns. A run stopped with Ctrl-C, or killed, records nothing. Users interrupt
+slow and hung commands, so those are under-counted: durations and error rates
+look better than they are. `cx` installs no signal handler to change this.
 
 ### Example request
 
@@ -130,6 +139,10 @@ it with one pattern.
   requests.
 - An event too large to fit a request on its own is dropped, not sent, so it
   cannot hold back the events behind it. No event the CLI builds is that large.
+- A spool line is checked again when the sender reads it: every enum and every
+  constrained string (command path, flags, agent, team id, versions) must pass
+  the check it was built with. A line that fails is dropped, so an edited spool
+  cannot put free text in a request.
 - No command sends. A detached sender sub-process does, after the command has
   exited (section 5.1).
 
@@ -144,7 +157,7 @@ What the collector does not do, and where it is handled:
 | Gap | Handled by |
 |---|---|
 | Per-IP rate limit | a `ratelimit` processor in a custom collector image (section 5.5) |
-| Duplicate events | deduplicate on `cx.invocation.id` + `event.name` in c4c queries |
+| Duplicate events | deduplicate on `cx.invocation.id` + `event.name` + the record timestamp in c4c queries. The first two alone are not unique: one `cx init` records several `cli.onboarding` steps |
 | "This flag belongs to this command" | not checked. Flag and command names are pattern-limited only |
 | Verified `team_id` | not available on an open path. `cx.team.id` is client-claimed |
 | Volume cap | daily quota on application `cx-cli` in c4c |
@@ -393,6 +406,11 @@ commands send too, so users who are not signed in yet are counted.
 - Only in `On` mode. With any opt-out there is no spool and no sender.
 - Starting it at the beginning of the run was rejected: the spawn costs the same
   either way, and this run's event would wait for the next run.
+- A minimum interval between sends was rejected. The cost of sending after
+  every command is one spawn and one request per command, so an agent loop
+  starts twice as many processes and batches rarely fill. With an interval, a
+  CI job or container that runs several commands and is then destroyed would
+  deliver only the first command's events.
 
 **One sender at a time**
 
@@ -455,10 +473,10 @@ master, with the wrapper logic (`begin`, `run`, `finish`, spawn) inside it.
 
 **Removed from the command path**
 
-`telemetry::flush`, the `network` gate on flushing, and `send::BUDGET`.
-`Invocation.network` and `mark_network` stay, because `cx.http.status_class`
-uses them: `cx init` and `cx profiles add` call the API without building
-execution targets.
+`telemetry::flush`, the `network` gate on flushing, `send::BUDGET`,
+`Invocation.network` and `mark_network`. `cx.http.status_class` comes from the
+statuses `CxClient` sees (`telemetry::observe_status`), not from whether the
+command was expected to use the network.
 
 **CI, containers and sandboxes**
 
@@ -552,7 +570,10 @@ the config to check from `CONFIG`.
 tagged source on its own machines (`cargo install`, no network), and Cargo and
 Nix builds do the same, so a repository variable or secret never reaches them.
 The URL is not a secret: it ships in a public binary. Debug builds ignore the
-constant, so tests and `cargo run` never send to the real collector.
+constant, so tests and `cargo run` never send to the real collector. `.cargo/config.toml`
+also sets `CX_TELEMETRY=0` for everything cargo runs, so a
+`CX_TELEMETRY_ENDPOINT` exported in a developer's shell is not used by the
+test suites either; `tests/telemetry` sets its own values.
 
 The release job is skipped while the constant is `None` and no collector repo
 is configured. M6 turns it on by setting the constant and the repository
@@ -739,8 +760,11 @@ and without `local.yaml`.
   per command. A few hundred users behind one NAT, each running a command every
   30 to 60 s, stay under it.
 - Burst 300, refilled in 30 s. This covers a CI fan-out or an agent burst.
-- Worst case from one IP: 10 requests × 50 records = 500 records per second per
-  replica. The daily quota on application `cx-cli` in c4c is the backstop.
+- The limit counts requests, not records. `cx` sends at most 50 records per
+  request, but nothing stops a hand-made request from carrying more: a 64 KiB
+  body fits about 210 of the smallest valid records. Worst case from one IP:
+  10 requests × 210 records, about 2,100 records per second per replica. The
+  daily quota on application `cx-cli` in c4c is the backstop.
 - Buckets are per replica, so with 2 replicas the real limit is up to twice
   these numbers.
 

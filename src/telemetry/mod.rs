@@ -14,6 +14,7 @@ pub mod event;
 pub mod send;
 pub mod spool;
 
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 
@@ -33,6 +34,9 @@ static MODE: OnceLock<Mode> = OnceLock::new();
 static NOTICE_OK: OnceLock<bool> = OnceLock::new();
 static INVOCATION_ID: LazyLock<Uuid> = LazyLock::new(Uuid::new_v4);
 static INVOCATION: LazyLock<Mutex<Invocation>> = LazyLock::new(Mutex::default);
+/// The highest HTTP status the Coralogix API answered with in this run; 0
+/// when it answered nothing.
+static HIGHEST_STATUS: AtomicU16 = AtomicU16::new(0);
 
 /// What this run did, filled in as `main` learns it.
 #[derive(Default)]
@@ -44,8 +48,6 @@ struct Invocation {
     profile_count: u32,
     team_id: Option<TeamId>,
     spilled: bool,
-    /// The command talked to the Coralogix API (for `cx.http.status_class`).
-    network: bool,
     /// The user declined a prompt; the outcome is `cancelled`.
     cancelled: bool,
 }
@@ -153,7 +155,6 @@ pub fn set_targets(output: OutputFormat, targets: &[Arc<ExecutionTarget>]) {
     // The collector drops counts above 50; report 50 for more.
     inv.profile_count = u32::try_from(targets.len().min(50)).unwrap_or(50);
     inv.team_id = team_id;
-    inv.network = true;
 }
 
 /// The command wrote its output to a file instead of stdout.
@@ -195,10 +196,10 @@ pub fn update_notice(latest: &str) {
     }
 }
 
-/// The command talks to the Coralogix API without building execution targets
-/// (`cx init`, `cx profiles add`).
-pub fn mark_network() {
-    invocation().network = true;
+/// The Coralogix API answered a request with `status` (for
+/// `cx.http.status_class`). Called by `CxClient` for every response.
+pub fn observe_status(status: u16) {
+    HIGHEST_STATUS.fetch_max(status, Ordering::Relaxed);
 }
 
 /// Start the detached sender for the spooled events, unless one is already
@@ -217,7 +218,7 @@ pub fn spawn_sender() {
     // Free now: release it and let the sender take it. Two runs can both get
     // here; the second sender finds the lock held and exits.
     if send::lock(&spool).is_some() {
-        crate::update_check::spawn_detached(&[send::SENDER_ARG]);
+        crate::update_check::spawn_detached(&[send::SENDER_ARG], &[]);
     }
 }
 
@@ -235,7 +236,7 @@ pub fn finish(result: &anyhow::Result<()>) {
         let (outcome, error_class, status_class) = if inv.cancelled {
             (Outcome::Cancelled, ErrorClass::None, StatusClass::None)
         } else {
-            classify(result, inv.network)
+            classify(result, HIGHEST_STATUS.load(Ordering::Relaxed))
         };
         CommandEvent {
             path,
@@ -253,7 +254,8 @@ pub fn finish(result: &anyhow::Result<()>) {
             spilled: inv.spilled,
         }
     };
-    let first_query = event.outcome == Outcome::Success && is_query(event.path.as_str());
+    let first_query =
+        event.outcome == Outcome::Success && QUERY_PATHS.contains(&event.path.as_str());
     record(EventKind::Command(event));
     if first_query {
         record_first_query();
@@ -261,12 +263,14 @@ pub fn finish(result: &anyhow::Result<()>) {
 }
 
 /// Commands that run a telemetry query: the end of the onboarding funnel.
-fn is_query(path: &str) -> bool {
-    matches!(
-        path,
-        "logs" | "spans" | "metrics query" | "metrics query-range" | "dataprime query"
-    )
-}
+/// A test in `main.rs` checks each one is a real command.
+pub const QUERY_PATHS: [&str; 5] = [
+    "logs",
+    "spans",
+    "metrics query",
+    "metrics query-range",
+    "dataprime query",
+];
 
 fn record_first_query() {
     let mut state = crate::version_cache::VersionCheckCache::load();
@@ -279,14 +283,16 @@ fn record_first_query() {
     }
 }
 
-fn classify(result: &anyhow::Result<()>, network: bool) -> (Outcome, ErrorClass, StatusClass) {
+/// `highest_status` is the highest status the API answered with (0 for none).
+/// The status class comes from it alone, so it is `none` for an error raised
+/// before any response, and not `2xx` when one profile of a fan-out failed.
+fn classify(
+    result: &anyhow::Result<()>,
+    highest_status: u16,
+) -> (Outcome, ErrorClass, StatusClass) {
+    let observed = StatusClass::from_status(highest_status);
     let Err(err) = result else {
-        let status = if network {
-            StatusClass::Success2xx
-        } else {
-            StatusClass::None
-        };
-        return (Outcome::Success, ErrorClass::None, status);
+        return (Outcome::Success, ErrorClass::None, observed);
     };
     let cancelled = err.chain().any(|e| {
         matches!(
@@ -304,16 +310,16 @@ fn classify(result: &anyhow::Result<()>, network: bool) -> (Outcome, ErrorClass,
         e.downcast_ref::<CxError>()
             .or_else(|| e.downcast_ref::<Explained>().map(|x| &x.cause))
     });
-    let (class, status) = match cx_error {
-        Some(CxError::Auth(_)) => (ErrorClass::Auth, StatusClass::Client4xx),
-        Some(CxError::Permission(_)) => (ErrorClass::Permission, StatusClass::Client4xx),
-        Some(CxError::Api { status, .. }) => (ErrorClass::Api, StatusClass::from_status(*status)),
-        Some(CxError::InvalidArgument(_)) => (ErrorClass::Usage, StatusClass::None),
-        Some(CxError::Timeout) => (ErrorClass::Timeout, StatusClass::None),
-        Some(CxError::Http(_)) => (ErrorClass::Http, StatusClass::None),
-        Some(CxError::Json(_)) => (ErrorClass::Json, StatusClass::None),
-        Some(CxError::Io(e)) => (io_class(e), StatusClass::None),
-        Some(CxError::QueryStream(_)) => (ErrorClass::QueryStream, StatusClass::None),
+    let class = match cx_error {
+        Some(CxError::Auth(_)) => ErrorClass::Auth,
+        Some(CxError::Permission(_)) => ErrorClass::Permission,
+        Some(CxError::Api { .. }) => ErrorClass::Api,
+        Some(CxError::InvalidArgument(_)) => ErrorClass::Usage,
+        Some(CxError::Timeout) => ErrorClass::Timeout,
+        Some(CxError::Http(_)) => ErrorClass::Http,
+        Some(CxError::Json(_)) => ErrorClass::Json,
+        Some(CxError::Io(e)) => io_class(e),
+        Some(CxError::QueryStream(_)) => ErrorClass::QueryStream,
         // Not a CxError: an untyped I/O or HTTP error, else a usage or
         // configuration error raised with `bail!`.
         None => {
@@ -330,10 +336,10 @@ fn classify(result: &anyhow::Result<()>, network: bool) -> (Outcome, ErrorClass,
                     })
                 }
             });
-            (class.unwrap_or(ErrorClass::Usage), StatusClass::None)
+            class.unwrap_or(ErrorClass::Usage)
         }
     };
-    (Outcome::Error, class, status)
+    (Outcome::Error, class, observed)
 }
 
 /// A file the user named that doesn't exist (a mistyped `--profile`, a wrong
@@ -373,10 +379,10 @@ mod tests {
         use anyhow::anyhow;
         let ok: anyhow::Result<()> = Ok(());
         assert_eq!(
-            classify(&ok, true),
+            classify(&ok, 200),
             (Outcome::Success, ErrorClass::None, StatusClass::Success2xx)
         );
-        assert_eq!(classify(&ok, false).2, StatusClass::None);
+        assert_eq!(classify(&ok, 0).2, StatusClass::None);
 
         let api: anyhow::Result<()> = Err(CxError::Api {
             status: 503,
@@ -384,12 +390,16 @@ mod tests {
         })
         .map_err(|e| anyhow::Error::from(e).context("listing alerts"));
         assert_eq!(
-            classify(&api, true),
+            classify(&api, 503),
             (Outcome::Error, ErrorClass::Api, StatusClass::Server5xx)
         );
 
         let auth: anyhow::Result<()> = Err(CxError::Auth("bad key".into()).into());
-        assert_eq!(classify(&auth, true).1, ErrorClass::Auth);
+        assert_eq!(classify(&auth, 401).1, ErrorClass::Auth);
+        // Raised before any request ("Invalid API key format"): no status.
+        assert_eq!(classify(&auth, 0).2, StatusClass::None);
+        // A fan-out that succeeded overall although one profile got a 500.
+        assert_eq!(classify(&ok, 500).2, StatusClass::Server5xx);
 
         let explained: anyhow::Result<()> = Err(Explained {
             message: "authentication failed — bad key".into(),
@@ -397,25 +407,25 @@ mod tests {
         }
         .into());
         assert_eq!(
-            classify(&explained, true),
+            classify(&explained, 401),
             (Outcome::Error, ErrorClass::Auth, StatusClass::Client4xx)
         );
 
         let io: anyhow::Result<()> =
             Err(anyhow::Error::from(std::io::Error::other("disk"))
                 .context("writing the result file"));
-        assert_eq!(classify(&io, false).1, ErrorClass::Io);
+        assert_eq!(classify(&io, 0).1, ErrorClass::Io);
 
         let missing: anyhow::Result<()> = Err(anyhow::Error::from(std::io::Error::from(
             std::io::ErrorKind::NotFound,
         ))
         .context("Profile 'nope' not found"));
-        assert_eq!(classify(&missing, false).1, ErrorClass::Usage);
+        assert_eq!(classify(&missing, 0).1, ErrorClass::Usage);
 
         let usage: anyhow::Result<()> = Err(anyhow!("Cannot combine --profile with --api-key"));
-        assert_eq!(classify(&usage, false).1, ErrorClass::Usage);
+        assert_eq!(classify(&usage, 0).1, ErrorClass::Usage);
 
         let cancelled: anyhow::Result<()> = Err(inquire::InquireError::OperationCanceled.into());
-        assert_eq!(classify(&cancelled, false).0, Outcome::Cancelled);
+        assert_eq!(classify(&cancelled, 0).0, Outcome::Cancelled);
     }
 }

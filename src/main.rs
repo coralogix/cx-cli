@@ -3486,13 +3486,14 @@ async fn run() -> Result<()> {
         std::env::args().nth(1).as_deref(),
         Some("profiles" | "profile")
     ) {
-        let profile_matches = ProfilesCli::command()
-            .try_get_matches()
+        let mut profiles_cmd = ProfilesCli::command();
+        let profile_matches = profiles_cmd
+            .try_get_matches_from_mut(std::env::args_os())
             .unwrap_or_else(|e| {
                 telemetry::record_parse_error(&e);
                 e.exit()
             });
-        telemetry::set_command(&ProfilesCli::command(), &profile_matches);
+        telemetry::set_command(&profiles_cmd, &profile_matches);
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
@@ -3540,11 +3541,13 @@ async fn run() -> Result<()> {
         );
     }
 
-    let matches = cmd.try_get_matches().unwrap_or_else(|e| {
-        telemetry::record_parse_error(&e);
-        e.exit()
-    });
-    telemetry::set_command(&Cli::command(), &matches);
+    let matches = cmd
+        .try_get_matches_from_mut(std::env::args_os())
+        .unwrap_or_else(|e| {
+            telemetry::record_parse_error(&e);
+            e.exit()
+        });
+    telemetry::set_command(&cmd, &matches);
     let cli = Cli::from_arg_matches(&matches)?;
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
@@ -5696,5 +5699,20 @@ mod tests {
         }
         walk(&Cli::command(), &mut Vec::new());
         walk(&ProfilesCli::command(), &mut Vec::new());
+    }
+
+    /// A renamed command would silently end `first_query_succeeded`.
+    #[test]
+    fn telemetry_query_paths_are_real_commands() {
+        for path in telemetry::QUERY_PATHS {
+            let mut cmd = Cli::command();
+            for name in path.split(' ') {
+                cmd = cmd
+                    .find_subcommand(name)
+                    .unwrap_or_else(|| panic!("`{path}` is not a cx command"))
+                    .clone();
+            }
+            assert!(!cmd.has_subcommands(), "`{path}` is not a leaf command");
+        }
     }
 }

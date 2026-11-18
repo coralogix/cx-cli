@@ -400,10 +400,8 @@ mod tests {
     fn an_event_too_large_for_any_request_is_dropped_alone() {
         let resource = Resource::current(&Uuid::new_v4().to_string());
         let small = command(CommandFlags::default());
-        // Not buildable through the API; a spool line can still carry it.
-        let mut huge = serde_json::to_value(&small).unwrap();
-        huge["cx.command.flags"] = json!("a".repeat(MAX_BODY_BYTES));
-        let huge: Event = serde_json::from_value(huge).unwrap();
+        // Not buildable from a command line or a spool line.
+        let huge = command(CommandFlags::unchecked("a".repeat(MAX_BODY_BYTES)));
         let mut events = vec![huge, small.clone(), small];
         assert_eq!(take_batch(&resource, &mut events).len(), 2);
         assert!(events.is_empty());

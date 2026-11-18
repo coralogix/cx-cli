@@ -1,0 +1,5 @@
+# `cargo test` and `cargo run` record and send no telemetry, wherever
+# CX_TELEMETRY_ENDPOINT points. A value set in the shell still wins
+# (`CX_TELEMETRY=log cargo run -- ...`), and tests/telemetry sets its own.
+[env]
+CX_TELEMETRY = "0"

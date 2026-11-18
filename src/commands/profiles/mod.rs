@@ -611,7 +611,6 @@ pub struct AddArgs {
 }
 
 pub async fn run_add(args: AddArgs) -> Result<()> {
-    crate::telemetry::mark_network();
     let AddArgs {
         name,
         url,
@@ -666,7 +665,8 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         None => "default".to_string(),
     };
 
-    if profile_file(&name)?.exists() && !force {
+    let is_new_profile = !profile_file(&name)?.exists();
+    if !is_new_profile && !force {
         if interactive {
             let confirmed = Confirm::new(&format!("Reconfigure profile '{name}'?"))
                 .with_default(false)
@@ -737,11 +737,14 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     }
 
     save_profile(&name, &profile)?;
-    crate::telemetry::onboarding(
-        OnboardingStep::ProfileAdded,
-        Some(profile.auth.into()),
-        Some(profile.credential_storage.into()),
-    );
+    // Not for a reconfigured profile: that is an edit, not a funnel step.
+    if is_new_profile {
+        crate::telemetry::onboarding(
+            OnboardingStep::ProfileAdded,
+            Some(profile.auth.into()),
+            Some(profile.credential_storage.into()),
+        );
+    }
 
     // On first profile creation, configure the global Olly setting and auto-set
     // this profile as default. Risky commands (iam/archive writes) stay allowed

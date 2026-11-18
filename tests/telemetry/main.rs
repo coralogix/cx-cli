@@ -511,7 +511,40 @@ async fn local_command_delivers_its_events() {
         wait_until(|| kept_events(&home).is_empty()),
         "spool emptied"
     );
-    assert!(!backoff(&home).exists());
+}
+
+/// A fresh backoff file stops senders. One older than 15 minutes does not,
+/// and the batch that is then delivered removes it.
+#[tokio::test]
+async fn backoff_expires_and_a_delivered_batch_clears_it() {
+    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    seed_spool(&home, 1);
+    fs::write(backoff(&home), "").unwrap();
+
+    let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert!(
+        collector_requests(&server).await.is_empty(),
+        "a sender ran while backing off"
+    );
+    assert!(backoff(&home).exists());
+
+    let expired = std::time::SystemTime::now() - std::time::Duration::from_secs(16 * 60);
+    fs::File::options()
+        .write(true)
+        .open(backoff(&home))
+        .unwrap()
+        .set_modified(expired)
+        .unwrap();
+    let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    wait_for_requests(&server, 1).await;
+    assert!(
+        wait_until(|| !backoff(&home).exists() && kept_events(&home).is_empty()),
+        "backoff file not cleared after a delivered batch"
+    );
 }
 
 #[tokio::test]
@@ -785,9 +818,34 @@ async fn init_records_the_onboarding_funnel_in_order() {
     let command = r.command_event();
     assert_eq!(command["cx.command.path"], "init");
     assert_eq!(
-        command["cx.http.status_class"], "2xx",
-        "init is a network command"
+        command["cx.http.status_class"], "none",
+        "this init got no API response, so there is no status to report"
     );
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn profile_added_is_recorded_for_a_new_profile_only() {
+    let server = MockServer::start().await;
+    let home = temp_home();
+    let add = |extra: &[&str]| {
+        let mut cmd = log_mode(&home);
+        cmd.env("CX_CREDENTIAL_STORAGE", "file")
+            .args(["profiles", "add", "work", "--api-key", "k", "--url"])
+            .arg(server.uri())
+            .args(extra);
+        run(&mut cmd)
+    };
+
+    let first = add(&[]);
+    assert_eq!(first.code, 0, "{}", first.stderr);
+    assert_eq!(onboarding_steps(&first), ["profile_added"]);
+
+    // Overwriting it is an edit, not a funnel step.
+    let again = add(&["--force"]);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert_eq!(onboarding_steps(&again), [] as [&str; 0]);
+    assert_eq!(again.command_event()["cx.command.path"], "profiles add");
 }
 
 #[cfg(debug_assertions)]

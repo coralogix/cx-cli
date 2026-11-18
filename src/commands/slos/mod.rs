@@ -11,7 +11,6 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use crate::time::parse_timestamp_whole_minute;
 use api::{Slo, SloStatus, SloStatusQuery, SlosApi};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -66,29 +65,6 @@ impl NamedSloStatus {
 
 fn display_ratio_as_percentage(ratio: f64) -> String {
     format!("{:.3}%", ratio * 100.0)
-}
-
-impl SloStatusQuery {
-    pub fn from_flags(
-        last: Option<&str>,
-        from: Option<&str>,
-        to: Option<&str>,
-        grouping_key_values: Vec<String>,
-        target_threshold_percentage: Option<f64>,
-    ) -> Result<Self> {
-        let from = last
-            .map(|last| format!("now-{last}"))
-            .or_else(|| from.map(str::to_string));
-        Ok(Self {
-            grouping_key_values,
-            from: from
-                .as_deref()
-                .map(parse_timestamp_whole_minute)
-                .transpose()?,
-            to: to.map(parse_timestamp_whole_minute).transpose()?,
-            target_threshold_percentage,
-        })
-    }
 }
 
 fn read_from_file(path: &str) -> Result<Value> {

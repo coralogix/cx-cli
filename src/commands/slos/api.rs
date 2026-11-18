@@ -5,6 +5,7 @@ use crate::error::Result;
 
 use crate::api_client::CxClient;
 use crate::serde_helpers::string_or_number;
+use crate::time::parse_timestamp_whole_minute;
 
 // --- Response types ---
 
@@ -134,6 +135,29 @@ pub struct SloStatusQuery {
     pub from: Option<String>,
     pub to: Option<String>,
     pub target_threshold_percentage: Option<f64>,
+}
+
+impl SloStatusQuery {
+    pub fn from_flags(
+        last: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+        grouping_key_values: Vec<String>,
+        target_threshold_percentage: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        let from = last
+            .map(|last| format!("now-{last}"))
+            .or_else(|| from.map(str::to_string));
+        Ok(Self {
+            grouping_key_values,
+            from: from
+                .as_deref()
+                .map(parse_timestamp_whole_minute)
+                .transpose()?,
+            to: to.map(parse_timestamp_whole_minute).transpose()?,
+            target_threshold_percentage,
+        })
+    }
 }
 
 // --- API ---

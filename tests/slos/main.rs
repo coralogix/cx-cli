@@ -110,6 +110,7 @@ fn status_body() -> serde_json::Value {
 async fn mount_names(server: &MockServer) {
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/slo/slos/v1/all/list"))
+        .and(query_param("ids", "slo-001"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "slos": [{"id": "slo-001", "name": "API Availability"}]
         })))

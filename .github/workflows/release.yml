@@ -52,6 +52,10 @@ jobs:
     name: Telemetry contract (deployed collector config)
     needs: verify-version
     runs-on: ubuntu-latest
+    # Read only: this job builds third-party collector code and must not be
+    # able to push to the repo or mint an OIDC token.
+    permissions:
+      contents: read
     env:
       COLLECTOR_REPO: ${{ vars.TELEMETRY_COLLECTOR_REPO }}
       COLLECTOR_CONFIG_PATH: ${{ vars.TELEMETRY_COLLECTOR_CONFIG_PATH }}
@@ -59,6 +63,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
 
       - name: Does this release need the contract check?
         id: gate
@@ -70,6 +75,7 @@ jobs:
           repository: ${{ env.COLLECTOR_REPO }}
           token: ${{ secrets.TELEMETRY_COLLECTOR_REPO_TOKEN }}
           path: collector-service
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         if: steps.gate.outputs.check == 'true'

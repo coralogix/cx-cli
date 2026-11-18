@@ -57,6 +57,10 @@ jobs:
   telemetry-contract:
     name: Telemetry contract
     runs-on: ubuntu-latest
+    # pull-requests: read is for paths-filter, which lists the PR's files.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -71,6 +75,8 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: steps.filter.outputs.code == 'true'
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         if: steps.filter.outputs.code == 'true'

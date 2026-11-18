@@ -119,7 +119,13 @@ it with one pattern.
   removed from the spool. Any other HTTP response keeps it. Redirects are not
   followed.
 - A network failure keeps the batch until it is older than 7 days.
-- At most 50 events per request.
+- At most 50 events and 60 KiB of body per request, whichever is reached
+  first. The collector rejects a body above 64 KiB (`max_request_body_size`)
+  with a 400, and a 400 removes the batch. 50 typical events are about 47 KB;
+  50 events with 30 flags of 40 characters are about 110 KB and go out as two
+  requests.
+- An event too large to fit a request on its own is dropped, not sent, so it
+  cannot hold back the events behind it. No event the CLI builds is that large.
 - No command sends. A detached sender sub-process does, after the command has
   exited (section 5.1).
 
@@ -368,8 +374,10 @@ as a GET with no body, possibly to another host.
 **Timeouts**
 
 - Connect 5 s, whole request 10 s.
-- The sender sends batches of 50 until the spool is empty: at most 10 requests,
-  because the spool holds at most 500 events.
+- The sender sends batches of up to 50 events and 60 KiB (section 1, client
+  rules) until the spool is empty. The spool holds at most 500 events: 10
+  requests when they are typical, about 20 when every event is the largest
+  the CLI can build.
 - Lifetime cap 30 s, enforced by a watchdog thread that exits the process. A DNS
   lookup runs on a blocking thread that a request timeout cannot stop. The cap
   stays below the 60 s after which a `.sending` file counts as abandoned.

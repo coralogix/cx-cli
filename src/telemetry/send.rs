@@ -19,6 +19,9 @@ use super::spool;
 pub const SENDER_ARG: &str = "__telemetry-send";
 /// Records per request.
 pub const MAX_BATCH: usize = 50;
+/// Request body cap in bytes. The collector rejects bodies above 65536
+/// (`max_request_body_size`) with a 400, which would delete the batch.
+pub const MAX_BODY_BYTES: usize = 60 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// The sender exits after this long whatever it is doing. Below the 60 s
@@ -53,8 +56,8 @@ pub fn backing_off(spool: &Path) -> bool {
         .is_some_and(|age| age < BACKOFF)
 }
 
-/// The sender sub-process: send the spool in batches of [`MAX_BATCH`] until
-/// it is empty or a batch is kept. Reads the consent mode itself, so an
+/// The sender sub-process: send the spool in batches of up to [`MAX_BATCH`]
+/// events and [`MAX_BODY_BYTES`] bytes until it is empty or a batch is kept. Reads the consent mode itself, so an
 /// opt-out set after the spawn still stops it. Records no telemetry.
 pub fn run_sender() {
     let Mode::On { endpoint } = consent::mode() else {
@@ -87,8 +90,8 @@ async fn drain(endpoint: &str, spool: &Path) {
     let token = uuid::Uuid::new_v4().to_string();
     loop {
         let mut taken = spool::take(spool, &token);
-        let mut batch = std::mem::take(&mut taken.events);
-        let mut unsent = batch.split_off(batch.len().min(MAX_BATCH));
+        let mut unsent = std::mem::take(&mut taken.events);
+        let batch = take_batch(&resource, &mut unsent);
         if batch.is_empty() {
             taken.finish(spool, &[]);
             return;
@@ -104,6 +107,29 @@ async fn drain(endpoint: &str, spool: &Path) {
         }
         let _ = fs::remove_file(&backoff);
     }
+}
+
+/// Remove and return the oldest events that fit one request: at most
+/// [`MAX_BATCH`] of them and at most [`MAX_BODY_BYTES`] encoded. An event too
+/// large to fit a request on its own is dropped from `events`, so it cannot
+/// block the ones behind it. Empty only when nothing sendable is left.
+fn take_batch(resource: &Resource, events: &mut Vec<Event>) -> Vec<Event> {
+    // Compact JSON, as `post` sends it: the body is the envelope plus the
+    // records and a comma between them (counted here as one per record).
+    let envelope = encode(resource, &[]).to_string().len();
+    let record_len = |event: &Event| log_record(event).to_string().len() + 1;
+    events.retain(|event| envelope + record_len(event) <= MAX_BODY_BYTES);
+    let mut size = envelope;
+    let count = events
+        .iter()
+        .take(MAX_BATCH)
+        .take_while(|event| {
+            size += record_len(event);
+            size <= MAX_BODY_BYTES
+        })
+        .count();
+    let rest = events.split_off(count);
+    std::mem::replace(events, rest)
 }
 
 /// The OTLP logs request body for `events`, all sharing `resource`.
@@ -310,5 +336,76 @@ mod tests {
             "no team id means no attribute"
         );
         assert!(records[0].get("body").is_none());
+    }
+
+    fn command(flags: CommandFlags) -> Event {
+        Event::now(
+            Uuid::new_v4(),
+            TeamId::new(4015532),
+            EventKind::Command(CommandEvent {
+                path: CommandPath::from_names(["dashboards", "query-search"]).unwrap(),
+                flags,
+                outcome: Outcome::Success,
+                error_class: ErrorClass::None,
+                status_class: StatusClass::Success2xx,
+                duration_ms: 123_456,
+                output_format: Some(OutputFormat::Json),
+                profile_count: 50,
+                spilled: true,
+            }),
+        )
+    }
+
+    /// The collector's `max_request_body_size`.
+    const COLLECTOR_LIMIT: usize = 65536;
+    const _: () = assert!(MAX_BODY_BYTES < COLLECTOR_LIMIT);
+
+    #[test]
+    fn fifty_maximum_size_events_go_out_in_requests_under_the_collector_limit() {
+        let names: Vec<String> = (0..30).map(|i| format!("{i:a>40}")).collect();
+        let flags = CommandFlags::from_long_names(names.iter().map(String::as_str));
+        assert_eq!(flags.as_str().len(), 30 * 42 + 29, "30 flags of 40 chars");
+        let resource = Resource::current(&Uuid::new_v4().to_string());
+        let mut events: Vec<Event> = (0..50).map(|_| command(flags.clone())).collect();
+        assert!(
+            encode(&resource, &events).to_string().len() > COLLECTOR_LIMIT,
+            "one request for all 50 would be rejected"
+        );
+
+        let (mut sent, mut requests) = (0, 0);
+        loop {
+            let batch = take_batch(&resource, &mut events);
+            if batch.is_empty() {
+                break;
+            }
+            let body = serde_json::to_vec(&encode(&resource, &batch)).unwrap();
+            assert!(body.len() <= MAX_BODY_BYTES, "{} bytes", body.len());
+            sent += batch.len();
+            requests += 1;
+        }
+        assert_eq!(sent, 50);
+        assert_eq!(requests, 2);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn small_events_still_batch_by_count() {
+        let resource = Resource::current(&Uuid::new_v4().to_string());
+        let mut events: Vec<Event> = (0..120).map(|_| command(CommandFlags::default())).collect();
+        assert_eq!(take_batch(&resource, &mut events).len(), MAX_BATCH);
+        assert_eq!(events.len(), 70);
+    }
+
+    #[test]
+    fn an_event_too_large_for_any_request_is_dropped_alone() {
+        let resource = Resource::current(&Uuid::new_v4().to_string());
+        let small = command(CommandFlags::default());
+        // Not buildable through the API; a spool line can still carry it.
+        let mut huge = serde_json::to_value(&small).unwrap();
+        huge["cx.command.flags"] = json!("a".repeat(MAX_BODY_BYTES));
+        let huge: Event = serde_json::from_value(huge).unwrap();
+        let mut events = vec![huge, small.clone(), small];
+        assert_eq!(take_batch(&resource, &mut events).len(), 2);
+        assert!(events.is_empty());
     }
 }

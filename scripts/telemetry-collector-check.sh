@@ -146,7 +146,12 @@ request() {
     {"key":"host.arch","value":{"stringValue":"amd64"}},
     {"key":"cx.install.id","value":{"stringValue":"%s"}},
     {"key":"cx.install.method","value":{"stringValue":"curl"}}]},
-    "scopeLogs":[{"logRecords":[{"timeUnixNano":"%s","body":{"stringValue":"free text"},"attributes":%s}]}]}]}' \
+    "schemaUrl":"FREE-TEXT",
+    "scopeLogs":[{"schemaUrl":"FREE-TEXT","scope":{"name":"FREE-TEXT","version":"FREE-TEXT",
+      "attributes":[{"key":"free","value":{"stringValue":"FREE-TEXT"}}]},
+    "logRecords":[{"timeUnixNano":"%s","body":{"stringValue":"FREE-TEXT"},
+      "severityText":"FREE-TEXT","severityNumber":21,"eventName":"FREE-TEXT","flags":1,
+      "traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174","attributes":%s}]}]}]}' \
     "$3" "$2" "$1"
 }
 base() { # $1: invocation id, $2: extra attributes, $3: event name (default cli.first_run)
@@ -245,6 +250,12 @@ for res, attrs, r in records:
     assert res["service.name"]["stringValue"] == "cx-cli", res
     assert r.get("body", {}).get("stringValue", "") == "", r
     assert "SENTINEL_SECRET" not in json.dumps(attrs)
+    # Only what the config sets itself, whatever the client put there.
+    assert r.get("severityText") == "INFO" and r.get("severityNumber") == 9, r
+    assert not r.get("traceId") and not r.get("spanId") and not r.get("flags") and not r.get("eventName"), r
+# Free text in the hand-made requests' scope, schema URLs and record fields.
+assert "FREE-TEXT" not in open(path).read(), "client free text was exported"
+assert "5b8efff798038103d269b633813fc60c" not in open(path).read(), "client trace id was exported"
 
 # What the CLI recorded (inspect-mode run) vs what the collector exported.
 expected = [json.loads(l) for l in open(expected_path)]

@@ -76,6 +76,14 @@ processors:
         statements:
           - keep_keys(attributes, ["service.version", "os.type", "host.arch", "cx.install.id", "cx.install.method"])
           - set(attributes["service.name"], "cx-cli")
+          - set(schema_url, "")
+      # The client sends no scope. Whatever arrives there is free text.
+      - context: scope
+        statements:
+          - set(name, "")
+          - set(version, "")
+          - set(schema_url, "")
+          - delete_matching_keys(attributes, ".*")
       - context: log
         statements:
           - keep_keys(attributes, ["event.name", "cx.invocation.id", "cx.agent", "cx.ci", "cx.tty", "cx.team.id", "cx.command.path", "cx.command.flags", "cx.outcome", "cx.error.class", "cx.http.status_class", "cx.duration_ms", "cx.output.format", "cx.profile.count", "cx.spilled", "cx.parse.kind", "cx.onboarding.step", "cx.auth.method", "cx.credential.store", "cx.skills.scope", "cx.version.latest", "cx.version.previous", "cx.confirm.result"])
@@ -86,6 +94,11 @@ processors:
           # receipt instead.
           - set(time, Now()) where time_unix_nano < UnixNano(Now()) - 604800000000000 or time_unix_nano > UnixNano(Now()) + 300000000000
           - set(severity_text, "INFO")
+          - set(severity_number, SEVERITY_NUMBER_INFO)
+          - set(event_name, "")
+          - set(trace_id, TraceID(0x00000000000000000000000000000000))
+          - set(span_id, SpanID(0x0000000000000000))
+          - set(flags, 0)
 
   batch:
     send_batch_size: 512

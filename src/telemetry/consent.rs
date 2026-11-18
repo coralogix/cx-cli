@@ -3,13 +3,19 @@
 
 use crate::version_cache::VersionCheckCache;
 
-/// The collector URL baked into release builds. Source and dev builds have
-/// none, so telemetry is off for them unless `CX_TELEMETRY_ENDPOINT` is set at
-/// runtime (tests, staging).
-const BUILD_ENDPOINT: Option<&str> = option_env!("CX_TELEMETRY_ENDPOINT");
+/// The collector URL release builds send to. A constant, not a build-time env
+/// var: Homebrew, Cargo and Nix compile the tagged source themselves, so only
+/// what is in the source reaches every build. `None` means no build sends.
+/// Debug builds never use it; they send only where `CX_TELEMETRY_ENDPOINT`
+/// points at runtime (tests, staging).
+///
+/// Keep this on one line in this exact form:
+/// `.github/scripts/telemetry-release-gate.sh` reads it.
+const BUILD_ENDPOINT: Option<&str> = None;
 
-pub const NOTICE: &str = "cx collects usage data (command names, versions, error categories \
-— never queries, arguments, credentials, or personal data) to improve the CLI.\n\
+pub const NOTICE: &str = "cx collects usage data (command names, versions, error categories, \
+a random install id and your Coralogix team id — never queries, arguments, credentials, or \
+personal data) to improve the CLI.\n\
 Details: https://github.com/coralogix/cx-cli/blob/master/docs/telemetry.md \
 · Opt out: CX_TELEMETRY=0 or `telemetry = false` in ~/.cx/config.toml";
 
@@ -35,7 +41,9 @@ pub fn mode() -> Mode {
         env("CX_TELEMETRY").as_deref(),
         env("DO_NOT_TRACK").as_deref(),
         config_allows(config),
-        env("CX_TELEMETRY_ENDPOINT").or(BUILD_ENDPOINT.map(str::to_string)),
+        env("CX_TELEMETRY_ENDPOINT").or(BUILD_ENDPOINT
+            .filter(|_| !cfg!(debug_assertions))
+            .map(str::to_string)),
     )
 }
 
@@ -138,6 +146,15 @@ mod tests {
             let off = decide(Some(allowed), Some("1"), true, ep());
             assert_eq!(off, Mode::Off, "{allowed}");
         }
+    }
+
+    /// The release gate script greps for this exact line.
+    #[test]
+    fn release_gate_can_read_the_endpoint_constant() {
+        let unset = include_str!("consent.rs")
+            .lines()
+            .any(|line| line == "const BUILD_ENDPOINT: Option<&str> = None;");
+        assert_eq!(unset, BUILD_ENDPOINT.is_none());
     }
 
     #[test]

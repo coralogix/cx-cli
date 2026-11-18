@@ -353,6 +353,11 @@ Before the first deploy:
   the user has a region?
 - Is a client-claimed `team_id` acceptable, or is a second authenticated endpoint
   needed?
+- The one-time notice is printed to stderr once, wherever `cx` runs, and then
+  marked as shown. Under an agent or in CI no person reads it, so that user is
+  never told. Is that acceptable, or must recording wait until the notice has
+  been printed to a terminal? Product/Legal to decide before any build gets an
+  endpoint.
 - Can the platform build and host the custom collector image from 5.5?
 - `error_mode: propagate` on the validation processors is deliberate. The internal
   OTTL skill recommends `ignore` for production, but with `ignore` a check that
@@ -542,11 +547,27 @@ Both run on `ubuntu-latest`, which has Docker. Both use a debug build of `cx`,
 because the script reads events through the Log mode (5.4). The script takes
 the config to check from `CONFIG`.
 
-The release job is skipped until the collector service repo exists. M6 turns
-it on, together with `CX_TELEMETRY_ENDPOINT`, by setting the repository
+**The endpoint is a constant in the source**, `BUILD_ENDPOINT` in
+`src/telemetry/consent.rs`, not a build-time variable. Homebrew compiles the
+tagged source on its own machines (`cargo install`, no network), and Cargo and
+Nix builds do the same, so a repository variable or secret never reaches them.
+The URL is not a secret: it ships in a public binary. Debug builds ignore the
+constant, so tests and `cargo run` never send to the real collector.
+
+The release job is skipped while the constant is `None` and no collector repo
+is configured. M6 turns it on by setting the constant and the repository
 variables `TELEMETRY_COLLECTOR_REPO` (`coralogix/cx-cli-onboarding-service`) and
 `TELEMETRY_COLLECTOR_CONFIG_PATH`, and the secret
 `TELEMETRY_COLLECTOR_REPO_TOKEN`, a token that can read that repo.
+
+The gate fails closed (`.github/scripts/telemetry-release-gate.sh`). Once the
+constant is set, the job fails unless both variables are set too, so a release
+that sends telemetry cannot skip the check.
+
+Known limit: Homebrew builds from the tag, not from the release workflow. A
+tag whose release job failed here can still reach Homebrew users. So the M6
+pull request that sets the constant must itself pass the check against the
+deployed config, before anything is tagged.
 
 The script learns what the CLI sends from its own scenario, which must cover
 every event kind. A new event kind needs a line in the scenario, or the check

@@ -23,6 +23,19 @@ pub struct VersionCheckCache {
     /// generated and persisted on the next command invocation when absent.
     pub installation_id: Option<String>,
 
+    /// Set once the telemetry notice has been printed (see `telemetry::consent`).
+    #[serde(default)]
+    pub telemetry_notice_shown: bool,
+
+    /// The `cx` version of the last run, to record `cli.version_changed`.
+    #[serde(default)]
+    pub last_run_version: Option<String>,
+
+    /// Set once a query command has succeeded, to record the onboarding step
+    /// `first_query_succeeded` once per install.
+    #[serde(default)]
+    pub first_query_succeeded: bool,
+
     /// The `cx` version that last ran `cx skills install --global` successfully.
     ///
     /// The skills ship from the same repo as the binary, so the CLI version is
@@ -80,7 +93,14 @@ impl VersionCheckCache {
             std::fs::create_dir_all(parent)?;
         }
         let contents = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, contents)?;
+        // Write a unique temp file, then rename it over the state file, so a
+        // concurrent `cx` never reads a half-written file (and falls back to
+        // defaults, wiping every field on its next save).
+        let tmp = path.with_extension(format!("json.{}.tmp", Uuid::new_v4()));
+        std::fs::write(&tmp, contents)?;
+        std::fs::rename(&tmp, &path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })?;
         Ok(())
     }
 
@@ -128,13 +148,20 @@ pub fn record_skills_unknown_noticed(version: &str) {
 /// The value is generated only when missing and persisted best-effort in the
 /// existing `~/.cx/state.json` cache file.
 pub fn installation_id() -> String {
+    installation_id_first_run().0
+}
+
+/// Like [`installation_id`], also saying whether this is the install's first
+/// run: `state.json` did not exist and was created now. An existing state file
+/// without an id (written by versions before telemetry) is an upgrade, not a
+/// new install.
+pub fn installation_id_first_run() -> (String, bool) {
+    let existed = VersionCheckCache::path().is_some_and(|p| p.exists());
     let mut state = VersionCheckCache::load();
     let was_missing = state.installation_id.is_none();
     let installation_id = state.ensure_installation_id();
-    if was_missing {
-        let _ = state.save();
-    }
-    installation_id
+    let saved = was_missing && state.save().is_ok();
+    (installation_id, !existed && saved)
 }
 
 #[cfg(test)]

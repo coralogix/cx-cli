@@ -40,9 +40,64 @@ jobs:
           fi
           echo "Version match confirmed."
 
+  # The collector must already run the config this release needs
+  # (contributing/telemetry-design-draft.md § 5.2). Checks the CLI's events
+  # against the config copy on the collector service repo's default branch.
+  # A release sends telemetry when BUILD_ENDPOINT in src/telemetry/consent.rs
+  # is set. Such a release must pass this check: the job fails unless the
+  # TELEMETRY_COLLECTOR_REPO variable (owner/name),
+  # TELEMETRY_COLLECTOR_CONFIG_PATH and the TELEMETRY_COLLECTOR_REPO_TOKEN
+  # secret are set. With no endpoint and no collector repo it is skipped.
+  telemetry-contract:
+    name: Telemetry contract (deployed collector config)
+    needs: verify-version
+    runs-on: ubuntu-latest
+    # Read only: this job builds third-party collector code and must not be
+    # able to push to the repo or mint an OIDC token.
+    permissions:
+      contents: read
+    env:
+      COLLECTOR_REPO: ${{ vars.TELEMETRY_COLLECTOR_REPO }}
+      COLLECTOR_CONFIG_PATH: ${{ vars.TELEMETRY_COLLECTOR_CONFIG_PATH }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Does this release need the contract check?
+        id: gate
+        run: .github/scripts/telemetry-release-gate.sh >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.gate.outputs.check == 'true'
+        with:
+          repository: ${{ env.COLLECTOR_REPO }}
+          token: ${{ secrets.TELEMETRY_COLLECTOR_REPO_TOKEN }}
+          path: collector-service
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: steps.gate.outputs.check == 'true'
+        with:
+          toolchain: "1.96.1"
+
+      - name: Install Linux system dependencies
+        if: steps.gate.outputs.check == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
+      # A debug build: the script reads events through CX_TELEMETRY=log.
+      - name: Check CLI events against the deployed collector config
+        if: steps.gate.outputs.check == 'true'
+        env:
+          CONFIG: collector-service/${{ vars.TELEMETRY_COLLECTOR_CONFIG_PATH }}
+        run: |
+          cargo build --locked
+          scripts/telemetry-collector-check.sh
+
   build:
     name: Build (${{ matrix.target }})
-    needs: verify-version
+    needs: [verify-version, telemetry-contract]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

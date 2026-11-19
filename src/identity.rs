@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use serde::Deserialize;
 
 use crate::api_client::CxClient;
-use crate::error::CxError;
+use crate::error::{CxError, Explained};
 
 const WHOAMI_BASE: &str = "/identity/whoami";
 
@@ -49,17 +49,22 @@ pub async fn verify_identity(client: &CxClient) -> anyhow::Result<Whoami> {
 /// TLS, timeout). Everything else (rate limits, transient 5xx) is surfaced
 /// verbatim — its own `Display` is already specific enough.
 fn classify_health_error(client: &CxClient, err: CxError) -> anyhow::Error {
-    match err {
+    let message = match &err {
         // `CxError::Auth`'s message already names the fix (`cx profiles add`).
-        CxError::Auth(msg) => anyhow!("authentication failed — {msg}"),
-        CxError::Timeout => anyhow!("could not reach {} — request timed out", client.endpoint()),
+        CxError::Auth(msg) => format!("authentication failed — {msg}"),
+        CxError::Timeout => format!("could not reach {} — request timed out", client.endpoint()),
         // Connection-level failures point at the region/URL, not the key.
-        CxError::Http(e) if e.is_connect() || e.is_timeout() || e.is_request() => anyhow!(
+        CxError::Http(e) if e.is_connect() || e.is_timeout() || e.is_request() => format!(
             "could not reach {} — the region or URL may be incorrect ({e})",
             client.endpoint()
         ),
-        other => anyhow!("{other}"),
+        other => other.to_string(),
+    };
+    Explained {
+        message,
+        cause: err,
     }
+    .into()
 }
 
 /// Resolve the team ID for the current API key via `GET /identity/whoami`.

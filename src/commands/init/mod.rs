@@ -47,6 +47,7 @@ use crate::commands::{completions, profiles, skills};
 use crate::config::{self, has_managed_completions, list_profile_names};
 use crate::identity;
 use crate::region::{region_from_url, RegionMatch};
+use crate::telemetry::event::OnboardingStep;
 
 /// Name of the profile init creates on a fresh machine.
 const DEFAULT_PROFILE_NAME: &str = "default";
@@ -82,6 +83,7 @@ pub struct InitArgs {
 
 /// Orchestrate the onboarding chain: profile → skills → success.
 pub async fn run_init(args: InitArgs) -> Result<()> {
+    crate::telemetry::onboarding(OnboardingStep::InitStarted, None, None);
     let InitArgs {
         url,
         region,
@@ -219,6 +221,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
 
     // ── Done ────────────────────────────────────────────────────────────────────
     print_success(verified);
+    crate::telemetry::onboarding(OnboardingStep::InitCompleted, None, None);
     Ok(())
 }
 

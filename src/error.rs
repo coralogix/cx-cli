@@ -32,6 +32,16 @@ pub enum CxError {
     QueryStream(String),
 }
 
+/// A [`CxError`] whose message was rewritten for the user. It prints only
+/// `message` and has no `source()`, so output is unchanged, while telemetry
+/// can still classify the original `cause`.
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub struct Explained {
+    pub message: String,
+    pub cause: CxError,
+}
+
 pub type Result<T> = std::result::Result<T, CxError>;
 
 impl From<reqwest::Error> for CxError {

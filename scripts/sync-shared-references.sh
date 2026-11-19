@@ -82,6 +82,14 @@ copy_refs "cx-coding-agents" \
     "promql-guidelines.md" \
     "metrics-querying.md"
 
+# cx-rum-setup: Coralogix browser SDK init reference (shared with cx-rum-migrate)
+copy_refs "cx-rum-setup" \
+    "rum-browser-init.md"
+
+# cx-rum-migrate: Coralogix browser SDK init reference
+copy_refs "cx-rum-migrate" \
+    "rum-browser-init.md"
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Synced $COPIED file(s)"

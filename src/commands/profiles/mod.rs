@@ -922,6 +922,83 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
     Ok(())
 }
 
+// ── `profiles label` ──────────────────────────────────────────────────────────
+
+/// The edit requested by `cx profiles label`. All lists are raw flag values
+/// (comma-separated values are split here). Clap guarantees that `set` and
+/// `clear` are not combined with each other or with `add` / `remove`.
+#[derive(Debug, Default)]
+pub struct LabelEdit {
+    pub add: Vec<String>,
+    pub remove: Vec<String>,
+    pub set: Vec<String>,
+    pub clear: bool,
+}
+
+impl LabelEdit {
+    fn is_empty(&self) -> bool {
+        self.add.is_empty() && self.remove.is_empty() && self.set.is_empty() && !self.clear
+    }
+
+    /// Apply the edit to `current` and return the new label list. Order is
+    /// kept: existing labels stay in place, added labels go to the end.
+    fn apply(&self, current: &[String]) -> Vec<String> {
+        if self.clear {
+            return Vec::new();
+        }
+        if !self.set.is_empty() {
+            return crate::config::parse_label_args(&self.set);
+        }
+        let remove = crate::config::parse_label_args(&self.remove);
+        let kept = current.iter().filter(|label| !remove.contains(label));
+        let add = crate::config::parse_label_args(&self.add);
+        crate::config::normalize_labels(kept.cloned().chain(add))
+    }
+}
+
+/// Show or change one profile's labels. Loads the profile, edits only
+/// `labels`, and saves it back, so credentials, region and settings are
+/// untouched (the same load-edit-save path as `profiles refresh`). A legacy
+/// `label = "..."` key is rewritten as a `labels` array on save.
+pub fn run_label(profile_name: String, edit: LabelEdit) -> Result<()> {
+    if !profile_file(&profile_name)?.exists() {
+        anyhow::bail!(
+            "Profile '{profile_name}' not found. Run `cx profiles list` to see profiles."
+        );
+    }
+    let mut profile = load_profile(&profile_name)?;
+
+    if edit.is_empty() {
+        println!("{}", labels_line(&profile_name, &profile.labels));
+        return Ok(());
+    }
+
+    let new_labels = edit.apply(&profile.labels);
+    if new_labels == profile.labels {
+        println!(
+            "{} (unchanged)",
+            labels_line(&profile_name, &profile.labels)
+        );
+        return Ok(());
+    }
+
+    profile.labels = new_labels;
+    save_profile(&profile_name, &profile)?;
+    println!("{}", labels_line(&profile_name, &profile.labels));
+    Ok(())
+}
+
+fn labels_line(profile_name: &str, labels: &[String]) -> String {
+    if labels.is_empty() {
+        format!("Profile '{profile_name}' has no labels.")
+    } else {
+        format!(
+            "Profile '{profile_name}' labels: {}",
+            display_labels(labels)
+        )
+    }
+}
+
 // ── Non-interactive configure path ────────────────────────────────────────────
 
 /// Build an API-key profile from flags alone — no terminal involved. OAuth is
@@ -1189,6 +1266,72 @@ fn configure_api_key(
 mod tests {
     use super::*;
     use clap::ValueEnum;
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn label_edit_add_keeps_existing_and_dedupes() {
+        let edit = LabelEdit {
+            add: strings(&["kuku, prod", "eu"]),
+            ..Default::default()
+        };
+        assert_eq!(
+            edit.apply(&strings(&["prod", "staging"])),
+            strings(&["prod", "staging", "kuku", "eu"])
+        );
+    }
+
+    #[test]
+    fn label_edit_remove_ignores_missing_and_splits_commas() {
+        let edit = LabelEdit {
+            remove: strings(&["staging,missing"]),
+            ..Default::default()
+        };
+        assert_eq!(
+            edit.apply(&strings(&["prod", "staging", "eu"])),
+            strings(&["prod", "eu"])
+        );
+    }
+
+    #[test]
+    fn label_edit_add_and_remove_in_one_call() {
+        let edit = LabelEdit {
+            add: strings(&["kuku"]),
+            remove: strings(&["prod"]),
+            ..Default::default()
+        };
+        assert_eq!(
+            edit.apply(&strings(&["prod", "eu"])),
+            strings(&["eu", "kuku"])
+        );
+    }
+
+    #[test]
+    fn label_edit_set_replaces_and_clear_empties() {
+        let set = LabelEdit {
+            set: strings(&["a,b"]),
+            ..Default::default()
+        };
+        assert_eq!(set.apply(&strings(&["prod"])), strings(&["a", "b"]));
+        let clear = LabelEdit {
+            clear: true,
+            ..Default::default()
+        };
+        assert!(clear.apply(&strings(&["prod"])).is_empty());
+        assert!(LabelEdit::default().is_empty());
+        assert!(!set.is_empty());
+    }
+
+    #[test]
+    fn labels_line_names_profile_and_labels() {
+        assert_eq!(labels_line("a", &[]), "Profile 'a' has no labels.");
+        assert_eq!(
+            labels_line("a", &strings(&["prod", "eu"])),
+            "Profile 'a' labels: prod,eu"
+        );
+    }
 
     #[test]
     fn display_labels_joins_with_commas_or_dash() {

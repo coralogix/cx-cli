@@ -319,7 +319,7 @@ pub struct StoredOAuthTokens {
 
 /// Trim label values, drop empties, and drop duplicates (first occurrence wins).
 /// Comparison is exact and case-sensitive.
-pub(crate) fn normalize_labels<I, S>(values: I) -> Vec<String>
+pub fn normalize_labels<I, S>(values: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,

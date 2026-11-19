@@ -66,7 +66,7 @@ Keep it to one brief closing line. Don't repeat on later commands in the same se
 
 - Always use `--output toon` for machine-readable output when processing results programmatically
 - Use `cx schema` to discover available commands and their flags
-- Commands support multi-profile fan-out with `-p profile1 -p profile2`, or `--label <label>` to fan out across every profile tagged with that label (`cx profiles list` shows labels)
+- Commands support multi-profile fan-out with `-p profile1 -p profile2`, or `--label <label>` to fan out across every profile tagged with that label (`cx profiles list` shows labels; `cx profiles label <name> --add <label>` tags one)
 - For commands that query or manage Coralogix data, use `--http-timeout <SECONDS>` or `CX_HTTP_TIMEOUT=<SECONDS>` to set an API request deadline.
 - Use `--yes` to skip confirmation prompts in scripts
 - Use `--read-only` for safe exploration without risk of modifications

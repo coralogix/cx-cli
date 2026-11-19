@@ -127,7 +127,7 @@ pub enum SearchByValueDataset {
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
-  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, label, delete, set-default)
   \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
@@ -222,7 +222,7 @@ struct ProfilesCli {
 
 #[derive(Subcommand)]
 enum ProfilesTopLevel {
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, label, delete, set-default).
     #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
@@ -368,7 +368,7 @@ Examples:
         install_completions: Option<Shell>,
     },
 
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, label, delete, set-default).
     #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
@@ -919,6 +919,35 @@ Examples:
         /// Profile name to set as default.
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
+    },
+    /// Show or change a profile's labels without reconfiguring it.
+    ///
+    /// Credentials, region and settings are not touched. With no flag, prints
+    /// the profile's current labels. Every flag takes repeated values or a
+    /// comma-separated list.
+    #[command(after_help = "\
+Examples:
+  cx profiles label team-a                      # show labels
+  cx profiles label team-a --add kuku           # add one label
+  cx profiles label team-a --remove staging     # remove one label
+  cx profiles label team-a --set prod,eu        # replace all labels
+  cx profiles label team-a --clear              # remove every label")]
+    Label {
+        /// Profile name.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+        /// Labels to add. Labels already on the profile are kept.
+        #[arg(long, value_name = "LABEL")]
+        add: Vec<String>,
+        /// Labels to remove. Labels not on the profile are ignored.
+        #[arg(long, value_name = "LABEL")]
+        remove: Vec<String>,
+        /// Replace every label with this list.
+        #[arg(long, value_name = "LABEL", conflicts_with_all = ["add", "remove", "clear"])]
+        set: Vec<String>,
+        /// Remove every label.
+        #[arg(long, conflicts_with_all = ["add", "remove", "set"])]
+        clear: bool,
     },
 }
 
@@ -3470,6 +3499,21 @@ async fn main() -> Result<()> {
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            ProfilesCmd::Label {
+                name,
+                add,
+                remove,
+                set,
+                clear,
+            } => commands::profiles::run_label(
+                name,
+                commands::profiles::LabelEdit {
+                    add,
+                    remove,
+                    set,
+                    clear,
+                },
+            ),
         };
         update_check::maybe_print_notice(output);
         return result;
@@ -3579,6 +3623,21 @@ async fn main() -> Result<()> {
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            ProfilesCmd::Label {
+                name,
+                add,
+                remove,
+                set,
+                clear,
+            } => commands::profiles::run_label(
+                name,
+                commands::profiles::LabelEdit {
+                    add,
+                    remove,
+                    set,
+                    clear,
+                },
+            ),
         };
         update_check::maybe_print_notice(output);
         return result;

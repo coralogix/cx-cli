@@ -265,7 +265,7 @@ These need no API credentials and are exempt from the risky-command confirmation
 | Command | Purpose |
 |---|---|
 | `cx init` | One-step onboarding: configure a profile and install the agent skills |
-| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx profiles` | Manage profiles: `list`, `add`, `label`, `delete`, `set-default` |
 | `cx skills` | Install or update the cx agent skills for coding agents: `install` |
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |

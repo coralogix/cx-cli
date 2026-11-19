@@ -67,6 +67,7 @@ Run `cx init` to set up a profile and get started.
 | `cx profiles add [NAME]` | Create or reconfigure a profile (see below). |
 | `cx profiles refresh <NAME>` | Sign an OAuth profile in again. Keeps its region and settings; only the tokens change. |
 | `cx profiles set-default <NAME>` | Make an existing profile the default, so commands without `-p` use it. |
+| `cx profiles label <NAME>` | Show or change a profile's labels without reconfiguring it: `--add`, `--remove`, `--set`, `--clear`. Credentials and region are untouched. |
 | `cx profiles delete <NAME>` | Delete a profile and its stored credentials. Asks for confirmation; `-f`/`--force` skips it. |
 
 Naming a profile that doesn't exist is an error, not a fall back to the default:
@@ -91,7 +92,7 @@ At the prompts, in order:
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
 5. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `file` is preselected and saves credentials in the profile TOML with `0600` permissions. `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). On macOS it is offered only when this `cx` binary is signed with an Apple Developer ID certificate; an ad-hoc or unsigned build offers only `file`. On Linux musl builds, `file` is the only storage option. If you choose `os-store` and that store is unavailable (for example Linux without a Secret Service), setup saves the secret in the profile file instead.
-6. **Labels** — optional tags to group or identify profiles (e.g. `prod, eu`). Leave the prompt empty to keep the labels already on the profile. `--label` sets them without asking; repeat it or separate values with commas.
+6. **Labels** — optional tags to group or identify profiles (e.g. `prod, eu`). Leave the prompt empty to keep the labels already on the profile. `--label` sets them without asking; repeat it or separate values with commas. To change labels on an existing profile later, use `cx profiles label <name> --add <label>` instead of reconfiguring.
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 

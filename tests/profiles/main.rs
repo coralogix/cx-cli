@@ -1400,3 +1400,155 @@ fn list_json_global_flag_before_profiles() {
     assert_eq!(profiles.len(), 1, "should have 1 profile");
     assert_eq!(profiles[0]["name"], "demo");
 }
+
+// ── `profiles label` ─────────────────────────────────────────────────────────
+
+fn run_ok(home: &std::path::Path, args: &[&str]) -> String {
+    let output = cx(home).args(args).output().expect("failed to run cx");
+    assert!(
+        output.status.success(),
+        "expected success, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn run_err(home: &std::path::Path, args: &[&str]) -> String {
+    let output = cx(home).args(args).output().expect("failed to run cx");
+    assert!(!output.status.success(), "expected failure, args: {args:?}");
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+const API_KEY_PROFILE: &str =
+    "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"keep-this-key\"\nregion = \"eu1\"\nlabels = [\"prod\", \"staging\"]\n";
+
+#[test]
+fn label_add_appends_without_touching_credentials() {
+    let tmp = temp_home();
+    write_profile(&tmp, "team-a", API_KEY_PROFILE);
+
+    let stdout = run_ok(&tmp, &["profiles", "label", "team-a", "--add", "kuku"]);
+    assert!(
+        stdout.contains("Profile 'team-a' labels: prod,staging,kuku"),
+        "stdout: {stdout}"
+    );
+
+    assert_eq!(
+        profile_labels(&tmp, "team-a"),
+        vec![
+            "prod".to_string(),
+            "staging".to_string(),
+            "kuku".to_string()
+        ]
+    );
+    let raw = load_profile_toml(&tmp, "team-a");
+    assert!(
+        raw.contains("keep-this-key") && raw.contains("eu1"),
+        "credentials and region must survive a label edit, got: {raw}"
+    );
+}
+
+#[test]
+fn label_remove_drops_one_and_ignores_missing() {
+    let tmp = temp_home();
+    write_profile(&tmp, "team-a", API_KEY_PROFILE);
+
+    let stdout = run_ok(
+        &tmp,
+        &["profiles", "label", "team-a", "--remove", "staging,missing"],
+    );
+    assert!(
+        stdout.contains("Profile 'team-a' labels: prod\n"),
+        "stdout: {stdout}"
+    );
+
+    assert_eq!(profile_labels(&tmp, "team-a"), vec!["prod".to_string()]);
+}
+
+#[test]
+fn label_set_replaces_and_clear_empties() {
+    let tmp = temp_home();
+    write_profile(&tmp, "team-a", API_KEY_PROFILE);
+
+    cx(&tmp)
+        .args(["profiles", "label", "team-a", "--set", "a,b", "--set", "c"])
+        .assert()
+        .success();
+    assert_eq!(
+        profile_labels(&tmp, "team-a"),
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+
+    let stdout = run_ok(&tmp, &["profiles", "label", "team-a", "--clear"]);
+    assert!(
+        stdout.contains("Profile 'team-a' has no labels."),
+        "stdout: {stdout}"
+    );
+    assert!(profile_labels(&tmp, "team-a").is_empty());
+    assert!(
+        !load_profile_toml(&tmp, "team-a").contains("labels"),
+        "an empty label list is omitted from the file"
+    );
+}
+
+#[test]
+fn label_without_flags_only_shows() {
+    let tmp = temp_home();
+    write_profile(&tmp, "team-a", API_KEY_PROFILE);
+    let before = load_profile_toml(&tmp, "team-a");
+
+    let stdout = run_ok(&tmp, &["profiles", "label", "team-a"]);
+    assert!(
+        stdout.contains("Profile 'team-a' labels: prod,staging"),
+        "stdout: {stdout}"
+    );
+
+    assert_eq!(
+        load_profile_toml(&tmp, "team-a"),
+        before,
+        "show must not rewrite the file"
+    );
+}
+
+#[test]
+fn label_migrates_legacy_single_label_key() {
+    let tmp = temp_home();
+    write_profile(
+        &tmp,
+        "old",
+        "auth = \"api_key\"\ncredential_storage = \"file\"\napi_key = \"k\"\nregion = \"eu1\"\nlabel = \"prod\"\n",
+    );
+
+    cx(&tmp)
+        .args(["profiles", "label", "old", "--add", "kuku"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        profile_labels(&tmp, "old"),
+        vec!["prod".to_string(), "kuku".to_string()]
+    );
+    let raw = load_profile_toml(&tmp, "old");
+    assert!(
+        raw.contains("labels") && !raw.contains("label = "),
+        "the legacy key should be rewritten as a labels array, got: {raw}"
+    );
+}
+
+#[test]
+fn label_rejects_set_with_add_and_unknown_profile() {
+    let tmp = temp_home();
+    write_profile(&tmp, "team-a", API_KEY_PROFILE);
+
+    let stderr = run_err(
+        &tmp,
+        &["profiles", "label", "team-a", "--set", "a", "--add", "b"],
+    );
+    assert!(stderr.contains("cannot be used with"), "stderr: {stderr}");
+
+    let stderr = run_err(&tmp, &["profiles", "label", "nope", "--add", "a"]);
+    assert!(
+        stderr.contains("Profile 'nope' not found"),
+        "stderr: {stderr}"
+    );
+}

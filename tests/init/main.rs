@@ -412,6 +412,18 @@ async fn init_without_npx_warns_but_succeeds() {
         stderr.contains("skipped the agent-skills install") && stderr.contains("Node.js"),
         "expected a Node.js-related skills warning, stderr: {stderr}"
     );
+    // The retry hint keeps the scope chosen on init, so an agent shell (no
+    // terminal, so no scope question) can run it as written, and it is
+    // printed once, not again by init.
+    assert!(
+        stderr.contains("`cx skills install --global`"),
+        "expected a scope-aware retry hint, stderr: {stderr}"
+    );
+    assert_eq!(
+        stderr.matches("Coding agents use cx much better").count(),
+        1,
+        "the skills hint must appear exactly once, stderr: {stderr}"
+    );
     assert!(
         profile_path(&home, "default").exists(),
         "profile is written"

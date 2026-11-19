@@ -23,6 +23,7 @@ const WRITE_VERBS: &[&str] = &[
     "reorder",
     "replace",
     "resolve",
+    "revert",
     "set",
     "set-active",
     "set-default",

@@ -256,3 +256,43 @@ fn views_folders_delete() {
 fn slos_delete() {
     assert_gated(&["slos", "delete", "nonexistent"], "slos delete");
 }
+
+#[test]
+fn context_writes() {
+    let writes: [&[&str]; 4] = [
+        &[
+            "memories",
+            "create",
+            "--title",
+            "T",
+            "--summary",
+            "S",
+            "--team-wide",
+            "--body-file",
+            "-",
+        ],
+        &[
+            "instructions",
+            "update",
+            "x",
+            "--expected-revision",
+            "1",
+            "--title",
+            "T",
+        ],
+        &["memories", "delete", "x", "--expected-revision", "1"],
+        &[
+            "instructions",
+            "revert",
+            "x",
+            "--to-revision",
+            "1",
+            "--expected-revision",
+            "2",
+        ],
+    ];
+    for args in writes {
+        let full: Vec<&str> = ["context"].iter().chain(args).copied().collect();
+        assert_gated(&full, &full.join(" "));
+    }
+}

@@ -11,6 +11,11 @@ pub enum CxError {
     #[error("API request failed ({status}): {message}")]
     Api { status: u16, message: String },
 
+    /// A request the CLI refuses to send because its arguments would make
+    /// the API do something other than what the user asked for.
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+
     #[error("HTTP request timed out")]
     Timeout,
 

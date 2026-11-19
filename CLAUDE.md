@@ -16,7 +16,7 @@ cargo clippy                        # Lint
 cargo test                          # Run all tests
 cargo test <test_name>              # Run a single test
 cargo test -- --ignored             # Run integration tests (filesystem-dependent)
-cargo test --test e2e -- --ignored --test-threads=1   # E2E vs. Coralogix test team (needs CX_API_KEY)
+cargo test --test e2e -- --ignored  # E2E vs. writable test team (needs CX_API_KEY, CX_REGION, CX_E2E_ALLOW_WRITES=1, CX_E2E_TEAM_ID)
 cargo run -- <args>                 # Run CLI in dev mode
 ```
 
@@ -34,6 +34,7 @@ Query:
   dataprime          DataPrime language reference and raw queries
   docs               Search and fetch official Coralogix product documentation
   search-fields      Search log/span fields by description or value content
+  datasets           List queryable datasets for DataPrime sources
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -89,7 +90,7 @@ Local:
 
 All use the Olly KB semantic-search-service API with gateway permission `legacy-archive-queries:Execute` (AAA id 40). See `olly-knowledge-base` `apps/semantic-search-service/AGENTS.md`.
 
-**`cx skills install`:** Installs the cx agent skills bundle by shelling out to the vercel-labs `skills` npx installer (`npx skills add coralogix/cx-cli/skills` — the `skills/` subdir, so the contributor-only dev skills under `.claude/skills/` are never installed for end users). By default it asks one question (global vs local scope, skipped by `--global`/`--local`), then runs fully non-interactively with agent auto-detection; `--agent <name>` overrides auto-detect, `--interactive` walks the installer's full flow. Requires Node.js/npx; the CLI is fully usable without skills. Logic lives in `src/commands/skills/mod.rs`.
+**`cx skills install`:** Installs the cx agent skills bundle by shelling out to the vercel-labs `skills` npx installer (`npx skills add coralogix/cx-cli/skills` — the `skills/` subdir, so the contributor-only dev skills under `.claude/skills/` are never installed for end users). By default it asks one question (global vs local scope, skipped by `--global`/`--local`), then runs fully non-interactively with agent auto-detection; `--agent <name>` overrides auto-detect, `--interactive` walks the installer's full flow. Installs are pinned to the running version's release tag (`coralogix/cx-cli/skills#vX.Y.Z`), with one retry from the default branch only when that tag is missing. The installer package itself is pinned too (`SKILLS_PACKAGE`, `skills@X.Y.Z`); bump it on purpose. A global install records its version and agents in `~/.cx/state.json`; after a cx upgrade, the update check (`src/update_check.rs`) starts the hidden `cx skills auto-refresh` in the background to repeat it (no console window on Windows, stopped after 5 minutes) (global cx skills with no record, from an older cx or plain `npx`, are refreshed too, with auto-detected agents) (opt out: `auto_update_skills = false` or `CX_NO_SKILLS_AUTO_UPDATE=1`). Requires Node.js/npx; the CLI is fully usable without skills. Logic lives in `src/commands/skills/mod.rs`.
 
 **Agent discovery:** `cx schema` outputs the full command tree (commands, subcommands, flags, descriptions) as JSON. Agents should call `cx schema` to discover available commands rather than parsing help text.
 
@@ -172,6 +173,7 @@ The `.claude/skills/` directory contains workflow skills for agents developing c
 | `/add-skill` | "add a skill", "create a skill" | End-to-end workflow for creating a user-facing skill |
 | `/run-tests` | "run tests", "cargo test", "check CI" | Run tests, clippy, fmt - full verification |
 | `/create-pr` | "create a PR", "open a pull request" | Create GitHub PR with auto-generated summary |
+| `/pr-review` | "review PR 123", "review this PR", "check PR scope" | Full PR review: scope check via `.github/scripts/pr-footprint.sh`, static review, build + drive changed commands read-only, verdict report |
 
 ### Skill Coverage
 
@@ -187,6 +189,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx dataprime query --source rum.events` (RUM) | `cx-telemetry-querying` | Covered (loads `rum-querying.md` + `rum-fields.md` + `dataprime-reference.md`) |
 | `cx rum` (source maps, stack traces) | `cx-telemetry-querying` | Covered (`rum-querying.md` § Mapping Stack Traces); `cx-rum-setup` for verifying uploads |
 | `cx search-fields` | `cx-telemetry-querying` | Covered (via gateway) |
+| `cx datasets` | `cx-datasets` | Covered |
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx alerts` | `cx-alerts` | Covered |
 | `cx dashboards` | `cx-dashboards` | Covered |
@@ -227,12 +230,16 @@ New commands must add tests at all three layers:
 |-------|----------|---------|
 | **Unit** | `src/commands/<command>/api.rs` `#[cfg(test)]` | API response deserialization (mandatory for REST commands) |
 | **Integration** | `tests/<command>/main.rs` (wiremock) | Command runner with mocked HTTP - covers fan-out, merge, render |
-| **E2E** | `tests/e2e/<command>/mod.rs` (`#[ignore]`d) | Real `cx` binary against the Coralogix test team - sanity check exit + output |
+| **E2E** | `tests/e2e/<command>/mod.rs` (`#[ignore]`d) | Real `cx` binary against the writable test team - full create/get/update/delete lifecycle with run-unique names and cleanup |
 
 E2E tests don't run by default; run them with
-`cargo test --test e2e -- --ignored --test-threads=1` (requires
-`CX_API_KEY`). See [contributing/adding-a-command.md](contributing/adding-a-command.md)
-§ "Testing" for templates.
+`cargo test --test e2e -- --ignored` (requires `CX_API_KEY` for the
+writable test team, `CX_REGION`, plus `CX_E2E_ALLOW_WRITES=1` and
+`CX_E2E_TEAM_ID` for write tests; writes refuse to run unless the key
+belongs to that team). CI runs the whole suite on every PR; PRs run in parallel,
+so every test uses `harness::unique_name` and cleans up after itself. See
+[contributing/adding-a-command.md](contributing/adding-a-command.md)
+§ "Testing" for the lifecycle template and rules.
 
 - **New skills** - verify skill triggers and reference file completeness
 

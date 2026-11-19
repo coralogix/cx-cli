@@ -635,6 +635,6 @@ Monitor error budget consumption or burn rate. Exactly one of `errorBudget` or `
 
 - **groupByKeys for metric alerts**: Leave empty to let the API infer from the PromQL `by` clause. If provided, keys must be in **alphabetical order** (the API infers alphabetically, not in query order).
 - **Priority**: Always ask the user -- never pick a default.
-- **override in rules**: Optional per-rule priority override using the same `ALERT_DEF_PRIORITY_*` enum values. Omit to use the alert-level priority.
+- **override in rules**: Per-rule priority override using the same `ALERT_DEF_PRIORITY_*` enum values. The create API rejects a logs-threshold rule without it (400 `Required` at `rules.0.override`), so always set it; use `{ "priority": "ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED" }` to keep the alert-level priority.
 - **notificationPayloadFilter**: List of log/span field paths to include in notifications (e.g. `["obj.field"]`).
 - **Best practice**: Fetch an existing alert with `cx alerts get <id> -o json` to see the exact response shape, then use it as a template for creating new alerts.

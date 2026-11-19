@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::error::Result;
 
@@ -59,6 +59,33 @@ pub struct CreateRouterResponse {
 #[derive(Debug, Deserialize)]
 pub struct DeleteRouterResponse {}
 
+/// Turn the matcher definition into the query parameters the API expects.
+/// The file may hold the labels flat (`{"routing.environment": "prod"}`) or
+/// wrapped as `{"entityLabelMatcher": {...}}` / `{"entity_label_matcher":
+/// {...}}`. The API only accepts the keys `routing.team`, `routing.service`
+/// and `routing.environment`; it reports any other key in the result.
+pub fn matcher_query_params(body: &Value) -> Vec<(String, String)> {
+    let labels = body
+        .get("entityLabelMatcher")
+        .or_else(|| body.get("entity_label_matcher"))
+        .unwrap_or(body);
+    labels
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .filter_map(|(key, value)| {
+                    let value = match value {
+                        Value::String(s) => s.clone(),
+                        Value::Null => return None,
+                        other => other.to_string(),
+                    };
+                    Some((format!("entity_label_matcher[{key}]"), value))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 // --- API ---
 
 const ROUTERS_BASE: &str = "/mgmt/openapi/5/notifications/notification-center/v1/routers";
@@ -94,9 +121,19 @@ impl<'a> RoutersApi<'a> {
         self.client.delete(&path).await
     }
 
+    /// The API reads the matcher from `entity_label_matcher[<key>]=<value>`
+    /// query parameters and ignores the request body (a body-only call always
+    /// answers "Routing labels cannot be empty"). See [`matcher_query_params`].
     pub async fn validate_matcher(&self, body: &Value) -> Result<Value> {
         let path = format!("{ROUTERS_BASE}/matcher/validate");
-        self.client.post(&path, body).await
+        let params = matcher_query_params(body);
+        let params: Vec<(&str, &str)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        self.client
+            .post_with_headers(&path, Some(&params), &json!({}), &[])
+            .await
     }
 }
 
@@ -154,5 +191,26 @@ mod tests {
         assert_eq!(router.display_name(), "-");
         assert_eq!(router.display_entity_type(), "-");
         assert_eq!(router.destinations_count(), 0);
+    }
+
+    #[test]
+    fn matcher_params_accept_flat_and_wrapped_labels() {
+        let flat = json!({ "routing.environment": "prod" });
+        assert_eq!(
+            matcher_query_params(&flat),
+            vec![(
+                "entity_label_matcher[routing.environment]".to_string(),
+                "prod".to_string()
+            )]
+        );
+        let wrapped = json!({ "entityLabelMatcher": { "routing.team": "cx", "skip": null } });
+        assert_eq!(
+            matcher_query_params(&wrapped),
+            vec![(
+                "entity_label_matcher[routing.team]".to_string(),
+                "cx".to_string()
+            )]
+        );
+        assert!(matcher_query_params(&json!("not an object")).is_empty());
     }
 }

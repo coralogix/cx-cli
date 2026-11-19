@@ -82,6 +82,7 @@ pub enum SearchByValueDataset {
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
   \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
+  \x1b[1mdatasets\x1b[0m           List queryable datasets for DataPrime sources
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
@@ -272,8 +273,10 @@ enum SkillsCmd {
     /// Install or update the cx agent skills bundle via the `skills` npx installer.
     ///
     /// By default this asks one question (install scope) and then runs the
-    /// installer fully non-interactively with agent auto-detection. Re-running
-    /// updates already-installed skills to the latest published bundle.
+    /// installer fully non-interactively with agent auto-detection. Installs
+    /// the skills from this cx version's release tag; re-running updates
+    /// already-installed skills. After a cx upgrade, a global install refreshes
+    /// itself in the background (`auto_update_skills` in config.toml).
     /// Requires Node.js (npx).
     #[command(after_help = "\
 Examples:
@@ -301,6 +304,11 @@ Examples:
         #[arg(long)]
         interactive: bool,
     },
+
+    /// Started in the background by the update check after a cx upgrade:
+    /// repeats the recorded global install with this version's skills.
+    #[command(hide = true)]
+    AutoRefresh,
 }
 
 #[derive(Subcommand)]
@@ -398,7 +406,10 @@ Examples:
 Examples:
   cx logs 'filter $m.severity == ERROR'
   cx logs 'filter $d.message ~ \"timeout\"' --start now-6h --tier archive
-  cx logs 'filter $l.applicationname == \"api\"' --limit 200 -o json")]
+  cx logs 'filter $l.applicationname == \"api\"' --limit 200 -o json
+
+RUM (frontend) data: query cx dataprime query --source rum.events '<query>' first.
+Legacy cx_rum logs are only a fallback when rum.events has no data.")]
     Logs {
         /// DataPrime query string. e.g. 'filter $m.severity == ERROR'
         query: String,
@@ -553,7 +564,6 @@ Examples:
   cx e2m create --from-file e2m.json
   cx e2m update --from-file e2m.json
   cx e2m delete <e2m-id>
-  cx e2m labels-cardinality
   cx e2m limits")]
     E2m {
         #[command(subcommand)]
@@ -772,6 +782,17 @@ Examples:
         offset: u32,
     },
 
+    /// List the datasets queryable by the current team, for DataPrime sources.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
+  cx datasets list -o json")]
+    Datasets {
+        #[command(subcommand)]
+        cmd: DatasetsCmd,
+    },
+
     /// DataPrime language reference and documentation.
     Dataprime {
         #[command(subcommand)]
@@ -974,6 +995,26 @@ Example:
     Fetch {
         /// Path suffix from `cx docs search` (not a full URL).
         suffix: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DatasetsCmd {
+    /// List the datasets queryable by the current team's API key.
+    ///
+    /// Each row is a fully qualified `<dataspace>/<dataset>` name usable in a
+    /// DataPrime `source` command. Only read-enabled, latest-version datasets
+    /// are returned.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
+  cx datasets list --filter \"<v1> \\$d.dataspace == 'default'\" -o json")]
+    List {
+        /// DPXL filter over $d.dataspace, $d.dataset, $d.pillar, $d.entityType and $d.teamId.
+        /// Must start with the version tag, e.g. "<v1> \$d.pillar == 'logs'".
+        #[arg(long)]
+        filter: Option<String>,
     },
 }
 
@@ -1904,7 +1945,10 @@ enum E2mCmd {
         /// E2M definition ID.
         id: String,
     },
-    /// Get E2M labels cardinality.
+    /// Get E2M labels cardinality. Hidden: the REST gateway cannot accept the
+    /// draft's metric labels, so the forecast is always empty; the command
+    /// exits with an error that points to the UI until that changes.
+    #[command(hide = true)]
     LabelsCardinality,
     /// Get E2M limits.
     Limits,
@@ -1995,7 +2039,7 @@ enum EnrichmentsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Overwrite all enrichment rules from a JSON file [requires --yes].
+    /// Replace ALL enrichment rules from a JSON file; custom enrichment tables the file does not reference are deleted too [requires --yes].
     Overwrite {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -2044,7 +2088,7 @@ enum CustomEnrichmentsCmd {
         /// Custom enrichment table ID.
         id: String,
     },
-    /// Search data in a custom enrichment table.
+    /// Search rows in a custom enrichment table (downloads every table's full content, then filters locally).
     Search {
         /// Custom enrichment table ID.
         #[arg(long)]
@@ -2102,8 +2146,12 @@ enum IntegrationsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Get integration template.
-    Template,
+    /// Get the deployment template of a deployed integration.
+    Template {
+        /// Deployed integration (instance) ID, as listed by `integrations get <key>`.
+        #[arg(long)]
+        integration_id: String,
+    },
     /// Manage extensions.
     #[command(after_help = "\
 Examples:
@@ -3678,6 +3726,7 @@ async fn main() -> Result<()> {
         install_completions,
     } = cli.command
     {
+        update_check::suppress_skills_refresh();
         let scope = if global_skills {
             Some(commands::skills::SkillsScope::Global)
         } else if local_skills {
@@ -3703,12 +3752,17 @@ async fn main() -> Result<()> {
 
     // Skills install shells out to npx locally - no API credentials.
     if let Commands::Skills { cmd } = cli.command {
+        update_check::suppress_skills_refresh();
         let SkillsCmd::Install {
             global,
             local,
             agents,
             interactive,
-        } = cmd;
+        } = cmd
+        else {
+            // No notice: this runs detached, with no terminal.
+            return commands::skills::run_auto_refresh();
+        };
         let result = if interactive {
             commands::skills::run_advanced_install()
         } else {
@@ -3883,6 +3937,12 @@ async fn main() -> Result<()> {
             Commands::Schema => unreachable!("handled above"),
             Commands::Completions { .. } => unreachable!("handled above"),
             Commands::Docs { .. } => unreachable!("handled above"),
+
+            Commands::Datasets { cmd } => match cmd {
+                DatasetsCmd::List { filter } => {
+                    commands::datasets::run_list(&targets, filter.as_deref(), output).await?;
+                }
+            },
 
             Commands::Dataprime { cmd } => match cmd {
                 DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {
@@ -4519,7 +4579,12 @@ async fn main() -> Result<()> {
                     commands::e2m::run_delete(&targets, &id).await?;
                 }
                 E2mCmd::LabelsCardinality => {
-                    commands::e2m::run_labels_cardinality(&targets, output).await?;
+                    anyhow::bail!(
+                        "`cx e2m labels-cardinality` is not available through the REST API yet: \
+                         the gateway cannot accept the draft's metric labels, so the forecast \
+                         would always be empty. Forecast cardinality in the Coralogix UI \
+                         (Events2Metrics create flow) for now."
+                    );
                 }
                 E2mCmd::Limits => {
                     commands::e2m::run_limits(&targets, output).await?;
@@ -4597,7 +4662,11 @@ async fn main() -> Result<()> {
                     commands::enrichments::run_remove(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Overwrite { from_file } => {
-                    confirm_destructive("Overwrite enrichment rules?", yes, agent_mode)?;
+                    confirm_destructive(
+                        "Overwrite ALL enrichment rules? Custom enrichment tables the file does not reference are deleted too.",
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Limit => {
@@ -4673,8 +4742,9 @@ async fn main() -> Result<()> {
                     )
                     .await?;
                 }
-                IntegrationsCmd::Template => {
-                    commands::integrations::run_template(&targets, output).await?;
+                IntegrationsCmd::Template { integration_id } => {
+                    commands::integrations::run_template(&targets, &integration_id, output)
+                        .await?;
                 }
                 IntegrationsCmd::Extensions { cmd } => match cmd {
                     ExtensionsCmd::List => {

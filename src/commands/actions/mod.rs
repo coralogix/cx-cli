@@ -201,12 +201,7 @@ pub async fn run_update(
         let body = body.clone();
         async move {
             let api = ActionsApi::new(&t.client);
-            let id = body
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(api.replace(&id, &body).await?)
+            Ok(api.replace(&body).await?)
         }
     })
     .await;

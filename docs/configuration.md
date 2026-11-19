@@ -274,6 +274,36 @@ The default install script and release binaries are built for musl on Linux, so
 only when building from source against glibc. The macOS default and the file
 fallback are in [Credentials on macOS](#credentials-on-macos).
 
+## Managed credential-storage policy
+
+IT can require platform credential-store storage on managed macOS and Windows
+devices. Deploy a root/admin-owned TOML file through device management:
+
+| Platform | Policy file |
+|---|---|
+| macOS | `/Library/Application Support/Coralogix/cx/policy.toml` |
+| Windows | `%ProgramData%\Coralogix\cx\policy.toml` |
+
+```toml
+require_credential_storage = "os_store"
+```
+
+The policy file and every parent directory must be readable and traversable by
+the user running `cx`; otherwise the CLI cannot enforce the policy. Keep the
+file owned by IT (for example `root:admin` on macOS) while granting read access
+to users. A suitable macOS setup is `755` on the `Coralogix` and `cx`
+directories and `664` on `policy.toml`.
+
+When enabled, `cx` stores credentials only in macOS Keychain or Windows
+Credential Manager. The interactive setup flow does not offer `file`, and
+`CX_CREDENTIAL_STORAGE=file` is rejected. On the next credential-resolving
+command, existing profile-file API keys and OAuth tokens are copied to the OS
+store; `cx` removes their plaintext fields only after all writes succeed. A
+failed migration leaves the original profile unchanged and stops the command
+instead of falling back to file storage.
+
+Linux ignores this policy and retains its existing credential-storage behavior.
+
 ## Credentials on macOS
 
 > Note: If you installed cx with Homebrew, Cargo, or Nix, any process running as your user can read your cx credentials without a prompt. To limit access to the Coralogix-signed cx, see [Stronger isolation](#stronger-isolation-optional).

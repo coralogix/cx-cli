@@ -3447,6 +3447,7 @@ async fn main() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        config::migrate_managed_profiles_to_os_store()?;
         let result = match cmd {
             ProfilesCmd::List => commands::profiles::run_list(),
             ProfilesCmd::Add {
@@ -3494,6 +3495,10 @@ async fn main() -> Result<()> {
 
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
+    // A managed credential-storage policy applies before every executed CLI
+    // command, including local commands that do not otherwise resolve API
+    // credentials (such as `cx profiles list`).
+    config::migrate_managed_profiles_to_os_store()?;
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();

@@ -38,8 +38,10 @@ fn sibling(spool: &Path, name: &str) -> PathBuf {
 /// by the kernel when the holder exits. `None` when another process holds it
 /// or it can't be taken at all, in which case nothing is sent.
 pub fn lock(spool: &Path) -> Option<File> {
+    // With read access: Windows cannot lock a file opened only for append.
     let file = File::options()
         .create(true)
+        .read(true)
         .append(true)
         .open(sibling(spool, "telemetry-sender.lock"))
         .ok()?;

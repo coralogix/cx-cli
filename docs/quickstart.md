@@ -275,6 +275,7 @@ These need no API credentials and are exempt from the risky-command confirmation
 
 ```
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
+    --label <LABEL>          Fan out across every profile that has one of these labels.
     --api-key <API_KEY>      Override the profile API key
     --region <REGION>        Override the profile region
 -o, --output <FORMAT>        text | json | toon (default: text)

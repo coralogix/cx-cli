@@ -53,6 +53,36 @@ cx logs 'filter $m.severity == ERROR' -p prod -p staging
 cx metrics query 'up' -p us-prod -p eu-prod
 ```
 
+### Selecting profiles by label
+
+Profiles can carry labels (`cx profiles add prod-eu --label prod,region:eu1`).
+The global `--label` flag runs the command against **every profile that has one
+of the given labels**, so a group of teams becomes one command instead of a
+shell loop:
+
+```bash
+cx usage query ... --label customer:acme        # every profile tagged customer:acme
+cx logs 'filter $m.severity == ERROR' --label region:eu1,region:us2
+cx metrics query 'up' --label tier:gold --label tier:platinum
+```
+
+- Repeat the flag or pass a comma-separated list. A profile is selected when it
+  has **any** of the labels (exact, case-sensitive match).
+- `--label` and `-p` combine: explicit profiles come first, then the label
+  matches, with no profile run twice.
+- A label that matches no profile is an error, not a silent fallback to the
+  default profile:
+
+  ```
+  No profiles with label 'staging'. Run `cx profiles list` to see each profile's labels, or `cx profiles add <name> --label <label>` to tag one.
+  ```
+
+- `cx profiles list --label <label>` shows which profiles a label would select.
+
+Selected profiles fan out exactly like repeated `-p`: results are tagged, limits
+apply per profile, and the `--api-key` / `--region` restriction below applies
+when more than one profile is selected.
+
 ### How it works
 
 1. Each profile is resolved into an independent execution target with its own API client.
@@ -77,7 +107,7 @@ Text output adds a `Profile` column to tables for REST commands (alerts, dashboa
 
 ### Restrictions
 
-`--api-key` and `--region` overrides are incompatible with multiple `-p` flags. These overrides apply to a single profile and would be ambiguous when targeting multiple profiles:
+`--api-key` and `--region` overrides are incompatible with multiple `-p` flags, or with a `--label` that selects more than one profile. These overrides apply to a single profile and would be ambiguous when targeting multiple profiles:
 
 ```bash
 # This will error

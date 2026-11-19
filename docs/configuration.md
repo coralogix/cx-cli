@@ -63,7 +63,7 @@ Run `cx init` to set up a profile and get started.
 
 | Command | Purpose |
 |---|---|
-| `cx profiles list` | List every configured profile and show which one is the default. `--label <name>` (repeatable, or comma-separated) shows only profiles that have any of those labels. |
+| `cx profiles list` | List every configured profile and show which one is the default. `--label <name>` (repeatable, or comma-separated) shows only profiles that have any of those labels, which is the set the global `--label` flag would run against. |
 | `cx profiles add [NAME]` | Create or reconfigure a profile (see below). |
 | `cx profiles refresh <NAME>` | Sign an OAuth profile in again. Keeps its region and settings; only the tokens change. |
 | `cx profiles set-default <NAME>` | Make an existing profile the default, so commands without `-p` use it. |
@@ -331,7 +331,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 | `auth` | No | `"oauth"` or `"api_key"` (default `"api_key"` for backward compatibility) |
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
-| `labels` | No | Free-form labels, for example `["production", "eu"]`. A legacy `label = "production"` string still loads as a one-item list. New writes use `labels` only. |
+| `labels` | No | Free-form labels, for example `["production", "eu"]`. The global `--label` flag runs a command against every profile that has one of the given labels (see [Multi-profile fan-out](multi-profile.md)). A legacy `label = "production"` string still loads as a one-item list. New writes use `labels` only. |
 | `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links. If unset, `cx` resolves it automatically via `GET /identity/whoami` - see [Console links](#console-links). |
 
 ### OAuth-specific fields

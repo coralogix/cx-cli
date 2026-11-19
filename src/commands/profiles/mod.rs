@@ -399,21 +399,6 @@ fn display_labels(labels: &[String]) -> String {
     }
 }
 
-fn profile_has_any_label(profile: &Profile, filter: &[String]) -> bool {
-    filter
-        .iter()
-        .any(|wanted| profile.labels.iter().any(|have| have == wanted))
-}
-
-fn no_profiles_for_labels(labels: &[String]) -> String {
-    let quoted: Vec<String> = labels.iter().map(|label| format!("'{label}'")).collect();
-    match quoted.as_slice() {
-        [] => "No profiles matched.".to_string(),
-        [label] => format!("No profiles with label {label}."),
-        [head @ .., last] => format!("No profiles with label {} or {last}.", head.join(", ")),
-    }
-}
-
 pub fn run_list(label_filter: Vec<String>, output: OutputFormat) -> Result<()> {
     let filter = crate::config::parse_label_args(label_filter);
     let global_config = load_config().unwrap_or_default();
@@ -438,12 +423,12 @@ pub fn run_list(label_filter: Vec<String>, output: OutputFormat) -> Result<()> {
     }
 
     if !filter.is_empty() {
-        entries.retain(|(_, profile)| profile_has_any_label(profile, &filter));
+        entries.retain(|(_, profile)| crate::config::has_any_label(&profile.labels, &filter));
         if entries.is_empty() {
             if output == OutputFormat::Json {
                 println!("[]");
             } else {
-                println!("{}", no_profiles_for_labels(&filter));
+                println!("{}", crate::config::no_profiles_for_labels(&filter));
             }
             return Ok(());
         }
@@ -1205,26 +1190,6 @@ mod tests {
     use super::*;
     use clap::ValueEnum;
 
-    /// The interactive picker seeds its cursor by matching `OutputFormat::as_str()`
-    /// against `OUTPUT_FORMATS`. If a canonical variant string is missing from the
-    /// list, the cursor silently falls back to index 0 instead of the user's current
-    /// setting (this regressed when `Agents`/`agents` was renamed to `Toon`/`toon`).
-    #[test]
-    fn list_filter_miss_message_names_each_label() {
-        assert_eq!(
-            no_profiles_for_labels(&["prod".to_string()]),
-            "No profiles with label 'prod'."
-        );
-        assert_eq!(
-            no_profiles_for_labels(&["prod".to_string(), "eu".to_string()]),
-            "No profiles with label 'prod' or 'eu'."
-        );
-        assert_eq!(
-            no_profiles_for_labels(&["prod".to_string(), "eu".to_string(), "staging".to_string()]),
-            "No profiles with label 'prod', 'eu' or 'staging'."
-        );
-    }
-
     #[test]
     fn display_labels_joins_with_commas_or_dash() {
         assert_eq!(display_labels(&[]), "-");
@@ -1256,6 +1221,10 @@ mod tests {
         );
     }
 
+    /// The interactive picker seeds its cursor by matching `OutputFormat::as_str()`
+    /// against `OUTPUT_FORMATS`. If a canonical variant string is missing from the
+    /// list, the cursor silently falls back to index 0 instead of the user's current
+    /// setting (this regressed when `Agents`/`agents` was renamed to `Toon`/`toon`).
     #[test]
     fn every_output_format_is_selectable_in_picker() {
         for variant in OutputFormat::value_variants() {

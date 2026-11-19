@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -337,7 +337,7 @@ where
 
 /// Parse repeatable `--label` values. Each value may itself be comma-separated
 /// (`--label prod,eu` and `--label prod --label eu` are the same).
-pub(crate) fn parse_label_args<I, S>(values: I) -> Vec<String>
+pub fn parse_label_args<I, S>(values: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -349,6 +349,75 @@ where
         }
     }
     normalize_labels(parts)
+}
+
+/// True when `labels` and `wanted` share at least one label (exact match).
+pub(crate) fn has_any_label(labels: &[String], wanted: &[String]) -> bool {
+    wanted
+        .iter()
+        .any(|want| labels.iter().any(|have| have == want))
+}
+
+/// Message for a label selection that matched no profile, for example
+/// `No profiles with label 'prod' or 'eu'.`
+pub(crate) fn no_profiles_for_labels(labels: &[String]) -> String {
+    let quoted: Vec<String> = labels.iter().map(|label| format!("'{label}'")).collect();
+    match quoted.as_slice() {
+        [] => "No profiles matched.".to_string(),
+        [label] => format!("No profiles with label {label}."),
+        [head @ .., last] => format!("No profiles with label {} or {last}.", head.join(", ")),
+    }
+}
+
+/// Names of the profiles in `entries` that have any of `wanted`, in the
+/// given order. `entries` pairs each profile name with its labels.
+fn names_with_any_label(entries: &[(String, Vec<String>)], wanted: &[String]) -> Vec<String> {
+    entries
+        .iter()
+        .filter(|(_, labels)| has_any_label(labels, wanted))
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// Build the list of profiles a command runs against from the global
+/// `--profile` and `--label` flags.
+///
+/// Explicit `--profile` names come first, in the order given. Every profile on
+/// disk that has any of `labels` is appended after them, in `cx profiles list`
+/// order, skipping names already selected. Profiles that fail to load are
+/// skipped for the label match (a broken file is reported when it is named
+/// explicitly, not when a label scan happens to pass over it).
+///
+/// Returns an empty list when both inputs are empty, which callers treat as
+/// "use the default profile". Errors when `labels` is non-empty and no
+/// profile has any of them, so a typo never silently runs against nothing.
+pub fn select_profile_names(profiles: &[String], labels: &[String]) -> Result<Vec<String>> {
+    let mut selected: Vec<String> = profiles.to_vec();
+    if labels.is_empty() {
+        return Ok(selected);
+    }
+    let entries: Vec<(String, Vec<String>)> = list_profile_names()?
+        .into_iter()
+        .filter_map(|name| {
+            load_profile(&name)
+                .ok()
+                .map(|profile| (name, profile.labels))
+        })
+        .collect();
+    let matched = names_with_any_label(&entries, labels);
+    if matched.is_empty() {
+        bail!(
+            "{} Run `cx profiles list` to see each profile's labels, \
+             or `cx profiles add <name> --label <label>` to tag one.",
+            no_profiles_for_labels(labels)
+        );
+    }
+    for name in matched {
+        if !selected.contains(&name) {
+            selected.push(name);
+        }
+    }
+    Ok(selected)
 }
 
 /// `labels` is the canonical key. When it is missing or normalizes to nothing,
@@ -1503,6 +1572,69 @@ api_key = "mykey"
 
     /// Existing configs store one `label` string. That key must still load, as
     /// a one-item list, including surrounding whitespace being trimmed.
+    fn labelled(name: &str, labels: &[&str]) -> (String, Vec<String>) {
+        (
+            name.to_string(),
+            labels.iter().map(|l| l.to_string()).collect(),
+        )
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn has_any_label_is_exact_and_any_match() {
+        let labels = strings(&["prod", "eu"]);
+        assert!(has_any_label(&labels, &strings(&["eu"])));
+        assert!(has_any_label(&labels, &strings(&["missing", "prod"])));
+        assert!(!has_any_label(&labels, &strings(&["PROD"])));
+        assert!(!has_any_label(&labels, &strings(&["pro"])));
+        assert!(!has_any_label(&labels, &[]));
+        assert!(!has_any_label(&[], &strings(&["prod"])));
+    }
+
+    #[test]
+    fn names_with_any_label_keeps_list_order_and_skips_unlabelled() {
+        let entries = vec![
+            labelled("a", &["prod", "eu"]),
+            labelled("b", &[]),
+            labelled("c", &["staging"]),
+            labelled("d", &["prod"]),
+        ];
+        assert_eq!(
+            names_with_any_label(&entries, &strings(&["prod"])),
+            strings(&["a", "d"])
+        );
+        assert_eq!(
+            names_with_any_label(&entries, &strings(&["staging", "eu"])),
+            strings(&["a", "c"])
+        );
+        assert!(names_with_any_label(&entries, &strings(&["qa"])).is_empty());
+    }
+
+    #[test]
+    fn no_profiles_for_labels_message_lists_every_label() {
+        assert_eq!(
+            no_profiles_for_labels(&strings(&["prod"])),
+            "No profiles with label 'prod'."
+        );
+        assert_eq!(
+            no_profiles_for_labels(&strings(&["a", "b", "c"])),
+            "No profiles with label 'a', 'b' or 'c'."
+        );
+    }
+
+    #[test]
+    fn select_profile_names_without_labels_returns_explicit_names_unchanged() {
+        // No disk access happens on this path, so it is safe without CX_HOME.
+        assert_eq!(
+            select_profile_names(&strings(&["b", "a"]), &[]).unwrap(),
+            strings(&["b", "a"])
+        );
+        assert!(select_profile_names(&[], &[]).unwrap().is_empty());
+    }
+
     #[test]
     fn legacy_label_string_loads_as_one_item_list() {
         let profile: Profile = toml::from_str("region = \"eu1\"\nlabel = \"  prod  \"\n").unwrap();

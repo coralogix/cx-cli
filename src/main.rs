@@ -144,6 +144,17 @@ struct Cli {
     )]
     profile: Vec<String>,
 
+    /// Run against every profile that has one of these labels. Repeat the flag
+    /// or pass a comma-separated list (`--label prod,eu`). Matching profiles
+    /// fan out like repeated --profile and can be combined with it.
+    #[arg(
+        long,
+        global = true,
+        value_name = "LABEL",
+        help_heading = "Global Options"
+    )]
+    label: Vec<String>,
+
     /// Coralogix API key (overrides a single profile; incompatible with multiple --profile).
     #[arg(
         long,
@@ -3529,7 +3540,14 @@ async fn main() -> Result<()> {
         let global_config = config::load_config().unwrap_or_default();
         let output = cli.output.unwrap_or(global_config.default_output_format);
         let result = match cmd {
-            ProfilesCmd::List { label } => commands::profiles::run_list(label, output),
+            // `list` defines its own `--label`, so clap does not hand it the
+            // global one. A label given before `profiles` (`cx --label prod
+            // profiles list`) lands on `cli.label`; merge both.
+            ProfilesCmd::List { label } => {
+                let mut labels = cli.label;
+                labels.extend(label);
+                commands::profiles::run_list(labels, output)
+            }
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3703,7 +3721,8 @@ async fn main() -> Result<()> {
     // --api-key / --region on the command line, suppress the corresponding
     // env-var value (CX_API_KEY / CX_REGION) so the profile's own stored
     // credentials and region are used instead.
-    let profile_from_cli = matches.value_source("profile") == Some(ValueSource::CommandLine);
+    let profile_from_cli = matches.value_source("profile") == Some(ValueSource::CommandLine)
+        || matches.value_source("label") == Some(ValueSource::CommandLine);
     let api_key_from_cli = matches.value_source("api_key") == Some(ValueSource::CommandLine);
     let region_from_cli = matches.value_source("region") == Some(ValueSource::CommandLine);
     let effective_api_key: Option<&str> = if profile_from_cli && !api_key_from_cli {
@@ -3717,11 +3736,24 @@ async fn main() -> Result<()> {
         cli.region.as_deref()
     };
 
-    // Reject --api-key / --region when more than one --profile is supplied,
+    // Turn --profile and --label into the list of profile names to run
+    // against. Empty means "the default profile".
+    let selected_profiles =
+        match config::select_profile_names(&cli.profile, &config::parse_label_args(&cli.label)) {
+            Ok(names) => names,
+            Err(error) => {
+                // The message already names the fix (`cx profiles list`, `cx
+                // profiles add --label`); exit here so it is not printed twice.
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        };
+
+    // Reject --api-key / --region when more than one profile is selected,
     // because it would be ambiguous which profile the override targets.
-    if cli.profile.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {
+    if selected_profiles.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {
         bail!(
-            "Cannot combine multiple --profile values with --api-key or --region overrides.\n\
+            "Cannot combine multiple --profile or --label values with --api-key or --region overrides.\n\
              Store per-profile credentials with `cx profiles add <name>`."
         );
     }
@@ -3730,44 +3762,44 @@ async fn main() -> Result<()> {
     let global_config = config::load_config().unwrap_or_default();
     let output = cli
         .output
-        .or_else(|| config::first_profile_output_format(&cli.profile))
+        .or_else(|| config::first_profile_output_format(&selected_profiles))
         .unwrap_or(global_config.default_output_format);
     let max_direct = global_config.max_dataprime_direct_output_size;
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = match config::resolve_all(&cli.profile, effective_api_key, effective_region).await
-    {
-        Ok(configs) => configs,
-        Err(error) => {
-            // First-run guidance: when nothing is configured at all (no profile
-            // on disk and no env-only credentials), don't dump the underlying
-            // config-resolution error. Point the user at the single guided entry
-            // point instead. The onboarding commands that *fix* this state
-            // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
-            // never reach here, so they can't be short-circuited by this branch.
-            if config::list_profile_names()
-                .map(|names| names.is_empty())
-                .unwrap_or(false)
-            {
-                eprintln!("No Coralogix profile is configured.");
-                eprintln!("Run `cx init` to set up a profile and get started.");
-                // Exit here instead of returning the error: propagating it
-                // would dump the anyhow config-resolution chain (with a second,
-                // contradicting `cx profiles add` instruction) after the
-                // guidance. The two lines above are the entire first-run story.
+    let configs =
+        match config::resolve_all(&selected_profiles, effective_api_key, effective_region).await {
+            Ok(configs) => configs,
+            Err(error) => {
+                // First-run guidance: when nothing is configured at all (no profile
+                // on disk and no env-only credentials), don't dump the underlying
+                // config-resolution error. Point the user at the single guided entry
+                // point instead. The onboarding commands that *fix* this state
+                // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
+                // never reach here, so they can't be short-circuited by this branch.
+                if config::list_profile_names()
+                    .map(|names| names.is_empty())
+                    .unwrap_or(false)
+                {
+                    eprintln!("No Coralogix profile is configured.");
+                    eprintln!("Run `cx init` to set up a profile and get started.");
+                    // Exit here instead of returning the error: propagating it
+                    // would dump the anyhow config-resolution chain (with a second,
+                    // contradicting `cx profiles add` instruction) after the
+                    // guidance. The two lines above are the entire first-run story.
+                    std::process::exit(1);
+                }
+                // The error already names the fix (for example `cx profiles add
+                // <name>`). Exit here instead of returning it: propagating it
+                // would print the same message a second time as `Error: ...`,
+                // and a generic `cx profiles add` line would sit beside the
+                // specific instruction already in the error. `{:?}` keeps a
+                // single copy of the cause chain (parse errors, and so on).
+                eprintln!("Configuration error: {error:?}");
                 std::process::exit(1);
             }
-            // The error already names the fix (for example `cx profiles add
-            // <name>`). Exit here instead of returning it: propagating it
-            // would print the same message a second time as `Error: ...`,
-            // and a generic `cx profiles add` line would sit beside the
-            // specific instruction already in the error. `{:?}` keeps a
-            // single copy of the cause chain (parse errors, and so on).
-            eprintln!("Configuration error: {error:?}");
-            std::process::exit(1);
-        }
-    };
+        };
 
     let targets = build_targets(
         configs,

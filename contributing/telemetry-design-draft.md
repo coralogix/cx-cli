@@ -1,17 +1,17 @@
 # cx CLI telemetry — draft
 
-Status: draft. The CLI side (section 1) is implemented in `src/telemetry/`. The
-collector config (section 2) passes `otelcol validate` and a local end-to-end run
-against the custom collector image built from `scripts/telemetry-collector/`: see
-`scripts/telemetry-collector/config.yaml` and
-`scripts/telemetry-collector-check.sh`. Sections 3 and 4 are not done. Section 5
-holds the decisions from the 2026-11-16 design review. They are implemented, and
-where they differ from sections 1 to 4, section 5 wins.
+Status: draft. The CLI side is implemented in `src/telemetry/`. Section 5 holds
+the decisions from the 2026-11-16 design review; where it differs from sections
+1 to 4, section 5 wins.
+
+The dedicated OTel collector of the first draft was dropped on 2026-11-19. The
+CLI now gets a send-your-data key from the onboarding service and sends its
+events straight to Coralogix (section 2).
 
 ```
-cx command → local spool → detached sender → HTTPS POST (OTLP/HTTP JSON)
-           → API gateway (open path)
-           → dedicated OTel collector (rate limit, validate, relabel) → c4c
+cx command → local spool → detached sender
+           → GET the key (onboarding service, open route, cached 24 h)
+           → HTTPS POST (OTLP/HTTP JSON, Bearer key) → Coralogix ingress → c4c
 ```
 
 ## 1. Event schema
@@ -24,7 +24,9 @@ body is empty.
 
 | Attribute | Type | Allowed values | Source in the CLI |
 |---|---|---|---|
-| `service.name` | string | `cx-cli` (the collector overwrites it) | constant |
+| `cx.application.name` | string | `cx-cli` | constant. The application the logs land under |
+| `cx.subsystem.name` | string | `usage` | constant. The subsystem the logs land under |
+| `service.name` | string | `cx-cli` | constant |
 | `service.version` | string | `MAJOR.MINOR.PATCH` | `CARGO_PKG_VERSION` |
 | `os.type` | string | `darwin`, `linux`, `windows` | `std::env::consts::OS` |
 | `host.arch` | string | `arm64`, `amd64` | `std::env::consts::ARCH` |
@@ -42,11 +44,9 @@ body is empty.
 | `cx.tty` | bool | |
 | `cx.team.id` | string, optional | digits only. Claimed by the client, not verified |
 
-The record timestamp is the time the event happened on the user's machine. The
-collector keeps it when it is between 7 days in the past and 5 minutes in the
-future. Outside that range the client clock is taken to be wrong and the
-collector sets the timestamp to the time of receipt. The event is kept either
-way.
+The record timestamp is the time the event happened on the user's machine.
+Nothing corrects a wrong client clock any more (the collector did): an event
+from a machine with a wrong clock is stored with that wrong time.
 
 ### Events
 
@@ -75,8 +75,8 @@ way.
 | `cx.profile.count` | int | 0 to 50 |
 | `cx.spilled` | bool | |
 
-`cx.command.flags` is a joined string, not an array, so the collector can check
-it with one pattern.
+`cx.command.flags` is a joined string, not an array, so one pattern checks
+it.
 
 `cx.http.status_class` is observed, not inferred from the outcome. A fan-out
 that succeeds overall although one profile got a 500 reports `success` with
@@ -89,12 +89,15 @@ look better than they are. `cx` installs no signal handler to change this.
 
 ### Example request
 
-`POST https://<host>/api/v2/cli-telemetry`, `Content-Type: application/json`
+`POST <host_url>/v1/logs`, `Content-Type: application/json`,
+`Authorization: Bearer <key>` (section 2)
 
 ```json
 {
   "resourceLogs": [{
     "resource": { "attributes": [
+      { "key": "cx.application.name", "value": { "stringValue": "cx-cli" } },
+      { "key": "cx.subsystem.name", "value": { "stringValue": "usage" } },
       { "key": "service.name", "value": { "stringValue": "cx-cli" } },
       { "key": "service.version", "value": { "stringValue": "0.1.32" } },
       { "key": "os.type", "value": { "stringValue": "darwin" } },
@@ -128,13 +131,14 @@ look better than they are. `cx` installs no signal handler to change this.
 ### Client rules
 
 - The CLI builds the JSON with `serde_json` and sends it with `reqwest`. No OTel SDK.
-- A 2xx, or a 4xx other than 408 and 429, means the batch is finished and
-  removed from the spool. Any other HTTP response keeps it. Redirects are not
-  followed.
+- A 2xx, or a 4xx other than 401, 403, 408 and 429, means the batch is
+  finished and removed from the spool. Any other HTTP response keeps it.
+  Redirects are not followed. A 401 or 403 means the key was refused
+  (section 2).
 - A network failure keeps the batch until it is older than 7 days.
 - At most 50 events and 60 KiB of body per request, whichever is reached
-  first. The collector rejects a body above 64 KiB (`max_request_body_size`)
-  with a 400, and a 400 removes the batch. 50 typical events are about 47 KB;
+  first. The ingress takes far larger bodies (10 MB); the cap only keeps
+  requests small. 50 typical events are about 47 KB;
   50 events with 30 flags of 40 characters are about 110 KB and go out as two
   requests.
 - An event too large to fit a request on its own is dropped, not sent, so it
@@ -146,235 +150,107 @@ look better than they are. `cx` installs no signal handler to change this.
 - No command sends. A detached sender sub-process does, after the command has
   exited (section 5.1).
 
-## 2. Collector config
+## 2. Transport: the key route and the Coralogix ingress
 
-A separate collector deployment, used only for CLI events.
+There is no service of our own between the CLI and Coralogix. The sender
+sub-process (section 5.1) does two things: it gets a key, and it posts the
+events with it. No command does either.
 
-The config is `scripts/telemetry-collector/config.yaml`.
+### The key route
 
-What the collector does not do, and where it is handled:
+`GET https://api.eu2.coralogix.com/api/v2/cli-telemetry-key`, served by
+`cx-cli-onboarding-service` (coralogix/cx-cli-onboarding-service#12). No auth:
+the CLI calls it before the user has signed in. The CLI always calls the eu2
+host, whatever region the user's profile points at.
 
-| Gap | Handled by |
+| Answer | Meaning |
 |---|---|
-| Per-IP rate limit | a `ratelimit` processor in a custom collector image (section 5.5) |
-| Duplicate events | deduplicate on `cx.invocation.id` + `event.name` + the record timestamp in c4c queries. The first two alone are not unique: one `cx init` records several `cli.onboarding` steps |
-| "This flag belongs to this command" | not checked. Flag and command names are pattern-limited only |
-| Verified `team_id` | not available on an open path. `cx.team.id` is client-claimed |
-| Volume cap | daily quota on application `cx-cli` in c4c |
+| `200 {"key": "...", "host_url": "https://..."}` | a send-your-data key of a team used only for CLI telemetry, and the ingress host to send to |
+| `503` | no key is stored yet |
+| `404` | the route is not deployed yet |
+| `429` | the gateway limit: one bucket of 100 requests per second for all callers together |
 
-## 3. Deployment with platform features
+The key is public. Anyone can fetch it, so it is never treated as a credential
+of the user. It is still never printed or logged: the type that holds it has no
+`Debug`, and the sender has no stdout or stderr.
 
-There is no OTel collector platform feature (checked in pipeline-handler and the IDP
-MCP). There is a precedent: the platform's own collectors are a `chart` deployable in
-`coralogix/eng-observability` (`opentelemetry/`), owned by the Observability team.
-They use the `helm` feature with the internal `otel-integration` chart (JFrog
-`coralogix-charts-virtual`) and the internally mirrored `otelcontribcol` image.
+### The key cache
 
-Decision: deploy ours as a plain service (not the platform chart). It needs one
-receiver, two processors and one exporter, so the cluster-collection chart is more
-than we need.
+The answer is cached in `~/.cx/telemetry-key.json` with its fetch time and used
+for 24 hours. Without a cache every command would call a route whose limit is
+shared by all users. 24 hours was chosen because a rotation does not wait for
+the cache (see "key refused" below), so a long cache costs nothing.
 
-Decided:
+A cache file that does not parse, is older than 24 hours, has a fetch time in
+the future, or holds a host that fails the check below counts as no key.
 
-- **Owner:** cxai.
-- **Repo:** private. `coralogix/cx-cli` is public, and these files name internal
-  registries, namespaces, secrets and rate limits. The service is a folder with
-  its own `meta.yaml` in `coralogix/cx-cli-onboarding-service`. A new private
-  repo is used only if the platform does not accept two deployables there.
+### The host check
 
-The layout copies `coralogix/cx-cli-onboarding-service`, the existing cxai service
-with a public route. The snippets below follow the files in that repo's PR 11
-(not merged or deployed yet). That repo is the place to read the exact files.
+The service stores `host_url` as typed in by hand and does not check it. The
+CLI sends only to a `host_url` that is `https://`, has no path, query or
+credentials, and whose host is, or ends with a dot followed by, one of:
+`coralogix.com`, `coralogix.us`, `coralogix.in`, `coralogix.net`,
+`coralogixsg.com`. Anything else counts as a failed fetch. Debug builds also
+accept `http://` on a loopback address, so the tests can use a mock server.
 
-```
-cx-cli-telemetry-collector/          # a folder in coralogix/cx-cli-onboarding-service
-├── meta.yaml
-├── Dockerfile                       # builds the image; the config is copied into it
-├── builder.yaml                     # copy of scripts/telemetry-collector/builder.yaml
-├── config.yaml                      # copy of scripts/telemetry-collector/config.yaml
-├── metrics.yaml                     # owned by that repo: the collector's own metrics
-└── platform/defaults/
-    ├── workloads/defaults.yaml
-    ├── envVars/defaults.yaml
-    ├── envVars/staging.yaml
-    ├── networking/defaults.yaml
-    └── observability/defaults.yaml
-```
+### Sending
 
-There is no configMap. The platform builds the image from the Dockerfile, and
-the Dockerfile copies `config.yaml` and `metrics.yaml` into it.
+`POST <host_url>/v1/logs` with `Authorization: Bearer <key>` and the OTLP/HTTP
+JSON body of section 1. This is the documented Coralogix OpenTelemetry endpoint
+(`cx docs fetch developer-portal/apis/data-ingestion/opentelemetry-custom-logs.md`).
+The logs land under application `cx-cli`, subsystem `usage`.
 
-`meta.yaml`
+### What the sender does with each result
 
-```yaml
-name: cx-cli-telemetry-collector
-deployable_type: application
-lifecycle_status: development
-namespace: ai
-enabled: true
-cx_metadata:
-  cx_feature_id: ai
-  cx_service_rnd_owner_id: cxai
-multiarch: true
-# No auto_deploy yet: the first deploy needs the CX_SEND_DATA_KEY secret.
-deploy_envs:
-  - cx10                            # staging first; the production cluster is an open question
-platform_features_version: v2
-```
+| Result | Sender does |
+|---|---|
+| Ingress 2xx | batch removed, backoff file removed |
+| Ingress 401 or 403 (key refused) | delete the cache, fetch the key once, post the batch once more. If that fails too, keep the batch and back off. Once per sender |
+| Ingress other 4xx (not 408, 429) | batch removed: it would be rejected again |
+| Ingress 3xx, 408, 429, 5xx, network error, timeout | batch kept, back off |
+| Key route 404, 429, 503, any non-200, network error, a body that is not the expected JSON, an empty key, a host that fails the check | nothing is taken from the spool, nothing is cached, back off |
 
-`Dockerfile`
+"Back off" is the 15-minute backoff of section 5.1. Nothing is ever printed.
 
-The build stage is the same as `scripts/telemetry-collector/Dockerfile`. The
-final stage differs: it is the internal `ubi9-minimal` base image (the one the
-platform's own collector image uses, with a CA bundle), not `scratch`, and the
-config is inside the image:
+No jitter is added to the backoff. A retry is not on a timer: it happens on
+the user's next command after the 15 minutes, and those are already spread
+out. Add jitter if the route's limit is ever reached in practice.
 
-```dockerfile
-FROM <internal registry>/ubi9-minimal:latest
-COPY --from=build /build/out/cx-telemetry-otelcol /otelcol
-COPY config.yaml metrics.yaml /etc/otelcol/
-USER 10001
-EXPOSE 4318 8888 13133
-ENTRYPOINT ["/otelcol"]
-CMD ["--config=/etc/otelcol/config.yaml", "--config=/etc/otelcol/metrics.yaml"]
-```
+### What is gone with the collector
 
-`metrics.yaml`
+| Was done by the collector | Now |
+|---|---|
+| Allow-list of every event name, attribute and value | **nothing on the server**. The types in `event.rs` are the only limit on what the CLI sends. Anyone who holds the key can write any log into the telemetry team |
+| Per-IP rate limit | none. The control is the daily quota of the telemetry team |
+| Correcting a wrong client clock | none |
+| Setting application and subsystem | the CLI sends `cx.application.name` and `cx.subsystem.name` |
+| Duplicate events | as before: deduplicate on `cx.invocation.id` + `event.name` + the record timestamp in c4c queries |
+| Verified `team_id` | as before: not available. `cx.team.id` is client-claimed |
 
-An overlay merged over `config.yaml`. The collector serves its own metrics on
-localhost only by default. Prometheus scrapes the pod IP, so the overlay makes
-it listen on all interfaces, port 8888:
+Queries and dashboards on the telemetry team must not trust a field's value
+without checking its shape, because the key is public.
 
-```yaml
-service:
-  telemetry:
-    metrics:
-      readers:
-        - pull:
-            exporter:
-              prometheus:
-                host: 0.0.0.0
-                port: 8888
-```
+## 3. Rollout
 
-`platform/defaults/workloads/defaults.yaml`
-
-```yaml
-# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/workloads/schema
-kind: deployment
-replicas: 2                         # the per-IP limit is per replica, so it is doubled (5.5)
-container:                          # no image or args: the platform builds the Dockerfile
-  resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: 500m, memory: 512Mi }
-  probes:
-    liveness:
-      httpGet: { path: /, port: 13133 }
-    readiness:
-      httpGet: { path: /, port: 13133 }
-```
-
-`platform/defaults/envVars/defaults.yaml`
-
-```yaml
-# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/envVars/schema
-environmentVariables:
-  CORALOGIX_PRIVATE_KEY:              # the name config.yaml reads
-    secretKeyRef:
-      key: CX_SEND_DATA_KEY           # the name in the service secret
-```
-
-`platform/defaults/envVars/staging.yaml`
-
-`CORALOGIX_DOMAIN` is not in the defaults. It is set per environment type, so a
-new environment fails to start instead of sending to the wrong team.
-
-```yaml
-# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/envVars/schema?partial=true
-environmentVariables:
-  CORALOGIX_DOMAIN: <domain of the c4c-staging team>
-```
-
-`platform/defaults/networking/defaults.yaml`
-
-```yaml
-# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/networking/schema
-ingress:
-  rateLimitDefinitions:
-    - name: cli-telemetry
-      unit: second
-      requestsPerUnit: 100            # global ceiling; the per-IP limit is in the collector (5.5)
-      shadowed: true                  # required field; start in shadow mode
-  endpoints:
-    - name: api-v2-cli-telemetry
-      protocol: http
-      path: /api/v2/cli-telemetry
-      matchType: exact
-      rewritePath: /v1/logs           # only the logs path of the collector is reachable
-      port: 4318
-      usage:
-        type: mgmt
-      timeout: 5
-      retries: 0
-      limitRef: cli-telemetry
-      authentication:
-        authTypes:
-          - unauthenticated: {}
-      # Without this, `usage.type: mgmt` puts the route at
-      # /mgmt/api/v2/cli-telemetry and the CLI's posts get a 404.
-      legacyEndpointFeatures:
-        migration: true
-ports:
-  - name: otlp-http
-    port: 4318
-    protocol: TCP
-    targetPort: 4318
-  - name: metrics                     # the collector's own metrics; no gateway endpoint
-    port: 8888
-    protocol: TCP
-    targetPort: 8888
-```
-
-`platform/defaults/observability/defaults.yaml`
-
-```yaml
-# yaml-language-server: $schema=https://handler.platform.coralogix.net/docs/pf/v2/observability/schema
-serviceMonitor:
-  endpoints:
-    - port: metrics                   # default path /metrics, default 60 s interval
-      scrapeTimeout: 10s
-```
-
-Differences from the onboarding service's route: `unauthenticated` instead of
-`userToken`, an exact path match, no `signAuthContext`, and no retries. Like the
-onboarding route it sets `legacyEndpointFeatures.migration: true`: with
-`usage.type: mgmt` the platform prepends `/mgmt/` to the path unless that flag
-is set, and the CLI posts to `/api/v2/cli-telemetry`.
-
-Before the first deploy:
-
-- Create a c4c-staging send-your-data key and store it in the service's secret
-  as `CX_SEND_DATA_KEY`.
-- Set a daily quota for application `cx-cli` in that c4c team.
-- Run the config through `otelcol validate` with the built image.
+- The server side is in coralogix/cx-cli-onboarding-service#12. Until it is
+  deployed the route answers 404, and until the owner stores a key it answers
+  503. The CLI is silent and harmless in both cases: events wait in the spool
+  for up to 7 days and are then dropped.
+- No build sends until `BUILD_KEY_URL` in `src/telemetry/consent.rs` is set
+  (section 5.2).
+- The key must belong to a team used only for CLI telemetry, with a daily
+  quota.
 
 ## 4. Open questions
 
-- Does the gateway forward `x-envoy-external-address` to the service, and is the
-  route limit on an unauthenticated endpoint one shared bucket? (5.5)
-- Which cluster hosts the collector, and what fixed hostname does the CLI use before
-  the user has a region?
-- Is a client-claimed `team_id` acceptable, or is a second authenticated endpoint
-  needed?
+- Is a client-claimed `team_id` acceptable?
 - The one-time notice is printed to stderr once, wherever `cx` runs, and then
   marked as shown. Under an agent or in CI no person reads it, so that user is
   never told. Is that acceptable, or must recording wait until the notice has
-  been printed to a terminal? Product/Legal to decide before any build gets an
-  endpoint.
-- Can the platform build and host the custom collector image from 5.5?
-- `error_mode: propagate` on the validation processors is deliberate. The internal
-  OTTL skill recommends `ignore` for production, but with `ignore` a check that
-  errors keeps the record, which lets bad data through. Confirm with Observability.
+  been printed to a terminal? Product/Legal to decide before any build gets a
+  key route URL.
+- With no server-side validation, is the quota of the telemetry team enough
+  protection against someone writing junk with the public key?
 
 ## 5. Design review decisions (2026-11-16)
 
@@ -395,7 +271,7 @@ commands send too, so users who are not signed in yet are counted.
   master: stdin, stdout and stderr are null, with its own process group on Unix
   and `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` on Windows. Both callers
   share one helper. (This branch must merge master first to get it.)
-- The sender reads the consent mode and the endpoint itself, the same way `cx`
+- The sender reads the consent mode and the key route URL itself, the same way `cx`
   does. An opt-out set after the spawn still stops it.
 
 **When it starts**
@@ -436,27 +312,29 @@ commands send too, so users who are not signed in yet are counted.
 There is no backoff file today. The sender adds one: `~/.cx/telemetry-backoff`,
 an empty file.
 
-- The sender touches it when the batch is kept (see below) and deletes it after
-  a batch is accepted.
+- The sender touches it when the batch is kept (see below) or when it could
+  not get a key (section 2), and deletes it after a batch is accepted.
 - The parent does not spawn while the file is younger than 15 minutes.
-- Result: with the collector unreachable, one sender per 15 minutes per machine.
+- Result: with Coralogix or the key route unreachable, one sender per 15
+  minutes per machine.
 
 **What ends a batch**
 
 | Result | Batch | Backoff |
 |---|---|---|
-| HTTP 2xx, or 4xx other than 408 and 429 | removed | no |
+| HTTP 2xx, or 4xx other than 401, 403, 408 and 429 | removed | no |
+| HTTP 401 or 403, after one fetch of a new key and one more try | kept | yes |
 | Any other HTTP status (3xx, 408, 429, 5xx) | kept | yes |
 | Network error or timeout | kept | yes |
+| No key (section 2) | not taken from the spool | yes |
 
-A kept status is one that does not show the collector looked at the batch: a
-429 from the per-IP rate limit (5.5), or a 502/504 from the gateway while the
-collector is down. Redirects are not followed: following one re-sends the POST
-as a GET with no body, possibly to another host.
+A kept status is one that does not show the ingress looked at the batch.
+Redirects are not followed: following one re-sends the POST as a GET with no
+body, possibly to another host.
 
 **Timeouts**
 
-- Connect 5 s, whole request 10 s.
+- Connect 5 s, whole request 10 s, for the key fetch and for each post.
 - The sender sends batches of up to 50 events and 60 KiB (section 1, client
   rules) until the spool is empty. The spool holds at most 500 events: 10
   requests when they are typical, about 20 when every event is the largest
@@ -520,90 +398,43 @@ killed and the backoff file removed, so every run paid for a spawn.
 | Scenario | Median | p95 |
 |---|---|---|
 | Telemetry off | 10.4 ms | 10.8 ms |
-| Collector refuses the connection | 10.8 ms | 11.1 ms |
-| Collector accepts and never answers | 11.0 ms | 11.5 ms |
+| Server refuses the connection | 10.8 ms | 11.1 ms |
+| Server accepts and never answers | 11.0 ms | 11.5 ms |
 | DNS stalls (a `.local` name, 5 s mDNS timeout) | 10.9 ms | 11.7 ms |
 
 Telemetry adds 0.4 to 0.6 ms at the median and under 1 ms at p95, whatever the
-collector does. That includes building the event and appending it to the
+server does (measured with the collector transport; the command path has not
+changed since). That includes building the event and appending it to the
 spool. With the in-process flush, the DNS case took about 700 ms.
 
 One outlier: the first spawn of the freshly downloaded `cx.exe` on Windows took
 82 ms, once in 600 spawns. That is most likely the antivirus scan of a new
 binary, so it can happen on the first run after an install or upgrade.
 
-### 5.2 CLI and collector deployment dependency
+### 5.2 The key route URL and release order
 
-The collector knows every event name, attribute and enum value. A CLI that
-sends something the collector does not know has that record dropped, silently.
-So the two must be released in order.
+This section used to tie CLI releases to the collector's config. With no
+collector there is no config to be behind, so the `telemetry-contract` CI jobs,
+the release gate script and the local collector were removed.
 
-**The rule**
-
-1. `scripts/telemetry-collector/config.yaml` in this repo is the only source of
-   the collector config. The collector service carries a copy, built into its
-   image, and never edits it by hand. The copies of `config.yaml` and `builder.yaml`
-   are in `coralogix/cx-cli-onboarding-service` under
-   `cx-cli-telemetry-collector/`. Nothing copies them automatically: a change
-   to either file here is copied there by hand
-   (`scripts/telemetry-collector/README.md`). The release check below fails
-   when the `config.yaml` copy is behind.
-2. Schema changes only add: a new event, a new attribute, a new enum value.
-   Nothing is removed or narrowed, because old CLI versions keep sending the old
-   shape for as long as they are installed.
-3. The collector is deployed first. A CLI release that needs a config change
-   ships only after that config is live.
-
-**Where it is enforced**
-
-| Place | Check | Catches |
-|---|---|---|
-| `test.yml`, new `telemetry-contract` job on every PR | runs `scripts/telemetry-collector-check.sh` with the config in the PR | a CLI change that adds an event or value without updating the config |
-| `release.yml`, new step before the build matrix | fetches the config copy from the collector service repo's default branch and runs the same script with it | a release cut before the collector has the new config |
-
-Both run on `ubuntu-latest`, which has Docker. Both use a debug build of `cx`,
-because the script reads events through the Log mode (5.4). The script takes
-the config to check from `CONFIG`.
-
-**The endpoint is a constant in the source**, `BUILD_ENDPOINT` in
+**The key route URL is a constant in the source**, `BUILD_KEY_URL` in
 `src/telemetry/consent.rs`, not a build-time variable. Homebrew compiles the
 tagged source on its own machines (`cargo install`, no network), and Cargo and
 Nix builds do the same, so a repository variable or secret never reaches them.
 The URL is not a secret: it ships in a public binary. Debug builds ignore the
-constant, so tests and `cargo run` never send to the real collector. `.cargo/config.toml`
+constant, so tests and `cargo run` never call the real route. `.cargo/config.toml`
 also sets `CX_TELEMETRY=0` for everything cargo runs, so a
-`CX_TELEMETRY_ENDPOINT` exported in a developer's shell is not used by the
+`CX_TELEMETRY_KEY_URL` exported in a developer's shell is not used by the
 test suites either; `tests/telemetry` sets its own values.
 
-The release job is skipped while the constant is `None` and no collector repo
-is configured. M6 turns it on by setting the constant and the repository
-variables `TELEMETRY_COLLECTOR_REPO` (`coralogix/cx-cli-onboarding-service`) and
-`TELEMETRY_COLLECTOR_CONFIG_PATH`, and the secret
-`TELEMETRY_COLLECTOR_REPO_TOKEN`, a token that can read that repo.
+While the constant is `None`, no release sends. Setting it is the switch, and
+it does not depend on the server: a release that calls a route that is not
+deployed (404) or has no key (503) stays silent.
 
-The gate fails closed (`.github/scripts/telemetry-release-gate.sh`). Once the
-constant is set, the job fails unless both variables are set too, so a release
-that sends telemetry cannot skip the check.
-
-Known limit: Homebrew builds from the tag, not from the release workflow. A
-tag whose release job failed here can still reach Homebrew users. So the M6
-pull request that sets the constant must itself pass the check against the
-deployed config, before anything is tagged.
-
-The script learns what the CLI sends from its own scenario, which must cover
-every event kind. A new event kind needs a line in the scenario, or the check
-does not see it.
-
-The release step compares against the service repo's default branch. That is
-the deployed config only while the service auto-deploys from that branch, as
-`auto_deploy` in section 3 sets up.
-
-**Old and new versions**
-
-| CLI | Collector | Result |
-|---|---|---|
-| old | new | accepted. The config only ever adds |
-| new | old (the release gate was bypassed) | records with an unknown event name or enum value are dropped. Unknown attributes are stripped and the record is kept. The CLI sees a 200 either way and nothing breaks for the user |
+**Schema changes** still only add: a new event, a new attribute, a new enum
+value. Nothing checks this on the server any more, but old CLI versions keep
+sending the old shape for as long as they are installed, and the queries on
+the telemetry team must keep working for them.
 
 ### 5.3 `cx.team.id` is optional
 
@@ -619,17 +450,12 @@ Audit of every place that touches it:
 |---|---|
 | Event model (`event.rs`): `Option<TeamId>`, skipped when `None`, defaults to `None` when read | no |
 | OTLP encoder (`send.rs`): an absent key gives no attribute | no |
-| Collector validation: `attributes["cx.team.id"] != nil and not IsMatch(...)` | no |
-| Collector `keep_keys`: lists the key, keeps the record without it | no |
 | Spec, section 1: "string, optional" | no |
 
 Gaps (1 and 2 are fixed):
 
-1. `scripts/telemetry-collector-check.sh` never sends an event that has a team
-   id. Its profile is created with `--api-key` against a stub, so
-   `cached_team_id` is never set. The script must write `cached_team_id` into
-   the profile file for one run and assert that the collector exports those
-   events with `cx.team.id`, next to the ones without it.
+1. The collector check script never sent an event that has a team id. The
+   script is gone with the collector; the unit test below covers the encoding.
 2. The unit test `team_id_is_a_string_and_one_record_per_event` checks the
    record that has a team id. It does not assert that the second record has no
    `cx.team.id` key. Add that assert.
@@ -669,140 +495,25 @@ sure nothing is sent does not start sending because the mode was removed.
   not fail.
 - One new unit test on `consent::decide` covers both builds: `log` gives `Log`
   with debug assertions and `Off` without.
-- `scripts/telemetry-collector-check.sh` needs a debug binary. It exits with a
-  clear message if the binary ignores the Log mode.
 
 **For users and reviewers on a release build**
 
 1. `docs/telemetry.md` (M5) lists every field and every value.
-2. To see the real bytes, point the endpoint at a local listener. The runtime
-   `CX_TELEMETRY_ENDPOINT` already overrides the built-in one:
-
-   ```bash
-   nc -l 4318
-   ```
-
-   ```bash
-   CX_TELEMETRY_ENDPOINT=http://localhost:4318/v1/logs cx logs --limit 1
-   ```
-
-   The listener prints the exact request the collector would get, and nothing
-   reaches Coralogix. `docs/telemetry.md` documents this in place of
-   `CX_TELEMETRY=log`.
+2. A release build has no way to show the real bytes locally. The old way,
+   pointing the endpoint at a local listener, no longer works: the CLI now
+   needs a key route to answer first, and a release build sends only to an
+   `https://` Coralogix host (section 2). To see the bytes, use a debug build
+   with `CX_TELEMETRY=log`.
 
 No new command is added for this.
 
-### 5.5 Collector rate limit, per source IP
+### 5.5 Rate limits
 
-**Mechanism:** Elastic's `ratelimit` processor
-(`github.com/elastic/opentelemetry-collector-components/processor/ratelimitprocessor`
-v0.81.0, built against collector v0.165.0), first in the pipeline after
-`memory_limiter`.
+The per-IP rate limit lived in the collector and is gone with it. What is left:
 
-The stock `otel/opentelemetry-collector-contrib:0.165.0` image has no rate
-limiter. `otelcol components` lists none, and the config below fails `validate`
-on it with `unknown type: "ratelimit"`. So the collector becomes a custom image
-built with `ocb`. This answers two open questions in section 4: the deployable
-does build an image, and the tag to pin is ours.
-
-The image holds only what the config uses: the `otlp` receiver; the
-`memory_limiter`, `batch`, `filter`, `transform` and `ratelimit` processors; the
-`coralogix` exporter (plus `file` and `debug`, which only the local runs put in
-a pipeline; they are in the deployed binary too, unused); the
-`health_check` extension; the `env` and `file` config providers. It is 61 MB,
-against 484 MB for contrib. The `ocb` manifest (`builder.yaml`) and the
-Dockerfile are in `scripts/telemetry-collector/`, and the check script builds
-and uses this image.
-
-**Config** (changes to `scripts/telemetry-collector/config.yaml`):
-
-```yaml
-receivers:
-  otlp:
-    protocols:
-      http:
-        include_metadata: true    # request headers become client metadata
-
-processors:
-  ratelimit/ip:
-    metadata_keys: [x-envoy-external-address]
-    strategy: requests
-    rate: 10                      # per second, per key
-    burst: 300
-    throttle_behavior: error      # reject with HTTP 429
-
-service:
-  pipelines:
-    logs:
-      processors: [memory_limiter, ratelimit/ip, filter/validate, transform/sanitize, batch]
-```
-
-With these changes the full config passes `validate` on the custom image, with
-and without `local.yaml`.
-
-**The client IP**
-
-- The peer address the collector sees is the gateway, so it cannot be the key.
-- The key is the `x-envoy-external-address` header, which the edge Envoy sets
-  to the client address it trusts.
-- `x-forwarded-for` must not be the key. The processor uses the whole header
-  value, and Envoy appends to whatever the client sent. A client that sends its
-  own `X-Forwarded-For` gets a new bucket on every request. Tested: keyed on
-  XFF, 400 requests with client-chosen prefixes all passed.
-- Requests without the header share one bucket.
-- Not checked: that the Coralogix gateway forwards `x-envoy-external-address`
-  to the service. M6 captures the real headers on cx10 before the limit is
-  relied on. If the header is missing, only the `metadata_keys` line changes.
-
-**The numbers**
-
-- 10 requests per second per IP, sustained. One install sends about one request
-  per command. A few hundred users behind one NAT, each running a command every
-  30 to 60 s, stay under it.
-- Burst 300, refilled in 30 s. This covers a CI fan-out or an agent burst.
-- The limit counts requests, not records. `cx` sends at most 50 records per
-  request, but nothing stops a hand-made request from carrying more: a 64 KiB
-  body fits about 210 of the smallest valid records. Worst case from one IP:
-  10 requests × 210 records, about 2,100 records per second per replica. The
-  daily quota on application `cx-cli` in c4c is the backstop.
-- Buckets are per replica, so with 2 replicas the real limit is up to twice
-  these numbers.
-
-**What a limited client gets:** HTTP 429 with `Retry-After: 1`. Nothing from
-that request is exported. The sender keeps the batch and backs off for 15
-minutes (5.1).
-
-`scripts/telemetry-collector-check.sh` runs a burst on every PR: 400 requests
-from one address must get at least one 429, 5 from a second address must all
-pass, and the number of records exported must equal the number of requests
-accepted.
-
-**Burst test** (custom image, local, 400 requests in 0.5 s):
-
-| Step | Result |
-|---|---|
-| 400 requests from `203.0.113.7` | 304 × 200, 96 × 429 |
-| 5 requests from `198.51.100.9` right after | 5 × 200 |
-| 5 more from `203.0.113.7` | 5 × 429 |
-| Records exported | 314, so a rejected request exports nothing |
-
-**Known limits of the processor**
-
-- Its stability level is `development`.
-- Buckets are never evicted, so memory grows with the number of distinct IPs.
-  Not measured. `memory_limiter` and the pod memory limit bound it; a restart
-  clears it.
-- It logs one error line per rejected request.
-
-**With the gateway's route limit**
-
-- The v2 `networking` schema has no per-IP scope. `RateLimit` has only
-  `userLevelScope` (`userId`, `userAccountId` or null). So the gateway cannot
-  limit per source IP, and the collector does it.
-- On a route with no user, the route limit is presumably one bucket shared by
-  everyone. This is read from the schema, not tested.
-- So the route limit is a global ceiling, set well above expected total traffic:
-  100 requests per second, replacing the 600 per minute placeholder in section
-  3, which one client could use up for everyone.
-- `shadowed` is a required field of `RateLimit` and is missing from the block in
-  section 3. The route limit starts with `shadowed: true`.
+- The key route has one gateway limit for all callers together (100 requests
+  per second). The platform has no per-IP scope for an unauthenticated route.
+  The 24-hour key cache and the 15-minute backoff keep each machine far below
+  it: at most one call per day when all is well, and at most one per 15
+  minutes while the route has no key.
+- Ingestion is limited only by the daily quota of the telemetry team.

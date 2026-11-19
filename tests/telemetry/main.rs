@@ -1,6 +1,6 @@
 //! Integration tests for client telemetry: the real `cx` binary in a sealed
 //! home dir, inspected through `CX_TELEMETRY=log` (events on stderr, debug
-//! builds only), the spool file, or a mock collector.
+//! builds only), the spool file, or a mock key route and ingress.
 
 // The log-mode tests and their helpers exist only in debug builds.
 #![cfg_attr(not(debug_assertions), allow(dead_code))]
@@ -13,8 +13,10 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PREFIX: &str = "cx telemetry: ";
-/// Nothing listens on the discard port, so sends fail fast.
-const DEAD_ENDPOINT: &str = "http://127.0.0.1:9/v1/logs";
+/// Nothing listens on the discard port, so the key fetch fails fast.
+const DEAD_KEY_URL: &str = "http://127.0.0.1:9/key";
+const KEY_ROUTE: &str = "/api/v2/cli-telemetry-key";
+const TEST_KEY: &str = "cxtp_TestKeyNeverPrinted";
 
 fn temp_home() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("cx_test_telemetry_{}", uuid::Uuid::new_v4()));
@@ -35,7 +37,7 @@ fn cx(home: &Path) -> Command {
         "CX_REGION",
         "CX_PROFILE",
         "CX_TELEMETRY",
-        "CX_TELEMETRY_ENDPOINT",
+        "CX_TELEMETRY_KEY_URL",
         "DO_NOT_TRACK",
     ] {
         cmd.env_remove(var);
@@ -174,7 +176,7 @@ async fn api_command_outcomes() {
         (500, "error", "api", "5xx"),
     ];
     for (status, outcome, class, status_class) in cases {
-        let server = MockServer::start().await;
+        let server = mock_server().await;
         let body = if status == 200 {
             serde_json::json!({ "alertDefs": [] })
         } else {
@@ -271,7 +273,7 @@ fn opt_outs_build_nothing() {
             fs::write(home.join(".cx").join("config.toml"), "telemetry = false\n").unwrap();
         }
         let mut cmd = cx(&home);
-        cmd.env("CX_TELEMETRY_ENDPOINT", DEAD_ENDPOINT);
+        cmd.env("CX_TELEMETRY_KEY_URL", DEAD_KEY_URL);
         if !var.is_empty() {
             cmd.env(var, value);
         }
@@ -288,7 +290,7 @@ fn opt_outs_build_nothing() {
 }
 
 #[test]
-fn no_endpoint_means_off() {
+fn no_key_url_means_off() {
     let home = temp_home();
     let r = run(cx(&home).args(["dataprime", "list"]));
     assert_eq!(r.code, 0);
@@ -301,7 +303,7 @@ fn on_mode_prints_notice_once_and_spools_local_commands() {
     let home = temp_home();
     let mut first = cx(&home);
     let first = run(first
-        .env("CX_TELEMETRY_ENDPOINT", DEAD_ENDPOINT)
+        .env("CX_TELEMETRY_KEY_URL", DEAD_KEY_URL)
         .args(["dataprime", "list"]));
     // The first run's sender fails, puts the events back and backs off.
     assert!(
@@ -311,7 +313,7 @@ fn on_mode_prints_notice_once_and_spools_local_commands() {
     // So the second run starts no sender, and nothing touches the spool.
     let mut second = cx(&home);
     let second = run(second
-        .env("CX_TELEMETRY_ENDPOINT", DEAD_ENDPOINT)
+        .env("CX_TELEMETRY_KEY_URL", DEAD_KEY_URL)
         .args(["dataprime", "list"]));
 
     assert_eq!(first.code, 0);
@@ -333,10 +335,38 @@ fn on_mode_prints_notice_once_and_spools_local_commands() {
 
 // ── Sender ────────────────────────────────────────────────────────────────────
 
-/// A mock serving the alerts API and a collector at `/v1/logs` answering
-/// `collector`.
-async fn api_and_collector(collector: impl wiremock::Respond + 'static) -> MockServer {
-    let server = MockServer::start().await;
+/// The key route's answer: `key`, and the mock itself as the ingress host.
+fn key_answer(server: &MockServer, key: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .set_body_json(serde_json::json!({ "key": key, "host_url": server.uri() }))
+}
+
+async fn mount_key_route(server: &MockServer, answer: impl wiremock::Respond + 'static) {
+    Mock::given(method("GET"))
+        .and(path(KEY_ROUTE))
+        .respond_with(answer)
+        .mount(server)
+        .await;
+}
+
+async fn mount_ingress(server: &MockServer, answer: impl wiremock::Respond + 'static) {
+    Mock::given(method("POST"))
+        .and(path("/v1/logs"))
+        .respond_with(answer)
+        .mount(server)
+        .await;
+}
+
+/// A mock server of this test's own. `MockServer::start()` hands out pooled
+/// servers, and a detached sender left by an earlier test would post to the
+/// next test that got the same one.
+async fn mock_server() -> MockServer {
+    MockServer::builder().start().await
+}
+
+/// A mock serving the alerts API, with nothing mounted for telemetry yet.
+async fn api() -> MockServer {
+    let server = mock_server().await;
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/alerts/alerts/v3"))
         .respond_with(
@@ -344,26 +374,41 @@ async fn api_and_collector(collector: impl wiremock::Respond + 'static) -> MockS
         )
         .mount(&server)
         .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/logs"))
-        .respond_with(collector)
-        .mount(&server)
-        .await;
     server
 }
 
-async fn collector_requests(server: &MockServer) -> Vec<wiremock::Request> {
+/// A mock serving the alerts API, the key route (answering [`TEST_KEY`]) and
+/// an ingress at `/v1/logs` answering `ingress`.
+async fn api_and_ingress(ingress: impl wiremock::Respond + 'static) -> MockServer {
+    let server = api().await;
+    mount_key_route(&server, key_answer(&server, TEST_KEY)).await;
+    mount_ingress(&server, ingress).await;
+    server
+}
+
+async fn requests_to(server: &MockServer, route: &str) -> Vec<wiremock::Request> {
     server
         .received_requests()
         .await
         .unwrap_or_default()
         .into_iter()
-        .filter(|r| r.url.path() == "/v1/logs")
+        .filter(|r| r.url.path() == route)
         .collect()
 }
 
-/// Every record the collector received, as `(event.name, cx.invocation.id)`.
-async fn collector_records(server: &MockServer) -> Vec<(String, String)> {
+async fn ingress_requests(server: &MockServer) -> Vec<wiremock::Request> {
+    requests_to(server, "/v1/logs").await
+}
+
+fn bearer(request: &wiremock::Request) -> String {
+    request.headers["authorization"]
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// Every record the ingress received, as `(event.name, cx.invocation.id)`.
+async fn ingress_records(server: &MockServer) -> Vec<(String, String)> {
     let attr = |record: &Value, key: &str| {
         record["attributes"]
             .as_array()
@@ -375,7 +420,7 @@ async fn collector_records(server: &MockServer) -> Vec<(String, String)> {
             .unwrap()
             .to_string()
     };
-    collector_requests(server)
+    ingress_requests(server)
         .await
         .iter()
         .flat_map(|req| {
@@ -392,7 +437,10 @@ async fn collector_records(server: &MockServer) -> Vec<(String, String)> {
 
 fn on_mode(home: &Path, server: &MockServer) -> Command {
     let mut cmd = cx(home);
-    cmd.env("CX_TELEMETRY_ENDPOINT", format!("{}/v1/logs", server.uri()));
+    cmd.env(
+        "CX_TELEMETRY_KEY_URL",
+        format!("{}{KEY_ROUTE}", server.uri()),
+    );
     cmd
 }
 
@@ -405,6 +453,10 @@ fn sender(home: &Path, server: &MockServer) -> Command {
 
 fn backoff(home: &Path) -> PathBuf {
     home.join(".cx").join("telemetry-backoff")
+}
+
+fn key_cache(home: &Path) -> PathBuf {
+    home.join(".cx").join("telemetry-key.json")
 }
 
 fn spool_lines(home: &Path) -> Vec<Value> {
@@ -453,12 +505,12 @@ fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
 
 async fn wait_for_requests(server: &MockServer, count: usize) {
     for _ in 0..200 {
-        if collector_requests(server).await.len() >= count {
+        if ingress_requests(server).await.len() >= count {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    panic!("the collector never got {count} request(s)");
+    panic!("the ingress never got {count} request(s)");
 }
 
 fn seed_spool(home: &Path, count: u64) {
@@ -481,26 +533,34 @@ fn seed_spool(home: &Path, count: u64) {
 
 #[tokio::test]
 async fn local_command_delivers_its_events() {
-    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let server = api_and_ingress(ResponseTemplate::new(200)).await;
     let home = temp_home();
 
     let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
     assert_eq!(r.code, 0, "{}", r.stderr);
     wait_for_requests(&server, 1).await;
 
-    let requests = collector_requests(&server).await;
+    let requests = ingress_requests(&server).await;
     let req = &requests[0];
-    assert!(req.headers.get("authorization").is_none(), "no auth header");
+    assert_eq!(bearer(req), format!("Bearer {TEST_KEY}"));
+    assert_eq!(req.headers["content-type"], "application/json");
     assert!(req.headers["user-agent"]
         .to_str()
         .unwrap()
         .starts_with("cx-cli/"));
     let body: Value = serde_json::from_slice(&req.body).unwrap();
     let resource = &body["resourceLogs"][0]["resource"]["attributes"];
-    assert!(resource.as_array().unwrap().contains(
-        &serde_json::json!({ "key": "service.name", "value": { "stringValue": "cx-cli" } })
-    ));
-    let names: Vec<String> = collector_records(&server)
+    for (key, value) in [
+        ("service.name", "cx-cli"),
+        ("cx.application.name", "cx-cli"),
+        ("cx.subsystem.name", "usage"),
+    ] {
+        assert!(resource
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!({ "key": key, "value": { "stringValue": value } })));
+    }
+    let names: Vec<String> = ingress_records(&server)
         .await
         .into_iter()
         .map(|(name, _)| name)
@@ -517,7 +577,7 @@ async fn local_command_delivers_its_events() {
 /// and the batch that is then delivered removes it.
 #[tokio::test]
 async fn backoff_expires_and_a_delivered_batch_clears_it() {
-    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let server = api_and_ingress(ResponseTemplate::new(200)).await;
     let home = temp_home();
     seed_spool(&home, 1);
     fs::write(backoff(&home), "").unwrap();
@@ -526,7 +586,7 @@ async fn backoff_expires_and_a_delivered_batch_clears_it() {
     assert_eq!(r.code, 0, "{}", r.stderr);
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert!(
-        collector_requests(&server).await.is_empty(),
+        ingress_requests(&server).await.is_empty(),
         "a sender ran while backing off"
     );
     assert!(backoff(&home).exists());
@@ -549,12 +609,12 @@ async fn backoff_expires_and_a_delivered_batch_clears_it() {
 
 #[tokio::test]
 async fn parse_error_is_delivered() {
-    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let server = api_and_ingress(ResponseTemplate::new(200)).await;
     let home = temp_home();
     let r = run(on_mode(&home, &server).args(["alertz", "list"]));
     assert_ne!(r.code, 0);
     wait_for_requests(&server, 1).await;
-    let names: Vec<String> = collector_records(&server)
+    let names: Vec<String> = ingress_records(&server)
         .await
         .into_iter()
         .map(|(name, _)| name)
@@ -563,9 +623,9 @@ async fn parse_error_is_delivered() {
 }
 
 #[tokio::test]
-async fn hung_collector_never_delays_the_command() {
+async fn hung_ingress_never_delays_the_command() {
     let server =
-        api_and_collector(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(60)))
+        api_and_ingress(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(60)))
             .await;
     let home = temp_home();
     write_profile(&home, "mock", &server.uri(), "");
@@ -588,7 +648,7 @@ async fn sender_status_decides_whether_the_batch_is_kept() {
     for (status, kept) in [
         (200, false),
         (400, false),
-        // Not followed: the collector is asked once and the batch is kept.
+        // Not followed: the ingress is asked once and the batch is kept.
         (302, true),
         (408, true),
         (429, true),
@@ -599,13 +659,13 @@ async fn sender_status_decides_whether_the_batch_is_kept() {
         // The header only matters for the 302: a followed redirect would show
         // up as a second request.
         let server =
-            api_and_collector(ResponseTemplate::new(status).insert_header("Location", "/v1/logs"))
+            api_and_ingress(ResponseTemplate::new(status).insert_header("Location", "/v1/logs"))
                 .await;
         let home = temp_home();
         seed_spool(&home, 3);
 
         assert_eq!(run(&mut sender(&home, &server)).code, 0);
-        assert_eq!(collector_requests(&server).await.len(), 1, "{status}");
+        assert_eq!(ingress_requests(&server).await.len(), 1, "{status}");
         assert_eq!(
             spool_lines(&home).len(),
             if kept { 3 } else { 0 },
@@ -619,7 +679,7 @@ async fn sender_status_decides_whether_the_batch_is_kept() {
         assert_eq!(r.code, 0);
         if kept {
             std::thread::sleep(std::time::Duration::from_millis(500));
-            assert_eq!(collector_requests(&server).await.len(), 1, "{status}");
+            assert_eq!(ingress_requests(&server).await.len(), 1, "{status}");
         } else {
             wait_for_requests(&server, 2).await;
         }
@@ -628,12 +688,12 @@ async fn sender_status_decides_whether_the_batch_is_kept() {
 
 #[tokio::test]
 async fn sender_posts_batches_of_50_until_the_spool_is_empty() {
-    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let server = api_and_ingress(ResponseTemplate::new(200)).await;
     let home = temp_home();
     seed_spool(&home, 120);
 
     assert_eq!(run(&mut sender(&home, &server)).code, 0);
-    let sizes: Vec<usize> = collector_requests(&server)
+    let sizes: Vec<usize> = ingress_requests(&server)
         .await
         .iter()
         .map(|req| {
@@ -650,18 +710,18 @@ async fn sender_posts_batches_of_50_until_the_spool_is_empty() {
 
 #[tokio::test]
 async fn sender_honours_an_opt_out_set_after_the_spawn() {
-    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let server = api_and_ingress(ResponseTemplate::new(200)).await;
     let home = temp_home();
     seed_spool(&home, 3);
 
     assert_eq!(run(sender(&home, &server).env("CX_TELEMETRY", "0")).code, 0);
-    assert!(collector_requests(&server).await.is_empty());
+    assert!(ingress_requests(&server).await.is_empty());
     assert_eq!(spool_lines(&home).len(), 3);
 }
 
 #[tokio::test]
 async fn sender_exits_when_another_holds_the_lock() {
-    let server = api_and_collector(ResponseTemplate::new(200)).await;
+    let server = api_and_ingress(ResponseTemplate::new(200)).await;
     let home = temp_home();
     seed_spool(&home, 3);
     let lock = fs::File::create(home.join(".cx").join("telemetry-sender.lock")).unwrap();
@@ -674,12 +734,12 @@ async fn sender_exits_when_another_holds_the_lock() {
         0
     );
     std::thread::sleep(std::time::Duration::from_millis(500));
-    assert!(collector_requests(&server).await.is_empty());
+    assert!(ingress_requests(&server).await.is_empty());
 
     drop(lock);
     assert_eq!(run(&mut sender(&home, &server)).code, 0);
     // 3 seeded + the command's first_run and command.
-    assert_eq!(collector_records(&server).await.len(), 5);
+    assert_eq!(ingress_records(&server).await.len(), 5);
 }
 
 /// Answers 200 after [`Arrivals::DELAY`] and records when each request came.
@@ -699,7 +759,7 @@ impl wiremock::Respond for Arrivals {
 #[tokio::test(flavor = "multi_thread")]
 async fn concurrent_runs_send_one_at_a_time_and_each_event_once() {
     let arrivals = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let server = api_and_collector(Arrivals(arrivals.clone())).await;
+    let server = api_and_ingress(Arrivals(arrivals.clone())).await;
     let home = temp_home();
     let commands = |records: &[(String, String)]| {
         records
@@ -731,7 +791,7 @@ async fn concurrent_runs_send_one_at_a_time_and_each_event_once() {
     // its event for the next run's sender. So run again until all are in.
     'delivered: loop {
         for _ in 0..60 {
-            if commands(&collector_records(&server).await) >= runs {
+            if commands(&ingress_records(&server).await) >= runs {
                 break 'delivered;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -744,7 +804,7 @@ async fn concurrent_runs_send_one_at_a_time_and_each_event_once() {
         runs += 1;
     }
 
-    let records = collector_records(&server).await;
+    let records = ingress_records(&server).await;
     assert_eq!(commands(&records), runs);
     let unique: std::collections::BTreeSet<_> = records.iter().collect();
     assert_eq!(unique.len(), records.len(), "an event arrived twice");
@@ -761,6 +821,199 @@ async fn concurrent_runs_send_one_at_a_time_and_each_event_once() {
     }
 }
 
+// ── Key route ─────────────────────────────────────────────────────────────────
+
+/// Answers with the next key in the list on each call, then the last one.
+struct Keys {
+    host_url: String,
+    keys: Vec<&'static str>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl wiremock::Respond for Keys {
+    fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let key = self.keys[call.min(self.keys.len() - 1)];
+        ResponseTemplate::new(200)
+            .set_body_json(serde_json::json!({ "key": key, "host_url": self.host_url }))
+    }
+}
+
+/// An ingress that takes only `Bearer <self.0>`.
+struct Accepts(&'static str);
+
+impl wiremock::Respond for Accepts {
+    fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+        if bearer(request) == format!("Bearer {}", self.0) {
+            ResponseTemplate::new(200)
+        } else {
+            ResponseTemplate::new(401)
+        }
+    }
+}
+
+#[tokio::test]
+async fn cached_key_is_reused_by_the_next_sender() {
+    let server = api_and_ingress(ResponseTemplate::new(200)).await;
+    let home = temp_home();
+
+    for _ in 0..2 {
+        seed_spool(&home, 3);
+        assert_eq!(run(&mut sender(&home, &server)).code, 0);
+    }
+    assert_eq!(ingress_requests(&server).await.len(), 2);
+    assert_eq!(requests_to(&server, KEY_ROUTE).await.len(), 1);
+}
+
+#[tokio::test]
+async fn no_key_keeps_the_events_and_backs_off() {
+    let not_json = ResponseTemplate::new(200).set_body_string("<html>");
+    let empty_key =
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({ "key": "", "host_url": "" }));
+    for (case, answer) in [
+        ("not deployed", ResponseTemplate::new(404)),
+        ("no key stored", ResponseTemplate::new(503)),
+        ("rate limited", ResponseTemplate::new(429)),
+        ("not json", not_json),
+        ("empty key", empty_key),
+    ] {
+        let server = api().await;
+        mount_key_route(&server, answer).await;
+        mount_ingress(&server, ResponseTemplate::new(200)).await;
+        let home = temp_home();
+        seed_spool(&home, 3);
+
+        let r = run(&mut sender(&home, &server));
+        assert_eq!(r.code, 0, "{case}");
+        assert!(r.stdout.is_empty() && r.stderr.is_empty(), "{case}");
+        assert_eq!(requests_to(&server, KEY_ROUTE).await.len(), 1, "{case}");
+        assert!(ingress_requests(&server).await.is_empty(), "{case}");
+        assert_eq!(spool_lines(&home).len(), 3, "{case}");
+        assert!(backoff(&home).exists(), "{case}");
+        assert!(!key_cache(&home).exists(), "{case}");
+
+        // While backing off, a command starts no sender and looks the same.
+        let r = run(on_mode(&home, &server).args(["dataprime", "list"]));
+        assert_eq!(r.code, 0, "{case}");
+        assert!(!r.stdout.is_empty(), "{case}");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(requests_to(&server, KEY_ROUTE).await.len(), 1, "{case}");
+    }
+}
+
+#[tokio::test]
+async fn a_host_that_is_not_coralogix_is_not_sent_to() {
+    let server = api().await;
+    let answer = ResponseTemplate::new(200).set_body_json(
+        serde_json::json!({ "key": TEST_KEY, "host_url": "https://evil.example.com" }),
+    );
+    mount_key_route(&server, answer).await;
+    mount_ingress(&server, ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    seed_spool(&home, 3);
+
+    assert_eq!(run(&mut sender(&home, &server)).code, 0);
+    assert!(ingress_requests(&server).await.is_empty());
+    assert_eq!(spool_lines(&home).len(), 3);
+    assert!(backoff(&home).exists());
+    assert!(!key_cache(&home).exists());
+}
+
+#[tokio::test]
+async fn rotated_key_is_fetched_again_and_the_batch_delivered() {
+    let server = api().await;
+    let keys = Keys {
+        host_url: server.uri(),
+        keys: vec!["cxtp_old", "cxtp_new"],
+        calls: Default::default(),
+    };
+    mount_key_route(&server, keys).await;
+    mount_ingress(&server, Accepts("cxtp_new")).await;
+    let home = temp_home();
+    seed_spool(&home, 3);
+
+    assert_eq!(run(&mut sender(&home, &server)).code, 0);
+    let sent: Vec<String> = ingress_requests(&server).await.iter().map(bearer).collect();
+    assert_eq!(sent, ["Bearer cxtp_old", "Bearer cxtp_new"]);
+    assert_eq!(requests_to(&server, KEY_ROUTE).await.len(), 2);
+    assert!(kept_events(&home).is_empty());
+    assert!(!backoff(&home).exists());
+    assert!(fs::read_to_string(key_cache(&home))
+        .unwrap()
+        .contains("cxtp_new"));
+
+    // The next sender starts from the new key.
+    seed_spool(&home, 1);
+    assert_eq!(run(&mut sender(&home, &server)).code, 0);
+    assert_eq!(requests_to(&server, KEY_ROUTE).await.len(), 2);
+    assert!(kept_events(&home).is_empty());
+}
+
+#[tokio::test]
+async fn a_key_refused_twice_keeps_the_batch_and_backs_off() {
+    for status in [401, 403] {
+        let server = api_and_ingress(ResponseTemplate::new(status)).await;
+        let home = temp_home();
+        seed_spool(&home, 3);
+
+        assert_eq!(run(&mut sender(&home, &server)).code, 0);
+        assert_eq!(ingress_requests(&server).await.len(), 2, "{status}");
+        assert_eq!(requests_to(&server, KEY_ROUTE).await.len(), 2, "{status}");
+        assert_eq!(spool_lines(&home).len(), 3, "{status}");
+        assert!(backoff(&home).exists(), "{status}");
+        assert!(sending_files(&home).is_empty(), "{status}");
+    }
+}
+
+#[tokio::test]
+async fn hung_key_route_never_delays_the_command() {
+    let server = api().await;
+    let hung = key_answer(&server, TEST_KEY).set_delay(std::time::Duration::from_secs(60));
+    mount_key_route(&server, hung).await;
+    mount_ingress(&server, ResponseTemplate::new(200)).await;
+    let home = temp_home();
+    write_profile(&home, "mock", &server.uri(), "");
+
+    let started = std::time::Instant::now();
+    let r = run(on_mode(&home, &server).args(["alerts", "list"]));
+    let elapsed = started.elapsed();
+
+    assert_eq!(r.code, 0);
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "took {elapsed:?}"
+    );
+    assert_eq!(kept_events(&home).len(), 2, "events kept while unanswered");
+    assert!(ingress_requests(&server).await.is_empty());
+}
+
+#[tokio::test]
+async fn the_key_is_never_printed_or_spooled() {
+    // The ingress fails, so the events stay on disk to be looked at.
+    let server = api_and_ingress(ResponseTemplate::new(500)).await;
+    let home = temp_home();
+
+    let command = run(on_mode(&home, &server).args(["dataprime", "list"]));
+    assert!(
+        wait_until(|| backoff(&home).exists()),
+        "sender never backed off"
+    );
+    fs::remove_file(backoff(&home)).unwrap();
+    let sender = run(&mut sender(&home, &server));
+
+    assert_eq!(ingress_requests(&server).await.len(), 2);
+    for output in [
+        &command.stdout,
+        &command.stderr,
+        &sender.stdout,
+        &sender.stderr,
+    ] {
+        assert!(!output.contains(TEST_KEY));
+    }
+    assert!(sender.stdout.is_empty() && sender.stderr.is_empty());
+    assert!(!fs::read_to_string(spool(&home)).unwrap().contains(TEST_KEY));
+}
+
 // ── Funnel and lifecycle events ───────────────────────────────────────────────
 
 fn onboarding_steps(r: &Run) -> Vec<String> {
@@ -775,7 +1028,7 @@ fn onboarding_steps(r: &Run) -> Vec<String> {
 #[tokio::test]
 async fn init_records_the_onboarding_funnel_in_order() {
     use std::os::unix::fs::PermissionsExt;
-    let server = MockServer::start().await;
+    let server = mock_server().await;
     let home = temp_home();
     // A fake npx: `skills ls` lists nothing, `skills add` succeeds.
     let bin = home.join("bin");
@@ -826,7 +1079,7 @@ async fn init_records_the_onboarding_funnel_in_order() {
 #[cfg(debug_assertions)]
 #[tokio::test]
 async fn profile_added_is_recorded_for_a_new_profile_only() {
-    let server = MockServer::start().await;
+    let server = mock_server().await;
     let home = temp_home();
     let add = |extra: &[&str]| {
         let mut cmd = log_mode(&home);
@@ -851,7 +1104,7 @@ async fn profile_added_is_recorded_for_a_new_profile_only() {
 #[cfg(debug_assertions)]
 #[tokio::test]
 async fn first_query_succeeded_is_recorded_once() {
-    let server = MockServer::start().await;
+    let server = mock_server().await;
     Mock::given(method("GET"))
         .and(path("/metrics/api/v1/query"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -873,7 +1126,7 @@ async fn first_query_succeeded_is_recorded_once() {
 #[cfg(debug_assertions)]
 #[tokio::test]
 async fn yes_on_a_confirmed_command_records_skipped_yes() {
-    let server = MockServer::start().await;
+    let server = mock_server().await;
     let home = temp_home();
     write_profile(&home, "mock", &server.uri(), "");
 
@@ -960,7 +1213,7 @@ fn config_opt_out_holds_when_another_key_is_invalid() {
     )
     .unwrap();
     let r = run(cx(&home)
-        .env("CX_TELEMETRY_ENDPOINT", DEAD_ENDPOINT)
+        .env("CX_TELEMETRY_KEY_URL", DEAD_KEY_URL)
         .args(["schema"]));
     assert!(!spool(&home).exists(), "{}", r.stderr);
     assert!(!r.stderr.contains("collects usage data"));

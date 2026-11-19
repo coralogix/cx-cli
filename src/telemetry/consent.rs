@@ -3,15 +3,13 @@
 
 use crate::version_cache::VersionCheckCache;
 
-/// The collector URL release builds send to. A constant, not a build-time env
-/// var: Homebrew, Cargo and Nix compile the tagged source themselves, so only
-/// what is in the source reaches every build. `None` means no build sends.
-/// Debug builds never use it; they send only where `CX_TELEMETRY_ENDPOINT`
-/// points at runtime (tests, staging).
-///
-/// Keep this on one line in this exact form:
-/// `.github/scripts/telemetry-release-gate.sh` reads it.
-const BUILD_ENDPOINT: Option<&str> = None;
+/// The onboarding service route release builds fetch the send-your-data key
+/// from (`key.rs`): always the eu2 host, whatever region the user is on. A
+/// constant, not a build-time env var: Homebrew, Cargo and Nix compile the
+/// tagged source themselves, so only what is in the source reaches every
+/// build. `None` means no build sends. Debug builds never use it; they send
+/// only when `CX_TELEMETRY_KEY_URL` is set at runtime (tests, staging).
+const BUILD_KEY_URL: Option<&str> = None;
 
 pub const NOTICE: &str = "cx collects usage data (command names, versions, error categories, \
 a random install id and your Coralogix team id — never queries, arguments, credentials, or \
@@ -26,12 +24,12 @@ pub enum Mode {
     /// Each event is printed to stderr; nothing is stored or sent. Debug
     /// builds only.
     Log,
-    /// Events are spooled and sent to `endpoint`.
-    On { endpoint: String },
+    /// Events are spooled and sent with the key fetched from `key_url`.
+    On { key_url: String },
 }
 
 /// The mode for this process, from the env vars, `~/.cx/config.toml` and the
-/// endpoint.
+/// key route URL.
 pub fn mode() -> Mode {
     let env = |var| std::env::var(var).ok();
     let config = crate::config::config_file()
@@ -41,7 +39,7 @@ pub fn mode() -> Mode {
         env("CX_TELEMETRY").as_deref(),
         env("DO_NOT_TRACK").as_deref(),
         config_allows(config),
-        env("CX_TELEMETRY_ENDPOINT").or(BUILD_ENDPOINT
+        env("CX_TELEMETRY_KEY_URL").or(BUILD_KEY_URL
             .filter(|_| !cfg!(debug_assertions))
             .map(str::to_string)),
     )
@@ -67,12 +65,12 @@ fn config_allows(config: Option<Result<String, std::io::ErrorKind>>) -> bool {
 /// `CX_TELEMETRY` can only turn telemetry off (or to `log`): an "on" value
 /// does not override another opt-out. A value it does not know is an opt-out,
 /// so a typo or `disabled` never sends. Then any other opt-out; then telemetry
-/// needs somewhere to send to.
+/// needs a route to get its key from.
 fn decide(
     cx_telemetry: Option<&str>,
     do_not_track: Option<&str>,
     config_enabled: bool,
-    endpoint: Option<String>,
+    key_url: Option<String>,
 ) -> Mode {
     let lower = |v: Option<&str>| v.map(|v| v.trim().to_ascii_lowercase());
     match lower(cx_telemetry).as_deref() {
@@ -89,8 +87,8 @@ fn decide(
     {
         return Mode::Off;
     }
-    match endpoint.filter(|e| !e.trim().is_empty()) {
-        Some(endpoint) => Mode::On { endpoint },
+    match key_url.filter(|u| !u.trim().is_empty()) {
+        Some(key_url) => Mode::On { key_url },
         None => Mode::Off,
     }
 }
@@ -118,13 +116,13 @@ mod tests {
 
     fn on() -> Mode {
         Mode::On {
-            endpoint: "https://collector".into(),
+            key_url: "https://key-route".into(),
         }
     }
 
     #[test]
     fn decide_modes() {
-        let ep = || Some("https://collector".to_string());
+        let ep = || Some("https://key-route".to_string());
         assert_eq!(decide(None, None, true, ep()), on());
         for off in ["0", "false", "OFF", "no"] {
             assert_eq!(decide(Some(off), None, true, ep()), Mode::Off, "{off}");
@@ -133,7 +131,7 @@ mod tests {
         assert_eq!(decide(None, Some("true"), true, ep()), Mode::Off);
         assert_eq!(decide(None, Some("0"), true, ep()), on());
         assert_eq!(decide(None, None, false, ep()), Mode::Off);
-        // No endpoint (source and dev builds) means off.
+        // No key route URL (source and dev builds) means off.
         assert_eq!(decide(None, None, true, None), Mode::Off);
         assert_eq!(decide(None, None, true, Some(" ".into())), Mode::Off);
         // An unrecognised value is an opt-out.
@@ -148,15 +146,6 @@ mod tests {
         }
     }
 
-    /// The release gate script greps for this exact line.
-    #[test]
-    fn release_gate_can_read_the_endpoint_constant() {
-        let unset = include_str!("consent.rs")
-            .lines()
-            .any(|line| line == "const BUILD_ENDPOINT: Option<&str> = None;");
-        assert_eq!(unset, BUILD_ENDPOINT.is_none());
-    }
-
     #[test]
     fn log_mode_exists_only_in_debug_builds() {
         let expected = if cfg!(debug_assertions) {
@@ -165,7 +154,7 @@ mod tests {
             Mode::Off
         };
         // Never `On`, whatever the build: `log` means nothing is sent.
-        let ep = || Some("https://collector".to_string());
+        let ep = || Some("https://key-route".to_string());
         assert_eq!(decide(Some("log"), None, true, ep()), expected);
         assert_eq!(decide(Some("LOG"), None, true, None), expected);
         assert_eq!(decide(Some("log"), Some("1"), false, None), expected);

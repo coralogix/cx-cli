@@ -1,9 +1,11 @@
 //! OTLP/HTTP JSON encoding and the sender sub-process, `cx __telemetry-send`,
-//! which posts the spool to the collector after the command has exited.
+//! which posts the spool to Coralogix after the command has exited.
 //!
-//! No OTel SDK: the body is the `resourceLogs` JSON the collector's OTLP
-//! receiver accepts, built from the flat event JSON. No auth header is sent;
-//! the collector path is open and validates every record itself.
+//! No OTel SDK: the body is the `resourceLogs` JSON the Coralogix ingress
+//! accepts on `/v1/logs`, built from the flat event JSON. It is sent with the
+//! send-your-data key the onboarding service hands out (`key.rs`). Nothing on
+//! the server checks the records: the types in `event.rs` are the only limit
+//! on what is sent.
 
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -13,21 +15,22 @@ use serde_json::{json, Map, Value};
 
 use super::consent::{self, Mode};
 use super::event::{Event, Resource};
+use super::key::{self, TelemetryKey};
 use super::spool;
 
 /// `argv[1]` of the sender sub-process.
 pub const SENDER_ARG: &str = "__telemetry-send";
 /// Records per request.
 pub const MAX_BATCH: usize = 50;
-/// Request body cap in bytes. The collector rejects bodies above 65536
-/// (`max_request_body_size`) with a 400, which would delete the batch.
+/// Request body cap in bytes: small requests, far below the ingress limit.
 pub const MAX_BODY_BYTES: usize = 60 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// The sender exits after this long whatever it is doing. Below the 60 s
 /// after which a `.sending` file counts as abandoned.
 const LIFETIME: Duration = Duration::from_secs(30);
-/// After a kept batch, no sender is started for this long.
+/// After a kept batch or a failed key fetch, no sender is started for this
+/// long.
 const BACKOFF: Duration = Duration::from_secs(15 * 60);
 
 fn sibling(spool: &Path, name: &str) -> PathBuf {
@@ -49,7 +52,7 @@ pub fn lock(spool: &Path) -> Option<File> {
     Some(file)
 }
 
-/// The last sender kept its batch less than [`BACKOFF`] ago.
+/// The last sender kept its batch or got no key less than [`BACKOFF`] ago.
 pub fn backing_off(spool: &Path) -> bool {
     fs::metadata(sibling(spool, "telemetry-backoff"))
         .and_then(|m| m.modified())
@@ -62,7 +65,7 @@ pub fn backing_off(spool: &Path) -> bool {
 /// events and [`MAX_BODY_BYTES`] bytes until it is empty or a batch is kept. Reads the consent mode itself, so an
 /// opt-out set after the spawn still stops it. Records no telemetry.
 pub fn run_sender() {
-    let Mode::On { endpoint } = consent::mode() else {
+    let Mode::On { key_url } = consent::mode() else {
         return;
     };
     let Some(spool) = spool::path() else {
@@ -83,13 +86,41 @@ pub fn run_sender() {
     else {
         return;
     };
-    runtime.block_on(drain(&endpoint, &spool));
+    runtime.block_on(drain(&key_url, &spool));
 }
 
-async fn drain(endpoint: &str, spool: &Path) {
-    let resource = Resource::current(&crate::version_cache::installation_id());
+async fn drain(key_url: &str, spool: &Path) {
     let backoff = sibling(spool, "telemetry-backoff");
+    let cache = sibling(spool, "telemetry-key.json");
+    let Ok(client) = reqwest::Client::builder()
+        .user_agent(concat!("cx-cli/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        // A followed redirect re-sends the POST as a bodyless GET, possibly
+        // to another host.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
+        return;
+    };
+    let fetch = || async {
+        let key = key::fetch(&client, key_url).await?;
+        key::save(&cache, &key);
+        Some(key)
+    };
+    let cached = key::load(&cache);
+    // No key (route not deployed, no key stored yet, rate limited, offline):
+    // the events wait in the spool.
+    let Some(mut key) = (match cached {
+        Some(key) => Some(key),
+        None => fetch().await,
+    }) else {
+        let _ = fs::write(&backoff, "");
+        return;
+    };
+    let resource = Resource::current(&crate::version_cache::installation_id());
     let token = uuid::Uuid::new_v4().to_string();
+    let mut refetched = false;
     loop {
         let mut taken = spool::take(spool, &token);
         let mut unsent = std::mem::take(&mut taken.events);
@@ -98,7 +129,19 @@ async fn drain(endpoint: &str, spool: &Path) {
             taken.finish(spool, &[]);
             return;
         }
-        let done = post(endpoint, &encode(&resource, &batch)).await;
+        let body = encode(&resource, &batch);
+        let mut status = post(&client, &key, &body).await;
+        // The key was probably rotated: get the new one and try once more,
+        // once per sender.
+        if key_refused(status) && !refetched {
+            refetched = true;
+            let _ = fs::remove_file(&cache);
+            if let Some(new) = fetch().await {
+                key = new;
+                status = post(&client, &key, &body).await;
+            }
+        }
+        let done = status.is_some_and(batch_finished);
         if !done {
             unsent.extend(batch);
         }
@@ -179,31 +222,26 @@ fn attributes(map: Map<String, Value>) -> Vec<Value> {
         .collect()
 }
 
-/// POST `body`. True when the batch is finished: the collector took it (2xx)
-/// or rejected it (4xx), and a rejected request would only be rejected again.
-/// False when the batch must be kept: a network error or timeout, or a
-/// response that does not show the collector looked at it (a redirect, 408,
-/// 429, or any 5xx, which a gateway in front of the collector also returns).
-async fn post(endpoint: &str, body: &Value) -> bool {
-    let Ok(client) = reqwest::Client::builder()
-        .user_agent(concat!("cx-cli/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
-        // A followed redirect re-sends the POST as a bodyless GET, possibly
-        // to another host.
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-    else {
-        return false;
-    };
-    match client.post(endpoint).json(body).send().await {
-        Ok(response) => batch_finished(response.status().as_u16()),
-        Err(_) => false,
-    }
+/// POST `body` to the ingress with `key`. The status, or `None` for a
+/// network error or timeout.
+async fn post(client: &reqwest::Client, key: &TelemetryKey, body: &Value) -> Option<u16> {
+    let request = client
+        .post(key.logs_url())
+        .bearer_auth(key.bearer())
+        .json(body);
+    Some(request.send().await.ok()?.status().as_u16())
 }
 
+fn key_refused(status: Option<u16>) -> bool {
+    matches!(status, Some(401 | 403))
+}
+
+/// True when the batch is finished: the ingress took it (2xx) or rejected it
+/// (4xx), and a rejected request would only be rejected again. False when the
+/// batch must be kept: the key was refused (401, 403), or the response does
+/// not show the ingress looked at the batch (a redirect, 408, 429, any 5xx).
 fn batch_finished(status: u16) -> bool {
-    matches!(status, 200..=299 | 400..=499) && !matches!(status, 408 | 429)
+    matches!(status, 200..=299 | 400..=499) && !matches!(status, 401 | 403 | 408 | 429)
 }
 
 #[cfg(test)]
@@ -234,6 +272,8 @@ mod tests {
     const SPEC_EXAMPLE: &str = r#"{
       "resourceLogs": [{
         "resource": { "attributes": [
+          { "key": "cx.application.name", "value": { "stringValue": "cx-cli" } },
+          { "key": "cx.subsystem.name", "value": { "stringValue": "usage" } },
           { "key": "service.name", "value": { "stringValue": "cx-cli" } },
           { "key": "service.version", "value": { "stringValue": "0.1.32" } },
           { "key": "os.type", "value": { "stringValue": "darwin" } },
@@ -266,6 +306,8 @@ mod tests {
     #[test]
     fn encodes_the_spec_example() {
         let resource = Resource {
+            application_name: "cx-cli",
+            subsystem_name: "usage",
             service_name: "cx-cli",
             service_version: "0.1.32",
             os_type: "darwin",
@@ -358,20 +400,16 @@ mod tests {
         )
     }
 
-    /// The collector's `max_request_body_size`.
-    const COLLECTOR_LIMIT: usize = 65536;
-    const _: () = assert!(MAX_BODY_BYTES < COLLECTOR_LIMIT);
-
     #[test]
-    fn fifty_maximum_size_events_go_out_in_requests_under_the_collector_limit() {
+    fn fifty_maximum_size_events_go_out_in_requests_under_the_body_cap() {
         let names: Vec<String> = (0..30).map(|i| format!("{i:a>40}")).collect();
         let flags = CommandFlags::from_long_names(names.iter().map(String::as_str));
         assert_eq!(flags.as_str().len(), 30 * 42 + 29, "30 flags of 40 chars");
         let resource = Resource::current(&Uuid::new_v4().to_string());
         let mut events: Vec<Event> = (0..50).map(|_| command(flags.clone())).collect();
         assert!(
-            encode(&resource, &events).to_string().len() > COLLECTOR_LIMIT,
-            "one request for all 50 would be rejected"
+            encode(&resource, &events).to_string().len() > MAX_BODY_BYTES,
+            "one request for all 50 would be over the cap"
         );
 
         let (mut sent, mut requests) = (0, 0);

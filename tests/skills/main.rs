@@ -567,7 +567,7 @@ fn outdated_global_skills_refresh_in_the_background() {
         .env_remove("CX_NO_SKILLS_AUTO_UPDATE")
         .env_remove("DO_NOT_TRACK")
         .env("CX_TELEMETRY", "1")
-        .env("CX_TELEMETRY_ENDPOINT", "http://127.0.0.1:9/v1/logs")
+        .env("CX_TELEMETRY_KEY_URL", "http://127.0.0.1:9/key")
         .arg("cleanup")
         .output()
         .expect("failed to run cx");

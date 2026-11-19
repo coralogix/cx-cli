@@ -5672,7 +5672,7 @@ mod tests {
     }
 
     /// Telemetry sends command and flag names only if they match the
-    /// collector's patterns (`[a-z0-9-]`); anything else would be silently
+    /// spec's patterns (`[a-z0-9-]`); anything else would be silently
     /// left out of `cx.command.path` / `cx.command.flags`.
     #[test]
     fn every_command_and_flag_name_is_a_valid_telemetry_name() {

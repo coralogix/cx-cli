@@ -16,8 +16,8 @@ use uuid::Uuid;
 
 use crate::config::OutputFormat;
 
-/// Longest a command may run and still be reported as-is; the collector drops
-/// larger values, so longer runs are clamped to it.
+/// Longest a command may run and still be reported as-is; longer runs are
+/// clamped to it.
 pub const MAX_DURATION_MS: u64 = 3_600_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -390,8 +390,8 @@ impl Version {
     }
 }
 
-/// The team id a profile has cached. Sent as a digit string, which is what the
-/// collector's pattern check expects. Claimed by the client, not verified.
+/// The team id a profile has cached. Sent as a digit string. Claimed by the
+/// client, not verified.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String")]
 pub struct TeamId(String);
@@ -444,6 +444,12 @@ fn is_ci() -> bool {
 /// Attributes shared by every event in a request (OTLP resource attributes).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Resource {
+    /// The application and subsystem the logs land under in the telemetry
+    /// team; Coralogix ingestion needs both.
+    #[serde(rename = "cx.application.name")]
+    pub application_name: &'static str,
+    #[serde(rename = "cx.subsystem.name")]
+    pub subsystem_name: &'static str,
     #[serde(rename = "service.name")]
     pub service_name: &'static str,
     #[serde(rename = "service.version")]
@@ -462,10 +468,12 @@ impl Resource {
     pub fn current(install_id: &str) -> Self {
         use crate::install_method::InstallMethod;
         Self {
+            application_name: "cx-cli",
+            subsystem_name: "usage",
             service_name: "cx-cli",
             service_version: env!("CARGO_PKG_VERSION"),
-            // Values outside the spec's lists pass through and the collector
-            // drops them; there is nothing better to send.
+            // Values outside the spec's lists pass through; there is nothing
+            // better to send.
             os_type: match std::env::consts::OS {
                 "macos" => "darwin",
                 other => other,
@@ -475,8 +483,8 @@ impl Resource {
                 "x86_64" => "amd64",
                 other => other,
             },
-            // An edited state file can hold anything: send the nil UUID, which
-            // the collector drops, rather than copy free text through.
+            // An edited state file can hold anything: send the nil UUID
+            // rather than copy free text through.
             install_id: Uuid::parse_str(install_id).unwrap_or(Uuid::nil()),
             install_method: match crate::install_method::detect() {
                 InstallMethod::Brew => "brew",
@@ -752,24 +760,5 @@ mod tests {
             (Some("cleanup".into()), String::new())
         );
         assert_eq!(identity(&["cx"]), (None, String::new()));
-    }
-
-    #[test]
-    fn collector_config_allows_every_agent_name() {
-        let config = include_str!("../../scripts/telemetry-collector/config.yaml");
-        let line = config
-            .lines()
-            .find(|l| l.contains(r#"IsMatch(attributes["cx.agent"]"#))
-            .expect("cx.agent condition in the collector config");
-        let (_, rest) = line.split_once("\"^(").unwrap();
-        let (list, _) = rest.split_once(")$\"").unwrap();
-        let allowed: Vec<&str> = list.split('|').collect();
-
-        let names: Vec<String> = Agent::names().collect();
-        assert_eq!(
-            allowed, names,
-            "scripts/telemetry-collector/config.yaml must allow `direct` plus safety::AGENT_ENV_VARS; \
-             update it and copy it to the collector service repo"
-        );
     }
 }

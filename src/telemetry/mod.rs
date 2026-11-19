@@ -11,6 +11,7 @@
 
 pub mod consent;
 pub mod event;
+pub mod key;
 pub mod send;
 pub mod spool;
 
@@ -152,7 +153,7 @@ pub fn set_targets(output: OutputFormat, targets: &[Arc<ExecutionTarget>]) {
     };
     let mut inv = invocation();
     inv.output_format = Some(output);
-    // The collector drops counts above 50; report 50 for more.
+    // The spec's highest count is 50; report 50 for more.
     inv.profile_count = u32::try_from(targets.len().min(50)).unwrap_or(50);
     inv.team_id = team_id;
 }

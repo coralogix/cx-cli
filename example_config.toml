@@ -25,7 +25,7 @@ default_output_format = "text"
 #
 # api_key = "cxp_your_api_key_here"
 # region = "eu1"
-# label = "production"
+# labels = ["production", "eu"]
 #
 # Optional: override the web console base URL used to build "View in
 # Coralogix" links printed after dashboard/alert/case mutations. By default

@@ -287,7 +287,7 @@ These need no API credentials and are exempt from the risky-command confirmation
 | Command | Purpose |
 |---|---|
 | `cx init` | One-step onboarding: configure a profile and install the agent skills |
-| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx profiles` | Manage profiles: `list`, `add`, `label`, `delete`, `set-default` |
 | `cx skills` | Install or update the cx agent skills for coding agents: `install` |
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
@@ -297,6 +297,7 @@ These need no API credentials and are exempt from the risky-command confirmation
 
 ```
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
+    --label <LABEL>          Fan out across every profile that has one of these labels.
     --api-key <API_KEY>      Override the profile API key
     --region <REGION>        Override the profile region
 -o, --output <FORMAT>        text | json | toon (default: text)

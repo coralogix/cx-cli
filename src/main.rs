@@ -128,7 +128,7 @@ pub enum SearchByValueDataset {
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
-  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, label, delete, set-default)
   \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
@@ -144,6 +144,17 @@ struct Cli {
         add = ArgValueCompleter::new(complete_profile_names)
     )]
     profile: Vec<String>,
+
+    /// Run against every profile that has one of these labels. Repeat the flag
+    /// or pass a comma-separated list (`--label prod,eu`). Matching profiles
+    /// fan out like repeated --profile and can be combined with it.
+    #[arg(
+        long,
+        global = true,
+        value_name = "LABEL",
+        help_heading = "Global Options"
+    )]
+    label: Vec<String>,
 
     /// Coralogix API key (overrides a single profile; incompatible with multiple --profile).
     #[arg(
@@ -202,13 +213,17 @@ struct Cli {
     about = "Coralogix CLI - the observability backbone for AI agents and engineering teams."
 )]
 struct ProfilesCli {
+    /// Output format (text, json, toon).
+    #[arg(long, short = 'o', global = true, value_name = "FORMAT")]
+    output: Option<OutputFormat>,
+
     #[command(subcommand)]
     command: ProfilesTopLevel,
 }
 
 #[derive(Subcommand)]
 enum ProfilesTopLevel {
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, label, delete, set-default).
     #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
@@ -361,7 +376,7 @@ Examples:
         install_completions: Option<Shell>,
     },
 
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, label, delete, set-default).
     #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
@@ -825,7 +840,18 @@ impl Commands {
 #[derive(Subcommand)]
 enum ProfilesCmd {
     /// List all configured profiles.
-    List,
+    ///
+    /// `--label` filters the table. Repeat the flag or pass a comma-separated
+    /// list. A profile is shown when it has any of the given labels.
+    List {
+        /// Only show profiles that have any of these labels.
+        ///
+        /// Repeat the flag (`--label prod --label eu`) or pass a comma-separated
+        /// list (`--label prod,eu`). A profile matches when it has at least one
+        /// of the labels. Matching is exact after surrounding whitespace is trimmed.
+        #[arg(long = "label", value_name = "LABEL")]
+        label: Vec<String>,
+    },
     /// Add or reconfigure a profile.
     ///
     /// Values supplied via flags/env are never prompted for. On a terminal,
@@ -839,6 +865,7 @@ Examples:
   cx profiles add prod --region eu2                      # region answered, rest prompted
   cx profiles add --oauth --region eu2                   # straight to browser login
   cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
+  cx profiles add prod --region eu2 --label prod --label eu
   CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite")]
     Add {
         /// Profile name to configure (prompted if not provided; defaults to
@@ -880,12 +907,19 @@ Examples:
         /// written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
+        /// Labels for this profile, such as `prod` or `eu`.
+        ///
+        /// Repeat the flag or pass a comma-separated list (`--label prod,eu`).
+        /// Whitespace is trimmed; empty values and duplicates are dropped.
+        /// When reconfiguring, omit this flag to keep the profile's existing labels.
+        #[arg(long = "label", value_name = "LABEL")]
+        label: Vec<String>,
     },
     /// Sign an OAuth profile in again, keeping its settings.
     ///
     /// Opens the browser sign-in with the profile's team preselected and saves
     /// the new tokens only when the sign-in is for that same team. Region,
-    /// credential storage, output format and label are not changed. To change
+    /// credential storage, output format and labels are not changed. To change
     /// those, use `cx profiles add <name>`.
     Refresh {
         /// Profile name to sign in again.
@@ -906,6 +940,35 @@ Examples:
         /// Profile name to set as default.
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
+    },
+    /// Show or change a profile's labels without reconfiguring it.
+    ///
+    /// Credentials, region and settings are not touched. With no flag, prints
+    /// the profile's current labels. Every flag takes repeated values or a
+    /// comma-separated list.
+    #[command(after_help = "\
+Examples:
+  cx profiles label team-a                      # show labels
+  cx profiles label team-a --add kuku           # add one label
+  cx profiles label team-a --remove staging     # remove one label
+  cx profiles label team-a --set prod,eu        # replace all labels
+  cx profiles label team-a --clear              # remove every label")]
+    Label {
+        /// Profile name.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+        /// Labels to add. Labels already on the profile are kept.
+        #[arg(long, value_name = "LABEL")]
+        add: Vec<String>,
+        /// Labels to remove. Labels not on the profile are ignored.
+        #[arg(long, value_name = "LABEL")]
+        remove: Vec<String>,
+        /// Replace every label with this list.
+        #[arg(long, value_name = "LABEL", conflicts_with_all = ["add", "remove", "clear"])]
+        set: Vec<String>,
+        /// Remove every label.
+        #[arg(long, conflicts_with_all = ["add", "remove", "set"])]
+        clear: bool,
     },
 }
 
@@ -3447,8 +3510,12 @@ async fn main() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        let global_config = config::load_config().unwrap_or_default();
+        let output = profiles_cli
+            .output
+            .unwrap_or(global_config.default_output_format);
         let result = match cmd {
-            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::List { label } => commands::profiles::run_list(label, output),
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3460,6 +3527,7 @@ async fn main() -> Result<()> {
                 force,
                 set_default,
                 disable_olly,
+                label,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3472,14 +3540,30 @@ async fn main() -> Result<()> {
                     set_default,
                     disable_olly,
                     quick: false,
+                    labels: (!label.is_empty()).then_some(label),
                 })
                 .await
             }
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            ProfilesCmd::Label {
+                name,
+                add,
+                remove,
+                set,
+                clear,
+            } => commands::profiles::run_label(
+                name,
+                commands::profiles::LabelEdit {
+                    add,
+                    remove,
+                    set,
+                    clear,
+                },
+            ),
         };
-        update_check::maybe_print_notice(OutputFormat::Text);
+        update_check::maybe_print_notice(output);
         return result;
     }
     // When global flags precede `profiles` (e.g. `cx --read-only profiles list`),
@@ -3545,8 +3629,17 @@ async fn main() -> Result<()> {
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // it falls through to here.
     if let Commands::Profiles { cmd } = cli.command {
+        let global_config = config::load_config().unwrap_or_default();
+        let output = cli.output.unwrap_or(global_config.default_output_format);
         let result = match cmd {
-            ProfilesCmd::List => commands::profiles::run_list(),
+            // `list` defines its own `--label`, so clap does not hand it the
+            // global one. A label given before `profiles` (`cx --label prod
+            // profiles list`) lands on `cli.label`; merge both.
+            ProfilesCmd::List { label } => {
+                let mut labels = cli.label;
+                labels.extend(label);
+                commands::profiles::run_list(labels, output)
+            }
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3558,6 +3651,7 @@ async fn main() -> Result<()> {
                 force,
                 set_default,
                 disable_olly,
+                label,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3570,14 +3664,30 @@ async fn main() -> Result<()> {
                     set_default,
                     disable_olly,
                     quick: false,
+                    labels: (!label.is_empty()).then_some(label),
                 })
                 .await
             }
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            ProfilesCmd::Label {
+                name,
+                add,
+                remove,
+                set,
+                clear,
+            } => commands::profiles::run_label(
+                name,
+                commands::profiles::LabelEdit {
+                    add,
+                    remove,
+                    set,
+                    clear,
+                },
+            ),
         };
-        update_check::maybe_print_notice(OutputFormat::Text);
+        update_check::maybe_print_notice(output);
         return result;
     }
 
@@ -3724,7 +3834,8 @@ async fn main() -> Result<()> {
     // --api-key / --region on the command line, suppress the corresponding
     // env-var value (CX_API_KEY / CX_REGION) so the profile's own stored
     // credentials and region are used instead.
-    let profile_from_cli = matches.value_source("profile") == Some(ValueSource::CommandLine);
+    let profile_from_cli = matches.value_source("profile") == Some(ValueSource::CommandLine)
+        || matches.value_source("label") == Some(ValueSource::CommandLine);
     let api_key_from_cli = matches.value_source("api_key") == Some(ValueSource::CommandLine);
     let region_from_cli = matches.value_source("region") == Some(ValueSource::CommandLine);
     let effective_api_key: Option<&str> = if profile_from_cli && !api_key_from_cli {
@@ -3738,11 +3849,24 @@ async fn main() -> Result<()> {
         cli.region.as_deref()
     };
 
-    // Reject --api-key / --region when more than one --profile is supplied,
+    // Turn --profile and --label into the list of profile names to run
+    // against. Empty means "the default profile".
+    let selected_profiles =
+        match config::select_profile_names(&cli.profile, &config::parse_label_args(&cli.label)) {
+            Ok(names) => names,
+            Err(error) => {
+                // The message already names the fix (`cx profiles list`, `cx
+                // profiles add --label`); exit here so it is not printed twice.
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        };
+
+    // Reject --api-key / --region when more than one profile is selected,
     // because it would be ambiguous which profile the override targets.
-    if cli.profile.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {
+    if selected_profiles.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {
         bail!(
-            "Cannot combine multiple --profile values with --api-key or --region overrides.\n\
+            "Cannot combine multiple --profile or --label values with --api-key or --region overrides.\n\
              Store per-profile credentials with `cx profiles add <name>`."
         );
     }
@@ -3751,44 +3875,44 @@ async fn main() -> Result<()> {
     let global_config = config::load_config().unwrap_or_default();
     let output = cli
         .output
-        .or_else(|| config::first_profile_output_format(&cli.profile))
+        .or_else(|| config::first_profile_output_format(&selected_profiles))
         .unwrap_or(global_config.default_output_format);
     let max_direct = global_config.max_dataprime_direct_output_size;
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = match config::resolve_all(&cli.profile, effective_api_key, effective_region).await
-    {
-        Ok(configs) => configs,
-        Err(error) => {
-            // First-run guidance: when nothing is configured at all (no profile
-            // on disk and no env-only credentials), don't dump the underlying
-            // config-resolution error. Point the user at the single guided entry
-            // point instead. The onboarding commands that *fix* this state
-            // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
-            // never reach here, so they can't be short-circuited by this branch.
-            if config::list_profile_names()
-                .map(|names| names.is_empty())
-                .unwrap_or(false)
-            {
-                eprintln!("No Coralogix profile is configured.");
-                eprintln!("Run `cx init` to set up a profile and get started.");
-                // Exit here instead of returning the error: propagating it
-                // would dump the anyhow config-resolution chain (with a second,
-                // contradicting `cx profiles add` instruction) after the
-                // guidance. The two lines above are the entire first-run story.
+    let configs =
+        match config::resolve_all(&selected_profiles, effective_api_key, effective_region).await {
+            Ok(configs) => configs,
+            Err(error) => {
+                // First-run guidance: when nothing is configured at all (no profile
+                // on disk and no env-only credentials), don't dump the underlying
+                // config-resolution error. Point the user at the single guided entry
+                // point instead. The onboarding commands that *fix* this state
+                // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
+                // never reach here, so they can't be short-circuited by this branch.
+                if config::list_profile_names()
+                    .map(|names| names.is_empty())
+                    .unwrap_or(false)
+                {
+                    eprintln!("No Coralogix profile is configured.");
+                    eprintln!("Run `cx init` to set up a profile and get started.");
+                    // Exit here instead of returning the error: propagating it
+                    // would dump the anyhow config-resolution chain (with a second,
+                    // contradicting `cx profiles add` instruction) after the
+                    // guidance. The two lines above are the entire first-run story.
+                    std::process::exit(1);
+                }
+                // The error already names the fix (for example `cx profiles add
+                // <name>`). Exit here instead of returning it: propagating it
+                // would print the same message a second time as `Error: ...`,
+                // and a generic `cx profiles add` line would sit beside the
+                // specific instruction already in the error. `{:?}` keeps a
+                // single copy of the cause chain (parse errors, and so on).
+                eprintln!("Configuration error: {error:?}");
                 std::process::exit(1);
             }
-            // The error already names the fix (for example `cx profiles add
-            // <name>`). Exit here instead of returning it: propagating it
-            // would print the same message a second time as `Error: ...`,
-            // and a generic `cx profiles add` line would sit beside the
-            // specific instruction already in the error. `{:?}` keeps a
-            // single copy of the cause chain (parse errors, and so on).
-            eprintln!("Configuration error: {error:?}");
-            std::process::exit(1);
-        }
-    };
+        };
 
     let targets = build_targets(
         configs,

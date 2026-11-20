@@ -533,6 +533,55 @@ pub fn load_profile(name: &str) -> Result<Profile> {
     toml::from_str(&raw).with_context(|| format!("Failed to parse profile '{name}'"))
 }
 
+/// Move plaintext profile secrets into the platform credential store when an
+/// IT-managed policy requires it. Writes always precede removal from the
+/// profile file, so a failed migration leaves the original credentials intact.
+pub fn migrate_managed_profiles_to_os_store() -> Result<()> {
+    if !crate::managed_policy::requires_os_store()? {
+        return Ok(());
+    }
+
+    for name in list_profile_names()? {
+        let mut profile = load_profile(&name)?;
+        let migrated = match profile.auth {
+            AuthKind::ApiKey => {
+                if let Some(api_key) = profile.api_key.as_deref() {
+                    keyring_store::store_secret(&name, "api_key", api_key).with_context(|| {
+                        format!(
+                            "Could not migrate profile '{name}' to the OS credential store; \
+                             its file-based credentials were left unchanged"
+                        )
+                    })?;
+                    profile.api_key = None;
+                    true
+                } else {
+                    false
+                }
+            }
+            AuthKind::OAuth => {
+                if let Some(tokens) = profile.oauth_tokens.as_ref() {
+                    oauth::store_stored_tokens_keyring(&name, tokens).with_context(|| {
+                        format!(
+                            "Could not migrate profile '{name}' to the OS credential store; \
+                             its file-based credentials were left unchanged"
+                        )
+                    })?;
+                    profile.oauth_tokens = None;
+                    true
+                } else {
+                    false
+                }
+            }
+        };
+
+        if migrated || profile.credential_storage == CredentialStorage::File {
+            profile.credential_storage = CredentialStorage::OsStore;
+            save_profile(&name, &profile)?;
+        }
+    }
+    Ok(())
+}
+
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal
 /// too: `cx ... -o json | jq` keeps stdin attached but must not open a browser
 /// or write login progress into the JSON stream. A coding agent keeps the error
@@ -773,6 +822,12 @@ fn keep_signed_in_tokens(
             Err(err) => {
                 // Clear any partial keyring writes from a failed multi-key store.
                 keyring_store::delete_profile(profile_name);
+                if crate::managed_policy::requires_os_store()? {
+                    anyhow::bail!(
+                        "Failed to store OAuth tokens in the OS credential store ({err}). \
+                         File credential storage is disabled by your organization's policy."
+                    );
+                }
                 eprintln!(
                     "Warning: failed to store OAuth tokens in the OS credential store ({err}); \
                      migrated profile '{profile_name}' to file storage."
@@ -789,6 +844,7 @@ fn keep_signed_in_tokens(
 /// reconfiguring it. Region, storage, output format and label stay as they
 /// are; only the tokens (and the cached team) change.
 pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
+    migrate_managed_profiles_to_os_store()?;
     let mut profile = load_profile(profile_name)?;
     if profile.auth != AuthKind::OAuth {
         anyhow::bail!(
@@ -940,6 +996,13 @@ async fn resolve_single(
             if let Some(new_tokens) = refreshed {
                 // File-storage profile, or an OS-store refresh that could not
                 // be written to the keyring: persist the tokens to disk.
+                if os_store_fallback_reason.is_some() && crate::managed_policy::requires_os_store()?
+                {
+                    anyhow::bail!(
+                        "Failed to store refreshed OAuth tokens in the OS credential store. \
+                         File credential storage is disabled by your organization's policy."
+                    );
+                }
                 profile.oauth_tokens = Some(new_tokens);
                 if os_store_fallback_reason.is_some() {
                     profile.credential_storage = CredentialStorage::File;
@@ -999,6 +1062,7 @@ pub async fn resolve(
     api_key_override: Option<&str>,
     region_override: Option<&str>,
 ) -> Result<ResolvedConfig> {
+    migrate_managed_profiles_to_os_store()?;
     let config = load_config()?;
     let name = profile_override.unwrap_or(&config.default_profile);
     resolve_single(name, api_key_override, region_override).await
@@ -1014,6 +1078,7 @@ pub async fn resolve_all(
     api_key_override: Option<&str>,
     region_override: Option<&str>,
 ) -> Result<Vec<ResolvedConfig>> {
+    migrate_managed_profiles_to_os_store()?;
     if profiles.is_empty() {
         let cfg = load_config()?;
         return Ok(vec![

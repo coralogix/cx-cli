@@ -672,6 +672,24 @@ pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()>
     Ok(())
 }
 
+/// Persist tokens read from a file-backed profile into the OS credential store.
+///
+/// Unlike [`store_tokens_keyring`], the expiry is already an absolute Unix
+/// timestamp and must not be recomputed.
+pub fn store_stored_tokens_keyring(profile: &str, tokens: &StoredOAuthTokens) -> Result<()> {
+    keyring_store::store_secret(profile, "oauth_access_token", &tokens.access_token)?;
+    if let Some(refresh_token) = &tokens.refresh_token {
+        keyring_store::store_secret(profile, "oauth_refresh_token", refresh_token)?;
+    }
+    if let Some(id_token) = &tokens.id_token {
+        keyring_store::store_secret(profile, "oauth_id_token", id_token)?;
+    }
+    if let Some(expiry) = tokens.expiry {
+        keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
+    }
+    Ok(())
+}
+
 /// Result of resolving an OAuth bearer token.
 ///
 /// When `os_store_fallback_reason` is set, the caller must persist

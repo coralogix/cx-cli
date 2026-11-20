@@ -115,6 +115,9 @@ fn os_store_offered_on(platform: OsStorePlatform) -> bool {
 fn credential_storage_options_for(
     platform: OsStorePlatform,
 ) -> Vec<(&'static str, CredentialStorage)> {
+    if crate::managed_policy::requires_os_store().unwrap_or(false) {
+        return vec![("os-store (encrypted)", CredentialStorage::OsStore)];
+    }
     let mut options = vec![("file", CredentialStorage::File)];
     if os_store_offered_on(platform) {
         options.push(("os-store (encrypted)", CredentialStorage::OsStore));
@@ -126,6 +129,9 @@ fn credential_storage_options_for(
 /// default. Existing profiles are not rewritten: an omitted `credential_storage`
 /// key still deserializes as `file`.
 fn default_credential_storage(platform: OsStorePlatform) -> CredentialStorage {
+    if crate::managed_policy::requires_os_store().unwrap_or(false) {
+        return CredentialStorage::OsStore;
+    }
     if let Some(storage) = credential_storage_override() {
         return storage;
     }
@@ -138,6 +144,9 @@ fn default_credential_storage(platform: OsStorePlatform) -> CredentialStorage {
 /// Explicit setup storage override. This is intentionally limited to `file`:
 /// it gives CI and coding agents a way to avoid touching an OS credential store.
 fn credential_storage_override() -> Option<CredentialStorage> {
+    if crate::managed_policy::requires_os_store().unwrap_or(false) {
+        return None;
+    }
     credential_storage_override_from(std::env::var("CX_CREDENTIAL_STORAGE").ok().as_deref())
 }
 
@@ -252,16 +261,22 @@ fn os_store_or_file_fallback<T>(
     file_payload: T,
     os_desc: &'static str,
     file_desc: &'static str,
-) -> (CredentialStorage, Option<T>, &'static str) {
+) -> Result<(CredentialStorage, Option<T>, &'static str)> {
     match store_result {
-        Ok(()) => (CredentialStorage::OsStore, None, os_desc),
+        Ok(()) => Ok((CredentialStorage::OsStore, None, os_desc)),
         Err(err) => {
             // Clear any partial keyring writes from a failed multi-key store.
             keyring_store::delete_profile(profile);
+            if crate::managed_policy::requires_os_store()? {
+                anyhow::bail!(
+                    "The OS credential store is unavailable ({err}). File credential storage \
+                     is disabled by your organization's policy; contact your IT administrator."
+                );
+            }
             eprintln!(
                 "Warning: OS credential store unavailable ({err}); falling back to file storage."
             );
-            (CredentialStorage::File, Some(file_payload), file_desc)
+            Ok((CredentialStorage::File, Some(file_payload), file_desc))
         }
     }
 }
@@ -623,6 +638,11 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         quick,
     } = args;
     let oauth = oauth || signup;
+    if crate::managed_policy::requires_os_store()?
+        && std::env::var("CX_CREDENTIAL_STORAGE").ok().as_deref() == Some("file")
+    {
+        crate::managed_policy::ensure_file_storage_allowed()?;
+    }
     warn_invalid_credential_storage_override();
 
     // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
@@ -926,7 +946,7 @@ fn build_profile_non_interactive(
                 api_key,
                 "OS credential store",
                 "profile file",
-            ),
+            )?,
             CredentialStorage::File => (CredentialStorage::File, Some(api_key), "profile file"),
         };
     let profile = Profile {
@@ -1049,7 +1069,7 @@ async fn configure_oauth(
             oauth::tokens_to_stored(&tokens),
             "OS credential store (OAuth tokens)",
             "profile file (OAuth tokens)",
-        ),
+        )?,
         CredentialStorage::File => (
             CredentialStorage::File,
             Some(oauth::tokens_to_stored(&tokens)),
@@ -1152,7 +1172,7 @@ fn configure_api_key(
             api_key,
             "OS credential store",
             "profile file",
-        ),
+        )?,
         CredentialStorage::File => {
             // Drop OS-store secrets only when this profile's file says they are there.
             delete_os_store_secrets_if_recorded(name);
@@ -1322,7 +1342,8 @@ mod tests {
             "secret",
             "OS credential store",
             "profile file",
-        );
+        )
+        .expect("successful store");
         assert_eq!(storage, CredentialStorage::OsStore);
         assert_eq!(payload, None);
         assert_eq!(desc, "OS credential store");
@@ -1336,7 +1357,8 @@ mod tests {
             "secret",
             "OS credential store",
             "profile file",
-        );
+        )
+        .expect("no policy should permit fallback");
         assert_eq!(storage, CredentialStorage::File);
         assert_eq!(payload, Some("secret"));
         assert_eq!(desc, "profile file");

@@ -329,6 +329,129 @@ pub async fn run_create(
     Ok(())
 }
 
+/// Build params for alert update operation from user inputs.
+fn build_alert_update_args<'a>(
+    alert_id: Option<&'a str>,
+    body: &'a Value,
+) -> Result<(&'a str, &'a Value)> {
+    if !body.is_object() {
+        bail!("Alert definition must be a JSON object");
+    }
+
+    // If called with a previously-exported alert def, it'll be inside an
+    // `alertDef` key.
+    let alert_def = body.get("alertDef").unwrap_or(body);
+
+    // Prefer the alert ID from the CLI arg if given, otherwise try to get
+    // it from the alert definition.
+    let Some(alert_id) = alert_id.or(alert_def.get("id").and_then(Value::as_str)) else {
+        bail!("Can't determine the alert id")
+    };
+
+    // We need the `alertDefProperties`, bail if it's not there.
+    let Some(alert_def_properties) = alert_def.get("alertDefProperties") else {
+        bail!("Alert definition must contain an alertDefProperties")
+    };
+
+    Ok((alert_id, alert_def_properties))
+}
+
+pub async fn run_replace(
+    targets: &[Arc<ExecutionTarget>],
+    alert_id: Option<&str>,
+    from_file: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    // Read JSON from file or stdin
+    let raw = if from_file == "-" {
+        eprintln!("{}", "Reading alert definition from stdin...".dimmed());
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        eprintln!(
+            "{}",
+            format!("Reading alert definition from {from_file}...").dimmed()
+        );
+        std::fs::read_to_string(from_file)?
+    };
+
+    let body: Value = serde_json::from_str(&raw)?;
+
+    let (alert_id, alert_def_properties) = build_alert_update_args(alert_id, &body)?;
+
+    let mut body = json!({
+        "id": alert_id,
+        "alertDefProperties": alert_def_properties
+    });
+    normalize_alert_payload(&mut body);
+
+    // The API says `name` could be `None`, whereas `alert-schemas.md` implies
+    // that it _must_ be present. For update it doesn't matter: either we're
+    // updating the name or not. Let the other end decide what to do with it.
+    let alert_name = alert_def_properties
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("<unknown>")
+        .to_string();
+    eprintln!("{}", format!("Replacing alert '{alert_name}'...").dimmed());
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |t| {
+        let body = body.clone();
+        async move {
+            let api = AlertsApi::new(&t.client);
+            Ok(api.replace(&body).await?)
+        }
+    })
+    .await;
+
+    // Merge
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, resp) in report_errors_and_collect_successes(per_profile)? {
+        if let Some(alert) = resp.alert_def {
+            let name = alert.display_name();
+            render::print_created(
+                "Replaced",
+                "alert",
+                Some(&name),
+                alert.id.as_deref(),
+                &profile,
+            );
+            if let Some(id) = alert.id.as_deref() {
+                crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
+                    crate::console_url::alert_url(b, id)
+                })
+                .await;
+            }
+            let json = alert_to_json(&alert, include_profile, &profile);
+            all_results.push(json);
+        } else {
+            eprintln!(
+                "{}",
+                format!("Alert replaced in profile '{profile}' but response was empty.").yellow()
+            );
+        }
+    }
+
+    // Render
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Toon => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            // Status messages already printed to stderr above
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn run_delete(targets: &[Arc<ExecutionTarget>], alert_id: &str) -> Result<()> {
     eprintln!("{}", format!("Deleting alert {alert_id}...").dimmed());
 
@@ -605,4 +728,122 @@ pub async fn run_event_stats(targets: &[Arc<ExecutionTarget>], output: OutputFor
     }
 
     Ok(())
+}
+
+// ── Tests ──────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// User is using a file they downloaded and edited.
+    #[test]
+    fn alert_properties_from_cli_args_from_previous_get() {
+        let alert_id = None;
+        let body = json!({
+            "alertDef": {
+                "alertDefProperties": {
+                    "name": "my alert downloaded with GET",
+                    "description": "other stuff below..."
+                },
+                "id": "123e4567-e89b-12d3-a456-426614174000"
+            }
+        });
+
+        let (actual_id, actual_payload) =
+            build_alert_update_args(alert_id, &body).expect("there should be no errors");
+
+        assert_eq!(
+            actual_id, "123e4567-e89b-12d3-a456-426614174000",
+            "alert_id should be found in the alert definition body"
+        );
+        assert_eq!(
+            *actual_payload,
+            json!({
+                "name": "my alert downloaded with GET",
+                "description": "other stuff below..."
+            }),
+            "actual payload should be content of alertDefProperties"
+        );
+    }
+
+    /// User is providing new body content with separate alert id to be replaced.
+    #[test]
+    fn alert_properties_from_cli_args_hand_crafted() {
+        let alert_id = Some("123e4567-e89b-12d3-a456-426614174000");
+        let body = json!({
+            "alertDefProperties": {
+                "name": "my alert downloaded with GET",
+                "description": "other stuff below..."
+            }
+        });
+
+        let (actual_id, actual_payload) =
+            build_alert_update_args(alert_id, &body).expect("there should be no errors");
+
+        assert_eq!(
+            actual_id, "123e4567-e89b-12d3-a456-426614174000",
+            "alert_id should be from CLI arg"
+        );
+        assert_eq!(
+            *actual_payload,
+            json!({
+                "name": "my alert downloaded with GET",
+                "description": "other stuff below..."
+            }),
+            "actual payload should be content of alertDefProperties"
+        );
+    }
+
+    /// Alert ID from CLI should be preferred over that from file/stdin.
+    #[test]
+    fn alert_properties_from_cli_args_preferred() {
+        let alert_id = Some("123e4567-e89b-12d3-a456-426614174000");
+        let body = json!({
+            "alertDef": {
+                "alertDefProperties": {
+                    "name": "my alert downloaded with GET",
+                    "description": "other stuff below..."
+                },
+                "id": "11111111-2222-3333-4444-555555555555"
+            }
+        });
+
+        let (actual_id, actual_payload) =
+            build_alert_update_args(alert_id, &body).expect("there should be no errors");
+
+        assert_eq!(
+            actual_id, "123e4567-e89b-12d3-a456-426614174000",
+            "alert_id should prefer CLI arg"
+        );
+        assert_eq!(
+            *actual_payload,
+            json!({
+                "name": "my alert downloaded with GET",
+                "description": "other stuff below..."
+            }),
+            "actual payload should be content of alertDefProperties"
+        );
+    }
+
+    /// There must _be_ an Alert ID somewhere.
+    #[test]
+    fn alert_id_must_exist() {
+        let alert_id = None;
+        let body = json!({
+            "alertDefProperties": {
+                "name": "my alert downloaded with GET",
+                "description": "other stuff below..."
+            },
+        });
+
+        match build_alert_update_args(alert_id, &body) {
+            Ok(_) => panic!("there should be an error"),
+            Err(e) if e.to_string() != "Can't determine the alert id" => {
+                panic!("Didn't get expected error")
+            }
+            _ => (),
+        }
+    }
 }

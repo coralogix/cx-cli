@@ -1266,7 +1266,9 @@ async fn resolve_single(
                     new_tokens,
                     os_store_fallback_reason.as_deref(),
                     managed,
-                )?;
+                )
+                // Clear any partial keyring writes, as a failed sign-in does.
+                .inspect_err(|_| keyring_store::delete_profile(profile_name))?;
             }
             if persist_profile {
                 // Save tokens (and, after a same-team sign-in, team identity)

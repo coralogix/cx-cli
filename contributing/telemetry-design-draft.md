@@ -236,8 +236,8 @@ without checking its shape, because the key is public.
   deployed the route answers 404, and until the owner stores a key it answers
   503. The CLI is silent and harmless in both cases: events wait in the spool
   for up to 7 days and are then dropped.
-- No build sends until `BUILD_KEY_URL` in `src/telemetry/consent.rs` is set
-  (section 5.2).
+- `BUILD_KEY_URL` in `src/telemetry/consent.rs` is set (2026-11-22), so release
+  builds call the route from the first release that includes it (section 5.2).
 - The key must belong to a team used only for CLI telemetry, with a daily
   quota.
 
@@ -427,8 +427,8 @@ also sets `CX_TELEMETRY=0` for everything cargo runs, so a
 `CX_TELEMETRY_KEY_URL` exported in a developer's shell is not used by the
 test suites either; `tests/telemetry` sets its own values.
 
-While the constant is `None`, no release sends. Setting it is the switch, and
-it does not depend on the server: a release that calls a route that is not
+The constant is the switch: with `None`, no release sends. It is set, and
+that does not depend on the server: a release that calls a route that is not
 deployed (404) or has no key (503) stays silent.
 
 **Schema changes** still only add: a new event, a new attribute, a new enum

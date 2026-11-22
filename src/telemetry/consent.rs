@@ -7,9 +7,9 @@ use crate::version_cache::VersionCheckCache;
 /// from (`key.rs`): always the eu2 host, whatever region the user is on. A
 /// constant, not a build-time env var: Homebrew, Cargo and Nix compile the
 /// tagged source themselves, so only what is in the source reaches every
-/// build. `None` means no build sends. Debug builds never use it; they send
-/// only when `CX_TELEMETRY_KEY_URL` is set at runtime (tests, staging).
-const BUILD_KEY_URL: Option<&str> = None;
+/// build. `None` would mean no build sends. Debug builds never use it; they
+/// send only when `CX_TELEMETRY_KEY_URL` is set at runtime (tests, staging).
+const BUILD_KEY_URL: Option<&str> = Some("https://api.eu2.coralogix.com/api/v2/cli-telemetry-key");
 
 pub const NOTICE: &str = "cx collects usage data (command names, versions, error categories, \
 a random install id and your Coralogix team id — never queries, arguments, credentials, or \

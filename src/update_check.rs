@@ -460,8 +460,39 @@ pub(crate) fn spawn_detached(args: &[&str], envs: &[(&str, &str)]) -> bool {
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        keep_own_stdio_from_children();
     }
     cmd.spawn().is_ok()
+}
+
+/// Stop child processes from inheriting this process's own stdin, stdout and
+/// stderr. Windows hands a child every inheritable handle of its parent, not
+/// only the three it is given as stdio. So a detached child would hold the
+/// pipe that a script or an agent reads this command's output from, and the
+/// reader would wait until that child exits. Children that are meant to share
+/// the stdio still do: std gives them an inheritable copy.
+#[cfg(windows)]
+fn keep_own_stdio_from_children() {
+    use std::os::windows::io::AsRawHandle;
+    extern "system" {
+        fn SetHandleInformation(handle: *mut std::ffi::c_void, mask: u32, flags: u32) -> i32;
+    }
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+    let handles = [
+        std::io::stdin().as_raw_handle(),
+        std::io::stdout().as_raw_handle(),
+        std::io::stderr().as_raw_handle(),
+    ];
+    for handle in handles {
+        if !handle.is_null() {
+            // SAFETY: `handle` is a std handle of this process, open for as
+            // long as the process runs, and the call only clears a flag on
+            // it. A failure (no console, an invalid handle) changes nothing.
+            unsafe {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
 }
 
 fn skills_status(state: &VersionCheckCache, current: &str) -> SkillsStatus {

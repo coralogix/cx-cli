@@ -27,6 +27,7 @@ pub mod notification_testing;
 pub mod olly;
 pub mod parsing_rules;
 pub mod presets;
+pub mod product_analytics;
 pub mod profiles;
 pub mod profiling;
 pub mod recording_rules;

@@ -100,6 +100,7 @@ pub enum SearchByValueDataset {
   \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities, their RED/health/saturation data, and insights
   \x1b[1mprofiling\x1b[0m          Query continuous-profiling data: services, metrics, flame graphs
   \x1b[1mrum\x1b[0m                Map RUM stack traces to source code with uploaded source maps
+  \x1b[1mproduct-analytics\x1b[0m  Query RUM product analytics: funnels, pathways, heatmaps, views, events
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -759,6 +760,29 @@ Examples:
     Rum {
         #[command(subcommand)]
         cmd: RumCmd,
+    },
+
+    #[command(
+        about = "Query RUM Product Analytics: applications, views, events, funnels, pathways, heatmaps, and settings",
+        after_help = "\
+Examples:
+  cx product-analytics applications list
+  cx product-analytics views list --app web-shop --last 7d
+  cx product-analytics events list --app web-shop --view /cart --source auto
+  cx product-analytics funnels list --app web-shop
+  cx product-analytics funnels query 42 --last 30d
+  cx product-analytics funnels matches 42 --step s2 --outcome dropped
+  cx product-analytics pathways query --app web-shop --view /cart --direction after
+  cx product-analytics heatmaps query 43 --top-n 10
+  cx product-analytics settings get
+
+Time ranges: --last 24h (default), --from/--to (fixed), or --calendar today|yesterday.
+Filters, breakdowns and inline funnel definitions go in a JSON request file (--from-file).
+Every call returns 412 while Product Analytics is off for the team; see `settings get`."
+    )]
+    ProductAnalytics {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsCmd,
     },
 
     /// Search log/span fields by description or by value content.
@@ -3072,6 +3096,385 @@ Examples:
 }
 
 #[derive(Subcommand)]
+enum ProductAnalyticsCmd {
+    #[command(about = "RUM applications with Product Analytics data")]
+    Applications {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsApplicationsCmd,
+    },
+    #[command(about = "Views (pages) of a RUM application and their session counts")]
+    Views {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsViewsCmd,
+    },
+    #[command(about = "Clicks and custom events on a view")]
+    Events {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsEventsCmd,
+    },
+    #[command(about = "Saved funnels, funnel conversion, and who converted or dropped")]
+    Funnels {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsFunnelsCmd,
+    },
+    #[command(about = "Saved pathways and the most common page paths to or from a view")]
+    Pathways {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsPathwaysCmd,
+    },
+    #[command(about = "Saved heatmaps and the most clicked elements on a view")]
+    Heatmaps {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsHeatmapsCmd,
+    },
+    #[command(about = "Whether Product Analytics is enabled for the team")]
+    Settings {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsSettingsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsApplicationsCmd {
+    #[command(about = "List RUM applications with sessions in the last 30 days")]
+    List {
+        #[arg(long = "app", help = "Only these applications. Repeatable")]
+        apps: Vec<String>,
+    },
+    #[command(about = "Get the 30-day session and user counts of one application")]
+    Get {
+        #[arg(help = "RUM application name")]
+        app_name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsViewsCmd {
+    #[command(
+        about = "List the views of an application, most visited first",
+        after_help = "\
+Examples:
+  cx product-analytics views list --app web-shop
+  cx product-analytics views list --app web-shop --from 2026-11-01T00:00:00Z --to 2026-11-08T00:00:00Z
+  cx product-analytics views list --app web-shop --from-file filters.json   # {\"filters\": [...]}"
+    )]
+    List {
+        #[arg(long, help = "RUM application name")]
+        app: String,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[command(flatten)]
+        page: commands::product_analytics::PageArgs,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters; flags override its values. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsEventsCmd {
+    #[command(
+        about = "List the clicks or custom events on a view",
+        after_help = "\
+Examples:
+  cx product-analytics events list --app web-shop --view /cart --source auto
+  cx product-analytics events list --app web-shop --view /cart --source custom --last 7d"
+    )]
+    List {
+        #[arg(long, help = "RUM application name")]
+        app: String,
+        #[arg(long, help = "View (page) name, as `views list` prints it")]
+        view: String,
+        #[arg(
+            long,
+            value_enum,
+            help = "auto: clicks the RUM SDK captured; custom: events the application sends"
+        )]
+        source: commands::product_analytics::api::EventSource,
+        #[arg(long, value_enum, help = "Which clicks to include (default: all)")]
+        action_name_filter: Option<commands::product_analytics::api::ActionNameFilter>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[command(flatten)]
+        page: commands::product_analytics::PageArgs,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters; flags override its values. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+    #[command(
+        about = "Get one event on a view by the eventId that `events list` or `heatmaps query` printed",
+        after_help = "\
+Send the same --app, --view, time range, filters and --action-name-filter as the list call so the numbers match.
+
+Examples:
+  cx product-analytics events get ev_Y2xpY2s6R290IGl0 --app web-shop --view /cart"
+    )]
+    Get {
+        #[arg(help = "Event ID (ev_...)")]
+        event_id: String,
+        #[arg(long, help = "RUM application name")]
+        app: String,
+        #[arg(long, help = "View (page) name")]
+        view: String,
+        #[arg(long, value_enum, help = "Which clicks to include (default: all)")]
+        action_name_filter: Option<commands::product_analytics::api::ActionNameFilter>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters; flags override its values. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsSavedCmd {
+    #[command(about = "List saved definitions, most recently updated first")]
+    List {
+        #[arg(long = "app", help = "Only these applications. Repeatable")]
+        apps: Vec<String>,
+        #[command(flatten)]
+        page: commands::product_analytics::PageArgs,
+    },
+    #[command(about = "Get a saved definition by ID")]
+    Get {
+        #[arg(help = "Saved ID, a decimal number")]
+        id: String,
+    },
+    #[command(
+        about = "Create a saved definition from a JSON file [requires --yes]",
+        after_help = "\
+The file is the definition itself (appName, name, timeRange, ...), not wrapped in a key.
+
+Examples:
+  cx product-analytics funnels create --from-file funnel.json
+  cat heatmap.json | cx product-analytics heatmaps create"
+    )]
+    Create {
+        #[arg(
+            long,
+            default_value = "-",
+            help = "JSON file with the definition. '-' for stdin"
+        )]
+        from_file: String,
+    },
+    #[command(
+        about = "Update a saved definition from a JSON file [requires --yes]",
+        after_help = "\
+Only the fields in the update mask change. Without --update-mask the mask is every top-level
+field of the file except read-only ones (id, appName, createdAt, updatedAt, owner, version),
+so the output of `get` can be edited and sent back. A masked field missing from the file is cleared.
+
+Examples:
+  cx product-analytics funnels update 42 --from-file funnel.json
+  cx product-analytics pathways update 44 --from-file pathway.json --update-mask name,topN"
+    )]
+    Update {
+        #[arg(help = "Saved ID, a decimal number")]
+        id: String,
+        #[arg(
+            long,
+            default_value = "-",
+            help = "JSON file with the fields to update. '-' for stdin"
+        )]
+        from_file: String,
+        #[arg(
+            long,
+            help = "Comma-separated top-level fields to update, e.g. name,filters"
+        )]
+        update_mask: Option<String>,
+    },
+    #[command(about = "Delete a saved definition [requires --yes]")]
+    Delete {
+        #[arg(help = "Saved ID, a decimal number")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsFunnelsCmd {
+    #[command(flatten)]
+    Saved(ProductAnalyticsSavedCmd),
+    #[command(
+        about = "Run a saved or inline funnel: count, conversion and drop-off of each step",
+        after_help = "\
+Pass a saved funnel ID, or an inline definition in --from-file:
+  {\"appName\": \"web-shop\", \"definition\": {...}, \"filters\": [...], \"breakdown\": {\"field\": \"BREAKDOWN_FIELD_PLATFORM\", \"limit\": 5}}
+With an ID, fields not sent use the saved values and sent filters are added to the saved ones.
+
+Examples:
+  cx product-analytics funnels query 42
+  cx product-analytics funnels query 42 --last 30d --mode sessions
+  cx product-analytics funnels query --from-file funnel-query.json"
+    )]
+    Query {
+        #[arg(help = "Saved funnel ID. Omit to run an inline definition from --from-file")]
+        id: Option<String>,
+        #[arg(
+            long,
+            help = "JSON request body (definition, filters, breakdown, ...). '-' for stdin"
+        )]
+        from_file: Option<String>,
+        #[arg(
+            long,
+            help = "RUM application name (required with an inline definition)"
+        )]
+        app: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            value_enum,
+            help = "Override the saved funnel's mode (saved funnels only)"
+        )]
+        mode: Option<commands::product_analytics::api::FunnelMode>,
+    },
+    #[command(
+        about = "List who reached or dropped at a funnel step",
+        after_help = "\
+Takes the same funnel input as `funnels query`. Only users mode works for now: sessions and
+accounts return 501. Send the same fixed --from/--to as the query so the list matches its counts.
+
+Examples:
+  cx product-analytics funnels matches 42 --step s2 --outcome dropped
+  cx product-analytics funnels matches 42 --step s3 --outcome converted --user-id-mode raw --page-size 100"
+    )]
+    Matches {
+        #[arg(help = "Saved funnel ID. Omit to run an inline definition from --from-file")]
+        id: Option<String>,
+        #[arg(
+            long = "step",
+            help = "Step ID, as in the funnel definition (s1, s2, ...)"
+        )]
+        step_id: String,
+        #[arg(
+            long,
+            value_enum,
+            help = "converted: reached the step; dropped: reached the previous step only"
+        )]
+        outcome: commands::product_analytics::api::FunnelOutcome,
+        #[arg(long, value_enum, help = "hashed (default) or raw user IDs")]
+        user_id_mode: Option<commands::product_analytics::api::UserIdMode>,
+        #[arg(
+            long,
+            help = "JSON request body (definition, filters, breakdown, group, ...). '-' for stdin"
+        )]
+        from_file: Option<String>,
+        #[arg(
+            long,
+            help = "RUM application name (required with an inline definition)"
+        )]
+        app: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            value_enum,
+            help = "What to list (default: the funnel's mode; only users works now)"
+        )]
+        mode: Option<commands::product_analytics::api::FunnelMode>,
+        #[command(flatten)]
+        page: commands::product_analytics::PageArgs,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsPathwaysCmd {
+    #[command(flatten)]
+    Saved(ProductAnalyticsSavedCmd),
+    #[command(
+        about = "Run a saved or inline pathway: the most common page paths after or before a view",
+        after_help = "\
+Examples:
+  cx product-analytics pathways query 44
+  cx product-analytics pathways query --app web-shop --view /cart --direction before --pages-count 3"
+    )]
+    Query {
+        #[arg(help = "Saved pathway ID. Omit and pass --app and --view for an inline pathway")]
+        id: Option<String>,
+        #[arg(
+            long,
+            help = "View (page) to trace paths from or to, for an inline pathway"
+        )]
+        view: Option<String>,
+        #[arg(long, help = "RUM application name (required with --view)")]
+        app: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(long, value_enum, help = "Pages after (default) or before the view")]
+        direction: Option<commands::product_analytics::api::PathwayDirection>,
+        #[arg(long, help = "Pages in each path (default 5)")]
+        pages_count: Option<u32>,
+        #[arg(long, help = "Number of paths, most common first (default 20)")]
+        top_n: Option<u32>,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsHeatmapsCmd {
+    #[command(flatten)]
+    Saved(ProductAnalyticsSavedCmd),
+    #[command(
+        about = "Run a saved or inline heatmap: the most clicked elements on a view (web only)",
+        after_help = "\
+Pass an element's eventId to `events get` for its details.
+
+Examples:
+  cx product-analytics heatmaps query 43
+  cx product-analytics heatmaps query --app web-shop --view /checkout --action-name-filter named --top-n 10"
+    )]
+    Query {
+        #[arg(help = "Saved heatmap ID. Omit and pass --app and --view for an inline heatmap")]
+        id: Option<String>,
+        #[arg(long, help = "View (page) to query, for an inline heatmap")]
+        view: Option<String>,
+        #[arg(long, help = "RUM application name (required with --view)")]
+        app: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            value_enum,
+            help = "Which clicks to include (default: all, or the saved value)"
+        )]
+        action_name_filter: Option<commands::product_analytics::api::ActionNameFilter>,
+        #[arg(long, help = "Number of elements, most clicked first (default 50)")]
+        top_n: Option<u32>,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsSettingsCmd {
+    #[command(about = "Show whether Product Analytics is enabled for the team")]
+    Get,
+    #[command(
+        about = "Turn Product Analytics on or off for the whole team [requires --yes]",
+        after_help = "\
+Examples:
+  cx product-analytics settings update --enabled true"
+    )]
+    Update {
+        #[arg(long, required = true, action = clap::ArgAction::Set, help = "true to enable, false to disable")]
+        enabled: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum RumCmd {
     /// List releases with uploaded source maps.
     SourceMaps {
@@ -3867,6 +4270,61 @@ struct ProfilingFlameGraphArgs {
     /// Number of functions to list by self value.
     #[arg(long, default_value_t = 20)]
     top_functions: usize,
+}
+
+async fn run_product_analytics_saved(
+    targets: &[std::sync::Arc<coralogix_cli::execution::ExecutionTarget>],
+    kind: commands::product_analytics::api::SavedObjectKind,
+    cmd: ProductAnalyticsSavedCmd,
+    yes: bool,
+    agent_mode: bool,
+    output: OutputFormat,
+) -> Result<()> {
+    let label = kind.label();
+    match cmd {
+        ProductAnalyticsSavedCmd::List { apps, page } => {
+            commands::product_analytics::run_saved_list(targets, kind, &apps, &page, output).await
+        }
+        ProductAnalyticsSavedCmd::Get { id } => {
+            commands::product_analytics::run_saved_get(targets, kind, &id, output).await
+        }
+        ProductAnalyticsSavedCmd::Create { from_file } => {
+            confirm_destructive(
+                &format!("Create a Product Analytics {label}?"),
+                yes,
+                agent_mode,
+            )?;
+            commands::product_analytics::run_saved_write(targets, kind, &from_file, None, output)
+                .await
+        }
+        ProductAnalyticsSavedCmd::Update {
+            id,
+            from_file,
+            update_mask,
+        } => {
+            confirm_destructive(
+                &format!("Update Product Analytics {label} '{id}'?"),
+                yes,
+                agent_mode,
+            )?;
+            commands::product_analytics::run_saved_write(
+                targets,
+                kind,
+                &from_file,
+                Some((&id, update_mask.as_deref())),
+                output,
+            )
+            .await
+        }
+        ProductAnalyticsSavedCmd::Delete { id } => {
+            confirm_destructive(
+                &format!("Delete Product Analytics {label} '{id}'?"),
+                yes,
+                agent_mode,
+            )?;
+            commands::product_analytics::run_saved_delete(targets, kind, &id).await
+        }
+    }
 }
 
 /// True when a `--label` (or `--label=...`) appears before the `profiles`
@@ -5858,6 +6316,273 @@ async fn main() -> Result<()> {
                     commands::slos::run_delete(&targets, &id).await?;
                 }
             },
+
+            Commands::ProductAnalytics { cmd } => {
+                use commands::product_analytics::api::{QueryInput, QueryKind, SavedObjectKind};
+                match cmd {
+                    ProductAnalyticsCmd::Applications { cmd } => match cmd {
+                        ProductAnalyticsApplicationsCmd::List { apps } => {
+                            commands::product_analytics::run_applications_list(
+                                &targets, &apps, output,
+                            )
+                            .await?;
+                        }
+                        ProductAnalyticsApplicationsCmd::Get { app_name } => {
+                            commands::product_analytics::run_applications_get(
+                                &targets, &app_name, output,
+                            )
+                            .await?;
+                        }
+                    },
+                    ProductAnalyticsCmd::Views {
+                        cmd:
+                            ProductAnalyticsViewsCmd::List {
+                                app,
+                                time,
+                                page,
+                                from_file,
+                            },
+                    } => {
+                        let input = QueryInput {
+                            app_name: Some(app),
+                            time_range: time.resolve()?,
+                            page_size: page.page_size,
+                            page_token: page.page_token,
+                            ..Default::default()
+                        };
+                        commands::product_analytics::run_list_query(
+                            &targets,
+                            QueryKind::Views,
+                            from_file.as_deref(),
+                            &input,
+                            output,
+                        )
+                        .await?;
+                    }
+                    ProductAnalyticsCmd::Events { cmd } => match cmd {
+                        ProductAnalyticsEventsCmd::List {
+                            app,
+                            view,
+                            source,
+                            action_name_filter,
+                            time,
+                            page,
+                            from_file,
+                        } => {
+                            let input = QueryInput {
+                                app_name: Some(app),
+                                view: Some(view),
+                                source: Some(source),
+                                action_name_filter,
+                                time_range: time.resolve()?,
+                                page_size: page.page_size,
+                                page_token: page.page_token,
+                                ..Default::default()
+                            };
+                            commands::product_analytics::run_list_query(
+                                &targets,
+                                QueryKind::Events,
+                                from_file.as_deref(),
+                                &input,
+                                output,
+                            )
+                            .await?;
+                        }
+                        ProductAnalyticsEventsCmd::Get {
+                            event_id,
+                            app,
+                            view,
+                            action_name_filter,
+                            time,
+                            from_file,
+                        } => {
+                            let input = QueryInput {
+                                app_name: Some(app),
+                                view: Some(view),
+                                action_name_filter,
+                                time_range: time.resolve()?,
+                                ..Default::default()
+                            };
+                            commands::product_analytics::run_events_get(
+                                &targets,
+                                &event_id,
+                                from_file.as_deref(),
+                                &input,
+                                output,
+                            )
+                            .await?;
+                        }
+                    },
+                    ProductAnalyticsCmd::Funnels { cmd } => match cmd {
+                        ProductAnalyticsFunnelsCmd::Saved(cmd) => {
+                            run_product_analytics_saved(
+                                &targets,
+                                SavedObjectKind::Funnel,
+                                cmd,
+                                yes,
+                                agent_mode,
+                                output,
+                            )
+                            .await?;
+                        }
+                        ProductAnalyticsFunnelsCmd::Query {
+                            id,
+                            from_file,
+                            app,
+                            time,
+                            mode,
+                        } => {
+                            let input = QueryInput {
+                                saved_id: id,
+                                app_name: app,
+                                time_range: time.resolve()?,
+                                funnel_mode: mode,
+                                ..Default::default()
+                            };
+                            commands::product_analytics::run_query(
+                                &targets,
+                                QueryKind::FunnelConversion,
+                                from_file.as_deref(),
+                                &input,
+                                output,
+                            )
+                            .await?;
+                        }
+                        ProductAnalyticsFunnelsCmd::Matches {
+                            id,
+                            step_id,
+                            outcome,
+                            user_id_mode,
+                            from_file,
+                            app,
+                            time,
+                            mode,
+                            page,
+                        } => {
+                            let input = QueryInput {
+                                saved_id: id,
+                                app_name: app,
+                                time_range: time.resolve()?,
+                                funnel_mode: mode,
+                                step_id: Some(step_id),
+                                outcome: Some(outcome),
+                                user_id_mode,
+                                page_size: page.page_size,
+                                page_token: page.page_token,
+                                ..Default::default()
+                            };
+                            commands::product_analytics::run_list_query(
+                                &targets,
+                                QueryKind::FunnelMatches,
+                                from_file.as_deref(),
+                                &input,
+                                output,
+                            )
+                            .await?;
+                        }
+                    },
+                    ProductAnalyticsCmd::Pathways { cmd } => match cmd {
+                        ProductAnalyticsPathwaysCmd::Saved(cmd) => {
+                            run_product_analytics_saved(
+                                &targets,
+                                SavedObjectKind::Pathway,
+                                cmd,
+                                yes,
+                                agent_mode,
+                                output,
+                            )
+                            .await?;
+                        }
+                        ProductAnalyticsPathwaysCmd::Query {
+                            id,
+                            view,
+                            app,
+                            time,
+                            direction,
+                            pages_count,
+                            top_n,
+                            from_file,
+                        } => {
+                            let input = QueryInput {
+                                saved_id: id,
+                                view,
+                                app_name: app,
+                                time_range: time.resolve()?,
+                                direction,
+                                pages_count,
+                                top_n,
+                                ..Default::default()
+                            };
+                            commands::product_analytics::run_query(
+                                &targets,
+                                QueryKind::PathwayPaths,
+                                from_file.as_deref(),
+                                &input,
+                                output,
+                            )
+                            .await?;
+                        }
+                    },
+                    ProductAnalyticsCmd::Heatmaps { cmd } => match cmd {
+                        ProductAnalyticsHeatmapsCmd::Saved(cmd) => {
+                            run_product_analytics_saved(
+                                &targets,
+                                SavedObjectKind::Heatmap,
+                                cmd,
+                                yes,
+                                agent_mode,
+                                output,
+                            )
+                            .await?;
+                        }
+                        ProductAnalyticsHeatmapsCmd::Query {
+                            id,
+                            view,
+                            app,
+                            time,
+                            action_name_filter,
+                            top_n,
+                            from_file,
+                        } => {
+                            let input = QueryInput {
+                                saved_id: id,
+                                view,
+                                app_name: app,
+                                time_range: time.resolve()?,
+                                action_name_filter,
+                                top_n,
+                                ..Default::default()
+                            };
+                            commands::product_analytics::run_query(
+                                &targets,
+                                QueryKind::HeatmapTopElements,
+                                from_file.as_deref(),
+                                &input,
+                                output,
+                            )
+                            .await?;
+                        }
+                    },
+                    ProductAnalyticsCmd::Settings { cmd } => match cmd {
+                        ProductAnalyticsSettingsCmd::Get => {
+                            commands::product_analytics::run_settings_get(&targets, output)
+                                .await?;
+                        }
+                        ProductAnalyticsSettingsCmd::Update { enabled } => {
+                            let action = if enabled { "on" } else { "off" };
+                            confirm_destructive(
+                                &format!("Turn Product Analytics {action} for the whole team?"),
+                                yes,
+                                agent_mode,
+                            )?;
+                            commands::product_analytics::run_settings_update(
+                                &targets, enabled, output,
+                            )
+                            .await?;
+                        }
+                    },
+                }
+            }
 
             Commands::Infra { cmd } => match cmd {
                 InfraCmd::Resources { cmd } => match cmd {

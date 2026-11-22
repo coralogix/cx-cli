@@ -21,6 +21,8 @@
 /skills/query-spans/                   @coralogix/team-cxai
 /skills/rum/                           @coralogix/team-cxai
 **/rum/                                @coralogix/team-cxai
+**/product_analytics/                  @coralogix/team-cxai
+/skills/cx-product-analytics/          @coralogix/team-cxai
 
 # === metrics ===
 **/metrics/                            @coralogix/team-cxai

@@ -30,6 +30,7 @@ Every command domain has a designated owning team. The owning team is responsibl
 | Cost & storage | `src/commands/data_usage/`, `src/commands/tco_policies/`, `src/commands/retentions/`, `src/commands/data_archive/`, `skills/cx-cost-optimization/` | Domain team |
 | Integrations | `src/commands/integrations/`, `src/commands/extensions/`, `src/commands/contextual_data/`, `skills/cx-observability-setup/` | Domain team |
 | Views | `src/commands/views/`, `skills/cx-observability-setup/` | Domain team |
+| Product Analytics | `src/commands/product_analytics/`, `skills/cx-product-analytics/` | Domain team |
 | User-facing docs | `README.md`, `docs/*` | `@coralogix/team-technical-writers`, `@coralogix/team-cxai` |
 | Contributor docs | `contributing/*`, `CONTRIBUTING.md` | `@coralogix/team-cxai` |
 

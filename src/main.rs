@@ -3279,7 +3279,9 @@ Examples:
     /// the most recently deployed services (by default up to 50, deployed
     /// within 7 days and at least 1 hour ago, skipping very low-traffic
     /// environments); the "eligible changes compared" line shows how many.
-    /// Use `entity-insights` to check one service.
+    /// Use `entity-insights` to check one service. Deployment insights are
+    /// enabled per account; when they are off, none are returned and there is
+    /// no coverage line.
     #[command(after_help = "\
 Examples:
   cx service-catalog insights service

@@ -123,6 +123,12 @@ wrong" questions instead of pulling raw `data`:
   Never conclude a service did not regress from its absence in the list: it may
   not have been compared. To check one service, use `entity-insights service
   <entity-id> --category deployment`.
+- **Deployment insights are behind a per-account feature flag** (rolling out,
+  soon generally available). When it is off they are simply absent: no
+  deployment insights, no `behaviorComparisonCoverage` (no coverage line), no
+  unchecked entry. Don't mention this unprompted; only when asked about
+  deployment changes or regressions and none were computed, say they are not
+  enabled for the account - never that nothing regressed.
 - **Opt-in types**: `traffic-drop`, `mix-shift` and `dependency-regression` are
   returned only when named with `--type`, never by `--category deployment` or
   the default request.

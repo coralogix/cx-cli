@@ -151,6 +151,59 @@ fn service_catalog_entity_insights() {
     harness::assert_object_with_keys(&v, &[]);
 }
 
+/// The API accepts `archiveFilter`. What it filters depends on the team's
+/// archive, so only the response shape is checked.
+#[test]
+#[ignore]
+fn service_catalog_insights_archived_include() {
+    if harness::require_creds("service_catalog_insights_archived_include").is_none() {
+        return;
+    }
+    let v = harness::run_ok_json(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "--archived",
+        "include",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["perEntityType"]);
+    assert_eq!(
+        v["perEntityType"][0]["entityType"], "ENTITY_TYPE_SERVICE",
+        "{v}"
+    );
+}
+
+#[test]
+#[ignore]
+fn service_catalog_entity_insights_archived_only() {
+    if harness::require_creds("service_catalog_entity_insights_archived_only").is_none() {
+        return;
+    }
+    let Some(service_name) = discover_entity_id("service") else {
+        eprintln!(
+            "[e2e] skipping service_catalog_entity_insights_archived_only: no services on test team"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "service-catalog",
+        "entity-insights",
+        "service",
+        &service_name,
+        "--exclude-category",
+        "deployment",
+        "--archived",
+        "only",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &[]);
+}
+
 /// Drills into the first setup insight that fired on the test team.
 #[test]
 #[ignore]

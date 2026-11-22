@@ -796,7 +796,13 @@ async fn concurrent_runs_send_one_at_a_time_and_each_event_once() {
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
-        assert!(runs < 30, "events were never delivered");
+        assert!(
+            runs < 30,
+            "events were never delivered: {} of {runs} arrived, {} still on disk, backing off: {}",
+            commands(&ingress_records(&server).await),
+            kept_events(&home).len(),
+            home.join(".cx").join("telemetry-backoff").exists(),
+        );
         assert_eq!(
             run(on_mode(&home, &server).args(["dataprime", "list"])).code,
             0

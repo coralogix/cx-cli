@@ -333,6 +333,87 @@ async fn label_on_the_command_line_ignores_env_profile() {
         .success();
 }
 
+// ── a write across several profiles says so first ────────────────────────────
+
+async fn delete_alert_mock(server: &MockServer, key: &str, hits: u64) {
+    Mock::given(method("DELETE"))
+        .and(path("/mgmt/openapi/5/alerts/alerts/v3/alert-001"))
+        .and(header("Authorization", &*format!("Bearer {key}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .expect(hits)
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn write_across_several_profiles_prints_the_blast_radius() {
+    let prod_a = MockServer::start().await;
+    let prod_b = MockServer::start().await;
+    delete_alert_mock(&prod_a, "key-a", 1).await;
+    delete_alert_mock(&prod_b, "key-b", 1).await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "prod-a",
+        "key-a",
+        &prod_a.uri(),
+        r#"labels = ["prod"]"#,
+    );
+    write_profile(
+        &home,
+        "prod-b",
+        "key-b",
+        &prod_b.uri(),
+        r#"labels = ["prod"]"#,
+    );
+    write_config(&home, "prod-a");
+
+    let output = cx(&home)
+        .args(["alerts", "delete", "alert-001", "--label", "prod", "--yes"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(
+        stderr.contains("Running 'alerts delete' against 2 profiles: prod-a, prod-b"),
+        "stderr: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn read_across_several_profiles_is_quiet() {
+    let prod_a = MockServer::start().await;
+    let prod_b = MockServer::start().await;
+    alerts_mock(&prod_a, "key-a", 1).await;
+    alerts_mock(&prod_b, "key-b", 1).await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "prod-a",
+        "key-a",
+        &prod_a.uri(),
+        r#"labels = ["prod"]"#,
+    );
+    write_profile(
+        &home,
+        "prod-b",
+        "key-b",
+        &prod_b.uri(),
+        r#"labels = ["prod"]"#,
+    );
+    write_config(&home, "prod-a");
+
+    let output = cx(&home)
+        .args(["alerts", "list", "--label", "prod"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(!stderr.contains("Running '"), "stderr: {stderr}");
+}
+
 // ── `profiles list` keeps its own --label, in both parse paths ───────────────
 
 #[test]

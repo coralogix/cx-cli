@@ -3908,6 +3908,16 @@ async fn main() -> Result<()> {
         }
     };
 
+    // A write that reaches several profiles says so up front, on stderr, so
+    // stdout stays clean for scripts. The per-command confirmation still
+    // follows; this only makes the blast radius visible.
+    if let Some(notice) = safety::multi_profile_write_notice(
+        &safety::get_subcommand_path(&matches),
+        &selected_profiles,
+    ) {
+        eprintln!("{notice}");
+    }
+
     // Reject --api-key / --region when more than one profile is selected,
     // because it would be ambiguous which profile the override targets.
     if selected_profiles.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {

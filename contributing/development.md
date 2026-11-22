@@ -14,6 +14,12 @@ cargo run -- <args>                 # Run CLI in dev mode
 
 Rust toolchain is pinned to **1.96.1** via `rust-toolchain.toml`.
 
+Dev builds, including every test, ignore an IT-managed
+[credential-storage policy](../docs/configuration.md#managed-credential-storage-policy)
+installed on your machine, so no test can move your real credentials into the
+OS store. To exercise the policy in a dev build, set `CX_POLICY_FILE` to a
+policy file. Release builds ignore `CX_POLICY_FILE`.
+
 Before submitting a PR, verify:
 
 - `cargo fmt --check` is clean

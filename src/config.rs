@@ -743,52 +743,74 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 }
 
 /// Move plaintext profile secrets into the platform credential store when an
-/// IT-managed policy requires it. Writes always precede removal from the
-/// profile file, so a failed migration leaves the original credentials intact.
+/// IT-managed policy requires it.
+///
+/// This runs before most commands, so a profile that cannot be read or moved
+/// is reported and skipped instead of blocking every command, including the
+/// `cx profiles` commands that repair it. [`resolve_single`] retries the move
+/// and refuses to use the plaintext copy.
 pub fn migrate_managed_profiles_to_os_store() -> Result<()> {
     if !crate::managed_policy::requires_os_store()? {
         return Ok(());
     }
 
     for name in list_profile_names()? {
-        let mut profile = load_profile(&name)?;
-        let migrated = match profile.auth {
-            AuthKind::ApiKey => {
-                if let Some(api_key) = profile.api_key.as_deref() {
-                    keyring_store::store_secret(&name, "api_key", api_key).with_context(|| {
-                        format!(
-                            "Could not migrate profile '{name}' to the OS credential store; \
-                             its file-based credentials were left unchanged"
-                        )
-                    })?;
-                    profile.api_key = None;
-                    true
-                } else {
-                    false
-                }
-            }
-            AuthKind::OAuth => {
-                if let Some(tokens) = profile.oauth_tokens.as_ref() {
-                    oauth::store_stored_tokens_keyring(&name, tokens).with_context(|| {
-                        format!(
-                            "Could not migrate profile '{name}' to the OS credential store; \
-                             its file-based credentials were left unchanged"
-                        )
-                    })?;
-                    profile.oauth_tokens = None;
-                    true
-                } else {
-                    false
-                }
-            }
-        };
-
-        if migrated || profile.credential_storage == CredentialStorage::File {
-            profile.credential_storage = CredentialStorage::OsStore;
-            save_profile(&name, &profile)?;
+        let migrated = load_profile(&name)
+            .with_context(|| format!("Could not check profile '{name}' for plaintext credentials"))
+            .and_then(|mut profile| migrate_profile_to_os_store(&name, &mut profile));
+        if let Err(err) = migrated {
+            eprintln!("Warning: {err:#}");
         }
     }
     Ok(())
+}
+
+/// Move one profile's plaintext secrets into the OS credential store. Returns
+/// whether the profile file was rewritten.
+fn migrate_profile_to_os_store(name: &str, profile: &mut Profile) -> Result<bool> {
+    migrate_profile_with(name, profile, store_profile_secrets, save_profile)
+}
+
+/// The OS-store write happens before the profile file is rewritten, so a
+/// failed write leaves the plaintext credentials where they were. An
+/// `os_store` profile already keeps its secrets in the store, so stray
+/// plaintext fields in its file are dropped rather than copied over them.
+fn migrate_profile_with(
+    name: &str,
+    profile: &mut Profile,
+    store: impl FnOnce(&str, &Profile) -> Result<()>,
+    save: impl FnOnce(&str, &Profile) -> Result<()>,
+) -> Result<bool> {
+    let has_plaintext = profile.api_key.is_some() || profile.oauth_tokens.is_some();
+    if profile.credential_storage == CredentialStorage::OsStore && !has_plaintext {
+        return Ok(false);
+    }
+    if profile.credential_storage == CredentialStorage::File {
+        store(name, profile).with_context(|| {
+            format!(
+                "Could not move the credentials of profile '{name}' into the OS credential \
+                 store; its profile file was left unchanged"
+            )
+        })?;
+    }
+    profile.credential_storage = CredentialStorage::OsStore;
+    profile.api_key = None;
+    profile.oauth_tokens = None;
+    save(name, profile)?;
+    Ok(true)
+}
+
+fn store_profile_secrets(name: &str, profile: &Profile) -> Result<()> {
+    match profile.auth {
+        AuthKind::ApiKey => match profile.api_key.as_deref() {
+            Some(api_key) => keyring_store::store_secret(name, "api_key", api_key),
+            None => Ok(()),
+        },
+        AuthKind::OAuth => match profile.oauth_tokens.as_ref() {
+            Some(tokens) => oauth::store_stored_tokens_keyring(name, tokens),
+            None => Ok(()),
+        },
+    }
 }
 
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal
@@ -1019,19 +1041,42 @@ async fn sign_in_to_profile_team(
 /// Store new sign-in tokens on the profile's credential backend and return the
 /// access token. The OS keyring is written here; for file storage the tokens
 /// go on `profile`, and the caller saves the profile. If the keyring write
-/// fails, the profile moves to file storage so the sign-in is not lost.
+/// fails, the profile moves to file storage so the sign-in is not lost. While
+/// an IT policy requires the OS store, the tokens always go there (replacing
+/// any in the profile file) and a failed write is an error.
 fn keep_signed_in_tokens(
     profile_name: &str,
     profile: &mut Profile,
     tokens: &oauth::TokenResponse,
 ) -> Result<String> {
+    let managed = crate::managed_policy::requires_os_store()?;
+    keep_signed_in_tokens_with(
+        profile_name,
+        profile,
+        tokens,
+        managed,
+        oauth::store_tokens_keyring,
+    )
+}
+
+fn keep_signed_in_tokens_with(
+    profile_name: &str,
+    profile: &mut Profile,
+    tokens: &oauth::TokenResponse,
+    managed: bool,
+    store: impl FnOnce(&str, &oauth::TokenResponse) -> Result<()>,
+) -> Result<String> {
+    if managed {
+        profile.credential_storage = CredentialStorage::OsStore;
+        profile.oauth_tokens = None;
+    }
     if profile.credential_storage == CredentialStorage::OsStore {
-        match oauth::store_tokens_keyring(profile_name, tokens) {
+        match store(profile_name, tokens) {
             Ok(()) => return Ok(tokens.access_token.clone()),
             Err(err) => {
                 // Clear any partial keyring writes from a failed multi-key store.
                 keyring_store::delete_profile(profile_name);
-                if crate::managed_policy::requires_os_store()? {
+                if managed {
                     anyhow::bail!(
                         "Failed to store OAuth tokens in the OS credential store ({err}). \
                          File credential storage is disabled by your organization's policy."
@@ -1055,7 +1100,6 @@ fn keep_signed_in_tokens(
 /// is loaded into `labels` and written back under that key, with the same
 /// values.
 pub async fn refresh_oauth_profile(profile_name: &str) -> Result<()> {
-    migrate_managed_profiles_to_os_store()?;
     let mut profile = load_profile(profile_name)?;
     if profile.auth != AuthKind::OAuth {
         anyhow::bail!(
@@ -1115,6 +1159,16 @@ async fn resolve_single(
     }
 
     let mut profile = load_profile(profile_name)?;
+    let managed = crate::managed_policy::requires_os_store()?;
+    if managed && api_key_override.is_none() {
+        migrate_profile_to_os_store(profile_name, &mut profile).with_context(|| {
+            format!(
+                "File credential storage is disabled by your organization's policy. Replace \
+                 the profile with `cx profiles add {profile_name} --force`, or remove it with \
+                 `cx profiles delete {profile_name}`"
+            )
+        })?;
+    }
     // `--region` is for this invocation only. The profile object is what
     // later gets saved, so remember the on-disk region and put it back
     // before any write.
@@ -1207,17 +1261,12 @@ async fn resolve_single(
             if let Some(new_tokens) = refreshed {
                 // File-storage profile, or an OS-store refresh that could not
                 // be written to the keyring: persist the tokens to disk.
-                if os_store_fallback_reason.is_some() && crate::managed_policy::requires_os_store()?
-                {
-                    anyhow::bail!(
-                        "Failed to store refreshed OAuth tokens in the OS credential store. \
-                         File credential storage is disabled by your organization's policy."
-                    );
-                }
-                profile.oauth_tokens = Some(new_tokens);
-                if os_store_fallback_reason.is_some() {
-                    profile.credential_storage = CredentialStorage::File;
-                }
+                keep_refreshed_tokens(
+                    &mut profile,
+                    new_tokens,
+                    os_store_fallback_reason.as_deref(),
+                    managed,
+                )?;
             }
             if persist_profile {
                 // Save tokens (and, after a same-team sign-in, team identity)
@@ -1265,6 +1314,28 @@ async fn resolve_single(
     })
 }
 
+/// Put a refreshed token set on `profile` for the caller to save. When the
+/// OS-store write failed, the profile moves to file storage, unless an IT
+/// policy requires the OS store.
+fn keep_refreshed_tokens(
+    profile: &mut Profile,
+    tokens: StoredOAuthTokens,
+    os_store_error: Option<&str>,
+    managed: bool,
+) -> Result<()> {
+    if let Some(err) = os_store_error {
+        if managed {
+            anyhow::bail!(
+                "Failed to store refreshed OAuth tokens in the OS credential store ({err}). \
+                 File credential storage is disabled by your organization's policy."
+            );
+        }
+        profile.credential_storage = CredentialStorage::File;
+    }
+    profile.oauth_tokens = Some(tokens);
+    Ok(())
+}
+
 /// Resolve the active profile, respecting CLI overrides.
 ///
 /// When `profile_override` is `None`, falls back to the default profile in config.
@@ -1273,7 +1344,6 @@ pub async fn resolve(
     api_key_override: Option<&str>,
     region_override: Option<&str>,
 ) -> Result<ResolvedConfig> {
-    migrate_managed_profiles_to_os_store()?;
     let config = load_config()?;
     let name = profile_override.unwrap_or(&config.default_profile);
     resolve_single(name, api_key_override, region_override).await
@@ -1289,7 +1359,6 @@ pub async fn resolve_all(
     api_key_override: Option<&str>,
     region_override: Option<&str>,
 ) -> Result<Vec<ResolvedConfig>> {
-    migrate_managed_profiles_to_os_store()?;
     if profiles.is_empty() {
         let cfg = load_config()?;
         return Ok(vec![
@@ -2343,5 +2412,249 @@ labels = [" eu ", "prod", "eu", "", "staging"]
         profile.cached_team_id = None;
         let signed_in = whoami(Some(2), "c4c", Some("https://c4c.app.eu2.coralogix.com"));
         assert!(reauth_team_conflict("default", &profile, &signed_in).is_none());
+    }
+
+    // ── IT-managed policy: migration and token storage ────────────────────────
+
+    fn stored_tokens(access_token: &str) -> StoredOAuthTokens {
+        StoredOAuthTokens {
+            access_token: access_token.to_string(),
+            refresh_token: Some("refresh".to_string()),
+            id_token: None,
+            expiry: Some(1_900_000_000),
+        }
+    }
+
+    fn token_response(access_token: &str) -> oauth::TokenResponse {
+        oauth::TokenResponse {
+            access_token: access_token.to_string(),
+            token_type: "Bearer".to_string(),
+            expires_in: Some(3600),
+            refresh_token: Some("refresh".to_string()),
+            id_token: None,
+            scope: None,
+        }
+    }
+
+    #[test]
+    fn migration_stores_the_api_key_before_saving_the_profile() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let mut profile = profile_with_labels(Vec::new());
+        profile.api_key = Some("key".to_string());
+
+        let migrated = migrate_profile_with(
+            "p",
+            &mut profile,
+            |name, profile| {
+                events
+                    .borrow_mut()
+                    .push(format!("store {name} {:?}", profile.api_key));
+                Ok(())
+            },
+            |name, profile| {
+                events.borrow_mut().push(format!(
+                    "save {name} {:?} {:?}",
+                    profile.credential_storage, profile.api_key
+                ));
+                Ok(())
+            },
+        )
+        .expect("migration succeeds");
+
+        assert!(migrated);
+        assert_eq!(
+            events.into_inner(),
+            ["store p Some(\"key\")", "save p OsStore None"]
+        );
+    }
+
+    #[test]
+    fn migration_hands_oauth_tokens_to_the_store_unchanged() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.auth = AuthKind::OAuth;
+        profile.oauth_tokens = Some(stored_tokens("access"));
+        let mut stored = None;
+        let mut saved = None;
+
+        migrate_profile_with(
+            "p",
+            &mut profile,
+            |_, profile| {
+                stored = profile.oauth_tokens.clone();
+                Ok(())
+            },
+            |_, profile| {
+                saved = Some(profile.clone());
+                Ok(())
+            },
+        )
+        .expect("migration succeeds");
+
+        assert_eq!(stored, Some(stored_tokens("access")));
+        let saved = saved.expect("profile saved");
+        assert_eq!(saved.credential_storage, CredentialStorage::OsStore);
+        assert_eq!(saved.oauth_tokens, None);
+    }
+
+    #[test]
+    fn failed_migration_leaves_the_profile_file_alone() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.api_key = Some("key".to_string());
+        let mut saved = false;
+
+        let err = migrate_profile_with(
+            "p",
+            &mut profile,
+            |_, _| Err(anyhow::anyhow!("keychain locked")),
+            |_, _| {
+                saved = true;
+                Ok(())
+            },
+        )
+        .expect_err("store failure is reported");
+
+        assert!(format!("{err:#}").contains("keychain locked"), "{err:#}");
+        assert!(!saved);
+        assert_eq!(profile.credential_storage, CredentialStorage::File);
+        assert_eq!(profile.api_key.as_deref(), Some("key"));
+    }
+
+    #[test]
+    fn migration_skips_profiles_already_in_the_os_store() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.credential_storage = CredentialStorage::OsStore;
+
+        let migrated = migrate_profile_with(
+            "p",
+            &mut profile,
+            |_, _| panic!("nothing to store"),
+            |_, _| panic!("nothing to save"),
+        )
+        .expect("nothing to migrate");
+        assert!(!migrated);
+    }
+
+    #[test]
+    fn migration_drops_stray_plaintext_from_os_store_profiles() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.credential_storage = CredentialStorage::OsStore;
+        profile.api_key = Some("stale".to_string());
+        let mut saved_without_key = false;
+
+        let migrated = migrate_profile_with(
+            "p",
+            &mut profile,
+            |_, _| panic!("the OS store already holds this profile's secret"),
+            |_, profile| {
+                saved_without_key = profile.api_key.is_none();
+                Ok(())
+            },
+        )
+        .expect("plaintext dropped");
+        assert!(migrated);
+        assert!(saved_without_key);
+    }
+
+    #[test]
+    fn managed_sign_in_moves_a_file_profile_to_the_os_store() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.auth = AuthKind::OAuth;
+        profile.oauth_tokens = Some(stored_tokens("old"));
+
+        let access_token =
+            keep_signed_in_tokens_with("p", &mut profile, &token_response("new"), true, |_, _| {
+                Ok(())
+            })
+            .expect("stored in the OS store");
+
+        assert_eq!(access_token, "new");
+        assert_eq!(profile.credential_storage, CredentialStorage::OsStore);
+        assert_eq!(profile.oauth_tokens, None);
+    }
+
+    #[test]
+    fn managed_sign_in_fails_instead_of_falling_back_to_file() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.auth = AuthKind::OAuth;
+
+        let err = keep_signed_in_tokens_with(
+            "cx_test_managed_sign_in",
+            &mut profile,
+            &token_response("new"),
+            true,
+            |_, _| Err(anyhow::anyhow!("keychain locked")),
+        )
+        .expect_err("policy forbids the file fallback");
+
+        assert!(err.to_string().contains("keychain locked"), "{err}");
+        assert_eq!(profile.oauth_tokens, None);
+    }
+
+    #[test]
+    fn unmanaged_sign_in_falls_back_to_file_when_the_os_store_fails() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.auth = AuthKind::OAuth;
+        profile.credential_storage = CredentialStorage::OsStore;
+
+        keep_signed_in_tokens_with(
+            "cx_test_unmanaged_sign_in",
+            &mut profile,
+            &token_response("new"),
+            false,
+            |_, _| Err(anyhow::anyhow!("keychain locked")),
+        )
+        .expect("falls back to file");
+
+        assert_eq!(profile.credential_storage, CredentialStorage::File);
+        assert_eq!(
+            profile.oauth_tokens.map(|tokens| tokens.access_token),
+            Some("new".to_string())
+        );
+    }
+
+    #[test]
+    fn managed_refresh_fails_instead_of_writing_tokens_to_file() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.credential_storage = CredentialStorage::OsStore;
+
+        let err = keep_refreshed_tokens(
+            &mut profile,
+            stored_tokens("new"),
+            Some("keychain locked"),
+            true,
+        )
+        .expect_err("policy forbids the file fallback");
+
+        assert!(err.to_string().contains("keychain locked"), "{err}");
+        assert_eq!(profile.credential_storage, CredentialStorage::OsStore);
+        assert_eq!(profile.oauth_tokens, None);
+    }
+
+    #[test]
+    fn unmanaged_refresh_falls_back_to_file_when_the_os_store_fails() {
+        let mut profile = profile_with_labels(Vec::new());
+        profile.credential_storage = CredentialStorage::OsStore;
+
+        keep_refreshed_tokens(
+            &mut profile,
+            stored_tokens("new"),
+            Some("keychain locked"),
+            false,
+        )
+        .expect("falls back to file");
+
+        assert_eq!(profile.credential_storage, CredentialStorage::File);
+        assert_eq!(profile.oauth_tokens, Some(stored_tokens("new")));
+    }
+
+    #[test]
+    fn file_profile_refresh_keeps_tokens_on_the_profile() {
+        let mut profile = profile_with_labels(Vec::new());
+
+        keep_refreshed_tokens(&mut profile, stored_tokens("new"), None, false)
+            .expect("file profile refresh");
+
+        assert_eq!(profile.credential_storage, CredentialStorage::File);
+        assert_eq!(profile.oauth_tokens, Some(stored_tokens("new")));
     }
 }

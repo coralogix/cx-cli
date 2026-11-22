@@ -675,17 +675,27 @@ pub fn store_tokens_keyring(profile: &str, tokens: &TokenResponse) -> Result<()>
 /// Persist tokens read from a file-backed profile into the OS credential store.
 ///
 /// Unlike [`store_tokens_keyring`], the expiry is already an absolute Unix
-/// timestamp and must not be recomputed.
+/// timestamp and must not be recomputed. The file holds the profile's whole
+/// token set, so keyring entries for fields it lacks are deleted: an older
+/// refresh token or expiry left there would otherwise be read back with the
+/// new access token. Deletes run only after every write has succeeded.
 pub fn store_stored_tokens_keyring(profile: &str, tokens: &StoredOAuthTokens) -> Result<()> {
-    keyring_store::store_secret(profile, "oauth_access_token", &tokens.access_token)?;
-    if let Some(refresh_token) = &tokens.refresh_token {
-        keyring_store::store_secret(profile, "oauth_refresh_token", refresh_token)?;
+    let expiry = tokens.expiry.map(|expiry| expiry.to_string());
+    let secrets = [
+        ("oauth_access_token", Some(tokens.access_token.as_str())),
+        ("oauth_refresh_token", tokens.refresh_token.as_deref()),
+        ("oauth_id_token", tokens.id_token.as_deref()),
+        ("oauth_token_expiry", expiry.as_deref()),
+    ];
+    for (key_name, value) in secrets {
+        if let Some(value) = value {
+            keyring_store::store_secret(profile, key_name, value)?;
+        }
     }
-    if let Some(id_token) = &tokens.id_token {
-        keyring_store::store_secret(profile, "oauth_id_token", id_token)?;
-    }
-    if let Some(expiry) = tokens.expiry {
-        keyring_store::store_secret(profile, "oauth_token_expiry", &expiry.to_string())?;
+    for (key_name, value) in secrets {
+        if value.is_none() {
+            keyring_store::delete_secret(profile, key_name);
+        }
     }
     Ok(())
 }
@@ -1047,6 +1057,29 @@ mod tests {
         assert!(msg.contains("OAuth tokens missing"), "got: {msg}");
         assert!(msg.contains("myprofile"), "got: {msg}");
         assert!(is_reauth_required(&err));
+    }
+
+    #[test]
+    #[ignore = "requires system keyring access"]
+    fn stored_tokens_replace_stale_keyring_entries() {
+        let profile = "cx_keyring_test_stored_tokens";
+        keyring_store::store_secret(profile, "oauth_refresh_token", "stale-refresh").unwrap();
+        keyring_store::store_secret(profile, "oauth_token_expiry", "1").unwrap();
+        let tokens = StoredOAuthTokens {
+            access_token: "access".to_string(),
+            refresh_token: None,
+            id_token: Some("id".to_string()),
+            expiry: None,
+        };
+
+        store_stored_tokens_keyring(profile, &tokens).unwrap();
+
+        let secret = |key_name| keyring_store::get_secret(profile, key_name).unwrap();
+        assert_eq!(secret("oauth_access_token").as_deref(), Some("access"));
+        assert_eq!(secret("oauth_id_token").as_deref(), Some("id"));
+        assert_eq!(secret("oauth_refresh_token"), None);
+        assert_eq!(secret("oauth_token_expiry"), None);
+        keyring_store::delete_profile(profile);
     }
 
     #[tokio::test]

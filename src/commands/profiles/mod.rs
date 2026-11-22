@@ -112,10 +112,12 @@ fn os_store_offered_on(platform: OsStorePlatform) -> bool {
 /// Storage choices for the setup prompt. `file` is listed first. `os-store` is
 /// appended only when [`os_store_offered_on`] is true. The highlighted default
 /// is [`default_credential_storage`]: `os-store` on macOS, `file` elsewhere.
+/// `managed` (an IT policy requires the OS store) leaves only `os-store`.
 fn credential_storage_options_for(
     platform: OsStorePlatform,
+    managed: bool,
 ) -> Vec<(&'static str, CredentialStorage)> {
-    if crate::managed_policy::requires_os_store().unwrap_or(false) {
+    if managed {
         return vec![("os-store (encrypted)", CredentialStorage::OsStore)];
     }
     let mut options = vec![("file", CredentialStorage::File)];
@@ -128,8 +130,8 @@ fn credential_storage_options_for(
 /// Where a newly created profile stores its secret when the user accepts the
 /// default. Existing profiles are not rewritten: an omitted `credential_storage`
 /// key still deserializes as `file`.
-fn default_credential_storage(platform: OsStorePlatform) -> CredentialStorage {
-    if crate::managed_policy::requires_os_store().unwrap_or(false) {
+fn default_credential_storage(platform: OsStorePlatform, managed: bool) -> CredentialStorage {
+    if managed {
         return CredentialStorage::OsStore;
     }
     if let Some(storage) = credential_storage_override() {
@@ -144,9 +146,6 @@ fn default_credential_storage(platform: OsStorePlatform) -> CredentialStorage {
 /// Explicit setup storage override. This is intentionally limited to `file`:
 /// it gives CI and coding agents a way to avoid touching an OS credential store.
 fn credential_storage_override() -> Option<CredentialStorage> {
-    if crate::managed_policy::requires_os_store().unwrap_or(false) {
-        return None;
-    }
     credential_storage_override_from(std::env::var("CX_CREDENTIAL_STORAGE").ok().as_deref())
 }
 
@@ -155,6 +154,18 @@ fn credential_storage_override_from(value: Option<&str>) -> Option<CredentialSto
         return Some(CredentialStorage::File);
     }
     None
+}
+
+/// Under an IT policy, `CX_CREDENTIAL_STORAGE=file` is an error rather than
+/// ignored, so a script that relies on file storage learns it is not in effect.
+fn reject_file_storage_override(managed: bool, value: Option<&str>) -> Result<()> {
+    if managed && credential_storage_override_from(value) == Some(CredentialStorage::File) {
+        anyhow::bail!(
+            "File credential storage is disabled by your organization's policy. \
+             Credentials must be stored in the OS credential store."
+        );
+    }
+    Ok(())
 }
 
 fn warn_invalid_credential_storage_override() {
@@ -171,9 +182,9 @@ fn invalid_credential_storage_override_warning(value: Option<&str>) -> Option<St
     })
 }
 
-fn credential_storage_cursor(platform: OsStorePlatform) -> usize {
-    let preferred = default_credential_storage(platform);
-    credential_storage_options_for(platform)
+fn credential_storage_cursor(platform: OsStorePlatform, managed: bool) -> usize {
+    let preferred = default_credential_storage(platform, managed);
+    credential_storage_options_for(platform, managed)
         .iter()
         .position(|(_, storage)| *storage == preferred)
         .unwrap_or(0)
@@ -211,14 +222,18 @@ fn credential_storage_help(file_description: &str, platform: OsStorePlatform) ->
     }
 }
 
-fn select_credential_storage(prompt: &str, help_message: &str) -> Result<CredentialStorage> {
-    if let Some(storage) = credential_storage_override() {
+fn select_credential_storage(
+    prompt: &str,
+    help_message: &str,
+    managed: bool,
+) -> Result<CredentialStorage> {
+    if let Some(storage) = credential_storage_override().filter(|_| !managed) {
         return Ok(storage);
     }
     let platform = current_os_store_platform();
-    let options = credential_storage_options_for(platform);
+    let options = credential_storage_options_for(platform, managed);
     let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
-    let cursor = credential_storage_cursor(platform);
+    let cursor = credential_storage_cursor(platform, managed);
     let chosen = Select::new(prompt, labels)
         .with_help_message(help_message)
         .with_starting_cursor(cursor)
@@ -254,20 +269,22 @@ fn delete_os_store_secrets_if_recorded(name: &str) {
 /// Persist to the OS credential store when possible; otherwise fall back to file.
 ///
 /// Linux hosts without a Secret Service (and musl builds with no keyring backend)
-/// must still succeed — falling back keeps existing clients working.
+/// must still succeed — falling back keeps existing clients working. Under an
+/// IT policy (`managed`) there is no fallback: a failed store is an error.
 fn os_store_or_file_fallback<T>(
     profile: &str,
     store_result: Result<()>,
     file_payload: T,
     os_desc: &'static str,
     file_desc: &'static str,
+    managed: bool,
 ) -> Result<(CredentialStorage, Option<T>, &'static str)> {
     match store_result {
         Ok(()) => Ok((CredentialStorage::OsStore, None, os_desc)),
         Err(err) => {
             // Clear any partial keyring writes from a failed multi-key store.
             keyring_store::delete_profile(profile);
-            if crate::managed_policy::requires_os_store()? {
+            if managed {
                 anyhow::bail!(
                     "The OS credential store is unavailable ({err}). File credential storage \
                      is disabled by your organization's policy; contact your IT administrator."
@@ -721,11 +738,11 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         labels,
     } = args;
     let oauth = oauth || signup;
-    if crate::managed_policy::requires_os_store()?
-        && std::env::var("CX_CREDENTIAL_STORAGE").ok().as_deref() == Some("file")
-    {
-        crate::managed_policy::ensure_file_storage_allowed()?;
-    }
+    let managed = crate::managed_policy::requires_os_store()?;
+    reject_file_storage_override(
+        managed,
+        std::env::var("CX_CREDENTIAL_STORAGE").ok().as_deref(),
+    )?;
     warn_invalid_credential_storage_override();
 
     // Treat an empty/whitespace-only key (e.g. `--api-key ""` or an unset CI
@@ -789,12 +806,12 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         // browser login. A terminal is not required: the approval happens in
         // the browser, the login URL is printed for the user (or an agent) to
         // open, and the remaining questions fall back to defaults.
-        configure_oauth(&name, region_choice, interactive, signup).await?
+        configure_oauth(&name, region_choice, interactive, signup, managed).await?
     } else if !interactive {
-        build_profile_non_interactive(&name, api_key, region_choice)?
+        build_profile_non_interactive(&name, api_key, region_choice, managed)?
     } else if api_key.is_some() {
         // An API key was supplied, so the auth-method question is answered.
-        configure_api_key(&name, api_key, region_choice)?
+        configure_api_key(&name, api_key, region_choice, managed)?
     } else {
         let auth_choice = Select::new("Authentication method:", AUTH_METHODS.to_vec())
             .with_starting_cursor(0) // OAuth is the default
@@ -806,9 +823,9 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
             .prompt()?;
 
         if auth_choice.starts_with("OAuth") {
-            configure_oauth(&name, region_choice, interactive, signup).await?
+            configure_oauth(&name, region_choice, interactive, signup, managed).await?
         } else {
-            configure_api_key(&name, None, region_choice)?
+            configure_api_key(&name, None, region_choice, managed)?
         }
     };
 
@@ -1087,6 +1104,7 @@ fn build_profile_non_interactive(
     name: &str,
     api_key: Option<String>,
     region_choice: Option<RegionChoice>,
+    managed: bool,
 ) -> Result<(Profile, &'static str)> {
     let mut missing = Vec::new();
     if region_choice.is_none() {
@@ -1108,13 +1126,14 @@ fn build_profile_non_interactive(
     // Drop OS-store secrets only when this profile's file says they are there.
     delete_os_store_secrets_if_recorded(name);
     let (credential_storage, api_key, storage_desc) =
-        match default_credential_storage(current_os_store_platform()) {
+        match default_credential_storage(current_os_store_platform(), managed) {
             CredentialStorage::OsStore => os_store_or_file_fallback(
                 name,
                 keyring_store::store_secret(name, "api_key", &api_key),
                 api_key,
                 "OS credential store",
                 "profile file",
+                managed,
             )?,
             CredentialStorage::File => (CredentialStorage::File, Some(api_key), "profile file"),
         };
@@ -1145,6 +1164,7 @@ async fn configure_oauth(
     region_choice: Option<RegionChoice>,
     interactive: bool,
     signup: bool,
+    managed: bool,
 ) -> Result<(Profile, &'static str)> {
     // Region / environment selection: the --url/--region flags when supplied,
     // otherwise the searchable list (URL derivation, BYOC). The browser login
@@ -1211,9 +1231,13 @@ async fn configure_oauth(
     let credential_storage = if interactive {
         let help_message =
             credential_storage_help_message("stores tokens in the profile config (0600 perms).");
-        select_credential_storage("Where should OAuth tokens be stored?", &help_message)?
+        select_credential_storage(
+            "Where should OAuth tokens be stored?",
+            &help_message,
+            managed,
+        )?
     } else {
-        default_credential_storage(current_os_store_platform())
+        default_credential_storage(current_os_store_platform(), managed)
     };
 
     // For custom environments, explicitly store the base URL so that token
@@ -1229,6 +1253,7 @@ async fn configure_oauth(
             oauth::tokens_to_stored(&tokens),
             "OS credential store (OAuth tokens)",
             "profile file (OAuth tokens)",
+            managed,
         )?,
         CredentialStorage::File => (
             CredentialStorage::File,
@@ -1274,6 +1299,7 @@ fn configure_api_key(
     name: &str,
     api_key: Option<String>,
     region_choice: Option<RegionChoice>,
+    managed: bool,
 ) -> Result<(Profile, &'static str)> {
     let api_key = match api_key {
         Some(key) => key,
@@ -1314,7 +1340,7 @@ fn configure_api_key(
     let help_message =
         credential_storage_help_message("stores credentials in the profile config (0600 perms).");
     let credential_storage =
-        select_credential_storage("Where should API keys be stored?", &help_message)?;
+        select_credential_storage("Where should API keys be stored?", &help_message, managed)?;
 
     let (credential_storage, api_key, storage_desc) = match credential_storage {
         CredentialStorage::OsStore => os_store_or_file_fallback(
@@ -1323,6 +1349,7 @@ fn configure_api_key(
             api_key,
             "OS credential store",
             "profile file",
+            managed,
         )?,
         CredentialStorage::File => {
             // Drop OS-store secrets only when this profile's file says they are there.
@@ -1481,7 +1508,7 @@ mod tests {
     #[test]
     fn credential_storage_lists_file_first() {
         let platform = current_os_store_platform();
-        let options = credential_storage_options_for(platform);
+        let options = credential_storage_options_for(platform, false);
         assert_eq!(options[0].1, CredentialStorage::File);
         if os_store_offered_on(platform) {
             assert_eq!(options.len(), 2);
@@ -1503,6 +1530,41 @@ mod tests {
     }
 
     #[test]
+    fn managed_policy_rejects_file_storage_override() {
+        let err = reject_file_storage_override(true, Some("file"))
+            .expect_err("policy forbids the file override");
+        assert!(
+            err.to_string()
+                .contains("disabled by your organization's policy"),
+            "got: {err}"
+        );
+        reject_file_storage_override(false, Some("file")).expect("no policy");
+        reject_file_storage_override(true, None).expect("no override");
+        reject_file_storage_override(true, Some("FILE")).expect("not the file override");
+    }
+
+    #[test]
+    fn managed_policy_offers_and_defaults_to_os_store_only() {
+        for platform in [
+            OsStorePlatform::Macos {
+                apple_signed: false,
+            },
+            OsStorePlatform::Macos { apple_signed: true },
+            OsStorePlatform::Other,
+            OsStorePlatform::LinuxMusl,
+        ] {
+            let options = credential_storage_options_for(platform, true);
+            assert_eq!(options.len(), 1);
+            assert_eq!(options[0].1, CredentialStorage::OsStore);
+            assert_eq!(
+                default_credential_storage(platform, true),
+                CredentialStorage::OsStore
+            );
+            assert_eq!(credential_storage_cursor(platform, true), 0);
+        }
+    }
+
+    #[test]
     fn invalid_credential_storage_override_warns() {
         assert_eq!(invalid_credential_storage_override_warning(None), None);
         assert_eq!(
@@ -1520,11 +1582,11 @@ mod tests {
         for apple_signed in [false, true] {
             let platform = OsStorePlatform::Macos { apple_signed };
             assert_eq!(
-                default_credential_storage(platform),
+                default_credential_storage(platform, false),
                 CredentialStorage::OsStore
             );
-            let options = credential_storage_options_for(platform);
-            let cursor = credential_storage_cursor(platform);
+            let options = credential_storage_options_for(platform, false);
+            let cursor = credential_storage_cursor(platform, false);
             assert_eq!(options[cursor].1, CredentialStorage::OsStore);
         }
     }
@@ -1533,11 +1595,11 @@ mod tests {
     fn non_macos_defaults_to_file() {
         for platform in [OsStorePlatform::Other, OsStorePlatform::LinuxMusl] {
             assert_eq!(
-                default_credential_storage(platform),
+                default_credential_storage(platform, false),
                 CredentialStorage::File
             );
-            let options = credential_storage_options_for(platform);
-            let cursor = credential_storage_cursor(platform);
+            let options = credential_storage_options_for(platform, false);
+            let cursor = credential_storage_cursor(platform, false);
             assert_eq!(options[cursor].1, CredentialStorage::File);
         }
     }
@@ -1590,6 +1652,7 @@ mod tests {
             "secret",
             "OS credential store",
             "profile file",
+            false,
         )
         .expect("successful store");
         assert_eq!(storage, CredentialStorage::OsStore);
@@ -1605,11 +1668,31 @@ mod tests {
             "secret",
             "OS credential store",
             "profile file",
+            false,
         )
         .expect("no policy should permit fallback");
         assert_eq!(storage, CredentialStorage::File);
         assert_eq!(payload, Some("secret"));
         assert_eq!(desc, "profile file");
+    }
+
+    #[test]
+    fn managed_policy_refuses_file_fallback_when_os_store_fails() {
+        let err = os_store_or_file_fallback(
+            "cx_test_os_store_managed",
+            Err(anyhow::anyhow!("no secret service")),
+            "secret",
+            "OS credential store",
+            "profile file",
+            true,
+        )
+        .expect_err("policy forbids the file fallback");
+        let message = err.to_string();
+        assert!(message.contains("no secret service"), "got: {message}");
+        assert!(
+            message.contains("disabled by your organization's policy"),
+            "got: {message}"
+        );
     }
 
     /// The default cursor is a raw index into `PICKER_REGIONS`; if the list is

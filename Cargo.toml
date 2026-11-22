@@ -83,9 +83,10 @@ uuid = { version = "1.24.0", features = ["v4"] }
 keyring = { version = "3", features = ["apple-native"] }
 security-framework = "3"
 
-# Windows: Credential Manager
+# Windows: Credential Manager, plus the Windows directory that locates the IT policy
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation"] }
 
 # Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)
 # NOTE: musl builds have no keyring backend - users must use file-based credential storage

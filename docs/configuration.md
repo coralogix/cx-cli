@@ -285,7 +285,11 @@ devices. Deploy a root/admin-owned TOML file through device management:
 | Platform | Policy file |
 |---|---|
 | macOS | `/Library/Application Support/Coralogix/cx/policy.toml` |
-| Windows | `%ProgramData%\Coralogix\cx\policy.toml` |
+| Windows | `%SystemDrive%\ProgramData\Coralogix\cx\policy.toml` (usually `C:\ProgramData\Coralogix\cx\policy.toml`) |
+
+On Windows, `cx` takes the drive from the system Windows directory, not from
+the `ProgramData` or `SystemDrive` environment variables, which a user can
+change for their own processes.
 
 ```toml
 require_credential_storage = "os_store"
@@ -295,15 +299,23 @@ The policy file and every parent directory must be readable and traversable by
 the user running `cx`; otherwise the CLI cannot enforce the policy. Keep the
 file owned by IT (for example `root:admin` on macOS) while granting read access
 to users. A suitable macOS setup is `755` on the `Coralogix` and `cx`
-directories and `664` on `policy.toml`.
+directories and `644` on `policy.toml`.
 
 When enabled, `cx` stores credentials only in macOS Keychain or Windows
 Credential Manager. The interactive setup flow does not offer `file`, and
-`CX_CREDENTIAL_STORAGE=file` is rejected. On the next credential-resolving
-command, existing profile-file API keys and OAuth tokens are copied to the OS
-store; `cx` removes their plaintext fields only after all writes succeed. A
-failed migration leaves the original profile unchanged and stops the command
-instead of falling back to file storage.
+`CX_CREDENTIAL_STORAGE=file` is rejected. Before running any command other than
+`cx profiles delete`, `cx` copies the API keys and OAuth tokens it finds in
+profile files to the OS store, and removes the plaintext fields only after
+every write succeeds.
+
+A profile that cannot be read or copied keeps its file unchanged and is skipped
+with a warning, so other profiles and the `cx profiles` commands keep working.
+A command that uses that profile stops instead of reading its plaintext
+credentials. Replace the profile with `cx profiles add <name> --force`, or
+remove it with `cx profiles delete <name>`.
+
+An invalid or unreadable policy file is an error, not a missing policy: `cx`
+stops instead of falling back to file storage.
 
 Linux ignores this policy and retains its existing credential-storage behavior.
 

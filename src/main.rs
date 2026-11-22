@@ -3678,7 +3678,10 @@ async fn main() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
-        config::migrate_managed_profiles_to_os_store()?;
+        // Deleting is how a user removes a profile that cannot be migrated.
+        if !matches!(cmd, ProfilesCmd::Delete { .. }) {
+            config::migrate_managed_profiles_to_os_store()?;
+        }
         let result = match cmd {
             ProfilesCmd::List { label } => commands::profiles::run_list(label),
             ProfilesCmd::Add {
@@ -3731,8 +3734,16 @@ async fn main() -> Result<()> {
     let cli = Cli::from_arg_matches(&matches)?;
     // A managed credential-storage policy applies before every executed CLI
     // command, including local commands that do not otherwise resolve API
-    // credentials (such as `cx profiles list`).
-    config::migrate_managed_profiles_to_os_store()?;
+    // credentials (such as `cx profiles list`). `cx profiles delete` is
+    // exempt: it is how a user removes a profile that cannot be migrated.
+    if !matches!(
+        cli.command,
+        Commands::Profiles {
+            cmd: ProfilesCmd::Delete { .. }
+        }
+    ) {
+        config::migrate_managed_profiles_to_os_store()?;
+    }
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();

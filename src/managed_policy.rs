@@ -4,7 +4,7 @@
 //! IT can deploy it through Jamf or a Windows management tool to require the
 //! platform credential store.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -22,40 +22,62 @@ pub const fn supported_platform() -> bool {
     cfg!(any(target_os = "macos", target_os = "windows"))
 }
 
-fn default_policy_file() -> PathBuf {
+fn default_policy_file() -> Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        PathBuf::from("/Library/Application Support/Coralogix/cx/policy.toml")
+        Ok(PathBuf::from(
+            "/Library/Application Support/Coralogix/cx/policy.toml",
+        ))
     }
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("ProgramData")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        Ok(windows_program_data()?
             .join("Coralogix")
             .join("cx")
-            .join("policy.toml")
+            .join("policy.toml"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        PathBuf::new()
+        Ok(PathBuf::new())
     }
 }
 
-fn policy_file() -> PathBuf {
-    // Test-only escape hatch: production builds always consult the IT-managed
-    // location, so a user cannot bypass policy by changing an environment
-    // variable.
-    #[cfg(test)]
-    {
-        if let Some(path) = std::env::var_os("CX_POLICY_FILE") {
-            return PathBuf::from(path);
-        }
+/// `%SystemDrive%\ProgramData`, with the drive taken from the system Windows
+/// directory. The `ProgramData` and `SystemDrive` environment variables are
+/// not consulted because a user can set them for their own processes.
+#[cfg(target_os = "windows")]
+fn windows_program_data() -> Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::SystemInformation::GetSystemWindowsDirectoryW;
+
+    let mut buffer = [0u16; 260];
+    // SAFETY: the pointer and length describe `buffer`, which outlives the call.
+    let len =
+        unsafe { GetSystemWindowsDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+    if len == 0 || len >= buffer.len() {
+        anyhow::bail!("Could not resolve the Windows directory to locate the managed policy");
     }
-    default_policy_file()
+    let windows_dir = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..len]));
+    let system_drive = windows_dir
+        .ancestors()
+        .last()
+        .unwrap_or(windows_dir.as_path());
+    Ok(system_drive.join("ProgramData"))
 }
 
-fn parse_policy(raw: &str, path: &std::path::Path) -> Result<bool> {
+/// Release builds read only the machine-wide file, so no environment variable
+/// can switch the policy off. Debug builds come from a source checkout, which
+/// can drop the check anyway, and read only `CX_POLICY_FILE`. Every test runs
+/// a debug build, and acting on a policy deployed to a developer's machine
+/// would move the developer's real credentials into the OS store.
+fn policy_file() -> Result<Option<PathBuf>> {
+    if cfg!(any(test, debug_assertions)) {
+        return Ok(std::env::var_os("CX_POLICY_FILE").map(PathBuf::from));
+    }
+    default_policy_file().map(Some)
+}
+
+fn parse_policy(raw: &str, path: &Path) -> Result<bool> {
     let policy: ManagedPolicy = toml::from_str(raw)
         .with_context(|| format!("Failed to parse managed policy {}", path.display()))?;
     match policy.require_credential_storage.as_deref() {
@@ -77,9 +99,14 @@ pub fn requires_os_store() -> Result<bool> {
     if !supported_platform() {
         return Ok(false);
     }
+    match policy_file()? {
+        Some(path) => requires_os_store_at(&path),
+        None => Ok(false),
+    }
+}
 
-    let path = policy_file();
-    match std::fs::metadata(&path) {
+fn requires_os_store_at(path: &Path) -> Result<bool> {
+    match std::fs::metadata(path) {
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => {
@@ -87,25 +114,21 @@ pub fn requires_os_store() -> Result<bool> {
                 .with_context(|| format!("Cannot access managed policy {}", path.display()));
         }
     }
-    let raw = std::fs::read_to_string(&path)
+    let raw = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read managed policy {}", path.display()))?;
-    parse_policy(&raw, &path)
-}
-
-/// Reject storing a credential in a plaintext profile while the IT policy is on.
-pub fn ensure_file_storage_allowed() -> Result<()> {
-    if requires_os_store()? {
-        anyhow::bail!(
-            "File credential storage is disabled by your organization's policy. \
-             Credentials must be stored in the OS credential store."
-        );
-    }
-    Ok(())
+    parse_policy(&raw, path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_policy(test: &str, body: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("cx_policy_{test}_{}.toml", std::process::id()));
+        std::fs::write(&path, body).expect("write policy");
+        path
+    }
 
     #[test]
     fn linux_ignores_the_managed_policy() {
@@ -118,17 +141,63 @@ mod tests {
     fn default_path_matches_supported_platform() {
         if cfg!(target_os = "macos") {
             assert_eq!(
-                default_policy_file(),
+                default_policy_file().expect("macOS policy path"),
                 PathBuf::from("/Library/Application Support/Coralogix/cx/policy.toml")
             );
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_path_ignores_the_program_data_environment_variable() {
+        let expected = default_policy_file().expect("Windows policy path");
+        assert!(
+            expected.ends_with(r"ProgramData\Coralogix\cx\policy.toml"),
+            "got {}",
+            expected.display()
+        );
+
+        let original = std::env::var_os("ProgramData");
+        std::env::set_var("ProgramData", r"C:\nowhere");
+        let redirected = default_policy_file();
+        match original {
+            Some(value) => std::env::set_var("ProgramData", value),
+            None => std::env::remove_var("ProgramData"),
+        }
+        assert_eq!(redirected.expect("Windows policy path"), expected);
+    }
+
+    #[test]
+    fn missing_policy_file_means_no_policy() {
+        let path = std::env::temp_dir().join("cx_policy_that_does_not_exist.toml");
+        assert!(!requires_os_store_at(&path).expect("missing file is no policy"));
+    }
+
+    #[test]
+    fn policy_file_requires_os_store() {
+        let path = write_policy("requires", "require_credential_storage = \"os_store\"");
+        let required = requires_os_store_at(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(required.expect("valid policy"));
+    }
+
+    #[test]
+    fn policy_file_with_invalid_value_fails_closed() {
+        let path = write_policy("invalid", "require_credential_storage = \"file\"");
+        let result = requires_os_store_at(&path);
+        let _ = std::fs::remove_file(&path);
+        let err = result.expect_err("file weakens the policy");
+        assert!(
+            err.to_string().contains("Expected \"os_store\""),
+            "got: {err}"
+        );
     }
 
     #[test]
     fn policy_requires_os_store() {
         assert!(parse_policy(
             "require_credential_storage = \"os_store\"",
-            std::path::Path::new("/managed/policy.toml")
+            Path::new("/managed/policy.toml")
         )
         .expect("valid policy"));
     }
@@ -137,7 +206,7 @@ mod tests {
     fn policy_rejects_unknown_storage() {
         let err = parse_policy(
             "require_credential_storage = \"file\"",
-            std::path::Path::new("/managed/policy.toml"),
+            Path::new("/managed/policy.toml"),
         )
         .expect_err("file weakens the policy");
         assert!(err.to_string().contains("Expected \"os_store\""));

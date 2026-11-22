@@ -340,6 +340,9 @@ pub const VALID_ENVIRONMENT_MATCHES: &[&str] =
 
 pub const VALID_REQUEST_KINDS: &[&str] = &["REQUEST_KIND_SERVER", "REQUEST_KIND_CONSUMER"];
 
+pub const INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY: &str = "INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY";
+pub const INSIGHT_ARCHIVE_FILTER_ALL: &str = "INSIGHT_ARCHIVE_FILTER_ALL";
+
 /// Which insights to compute: `types`/`categories` narrow, the `excluded_*`
 /// lists remove. All values are full proto enum names.
 #[derive(Debug, Default)]
@@ -348,6 +351,8 @@ pub struct InsightSelection {
     pub categories: Vec<String>,
     pub excluded_types: Vec<String>,
     pub excluded_categories: Vec<String>,
+    /// Unset leaves out the company's archived insight types, as the UI does.
+    pub archive_filter: Option<&'static str>,
 }
 
 /// An `EntityIdentity`. `system` is required by the backend for databases only.
@@ -442,6 +447,7 @@ fn insert_selection_and_breakdown_options(
     body["categories"] = json!(selection.categories);
     body["excludedTypes"] = json!(selection.excluded_types);
     body["excludedCategories"] = json!(selection.excluded_categories);
+    insert_if_some(body, "archiveFilter", selection.archive_filter);
     insert_if_some(body, "topValuesPerBreakdown", top_values_per_breakdown);
     insert_if_some(body, "breakdownSort", breakdown_sort);
 }
@@ -964,7 +970,10 @@ mod tests {
 
     #[test]
     fn build_entity_insights_body_carries_identity_and_system() {
-        let selection = InsightSelection::default();
+        let selection = InsightSelection {
+            archive_filter: Some(INSIGHT_ARCHIVE_FILTER_ALL),
+            ..InsightSelection::default()
+        };
         let environments = vec!["prod".to_string()];
         let body = build_entity_insights_body(&EntityInsightsParams {
             entity: EntityRef {
@@ -984,6 +993,7 @@ mod tests {
         assert_eq!(body["environments"], json!(["prod"]));
         assert_eq!(body["topValuesPerBreakdown"], 5);
         assert_eq!(body["breakdownSort"], "INSIGHT_BREAKDOWN_SORT_COUNT");
+        assert_eq!(body["archiveFilter"], "INSIGHT_ARCHIVE_FILTER_ALL");
     }
 
     #[test]

@@ -32,8 +32,8 @@ usage, etc.) via the v2 Service Catalog API.
 | `cx service-catalog entities <entity-type>` | Known entities of one type (e.g. service names) | - |
 | `cx service-catalog data <entity-type>` | Aggregated column data across every entity of a type | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation`, `--limit`, `--sort-column`, `--sort-order` |
 | `cx service-catalog entity-data <entity-type> <entity-id>` | Column data for one named entity (drilldown) | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation` |
-| `cx service-catalog insights <entity-type>...` | Insights over every entity of the given types, plus company-wide limits | `--filter`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--breakdown`, `--top-values`, `--breakdown-sort` |
-| `cx service-catalog entity-insights <entity-type> <entity-id>` | Insights of one entity, with the environments each fired in | `--system` (databases), `--environment`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--top-values`, `--breakdown-sort` |
+| `cx service-catalog insights <entity-type>...` | Insights over every entity of the given types, plus company-wide limits | `--filter`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--archived`, `--breakdown`, `--top-values`, `--breakdown-sort` |
+| `cx service-catalog entity-insights <entity-type> <entity-id>` | Insights of one entity, with the environments each fired in | `--system` (databases), `--environment`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--archived`, `--top-values`, `--breakdown-sort` |
 | `cx service-catalog insight-drilldown <insight-type> <entity-type>` | The entities behind one insight | `--scope`, `--filter`, `--environment-match`, `--sort`, `--sort-order`, `--page-size` (100 when omitted), `--page-index`, `--name-search` |
 | `cx service-catalog entity-insight-drilldown <insight-type> <entity-type> <entity-id>` | One entity's environments (or another `--dimension`) under one insight | `--scope`, `--dimension`, `--environment`, `--system` |
 
@@ -136,6 +136,15 @@ wrong" questions instead of pulling raw `data`:
   computed: requested (opt-in types by `--type`) and served to the company.
   `no-logs` is served only to companies with logs-by-environment enabled, so its
   absence elsewhere does not mean every service sends logs.
+- **Archived insight types are hidden by default.** A company can archive
+  (dismiss) insight types. `insights` and `entity-insights` leave them out
+  unless asked, and list the company's whole archived set in `archivedTypes`
+  ("Archived (hidden by default): ..." in text). A hidden type did not
+  "not fire": it was not shown. When asked about archived or dismissed
+  insights, or about a type listed as archived, pass `--archived include`
+  (archived types with the rest) or `--archived only` (just them).
+  `archiveUnavailable: true` means the archive could not be read: every type was
+  served and `archivedTypes` is empty (`--archived only` fails then).
 
 Insight types and categories take the short form (`no-slo`,
 `latency-regression`, `deployment`) or the full proto name. Text output shows
@@ -156,7 +165,10 @@ cx service-catalog insight-drilldown latency-regression service --scope request-
 # 3. Everything about one service, including which operations and dependencies regressed
 cx service-catalog entity-insights service <entity-id> --category deployment
 
-# 4. Which environments of that service an insight fired in
+# 4. Archived (dismissed) types, hidden by the calls above
+cx service-catalog insights service --archived only
+
+# 5. Which environments of that service an insight fired in
 cx service-catalog entity-insight-drilldown operation-regression service <entity-id> \
   --scope 'operation=GET /cart'
 ```

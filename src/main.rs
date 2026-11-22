@@ -3214,7 +3214,8 @@ Examples:
   cx service-catalog insights service
   cx service-catalog insights service --filter environment=prod --exclude-category deployment
   cx service-catalog insights service --category deployment
-  cx service-catalog insights service database --breakdown environment --top-values 5")]
+  cx service-catalog insights service database --breakdown environment --top-values 5
+  cx service-catalog insights service --archived include")]
     Insights(InsightsArgs),
     /// List the insights of one entity, with the environments each fired in.
     /// For a service, deployment insights also judge its operations and
@@ -3484,6 +3485,12 @@ struct InsightSelectionArgs {
     /// Leave out this category. Repeatable.
     #[arg(long = "exclude-category")]
     exclude_categories: Vec<String>,
+
+    /// Archived (dismissed) insight types: `exclude` (default) hides them,
+    /// `only` returns just them, `include` returns them with the rest. The
+    /// response lists the company's archived types either way.
+    #[arg(long)]
+    archived: Option<String>,
 }
 
 impl InsightSelectionArgs {
@@ -3493,6 +3500,7 @@ impl InsightSelectionArgs {
             categories: &self.categories,
             excluded_types: &self.exclude_types,
             excluded_categories: &self.exclude_categories,
+            archived: self.archived.as_deref(),
         }
     }
 }

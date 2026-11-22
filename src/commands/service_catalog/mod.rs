@@ -12,12 +12,12 @@ use api::{
     DataParams, EntitiesDataResult, EntitiesInsightDrilldownParams, EntitiesInsightsParams,
     EntityInsightDrilldownParams, EntityInsightsParams, EntityItem, EntityRef, EntityTypeInfo,
     EntityTypeMetadata, InsightScope, InsightSelection, ServiceCatalogApi, TableRow,
-    ENTITY_TYPE_PREFIX, ENVIRONMENT_MATCH_PREFIX, INSIGHT_BREAKDOWN_SORT_PREFIX,
-    INSIGHT_CATEGORY_PREFIX, INSIGHT_DIMENSION_PREFIX, INSIGHT_DRILLDOWN_SORT_PREFIX,
-    INSIGHT_TYPE_PREFIX, INSIGHT_UNCHECKED_REASON_PREFIX, REQUEST_KIND_PREFIX,
-    VALID_ENVIRONMENT_MATCHES, VALID_INSIGHT_BREAKDOWN_SORTS, VALID_INSIGHT_CATEGORIES,
-    VALID_INSIGHT_DIMENSIONS, VALID_INSIGHT_DRILLDOWN_SORTS, VALID_INSIGHT_TYPES,
-    VALID_REQUEST_KINDS,
+    ENTITY_TYPE_PREFIX, ENVIRONMENT_MATCH_PREFIX, INSIGHT_ARCHIVE_FILTER_ALL,
+    INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY, INSIGHT_BREAKDOWN_SORT_PREFIX, INSIGHT_CATEGORY_PREFIX,
+    INSIGHT_DIMENSION_PREFIX, INSIGHT_DRILLDOWN_SORT_PREFIX, INSIGHT_TYPE_PREFIX,
+    INSIGHT_UNCHECKED_REASON_PREFIX, REQUEST_KIND_PREFIX, VALID_ENVIRONMENT_MATCHES,
+    VALID_INSIGHT_BREAKDOWN_SORTS, VALID_INSIGHT_CATEGORIES, VALID_INSIGHT_DIMENSIONS,
+    VALID_INSIGHT_DRILLDOWN_SORTS, VALID_INSIGHT_TYPES, VALID_REQUEST_KINDS,
 };
 
 use crate::config::OutputFormat;
@@ -335,12 +335,14 @@ pub async fn run_entity_data(
     render_entities_data_results(results, include_profile, output)
 }
 
-/// Raw `--type` / `--category` / `--exclude-type` / `--exclude-category` values.
+/// Raw `--type` / `--category` / `--exclude-type` / `--exclude-category` /
+/// `--archived` values.
 pub struct InsightSelectionInput<'a> {
     pub types: &'a [String],
     pub categories: &'a [String],
     pub excluded_types: &'a [String],
     pub excluded_categories: &'a [String],
+    pub archived: Option<&'a str>,
 }
 
 /// `cx service-catalog insights <entity-type>...` - insights over every entity of the given types.
@@ -1020,7 +1022,23 @@ fn normalize_insight_selection(selection: &InsightSelectionInput<'_>) -> Result<
             selection.excluded_categories,
             "--exclude-category",
         )?,
+        archive_filter: selection
+            .archived
+            .map(parse_archived)
+            .transpose()?
+            .flatten(),
     })
+}
+
+/// `--archived`: `exclude` (the default) sends no filter, which already leaves
+/// archived types out.
+fn parse_archived(archived: &str) -> Result<Option<&'static str>> {
+    match archived.trim().to_lowercase().as_str() {
+        "exclude" => Ok(None),
+        "only" => Ok(Some(INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY)),
+        "include" => Ok(Some(INSIGHT_ARCHIVE_FILTER_ALL)),
+        other => bail!("unknown --archived '{other}'; allowed: exclude, only, include"),
+    }
 }
 
 fn parse_breakdown_sort(breakdown_sort: &str) -> Result<String> {
@@ -1175,7 +1193,10 @@ fn print_entities_insights(response: &Value) {
             false,
         );
     }
-    for line in coverage_lines {
+    for line in coverage_lines
+        .into_iter()
+        .chain(format_archive_notes(response))
+    {
         println!("{}", line.dimmed());
     }
     print_unchecked_insights(&["Entity Type", "Type", "Reason"], unchecked_rows);
@@ -1206,6 +1227,9 @@ fn print_entity_insights(response: &Value) {
             insight_rows,
             false,
         );
+    }
+    for line in format_archive_notes(response) {
+        println!("{}", line.dimmed());
     }
     print_unchecked_insights(&["Type", "Reason"], unchecked_rows);
 }
@@ -1270,6 +1294,33 @@ fn format_behavior_coverage(entity_type: &str, per_entity_type: &Value) -> Optio
         json_i64(coverage, "compared"),
         json_i64(coverage, "eligibleChanges")
     ))
+}
+
+/// The company's archived insight types, which the default request leaves out,
+/// so a type listed here was hidden rather than not firing.
+fn format_archive_notes(response: &Value) -> Vec<String> {
+    let mut notes = Vec::new();
+    let archived: Vec<String> = json_array(response, "archivedTypes")
+        .filter_map(Value::as_str)
+        .map(|insight_type| short_enum_name(insight_type, INSIGHT_TYPE_PREFIX))
+        .collect();
+    if !archived.is_empty() {
+        notes.push(format!(
+            "Archived (hidden by default): {}",
+            archived.join(", ")
+        ));
+    }
+    if response
+        .get("archiveUnavailable")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        notes.push(
+            "The archive could not be read: every insight type is shown, archived or not."
+                .to_string(),
+        );
+    }
+    notes
 }
 
 fn print_entity_insight_drilldown(response: &Value) {
@@ -1827,6 +1878,7 @@ mod tests {
             categories: &categories,
             excluded_types: &excluded_types,
             excluded_categories: &[],
+            archived: None,
         })
         .unwrap_err();
         assert!(
@@ -1843,9 +1895,30 @@ mod tests {
             categories: &[],
             excluded_types: &[],
             excluded_categories: &[],
+            archived: None,
         })
         .unwrap();
         assert_eq!(selection.types, vec!["INSIGHT_TYPE_NO_SLO"]);
+        assert_eq!(selection.archive_filter, None);
+    }
+
+    #[test]
+    fn parse_archived_maps_exclude_to_no_filter() {
+        assert_eq!(parse_archived("exclude").unwrap(), None);
+        assert_eq!(
+            parse_archived("Only").unwrap(),
+            Some("INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY")
+        );
+        assert_eq!(
+            parse_archived("include").unwrap(),
+            Some("INSIGHT_ARCHIVE_FILTER_ALL")
+        );
+        let err = parse_archived("all").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("unknown --archived 'all'; allowed: exclude, only, include"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -1972,6 +2045,27 @@ mod tests {
             Some("service: 0 of 0 eligible changes compared")
         );
         assert_eq!(format_behavior_coverage("service", &json!({})), None);
+    }
+
+    #[test]
+    fn format_archive_notes_lists_archived_types_in_short_form() {
+        assert_eq!(
+            format_archive_notes(&json!({
+                "archivedTypes": ["INSIGHT_TYPE_NO_SLO", "INSIGHT_TYPE_NO_OWNER"]
+            })),
+            vec!["Archived (hidden by default): no-slo, no-owner"]
+        );
+        assert!(format_archive_notes(&json!({ "archivedTypes": [] })).is_empty());
+        assert!(format_archive_notes(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn format_archive_notes_says_when_the_archive_could_not_be_read() {
+        assert_eq!(
+            format_archive_notes(&json!({ "archiveUnavailable": true })),
+            vec!["The archive could not be read: every insight type is shown, archived or not."]
+        );
+        assert!(format_archive_notes(&json!({ "archiveUnavailable": false })).is_empty());
     }
 
     #[test]

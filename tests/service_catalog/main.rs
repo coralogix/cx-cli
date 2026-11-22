@@ -617,6 +617,7 @@ const NO_SELECTION: InsightSelectionInput<'static> = InsightSelectionInput {
     categories: &[],
     excluded_types: &[],
     excluded_categories: &[],
+    archived: None,
 };
 
 fn entities_insights_body() -> serde_json::Value {
@@ -692,6 +693,7 @@ async fn insights_posts_the_selection_and_renders_every_format() {
                 categories: &categories,
                 excluded_types: &excluded_types,
                 excluded_categories: &[],
+                archived: None,
             },
             &["environment".to_string()],
             Some(5),
@@ -755,6 +757,7 @@ async fn insights_rejects_unknown_category_before_any_request() {
             categories: &categories,
             excluded_types: &[],
             excluded_categories: &[],
+            archived: None,
         },
         &[],
         None,
@@ -810,6 +813,139 @@ async fn entity_insights_posts_the_entity_identity() {
     )
     .await
     .expect("run_entity_insights should succeed");
+}
+
+fn archived_selection(archived: Option<&str>) -> InsightSelectionInput<'_> {
+    InsightSelectionInput {
+        archived,
+        ..NO_SELECTION
+    }
+}
+
+/// The body each `--archived` value sends: `exclude` and no flag send no
+/// filter, which already hides archived types.
+fn archive_filter_body(base: serde_json::Value, archive_filter: Option<&str>) -> serde_json::Value {
+    let mut body = base;
+    if let Some(archive_filter) = archive_filter {
+        body["archiveFilter"] = json!(archive_filter);
+    }
+    body
+}
+
+const ARCHIVED_FLAG_CASES: &[(Option<&str>, Option<&str>)] = &[
+    (None, None),
+    (Some("exclude"), None),
+    (Some("only"), Some("INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY")),
+    (Some("include"), Some("INSIGHT_ARCHIVE_FILTER_ALL")),
+];
+
+#[tokio::test]
+async fn insights_sends_the_archive_filter_for_each_archived_value() {
+    for &(archived, archive_filter) in ARCHIVED_FLAG_CASES {
+        let server = MockServer::start().await;
+        let expected = archive_filter_body(
+            json!({
+                "entityTypes": ["ENTITY_TYPE_SERVICE"],
+                "filters": [],
+                "breakdowns": [],
+                "types": [],
+                "categories": [],
+                "excludedTypes": [],
+                "excludedCategories": []
+            }),
+            archive_filter,
+        );
+        Mock::given(method("POST"))
+            .and(path(INSIGHTS))
+            .and(body_json(expected))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "archivedTypes": ["INSIGHT_TYPE_NO_SLO"]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+        run_insights(
+            &targets,
+            &["service".to_string()],
+            &[],
+            &archived_selection(archived),
+            &[],
+            None,
+            None,
+            OutputFormat::Text,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("--archived {archived:?} should succeed: {e:#}"));
+    }
+}
+
+#[tokio::test]
+async fn entity_insights_sends_the_archive_filter_for_each_archived_value() {
+    for &(archived, archive_filter) in ARCHIVED_FLAG_CASES {
+        let server = MockServer::start().await;
+        let expected = archive_filter_body(
+            json!({
+                "entity": { "entityType": "ENTITY_TYPE_SERVICE", "name": "checkout" },
+                "environments": [],
+                "types": [],
+                "categories": [],
+                "excludedTypes": [],
+                "excludedCategories": []
+            }),
+            archive_filter,
+        );
+        Mock::given(method("POST"))
+            .and(path(format!("{INSIGHTS}/entity")))
+            .and(body_json(expected))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "archiveUnavailable": true
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+        run_entity_insights(
+            &targets,
+            "service",
+            "checkout",
+            None,
+            &[],
+            &archived_selection(archived),
+            None,
+            None,
+            OutputFormat::Text,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("--archived {archived:?} should succeed: {e:#}"));
+    }
+}
+
+#[tokio::test]
+async fn insights_rejects_unknown_archived_value_before_any_request() {
+    let server = MockServer::start().await;
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    let err = run_entity_insights(
+        &targets,
+        "service",
+        "checkout",
+        None,
+        &[],
+        &archived_selection(Some("all")),
+        None,
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("an unknown --archived value should error");
+    assert!(
+        err.to_string().contains("unknown --archived 'all'"),
+        "got: {err}"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 0);
 }
 
 #[tokio::test]

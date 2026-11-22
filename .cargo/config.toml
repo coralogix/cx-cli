@@ -1,0 +1,9 @@
+# Windows gives the main thread a 1 MiB stack, while Linux and macOS give 8 MiB.
+# The CLI's large async state machines overflow 1 MiB (seen as
+# "thread 'main' has overflowed its stack" on `cx iam api-keys delete`), so
+# link Windows binaries with the same 8 MiB stack as the other platforms.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8388608"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8388608"]

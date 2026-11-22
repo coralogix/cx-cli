@@ -22,7 +22,7 @@
 //!   otherwise; `file` preselected on Windows and Linux). A prompt-free run
 //!   uses that same default, and a failed Keychain write is saved in the
 //!   profile file.
-//!   Output format and label are defaulted (JSON / none) rather than asked;
+//!   Output format and labels are defaulted (JSON / none) rather than asked;
 //!   Olly is enabled on the first profile without asking.
 //! * **Advanced (non-interactive)** — the setup is fully specified by flags (or
 //!   there is no terminal). The flags make the *profile* step prompt-free; the
@@ -119,6 +119,7 @@ pub async fn run_init(args: InitArgs) -> Result<()> {
             // (`cx profiles add` exposes `--disable-olly`.)
             disable_olly: false,
             quick: true,
+            labels: None,
         })
         .await?;
     } else {

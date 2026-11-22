@@ -61,10 +61,11 @@ Run `cx init` to set up a profile and get started.
 
 | Command | Purpose |
 |---|---|
-| `cx profiles list` | List every configured profile and show which one is the default. |
+| `cx profiles list` | List every configured profile and show which one is the default. `--label <name>` (repeatable, or comma-separated) shows only profiles that have any of those labels, which is the set the global `--label` flag would run against. |
 | `cx profiles add [NAME]` | Create or reconfigure a profile (see below). |
 | `cx profiles refresh <NAME>` | Sign an OAuth profile in again. Keeps its region and settings; only the tokens change. |
 | `cx profiles set-default <NAME>` | Make an existing profile the default, so commands without `-p` use it. |
+| `cx profiles labels <VERB> <NAME>` | Show or change a profile's labels without reconfiguring it. Verbs: `get`, `add`, `remove`, `set`, `clear`. Labels go behind `--label` (repeatable or comma-separated), for example `cx profiles labels add prod-eu --label prod,eu`. Credentials and region are untouched. |
 | `cx profiles delete <NAME>` | Delete a profile and its stored credentials. Asks for confirmation; `-f`/`--force` skips it. |
 
 Naming a profile that doesn't exist is an error, not a fall back to the default:
@@ -88,8 +89,8 @@ At the prompts, in order:
 2. **Reconfigure?** — if a profile of that name already exists, `cx` asks `Reconfigure profile '<name>'?` before touching it. `--force` skips the confirmation.
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
-5. **Label** — an optional tag to group or identify profiles (e.g. `production`).
-6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. On macOS, `os-store` is preselected and saves the secret in the Keychain ([Credentials on macOS](#credentials-on-macos)). On Windows and glibc Linux, `file` is preselected and saves credentials in the profile TOML with `0600` permissions; `os-store` is the other choice (Windows Credential Manager, or D-Bus Secret Service on Linux). On Linux musl builds, `file` is the only storage option. If you choose `os-store` and that store is unavailable (for example Linux without a Secret Service, or a Keychain write that fails), setup saves the secret in the profile file instead. A prompt-free run uses the same default and the same fallback.
+5. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. On macOS, `os-store` is preselected and saves the secret in the Keychain ([Credentials on macOS](#credentials-on-macos)). On Windows and glibc Linux, `file` is preselected and saves credentials in the profile TOML with `0600` permissions; `os-store` is the other choice (Windows Credential Manager, or D-Bus Secret Service on Linux). On Linux musl builds, `file` is the only storage option. If you choose `os-store` and that store is unavailable (for example Linux without a Secret Service, or a Keychain write that fails), setup saves the secret in the profile file instead. A prompt-free run uses the same default and the same fallback.
+6. **Labels** — optional tags to group or identify profiles (e.g. `prod, eu`). Leave the prompt empty to keep the labels already on the profile. `--label` sets them without asking; repeat it or separate values with commas. To change labels on an existing profile later, use `cx profiles labels add <name> --label <label>` instead of reconfiguring.
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
@@ -124,6 +125,7 @@ supplies both credentials and a region/URL prompts for nothing at all:
 cx profiles add prod --region eu2                      # region answered, rest prompted
 cx profiles add --oauth --region eu2                   # straight to browser login
 cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
+cx profiles add prod --region eu2 --label prod --label eu
 CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite
 ```
 
@@ -141,6 +143,7 @@ scripts unless you mean to write the default one.
 | `--oauth` | Use browser login and skip the auth-method prompt. Takes precedence over `--api-key`. Prints the sign-in URL, so it works without a terminal too (which then requires `--url` or `--region`). |
 | `--force` | Overwrite an existing profile without prompting. |
 | `--set-default` | Make this the default profile without prompting. |
+| `--label <LABEL>` | Labels for this profile. Repeat the flag or pass a comma-separated list (`--label prod,eu`). Whitespace is trimmed; empty values and duplicates are dropped. Omit it when reconfiguring to keep the profile's existing labels. |
 | `--disable-olly` | Create the first profile with the Olly AI assistant switched off. Only meaningful for the first profile, since that is when `olly_enabled` is written. No prompt either way. |
 | `-h` / `--help` | `--help` prints the full reference above; `-h` prints a short summary. |
 
@@ -432,7 +435,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 | `auth` | No | `"oauth"` or `"api_key"` (default `"api_key"` for backward compatibility) |
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
 | `credential_storage` | No | `"file"` or `"os_store"`. Omitted means `"file"`. See [Credentials on macOS](#credentials-on-macos). |
-| `label` | No | Free-form label, for example `"production"` |
+| `labels` | No | Free-form labels, for example `["production", "eu"]`. The global `--label` flag runs a command against every profile that has one of the given labels (see [Multi-profile fan-out](multi-profile.md)). A legacy `label = "production"` string still loads as a one-item list. New writes use `labels` only. |
 | `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links. If unset, `cx` resolves it automatically via `GET /identity/whoami` - see [Console links](#console-links). |
 
 ### OAuth-specific fields
@@ -449,7 +452,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 auth = "oauth"
 credential_storage = "file"
 region = "eu2"
-label = "production"
+labels = ["production", "eu"]
 
 [oauth_tokens]
 access_token = "..."
@@ -465,7 +468,7 @@ The token set is rewritten in place each time `cx` refreshes. The file is create
 auth = "oauth"
 credential_storage = "os_store"
 region = "eu2"
-label = "production"
+labels = ["production", "eu"]
 ```
 
 Tokens live in the OS keyring; nothing sensitive is in this file.
@@ -477,7 +480,7 @@ auth = "oauth"
 credential_storage = "file"
 region = "https://api.myenv.example.com"
 oauth_client_id = "abc123-my-client"
-label = "custom-env"
+labels = ["custom-env"]
 ```
 
 ### Example: API key profile (OS keyring)
@@ -486,7 +489,7 @@ label = "custom-env"
 auth = "api_key"
 credential_storage = "os_store"
 region = "eu1"
-label = "production"
+labels = ["production", "eu"]
 ```
 
 Secrets are stored in separate OS-keyring entries scoped to the profile. This
@@ -498,7 +501,7 @@ size limit.
 ```toml
 region = "eu1"
 api_key = "cxp_your_api_key_here"
-label = "production"
+labels = ["production", "eu"]
 ```
 
 Legacy profiles without an `auth` field behave as `auth = "api_key"` automatically.

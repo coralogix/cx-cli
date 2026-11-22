@@ -51,6 +51,35 @@ pub fn get_top_level_subcommand_name(matches: &clap::ArgMatches) -> Option<Strin
     matches.subcommand().map(|(name, _)| name.to_string())
 }
 
+/// Every subcommand name on the path to the leaf, for example
+/// `["alerts", "delete"]`.
+pub fn get_subcommand_path(matches: &clap::ArgMatches) -> Vec<String> {
+    let mut path = Vec::new();
+    let mut current = matches;
+    while let Some((name, sub)) = current.subcommand() {
+        path.push(name.to_string());
+        current = sub;
+    }
+    path
+}
+
+/// The stderr line printed before a write command runs against more than one
+/// profile (repeated `-p`, or `--label`), so the blast radius is visible in a
+/// terminal, in logs and in an agent's session. `None` for a single profile
+/// or for a read command.
+pub fn multi_profile_write_notice(command_path: &[String], profiles: &[String]) -> Option<String> {
+    let leaf = command_path.last()?;
+    if profiles.len() < 2 || !is_write_verb(leaf) {
+        return None;
+    }
+    Some(format!(
+        "Running '{}' against {} profiles: {}",
+        command_path.join(" "),
+        profiles.len(),
+        profiles.join(", ")
+    ))
+}
+
 pub fn env_is_truthy(var: &str) -> bool {
     std::env::var(var)
         .ok()
@@ -141,6 +170,31 @@ pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn names(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn multi_profile_write_notice_names_command_and_every_profile() {
+        let line =
+            multi_profile_write_notice(&names(&["alerts", "delete"]), &names(&["a", "b", "c"]));
+        assert_eq!(
+            line.as_deref(),
+            Some("Running 'alerts delete' against 3 profiles: a, b, c")
+        );
+    }
+
+    #[test]
+    fn multi_profile_write_notice_is_silent_for_one_profile_or_a_read() {
+        assert!(
+            multi_profile_write_notice(&names(&["alerts", "delete"]), &names(&["a"])).is_none()
+        );
+        assert!(
+            multi_profile_write_notice(&names(&["alerts", "list"]), &names(&["a", "b"])).is_none()
+        );
+        assert!(multi_profile_write_notice(&[], &names(&["a", "b"])).is_none());
+    }
 
     #[test]
     fn test_write_verbs_sorted() {

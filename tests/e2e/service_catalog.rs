@@ -798,6 +798,7 @@ fn discover_group_and_filter_label(entity_type: &str) -> Option<String> {
         .map(String::from)
 }
 
-// `service-catalog` has no mutating subcommands. Deployment insights are
+// The only mutating subcommands are `insight-types archive|unarchive`, covered
+// by `service_catalog_insight_types_archive_unarchive`. Deployment insights are
 // excluded from every insights test: they need a recent deployment on the
 // test team and query metrics around each service's last change.

@@ -415,12 +415,16 @@ pub fn select_profile_names(profiles: &[String], labels: &[String]) -> Result<Ve
     if labels.is_empty() {
         return Ok(selected);
     }
+    // A profile that does not load cannot be matched. Say so instead of
+    // silently running against fewer profiles than the label implies.
     let entries: Vec<(String, Vec<String>)> = list_profile_names()?
         .into_iter()
-        .filter_map(|name| {
-            load_profile(&name)
-                .ok()
-                .map(|profile| (name, profile.labels))
+        .filter_map(|name| match load_profile(&name) {
+            Ok(profile) => Some((name, profile.labels)),
+            Err(error) => {
+                eprintln!("warning: skipping profile '{name}' in the --label scan: {error}");
+                None
+            }
         })
         .collect();
     let matched = names_with_any_label(&entries, labels);

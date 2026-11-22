@@ -3788,7 +3788,10 @@ async fn main() -> Result<()> {
         let label_before_profiles = label_flag_precedes_profiles(std::env::args().skip(1));
         if label_before_profiles
             || (!cli.label.is_empty()
-                && !matches!(cmd, ProfilesCmd::List { .. } | ProfilesCmd::Add { .. }))
+                && !matches!(
+                    cmd,
+                    ProfilesCmd::List { .. } | ProfilesCmd::Add { .. } | ProfilesCmd::Labels { .. }
+                ))
         {
             bail!(
                 "`--label` selects profiles for fan-out and does not apply to `cx profiles` itself.\n\

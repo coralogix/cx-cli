@@ -498,6 +498,72 @@ fn global_label_before_profiles_labels_is_refused() {
     );
 }
 
+#[test]
+fn global_flag_before_profiles_labels_verbs_still_works() {
+    // `--read-only profiles labels add x --label y` goes through the main
+    // parser. The `--label` belongs to the verb and must not be refused.
+    let home = temp_home();
+    write_profile(
+        &home,
+        "team-a",
+        "k",
+        "http://127.0.0.1:9",
+        r#"labels = ["prod"]"#,
+    );
+
+    let output = cx(&home)
+        .args([
+            "--read-only",
+            "profiles",
+            "labels",
+            "add",
+            "team-a",
+            "--label",
+            "kuku",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    let raw = fs::read_to_string(home.join(".cx/profiles/team-a.toml")).unwrap();
+    assert!(
+        raw.contains("\"prod\"") && raw.contains("\"kuku\""),
+        "got: {raw}"
+    );
+}
+
+#[tokio::test]
+async fn label_scan_warns_about_a_profile_that_does_not_load() {
+    let server = MockServer::start().await;
+    alerts_mock(&server, "key-a", 1).await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "prod-a",
+        "key-a",
+        &server.uri(),
+        r#"labels = ["prod"]"#,
+    );
+    fs::write(
+        home.join(".cx/profiles/broken.toml"),
+        "auth = \"api_key\"\nlabels = [\"prod\"\n",
+    )
+    .unwrap();
+    write_config(&home, "prod-a");
+
+    let output = cx(&home)
+        .args(["alerts", "list", "--label", "prod"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(
+        stderr.contains("warning: skipping profile 'broken' in the --label scan"),
+        "stderr: {stderr}"
+    );
+}
+
 // ── `profiles list` keeps its own --label, in both parse paths ───────────────
 
 #[test]

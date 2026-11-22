@@ -4271,6 +4271,275 @@ struct ProfilingFlameGraphArgs {
     top_functions: usize,
 }
 
+fn run_product_analytics(
+    targets: &[std::sync::Arc<coralogix_cli::execution::ExecutionTarget>],
+    cmd: ProductAnalyticsCmd,
+    yes: bool,
+    agent_mode: bool,
+    output: OutputFormat,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + '_>> {
+    Box::pin(async move {
+        use commands::product_analytics::api::{QueryInput, QueryKind, SavedObjectKind};
+        match cmd {
+            ProductAnalyticsCmd::Applications { cmd } => match cmd {
+                ProductAnalyticsApplicationsCmd::List { apps } => {
+                    commands::product_analytics::run_applications_list(targets, &apps, output)
+                        .await?;
+                }
+                ProductAnalyticsApplicationsCmd::Get { app_name } => {
+                    commands::product_analytics::run_applications_get(targets, &app_name, output)
+                        .await?;
+                }
+            },
+            ProductAnalyticsCmd::Views {
+                cmd:
+                    ProductAnalyticsViewsCmd::List {
+                        app,
+                        time,
+                        page,
+                        from_file,
+                    },
+            } => {
+                let input = QueryInput {
+                    app_name: Some(app),
+                    time_range: time.resolve(false)?,
+                    page_size: page.page_size,
+                    page_token: page.page_token,
+                    ..Default::default()
+                };
+                commands::product_analytics::run_list_query(
+                    targets,
+                    QueryKind::Views,
+                    from_file.as_deref(),
+                    &input,
+                    output,
+                )
+                .await?;
+            }
+            ProductAnalyticsCmd::Events { cmd } => match cmd {
+                ProductAnalyticsEventsCmd::List {
+                    app,
+                    view,
+                    source,
+                    action_name_filter,
+                    time,
+                    page,
+                    from_file,
+                } => {
+                    let input = QueryInput {
+                        app_name: Some(app),
+                        view: Some(view),
+                        source: Some(source),
+                        action_name_filter,
+                        time_range: time.resolve(false)?,
+                        page_size: page.page_size,
+                        page_token: page.page_token,
+                        ..Default::default()
+                    };
+                    commands::product_analytics::run_list_query(
+                        targets,
+                        QueryKind::Events,
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsEventsCmd::Get {
+                    event_id,
+                    app,
+                    view,
+                    action_name_filter,
+                    time,
+                    from_file,
+                } => {
+                    let input = QueryInput {
+                        app_name: Some(app),
+                        view: Some(view),
+                        action_name_filter,
+                        time_range: time.resolve(false)?,
+                        ..Default::default()
+                    };
+                    commands::product_analytics::run_events_get(
+                        targets,
+                        &event_id,
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+            ProductAnalyticsCmd::Funnels { cmd } => match cmd {
+                ProductAnalyticsFunnelsCmd::Saved(cmd) => {
+                    run_product_analytics_saved(
+                        targets,
+                        SavedObjectKind::Funnel,
+                        cmd,
+                        yes,
+                        agent_mode,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsFunnelsCmd::Query {
+                    id,
+                    from_file,
+                    app,
+                    time,
+                    mode,
+                } => {
+                    let input = QueryInput {
+                        time_range: time.resolve(id.is_some())?,
+                        saved_id: id,
+                        app_name: app,
+                        funnel_mode: mode,
+                        ..Default::default()
+                    };
+                    commands::product_analytics::run_query(
+                        targets,
+                        QueryKind::FunnelConversion,
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsFunnelsCmd::Matches {
+                    id,
+                    step_id,
+                    outcome,
+                    user_id_mode,
+                    from_file,
+                    app,
+                    time,
+                    mode,
+                    page,
+                } => {
+                    let input = QueryInput {
+                        time_range: time.resolve(id.is_some())?,
+                        saved_id: id,
+                        app_name: app,
+                        funnel_mode: mode,
+                        step_id: Some(step_id),
+                        outcome: Some(outcome),
+                        user_id_mode,
+                        page_size: page.page_size,
+                        page_token: page.page_token,
+                        ..Default::default()
+                    };
+                    commands::product_analytics::run_list_query(
+                        targets,
+                        QueryKind::FunnelMatches,
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+            ProductAnalyticsCmd::Pathways { cmd } => match cmd {
+                ProductAnalyticsPathwaysCmd::Saved(cmd) => {
+                    run_product_analytics_saved(
+                        targets,
+                        SavedObjectKind::Pathway,
+                        cmd,
+                        yes,
+                        agent_mode,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsPathwaysCmd::Query {
+                    id,
+                    view,
+                    app,
+                    time,
+                    direction,
+                    pages_count,
+                    top_n,
+                    from_file,
+                } => {
+                    let input = QueryInput {
+                        time_range: time.resolve(id.is_some())?,
+                        saved_id: id,
+                        view,
+                        app_name: app,
+                        direction,
+                        pages_count,
+                        top_n,
+                        ..Default::default()
+                    };
+                    commands::product_analytics::run_query(
+                        targets,
+                        QueryKind::PathwayPaths,
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+            ProductAnalyticsCmd::Heatmaps { cmd } => match cmd {
+                ProductAnalyticsHeatmapsCmd::Saved(cmd) => {
+                    run_product_analytics_saved(
+                        targets,
+                        SavedObjectKind::Heatmap,
+                        cmd,
+                        yes,
+                        agent_mode,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsHeatmapsCmd::Query {
+                    id,
+                    view,
+                    app,
+                    time,
+                    action_name_filter,
+                    top_n,
+                    from_file,
+                } => {
+                    let input = QueryInput {
+                        time_range: time.resolve(id.is_some())?,
+                        saved_id: id,
+                        view,
+                        app_name: app,
+                        action_name_filter,
+                        top_n,
+                        ..Default::default()
+                    };
+                    commands::product_analytics::run_query(
+                        targets,
+                        QueryKind::HeatmapTopElements,
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+            ProductAnalyticsCmd::Settings { cmd } => match cmd {
+                ProductAnalyticsSettingsCmd::Get => {
+                    commands::product_analytics::run_settings_get(targets, output).await?;
+                }
+                ProductAnalyticsSettingsCmd::Update { enabled } => {
+                    let action = if enabled { "on" } else { "off" };
+                    confirm_destructive(
+                        &format!("Turn Product Analytics {action} for the whole team?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::product_analytics::run_settings_update(targets, enabled, output)
+                        .await?;
+                }
+            },
+        }
+        Ok(())
+    })
+}
+
 async fn run_product_analytics_saved(
     targets: &[std::sync::Arc<coralogix_cli::execution::ExecutionTarget>],
     kind: commands::product_analytics::api::SavedObjectKind,
@@ -6317,270 +6586,7 @@ async fn main() -> Result<()> {
             },
 
             Commands::ProductAnalytics { cmd } => {
-                use commands::product_analytics::api::{QueryInput, QueryKind, SavedObjectKind};
-                match cmd {
-                    ProductAnalyticsCmd::Applications { cmd } => match cmd {
-                        ProductAnalyticsApplicationsCmd::List { apps } => {
-                            commands::product_analytics::run_applications_list(
-                                &targets, &apps, output,
-                            )
-                            .await?;
-                        }
-                        ProductAnalyticsApplicationsCmd::Get { app_name } => {
-                            commands::product_analytics::run_applications_get(
-                                &targets, &app_name, output,
-                            )
-                            .await?;
-                        }
-                    },
-                    ProductAnalyticsCmd::Views {
-                        cmd:
-                            ProductAnalyticsViewsCmd::List {
-                                app,
-                                time,
-                                page,
-                                from_file,
-                            },
-                    } => {
-                        let input = QueryInput {
-                            app_name: Some(app),
-                            time_range: time.resolve(false)?,
-                            page_size: page.page_size,
-                            page_token: page.page_token,
-                            ..Default::default()
-                        };
-                        commands::product_analytics::run_list_query(
-                            &targets,
-                            QueryKind::Views,
-                            from_file.as_deref(),
-                            &input,
-                            output,
-                        )
-                        .await?;
-                    }
-                    ProductAnalyticsCmd::Events { cmd } => match cmd {
-                        ProductAnalyticsEventsCmd::List {
-                            app,
-                            view,
-                            source,
-                            action_name_filter,
-                            time,
-                            page,
-                            from_file,
-                        } => {
-                            let input = QueryInput {
-                                app_name: Some(app),
-                                view: Some(view),
-                                source: Some(source),
-                                action_name_filter,
-                                time_range: time.resolve(false)?,
-                                page_size: page.page_size,
-                                page_token: page.page_token,
-                                ..Default::default()
-                            };
-                            commands::product_analytics::run_list_query(
-                                &targets,
-                                QueryKind::Events,
-                                from_file.as_deref(),
-                                &input,
-                                output,
-                            )
-                            .await?;
-                        }
-                        ProductAnalyticsEventsCmd::Get {
-                            event_id,
-                            app,
-                            view,
-                            action_name_filter,
-                            time,
-                            from_file,
-                        } => {
-                            let input = QueryInput {
-                                app_name: Some(app),
-                                view: Some(view),
-                                action_name_filter,
-                                time_range: time.resolve(false)?,
-                                ..Default::default()
-                            };
-                            commands::product_analytics::run_events_get(
-                                &targets,
-                                &event_id,
-                                from_file.as_deref(),
-                                &input,
-                                output,
-                            )
-                            .await?;
-                        }
-                    },
-                    ProductAnalyticsCmd::Funnels { cmd } => match cmd {
-                        ProductAnalyticsFunnelsCmd::Saved(cmd) => {
-                            run_product_analytics_saved(
-                                &targets,
-                                SavedObjectKind::Funnel,
-                                cmd,
-                                yes,
-                                agent_mode,
-                                output,
-                            )
-                            .await?;
-                        }
-                        ProductAnalyticsFunnelsCmd::Query {
-                            id,
-                            from_file,
-                            app,
-                            time,
-                            mode,
-                        } => {
-                            let input = QueryInput {
-                                time_range: time.resolve(id.is_some())?,
-                                saved_id: id,
-                                app_name: app,
-                                funnel_mode: mode,
-                                ..Default::default()
-                            };
-                            commands::product_analytics::run_query(
-                                &targets,
-                                QueryKind::FunnelConversion,
-                                from_file.as_deref(),
-                                &input,
-                                output,
-                            )
-                            .await?;
-                        }
-                        ProductAnalyticsFunnelsCmd::Matches {
-                            id,
-                            step_id,
-                            outcome,
-                            user_id_mode,
-                            from_file,
-                            app,
-                            time,
-                            mode,
-                            page,
-                        } => {
-                            let input = QueryInput {
-                                time_range: time.resolve(id.is_some())?,
-                                saved_id: id,
-                                app_name: app,
-                                funnel_mode: mode,
-                                step_id: Some(step_id),
-                                outcome: Some(outcome),
-                                user_id_mode,
-                                page_size: page.page_size,
-                                page_token: page.page_token,
-                                ..Default::default()
-                            };
-                            commands::product_analytics::run_list_query(
-                                &targets,
-                                QueryKind::FunnelMatches,
-                                from_file.as_deref(),
-                                &input,
-                                output,
-                            )
-                            .await?;
-                        }
-                    },
-                    ProductAnalyticsCmd::Pathways { cmd } => match cmd {
-                        ProductAnalyticsPathwaysCmd::Saved(cmd) => {
-                            run_product_analytics_saved(
-                                &targets,
-                                SavedObjectKind::Pathway,
-                                cmd,
-                                yes,
-                                agent_mode,
-                                output,
-                            )
-                            .await?;
-                        }
-                        ProductAnalyticsPathwaysCmd::Query {
-                            id,
-                            view,
-                            app,
-                            time,
-                            direction,
-                            pages_count,
-                            top_n,
-                            from_file,
-                        } => {
-                            let input = QueryInput {
-                                time_range: time.resolve(id.is_some())?,
-                                saved_id: id,
-                                view,
-                                app_name: app,
-                                direction,
-                                pages_count,
-                                top_n,
-                                ..Default::default()
-                            };
-                            commands::product_analytics::run_query(
-                                &targets,
-                                QueryKind::PathwayPaths,
-                                from_file.as_deref(),
-                                &input,
-                                output,
-                            )
-                            .await?;
-                        }
-                    },
-                    ProductAnalyticsCmd::Heatmaps { cmd } => match cmd {
-                        ProductAnalyticsHeatmapsCmd::Saved(cmd) => {
-                            run_product_analytics_saved(
-                                &targets,
-                                SavedObjectKind::Heatmap,
-                                cmd,
-                                yes,
-                                agent_mode,
-                                output,
-                            )
-                            .await?;
-                        }
-                        ProductAnalyticsHeatmapsCmd::Query {
-                            id,
-                            view,
-                            app,
-                            time,
-                            action_name_filter,
-                            top_n,
-                            from_file,
-                        } => {
-                            let input = QueryInput {
-                                time_range: time.resolve(id.is_some())?,
-                                saved_id: id,
-                                view,
-                                app_name: app,
-                                action_name_filter,
-                                top_n,
-                                ..Default::default()
-                            };
-                            commands::product_analytics::run_query(
-                                &targets,
-                                QueryKind::HeatmapTopElements,
-                                from_file.as_deref(),
-                                &input,
-                                output,
-                            )
-                            .await?;
-                        }
-                    },
-                    ProductAnalyticsCmd::Settings { cmd } => match cmd {
-                        ProductAnalyticsSettingsCmd::Get => {
-                            commands::product_analytics::run_settings_get(&targets, output)
-                                .await?;
-                        }
-                        ProductAnalyticsSettingsCmd::Update { enabled } => {
-                            let action = if enabled { "on" } else { "off" };
-                            confirm_destructive(
-                                &format!("Turn Product Analytics {action} for the whole team?"),
-                                yes,
-                                agent_mode,
-                            )?;
-                            commands::product_analytics::run_settings_update(
-                                &targets, enabled, output,
-                            )
-                            .await?;
-                        }
-                    },
-                }
+                run_product_analytics(&targets, cmd, yes, agent_mode, output).await?;
             }
 
             Commands::Infra { cmd } => match cmd {

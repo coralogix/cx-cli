@@ -10,9 +10,9 @@ fn product_analytics_available(test_name: &str) -> bool {
         return true;
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("(412)") || stderr.contains("(404)") || stderr.contains("(501)") {
+    if stderr.contains("(412)") || stderr.contains("(501)") {
         eprintln!(
-            "[e2e] skipping {test_name}: Product Analytics API not deployed or not enabled for the team"
+            "[e2e] not covered: {test_name} — Product Analytics API not deployed or not enabled for the team"
         );
         return false;
     }

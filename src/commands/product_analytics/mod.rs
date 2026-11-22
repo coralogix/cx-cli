@@ -10,7 +10,7 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use crate::time::parse_timestamp_epoch_seconds;
+use crate::time::parse_timestamp_epoch_millis;
 use api::{
     display_enum, Application, Event, FunnelMatchedUser, HeatmapElement, Page, ProductAnalyticsApi,
     QueryFunnelConversionResponse, QueryHeatmapTopElementsResponse, QueryInput, QueryKind,
@@ -41,12 +41,12 @@ impl TimeRangeArgs {
         }
         let start = self.start.as_deref().unwrap_or("now-1h");
         let end = self.end.as_deref().unwrap_or("now");
-        let start_epoch = parse_timestamp_epoch_seconds(start)?;
-        let end_epoch = parse_timestamp_epoch_seconds(end)?;
-        if end_epoch <= start_epoch {
+        let start_millis = parse_timestamp_epoch_millis(start)?;
+        let end_millis = parse_timestamp_epoch_millis(end)?;
+        if end_millis <= start_millis {
             bail!("--end ({end}) must be strictly after --start ({start})");
         }
-        Ok(Some((start_epoch * 1000, end_epoch * 1000)))
+        Ok(Some((start_millis, end_millis)))
     }
 }
 
@@ -856,6 +856,18 @@ mod tests {
         assert_eq!(
             args.resolve(false).unwrap(),
             Some((1_794_787_200_000, 1_794_873_600_000))
+        );
+    }
+
+    #[test]
+    fn subsecond_start_and_end_keep_their_milliseconds() {
+        let args = time_range(
+            Some("2026-11-16T00:00:00.100Z"),
+            Some("2026-11-16T00:00:00.900Z"),
+        );
+        assert_eq!(
+            args.resolve(false).unwrap(),
+            Some((1_794_787_200_100, 1_794_787_200_900))
         );
     }
 

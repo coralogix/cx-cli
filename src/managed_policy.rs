@@ -16,8 +16,8 @@ struct ManagedPolicy {
 
 /// Whether this build supports an IT-managed credential policy.
 ///
-/// Linux deliberately remains unchanged, including when `CX_POLICY_FILE` is
-/// set, because a consistent OS credential store is not available everywhere.
+/// Linux deliberately remains unchanged because a consistent OS credential
+/// store is not available everywhere.
 pub const fn supported_platform() -> bool {
     cfg!(any(target_os = "macos", target_os = "windows"))
 }
@@ -65,16 +65,10 @@ fn windows_program_data() -> Result<PathBuf> {
     Ok(system_drive.join("ProgramData"))
 }
 
-/// Release builds read only the machine-wide file, so no environment variable
-/// can switch the policy off. Debug builds come from a source checkout, which
-/// can drop the check anyway, and read only `CX_POLICY_FILE`. Every test runs
-/// a debug build, and acting on a policy deployed to a developer's machine
-/// would move the developer's real credentials into the OS store.
-fn policy_file() -> Result<Option<PathBuf>> {
-    if cfg!(any(test, debug_assertions)) {
-        return Ok(std::env::var_os("CX_POLICY_FILE").map(PathBuf::from));
-    }
-    default_policy_file().map(Some)
+/// Every build reads the machine-wide policy file. An environment variable
+/// must not be able to redirect or disable an IT-managed policy.
+fn policy_file() -> Result<PathBuf> {
+    default_policy_file()
 }
 
 fn parse_policy(raw: &str, path: &Path) -> Result<bool> {
@@ -99,10 +93,7 @@ pub fn requires_os_store() -> Result<bool> {
     if !supported_platform() {
         return Ok(false);
     }
-    match policy_file()? {
-        Some(path) => requires_os_store_at(&path),
-        None => Ok(false),
-    }
+    requires_os_store_at(&policy_file()?)
 }
 
 fn requires_os_store_at(path: &Path) -> Result<bool> {

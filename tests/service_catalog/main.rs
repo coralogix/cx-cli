@@ -6,7 +6,7 @@ use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::service_catalog::{
-    run_archive_insight_types, run_data, run_entities, run_entity_data,
+    normalize_insight_types, run_archive_insight_types, run_data, run_entities, run_entity_data,
     run_entity_insight_drilldown, run_entity_insights, run_entity_types, run_insight_drilldown,
     run_insights, run_schema, InsightSelectionInput,
 };
@@ -1096,10 +1096,11 @@ async fn insight_types_archive_posts_the_types_and_renders_every_format() {
         let targets = vec![common::test_target("test-profile", &server.uri())];
         run_archive_insight_types(
             &targets,
-            &[
+            &normalize_insight_types(&[
                 "no-slo".to_string(),
                 "INSIGHT_TYPE_LATENCY_REGRESSION".to_string(),
-            ],
+            ])
+            .unwrap(),
             true,
             format,
         )
@@ -1123,9 +1124,14 @@ async fn insight_types_unarchive_handles_the_empty_archived_set() {
             .await;
 
         let targets = vec![common::test_target("test-profile", &server.uri())];
-        run_archive_insight_types(&targets, &["no-slo".to_string()], false, format)
-            .await
-            .unwrap_or_else(|e| panic!("unarchive should render {format:?}: {e:#}"));
+        run_archive_insight_types(
+            &targets,
+            &["INSIGHT_TYPE_NO_SLO".to_string()],
+            false,
+            format,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("unarchive should render {format:?}: {e:#}"));
     }
 }
 
@@ -1144,10 +1150,14 @@ async fn insight_types_archive_surfaces_a_permission_error() {
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    let err =
-        run_archive_insight_types(&targets, &["no-slo".to_string()], true, OutputFormat::Text)
-            .await
-            .expect_err("a 403 should error");
+    let err = run_archive_insight_types(
+        &targets,
+        &["INSIGHT_TYPE_NO_SLO".to_string()],
+        true,
+        OutputFormat::Text,
+    )
+    .await
+    .expect_err("a 403 should error");
     let chain = format!("{err:#}");
     assert!(chain.contains("service-catalog:Update"), "got: {chain}");
     assert!(
@@ -1156,22 +1166,12 @@ async fn insight_types_archive_surfaces_a_permission_error() {
     );
 }
 
-#[tokio::test]
-async fn insight_types_archive_rejects_unknown_type_before_any_request() {
-    let server = MockServer::start().await;
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-
-    let err = run_archive_insight_types(
-        &targets,
-        &["no-such-type".to_string()],
-        true,
-        OutputFormat::Text,
-    )
-    .await
-    .expect_err("an unknown type should error");
+#[test]
+fn insight_types_rejects_an_unknown_type() {
+    let err = normalize_insight_types(&["no-such-type".to_string()])
+        .expect_err("an unknown type should error");
     assert!(
         err.to_string().contains("unknown --type 'no-such-type'"),
         "got: {err}"
     );
-    assert_eq!(server.received_requests().await.unwrap().len(), 0);
 }

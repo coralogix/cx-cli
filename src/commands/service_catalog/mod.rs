@@ -590,26 +590,27 @@ pub async fn run_entity_insight_drilldown(
     )
 }
 
+/// `--type` values as full proto names, checked before the archive prompt so a
+/// typo fails without asking to confirm a company-wide write.
+pub fn normalize_insight_types(types: &[String]) -> Result<Vec<String>> {
+    normalize_insight_enums(types, INSIGHT_TYPE_PREFIX, VALID_INSIGHT_TYPES, "--type")
+}
+
 /// `cx service-catalog insight-types archive|unarchive --type <T>...` - archive
-/// or unarchive insight types for the whole company.
+/// or unarchive insight types (full proto names, from `normalize_insight_types`)
+/// for the whole company.
 pub async fn run_archive_insight_types(
     targets: &[Arc<ExecutionTarget>],
-    types: &[String],
+    normalized_types: &[String],
     archive: bool,
     output: OutputFormat,
 ) -> Result<()> {
-    let normalized_types =
-        normalize_insight_enums(types, INSIGHT_TYPE_PREFIX, VALID_INSIGHT_TYPES, "--type")?;
-
     let action = if archive { "Archiving" } else { "Unarchiving" };
     eprintln!("{}", format!("{action} insight types...").dimmed());
 
-    let per_profile = fan_out(targets, |target| {
-        let normalized_types = &normalized_types;
-        async move {
-            let api = ServiceCatalogApi::new(&target.client);
-            Ok(api.archive_insight_types(normalized_types, archive).await?)
-        }
+    let per_profile = fan_out(targets, |target| async move {
+        let api = ServiceCatalogApi::new(&target.client);
+        Ok(api.archive_insight_types(normalized_types, archive).await?)
     })
     .await;
 

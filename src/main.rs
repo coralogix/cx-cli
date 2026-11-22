@@ -6034,6 +6034,8 @@ async fn main() -> Result<()> {
                         InsightTypesCmd::Archive(args) => (true, args),
                         InsightTypesCmd::Unarchive(args) => (false, args),
                     };
+                    let insight_types =
+                        commands::service_catalog::normalize_insight_types(&types)?;
                     let verb = if archive { "Archive" } else { "Unarchive" };
                     confirm_destructive(
                         &format!("{verb} insight types {} for the whole company?", types.join(", ")),
@@ -6041,7 +6043,10 @@ async fn main() -> Result<()> {
                         agent_mode,
                     )?;
                     commands::service_catalog::run_archive_insight_types(
-                        &targets, &types, archive, output,
+                        &targets,
+                        &insight_types,
+                        archive,
+                        output,
                     )
                     .await?;
                 }

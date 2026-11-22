@@ -272,6 +272,23 @@ fn service_catalog_insight_types_archive() {
 }
 
 #[test]
+fn service_catalog_insight_types_archive_rejects_a_typo_before_confirming() {
+    let (failed, stderr) = cx_agent(&[
+        "service-catalog",
+        "insight-types",
+        "archive",
+        "--type",
+        "no-such-type",
+    ]);
+    assert!(
+        failed
+            && stderr.contains("unknown --type")
+            && !stderr.contains("requires user confirmation"),
+        "expected the type check before the confirmation gate, stderr: {stderr}"
+    );
+}
+
+#[test]
 fn service_catalog_insight_types_unarchive() {
     assert_gated(
         &[

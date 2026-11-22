@@ -3373,6 +3373,38 @@ Examples:
   cx service-catalog entity-insight-drilldown dependency-regression service checkout \\
     --scope database=postgresql/orders")]
     EntityInsightDrilldown(EntityInsightDrilldownArgs),
+    /// Archive or unarchive insight types for the whole company.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog insight-types archive --type no-slo --type no-owner --yes
+  cx service-catalog insight-types unarchive --type no-slo --yes")]
+    InsightTypes {
+        #[command(subcommand)]
+        cmd: InsightTypesCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum InsightTypesCmd {
+    /// Archive insight types for the whole company [requires --yes].
+    ///
+    /// `insights` and `entity-insights` then hide them unless `--archived`
+    /// asks for them. Prints the company's archived types after the change.
+    /// Needs the service-catalog:Update permission.
+    Archive(InsightTypesArgs),
+    /// Unarchive insight types, so they are shown by default again [requires --yes].
+    ///
+    /// Prints the company's archived types after the change. Needs the
+    /// service-catalog:Update permission.
+    Unarchive(InsightTypesArgs),
+}
+
+#[derive(Args)]
+struct InsightTypesArgs {
+    /// Insight type, e.g. `no-slo` or `latency-regression` (also accepts the
+    /// full INSIGHT_TYPE_* proto name). Repeatable; at least one required.
+    #[arg(long = "type", required = true)]
+    types: Vec<String>,
 }
 
 #[derive(Args)]
@@ -5994,6 +6026,22 @@ async fn main() -> Result<()> {
                         &environments,
                         scope.as_deref(),
                         output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::InsightTypes { cmd } => {
+                    let (archive, InsightTypesArgs { types }) = match cmd {
+                        InsightTypesCmd::Archive(args) => (true, args),
+                        InsightTypesCmd::Unarchive(args) => (false, args),
+                    };
+                    let verb = if archive { "Archive" } else { "Unarchive" };
+                    confirm_destructive(
+                        &format!("{verb} insight types {} for the whole company?", types.join(", ")),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::service_catalog::run_archive_insight_types(
+                        &targets, &types, archive, output,
                     )
                     .await?;
                 }

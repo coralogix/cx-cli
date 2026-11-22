@@ -590,6 +590,41 @@ pub async fn run_entity_insight_drilldown(
     )
 }
 
+/// `cx service-catalog insight-types archive|unarchive --type <T>...` - archive
+/// or unarchive insight types for the whole company.
+pub async fn run_archive_insight_types(
+    targets: &[Arc<ExecutionTarget>],
+    types: &[String],
+    archive: bool,
+    output: OutputFormat,
+) -> Result<()> {
+    let normalized_types =
+        normalize_insight_enums(types, INSIGHT_TYPE_PREFIX, VALID_INSIGHT_TYPES, "--type")?;
+
+    let action = if archive { "Archiving" } else { "Unarchiving" };
+    eprintln!("{}", format!("{action} insight types...").dimmed());
+
+    let per_profile = fan_out(targets, |target| {
+        let normalized_types = &normalized_types;
+        async move {
+            let api = ServiceCatalogApi::new(&target.client);
+            Ok(api.archive_insight_types(normalized_types, archive).await?)
+        }
+    })
+    .await;
+
+    let results = report_errors_and_collect_successes(per_profile)?;
+    render_insight_results(results, targets.len() > 1, output, |response| {
+        let archived = archived_type_names(response);
+        let listed = if archived.is_empty() {
+            "none".to_string()
+        } else {
+            archived.join(", ")
+        };
+        println!("Archived insight types: {listed}");
+    })
+}
+
 // ── Entity type / aggregation / sort-order enum mapping ─────────────────────────
 
 const DATA_AGGREGATION_TABLE: &str = "DATA_AGGREGATION_TYPE_TABLE";
@@ -1300,10 +1335,7 @@ fn format_behavior_coverage(entity_type: &str, per_entity_type: &Value) -> Optio
 /// so a type listed here was hidden rather than not firing.
 fn format_archive_notes(response: &Value) -> Vec<String> {
     let mut notes = Vec::new();
-    let archived: Vec<String> = json_array(response, "archivedTypes")
-        .filter_map(Value::as_str)
-        .map(|insight_type| short_enum_name(insight_type, INSIGHT_TYPE_PREFIX))
-        .collect();
+    let archived = archived_type_names(response);
     if !archived.is_empty() {
         notes.push(format!(
             "Archived (hidden by default): {}",
@@ -1321,6 +1353,13 @@ fn format_archive_notes(response: &Value) -> Vec<String> {
         );
     }
     notes
+}
+
+fn archived_type_names(response: &Value) -> Vec<String> {
+    json_array(response, "archivedTypes")
+        .filter_map(Value::as_str)
+        .map(|insight_type| short_enum_name(insight_type, INSIGHT_TYPE_PREFIX))
+        .collect()
 }
 
 fn print_entity_insight_drilldown(response: &Value) {

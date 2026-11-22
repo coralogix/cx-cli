@@ -607,6 +607,14 @@ impl<'a> ServiceCatalogApi<'a> {
             .post(&path, &build_entity_insight_drilldown_body(params))
             .await
     }
+
+    /// `ArchiveInsightTypes` / `UnarchiveInsightTypes` - returns the company's
+    /// whole archived set after the change.
+    pub async fn archive_insight_types(&self, types: &[String], archive: bool) -> Result<Value> {
+        let action = if archive { "archive" } else { "unarchive" };
+        let path = format!("{INSIGHTS_PATH}/types/{action}");
+        self.client.post(&path, &json!({ "types": types })).await
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────

@@ -122,3 +122,28 @@ fn read_only_env_yes_blocks_write() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("read-only mode"), "stderr: {stderr}");
 }
+
+#[test]
+fn read_only_flag_blocks_insight_types_archive_and_unarchive() {
+    for verb in ["archive", "unarchive"] {
+        let output = cx()
+            .args([
+                "--read-only",
+                "service-catalog",
+                "insight-types",
+                verb,
+                "--type",
+                "no-slo",
+                "--yes",
+                "--api-key",
+                "fake",
+                "--region",
+                "us1",
+            ])
+            .output()
+            .expect("failed to run cx");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("read-only mode"), "{verb} stderr: {stderr}");
+    }
+}

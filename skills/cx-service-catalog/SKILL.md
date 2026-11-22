@@ -11,6 +11,7 @@ description: >
   "what columns are available for this entity type", "service catalog schema",
   "what's wrong with my APM setup", "which services have no SLO",
   "did the last deployment make a service slower", "APM insights",
+  "archive / dismiss an insight type", "hide an insight type", "unarchive an insight",
   or wants to explore APM entities, their metrics, and their insights.
 metadata:
   version: "0.2.0"
@@ -36,9 +37,10 @@ usage, etc.) via the v2 Service Catalog API.
 | `cx service-catalog entity-insights <entity-type> <entity-id>` | Insights of one entity, with the environments each fired in | `--system` (databases), `--environment`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--archived`, `--top-values`, `--breakdown-sort` |
 | `cx service-catalog insight-drilldown <insight-type> <entity-type>` | The entities behind one insight | `--scope`, `--filter`, `--environment-match`, `--sort`, `--sort-order`, `--page-size` (100 when omitted), `--page-index`, `--name-search` |
 | `cx service-catalog entity-insight-drilldown <insight-type> <entity-type> <entity-id>` | One entity's environments (or another `--dimension`) under one insight | `--scope`, `--dimension`, `--environment`, `--system` |
+| `cx service-catalog insight-types archive\|unarchive` | Archive or unarchive insight types for the whole company (write) | `--type` (required, repeatable), `--yes` |
 
-- All commands are **read-only** and support `-o json` / `-o toon` for
-  structured output.
+- All commands except `insight-types archive|unarchive` are **read-only**, and
+  all support `-o json` / `-o toon` for structured output.
 - **Entity type accepts short forms**: `service`, `database`, `operation`,
   `database-operation`, `jvm`, `jvm-gc`, `k8s-pod`, `transaction` (case-insensitive,
   hyphens or underscores). The full proto name (`ENTITY_TYPE_K8S_POD`) also works.
@@ -145,6 +147,13 @@ wrong" questions instead of pulling raw `data`:
   (archived types with the rest) or `--archived only` (just them).
   `archiveUnavailable: true` means the archive could not be read: every type was
   served and `archivedTypes` is empty (`--archived only` fails then).
+- **Archiving is a write, per company and per insight type** (not per entity):
+  `insight-types archive --type <type>` hides that type for everyone in the
+  company, `insight-types unarchive --type <type>` shows it again. Both are
+  idempotent, need the `service-catalog:Update` permission and `--yes` (ask
+  the user first; `--read-only` blocks them), and print the company's whole
+  archived set after the change (an empty set comes back as `{}` in json/toon).
+  To see what is archived, read `archivedTypes` from any `insights` call.
 
 Insight types and categories take the short form (`no-slo`,
 `latency-regression`, `deployment`) or the full proto name. Text output shows

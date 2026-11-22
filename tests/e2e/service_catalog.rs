@@ -287,6 +287,85 @@ fn service_catalog_entity_insight_drilldown() {
     assert_eq!(v["insight"]["type"], insight_type.as_str(), "{v}");
 }
 
+/// Archives an insight type that is not archived yet and unarchives it again,
+/// restoring the team's archive. Only opt-in types are candidates: no default
+/// `insights` request returns them, so the other tests never see the change.
+#[test]
+#[ignore]
+fn service_catalog_insight_types_archive_unarchive() {
+    if harness::require_write_creds("service_catalog_insight_types_archive_unarchive").is_none() {
+        return;
+    }
+    let archived_now = harness::run_ok_json(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "--archived",
+        "include",
+        "-o",
+        "json",
+    ]);
+    if archived_now["archiveUnavailable"] == true {
+        eprintln!(
+            "[e2e] skipping service_catalog_insight_types_archive_unarchive: archive unavailable"
+        );
+        return;
+    }
+    let is_archived = |v: &serde_json::Value, proto: &str| {
+        v["archivedTypes"]
+            .as_array()
+            .is_some_and(|types| types.iter().any(|t| t == proto))
+    };
+    let Some((short, proto)) = [
+        ("mix-shift", "INSIGHT_TYPE_MIX_SHIFT"),
+        ("traffic-drop", "INSIGHT_TYPE_TRAFFIC_DROP"),
+        (
+            "dependency-regression",
+            "INSIGHT_TYPE_DEPENDENCY_REGRESSION",
+        ),
+    ]
+    .into_iter()
+    .find(|(_, proto)| !is_archived(&archived_now, proto)) else {
+        eprintln!(
+            "[e2e] not covered: service-catalog insight-types archive - every candidate type \
+             is already archived on the test team"
+        );
+        return;
+    };
+
+    let archived = harness::run_write_json(&[
+        "service-catalog",
+        "insight-types",
+        "archive",
+        "--type",
+        short,
+        "-o",
+        "json",
+    ]);
+    let mut cleanup = harness::Cleanup::new(&[
+        "service-catalog",
+        "insight-types",
+        "unarchive",
+        "--type",
+        short,
+    ]);
+    assert!(is_archived(&archived, proto), "{archived}");
+
+    let unarchived = harness::run_write_json(&[
+        "service-catalog",
+        "insight-types",
+        "unarchive",
+        "--type",
+        short,
+        "-o",
+        "json",
+    ]);
+    cleanup.disarm();
+    assert!(!is_archived(&unarchived, proto), "{unarchived}");
+}
+
 /// The type of the first insight without a `scope`, which a drilldown can
 /// request without `--scope`.
 fn first_unscoped_insight_type(insights: &serde_json::Value) -> Option<String> {

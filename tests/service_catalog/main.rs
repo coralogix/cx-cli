@@ -6,8 +6,9 @@ use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::service_catalog::{
-    run_data, run_entities, run_entity_data, run_entity_insight_drilldown, run_entity_insights,
-    run_entity_types, run_insight_drilldown, run_insights, run_schema, InsightSelectionInput,
+    run_archive_insight_types, run_data, run_entities, run_entity_data,
+    run_entity_insight_drilldown, run_entity_insights, run_entity_types, run_insight_drilldown,
+    run_insights, run_schema, InsightSelectionInput,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -1067,4 +1068,110 @@ async fn entity_insight_drilldown_posts_dimension_and_scope() {
     )
     .await
     .expect("run_entity_insight_drilldown should succeed");
+}
+
+// ── Insight-type archive ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn insight_types_archive_posts_the_types_and_renders_every_format() {
+    for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Toon] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path(format!("{INSIGHTS}/types/archive")))
+            .and(body_json(json!({
+                "types": ["INSIGHT_TYPE_NO_SLO", "INSIGHT_TYPE_LATENCY_REGRESSION"]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "archivedTypes": [
+                    "INSIGHT_TYPE_NO_OWNER",
+                    "INSIGHT_TYPE_NO_SLO",
+                    "INSIGHT_TYPE_LATENCY_REGRESSION"
+                ]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+        run_archive_insight_types(
+            &targets,
+            &[
+                "no-slo".to_string(),
+                "INSIGHT_TYPE_LATENCY_REGRESSION".to_string(),
+            ],
+            true,
+            format,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("archive should render {format:?}: {e:#}"));
+    }
+}
+
+/// Proto JSON omits an empty list, so unarchiving the last type returns `{}`.
+#[tokio::test]
+async fn insight_types_unarchive_handles_the_empty_archived_set() {
+    for format in [OutputFormat::Text, OutputFormat::Json] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path(format!("{INSIGHTS}/types/unarchive")))
+            .and(body_json(json!({ "types": ["INSIGHT_TYPE_NO_SLO"] })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+        run_archive_insight_types(&targets, &["no-slo".to_string()], false, format)
+            .await
+            .unwrap_or_else(|e| panic!("unarchive should render {format:?}: {e:#}"));
+    }
+}
+
+#[tokio::test]
+async fn insight_types_archive_surfaces_a_permission_error() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{INSIGHTS}/types/archive")))
+        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+            "code": "PERMISSION_DENIED",
+            "message": "missing permission service-catalog:Update"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let err =
+        run_archive_insight_types(&targets, &["no-slo".to_string()], true, OutputFormat::Text)
+            .await
+            .expect_err("a 403 should error");
+    let chain = format!("{err:#}");
+    assert!(chain.contains("service-catalog:Update"), "got: {chain}");
+    assert!(
+        chain.contains("profile 'test-profile' failed"),
+        "got: {chain}"
+    );
+}
+
+#[tokio::test]
+async fn insight_types_archive_rejects_unknown_type_before_any_request() {
+    let server = MockServer::start().await;
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    let err = run_archive_insight_types(
+        &targets,
+        &["no-such-type".to_string()],
+        true,
+        OutputFormat::Text,
+    )
+    .await
+    .expect_err("an unknown type should error");
+    assert!(
+        err.to_string().contains("unknown --type 'no-such-type'"),
+        "got: {err}"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 0);
 }

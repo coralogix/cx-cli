@@ -222,7 +222,6 @@ Commands are grouped by domain. Run `cx --help` for the full organized listing, 
 | `cx infra`      | Get infrastructure data: `types`, `list`, `health-history`, `raw-data` |
 | `cx service-catalog` | Query service-catalog entities and their RED / health / saturation data |
 | `cx rum`        | Map RUM stack traces to source code: `source-maps list`, `stacktrace`  |
-| `cx product-analytics` | RUM product analytics: `applications`, `views`, `events`, `funnels`, `pathways`, `heatmaps`, `settings` |
 
 **AI**
 

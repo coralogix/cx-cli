@@ -6,7 +6,7 @@ use wiremock::matchers::{body_json, body_partial_json, method, path, query_param
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::product_analytics::api::{
-    EventSource, FunnelOutcome, PathwayDirection, QueryInput, QueryKind, SavedObjectKind, TimeRange,
+    EventSource, FunnelOutcome, PathwayDirection, QueryInput, QueryKind, SavedObjectKind,
 };
 use coralogix_cli::commands::product_analytics::{
     run_applications_get, run_applications_list, run_events_get, run_list_query, run_query,
@@ -16,6 +16,11 @@ use coralogix_cli::commands::product_analytics::{
 use coralogix_cli::config::OutputFormat;
 
 const BASE: &str = "/mgmt/openapi/5/product-analytics";
+const FIXED_RANGE: (i64, i64) = (1_763_251_200_000, 1_763_337_600_000);
+
+fn fixed_range_json() -> Value {
+    json!({"fixed": {"fromTimestampMs": FIXED_RANGE.0, "toTimestampMs": FIXED_RANGE.1}})
+}
 
 fn saved_funnel() -> Value {
     json!({
@@ -99,7 +104,7 @@ async fn applications_get_encodes_the_app_name() {
 }
 
 #[tokio::test]
-async fn disabled_team_returns_a_clear_error() {
+async fn disabled_team_error_carries_the_server_message() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/funnels/v1")))
@@ -124,9 +129,8 @@ async fn disabled_team_returns_a_clear_error() {
     .expect_err("412 must fail");
     let message = format!("{error:#}");
     assert!(message.contains("412"), "{message}");
-    assert!(message.contains("not enabled for this team"), "{message}");
     assert!(
-        message.contains("cx product-analytics settings get"),
+        message.contains("A team admin can enable it in Coralogix."),
         "{message}"
     );
 }
@@ -138,7 +142,7 @@ async fn views_list_posts_app_time_range_and_paging() {
         .and(path(format!("{BASE}/views/v1")))
         .and(body_json(json!({
             "appName": "web-shop",
-            "timeRange": {"relativeMinutes": "10080"},
+            "timeRange": fixed_range_json(),
             "pageSize": 2,
             "pageToken": "tok",
             "filters": [{"stringFilter": {"field": "STRING_FILTER_FIELD_PLATFORM", "condition": {"values": ["web"], "operator": "STRING_CONDITION_OPERATOR_EQUAL"}}}]
@@ -158,7 +162,7 @@ async fn views_list_posts_app_time_range_and_paging() {
     );
     let input = QueryInput {
         app_name: Some("web-shop".into()),
-        time_range: Some(TimeRange::RelativeMinutes(10080)),
+        time_range: Some(FIXED_RANGE),
         page_size: Some(2),
         page_token: Some("tok".into()),
         ..Default::default()
@@ -177,7 +181,7 @@ async fn views_list_posts_app_time_range_and_paging() {
 }
 
 #[tokio::test]
-async fn events_list_sends_source_and_default_time_range() {
+async fn events_list_sends_source_and_fixed_time_range() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/events/v1")))
@@ -185,7 +189,7 @@ async fn events_list_sends_source_and_default_time_range() {
             "appName": "web-shop",
             "view": "/cart",
             "source": "EVENT_SOURCE_AUTO",
-            "timeRange": {"relativeMinutes": "1440"}
+            "timeRange": fixed_range_json()
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "events": [{"eventId": "ev_Y2xpY2s6R290IGl0", "event": {"source": "EVENT_SOURCE_AUTO", "name": "Got it"},
@@ -201,6 +205,7 @@ async fn events_list_sends_source_and_default_time_range() {
         app_name: Some("web-shop".into()),
         view: Some("/cart".into()),
         source: Some(EventSource::Auto),
+        time_range: Some(FIXED_RANGE),
         ..Default::default()
     };
     let targets = vec![common::test_target("test-profile", &server.uri())];
@@ -514,23 +519,6 @@ async fn funnel_query_with_breakdown_groups_renders() {
 }
 
 #[tokio::test]
-async fn funnel_query_without_id_or_definition_fails_before_sending() {
-    let server = MockServer::start().await;
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    let error = run_query(
-        &targets,
-        QueryKind::FunnelConversion,
-        None,
-        &QueryInput::default(),
-        OutputFormat::Json,
-    )
-    .await
-    .expect_err("missing funnel input must fail");
-    assert!(error.to_string().contains("definition"), "{error}");
-    assert!(server.received_requests().await.unwrap().is_empty());
-}
-
-#[tokio::test]
 async fn funnel_matches_lists_users() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -577,7 +565,7 @@ async fn pathway_and_heatmap_inline_queries() {
         .and(path(format!("{BASE}/pathways/v1:queryPaths")))
         .and(body_json(json!({
             "appName": "docs", "view": "/setup", "direction": "PATHWAY_DIRECTION_BEFORE", "pagesCount": 3,
-            "timeRange": {"relativeMinutes": "1440"}
+            "timeRange": fixed_range_json()
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "pathwayPaths": {"appName": "docs", "view": "/setup", "direction": "PATHWAY_DIRECTION_BEFORE",
@@ -606,6 +594,7 @@ async fn pathway_and_heatmap_inline_queries() {
         view: Some("/setup".into()),
         direction: Some(PathwayDirection::Before),
         pages_count: Some(3),
+        time_range: Some(FIXED_RANGE),
         ..Default::default()
     };
     run_query(

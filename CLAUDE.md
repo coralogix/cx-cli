@@ -42,7 +42,6 @@ Observe:
   slos               Manage SLO definitions
   infra              Query infrastructure resources and their data
   rum                Map RUM stack traces to source code with uploaded source maps
-  product-analytics  Query RUM product analytics: funnels, pathways, heatmaps, views, events
 
 AI:
   ai-center (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -135,7 +134,6 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 - **`src/commands/dataprime/api.rs`** - DataPrime query API (logs & traces via NDJSON)
 - **`src/commands/dataprime/semantic_search.rs`** - Semantic Search HTTP API (fields + metrics)
 - **`src/commands/metrics/api.rs`** - PromQL queries (instant, range, search, labels)
-- **`src/commands/product_analytics/api.rs`** - Product Analytics REST API (`/mgmt/openapi/5/product-analytics/...`): every route, wire field name, enum value and update-mask rule in one place
 - **`src/commands/<command>/mod.rs`** - Per-command handler (logs, metrics, spans, dashboards, alerts, notifications, webhooks, enrichments, parsing-rules, tco, usage, archive, integrations, iam, slos, search-fields, profiles, cleanup, dataprime docs, schema)
 - **`src/time.rs`** - Parses relative timestamps (`now-1h`, `now - 3d`) and ISO-8601
 - **`src/render.rs`** - Shared rendering helpers (`render_table`, `render_json`, `bool_display`, etc.) for text/JSON/toon output
@@ -214,7 +212,6 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx olly` | `cx-olly` | Covered |
 | `cx infra` | `cx-infra` | Covered |
-| `cx product-analytics` | `cx-product-analytics` | Covered (loads `request-bodies.md` for filters, definitions and create bodies) |
 | `cx profiles` | - | Local command |
 | `cx skills` | - | Local command (installs the skills in this table) |
 | `cx cleanup` | - | Local command |

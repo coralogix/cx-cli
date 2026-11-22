@@ -45,15 +45,13 @@ or web vitals, use `cx-telemetry-querying` (`rum.events`) instead.
 
 ## Time ranges
 
-Commands that query data take one of:
+Commands that query data take `--start` / `--end` (default `now-1h` / `now`):
+`now`, `now-7d`-style relative expressions, or ISO-8601 timestamps. The CLI sends
+them as a fixed millisecond range.
 
-- `--last 24h` (the default; whole minutes, e.g. `30m`, `7d`)
-- `--from <time> [--to <time>]` — fixed range, `now-7d` or ISO-8601
-- `--calendar today|yesterday`
-
-When you run a saved funnel, pathway or heatmap by ID, the saved time range is used
-unless you pass one. Ranges over 90 days work but print a `costly` warning; prefer
-shorter ranges.
+When you run a saved funnel, pathway or heatmap by ID without `--start`/`--end`, no
+time range is sent and the saved one applies. Ranges over 90 days work but print a
+`costly` warning; prefer shorter ranges.
 
 ## Paging
 
@@ -72,14 +70,15 @@ cx product-analytics applications list
 ```
 
 Every call fails with 412 when Product Analytics is off for the team. Tell the user;
-only a team admin should turn it on (`settings update --enabled true --yes`).
+only a team admin should turn it on (`settings update --enabled true --yes`). For
+what users did meanwhile, fall back to `cx-telemetry-querying` (`rum.events`).
 
 ### 2. Explore pages and clicks
 
 ```bash
-cx product-analytics views list --app web-shop --last 7d
-cx product-analytics events list --app web-shop --view /cart --source auto --last 7d
-cx product-analytics events list --app web-shop --view /cart --source custom --last 7d
+cx product-analytics views list --app web-shop --start now-7d
+cx product-analytics events list --app web-shop --view /cart --source auto --start now-7d
+cx product-analytics events list --app web-shop --view /cart --source custom --start now-7d
 ```
 
 Pass `view` exactly as `views list` prints it. Clicks carry dead-click and rage-click
@@ -89,8 +88,8 @@ percentages, a good signal of UX problems.
 
 ```bash
 cx product-analytics funnels list --app web-shop
-cx product-analytics funnels query 42 --last 30d
-cx product-analytics funnels matches 42 --step s2 --outcome dropped --from now-30d --to now
+cx product-analytics funnels query 42 --start now-30d
+cx product-analytics funnels matches 42 --step s2 --outcome dropped --start now-30d --end now
 ```
 
 - Run an inline funnel with `--from-file` holding the request body (see
@@ -98,15 +97,15 @@ cx product-analytics funnels matches 42 --step s2 --outcome dropped --from now-3
 - Break a funnel down by a dimension with `"breakdown": {"field": "BREAKDOWN_FIELD_PLATFORM", "limit": 5}` in the file.
 - `matches` takes the same input as `query`. Only users mode works for now: sessions
   and accounts return 501. User IDs are hashed unless you pass `--user-id-mode raw`.
-- To make `matches` agree with a `query`, send the same fixed `--from/--to`, filters
+- To make `matches` agree with a `query`, send the same `--start`/`--end`, filters
   and breakdown to both.
 
 ### 4. Pathways and heatmaps
 
 ```bash
-cx product-analytics pathways query --app web-shop --view /cart --direction after --last 7d
-cx product-analytics heatmaps query --app web-shop --view /checkout --top-n 10 --last 7d
-cx product-analytics events get <eventId> --app web-shop --view /checkout --last 7d
+cx product-analytics pathways query --app web-shop --view /cart --direction after --start now-7d
+cx product-analytics heatmaps query --app web-shop --view /checkout --top-n 10 --start now-7d
+cx product-analytics events get <eventId> --app web-shop --view /checkout --start now-7d
 ```
 
 A heatmap element's `eventId` is the same ID `events list` returns.
@@ -140,6 +139,12 @@ object, sent filters are added to its saved filters.
 - **Prefer saved objects** when the user names an existing funnel, pathway or heatmap.
 - **Never write without asking**: `create`, `update`, `delete` and `settings update`
   change shared team state.
+- **Empty results are not errors** — an app or view with no sessions in the range
+  returns empty lists; widen `--start` before concluding there is no traffic.
+- **No Product Analytics data** — if `applications list` is empty, the app has no
+  RUM sessions in the last 30 days. Do not guess other app names: answer from
+  `cx-telemetry-querying` (`rum.events`) and say that Product Analytics needs the RUM
+  SDK sending data (`cx-rum-setup`).
 
 ## Related Skills
 

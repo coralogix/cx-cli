@@ -29,10 +29,6 @@ pub fn parse_timestamp_epoch_seconds(input: &str) -> Result<i64> {
     Ok(parse_datetime(input)?.timestamp())
 }
 
-pub fn parse_timestamp_epoch_millis(input: &str) -> Result<i64> {
-    Ok(parse_datetime(input)?.timestamp_millis())
-}
-
 /// Parse the same time expressions as [`parse_timestamp`], cut down to the
 /// whole minute (`2024-01-01T12:34:00Z`). For APIs (like SLO status) that
 /// reject seconds.

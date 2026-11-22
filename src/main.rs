@@ -767,18 +767,17 @@ Examples:
         after_help = "\
 Examples:
   cx product-analytics applications list
-  cx product-analytics views list --app web-shop --last 7d
+  cx product-analytics views list --app web-shop --start now-7d
   cx product-analytics events list --app web-shop --view /cart --source auto
   cx product-analytics funnels list --app web-shop
-  cx product-analytics funnels query 42 --last 30d
+  cx product-analytics funnels query 42 --start now-30d
   cx product-analytics funnels matches 42 --step s2 --outcome dropped
   cx product-analytics pathways query --app web-shop --view /cart --direction after
   cx product-analytics heatmaps query 43 --top-n 10
   cx product-analytics settings get
 
-Time ranges: --last 24h (default), --from/--to (fixed), or --calendar today|yesterday.
-Filters, breakdowns and inline funnel definitions go in a JSON request file (--from-file).
-Every call returns 412 while Product Analytics is off for the team; see `settings get`."
+Time ranges: --start/--end (default now-1h to now); a saved object run without them uses its saved range.
+Filters, breakdowns and inline funnel definitions go in a JSON request file (--from-file)."
     )]
     ProductAnalytics {
         #[command(subcommand)]
@@ -3155,7 +3154,7 @@ enum ProductAnalyticsViewsCmd {
         after_help = "\
 Examples:
   cx product-analytics views list --app web-shop
-  cx product-analytics views list --app web-shop --from 2026-11-01T00:00:00Z --to 2026-11-08T00:00:00Z
+  cx product-analytics views list --app web-shop --start 2026-11-01T00:00:00Z --end 2026-11-08T00:00:00Z
   cx product-analytics views list --app web-shop --from-file filters.json   # {\"filters\": [...]}"
     )]
     List {
@@ -3180,7 +3179,7 @@ enum ProductAnalyticsEventsCmd {
         after_help = "\
 Examples:
   cx product-analytics events list --app web-shop --view /cart --source auto
-  cx product-analytics events list --app web-shop --view /cart --source custom --last 7d"
+  cx product-analytics events list --app web-shop --view /cart --source custom --start now-7d"
     )]
     List {
         #[arg(long, help = "RUM application name")]
@@ -3309,7 +3308,7 @@ With an ID, fields not sent use the saved values and sent filters are added to t
 
 Examples:
   cx product-analytics funnels query 42
-  cx product-analytics funnels query 42 --last 30d --mode sessions
+  cx product-analytics funnels query 42 --start now-30d --mode sessions
   cx product-analytics funnels query --from-file funnel-query.json"
     )]
     Query {
@@ -3338,7 +3337,7 @@ Examples:
         about = "List who reached or dropped at a funnel step",
         after_help = "\
 Takes the same funnel input as `funnels query`. Only users mode works for now: sessions and
-accounts return 501. Send the same fixed --from/--to as the query so the list matches its counts.
+accounts return 501. Send the same --start/--end as the query so the list matches its counts.
 
 Examples:
   cx product-analytics funnels matches 42 --step s2 --outcome dropped
@@ -6345,7 +6344,7 @@ async fn main() -> Result<()> {
                     } => {
                         let input = QueryInput {
                             app_name: Some(app),
-                            time_range: time.resolve()?,
+                            time_range: time.resolve(false)?,
                             page_size: page.page_size,
                             page_token: page.page_token,
                             ..Default::default()
@@ -6374,7 +6373,7 @@ async fn main() -> Result<()> {
                                 view: Some(view),
                                 source: Some(source),
                                 action_name_filter,
-                                time_range: time.resolve()?,
+                                time_range: time.resolve(false)?,
                                 page_size: page.page_size,
                                 page_token: page.page_token,
                                 ..Default::default()
@@ -6400,7 +6399,7 @@ async fn main() -> Result<()> {
                                 app_name: Some(app),
                                 view: Some(view),
                                 action_name_filter,
-                                time_range: time.resolve()?,
+                                time_range: time.resolve(false)?,
                                 ..Default::default()
                             };
                             commands::product_analytics::run_events_get(
@@ -6433,9 +6432,9 @@ async fn main() -> Result<()> {
                             mode,
                         } => {
                             let input = QueryInput {
+                                time_range: time.resolve(id.is_some())?,
                                 saved_id: id,
                                 app_name: app,
-                                time_range: time.resolve()?,
                                 funnel_mode: mode,
                                 ..Default::default()
                             };
@@ -6460,9 +6459,9 @@ async fn main() -> Result<()> {
                             page,
                         } => {
                             let input = QueryInput {
+                                time_range: time.resolve(id.is_some())?,
                                 saved_id: id,
                                 app_name: app,
-                                time_range: time.resolve()?,
                                 funnel_mode: mode,
                                 step_id: Some(step_id),
                                 outcome: Some(outcome),
@@ -6504,10 +6503,10 @@ async fn main() -> Result<()> {
                             from_file,
                         } => {
                             let input = QueryInput {
+                                time_range: time.resolve(id.is_some())?,
                                 saved_id: id,
                                 view,
                                 app_name: app,
-                                time_range: time.resolve()?,
                                 direction,
                                 pages_count,
                                 top_n,
@@ -6545,10 +6544,10 @@ async fn main() -> Result<()> {
                             from_file,
                         } => {
                             let input = QueryInput {
+                                time_range: time.resolve(id.is_some())?,
                                 saved_id: id,
                                 view,
                                 app_name: app,
-                                time_range: time.resolve()?,
                                 action_name_filter,
                                 top_n,
                                 ..Default::default()

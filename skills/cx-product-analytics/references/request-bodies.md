@@ -5,7 +5,11 @@ Flags on the command line override the same fields in a `--from-file` body.
 
 ## Time range (`timeRange`)
 
-Exactly one of:
+Queries take their time range from `--start` / `--end`, sent as
+`{"fixed": {"fromTimestampMs": ..., "toTimestampMs": ...}}` (from inclusive, to
+exclusive). Do not put `timeRange` in a query file.
+
+A saved object's own `timeRange` (in `create` and `update` bodies) is exactly one of:
 
 ```json
 {"relativeMinutes": "1440"}
@@ -13,8 +17,7 @@ Exactly one of:
 {"calendar": "CALENDAR_WINDOW_TODAY"}
 ```
 
-`fixed` is inclusive of `from`, exclusive of `to`. `calendar` is `CALENDAR_WINDOW_TODAY`
-or `CALENDAR_WINDOW_YESTERDAY`.
+`calendar` is `CALENDAR_WINDOW_TODAY` or `CALENDAR_WINDOW_YESTERDAY`.
 
 ## Filters (`filters`)
 
@@ -100,7 +103,7 @@ For `funnels matches` on one group of a broken-down funnel, add
 | `pathways query` | `pathwayId` (positional ID) | `appName` + `view` |
 | `heatmaps query` | `heatmapId` (positional ID) | `appName` + `view` |
 
-Other fields: `timeRange`, `filters`, `breakdown` (funnels), `mode` (funnels, saved
+Other fields: `filters`, `breakdown` (funnels), `mode` (funnels, saved
 only), `direction` / `pagesCount` / `topN` (pathways), `actionNameFilter` / `topN`
 (heatmaps). `actionNameFilter` is `ACTION_NAME_FILTER_ALL_CLICKS`, `_NAMED_ONLY` or
 `_UNNAMED_ONLY`.

@@ -10,68 +10,43 @@ use toon_format::encode_default as toon_encode;
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use crate::time::parse_timestamp_epoch_millis;
+use crate::time::parse_timestamp_epoch_seconds;
 use api::{
-    display_enum, Application, CalendarWindow, Event, FunnelMatchedUser, HeatmapElement, Page,
-    ProductAnalyticsApi, QueryFunnelConversionResponse, QueryHeatmapTopElementsResponse,
-    QueryInput, QueryKind, QueryPathwayPathsResponse, QueryRumEventResponse, SavedObject,
-    SavedObjectKind, Settings, TimeRange, ViewSessions,
+    display_enum, Application, Event, FunnelMatchedUser, HeatmapElement, Page, ProductAnalyticsApi,
+    QueryFunnelConversionResponse, QueryHeatmapTopElementsResponse, QueryInput, QueryKind,
+    QueryPathwayPathsResponse, QueryRumEventResponse, SavedObject, SavedObjectKind, Settings,
+    ViewSessions,
 };
 
 #[derive(clap::Args, Clone, Debug, Default)]
 pub struct TimeRangeArgs {
     #[arg(
         long,
-        conflicts_with_all = ["from", "to", "calendar"],
-        help = "Window back from now in whole minutes, e.g. `30m`, `24h`, `7d`. Default: 24h, or the saved time range when running a saved object"
+        help = "Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601. Default: now-1h, or the saved range when running a saved object"
     )]
-    pub last: Option<String>,
+    pub start: Option<String>,
 
     #[arg(
         long,
-        conflicts_with = "calendar",
-        help = "Start of a fixed range. Accepts `now-7d` or ISO-8601"
+        help = "End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601. Default: now"
     )]
-    pub from: Option<String>,
-
-    #[arg(
-        long,
-        requires = "from",
-        conflicts_with = "calendar",
-        help = "End of a fixed range (default: now). Accepts `now-1d` or ISO-8601"
-    )]
-    pub to: Option<String>,
-
-    #[arg(long, value_enum, help = "Calendar window in the viewer's timezone")]
-    pub calendar: Option<CalendarWindow>,
+    pub end: Option<String>,
 }
 
 impl TimeRangeArgs {
-    pub fn resolve(&self) -> Result<Option<TimeRange>> {
-        if let Some(calendar) = self.calendar {
-            return Ok(Some(TimeRange::Calendar(calendar)));
-        }
-        if let Some(last) = &self.last {
-            let duration = humantime::parse_duration(last.trim()).map_err(|error| {
-                anyhow::anyhow!(
-                    "--last: could not parse '{last}': {error}. Examples: 30m, 24h, 7d."
-                )
-            })?;
-            let seconds = duration.as_secs();
-            if seconds < 60 || seconds % 60 != 0 || duration.subsec_nanos() != 0 {
-                bail!("--last must be a whole number of minutes, at least 1m (got '{last}')");
-            }
-            return Ok(Some(TimeRange::RelativeMinutes((seconds / 60) as i64)));
-        }
-        let Some(from) = &self.from else {
+    // Fixed range in epoch milliseconds, or None to keep a saved object's own range.
+    pub fn resolve(&self, runs_saved_object: bool) -> Result<Option<(i64, i64)>> {
+        if runs_saved_object && self.start.is_none() && self.end.is_none() {
             return Ok(None);
-        };
-        let from_ms = parse_timestamp_epoch_millis(from)?;
-        let to_ms = parse_timestamp_epoch_millis(self.to.as_deref().unwrap_or("now"))?;
-        if from_ms >= to_ms {
-            bail!("--from must be before --to");
         }
-        Ok(Some(TimeRange::Fixed { from_ms, to_ms }))
+        let start = self.start.as_deref().unwrap_or("now-1h");
+        let end = self.end.as_deref().unwrap_or("now");
+        let start_epoch = parse_timestamp_epoch_seconds(start)?;
+        let end_epoch = parse_timestamp_epoch_seconds(end)?;
+        if end_epoch <= start_epoch {
+            bail!("--end ({end}) must be strictly after --start ({start})");
+        }
+        Ok(Some((start_epoch * 1000, end_epoch * 1000)))
     }
 }
 
@@ -609,7 +584,7 @@ pub async fn run_list_query(
         QueryKind::Views => (VIEW_HEADERS, view_row, "No views found."),
         QueryKind::Events => (EVENT_HEADERS, event_row, "No events found."),
         QueryKind::FunnelMatches => (MATCHED_USER_HEADERS, matched_user_row, "No matches found."),
-        _ => bail!("{kind:?} is not a paged query"),
+        _ => unreachable!("{kind:?} is not a paged query"),
     };
     let body = api::build_query_body(kind, read_optional_file(from_file)?, input)?;
     eprintln!("{}", "Running Product Analytics query...".dimmed());
@@ -643,7 +618,7 @@ pub async fn run_query(
         QueryKind::FunnelConversion => print_funnel_conversion,
         QueryKind::PathwayPaths => print_pathway_paths,
         QueryKind::HeatmapTopElements => print_heatmap_elements,
-        _ => bail!("{kind:?} is not a single-result query"),
+        _ => unreachable!("{kind:?} is not a single-result query"),
     };
     let body = api::build_query_body(kind, read_optional_file(from_file)?, input)?;
     eprintln!("{}", "Running Product Analytics query...".dimmed());
@@ -868,69 +843,38 @@ pub async fn run_settings_update(
 mod tests {
     use super::*;
 
-    fn last(value: &str) -> TimeRangeArgs {
+    fn time_range(start: Option<&str>, end: Option<&str>) -> TimeRangeArgs {
         TimeRangeArgs {
-            last: Some(value.to_string()),
-            ..Default::default()
+            start: start.map(String::from),
+            end: end.map(String::from),
         }
     }
 
     #[test]
-    fn last_becomes_relative_minutes() {
+    fn start_and_end_become_fixed_millis() {
+        let args = time_range(Some("2026-11-16T00:00:00Z"), Some("2026-11-17T00:00:00Z"));
         assert_eq!(
-            last("24h").resolve().unwrap(),
-            Some(TimeRange::RelativeMinutes(1440))
-        );
-        assert_eq!(
-            last("30m").resolve().unwrap(),
-            Some(TimeRange::RelativeMinutes(30))
+            args.resolve(false).unwrap(),
+            Some((1_794_787_200_000, 1_794_873_600_000))
         );
     }
 
     #[test]
-    fn last_rejects_sub_minute_values() {
-        assert!(last("30s").resolve().is_err());
-        assert!(last("90s").resolve().is_err());
-        assert!(last("soon").resolve().is_err());
-    }
-
-    #[test]
-    fn from_to_becomes_fixed_range() {
-        let args = TimeRangeArgs {
-            from: Some("2026-11-16T00:00:00Z".to_string()),
-            to: Some("2026-11-17T00:00:00Z".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            args.resolve().unwrap(),
-            Some(TimeRange::Fixed {
-                from_ms: 1_794_787_200_000,
-                to_ms: 1_794_873_600_000
-            })
-        );
+    fn no_flags_default_to_last_hour_unless_running_a_saved_object() {
+        let (start, end) = time_range(None, None).resolve(false).unwrap().unwrap();
+        assert!((3_600_000..=3_601_000).contains(&(end - start)));
+        assert_eq!(time_range(None, None).resolve(true).unwrap(), None);
+        assert!(time_range(Some("now-1d"), None)
+            .resolve(true)
+            .unwrap()
+            .is_some());
     }
 
     #[test]
     fn reversed_range_is_rejected() {
-        let args = TimeRangeArgs {
-            from: Some("now-1h".to_string()),
-            to: Some("now-2h".to_string()),
-            ..Default::default()
-        };
-        assert!(args.resolve().is_err());
-    }
-
-    #[test]
-    fn calendar_and_no_flags() {
-        let calendar = TimeRangeArgs {
-            calendar: Some(CalendarWindow::Yesterday),
-            ..Default::default()
-        };
-        assert_eq!(
-            calendar.resolve().unwrap(),
-            Some(TimeRange::Calendar(CalendarWindow::Yesterday))
-        );
-        assert_eq!(TimeRangeArgs::default().resolve().unwrap(), None);
+        assert!(time_range(Some("now-1h"), Some("now-2h"))
+            .resolve(false)
+            .is_err());
     }
 
     #[test]

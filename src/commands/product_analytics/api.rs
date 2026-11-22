@@ -1,10 +1,10 @@
 use anyhow::bail;
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 use crate::api_client::CxClient;
-use crate::error::{CxError, Result};
+use crate::error::Result;
 use crate::serde_helpers::string_or_number;
 
 const BASE_PATH: &str = "/mgmt/openapi/5/product-analytics";
@@ -21,7 +21,6 @@ const PAGE_SIZE_PARAM: &str = "page_size";
 const PAGE_TOKEN_PARAM: &str = "page_token";
 const UPDATE_MASK_PARAM: &str = "updateMask";
 
-const TIME_RANGE_FIELD: &str = "timeRange";
 const SETTINGS_ENABLED_FIELD: &str = "enabled";
 const READ_ONLY_FIELDS: &[&str] = &[
     "id",
@@ -32,8 +31,6 @@ const READ_ONLY_FIELDS: &[&str] = &[
     "version",
 ];
 
-pub const DEFAULT_TIME_RANGE_MINUTES: i64 = 24 * 60;
-
 const ENUM_PREFIXES: &[&str] = &[
     "FUNNEL_MODE_",
     "FUNNEL_OUTCOME_",
@@ -42,9 +39,6 @@ const ENUM_PREFIXES: &[&str] = &[
     "ACTION_NAME_FILTER_",
     "EVENT_SOURCE_",
 ];
-
-const PRODUCT_ANALYTICS_DISABLED_HINT: &str = "Check it with `cx product-analytics settings get`; \
-     a team admin can turn it on with `cx product-analytics settings update --enabled true`.";
 
 const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -56,26 +50,6 @@ const QUERY_VALUE_ENCODE_SET: &AsciiSet = &PATH_SEGMENT_ENCODE_SET.remove(b',');
 
 fn encode_segment(segment: &str) -> String {
     utf8_percent_encode(segment, PATH_SEGMENT_ENCODE_SET).to_string()
-}
-
-fn explain_disabled(error: CxError) -> CxError {
-    match error {
-        CxError::Api {
-            status: 412,
-            message,
-        } => {
-            let message = if message.trim().is_empty() {
-                "Product Analytics is not enabled for this team.".to_string()
-            } else {
-                message
-            };
-            CxError::Api {
-                status: 412,
-                message: format!("{message} {PRODUCT_ANALYTICS_DISABLED_HINT}"),
-            }
-        }
-        other => other,
-    }
 }
 
 pub fn display_enum(value: Option<&str>) -> String {
@@ -183,45 +157,6 @@ impl PathwayDirection {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum CalendarWindow {
-    Today,
-    Yesterday,
-}
-
-impl CalendarWindow {
-    pub fn wire(self) -> &'static str {
-        match self {
-            Self::Today => "CALENDAR_WINDOW_TODAY",
-            Self::Yesterday => "CALENDAR_WINDOW_YESTERDAY",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TimeRange {
-    Fixed { from_ms: i64, to_ms: i64 },
-    RelativeMinutes(i64),
-    Calendar(CalendarWindow),
-}
-
-impl TimeRange {
-    pub fn to_wire(self) -> Value {
-        match self {
-            Self::Fixed { from_ms, to_ms } => serde_json::json!({
-                "fixed": {
-                    "fromTimestampMs": from_ms.to_string(),
-                    "toTimestampMs": to_ms.to_string(),
-                }
-            }),
-            Self::RelativeMinutes(minutes) => {
-                serde_json::json!({ "relativeMinutes": minutes.to_string() })
-            }
-            Self::Calendar(window) => serde_json::json!({ "calendar": window.wire() }),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SavedObjectKind {
     Funnel,
@@ -287,14 +222,6 @@ impl QueryKind {
         }
     }
 
-    fn inline_key(self) -> Option<&'static str> {
-        match self {
-            Self::FunnelConversion | Self::FunnelMatches => Some("definition"),
-            Self::PathwayPaths | Self::HeatmapTopElements => Some("view"),
-            Self::Views | Self::Events | Self::Event => None,
-        }
-    }
-
     fn items_key(self, response: &Value) -> &'static str {
         match self {
             Self::Views => "views",
@@ -314,7 +241,7 @@ pub struct QueryInput {
     pub saved_id: Option<String>,
     pub app_name: Option<String>,
     pub view: Option<String>,
-    pub time_range: Option<TimeRange>,
+    pub time_range: Option<(i64, i64)>,
     pub source: Option<EventSource>,
     pub action_name_filter: Option<ActionNameFilter>,
     pub funnel_mode: Option<FunnelMode>,
@@ -343,8 +270,10 @@ pub fn build_query_body(
         (Some("appName"), input.app_name.clone().map(Value::from)),
         (Some("view"), input.view.clone().map(Value::from)),
         (
-            Some(TIME_RANGE_FIELD),
-            input.time_range.map(TimeRange::to_wire),
+            Some("timeRange"),
+            input.time_range.map(|(from_ms, to_ms)| {
+                json!({"fixed": {"fromTimestampMs": from_ms, "toTimestampMs": to_ms}})
+            }),
         ),
         (Some("source"), input.source.map(|v| v.wire().into())),
         (
@@ -368,27 +297,6 @@ pub fn build_query_body(
         if let (Some(key), Some(value)) = (key, value) {
             body.insert(key.to_string(), value);
         }
-    }
-
-    let runs_saved_object = kind
-        .saved_id_key()
-        .is_some_and(|key| body.contains_key(key));
-    if let (Some(saved_key), Some(inline_key)) = (kind.saved_id_key(), kind.inline_key()) {
-        match (runs_saved_object, body.contains_key(inline_key)) {
-            (true, true) => {
-                bail!("pass either a saved ID ({saved_key}) or an inline {inline_key}, not both")
-            }
-            (false, false) => {
-                bail!("pass a saved ID, or an inline {inline_key} (flag or request file)")
-            }
-            _ => {}
-        }
-    }
-    if !runs_saved_object && !body.contains_key(TIME_RANGE_FIELD) {
-        body.insert(
-            TIME_RANGE_FIELD.to_string(),
-            TimeRange::RelativeMinutes(DEFAULT_TIME_RANGE_MINUTES).to_wire(),
-        );
     }
     Ok(Value::Object(body))
 }
@@ -693,11 +601,7 @@ impl<'a> ProductAnalyticsApi<'a> {
             .map(|name| (APP_NAMES_PARAM, name.as_str()))
             .collect();
         let path = format!("{BASE_PATH}{APPLICATIONS_PATH}");
-        let response: Value = self
-            .client
-            .get(&path, &params)
-            .await
-            .map_err(explain_disabled)?;
+        let response: Value = self.client.get(&path, &params).await?;
         Page::from_response(response, "applications")
     }
 
@@ -706,7 +610,7 @@ impl<'a> ProductAnalyticsApi<'a> {
             "{BASE_PATH}{APPLICATIONS_PATH}/{}",
             encode_segment(app_name)
         );
-        self.client.get(&path, &[]).await.map_err(explain_disabled)
+        self.client.get(&path, &[]).await
     }
 
     pub async fn list_saved(
@@ -728,25 +632,18 @@ impl<'a> ProductAnalyticsApi<'a> {
             params.push((PAGE_TOKEN_PARAM, token));
         }
         let path = format!("{BASE_PATH}{}", kind.path());
-        let response: Value = self
-            .client
-            .get(&path, &params)
-            .await
-            .map_err(explain_disabled)?;
+        let response: Value = self.client.get(&path, &params).await?;
         Page::from_response(response, kind.list_key())
     }
 
     pub async fn get_saved(&self, kind: SavedObjectKind, id: &str) -> Result<Value> {
         let path = format!("{BASE_PATH}{}/{}", kind.path(), encode_segment(id));
-        self.client.get(&path, &[]).await.map_err(explain_disabled)
+        self.client.get(&path, &[]).await
     }
 
     pub async fn create_saved(&self, kind: SavedObjectKind, body: &Value) -> Result<Value> {
         let path = format!("{BASE_PATH}{}", kind.path());
-        self.client
-            .post(&path, body)
-            .await
-            .map_err(explain_disabled)
+        self.client.post(&path, body).await
     }
 
     pub async fn update_saved(
@@ -762,23 +659,17 @@ impl<'a> ProductAnalyticsApi<'a> {
             encode_segment(id),
             utf8_percent_encode(update_mask, QUERY_VALUE_ENCODE_SET)
         );
-        self.client
-            .patch(&path, body)
-            .await
-            .map_err(explain_disabled)
+        self.client.patch(&path, body).await
     }
 
     pub async fn delete_saved(&self, kind: SavedObjectKind, id: &str) -> Result<Value> {
         let path = format!("{BASE_PATH}{}/{}", kind.path(), encode_segment(id));
-        self.client.delete(&path).await.map_err(explain_disabled)
+        self.client.delete(&path).await
     }
 
     pub async fn query(&self, kind: QueryKind, body: &Value) -> Result<Value> {
         let path = format!("{BASE_PATH}{}", kind.path());
-        self.client
-            .post(&path, body)
-            .await
-            .map_err(explain_disabled)
+        self.client.post(&path, body).await
     }
 
     pub async fn query_page(&self, kind: QueryKind, body: &Value) -> Result<Page> {
@@ -793,10 +684,7 @@ impl<'a> ProductAnalyticsApi<'a> {
             QueryKind::Event.path(),
             encode_segment(event_id)
         );
-        self.client
-            .post(&path, body)
-            .await
-            .map_err(explain_disabled)
+        self.client.post(&path, body).await
     }
 
     pub async fn get_settings(&self) -> Result<Value> {
@@ -1011,30 +899,11 @@ mod tests {
     }
 
     #[test]
-    fn time_range_wire_shapes() {
-        assert_eq!(
-            TimeRange::RelativeMinutes(1440).to_wire(),
-            json!({"relativeMinutes": "1440"})
-        );
-        assert_eq!(
-            TimeRange::Fixed {
-                from_ms: 1,
-                to_ms: 2
-            }
-            .to_wire(),
-            json!({"fixed": {"fromTimestampMs": "1", "toTimestampMs": "2"}})
-        );
-        assert_eq!(
-            TimeRange::Calendar(CalendarWindow::Today).to_wire(),
-            json!({"calendar": "CALENDAR_WINDOW_TODAY"})
-        );
-    }
-
-    #[test]
-    fn query_body_merges_flags_over_file_and_defaults_time_range() {
+    fn query_body_merges_flags_over_file_and_sends_fixed_time_range() {
         let input = QueryInput {
             app_name: Some("web-shop".into()),
             view: Some("/cart".into()),
+            time_range: Some((1_763_251_200_000, 1_763_337_600_000)),
             source: Some(EventSource::Custom),
             page_size: Some(10),
             ..Default::default()
@@ -1049,34 +918,20 @@ mod tests {
         assert_eq!(body["source"], "EVENT_SOURCE_CUSTOM");
         assert_eq!(body["pageSize"], 10);
         assert_eq!(body["filters"].as_array().unwrap().len(), 1);
-        assert_eq!(body["timeRange"], json!({"relativeMinutes": "1440"}));
+        assert_eq!(
+            body["timeRange"],
+            json!({"fixed": {"fromTimestampMs": 1_763_251_200_000_i64, "toTimestampMs": 1_763_337_600_000_i64}})
+        );
     }
 
     #[test]
-    fn saved_query_keeps_saved_time_range() {
+    fn saved_query_without_time_flags_sends_no_time_range() {
         let input = QueryInput {
             saved_id: Some("42".into()),
             ..Default::default()
         };
         let body = build_query_body(QueryKind::FunnelConversion, None, &input).unwrap();
         assert_eq!(body, json!({"funnelId": "42"}));
-    }
-
-    #[test]
-    fn query_requires_exactly_one_of_saved_id_or_inline() {
-        assert!(build_query_body(QueryKind::PathwayPaths, None, &QueryInput::default()).is_err());
-        let both = QueryInput {
-            saved_id: Some("44".into()),
-            view: Some("/cart".into()),
-            ..Default::default()
-        };
-        assert!(build_query_body(QueryKind::PathwayPaths, None, &both).is_err());
-        let inline = QueryInput {
-            view: Some("/cart".into()),
-            ..Default::default()
-        };
-        let body = build_query_body(QueryKind::HeatmapTopElements, None, &inline).unwrap();
-        assert_eq!(body["view"], "/cart");
     }
 
     #[test]
@@ -1107,22 +962,6 @@ mod tests {
     #[test]
     fn update_with_nothing_to_update_fails() {
         assert!(prepare_update(json!({"id": "42"}), None).is_err());
-    }
-
-    #[test]
-    fn disabled_error_gets_a_hint() {
-        let error = explain_disabled(CxError::Api {
-            status: 412,
-            message: "Product Analytics is not enabled for this team.".into(),
-        });
-        assert!(error
-            .to_string()
-            .contains("cx product-analytics settings get"));
-        let other = explain_disabled(CxError::Api {
-            status: 404,
-            message: "not found".into(),
-        });
-        assert!(!other.to_string().contains("settings"));
     }
 
     #[test]

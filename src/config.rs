@@ -354,6 +354,17 @@ where
     out
 }
 
+/// Parse `--label` values that were given on purpose: the flag was passed at
+/// least once, so a list that normalizes to nothing (`--label ""`, `--label ,`,
+/// an unset shell variable) is a mistake, not "no filter".
+pub fn parse_given_label_args<S: AsRef<str>>(values: &[S]) -> Result<Vec<String>> {
+    let labels = parse_label_args(values);
+    if labels.is_empty() && !values.is_empty() {
+        bail!("--label needs at least one non-empty label.");
+    }
+    Ok(labels)
+}
+
 /// Parse repeatable `--label` values. Each value may itself be comma-separated
 /// (`--label prod,eu` and `--label prod --label eu` are the same).
 pub fn parse_label_args<I, S>(values: I) -> Vec<String>
@@ -403,9 +414,9 @@ fn names_with_any_label(entries: &[(String, Vec<String>)], wanted: &[String]) ->
 ///
 /// Explicit `--profile` names come first, in the order given. Every profile on
 /// disk that has any of `labels` is appended after them, in `cx profiles list`
-/// order, skipping names already selected. Profiles that fail to load are
-/// skipped for the label match (a broken file is reported when it is named
-/// explicitly, not when a label scan happens to pass over it).
+/// order, skipping names already selected. A profile that fails to load
+/// cannot be matched; it is reported on stderr and left out, so the caller
+/// sees that the label covers fewer profiles than it implies.
 ///
 /// Returns an empty list when both inputs are empty, which callers treat as
 /// "use the default profile". Errors when `labels` is non-empty and no
@@ -1654,6 +1665,19 @@ api_key = "mykey"
             no_profiles_for_labels(&strings(&["a", "b", "c"])),
             "No profiles with label 'a', 'b' or 'c'."
         );
+    }
+
+    #[test]
+    fn parse_given_label_args_rejects_only_a_given_but_empty_list() {
+        assert_eq!(
+            parse_given_label_args::<&str>(&[]).unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(parse_given_label_args(&["a,b"]).unwrap(), vec!["a", "b"]);
+        for raw in [vec![""], vec![","], vec![" ", ""]] {
+            let err = parse_given_label_args(&raw).unwrap_err().to_string();
+            assert!(err.contains("non-empty label"), "{raw:?}: {err}");
+        }
     }
 
     #[test]

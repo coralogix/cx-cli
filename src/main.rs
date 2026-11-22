@@ -3786,13 +3786,20 @@ async fn main() -> Result<()> {
         // subcommands that have no use for it. Refuse both cases with the fix
         // instead of dropping a label silently.
         let label_before_profiles = label_flag_precedes_profiles(std::env::args().skip(1));
-        if label_before_profiles
-            || (!cli.label.is_empty()
-                && !matches!(
-                    cmd,
-                    ProfilesCmd::List { .. } | ProfilesCmd::Add { .. } | ProfilesCmd::Labels { .. }
-                ))
-        {
+        // Only the subcommands that own a `--label` may see `cli.label` set:
+        // for them it is their own value, copied up by clap. `labels get` and
+        // `labels clear` have none, so a `--label` there is a stray global.
+        let owns_label_flag = matches!(
+            cmd,
+            ProfilesCmd::List { .. }
+                | ProfilesCmd::Add { .. }
+                | ProfilesCmd::Labels {
+                    cmd: ProfileLabelsCmd::Add { .. }
+                        | ProfileLabelsCmd::Remove { .. }
+                        | ProfileLabelsCmd::Set { .. }
+                }
+        );
+        if label_before_profiles || (!cli.label.is_empty() && !owns_label_flag) {
             bail!(
                 "`--label` selects profiles for fan-out and does not apply to `cx profiles` itself.\n\
                  Put it after the subcommand to filter or tag:\n\
@@ -4004,12 +4011,9 @@ async fn main() -> Result<()> {
     // must not sneak in as an extra target, the same way it must not override
     // an explicit `-p`.
     let label_from_cli = matches.value_source("label") == Some(ValueSource::CommandLine);
-    let wanted_labels = config::parse_label_args(&cli.label);
-    if label_from_cli && wanted_labels.is_empty() {
-        // `--label ""` (an unset shell variable) must not fall back to the
-        // default profile, which may be the wrong team.
-        bail!("--label needs at least one non-empty label.");
-    }
+    // `--label ""` (an unset shell variable) must not fall back to the
+    // default profile, which may be the wrong team.
+    let wanted_labels = config::parse_given_label_args(&cli.label)?;
     let profile_from_env = matches.value_source("profile") == Some(ValueSource::EnvVariable);
     let explicit_profiles: &[String] = if label_from_cli && profile_from_env {
         &[]

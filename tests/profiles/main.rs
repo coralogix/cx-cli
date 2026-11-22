@@ -1364,6 +1364,46 @@ fn label_migrates_legacy_single_label_key() {
 }
 
 #[test]
+fn empty_label_values_are_refused_everywhere() {
+    let tmp = temp_home();
+    write_profile(&tmp, "team-a", API_KEY_PROFILE);
+    let before = load_profile_toml(&tmp, "team-a");
+
+    for args in [
+        vec!["profiles", "list", "--label", " "],
+        vec!["profiles", "list", "--label", ","],
+        vec!["profiles", "labels", "add", "team-a", "--label", ""],
+        vec!["profiles", "labels", "set", "team-a", "--label", ","],
+        vec![
+            "profiles",
+            "add",
+            "team-new",
+            "--region",
+            "eu1",
+            "--api-key",
+            "k",
+            "--label",
+            "",
+        ],
+    ] {
+        let stderr = run_err(&tmp, &args);
+        assert!(
+            stderr.contains("--label needs at least one non-empty label"),
+            "{args:?}: {stderr}"
+        );
+    }
+    assert_eq!(
+        load_profile_toml(&tmp, "team-a"),
+        before,
+        "nothing may be written"
+    );
+    assert!(
+        !tmp.join(".cx/profiles/team-new.toml").exists(),
+        "no profile may be created with an empty label"
+    );
+}
+
+#[test]
 fn labels_verbs_require_a_label_and_a_known_profile() {
     let tmp = temp_home();
     write_profile(&tmp, "team-a", API_KEY_PROFILE);

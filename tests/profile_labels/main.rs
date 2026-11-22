@@ -532,6 +532,53 @@ fn global_flag_before_profiles_labels_verbs_still_works() {
     );
 }
 
+#[test]
+fn stray_global_label_on_labels_get_or_clear_is_refused() {
+    let home = temp_home();
+    write_profile(
+        &home,
+        "team-a",
+        "k",
+        "http://127.0.0.1:9",
+        r#"labels = ["prod"]"#,
+    );
+    let before = fs::read_to_string(home.join(".cx/profiles/team-a.toml")).unwrap();
+
+    for args in [
+        vec![
+            "--read-only",
+            "profiles",
+            "labels",
+            "clear",
+            "team-a",
+            "--label",
+            "eu",
+        ],
+        vec![
+            "--read-only",
+            "profiles",
+            "labels",
+            "get",
+            "team-a",
+            "--label",
+            "eu",
+        ],
+    ] {
+        let output = cx(&home).args(&args).output().expect("failed to run cx");
+        assert!(!output.status.success(), "{args:?} must be refused");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("does not apply to `cx profiles` itself"),
+            "{args:?}: {stderr}"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(home.join(".cx/profiles/team-a.toml")).unwrap(),
+        before,
+        "clear must not run"
+    );
+}
+
 #[tokio::test]
 async fn label_scan_warns_about_a_profile_that_does_not_load() {
     let server = MockServer::start().await;

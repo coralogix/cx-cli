@@ -483,7 +483,7 @@ fn display_labels(labels: &[String]) -> String {
 }
 
 pub fn run_list(label_filter: Vec<String>) -> Result<()> {
-    let filter = crate::config::parse_label_args(label_filter);
+    let filter = crate::config::parse_given_label_args(&label_filter)?;
     let global_config = load_config().unwrap_or_default();
 
     let names = list_profile_names()?;
@@ -649,7 +649,7 @@ fn resolve_profile_labels(
     quick: bool,
 ) -> Result<Vec<String>> {
     if let Some(raw) = provided {
-        return Ok(crate::config::parse_label_args(raw));
+        return crate::config::parse_given_label_args(&raw);
     }
     let existing = load_profile(name)
         .ok()
@@ -1021,6 +1021,9 @@ pub fn run_label(profile_name: String, edit: LabelEdit) -> Result<()> {
         );
     }
     let mut profile = load_profile(&profile_name)?;
+    for raw in [&edit.add, &edit.remove, &edit.set] {
+        crate::config::parse_given_label_args(raw)?;
+    }
 
     if edit.is_empty() {
         println!("{}", labels_line(&profile_name, &profile.labels));

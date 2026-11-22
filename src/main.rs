@@ -18,6 +18,7 @@ use coralogix_cli::execution::build_targets;
 use coralogix_cli::onboarding;
 use coralogix_cli::safety;
 use coralogix_cli::safety::confirm_destructive;
+use coralogix_cli::telemetry;
 use coralogix_cli::update_check;
 use coralogix_cli::Tier;
 
@@ -3464,13 +3465,54 @@ struct ProfilingFlameGraphArgs {
     top_functions: usize,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Handle shell completions before any stdout output.
-    // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
-    // completion scripts and exits. Otherwise it is a no-op.
-    CompleteEnv::with_factory(Cli::command).complete();
+/// Returned by [`run`] in place of `std::process::exit(1)` once the message is
+/// printed, so [`main`] still records telemetry before exiting with code 1.
+/// Carries the error already shown, so telemetry classifies the real cause.
+#[derive(Debug, thiserror::Error)]
+#[error("exit 1")]
+struct SilentExit(#[source] anyhow::Error);
 
+fn main() -> Result<()> {
+    // The detached telemetry sender (`telemetry::spawn_sender`). Not a clap
+    // subcommand, so it is absent from help, `cx schema` and completions.
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|a| a == telemetry::send::SENDER_ARG)
+    {
+        telemetry::send::run_sender();
+        return Ok(());
+    }
+
+    // On its own thread, for the stack: a debug build needs about 1 MB, which
+    // is all the main thread has on Windows.
+    let cli = std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            // Handle shell completions before any stdout or stderr output.
+            // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this
+            // generates completion scripts and exits. Otherwise it is a no-op.
+            CompleteEnv::with_factory(Cli::command).complete();
+            run_recorded()
+        })?;
+    let result = cli
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    if result.as_ref().is_err_and(|e| e.is::<SilentExit>()) {
+        std::process::exit(1);
+    }
+    result
+}
+
+#[tokio::main]
+async fn run_recorded() -> Result<()> {
+    telemetry::begin();
+    let result = run().await;
+    telemetry::finish(&result);
+    telemetry::spawn_sender();
+    result
+}
+
+async fn run() -> Result<()> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
@@ -3488,7 +3530,14 @@ async fn main() -> Result<()> {
         std::env::args().nth(1).as_deref(),
         Some("profiles" | "profile")
     ) {
-        let profile_matches = ProfilesCli::command().get_matches();
+        let mut profiles_cmd = ProfilesCli::command();
+        let profile_matches = profiles_cmd
+            .try_get_matches_from_mut(std::env::args_os())
+            .unwrap_or_else(|e| {
+                telemetry::record_parse_error(&e);
+                e.exit()
+            });
+        telemetry::set_command(&profiles_cmd, &profile_matches);
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
         let result = match cmd {
@@ -3536,7 +3585,13 @@ async fn main() -> Result<()> {
         );
     }
 
-    let matches = cmd.get_matches();
+    let matches = cmd
+        .try_get_matches_from_mut(std::env::args_os())
+        .unwrap_or_else(|e| {
+            telemetry::record_parse_error(&e);
+            e.exit()
+        });
+    telemetry::set_command(&cmd, &matches);
     let cli = Cli::from_arg_matches(&matches)?;
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
@@ -3821,7 +3876,9 @@ async fn main() -> Result<()> {
                 // would dump the anyhow config-resolution chain (with a second,
                 // contradicting `cx profiles add` instruction) after the
                 // guidance. The two lines above are the entire first-run story.
-                std::process::exit(1);
+                // Not the resolution error: a missing profile file is a setup
+                // state, not an I/O failure.
+                return Err(SilentExit(anyhow::anyhow!("no profile is configured")).into());
             }
             // The error already names the fix (for example `cx profiles add
             // <name>`). Exit here instead of returning it: propagating it
@@ -3830,7 +3887,7 @@ async fn main() -> Result<()> {
             // specific instruction already in the error. `{:?}` keeps a
             // single copy of the cause chain (parse errors, and so on).
             eprintln!("Configuration error: {error:?}");
-            std::process::exit(1);
+            return Err(SilentExit(error).into());
         }
     };
 
@@ -3839,6 +3896,7 @@ async fn main() -> Result<()> {
         no_console_link,
         cli.http_timeout.map(std::time::Duration::from_secs),
     )?;
+    telemetry::set_targets(output, &targets);
     let agent_mode = safety::is_agent_mode();
 
     // Report onboarding for any profile whose report hasn't gone through yet
@@ -5681,5 +5739,50 @@ mod tests {
     #[test]
     fn parse_completions_shell_rejects_garbage() {
         assert!(parse_completions_shell("not-a-shell").is_err());
+    }
+
+    /// Telemetry sends command and flag names only if they match the
+    /// spec's patterns (`[a-z0-9-]`); anything else would be silently
+    /// left out of `cx.command.path` / `cx.command.flags`.
+    #[test]
+    fn every_command_and_flag_name_is_a_valid_telemetry_name() {
+        use coralogix_cli::telemetry::event::{CommandFlags, CommandPath};
+        fn walk(cmd: &clap::Command, path: &mut Vec<String>) {
+            for arg in cmd.get_arguments() {
+                if let Some(long) = arg.get_long() {
+                    assert_eq!(
+                        CommandFlags::from_long_names([long]).as_str(),
+                        format!("--{long}"),
+                        "flag --{long} under `{}`",
+                        path.join(" ")
+                    );
+                }
+            }
+            for sub in cmd.get_subcommands() {
+                let name = sub.get_name();
+                path.push(name.to_string());
+                let valid = CommandPath::from_names([name]).is_some_and(|p| p.as_str() == name);
+                assert!(valid, "command `{}`", path.join(" "));
+                walk(sub, path);
+                path.pop();
+            }
+        }
+        walk(&Cli::command(), &mut Vec::new());
+        walk(&ProfilesCli::command(), &mut Vec::new());
+    }
+
+    /// A renamed command would silently end `first_query_succeeded`.
+    #[test]
+    fn telemetry_query_paths_are_real_commands() {
+        for path in telemetry::QUERY_PATHS {
+            let mut cmd = Cli::command();
+            for name in path.split(' ') {
+                cmd = cmd
+                    .find_subcommand(name)
+                    .unwrap_or_else(|| panic!("`{path}` is not a cx command"))
+                    .clone();
+            }
+            assert!(!cmd.has_subcommands(), "`{path}` is not a leaf command");
+        }
     }
 }

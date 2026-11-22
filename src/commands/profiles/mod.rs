@@ -10,6 +10,7 @@ use crate::config::{
 use crate::keyring_store;
 use crate::oauth;
 use crate::region::{region_from_url, RegionMatch};
+use crate::telemetry::event::{AuthMethod, OnboardingStep};
 
 // ── Option lists ──────────────────────────────────────────────────────────────
 
@@ -664,7 +665,8 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
         None => "default".to_string(),
     };
 
-    if profile_file(&name)?.exists() && !force {
+    let is_new_profile = !profile_file(&name)?.exists();
+    if !is_new_profile && !force {
         if interactive {
             let confirmed = Confirm::new(&format!("Reconfigure profile '{name}'?"))
                 .with_default(false)
@@ -672,6 +674,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
                 .prompt()?;
             if !confirmed {
                 println!("Cancelled.");
+                crate::telemetry::mark_cancelled();
                 return Ok(());
             }
         } else {
@@ -734,6 +737,14 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     }
 
     save_profile(&name, &profile)?;
+    // Not for a reconfigured profile: that is an edit, not a funnel step.
+    if is_new_profile {
+        crate::telemetry::onboarding(
+            OnboardingStep::ProfileAdded,
+            Some(profile.auth.into()),
+            Some(profile.credential_storage.into()),
+        );
+    }
 
     // On first profile creation, configure the global Olly setting and auto-set
     // this profile as default. Risky commands (iam/archive writes) stay allowed
@@ -1020,7 +1031,15 @@ async fn configure_oauth(
         signup,
         ..oauth::LoginOptions::default()
     };
-    let tokens = oauth::browser_login(&base_url, &client_id, login).await?;
+    let oauth_step = |step| crate::telemetry::onboarding(step, Some(AuthMethod::Oauth), None);
+    oauth_step(OnboardingStep::OauthStarted);
+    let tokens = oauth::browser_login(&base_url, &client_id, login).await;
+    oauth_step(if tokens.is_ok() {
+        OnboardingStep::OauthSucceeded
+    } else {
+        OnboardingStep::OauthFailed
+    });
+    let tokens = tokens?;
     println!("Login successful!");
 
     // Interactive runs (including `cx init`) ask. macOS preselects the Keychain;

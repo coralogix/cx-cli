@@ -189,6 +189,7 @@ impl CxClient {
     /// Validate the HTTP status of a response and read the body as text.
     async fn checked_text(&self, resp: reqwest::Response) -> Result<String> {
         let status = resp.status();
+        crate::telemetry::observe_status(status.as_u16());
         if status.is_success() {
             return Ok(resp.text().await?);
         }

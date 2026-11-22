@@ -57,8 +57,7 @@ pub async fn fetch_if_stale() {
         return;
     }
 
-    let mut state = VersionCheckCache::load();
-    if !state.check_is_stale() {
+    if !VersionCheckCache::load().check_is_stale() {
         return;
     }
 
@@ -70,23 +69,19 @@ pub async fn fetch_if_stale() {
         return;
     };
 
-    if let Some(v) = fetch_latest_binary(&client).await {
-        state.latest_binary = Some(v);
-    }
+    let latest = fetch_latest_binary(&client).await;
 
+    // Reload after the fetch: the command may have written other fields
+    // (installation id, telemetry state) meanwhile, and saving a copy loaded
+    // before the fetch would undo them.
+    let mut state = VersionCheckCache::load();
+    if latest.is_some() {
+        state.latest_binary = latest;
+    }
     // Always update the timestamp, even when fetches fail (e.g. GitHub is
     // unreachable).  This prevents hammering the API on every command during
     // an outage — we accept missing one 24 h window rather than spamming.
     state.last_checked_at = Some(Utc::now());
-    // Re-read the fields other commands may have written while we fetched
-    // (`cx skills install` records its version), so we don't overwrite them.
-    let latest_state = VersionCheckCache::load();
-    state.installation_id = latest_state.installation_id.or(state.installation_id);
-    state.skills_installed_for = latest_state.skills_installed_for;
-    state.skills_unknown_noticed_for = latest_state.skills_unknown_noticed_for;
-    state.skills_agents = latest_state.skills_agents;
-    state.skills_refresh_attempted_for = latest_state.skills_refresh_attempted_for;
-    state.skills_refresh_attempted_at = latest_state.skills_refresh_attempted_at;
     let _ = state.save();
 }
 
@@ -144,6 +139,7 @@ pub fn maybe_print_notice(output: OutputFormat) {
 
     if let Some(latest) = state.latest_binary.as_deref() {
         if is_newer(latest, current) {
+            crate::telemetry::update_notice(latest);
             let upgrade = install_method::binary_upgrade_command(&install_method::detect());
 
             if plain {
@@ -278,6 +274,9 @@ pub fn maybe_print_toon_meta() {
     if let Some(meta) = build_meta_block() {
         if let Ok(s) = serde_json::to_string(&json!({ "_meta": meta })) {
             println!("{s}");
+            if let Some(latest) = meta["update"]["binary"]["latest"].as_str() {
+                crate::telemetry::update_notice(latest);
+            }
         }
     }
 }
@@ -429,13 +428,22 @@ fn auto_refresh_allowed() -> bool {
 /// Start `cx skills auto-refresh` as a detached process with no terminal
 /// output, so the user's command neither waits for it nor shows its output.
 fn spawn_skills_refresh() -> bool {
+    // The user did not run this command: it records and sends no telemetry.
+    spawn_detached(&["skills", "auto-refresh"], &[("CX_TELEMETRY", "0")])
+}
+
+/// Start this `cx` binary again with `args` and the extra env vars `envs`,
+/// detached: no shared stdio, and it outlives this process. True when the
+/// process started.
+pub(crate) fn spawn_detached(args: &[&str], envs: &[(&str, &str)]) -> bool {
     use std::process::{Command, Stdio};
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
     let mut cmd = Command::new(exe);
-    cmd.args(["skills", "auto-refresh"])
+    cmd.args(args)
         .env("CX_NO_UPDATE_NOTIFIER", "1")
+        .envs(envs.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -452,8 +460,39 @@ fn spawn_skills_refresh() -> bool {
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        keep_own_stdio_from_children();
     }
     cmd.spawn().is_ok()
+}
+
+/// Stop child processes from inheriting this process's own stdin, stdout and
+/// stderr. Windows hands a child every inheritable handle of its parent, not
+/// only the three it is given as stdio. So a detached child would hold the
+/// pipe that a script or an agent reads this command's output from, and the
+/// reader would wait until that child exits. Children that are meant to share
+/// the stdio still do: std gives them an inheritable copy.
+#[cfg(windows)]
+fn keep_own_stdio_from_children() {
+    use std::os::windows::io::AsRawHandle;
+    extern "system" {
+        fn SetHandleInformation(handle: *mut std::ffi::c_void, mask: u32, flags: u32) -> i32;
+    }
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+    let handles = [
+        std::io::stdin().as_raw_handle(),
+        std::io::stdout().as_raw_handle(),
+        std::io::stderr().as_raw_handle(),
+    ];
+    for handle in handles {
+        if !handle.is_null() {
+            // SAFETY: `handle` is a std handle of this process, open for as
+            // long as the process runs, and the call only clears a flag on
+            // it. A failure (no console, an invalid handle) changes nothing.
+            unsafe {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
 }
 
 fn skills_status(state: &VersionCheckCache, current: &str) -> SkillsStatus {

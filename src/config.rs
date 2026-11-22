@@ -235,6 +235,11 @@ pub struct Config {
     #[serde(default)]
     pub no_console_link: bool,
 
+    /// Usage telemetry. `false` opts out, like `CX_TELEMETRY=0` or
+    /// `DO_NOT_TRACK=1`.
+    #[serde(default = "default_true")]
+    pub telemetry: bool,
+
     /// After a cx upgrade, refresh the global cx agent skills in the
     /// background (`cx skills install --global` with the recorded agents, or
     /// auto-detected agents when cx did not record the install). Only for
@@ -286,6 +291,7 @@ impl Default for Config {
             read_only: false,
             strict_fields_validation: false,
             no_console_link: false,
+            telemetry: true,
             auto_update_skills: true,
             managed_completions: vec![],
         }

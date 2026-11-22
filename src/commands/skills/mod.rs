@@ -717,12 +717,22 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(10));
         let grandchild = std::fs::read_to_string(&pid_file).unwrap();
         let _ = std::fs::remove_file(&pid_file);
-        let alive = Command::new("kill")
-            .args(["-0", grandchild.trim()])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success();
+        // The group is sent SIGKILL, but the orphaned grandchild stays visible
+        // to `kill -0` until init reaps it, which can take a moment on a busy
+        // CI runner. Poll briefly instead of checking once.
+        let gone_by = std::time::Instant::now() + Duration::from_secs(5);
+        let alive = loop {
+            let alive = Command::new("kill")
+                .args(["-0", grandchild.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            if !alive || std::time::Instant::now() >= gone_by {
+                break alive;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
         assert!(!alive, "the installer's child must be stopped too");
     }
 

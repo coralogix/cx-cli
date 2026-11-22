@@ -113,6 +113,16 @@ wrong" questions instead of pulling raw `data`:
   operation or call regressions. It is slower than the setup categories;
   request it in a call of its own (`--category deployment`) and leave it out of
   the others (`--exclude-category deployment`).
+- **Deployment insights do not check every service.** On the services list
+  (`insights`), only the most recently deployed services are compared:
+  currently up to 50 by default (within a 500 service x environment budget),
+  whose latest deployment is within the last 7 days and at least 1 hour old by
+  default; environments with very low traffic (under about 0.2 requests/s) are
+  skipped. `behaviorComparisonCoverage` (`compared` of `eligibleChanges`, the
+  "N of M eligible changes compared" line in text) shows how much was checked.
+  Never conclude a service did not regress from its absence in the list: it may
+  not have been compared. To check one service, use `entity-insights service
+  <entity-id> --category deployment`.
 - **Opt-in types**: `traffic-drop`, `mix-shift` and `dependency-regression` are
   returned only when named with `--type`, never by `--category deployment` or
   the default request.

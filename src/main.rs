@@ -3273,7 +3273,13 @@ Examples:
     },
     /// List insights over every entity of one or more types: setup gaps
     /// (missing spans, SLOs, profiling), catalog limits, and behavior changes
-    /// after each service's last deployment.
+    /// after recent deployments.
+    ///
+    /// Deployment insights currently compare only
+    /// the most recently deployed services (by default up to 50, deployed
+    /// within 7 days and at least 1 hour ago, skipping very low-traffic
+    /// environments); the "eligible changes compared" line shows how many.
+    /// Use `entity-insights` to check one service.
     #[command(after_help = "\
 Examples:
   cx service-catalog insights service
@@ -3446,7 +3452,8 @@ struct InsightSelectionArgs {
 
     /// Only this category: instrumentation, enablement, configuration,
     /// limits, or deployment. Repeatable. Deployment insights are slower;
-    /// request them separately from the others.
+    /// request them separately from the others. On `insights` they cover only
+    /// the most recently deployed services, not every service.
     #[arg(long = "category")]
     categories: Vec<String>,
 

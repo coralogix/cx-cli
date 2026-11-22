@@ -316,11 +316,19 @@ fn profiles_list_label_before_profiles_still_filters() {
     write_config(&home, "a");
 
     let output = cx(&home)
-        .args(["--label", "prod", "profiles", "list", "-o", "json"])
+        .args(["--label", "prod", "profiles", "list"])
         .output()
         .expect("failed to run cx");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("\"a\""), "stdout: {stdout}");
-    assert!(!stdout.contains("\"b\""), "stdout: {stdout}");
+    let rows: Vec<&str> = stdout
+        .lines()
+        .filter(|line| line.starts_with("a ") || line.starts_with("b "))
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "only profile a should be listed, stdout: {stdout}"
+    );
+    assert!(rows[0].starts_with("a "), "stdout: {stdout}");
 }

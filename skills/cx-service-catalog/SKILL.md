@@ -33,8 +33,8 @@ usage, etc.) via the v2 Service Catalog API.
 | `cx service-catalog data <entity-type>` | Aggregated column data across every entity of a type | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation`, `--limit`, `--sort-column`, `--sort-order` |
 | `cx service-catalog entity-data <entity-type> <entity-id>` | Column data for one named entity (drilldown) | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation` |
 | `cx service-catalog insights <entity-type>...` | Insights over every entity of the given types, plus company-wide limits | `--filter`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--breakdown`, `--top-values`, `--breakdown-sort` |
-| `cx service-catalog entity-insights <entity-type> <entity-id>` | Insights of one entity, with the environments each fired in | `--system` (databases), `--environment`, `--type`, `--category`, `--exclude-type`, `--exclude-category` |
-| `cx service-catalog insight-drilldown <insight-type> <entity-type>` | The entities behind one insight | `--scope`, `--filter`, `--environment-match`, `--sort`, `--sort-order`, `--page-size`, `--page-index`, `--name-search` |
+| `cx service-catalog entity-insights <entity-type> <entity-id>` | Insights of one entity, with the environments each fired in | `--system` (databases), `--environment`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--top-values`, `--breakdown-sort` |
+| `cx service-catalog insight-drilldown <insight-type> <entity-type>` | The entities behind one insight | `--scope`, `--filter`, `--environment-match`, `--sort`, `--sort-order`, `--page-size` (100 when omitted), `--page-index`, `--name-search` |
 | `cx service-catalog entity-insight-drilldown <insight-type> <entity-type> <entity-id>` | One entity's environments (or another `--dimension`) under one insight | `--scope`, `--dimension`, `--environment`, `--system` |
 
 - All commands are **read-only** and support `-o json` / `-o toon` for
@@ -105,18 +105,29 @@ wrong" questions instead of pulling raw `data`:
   metrics, no transactions), `enablement` (no spans, no CPU or memory
   profiling, missing runtime metrics, no recent ops events, no logs),
   `configuration` (no owner, no SLO, latency above the top histogram bucket),
-  and `limits` (catalog and cardinality caps, reported as company insights).
+  and `limits`: the catalog entity and identity caps are company insights
+  (`companyInsights`), the cardinality caps are per-service insights under
+  `perEntityType`.
 - **`deployment`**: a service before and after its last deployment or version
-  change - latency regression, error-rate jump, traffic drop, slower
-  dependencies. It is slower than the setup categories; request it in a call of
-  its own (`--category deployment`) and leave it out of the others
-  (`--exclude-category deployment`).
+  change - latency regression, error-rate jump, slower dependencies, and per
+  operation or call regressions. It is slower than the setup categories;
+  request it in a call of its own (`--category deployment`) and leave it out of
+  the others (`--exclude-category deployment`).
+- **Opt-in types**: `traffic-drop`, `mix-shift` and `dependency-regression` are
+  returned only when named with `--type`, never by `--category deployment` or
+  the default request.
+- An insight missing from a response did not fire only if its type was
+  computed: requested (opt-in types by `--type`) and served to the company.
+  `no-logs` is served only to companies with logs-by-environment enabled, so its
+  absence elsewhere does not mean every service sends logs.
 
 Insight types and categories take the short form (`no-slo`,
 `latency-regression`, `deployment`) or the full proto name. Text output shows
 each insight's **scope** (`request-kind=server`, `language=java`,
 `operation=GET /cart`, `database=postgresql/orders`, `external-services`) in
-the exact syntax `--scope` takes, so a drilldown is a copy-paste:
+the exact syntax `--scope` takes, so a drilldown is a copy-paste. The one
+exception: `language=` scopes (`missing-runtime-metrics`) are for
+`insight-drilldown` only; omit `--scope` for `entity-insight-drilldown`.
 
 ```bash
 # 1. What is wrong across services?
@@ -137,7 +148,13 @@ cx service-catalog entity-insight-drilldown operation-regression service <entity
 - `-o json` returns the API response as-is: camelCase fields and full proto
   enum names, with the before/after measurements of deployment insights
   (`overall`, `environmentMeasurements`, `serviceMeasurements`) and, for
-  `entity-insights`, the `behaviorSummary` of the compared windows.
+  `entity-insights`, the `behaviorSummary` of the compared windows. Numeric
+  fields equal to 0 are omitted (e.g. a measurement's `before: 0`): read an
+  absent number as 0.
+- Text output of `insights` ends with how many service changes the deployment
+  insights compared (`275 of 2000 eligible changes compared`); an
+  `insight-drilldown` page footer shows its rows within the total
+  (`101-200 of 977 entities`).
 - **Unchecked insights** (`uncheckedInsights`, "Not checked" in text) mean a
   source could not be read, not that the entity is fine.
 - Databases are identified by name and system: pass `--system`.

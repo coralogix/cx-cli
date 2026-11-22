@@ -858,7 +858,7 @@ async fn insight_drilldown_posts_scope_sort_and_pagination() {
         Some("severity"),
         Some("desc"),
         Some(1),
-        Some(20),
+        20,
         Some("check"),
         OutputFormat::Text,
     )
@@ -881,7 +881,7 @@ async fn insight_drilldown_rejects_entity_only_scope_before_any_request() {
         None,
         None,
         None,
-        None,
+        100,
         None,
         OutputFormat::Json,
     )

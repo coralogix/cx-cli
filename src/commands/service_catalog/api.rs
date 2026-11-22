@@ -10,6 +10,8 @@ use crate::error::Result;
 
 const BASE_PATH: &str = "/v2/entities";
 
+pub const ENTITY_TYPE_PREFIX: &str = "ENTITY_TYPE_";
+
 /// Full proto enum names accepted by the service-catalog v2 HTTP API, in the
 /// same order as `com.coralogix.catalog.v2.EntityType`. `ENTITY_TYPE_UNSPECIFIED`
 /// is deliberately excluded - it is a protobuf zero-value, never a meaningful
@@ -31,7 +33,7 @@ const VALID_ENTITY_TYPES: &[&str] = &[
 /// anything else (including the short forms), so this must run before the id
 /// ever reaches a URL.
 pub fn normalize_entity_type(input: &str) -> AnyResult<String> {
-    normalize_proto_enum(input, "ENTITY_TYPE_", VALID_ENTITY_TYPES, "entity type")
+    normalize_proto_enum(input, ENTITY_TYPE_PREFIX, VALID_ENTITY_TYPES, "entity type")
 }
 
 /// Normalizes a short (`latency-regression`) or full (`INSIGHT_TYPE_LATENCY_REGRESSION`)
@@ -393,7 +395,8 @@ pub struct EntitiesInsightDrilldownParams<'p> {
     pub sort: Option<&'p str>,
     pub sort_order: Option<&'p str>,
     pub page_index: Option<i32>,
-    pub page_size: Option<i32>,
+    /// Always sent: without `pagination` the backend returns every entity.
+    pub page_size: i32,
     pub name_search: Option<&'p str>,
 }
 
@@ -427,11 +430,20 @@ fn insert_if_some<T: Into<Value>>(body: &mut Value, key: &str, value: Option<T>)
     }
 }
 
-fn insert_selection(body: &mut Value, selection: &InsightSelection) {
+/// The fields both insights lists share: which insights, and how each
+/// breakdown is cut.
+fn insert_selection_and_breakdown_options(
+    body: &mut Value,
+    selection: &InsightSelection,
+    top_values_per_breakdown: Option<i32>,
+    breakdown_sort: Option<&str>,
+) {
     body["types"] = json!(selection.types);
     body["categories"] = json!(selection.categories);
     body["excludedTypes"] = json!(selection.excluded_types);
     body["excludedCategories"] = json!(selection.excluded_categories);
+    insert_if_some(body, "topValuesPerBreakdown", top_values_per_breakdown);
+    insert_if_some(body, "breakdownSort", breakdown_sort);
 }
 
 fn insert_scope(body: &mut Value, scope: Option<&InsightScope>) {
@@ -446,13 +458,12 @@ fn build_entities_insights_body(params: &EntitiesInsightsParams<'_>) -> Value {
         "filters": filters_to_json(params.filters),
         "breakdowns": params.breakdowns,
     });
-    insert_selection(&mut body, params.selection);
-    insert_if_some(
+    insert_selection_and_breakdown_options(
         &mut body,
-        "topValuesPerBreakdown",
+        params.selection,
         params.top_values_per_breakdown,
+        params.breakdown_sort,
     );
-    insert_if_some(&mut body, "breakdownSort", params.breakdown_sort);
     body
 }
 
@@ -461,13 +472,12 @@ fn build_entity_insights_body(params: &EntityInsightsParams<'_>) -> Value {
         "entity": entity_identity_to_json(&params.entity),
         "environments": params.environments,
     });
-    insert_selection(&mut body, params.selection);
-    insert_if_some(
+    insert_selection_and_breakdown_options(
         &mut body,
-        "topValuesPerBreakdown",
+        params.selection,
         params.top_values_per_breakdown,
+        params.breakdown_sort,
     );
-    insert_if_some(&mut body, "breakdownSort", params.breakdown_sort);
     body
 }
 
@@ -482,12 +492,9 @@ fn build_entities_insight_drilldown_body(params: &EntitiesInsightDrilldownParams
     insert_if_some(&mut body, "sort", params.sort);
     insert_if_some(&mut body, "sortOrder", params.sort_order);
     insert_if_some(&mut body, "nameSearch", params.name_search);
-    if params.page_index.is_some() || params.page_size.is_some() {
-        let mut pagination = json!({});
-        insert_if_some(&mut pagination, "pageIndex", params.page_index);
-        insert_if_some(&mut pagination, "pageSize", params.page_size);
-        body["pagination"] = pagination;
-    }
+    let mut pagination = json!({ "pageSize": params.page_size });
+    insert_if_some(&mut pagination, "pageIndex", params.page_index);
+    body["pagination"] = pagination;
     body
 }
 
@@ -557,9 +564,6 @@ impl<'a> ServiceCatalogApi<'a> {
         );
         self.client.post(&path, &build_data_body(params)).await
     }
-
-    // The insights responses are nested `oneof`s that the CLI renders as-is
-    // for json/toon and summarizes for text, so they stay raw JSON here.
 
     /// `GetEntitiesInsights` - insights over the filtered population of one or more entity types.
     pub async fn entities_insights(&self, params: &EntitiesInsightsParams<'_>) -> Result<Value> {
@@ -997,7 +1001,7 @@ mod tests {
             sort: Some("INSIGHT_DRILLDOWN_SORT_SEVERITY"),
             sort_order: None,
             page_index: None,
-            page_size: Some(20),
+            page_size: 20,
             name_search: Some("check"),
         });
         assert_eq!(
@@ -1015,7 +1019,7 @@ mod tests {
     }
 
     #[test]
-    fn build_entities_insight_drilldown_body_omits_pagination_when_unset() {
+    fn build_entities_insight_drilldown_body_always_sends_page_size() {
         let body = build_entities_insight_drilldown_body(&EntitiesInsightDrilldownParams {
             insight_type: "INSIGHT_TYPE_NO_SLO",
             entity_type: "ENTITY_TYPE_SERVICE",
@@ -1024,11 +1028,14 @@ mod tests {
             environment_match: None,
             sort: None,
             sort_order: None,
-            page_index: None,
-            page_size: None,
+            page_index: Some(2),
+            page_size: 100,
             name_search: None,
         });
-        assert!(body.get("pagination").is_none());
+        assert_eq!(
+            body["pagination"],
+            json!({ "pageSize": 100, "pageIndex": 2 })
+        );
     }
 
     #[test]

@@ -12,11 +12,12 @@ use api::{
     DataParams, EntitiesDataResult, EntitiesInsightDrilldownParams, EntitiesInsightsParams,
     EntityInsightDrilldownParams, EntityInsightsParams, EntityItem, EntityRef, EntityTypeInfo,
     EntityTypeMetadata, InsightScope, InsightSelection, ServiceCatalogApi, TableRow,
-    ENVIRONMENT_MATCH_PREFIX, INSIGHT_BREAKDOWN_SORT_PREFIX, INSIGHT_CATEGORY_PREFIX,
-    INSIGHT_DIMENSION_PREFIX, INSIGHT_DRILLDOWN_SORT_PREFIX, INSIGHT_TYPE_PREFIX,
-    INSIGHT_UNCHECKED_REASON_PREFIX, REQUEST_KIND_PREFIX, VALID_ENVIRONMENT_MATCHES,
-    VALID_INSIGHT_BREAKDOWN_SORTS, VALID_INSIGHT_CATEGORIES, VALID_INSIGHT_DIMENSIONS,
-    VALID_INSIGHT_DRILLDOWN_SORTS, VALID_INSIGHT_TYPES, VALID_REQUEST_KINDS,
+    ENTITY_TYPE_PREFIX, ENVIRONMENT_MATCH_PREFIX, INSIGHT_BREAKDOWN_SORT_PREFIX,
+    INSIGHT_CATEGORY_PREFIX, INSIGHT_DIMENSION_PREFIX, INSIGHT_DRILLDOWN_SORT_PREFIX,
+    INSIGHT_TYPE_PREFIX, INSIGHT_UNCHECKED_REASON_PREFIX, REQUEST_KIND_PREFIX,
+    VALID_ENVIRONMENT_MATCHES, VALID_INSIGHT_BREAKDOWN_SORTS, VALID_INSIGHT_CATEGORIES,
+    VALID_INSIGHT_DIMENSIONS, VALID_INSIGHT_DRILLDOWN_SORTS, VALID_INSIGHT_TYPES,
+    VALID_REQUEST_KINDS,
 };
 
 use crate::config::OutputFormat;
@@ -457,7 +458,7 @@ pub async fn run_insight_drilldown(
     sort: Option<&str>,
     sort_order: Option<&str>,
     page_index: Option<i32>,
-    page_size: Option<i32>,
+    page_size: i32,
     name_search: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
@@ -516,12 +517,10 @@ pub async fn run_insight_drilldown(
     .await;
 
     let results = report_errors_and_collect_successes(per_profile)?;
-    render_insight_results(
-        results,
-        targets.len() > 1,
-        output,
-        print_entities_insight_drilldown,
-    )
+    let first_row = i64::from(page_index.unwrap_or(0)) * i64::from(page_size);
+    render_insight_results(results, targets.len() > 1, output, |response| {
+        print_entities_insight_drilldown(response, first_row)
+    })
 }
 
 /// `cx service-catalog entity-insight-drilldown <insight-type> <entity-type> <entity-id>` -
@@ -1073,9 +1072,13 @@ fn parse_scope(raw: &str, allowed: &[&str]) -> Result<InsightScope> {
             }),
         },
         "database" => {
-            let Some((db_system, db_namespace)) = required_value()?.split_once('/') else {
-                bail!("invalid --scope '{raw}': expected database=<db-system>/<db-namespace>");
-            };
+            let (db_system, db_namespace) = required_value()?
+                .split_once('/')
+                .map(|(system, namespace)| (system.trim(), namespace.trim()))
+                .filter(|(system, namespace)| !system.is_empty() && !namespace.is_empty())
+                .ok_or_else(|| {
+                    anyhow!("invalid --scope '{raw}': expected database=<db-system>/<db-namespace>")
+                })?;
             InsightScope {
                 field: "dependency",
                 value: json!({ "database": { "dbSystem": db_system, "dbNamespace": db_namespace } }),
@@ -1097,15 +1100,16 @@ fn parse_scope(raw: &str, allowed: &[&str]) -> Result<InsightScope> {
 
 // ── Insights rendering ───────────────────────────────────────────────────────────
 //
-// json/toon output is the API response as-is (camelCase, proto enum names):
-// the insight payloads are nested `oneof`s with per-environment measurements
-// that a flat row would lose. Text output summarizes each response as tables.
+// The insights responses stay raw JSON from `api.rs` on: json/toon output is
+// the API response as-is (camelCase, proto enum names), since the insight
+// payloads are nested `oneof`s with per-environment measurements that a flat
+// row would lose. Text output summarizes each response as tables.
 
 fn render_insight_results(
     results: Vec<(String, Value)>,
     include_profile: bool,
     output: OutputFormat,
-    print_text: fn(&Value),
+    print_text: impl Fn(&Value),
 ) -> Result<()> {
     let tag_profiles = |results: Vec<(String, Value)>| -> Vec<Value> {
         results
@@ -1136,8 +1140,11 @@ fn render_insight_results(
 fn print_entities_insights(response: &Value) {
     let mut insight_rows: Vec<Vec<String>> = Vec::new();
     let mut unchecked_rows: Vec<Vec<String>> = Vec::new();
+    let mut coverage_lines: Vec<String> = Vec::new();
     for per_entity_type in json_array(response, "perEntityType") {
-        let entity_type = short_enum_name(json_str(per_entity_type, "entityType"), "ENTITY_TYPE_");
+        let entity_type =
+            short_enum_name(json_str(per_entity_type, "entityType"), ENTITY_TYPE_PREFIX);
+        coverage_lines.extend(format_behavior_coverage(&entity_type, per_entity_type));
         for insight in json_array(per_entity_type, "insights") {
             insight_rows.push(listed_insight_row(&entity_type, insight));
         }
@@ -1167,6 +1174,9 @@ fn print_entities_insights(response: &Value) {
             insight_rows,
             false,
         );
+    }
+    for line in coverage_lines {
+        println!("{}", line.dimmed());
     }
     print_unchecked_insights(&["Entity Type", "Type", "Reason"], unchecked_rows);
 }
@@ -1200,7 +1210,8 @@ fn print_entity_insights(response: &Value) {
     print_unchecked_insights(&["Type", "Reason"], unchecked_rows);
 }
 
-fn print_entities_insight_drilldown(response: &Value) {
+/// `first_row` is the zero-based offset of the requested page.
+fn print_entities_insight_drilldown(response: &Value, first_row: i64) {
     print_drilldown_title(response);
     let entity_rows: Vec<Vec<String>> = json_array(response, "entities")
         .map(|entity| {
@@ -1222,7 +1233,7 @@ fn print_entities_insight_drilldown(response: &Value) {
     if entity_rows.is_empty() {
         render::print_no_results("No affected entities found.");
     } else {
-        let shown = entity_rows.len();
+        let shown = entity_rows.len() as i64;
         render::render_table(
             &[
                 "Name",
@@ -1236,13 +1247,29 @@ fn print_entities_insight_drilldown(response: &Value) {
         );
         println!(
             "{}",
-            format!(
-                "{shown} of {} entities",
-                json_i64(response, "totalEntities")
-            )
-            .dimmed()
+            format_page_range(first_row, shown, json_i64(response, "totalEntities")).dimmed()
         );
     }
+}
+
+/// The rows on screen within the whole result, e.g. `201-300 of 977 entities`.
+fn format_page_range(first_row: i64, shown: i64, total: i64) -> String {
+    format!(
+        "{}-{} of {total} entities",
+        first_row + 1,
+        first_row + shown
+    )
+}
+
+/// How many service changes the deployment insights compared, when they were
+/// requested: without it, no deployment insight would read as nothing regressed.
+fn format_behavior_coverage(entity_type: &str, per_entity_type: &Value) -> Option<String> {
+    let coverage = per_entity_type.get("behaviorComparisonCoverage")?;
+    Some(format!(
+        "{entity_type}: {} of {} eligible changes compared",
+        json_i64(coverage, "compared"),
+        json_i64(coverage, "eligibleChanges")
+    ))
 }
 
 fn print_entity_insight_drilldown(response: &Value) {
@@ -1860,6 +1887,14 @@ mod tests {
     fn parse_scope_rejects_missing_or_malformed_values() {
         assert!(parse_scope("operation", ENTITY_DRILLDOWN_SCOPES).is_err());
         assert!(parse_scope("database=postgresql", ENTITY_DRILLDOWN_SCOPES).is_err());
+        for empty_half in ["database=/orders", "database=postgresql/", "database= / "] {
+            let err = parse_scope(empty_half, ENTITY_DRILLDOWN_SCOPES).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("expected database=<db-system>/<db-namespace>"),
+                "{empty_half}: {err}"
+            );
+        }
         assert!(parse_scope("request-kind=client", ENTITY_DRILLDOWN_SCOPES).is_err());
         assert!(parse_scope("external-services=x", ENTITY_DRILLDOWN_SCOPES).is_err());
     }
@@ -1912,6 +1947,31 @@ mod tests {
             "9500/10000 cap (95.0%)"
         );
         assert_eq!(format_insight_affected(&json!({})), "-");
+    }
+
+    #[test]
+    fn format_page_range_counts_from_the_page_offset() {
+        assert_eq!(format_page_range(0, 3, 77), "1-3 of 77 entities");
+        assert_eq!(format_page_range(200, 100, 977), "201-300 of 977 entities");
+    }
+
+    #[test]
+    fn format_behavior_coverage_only_when_deployment_insights_ran() {
+        assert_eq!(
+            format_behavior_coverage(
+                "service",
+                &json!({ "behaviorComparisonCoverage": { "eligibleChanges": 2000, "compared": 275 } })
+            )
+            .as_deref(),
+            Some("service: 275 of 2000 eligible changes compared")
+        );
+        // Proto JSON omits zero counts.
+        assert_eq!(
+            format_behavior_coverage("service", &json!({ "behaviorComparisonCoverage": {} }))
+                .as_deref(),
+            Some("service: 0 of 0 eligible changes compared")
+        );
+        assert_eq!(format_behavior_coverage("service", &json!({})), None);
     }
 
     #[test]

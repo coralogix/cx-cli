@@ -120,7 +120,12 @@ fn service_catalog_insights() {
         "-o",
         "json",
     ]);
-    harness::assert_object_with_keys(&v, &[]);
+    harness::assert_object_with_keys(&v, &["perEntityType"]);
+    // One entity type requested, one entry back.
+    assert_eq!(
+        v["perEntityType"][0]["entityType"], "ENTITY_TYPE_SERVICE",
+        "{v}"
+    );
 }
 
 #[test]
@@ -162,6 +167,7 @@ fn service_catalog_insight_drilldown() {
         "-o",
         "json",
     ]);
+    harness::assert_object_with_keys(&listed, &["perEntityType"]);
     let Some(insight_type) = first_unscoped_insight_type(&listed["perEntityType"][0]["insights"])
     else {
         eprintln!(

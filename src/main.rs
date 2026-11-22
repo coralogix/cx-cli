@@ -3385,9 +3385,9 @@ Examples:
         #[arg(long, value_parser = clap::value_parser!(i32).range(0..))]
         page_index: Option<i32>,
 
-        /// Entities per page (1-200).
-        #[arg(long, value_parser = clap::value_parser!(i32).range(1..=200))]
-        page_size: Option<i32>,
+        /// Entities per page (1-200; 100 when omitted).
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(i32).range(1..=200))]
+        page_size: i32,
 
         /// Case-insensitive substring the entity name must contain.
         #[arg(long)]
@@ -3428,7 +3428,8 @@ Examples:
         /// The insight's scope, as `entity-insights` prints it:
         /// `operation=<span name>`, `request-kind=server|consumer`,
         /// `database=<db-system>/<db-namespace>`, or `external-services`.
-        /// Required for deployment insights.
+        /// Required for deployment insights. `language=` scopes are for
+        /// `insight-drilldown` only; omit `--scope` here for those.
         #[arg(long)]
         scope: Option<String>,
     },
@@ -3438,6 +3439,8 @@ Examples:
 #[derive(Args)]
 struct InsightSelectionArgs {
     /// Only this insight type, e.g. `no-slo` or `latency-regression`. Repeatable.
+    /// `traffic-drop`, `mix-shift` and `dependency-regression` are opt-in:
+    /// returned only when named here, never for `--category deployment`.
     #[arg(long = "type")]
     types: Vec<String>,
 

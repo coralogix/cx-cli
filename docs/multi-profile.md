@@ -56,7 +56,7 @@ cx metrics query 'up' -p us-prod -p eu-prod
 ### Selecting profiles by label
 
 Profiles can carry labels. Tag an existing profile with
-`cx profiles label prod-eu --add prod,region:eu1`, or set them at creation with
+`cx profiles labels add prod-eu --label prod,region:eu1`, or set them at creation with
 `cx profiles add prod-eu --label prod,region:eu1`.
 The global `--label` flag runs the command against **every profile that has one
 of the given labels**, so a group of teams becomes one command instead of a
@@ -86,8 +86,9 @@ cx metrics query 'up' --label tier:gold --label tier:platinum
   ```
 
 - `cx profiles list --label <label>` shows which profiles a label would select.
-- `cx profiles label <name>` shows one profile's labels; `--add`, `--remove`,
-  `--set` and `--clear` change them without touching credentials.
+- `cx profiles labels get <name>` shows one profile's labels. `add`, `remove`,
+  `set` and `clear` change them in place; labels go behind `--label`, for
+  example `cx profiles labels add <name> --label prod,eu`.
 
 Selected profiles fan out exactly like repeated `-p`: results are tagged, limits
 apply per profile, and the `--api-key` / `--region` restriction below applies

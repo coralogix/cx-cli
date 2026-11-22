@@ -414,29 +414,125 @@ async fn read_across_several_profiles_is_quiet() {
     assert!(!stderr.contains("Running '"), "stderr: {stderr}");
 }
 
+#[test]
+fn empty_label_is_an_error_not_the_default_profile() {
+    let home = temp_home();
+    write_profile(
+        &home,
+        "one",
+        "k",
+        "http://127.0.0.1:9",
+        r#"labels = ["prod"]"#,
+    );
+    write_config(&home, "one");
+
+    for value in ["", ","] {
+        let output = cx(&home)
+            .args(["alerts", "list", "--label", value])
+            .output()
+            .expect("failed to run cx");
+        assert!(!output.status.success(), "--label {value:?} must fail");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("--label needs at least one non-empty label"),
+            "stderr: {stderr}"
+        );
+    }
+}
+
+// ── a global --label before `profiles` is merged or refused, never dropped ───
+
+#[test]
+fn global_label_before_profiles_add_is_refused() {
+    // Clap would overwrite the leading `--label prod` with the trailing
+    // `--label eu`, so refuse instead of storing a partial list.
+    let home = temp_home();
+    let output = cx(&home)
+        .args([
+            "--label",
+            "prod",
+            "profiles",
+            "add",
+            "team-x",
+            "--region",
+            "eu1",
+            "--api-key",
+            "k",
+            "--label",
+            "eu",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cx profiles add <name> --label <label>"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !home.join(".cx/profiles/team-x.toml").exists(),
+        "no profile may be written"
+    );
+}
+
+#[test]
+fn global_label_before_profiles_labels_is_refused() {
+    let home = temp_home();
+    write_profile(
+        &home,
+        "one",
+        "k",
+        "http://127.0.0.1:9",
+        r#"labels = ["prod"]"#,
+    );
+
+    let output = cx(&home)
+        .args(["--label", "prod", "profiles", "labels", "get", "one"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("does not apply to `cx profiles` itself"),
+        "stderr: {stderr}"
+    );
+}
+
 // ── `profiles list` keeps its own --label, in both parse paths ───────────────
 
 #[test]
-fn profiles_list_label_before_profiles_still_filters() {
+fn label_before_profiles_list_is_refused_with_the_fix() {
     let home = temp_home();
-    write_profile(&home, "a", "k", "eu1", r#"labels = ["prod"]"#);
-    write_profile(&home, "b", "k", "eu1", r#"labels = ["staging"]"#);
-    write_config(&home, "a");
+    write_profile(
+        &home,
+        "a",
+        "k",
+        "http://127.0.0.1:9",
+        r#"labels = ["prod"]"#,
+    );
 
     let output = cx(&home)
         .args(["--label", "prod", "profiles", "list"])
         .output()
         .expect("failed to run cx");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let rows: Vec<&str> = stdout
-        .lines()
-        .filter(|line| line.starts_with("a ") || line.starts_with("b "))
-        .collect();
-    assert_eq!(
-        rows.len(),
-        1,
-        "only profile a should be listed, stdout: {stdout}"
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cx profiles list --label <label>"),
+        "stderr: {stderr}"
     );
-    assert!(rows[0].starts_with("a "), "stdout: {stdout}");
+
+    // The same filter after the subcommand works, in both parse paths.
+    for args in [
+        vec!["profiles", "list", "--label", "prod"],
+        vec!["--read-only", "profiles", "list", "--label", "prod"],
+    ] {
+        let output = cx(&home).args(&args).output().expect("failed to run cx");
+        assert!(output.status.success(), "{args:?}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.lines().any(|l| l.starts_with("a ")),
+            "stdout: {stdout}"
+        );
+    }
 }

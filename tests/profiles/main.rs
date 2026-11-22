@@ -1217,7 +1217,7 @@ fn refresh_leaves_labeled_api_key_profile_unchanged() {
     );
 }
 
-// ── `profiles label` ─────────────────────────────────────────────────────────
+// ── `profiles labels` ────────────────────────────────────────────────────────
 
 fn run_ok(home: &std::path::Path, args: &[&str]) -> String {
     let output = cx(home).args(args).output().expect("failed to run cx");
@@ -1243,7 +1243,10 @@ fn label_add_appends_without_touching_credentials() {
     let tmp = temp_home();
     write_profile(&tmp, "team-a", API_KEY_PROFILE);
 
-    let stdout = run_ok(&tmp, &["profiles", "label", "team-a", "--add", "kuku"]);
+    let stdout = run_ok(
+        &tmp,
+        &["profiles", "labels", "add", "team-a", "--label", "kuku"],
+    );
     assert!(
         stdout.contains("Profile 'team-a' labels: prod,staging,kuku"),
         "stdout: {stdout}"
@@ -1271,7 +1274,14 @@ fn label_remove_drops_one_and_ignores_missing() {
 
     let stdout = run_ok(
         &tmp,
-        &["profiles", "label", "team-a", "--remove", "staging,missing"],
+        &[
+            "profiles",
+            "labels",
+            "remove",
+            "team-a",
+            "--label",
+            "staging,missing",
+        ],
     );
     assert!(
         stdout.contains("Profile 'team-a' labels: prod\n"),
@@ -1287,7 +1297,9 @@ fn label_set_replaces_and_clear_empties() {
     write_profile(&tmp, "team-a", API_KEY_PROFILE);
 
     cx(&tmp)
-        .args(["profiles", "label", "team-a", "--set", "a,b", "--set", "c"])
+        .args([
+            "profiles", "labels", "set", "team-a", "--label", "a,b", "--label", "c",
+        ])
         .assert()
         .success();
     assert_eq!(
@@ -1295,7 +1307,7 @@ fn label_set_replaces_and_clear_empties() {
         vec!["a".to_string(), "b".to_string(), "c".to_string()]
     );
 
-    let stdout = run_ok(&tmp, &["profiles", "label", "team-a", "--clear"]);
+    let stdout = run_ok(&tmp, &["profiles", "labels", "clear", "team-a"]);
     assert!(
         stdout.contains("Profile 'team-a' has no labels."),
         "stdout: {stdout}"
@@ -1308,12 +1320,12 @@ fn label_set_replaces_and_clear_empties() {
 }
 
 #[test]
-fn label_without_flags_only_shows() {
+fn labels_get_only_shows() {
     let tmp = temp_home();
     write_profile(&tmp, "team-a", API_KEY_PROFILE);
     let before = load_profile_toml(&tmp, "team-a");
 
-    let stdout = run_ok(&tmp, &["profiles", "label", "team-a"]);
+    let stdout = run_ok(&tmp, &["profiles", "labels", "get", "team-a"]);
     assert!(
         stdout.contains("Profile 'team-a' labels: prod,staging"),
         "stdout: {stdout}"
@@ -1336,7 +1348,7 @@ fn label_migrates_legacy_single_label_key() {
     );
 
     cx(&tmp)
-        .args(["profiles", "label", "old", "--add", "kuku"])
+        .args(["profiles", "labels", "add", "old", "--label", "kuku"])
         .assert()
         .success();
 
@@ -1352,17 +1364,20 @@ fn label_migrates_legacy_single_label_key() {
 }
 
 #[test]
-fn label_rejects_set_with_add_and_unknown_profile() {
+fn labels_verbs_require_a_label_and_a_known_profile() {
     let tmp = temp_home();
     write_profile(&tmp, "team-a", API_KEY_PROFILE);
 
-    let stderr = run_err(
-        &tmp,
-        &["profiles", "label", "team-a", "--set", "a", "--add", "b"],
-    );
-    assert!(stderr.contains("cannot be used with"), "stderr: {stderr}");
+    // Every mutating verb except `clear` needs at least one --label.
+    for verb in ["add", "remove", "set"] {
+        let stderr = run_err(&tmp, &["profiles", "labels", verb, "team-a"]);
+        assert!(
+            stderr.contains("--label"),
+            "{verb} without --label should fail with a hint, stderr: {stderr}"
+        );
+    }
 
-    let stderr = run_err(&tmp, &["profiles", "label", "nope", "--add", "a"]);
+    let stderr = run_err(&tmp, &["profiles", "labels", "add", "nope", "--label", "a"]);
     assert!(
         stderr.contains("Profile 'nope' not found"),
         "stderr: {stderr}"

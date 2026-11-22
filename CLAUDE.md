@@ -76,7 +76,7 @@ Agent:
   schema             Output the full command tree as JSON for agent consumption
 
 Local:
-  profiles           Manage profiles (list, add, label, delete, set-default)
+  profiles           Manage profiles (list, add, labels, delete, set-default)
   skills             Install or update the cx agent skills for coding agents
   cleanup            Remove stale temp files
 ```

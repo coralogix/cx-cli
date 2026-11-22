@@ -976,9 +976,9 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
     Ok(())
 }
 
-// ── `profiles label` ──────────────────────────────────────────────────────────
+// ── `profiles labels` ──────────────────────────────────────────────────────────
 
-/// The edit requested by `cx profiles label`. All lists are raw flag values
+/// The edit requested by `cx profiles labels`. All lists are raw flag values
 /// (comma-separated values are split here). Clap guarantees that `set` and
 /// `clear` are not combined with each other or with `add` / `remove`.
 #[derive(Debug, Default)]

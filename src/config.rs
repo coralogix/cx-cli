@@ -801,7 +801,7 @@ fn migrate_profile_with(
 }
 
 fn store_profile_secrets(name: &str, profile: &Profile) -> Result<()> {
-    match profile.auth {
+    let stored = match profile.auth {
         AuthKind::ApiKey => match profile.api_key.as_deref() {
             Some(api_key) => keyring_store::store_secret(name, "api_key", api_key),
             None => Ok(()),
@@ -810,7 +810,10 @@ fn store_profile_secrets(name: &str, profile: &Profile) -> Result<()> {
             Some(tokens) => oauth::store_stored_tokens_keyring(name, tokens),
             None => Ok(()),
         },
-    }
+    };
+    // Clear any partial keyring writes from a failed multi-key store. The
+    // profile file still says `file`, so `cx profiles delete` would not.
+    stored.inspect_err(|_| keyring_store::delete_profile(name))
 }
 
 /// Browser re-login is for a person at a terminal. Stdout must be a terminal

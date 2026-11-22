@@ -306,6 +306,33 @@ async fn label_on_the_command_line_ignores_env_api_key() {
         .success();
 }
 
+#[tokio::test]
+async fn label_on_the_command_line_ignores_env_profile() {
+    let prod = MockServer::start().await;
+    let dev = MockServer::start().await;
+    // Only the labelled profile may be queried; CX_PROFILE=dev must not be
+    // added as an extra target.
+    alerts_mock(&prod, "key-prod", 1).await;
+    alerts_mock(&dev, "key-dev", 0).await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "prod",
+        "key-prod",
+        &prod.uri(),
+        r#"labels = ["prod"]"#,
+    );
+    write_profile(&home, "dev", "key-dev", &dev.uri(), r#"labels = ["dev"]"#);
+    write_config(&home, "dev");
+
+    cx(&home)
+        .env("CX_PROFILE", "dev")
+        .args(["alerts", "list", "--label", "prod"])
+        .assert()
+        .success();
+}
+
 // ── `profiles list` keeps its own --label, in both parse paths ───────────────
 
 #[test]

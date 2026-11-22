@@ -70,6 +70,8 @@ cx metrics query 'up' --label tier:gold --label tier:platinum
 
 - Repeat the flag or pass a comma-separated list. A profile is selected when it
   has **any** of the labels (exact, case-sensitive match).
+- A `--label` on the command line ignores `CX_PROFILE` from the environment, so
+  the env profile is not added as an extra target. An explicit `-p` still combines.
 - `--label` and `-p` combine: explicit profiles come first, then the label
   matches, with no profile run twice.
 - A label that matches no profile is an error, not a silent fallback to the

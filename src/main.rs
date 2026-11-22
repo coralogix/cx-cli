@@ -3884,17 +3884,29 @@ async fn main() -> Result<()> {
     };
 
     // Turn --profile and --label into the list of profile names to run
-    // against. Empty means "the default profile".
-    let selected_profiles =
-        match config::select_profile_names(&cli.profile, &config::parse_label_args(&cli.label)) {
-            Ok(names) => names,
-            Err(error) => {
-                // The message already names the fix (`cx profiles list`, `cx
-                // profiles add --label`); exit here so it is not printed twice.
-                eprintln!("{error}");
-                std::process::exit(1);
-            }
-        };
+    // against. Empty means "the default profile". A `--label` on the command
+    // line chooses the targets by itself: a CX_PROFILE from the environment
+    // must not sneak in as an extra target, the same way it must not override
+    // an explicit `-p`.
+    let label_from_cli = matches.value_source("label") == Some(ValueSource::CommandLine);
+    let profile_from_env = matches.value_source("profile") == Some(ValueSource::EnvVariable);
+    let explicit_profiles: &[String] = if label_from_cli && profile_from_env {
+        &[]
+    } else {
+        &cli.profile
+    };
+    let selected_profiles = match config::select_profile_names(
+        explicit_profiles,
+        &config::parse_label_args(&cli.label),
+    ) {
+        Ok(names) => names,
+        Err(error) => {
+            // The message already names the fix (`cx profiles list`, `cx
+            // profiles add --label`); exit here so it is not printed twice.
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    };
 
     // Reject --api-key / --region when more than one profile is selected,
     // because it would be ambiguous which profile the override targets.

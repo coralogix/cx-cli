@@ -435,6 +435,13 @@ pub fn select_profile_names(profiles: &[String], labels: &[String]) -> Result<Ve
             no_profiles_for_labels(labels)
         );
     }
+    // Any match wins, so a label that matches nothing does not stop the
+    // command. Still say so: a typo next to a good label is easy to miss.
+    for label in labels {
+        if !entries.iter().any(|(_, have)| have.contains(label)) {
+            eprintln!("warning: no profile has label '{label}'");
+        }
+    }
     for name in matched {
         if !selected.contains(&name) {
             selected.push(name);

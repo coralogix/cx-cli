@@ -564,6 +564,37 @@ async fn label_scan_warns_about_a_profile_that_does_not_load() {
     );
 }
 
+#[tokio::test]
+async fn label_that_matches_nothing_next_to_one_that_does_is_warned_about() {
+    let server = MockServer::start().await;
+    alerts_mock(&server, "key-a", 1).await;
+
+    let home = temp_home();
+    write_profile(
+        &home,
+        "prod-a",
+        "key-a",
+        &server.uri(),
+        r#"labels = ["haya"]"#,
+    );
+    write_config(&home, "prod-a");
+
+    let output = cx(&home)
+        .args(["alerts", "list", "--label", "haya", "--label", "menachem"])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(
+        stderr.contains("warning: no profile has label 'menachem'"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("no profile has label 'haya'"),
+        "the matching label must not be warned about, stderr: {stderr}"
+    );
+}
+
 // ── `profiles list` keeps its own --label, in both parse paths ───────────────
 
 #[test]

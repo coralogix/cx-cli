@@ -9,6 +9,9 @@
 # and fails the job unless it says PASS. The job then labels the PR with the
 # human-review tier, like the "baz approved" label.
 #
+# One summary comment per PR: a run edits the comment of the previous run instead
+# of adding another, so the PR shows one verdict, for the commit the comment names.
+#
 # pull_request_target: GitHub runs this file, the skill, and the footprint script
 # from master, never from the PR, so a PR cannot change the review that judges it.
 # The PR code is never checked out or run. It is fetched as git objects only.
@@ -200,9 +203,22 @@ jobs:
             *) shown="unknown" ;;
           esac
           [ "$shown" = "$verdict" ] || fail "The report says '$shown' but the structured result says '$verdict'."
-          awk -v sha="$SHA" '{print} !done && /^\*\*Verdict:/ {print "**Commit:** `" sha "`"; done=1}' \
-            "$report" > "$comment"
-          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$comment" >/dev/null
+          # A hidden marker names the summary comment, so the next run can find
+          # and edit it. GitHub keeps the edit history of the comment.
+          marker='<!-- cx-pr-review-summary -->'
+          { echo "$marker"
+            awk -v sha="$SHA" '{print} !done && /^\*\*Verdict:/ {print "**Commit:** `" sha "`"; done=1}' "$report"
+          } > "$comment"
+          # Only a comment by this workflow's bot: anyone can paste the marker into
+          # a comment of their own, and that one must never be edited.
+          previous="$(gh api --paginate -X GET -f per_page=100 "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id")"
+          previous="${previous%%$'\n'*}"
+          if [ -n "$previous" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${previous}" -F body=@"$comment" >/dev/null
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$comment" >/dev/null
+          fi
 
           # 4. Label and summary, then the verdict decides the check.
           if [ "$verdict" = BLOCK ]; then label="review: blocked"

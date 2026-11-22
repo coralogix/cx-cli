@@ -6,7 +6,8 @@ use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::service_catalog::{
-    run_data, run_entities, run_entity_data, run_entity_types, run_schema,
+    run_data, run_entities, run_entity_data, run_entity_insight_drilldown, run_entity_insights,
+    run_entity_types, run_insight_drilldown, run_insights, run_schema, InsightSelectionInput,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -605,4 +606,329 @@ async fn api_error_body_surfaces_in_message() {
     let chain = format!("{err:#}");
     assert!(chain.contains("invalid request"));
     assert!(chain.contains("profile 'test-profile' failed"));
+}
+
+// ── Insights ──────────────────────────────────────────────────────────────────
+
+const INSIGHTS: &str = "/v2/entities/insights";
+
+const NO_SELECTION: InsightSelectionInput<'static> = InsightSelectionInput {
+    types: &[],
+    categories: &[],
+    excluded_types: &[],
+    excluded_categories: &[],
+};
+
+fn entities_insights_body() -> serde_json::Value {
+    json!({
+        "perEntityType": [
+            {
+                "entityType": "ENTITY_TYPE_SERVICE",
+                "insights": [
+                    {
+                        "type": "INSIGHT_TYPE_LATENCY_REGRESSION",
+                        "category": "INSIGHT_CATEGORY_DEPLOYMENT",
+                        "title": "2 services got slower after their last deployment",
+                        "behaviorCoverage": {
+                            "atLeastOne": { "insightCount": 2, "totalEntities": 10, "percentage": 20 }
+                        },
+                        "requestKind": { "kind": "REQUEST_KIND_SERVER" }
+                    }
+                ],
+                "uncheckedInsights": [
+                    {
+                        "type": "INSIGHT_TYPE_NO_SLO",
+                        "category": "INSIGHT_CATEGORY_ENABLEMENT",
+                        "reason": "INSIGHT_UNCHECKED_REASON_SOURCE_UNAVAILABLE"
+                    }
+                ],
+                "behaviorComparisonCoverage": { "eligibleChanges": 12, "compared": 10 }
+            }
+        ],
+        "companyInsights": [
+            {
+                "type": "INSIGHT_TYPE_ENTITIES_LIMIT_NEAR",
+                "category": "INSIGHT_CATEGORY_LIMITS",
+                "title": "Close to the entities limit",
+                "capUsage": { "used": 9500, "cap": 10000, "percentage": 95 }
+            }
+        ]
+    })
+}
+
+#[tokio::test]
+async fn insights_posts_the_selection_and_renders_every_format() {
+    for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Toon] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path(INSIGHTS))
+            .and(body_json(json!({
+                "entityTypes": ["ENTITY_TYPE_SERVICE"],
+                "filters": [{ "labelName": "environment", "labelValues": ["prod"] }],
+                "breakdowns": ["INSIGHT_DIMENSION_ENVIRONMENT"],
+                "types": [],
+                "categories": ["INSIGHT_CATEGORY_DEPLOYMENT"],
+                "excludedTypes": ["INSIGHT_TYPE_TRAFFIC_DROP"],
+                "excludedCategories": [],
+                "topValuesPerBreakdown": 5,
+                "breakdownSort": "INSIGHT_BREAKDOWN_SORT_COUNT"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(entities_insights_body()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+        let categories = vec!["deployment".to_string()];
+        let excluded_types = vec!["traffic-drop".to_string()];
+
+        run_insights(
+            &targets,
+            &["service".to_string()],
+            &["environment=prod".to_string()],
+            &InsightSelectionInput {
+                types: &[],
+                categories: &categories,
+                excluded_types: &excluded_types,
+                excluded_categories: &[],
+            },
+            &["environment".to_string()],
+            Some(5),
+            Some("count"),
+            format,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("run_insights should render {format:?}: {e:#}"));
+    }
+}
+
+#[tokio::test]
+async fn insights_tolerates_one_failing_profile() {
+    let server_ok = MockServer::start().await;
+    let server_err = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(INSIGHTS))
+        .respond_with(ResponseTemplate::new(200).set_body_json(entities_insights_body()))
+        .expect(1)
+        .mount(&server_ok)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(INSIGHTS))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({ "message": "boom" })))
+        .expect(1)
+        .mount(&server_err)
+        .await;
+
+    let targets = vec![
+        common::test_target("profile-ok", &server_ok.uri()),
+        common::test_target("profile-err", &server_err.uri()),
+    ];
+
+    run_insights(
+        &targets,
+        &["service".to_string()],
+        &[],
+        &NO_SELECTION,
+        &[],
+        None,
+        None,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("one failing profile should be non-fatal");
+}
+
+#[tokio::test]
+async fn insights_rejects_unknown_category_before_any_request() {
+    let server = MockServer::start().await;
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let categories = vec!["capacity".to_string()];
+
+    let err = run_insights(
+        &targets,
+        &["service".to_string()],
+        &[],
+        &InsightSelectionInput {
+            types: &[],
+            categories: &categories,
+            excluded_types: &[],
+            excluded_categories: &[],
+        },
+        &[],
+        None,
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("an unknown category should error");
+    assert!(err.to_string().contains("unknown --category 'capacity'"));
+    assert_eq!(server.received_requests().await.unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn entity_insights_posts_the_entity_identity() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{INSIGHTS}/entity")))
+        .and(body_json(json!({
+            "entity": { "entityType": "ENTITY_TYPE_DATABASE", "name": "orders", "system": "postgresql" },
+            "environments": ["prod"],
+            "types": [],
+            "categories": [],
+            "excludedTypes": [],
+            "excludedCategories": []
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "insights": [
+                {
+                    "type": "INSIGHT_TYPE_NO_OWNER",
+                    "category": "INSIGHT_CATEGORY_CONFIGURATION",
+                    "title": "No owner",
+                    "environments": ["prod"]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_entity_insights(
+        &targets,
+        "database",
+        "orders",
+        Some("postgresql"),
+        &["prod".to_string()],
+        &NO_SELECTION,
+        None,
+        None,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("run_entity_insights should succeed");
+}
+
+#[tokio::test]
+async fn insight_drilldown_posts_scope_sort_and_pagination() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{INSIGHTS}/drilldown")))
+        .and(body_json(json!({
+            "type": "INSIGHT_TYPE_LATENCY_REGRESSION",
+            "entityType": "ENTITY_TYPE_SERVICE",
+            "filters": [],
+            "requestKind": { "kind": "REQUEST_KIND_SERVER" },
+            "environmentMatch": "ENVIRONMENT_MATCH_EVERY",
+            "sort": "INSIGHT_DRILLDOWN_SORT_SEVERITY",
+            "sortOrder": "SORT_ORDER_DESCENDING",
+            "nameSearch": "check",
+            "pagination": { "pageIndex": 1, "pageSize": 20 }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "insight": { "type": "INSIGHT_TYPE_LATENCY_REGRESSION", "title": "Slower after deploy" },
+            "entities": [
+                {
+                    "entity": { "entityType": "ENTITY_TYPE_SERVICE", "name": "checkout" },
+                    "affectedEnvironmentCount": 1,
+                    "environmentCount": 2,
+                    "percentage": 50,
+                    "affectedEnvironments": ["prod"]
+                }
+            ],
+            "totalEntities": 21
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_insight_drilldown(
+        &targets,
+        "latency-regression",
+        "service",
+        &[],
+        Some("request-kind=server"),
+        Some("every"),
+        Some("severity"),
+        Some("desc"),
+        Some(1),
+        Some(20),
+        Some("check"),
+        OutputFormat::Text,
+    )
+    .await
+    .expect("run_insight_drilldown should succeed");
+}
+
+#[tokio::test]
+async fn insight_drilldown_rejects_entity_only_scope_before_any_request() {
+    let server = MockServer::start().await;
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    let err = run_insight_drilldown(
+        &targets,
+        "operation-regression",
+        "service",
+        &[],
+        Some("operation=GET /cart"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("operation scope belongs to entity-insight-drilldown");
+    assert!(err.to_string().contains("invalid --scope"));
+    assert_eq!(server.received_requests().await.unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn entity_insight_drilldown_posts_dimension_and_scope() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("{INSIGHTS}/drilldown/entity")))
+        .and(body_json(json!({
+            "type": "INSIGHT_TYPE_DEPENDENCY_REGRESSION",
+            "entity": { "entityType": "ENTITY_TYPE_SERVICE", "name": "checkout" },
+            "dimension": "INSIGHT_DIMENSION_ENVIRONMENT",
+            "environments": [],
+            "dependency": { "database": { "dbSystem": "postgresql", "dbNamespace": "orders" } }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "insight": { "type": "INSIGHT_TYPE_DEPENDENCY_REGRESSION", "title": "orders got slower" },
+            "dimension": "INSIGHT_DIMENSION_ENVIRONMENT",
+            "values": [
+                { "value": "prod", "isAffected": true, "affectedEnvironments": ["prod"] },
+                { "value": "staging" }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_entity_insight_drilldown(
+        &targets,
+        "dependency-regression",
+        "service",
+        "checkout",
+        None,
+        "environment",
+        &[],
+        Some("database=postgresql/orders"),
+        OutputFormat::Text,
+    )
+    .await
+    .expect("run_entity_insight_drilldown should succeed");
 }

@@ -103,6 +103,145 @@ fn service_catalog_entity_data() {
     harness::assert_object_with_keys(&v, &["rows", "columns"]);
 }
 
+/// Setup insights only: deployment insights query metrics around every
+/// service's last change and are much slower.
+#[test]
+#[ignore]
+fn service_catalog_insights() {
+    if harness::require_creds("service_catalog_insights").is_none() {
+        return;
+    }
+    let v = harness::run_ok_json(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &[]);
+}
+
+#[test]
+#[ignore]
+fn service_catalog_entity_insights() {
+    if harness::require_creds("service_catalog_entity_insights").is_none() {
+        return;
+    }
+    let Some(service_name) = discover_entity_id("service") else {
+        eprintln!("[e2e] skipping service_catalog_entity_insights: no services on test team");
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "service-catalog",
+        "entity-insights",
+        "service",
+        &service_name,
+        "--exclude-category",
+        "deployment",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &[]);
+}
+
+/// Drills into the first setup insight that fired on the test team.
+#[test]
+#[ignore]
+fn service_catalog_insight_drilldown() {
+    if harness::require_creds("service_catalog_insight_drilldown").is_none() {
+        return;
+    }
+    let listed = harness::run_ok_json(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "-o",
+        "json",
+    ]);
+    let Some(insight_type) = first_unscoped_insight_type(&listed["perEntityType"][0]["insights"])
+    else {
+        eprintln!(
+            "[e2e] not covered: service-catalog insight-drilldown - no setup insight fired \
+             on the test team"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "service-catalog",
+        "insight-drilldown",
+        &insight_type,
+        "service",
+        "--page-size",
+        "3",
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["insight"]);
+    assert_eq!(v["insight"]["type"], insight_type.as_str(), "{v}");
+    assert!(v["entities"].as_array().map_or(0, Vec::len) <= 3, "{v}");
+}
+
+/// Drills into the first setup insight of one service, per environment.
+#[test]
+#[ignore]
+fn service_catalog_entity_insight_drilldown() {
+    if harness::require_creds("service_catalog_entity_insight_drilldown").is_none() {
+        return;
+    }
+    let Some(service_name) = discover_entity_id("service") else {
+        eprintln!(
+            "[e2e] skipping service_catalog_entity_insight_drilldown: no services on test team"
+        );
+        return;
+    };
+    let listed = harness::run_ok_json(&[
+        "service-catalog",
+        "entity-insights",
+        "service",
+        &service_name,
+        "--exclude-category",
+        "deployment",
+        "-o",
+        "json",
+    ]);
+    let Some(insight_type) = first_unscoped_insight_type(&listed["insights"]) else {
+        eprintln!(
+            "[e2e] not covered: service-catalog entity-insight-drilldown - no setup insight \
+             fired for {service_name}"
+        );
+        return;
+    };
+    let v = harness::run_ok_json(&[
+        "service-catalog",
+        "entity-insight-drilldown",
+        &insight_type,
+        "service",
+        &service_name,
+        "-o",
+        "json",
+    ]);
+    harness::assert_object_with_keys(&v, &["insight"]);
+    assert_eq!(v["insight"]["type"], insight_type.as_str(), "{v}");
+}
+
+/// The type of the first insight without a `scope`, which a drilldown can
+/// request without `--scope`.
+fn first_unscoped_insight_type(insights: &serde_json::Value) -> Option<String> {
+    insights.as_array()?.iter().find_map(|insight| {
+        let scoped = ["language", "operation", "dependency", "requestKind"]
+            .iter()
+            .any(|field| insight.get(*field).is_some());
+        if scoped {
+            return None;
+        }
+        insight.get("type")?.as_str().map(String::from)
+    })
+}
+
 /// Discover an entity type from `service-catalog entity-types`. Cached so
 /// multiple tests don't each pay for the call.
 fn discover_entity_type() -> Option<String> {
@@ -158,8 +297,7 @@ fn discover_entity_type_and_column() -> Option<(String, String)> {
 }
 
 /// Discover a known entity name for `entity_type` via `service-catalog
-/// entities`. Not cached on its own - only called once, by
-/// `service_catalog_entity_data`.
+/// entities`. Not cached: each caller asks for its own entity type.
 fn discover_entity_id(entity_type: &str) -> Option<String> {
     let stdout = harness::run_ok(&["service-catalog", "entities", entity_type, "-o", "json"]);
     let v = harness::parse_json(&stdout)?;
@@ -467,6 +605,14 @@ fn service_catalog_rejects_bad_flags_locally() {
             "invalid --filter",
         ),
         (vec!["schema", "cx-no-such-entity-type"], "entity type"),
+        (
+            vec!["insight-drilldown", "no-such-insight", "service"],
+            "unknown insight type",
+        ),
+        (
+            vec!["insights", "service", "--category", "capacity"],
+            "unknown --category",
+        ),
     ] {
         let output = harness::cx()
             .arg("service-catalog")
@@ -514,6 +660,6 @@ fn discover_group_and_filter_label(entity_type: &str) -> Option<String> {
         .map(String::from)
 }
 
-// `service-catalog` has no mutating subcommands, so there is nothing
-// deliberately uncovered here - all five read-only subcommands
-// (entity-types, schema, entities, data, entity-data) are exercised above.
+// `service-catalog` has no mutating subcommands. Deployment insights are
+// excluded from every insights test: they need a recent deployment on the
+// test team and query metrics around each service's last change.

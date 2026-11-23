@@ -1070,6 +1070,7 @@ fn migrate_profile_secrets(
     migrator: &impl ProfileSecretMigrator,
 ) -> Result<()> {
     let (required_secret, secret_names) = profile_secret_names(auth);
+    let mut secrets = Vec::new();
 
     for key_name in secret_names {
         let Some(value) = migrator.read_source(key_name)? else {
@@ -1082,6 +1083,10 @@ fn migrate_profile_secrets(
         };
 
         migrator.validate_target(key_name, &value)?;
+        secrets.push((*key_name, value));
+    }
+
+    for (key_name, value) in secrets {
         migrator.delete_target(key_name)?;
         store_and_verify_secret(profile_name, key_name, &value, migrator)?;
     }
@@ -1642,6 +1647,7 @@ mod tests {
         operations: RefCell<Vec<String>>,
         source_error: Option<String>,
         target_validation_error: Option<String>,
+        target_validation_errors: HashMap<String, String>,
         verification_override: Option<String>,
         verification_failures: RefCell<usize>,
         store_failures: RefCell<usize>,
@@ -1662,6 +1668,9 @@ mod tests {
             self.operations
                 .borrow_mut()
                 .push(format!("validate:{key_name}"));
+            if let Some(error) = self.target_validation_errors.get(key_name) {
+                anyhow::bail!("{error}");
+            }
             if let Some(error) = &self.target_validation_error {
                 anyhow::bail!("{error}");
             }
@@ -1733,16 +1742,16 @@ mod tests {
             vec![
                 "read:oauth_access_token",
                 "validate:oauth_access_token",
+                "read:oauth_refresh_token",
+                "validate:oauth_refresh_token",
+                "read:oauth_id_token",
+                "read:oauth_token_expiry",
                 "delete:oauth_access_token",
                 "store:oauth_access_token:access",
                 "verify:oauth_access_token",
-                "read:oauth_refresh_token",
-                "validate:oauth_refresh_token",
                 "delete:oauth_refresh_token",
                 "store:oauth_refresh_token:refresh",
                 "verify:oauth_refresh_token",
-                "read:oauth_id_token",
-                "read:oauth_token_expiry",
             ]
         );
     }
@@ -1786,6 +1795,43 @@ mod tests {
         assert_eq!(
             migrator.operations.into_inner(),
             vec!["read:api_key", "validate:api_key"]
+        );
+    }
+
+    #[test]
+    fn migration_validates_every_oauth_secret_before_deleting_any_of_them() {
+        let migrator = MockSecretMigrator {
+            source: HashMap::from([
+                ("oauth_access_token".to_string(), "access".to_string()),
+                ("oauth_refresh_token".to_string(), "refresh".to_string()),
+                ("oauth_id_token".to_string(), "too-long".to_string()),
+            ]),
+            target_validation_errors: HashMap::from([(
+                "oauth_id_token".to_string(),
+                "exceeds the interactive command buffer".to_string(),
+            )]),
+            ..Default::default()
+        };
+
+        let error = migrate_profile_secrets("test", AuthKind::OAuth, &migrator).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("exceeds the interactive command buffer"));
+        let operations = migrator.operations.into_inner();
+        assert!(operations
+            .iter()
+            .all(|operation| !operation.starts_with("delete:")));
+        assert_eq!(
+            operations,
+            vec![
+                "read:oauth_access_token",
+                "validate:oauth_access_token",
+                "read:oauth_refresh_token",
+                "validate:oauth_refresh_token",
+                "read:oauth_id_token",
+                "validate:oauth_id_token",
+            ]
         );
     }
 

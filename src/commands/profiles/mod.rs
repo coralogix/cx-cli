@@ -973,40 +973,67 @@ pub fn run_delete(profile_name: String, force: bool) -> Result<()> {
 /// backed throughout; file-backed profiles are deliberately skipped.
 #[cfg(target_os = "macos")]
 pub fn run_migrate() -> Result<()> {
-    let mut migrated = 0;
-    let mut skipped = 0;
-    let mut failed = 0;
+    let profiles = list_profile_names()?.into_iter().map(|name| {
+        let profile = load_profile(&name);
+        (name, profile)
+    });
+    let summary = run_migrate_with(profiles, recreate_os_store_secrets);
+    migration_result(summary)
+}
 
-    for name in list_profile_names()? {
-        let profile = match load_profile(&name) {
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Default, PartialEq, Eq)]
+struct MigrationSummary {
+    migrated: usize,
+    skipped: usize,
+    failed: usize,
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn run_migrate_with(
+    profiles: impl IntoIterator<Item = (String, Result<Profile>)>,
+    mut migrate: impl FnMut(&str, &Profile) -> Result<()>,
+) -> MigrationSummary {
+    let mut summary = MigrationSummary::default();
+
+    for (name, profile) in profiles {
+        let profile = match profile {
             Ok(profile) => profile,
             Err(err) => {
                 eprintln!("Profile {name}: error: could not load: {err}");
-                failed += 1;
+                summary.failed += 1;
                 continue;
             }
         };
         if profile.credential_storage != CredentialStorage::OsStore {
             eprintln!("Profile {name}: skipped (credentials are stored in the profile file).");
-            skipped += 1;
+            summary.skipped += 1;
             continue;
         }
 
-        match recreate_os_store_secrets(&name, &profile) {
+        match migrate(&name, &profile) {
             Ok(()) => {
                 eprintln!("Profile {name}: migrated.");
-                migrated += 1;
+                summary.migrated += 1;
             }
             Err(err) => {
                 eprintln!("Profile {name}: error: could not migrate: {err}");
-                failed += 1;
+                summary.failed += 1;
             }
         }
     }
 
-    eprintln!("Migration complete: {migrated} migrated, {skipped} skipped, {failed} failed.");
-    if failed > 0 {
-        anyhow::bail!("{failed} profile(s) failed to migrate");
+    eprintln!(
+        "Migration complete: {} migrated, {} skipped, {} failed.",
+        summary.migrated, summary.skipped, summary.failed
+    );
+    summary
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn migration_result(summary: MigrationSummary) -> Result<()> {
+    if summary.failed > 0 {
+        anyhow::bail!("{} profile(s) failed to migrate", summary.failed);
     }
     Ok(())
 }
@@ -1016,6 +1043,7 @@ fn recreate_os_store_secrets(name: &str, profile: &Profile) -> Result<()> {
     let target = keyring_store::current_macos_backend();
 
     migrate_profile_secrets(
+        name,
         profile.auth,
         &MacosProfileSecretMigrator {
             profile_name: name,
@@ -1033,7 +1061,11 @@ trait ProfileSecretMigrator {
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn migrate_profile_secrets(auth: AuthKind, migrator: &impl ProfileSecretMigrator) -> Result<()> {
+fn migrate_profile_secrets(
+    profile_name: &str,
+    auth: AuthKind,
+    migrator: &impl ProfileSecretMigrator,
+) -> Result<()> {
     let (required_secret, secret_names) = profile_secret_names(auth);
 
     for key_name in secret_names {
@@ -1047,13 +1079,53 @@ fn migrate_profile_secrets(auth: AuthKind, migrator: &impl ProfileSecretMigrator
         };
 
         migrator.delete_target(key_name)?;
-        migrator.store_target(key_name, &value)?;
-        let actual = migrator.read_target(key_name)?.with_context(|| {
-            format!("secret '{key_name}' could not be read through the target backend")
-        })?;
-        if actual != value {
-            anyhow::bail!("secret '{key_name}' did not match after rewriting it");
-        }
+        store_and_verify_secret(profile_name, key_name, &value, migrator)?;
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn store_and_verify_secret(
+    profile_name: &str,
+    key_name: &str,
+    value: &str,
+    migrator: &impl ProfileSecretMigrator,
+) -> Result<()> {
+    let first_failure = match migrator.store_target(key_name, value) {
+        Ok(()) => match verify_migrated_secret(key_name, value, migrator) {
+            Ok(()) => return Ok(()),
+            Err(err) => err,
+        },
+        Err(err) => err,
+    };
+
+    if let Err(retry_err) = migrator.store_target(key_name, value) {
+        anyhow::bail!(
+            "secret '{key_name}' was deleted but could not be restored \
+             (first attempt: {first_failure}; retry: {retry_err}). \
+             Reconfigure profile '{profile_name}' with `cx profiles add {profile_name} --force`."
+        );
+    }
+
+    verify_migrated_secret(key_name, value, migrator).with_context(|| {
+        format!(
+            "secret '{key_name}' was deleted and rewritten, but verification still failed; \
+             reconfigure profile '{profile_name}' with `cx profiles add {profile_name} --force`"
+        )
+    })
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn verify_migrated_secret(
+    key_name: &str,
+    expected: &str,
+    migrator: &impl ProfileSecretMigrator,
+) -> Result<()> {
+    let actual = migrator.read_target(key_name)?.with_context(|| {
+        format!("secret '{key_name}' could not be read through the target backend")
+    })?;
+    if actual != expected {
+        anyhow::bail!("secret '{key_name}' did not match after rewriting it");
     }
     Ok(())
 }
@@ -1530,6 +1602,26 @@ mod tests {
         values.iter().map(|v| v.to_string()).collect()
     }
 
+    fn test_profile(credential_storage: CredentialStorage) -> Profile {
+        Profile {
+            auth: AuthKind::ApiKey,
+            credential_storage,
+            api_key: None,
+            region: Region::Eu2,
+            labels: Vec::new(),
+            oauth_client_id: None,
+            oauth_base_url: None,
+            oauth_tokens: None,
+            default_output_format: None,
+            default_tier: None,
+            console_url: None,
+            cached_console_url: None,
+            cached_console_url_at: None,
+            cached_team_id: None,
+            cached_team_name: None,
+        }
+    }
+
     #[derive(Default)]
     struct MockSecretMigrator {
         source: HashMap<String, String>,
@@ -1537,6 +1629,8 @@ mod tests {
         operations: RefCell<Vec<String>>,
         source_error: Option<String>,
         verification_override: Option<String>,
+        verification_failures: RefCell<usize>,
+        store_failures: RefCell<usize>,
     }
 
     impl ProfileSecretMigrator for MockSecretMigrator {
@@ -1562,6 +1656,11 @@ mod tests {
             self.operations
                 .borrow_mut()
                 .push(format!("store:{key_name}:{value}"));
+            let mut remaining_failures = self.store_failures.borrow_mut();
+            if *remaining_failures > 0 {
+                *remaining_failures -= 1;
+                anyhow::bail!("store denied");
+            }
             self.target
                 .borrow_mut()
                 .insert(key_name.to_string(), value.to_string());
@@ -1572,10 +1671,12 @@ mod tests {
             self.operations
                 .borrow_mut()
                 .push(format!("verify:{key_name}"));
-            Ok(self
-                .verification_override
-                .clone()
-                .or_else(|| self.target.borrow().get(key_name).cloned()))
+            let mut remaining_failures = self.verification_failures.borrow_mut();
+            if *remaining_failures > 0 {
+                *remaining_failures -= 1;
+                return Ok(self.verification_override.clone());
+            }
+            Ok(self.target.borrow().get(key_name).cloned())
         }
     }
 
@@ -1601,7 +1702,7 @@ mod tests {
             ..Default::default()
         };
 
-        migrate_profile_secrets(AuthKind::OAuth, &migrator).unwrap();
+        migrate_profile_secrets("test", AuthKind::OAuth, &migrator).unwrap();
 
         assert_eq!(
             migrator.operations.into_inner(),
@@ -1624,7 +1725,7 @@ mod tests {
     fn migration_does_not_delete_a_required_secret_that_cannot_be_read() {
         let migrator = MockSecretMigrator::default();
 
-        let error = migrate_profile_secrets(AuthKind::ApiKey, &migrator).unwrap_err();
+        let error = migrate_profile_secrets("test", AuthKind::ApiKey, &migrator).unwrap_err();
 
         assert!(error.to_string().contains("required secret 'api_key'"));
         assert_eq!(migrator.operations.into_inner(), vec!["read:api_key"]);
@@ -1637,7 +1738,7 @@ mod tests {
             ..Default::default()
         };
 
-        let error = migrate_profile_secrets(AuthKind::ApiKey, &migrator).unwrap_err();
+        let error = migrate_profile_secrets("test", AuthKind::ApiKey, &migrator).unwrap_err();
 
         assert!(error.to_string().contains("access refused"));
         assert_eq!(migrator.operations.into_inner(), vec!["read:api_key"]);
@@ -1648,12 +1749,13 @@ mod tests {
         let migrator = MockSecretMigrator {
             source: HashMap::from([("api_key".to_string(), "expected".to_string())]),
             verification_override: Some("different".to_string()),
+            verification_failures: RefCell::new(2),
             ..Default::default()
         };
 
-        let error = migrate_profile_secrets(AuthKind::ApiKey, &migrator).unwrap_err();
+        let error = migrate_profile_secrets("test", AuthKind::ApiKey, &migrator).unwrap_err();
 
-        assert!(error.to_string().contains("did not match after rewriting"));
+        assert!(format!("{error:#}").contains("did not match after rewriting"));
         assert_eq!(
             migrator.operations.into_inner(),
             vec![
@@ -1661,7 +1763,103 @@ mod tests {
                 "delete:api_key",
                 "store:api_key:expected",
                 "verify:api_key",
+                "store:api_key:expected",
+                "verify:api_key",
             ]
+        );
+    }
+
+    #[test]
+    fn migration_retries_store_after_delete_before_reporting_a_lost_secret() {
+        let migrator = MockSecretMigrator {
+            source: HashMap::from([("api_key".to_string(), "value".to_string())]),
+            store_failures: RefCell::new(2),
+            ..Default::default()
+        };
+
+        let error = migrate_profile_secrets("test", AuthKind::ApiKey, &migrator).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("was deleted but could not be restored"));
+        assert!(error.to_string().contains("cx profiles add test --force"));
+        assert_eq!(
+            migrator.operations.into_inner(),
+            vec![
+                "read:api_key",
+                "delete:api_key",
+                "store:api_key:value",
+                "store:api_key:value",
+            ]
+        );
+    }
+
+    #[test]
+    fn migration_retries_store_after_a_failed_readback() {
+        let migrator = MockSecretMigrator {
+            source: HashMap::from([("api_key".to_string(), "value".to_string())]),
+            verification_override: Some("different".to_string()),
+            verification_failures: RefCell::new(1),
+            ..Default::default()
+        };
+
+        migrate_profile_secrets("test", AuthKind::ApiKey, &migrator).unwrap();
+
+        assert_eq!(
+            migrator.operations.into_inner(),
+            vec![
+                "read:api_key",
+                "delete:api_key",
+                "store:api_key:value",
+                "verify:api_key",
+                "store:api_key:value",
+                "verify:api_key",
+            ]
+        );
+    }
+
+    #[test]
+    fn migration_loop_skips_file_profiles_continues_after_failures_and_returns_an_error() {
+        let profiles = vec![
+            (
+                "file".to_string(),
+                Ok(test_profile(CredentialStorage::File)),
+            ),
+            (
+                "success".to_string(),
+                Ok(test_profile(CredentialStorage::OsStore)),
+            ),
+            (
+                "failure".to_string(),
+                Ok(test_profile(CredentialStorage::OsStore)),
+            ),
+            (
+                "unreadable".to_string(),
+                Err(anyhow::anyhow!("permission denied")),
+            ),
+        ];
+        let migrated = RefCell::new(Vec::new());
+
+        let summary = run_migrate_with(profiles, |name, _profile| {
+            migrated.borrow_mut().push(name.to_string());
+            if name == "failure" {
+                anyhow::bail!("Keychain access denied");
+            }
+            Ok(())
+        });
+
+        assert_eq!(
+            summary,
+            MigrationSummary {
+                migrated: 1,
+                skipped: 1,
+                failed: 2,
+            }
+        );
+        assert_eq!(migrated.into_inner(), vec!["success", "failure"]);
+        assert_eq!(
+            migration_result(summary).unwrap_err().to_string(),
+            "2 profile(s) failed to migrate"
         );
     }
 

@@ -19,7 +19,7 @@ const SECRET_NAMES: &[&str] = &[
 /// and Cargo use [`SecurityCli`] so their credentials survive binary upgrades.
 #[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MacosKeychainBackend {
+pub(crate) enum MacosKeychainBackend {
     NativeKeyring,
     SecurityCli,
 }
@@ -89,7 +89,7 @@ pub fn store_secret(profile: &str, key_name: &str, secret: &str) -> Result<()> {
 
 /// The Keychain implementation selected for the currently running macOS binary.
 #[cfg(target_os = "macos")]
-pub fn current_macos_backend() -> MacosKeychainBackend {
+pub(crate) fn current_macos_backend() -> MacosKeychainBackend {
     if security_cli_backend() {
         MacosKeychainBackend::SecurityCli
     } else {
@@ -102,7 +102,7 @@ pub fn current_macos_backend() -> MacosKeychainBackend {
 /// Profile migration uses this instead of [`get_secret`] so it can read
 /// credentials written by the alternate installation type.
 #[cfg(target_os = "macos")]
-pub fn get_secret_from_macos_backend(
+pub(crate) fn get_secret_from_macos_backend(
     profile: &str,
     key_name: &str,
     backend: MacosKeychainBackend,
@@ -117,7 +117,7 @@ pub fn get_secret_from_macos_backend(
 
 /// Write a secret through a specific macOS Keychain implementation.
 #[cfg(target_os = "macos")]
-pub fn store_secret_in_macos_backend(
+pub(crate) fn store_secret_in_macos_backend(
     profile: &str,
     key_name: &str,
     secret: &str,
@@ -131,6 +131,35 @@ pub fn store_secret_in_macos_backend(
             key_name,
             secret,
         ),
+    }
+}
+
+/// Delete a secret through a specific macOS Keychain implementation.
+///
+/// A missing item is accepted so migration can recreate it with the current
+/// binary's access controls.
+#[cfg(target_os = "macos")]
+pub(crate) fn delete_secret_in_macos_backend(
+    profile: &str,
+    key_name: &str,
+    backend: MacosKeychainBackend,
+) -> Result<()> {
+    match backend {
+        MacosKeychainBackend::NativeKeyring => {
+            let entry = secret_entry(profile, key_name)?;
+            match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                Err(err) => Err(anyhow::anyhow!(
+                    "Failed to delete '{key_name}' from keyring: {err}"
+                )),
+            }
+        }
+        MacosKeychainBackend::SecurityCli => macos_security::delete(
+            &macos_security::SystemSecurityRunner,
+            &service_name(profile),
+            key_name,
+        )
+        .with_context(|| format!("Failed to delete '{key_name}' from keyring")),
     }
 }
 

@@ -15,9 +15,9 @@ use crate::region::{region_from_url, RegionMatch};
 
 const AUTH_METHODS: &[&str] = &["OAuth (browser login)", "API key (paste manually)"];
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 const API_KEY_SECRET: &str = "api_key";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 const OAUTH_SECRETS: &[&str] = &[
     "oauth_access_token",
     "oauth_refresh_token",
@@ -987,14 +987,14 @@ pub fn run_migrate() -> Result<()> {
             }
         };
         if profile.credential_storage != CredentialStorage::OsStore {
-            println!("Profile {name}: skipped (credentials are stored in the profile file).");
+            eprintln!("Profile {name}: skipped (credentials are stored in the profile file).");
             skipped += 1;
             continue;
         }
 
         match recreate_os_store_secrets(&name, &profile) {
             Ok(()) => {
-                println!("Profile {name}: migrated.");
+                eprintln!("Profile {name}: migrated.");
                 migrated += 1;
             }
             Err(err) => {
@@ -1004,45 +1004,95 @@ pub fn run_migrate() -> Result<()> {
         }
     }
 
-    println!("Migration complete: {migrated} migrated, {skipped} skipped, {failed} failed.");
+    eprintln!("Migration complete: {migrated} migrated, {skipped} skipped, {failed} failed.");
+    if failed > 0 {
+        anyhow::bail!("{failed} profile(s) failed to migrate");
+    }
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
 fn recreate_os_store_secrets(name: &str, profile: &Profile) -> Result<()> {
-    let (required_secret, secret_names) = macos_profile_secrets(profile.auth);
     let target = keyring_store::current_macos_backend();
-    let mut secrets = Vec::new();
+
+    migrate_profile_secrets(
+        profile.auth,
+        &MacosProfileSecretMigrator {
+            profile_name: name,
+            target,
+        },
+    )
+}
+
+#[cfg(any(target_os = "macos", test))]
+trait ProfileSecretMigrator {
+    fn read_source(&self, key_name: &str) -> Result<Option<String>>;
+    fn delete_target(&self, key_name: &str) -> Result<()>;
+    fn store_target(&self, key_name: &str, value: &str) -> Result<()>;
+    fn read_target(&self, key_name: &str) -> Result<Option<String>>;
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn migrate_profile_secrets(auth: AuthKind, migrator: &impl ProfileSecretMigrator) -> Result<()> {
+    let (required_secret, secret_names) = profile_secret_names(auth);
 
     for key_name in secret_names {
-        let value = read_macos_secret(name, key_name, target)?;
-        if let Some(value) = value {
-            secrets.push((*key_name, value));
-        } else if *key_name == required_secret {
-            anyhow::bail!("required secret '{key_name}' was not found in either Keychain backend");
-        }
-    }
+        let Some(value) = migrator.read_source(key_name)? else {
+            if *key_name == required_secret {
+                anyhow::bail!(
+                    "required secret '{key_name}' was not found in either Keychain backend"
+                );
+            }
+            continue;
+        };
 
-    for (key_name, value) in &secrets {
-        keyring_store::store_secret_in_macos_backend(name, key_name, value, target)?;
-    }
-    for (key_name, expected) in &secrets {
-        let actual = keyring_store::get_secret_from_macos_backend(name, key_name, target)?
-            .with_context(|| {
-                format!("secret '{key_name}' could not be read through the target backend")
-            })?;
-        if actual != *expected {
+        migrator.delete_target(key_name)?;
+        migrator.store_target(key_name, &value)?;
+        let actual = migrator.read_target(key_name)?.with_context(|| {
+            format!("secret '{key_name}' could not be read through the target backend")
+        })?;
+        if actual != value {
             anyhow::bail!("secret '{key_name}' did not match after rewriting it");
         }
     }
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn macos_profile_secrets(auth: AuthKind) -> (&'static str, &'static [&'static str]) {
+#[cfg(any(target_os = "macos", test))]
+fn profile_secret_names(auth: AuthKind) -> (&'static str, &'static [&'static str]) {
     match auth {
         AuthKind::ApiKey => (API_KEY_SECRET, &[API_KEY_SECRET]),
         AuthKind::OAuth => ("oauth_access_token", OAUTH_SECRETS),
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct MacosProfileSecretMigrator<'a> {
+    profile_name: &'a str,
+    target: keyring_store::MacosKeychainBackend,
+}
+
+#[cfg(target_os = "macos")]
+impl ProfileSecretMigrator for MacosProfileSecretMigrator<'_> {
+    fn read_source(&self, key_name: &str) -> Result<Option<String>> {
+        read_macos_secret(self.profile_name, key_name, self.target)
+    }
+
+    fn delete_target(&self, key_name: &str) -> Result<()> {
+        keyring_store::delete_secret_in_macos_backend(self.profile_name, key_name, self.target)
+    }
+
+    fn store_target(&self, key_name: &str, value: &str) -> Result<()> {
+        keyring_store::store_secret_in_macos_backend(
+            self.profile_name,
+            key_name,
+            value,
+            self.target,
+        )
+    }
+
+    fn read_target(&self, key_name: &str) -> Result<Option<String>> {
+        keyring_store::get_secret_from_macos_backend(self.profile_name, key_name, self.target)
     }
 }
 
@@ -1061,21 +1111,32 @@ fn read_macos_secret(
         }
     };
 
-    match keyring_store::get_secret_from_macos_backend(profile_name, key_name, target) {
+    read_secret_with_fallback(
+        key_name,
+        keyring_store::get_secret_from_macos_backend(profile_name, key_name, target),
+        || keyring_store::get_secret_from_macos_backend(profile_name, key_name, alternate),
+    )
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn read_secret_with_fallback(
+    key_name: &str,
+    target_read: Result<Option<String>>,
+    alternate_read: impl FnOnce() -> Result<Option<String>>,
+) -> Result<Option<String>> {
+    match target_read {
         Ok(Some(value)) => Ok(Some(value)),
-        Ok(None) => keyring_store::get_secret_from_macos_backend(profile_name, key_name, alternate),
-        Err(target_err) => {
-            match keyring_store::get_secret_from_macos_backend(profile_name, key_name, alternate) {
-                Ok(Some(value)) => Ok(Some(value)),
-                Ok(None) => Err(target_err).with_context(|| {
-                    format!("secret '{key_name}' could not be read from either Keychain backend")
-                }),
-                Err(alternate_err) => Err(anyhow::anyhow!(
-                    "secret '{key_name}' could not be read from either Keychain backend \
-                     (target: {target_err}; alternate: {alternate_err})"
-                )),
-            }
-        }
+        Ok(None) => alternate_read(),
+        Err(target_err) => match alternate_read() {
+            Ok(Some(value)) => Ok(Some(value)),
+            Ok(None) => Err(target_err).with_context(|| {
+                format!("secret '{key_name}' could not be read from either Keychain backend")
+            }),
+            Err(alternate_err) => Err(anyhow::anyhow!(
+                "secret '{key_name}' could not be read from either Keychain backend \
+                 (target: {target_err}; alternate: {alternate_err})"
+            )),
+        },
     }
 }
 
@@ -1459,6 +1520,9 @@ fn configure_api_key(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
     use super::*;
     use clap::ValueEnum;
 
@@ -1466,17 +1530,163 @@ mod tests {
         values.iter().map(|v| v.to_string()).collect()
     }
 
-    #[cfg(target_os = "macos")]
+    #[derive(Default)]
+    struct MockSecretMigrator {
+        source: HashMap<String, String>,
+        target: RefCell<HashMap<String, String>>,
+        operations: RefCell<Vec<String>>,
+        source_error: Option<String>,
+        verification_override: Option<String>,
+    }
+
+    impl ProfileSecretMigrator for MockSecretMigrator {
+        fn read_source(&self, key_name: &str) -> Result<Option<String>> {
+            self.operations
+                .borrow_mut()
+                .push(format!("read:{key_name}"));
+            if let Some(error) = &self.source_error {
+                anyhow::bail!("{error}");
+            }
+            Ok(self.source.get(key_name).cloned())
+        }
+
+        fn delete_target(&self, key_name: &str) -> Result<()> {
+            self.operations
+                .borrow_mut()
+                .push(format!("delete:{key_name}"));
+            self.target.borrow_mut().remove(key_name);
+            Ok(())
+        }
+
+        fn store_target(&self, key_name: &str, value: &str) -> Result<()> {
+            self.operations
+                .borrow_mut()
+                .push(format!("store:{key_name}:{value}"));
+            self.target
+                .borrow_mut()
+                .insert(key_name.to_string(), value.to_string());
+            Ok(())
+        }
+
+        fn read_target(&self, key_name: &str) -> Result<Option<String>> {
+            self.operations
+                .borrow_mut()
+                .push(format!("verify:{key_name}"));
+            Ok(self
+                .verification_override
+                .clone()
+                .or_else(|| self.target.borrow().get(key_name).cloned()))
+        }
+    }
+
     #[test]
     fn migration_uses_the_expected_secret_set_for_each_auth_kind() {
         assert_eq!(
-            macos_profile_secrets(AuthKind::ApiKey),
+            profile_secret_names(AuthKind::ApiKey),
             (API_KEY_SECRET, &[API_KEY_SECRET][..])
         );
         assert_eq!(
-            macos_profile_secrets(AuthKind::OAuth),
+            profile_secret_names(AuthKind::OAuth),
             ("oauth_access_token", OAUTH_SECRETS)
         );
+    }
+
+    #[test]
+    fn migration_recreates_each_secret_in_read_delete_store_verify_order() {
+        let migrator = MockSecretMigrator {
+            source: HashMap::from([
+                ("oauth_access_token".to_string(), "access".to_string()),
+                ("oauth_refresh_token".to_string(), "refresh".to_string()),
+            ]),
+            ..Default::default()
+        };
+
+        migrate_profile_secrets(AuthKind::OAuth, &migrator).unwrap();
+
+        assert_eq!(
+            migrator.operations.into_inner(),
+            vec![
+                "read:oauth_access_token",
+                "delete:oauth_access_token",
+                "store:oauth_access_token:access",
+                "verify:oauth_access_token",
+                "read:oauth_refresh_token",
+                "delete:oauth_refresh_token",
+                "store:oauth_refresh_token:refresh",
+                "verify:oauth_refresh_token",
+                "read:oauth_id_token",
+                "read:oauth_token_expiry",
+            ]
+        );
+    }
+
+    #[test]
+    fn migration_does_not_delete_a_required_secret_that_cannot_be_read() {
+        let migrator = MockSecretMigrator::default();
+
+        let error = migrate_profile_secrets(AuthKind::ApiKey, &migrator).unwrap_err();
+
+        assert!(error.to_string().contains("required secret 'api_key'"));
+        assert_eq!(migrator.operations.into_inner(), vec!["read:api_key"]);
+    }
+
+    #[test]
+    fn migration_stops_before_delete_when_source_read_fails() {
+        let migrator = MockSecretMigrator {
+            source_error: Some("access refused".to_string()),
+            ..Default::default()
+        };
+
+        let error = migrate_profile_secrets(AuthKind::ApiKey, &migrator).unwrap_err();
+
+        assert!(error.to_string().contains("access refused"));
+        assert_eq!(migrator.operations.into_inner(), vec!["read:api_key"]);
+    }
+
+    #[test]
+    fn migration_fails_when_target_readback_does_not_match() {
+        let migrator = MockSecretMigrator {
+            source: HashMap::from([("api_key".to_string(), "expected".to_string())]),
+            verification_override: Some("different".to_string()),
+            ..Default::default()
+        };
+
+        let error = migrate_profile_secrets(AuthKind::ApiKey, &migrator).unwrap_err();
+
+        assert!(error.to_string().contains("did not match after rewriting"));
+        assert_eq!(
+            migrator.operations.into_inner(),
+            vec![
+                "read:api_key",
+                "delete:api_key",
+                "store:api_key:expected",
+                "verify:api_key",
+            ]
+        );
+    }
+
+    #[test]
+    fn secret_read_falls_back_when_target_does_not_find_the_item() {
+        let result = read_secret_with_fallback("api_key", Ok(None), || {
+            Ok(Some("from-alternate".to_string()))
+        })
+        .unwrap();
+
+        assert_eq!(result.as_deref(), Some("from-alternate"));
+    }
+
+    #[test]
+    fn secret_read_reports_both_backend_errors() {
+        let error = read_secret_with_fallback(
+            "api_key",
+            Err(anyhow::anyhow!("target denied access")),
+            || Err(anyhow::anyhow!("alternate denied access")),
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("target: target denied access; alternate: alternate denied access"));
     }
 
     #[test]

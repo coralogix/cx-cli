@@ -672,3 +672,209 @@ async fn agent_to_agent_mode_does_not_swallow_positional_message() {
         .assert()
         .success();
 }
+
+// ── `artifacts list` filters and pagination ──────────────────────────────────
+
+fn artifact_list_item() -> serde_json::Value {
+    json!({
+        "id": "artifact-1",
+        "created_at": "2026-01-02T03:04:05.000000Z",
+        "is_user_managed": false,
+        "chat_id": "chat-1",
+        "type": "coralogix_metrics",
+        "interaction_id": "interaction-1",
+        "data_source_id": null,
+        "chat_title": "Checkout latency",
+        "chat_type": "api"
+    })
+}
+
+/// Runs `cx olly artifacts list <args>` against a mock that answers every
+/// list request, and returns the output plus the query pairs of each request
+/// the CLI sent.
+async fn run_artifacts_list_cli(
+    args: &[&str],
+) -> (std::process::Output, Vec<Vec<(String, String)>>) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/olly/artifacts/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([artifact_list_item()])))
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let output = cx_olly(&home)
+        .args(["olly", "artifacts", "list"])
+        .args(args)
+        .output()
+        .expect("failed to run cx");
+
+    let queries = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|request| {
+            request
+                .url
+                .query_pairs()
+                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                .collect()
+        })
+        .collect();
+    (output, queries)
+}
+
+fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
+    expected
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect()
+}
+
+#[tokio::test]
+async fn artifacts_list_without_flags_sends_no_query() {
+    let (output, queries) = run_artifacts_list_cli(&[]).await;
+
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(queries, vec![pairs(&[])]);
+}
+
+#[tokio::test]
+async fn artifacts_list_sends_each_filter_as_its_query_param() {
+    let cases: [(&[&str], (&str, &str)); 6] = [
+        (&["--chat-id", "chat-1"], ("chat_id", "chat-1")),
+        (
+            &["--type", "sandbox_generated_file"],
+            ("artifact_type", "sandbox_generated_file"),
+        ),
+        (
+            &["--start", "2026-01-01T00:00:00Z"],
+            ("start_time", "2026-01-01T00:00:00.000Z"),
+        ),
+        (
+            &["--end", "2026-01-02T00:00:00Z"],
+            ("end_time", "2026-01-02T00:00:00.000Z"),
+        ),
+        (&["--limit", "5"], ("limit", "5")),
+        (&["--offset", "0"], ("offset", "0")),
+    ];
+
+    for (args, expected) in cases {
+        let (output, queries) = run_artifacts_list_cli(args).await;
+
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        assert_eq!(queries, vec![pairs(&[expected])], "{args:?}");
+    }
+}
+
+#[tokio::test]
+async fn artifacts_list_combines_filters() {
+    let (output, queries) = run_artifacts_list_cli(&[
+        "--chat-id",
+        "chat-1",
+        "--type",
+        "coralogix_dataprime",
+        "--start",
+        "2026-01-01T00:00:00Z",
+        "--end",
+        "2026-01-02T00:00:00+02:00",
+        "--limit",
+        "5",
+        "--offset",
+        "5",
+    ])
+    .await;
+
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        queries,
+        vec![pairs(&[
+            ("chat_id", "chat-1"),
+            ("artifact_type", "coralogix_dataprime"),
+            ("start_time", "2026-01-01T00:00:00.000Z"),
+            ("end_time", "2026-01-01T22:00:00.000Z"),
+            ("limit", "5"),
+            ("offset", "5"),
+        ])]
+    );
+}
+
+#[tokio::test]
+async fn artifacts_list_sends_relative_time_as_iso8601() {
+    let before = chrono::Utc::now() - chrono::Duration::hours(1);
+    let (output, queries) = run_artifacts_list_cli(&["--start", "now-1h"]).await;
+    let after = chrono::Utc::now() - chrono::Duration::hours(1);
+
+    assert!(output.status.success(), "{output:?}");
+    let (name, value) = &queries[0][0];
+    assert_eq!(name, "start_time");
+    let sent = chrono::DateTime::parse_from_rfc3339(value).expect("ISO 8601 start_time");
+    // The CLI sends millisecond precision, so allow for the truncation.
+    assert!(
+        sent >= before - chrono::Duration::milliseconds(1) && sent <= after,
+        "start_time {value} is not one hour ago"
+    );
+}
+
+#[tokio::test]
+async fn artifacts_list_rejects_bad_flags_before_any_request() {
+    let cases: [(&[&str], &str); 4] = [
+        (&["--type", "coralogix_logs"], "schema_health_suggestions"),
+        (&["--offset", "-1"], "-1"),
+        (&["--limit", "0"], "0 is not in"),
+        (&["--start", "not-a-time"], "Could not parse time"),
+    ];
+
+    for (args, expected_stderr) in cases {
+        let (output, queries) = run_artifacts_list_cli(args).await;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "{args:?}: {output:?}");
+        assert!(stderr.contains(expected_stderr), "{args:?}: {stderr}");
+        assert!(queries.is_empty(), "{args:?} sent a request: {queries:?}");
+    }
+}
+
+#[tokio::test]
+async fn artifacts_list_shows_type_and_chat() {
+    let (output, _) = run_artifacts_list_cli(&[]).await;
+    let text = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "ID",
+        "TYPE",
+        "CHAT",
+        "CREATED",
+        "artifact-1",
+        "coralogix_metrics",
+        "Checkout latency",
+        "2026-01-02T03:04:05.000000Z",
+    ] {
+        assert!(text.contains(expected), "missing {expected}: {text}");
+    }
+
+    let (output, _) = run_artifacts_list_cli(&["-o", "json"]).await;
+    let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        rows,
+        json!([{
+            "id": "artifact-1",
+            "download_url": null,
+            "filename": null,
+            "content_type": null,
+            "size": null,
+            "type": "coralogix_metrics",
+            "chat_id": "chat-1",
+            "chat_title": "Checkout latency",
+            "chat_type": "api",
+            "interaction_id": "interaction-1",
+            "created_at": "2026-01-02T03:04:05.000000Z"
+        }])
+    );
+
+    let (output, _) = run_artifacts_list_cli(&["-o", "toon"]).await;
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("coralogix_metrics"));
+}

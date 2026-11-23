@@ -102,7 +102,19 @@ fn olly_artifacts_list() {
     let v = harness::run_ok_json(&["olly", "artifacts", "list", "-o", "json"]);
     harness::assert_array_of_objects_with_keys(
         &v,
-        &["id", "download_url", "filename", "content_type", "size"],
+        &[
+            "id",
+            "download_url",
+            "filename",
+            "content_type",
+            "size",
+            "type",
+            "chat_id",
+            "chat_title",
+            "chat_type",
+            "interaction_id",
+            "created_at",
+        ],
     );
     let text = harness::run_ok_nonempty(&["olly", "artifacts", "list"]);
     let text = String::from_utf8_lossy(&text);
@@ -112,6 +124,51 @@ fn olly_artifacts_list() {
         assert!(text.contains("ID"), "{text}");
     }
     harness::run_ok(&["olly", "artifacts", "list", "-o", "toon"]);
+}
+
+/// Every filter in one call, then a page of one. When the team has an
+/// artifact, filtering by its chat and type must return rows that match.
+#[test]
+#[ignore]
+fn olly_artifacts_list_filters_and_pagination() {
+    if harness::require_creds("olly_artifacts_list_filters_and_pagination").is_none() {
+        return;
+    }
+    let page = harness::run_ok_json(&["olly", "artifacts", "list", "--limit", "1", "-o", "json"]);
+    let page = harness::assert_array(&page);
+    assert!(page.len() <= 1, "--limit 1 returned {} rows", page.len());
+
+    let Some(first) = page.first() else {
+        eprintln!("[e2e] olly artifacts list filters: no artifacts on test team");
+        return;
+    };
+    let chat_id = first["chat_id"].as_str().expect("chat_id").to_string();
+    let artifact_type = first["type"].as_str().expect("type").to_string();
+    let filtered = harness::run_ok_json(&[
+        "olly",
+        "artifacts",
+        "list",
+        "--chat-id",
+        &chat_id,
+        "--type",
+        &artifact_type,
+        "--start",
+        "now-365d",
+        "--end",
+        "now",
+        "--limit",
+        "5",
+        "--offset",
+        "0",
+        "-o",
+        "json",
+    ]);
+    let filtered = harness::assert_array(&filtered);
+    assert!(filtered.len() <= 5, "--limit 5 returned {}", filtered.len());
+    for row in filtered {
+        assert_eq!(row["chat_id"], chat_id.as_str());
+        assert_eq!(row["type"], artifact_type.as_str());
+    }
 }
 
 /// `get` on a real artifact when the team has one; a made-up id is a 404

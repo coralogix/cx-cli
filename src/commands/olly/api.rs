@@ -512,6 +512,40 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_artifact_list_item() {
+        let json = json!({
+            "id": "artifact-123",
+            "created_at": "2026-01-02T03:04:05.000000Z",
+            "is_user_managed": false,
+            "chat_id": "chat-123",
+            "type": "coralogix_metrics",
+            "interaction_id": "interaction-123",
+            "data_source_id": null,
+            "chat_title": "Checkout latency",
+            "chat_type": "api"
+        });
+        let item: ArtifactListItem = serde_json::from_value(json).unwrap();
+        assert_eq!(item.id.as_deref(), Some("artifact-123"));
+        assert_eq!(item.artifact_type.as_deref(), Some("coralogix_metrics"));
+        assert_eq!(item.chat_id.as_deref(), Some("chat-123"));
+        assert_eq!(item.chat_title.as_deref(), Some("Checkout latency"));
+        assert_eq!(item.chat_type.as_deref(), Some("api"));
+        assert_eq!(item.interaction_id.as_deref(), Some("interaction-123"));
+        assert_eq!(
+            item.created_at.as_deref(),
+            Some("2026-01-02T03:04:05.000000Z")
+        );
+    }
+
+    #[test]
+    fn deserialize_artifact_list_item_minimal() {
+        let item: ArtifactListItem = serde_json::from_value(json!({})).unwrap();
+        assert!(item.id.is_none());
+        assert!(item.artifact_type.is_none());
+        assert!(item.chat_title.is_none());
+    }
+
+    #[test]
     fn input_content_block_serializes_correctly() {
         let block = InputContentBlock::text("Hello world");
         let json = serde_json::to_value(&block).unwrap();

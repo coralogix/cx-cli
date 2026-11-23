@@ -281,6 +281,7 @@ fn store_secret_with(
         .with_context(|| format!("Failed to store '{key_name}' in keyring"))
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn store_security_cli_secret_with(
     runner: &impl SecurityRunner,
     profile: &str,
@@ -306,6 +307,7 @@ fn get_secret_with(
     Ok(map.get(key_name).cloned())
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn get_security_cli_secret_with(
     runner: &impl SecurityRunner,
     profile: &str,
@@ -314,6 +316,7 @@ fn get_security_cli_secret_with(
     get_secret_with(runner, profile, key_name)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn delete_security_cli_secret_with(
     runner: &impl SecurityRunner,
     profile: &str,

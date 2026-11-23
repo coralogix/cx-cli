@@ -169,6 +169,42 @@ pub struct Artifact {
     pub artifact_type: Option<String>,
 }
 
+/// One row of `GET /artifacts/`. The list response carries no download URL or
+/// query params; those come from `get_artifact`.
+#[derive(Debug, Deserialize)]
+pub struct ArtifactListItem {
+    pub id: Option<String>,
+    pub created_at: Option<String>,
+    #[serde(rename = "type")]
+    pub artifact_type: Option<String>,
+    pub chat_id: Option<String>,
+    pub chat_title: Option<String>,
+    pub chat_type: Option<String>,
+    pub interaction_id: Option<String>,
+}
+
+/// Values the server accepts for the `artifact_type` filter.
+pub const ARTIFACT_TYPES: [&str; 7] = [
+    "coralogix_dataprime",
+    "coralogix_metrics",
+    "kubernetes_query_results",
+    "alert_watch_data",
+    "github_file_content",
+    "sandbox_generated_file",
+    "schema_health_suggestions",
+];
+
+/// Filters for `list_artifacts`. `start` and `end` are ISO 8601 timestamps.
+#[derive(Debug, Default)]
+pub struct ArtifactListFilters {
+    pub chat_id: Option<String>,
+    pub artifact_type: Option<String>,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
 // ── API client ─────────────────────────────────────────────────────────────────
 
 /// Olly API client.
@@ -239,9 +275,26 @@ impl OllyApi {
 
     // ── Artifacts ──────────────────────────────────────────────────────────────
 
-    pub async fn list_artifacts(&self) -> Result<Vec<Artifact>> {
+    /// List artifacts, newest first. Only the filters that are set are sent.
+    pub async fn list_artifacts(
+        &self,
+        filters: &ArtifactListFilters,
+    ) -> Result<Vec<ArtifactListItem>> {
         let path = format!("{ARTIFACTS_BASE}/");
-        self.client.get(&path, &[]).await
+        let limit = filters.limit.map(|n| n.to_string());
+        let offset = filters.offset.map(|n| n.to_string());
+        let params: Vec<(&str, &str)> = [
+            ("chat_id", filters.chat_id.as_deref()),
+            ("artifact_type", filters.artifact_type.as_deref()),
+            ("start_time", filters.start.as_deref()),
+            ("end_time", filters.end.as_deref()),
+            ("limit", limit.as_deref()),
+            ("offset", offset.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| value.map(|v| (name, v)))
+        .collect();
+        self.client.get(&path, &params).await
     }
 
     pub async fn get_artifact(&self, artifact_id: &str) -> Result<Artifact> {

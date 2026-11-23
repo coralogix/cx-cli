@@ -20,12 +20,13 @@ Every alert definition has this top-level shape. The alert type config (e.g. `lo
     "entityLabels": {},
     "phantomMode": false,
     "activeOn": { ... },
-    "incidentsSettings": { ... },
-    "notificationGroup": { ... },
+    "caseSettings": { ... },
     "logsThreshold": { ... }
   }
 }
 ```
+
+**Notification mode:** create alerts in **Cases mode** — leave out `notificationGroup` and `incidentsSettings` (the API defaults them) and use `caseSettings` only when you need to send case notifications to a connector. `notificationGroup` and `incidentsSettings` are the **Alerts-mode** (legacy) notification fields; see their sections below and only use them when the user explicitly asks for alert-based notifications.
 
 ### Priority values
 
@@ -70,7 +71,25 @@ Every alert definition has this top-level shape. The alert type config (e.g. `lo
 
 Day values: `DAY_OF_WEEK_MONDAY_OR_UNSPECIFIED`, `DAY_OF_WEEK_TUESDAY`, `DAY_OF_WEEK_WEDNESDAY`, `DAY_OF_WEEK_THURSDAY`, `DAY_OF_WEEK_FRIDAY`, `DAY_OF_WEEK_SATURDAY`, `DAY_OF_WEEK_SUNDAY`
 
-### Incident Settings (`incidentsSettings`)
+### Case Settings (`caseSettings`) — Cases mode
+
+Optional. Settings for the cases this alert creates. In Cases mode the alert sends no notifications itself: the case does, via `destinations` here and via any notification router whose matcher matches the alert's `routing.*` entity labels.
+
+```json
+{
+  "destinations": [
+    { "connectorId": "uuid", "presetId": "uuid", "condition": "true" }
+  ]
+}
+```
+
+- `destinations[]` — connectors notified directly about the case (max 100). `presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise a notification-center routing condition such as `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Two destinations with the same connector, preset and condition are rejected.
+- `autoResolveMode` — `ALERT_DEF_CASE_AUTO_RESOLVE_MODE_UNSPECIFIED`, `_ENABLED`, `_DISABLED`. Leave unset unless the user asks.
+- `enrichmentQueries` — optional enrichment query for the case (max 1). Leave empty unless the user asks.
+
+### Incident Settings (`incidentsSettings`) — Alerts mode only
+
+**Do not set this when creating alerts in Cases mode.** It is the alert-level notify-on and retriggering period used by alert-based notifications.
 
 ```json
 {
@@ -81,7 +100,9 @@ Day values: `DAY_OF_WEEK_MONDAY_OR_UNSPECIFIED`, `DAY_OF_WEEK_TUESDAY`, `DAY_OF_
 
 `notifyOn` values: `NOTIFY_ON_TRIGGERED_ONLY_UNSPECIFIED`, `NOTIFY_ON_TRIGGERED_AND_RESOLVED`
 
-### Notification Group (`notificationGroup`)
+### Notification Group (`notificationGroup`) — Alerts mode only
+
+**Do not set `router`, `destinations` or `webhooks` when creating alerts in Cases mode.** A `notificationGroup` with a `router` (or with `destinations` / `webhooks`) makes the alert send its own notifications and bypasses Cases. Omit the whole object to stay in Cases mode; use `caseSettings.destinations` to notify a connector instead.
 
 ```json
 {
@@ -637,4 +658,5 @@ Monitor error budget consumption or burn rate. Exactly one of `errorBudget` or `
 - **Priority**: Always ask the user -- never pick a default.
 - **override in rules**: Per-rule priority override using the same `ALERT_DEF_PRIORITY_*` enum values. The create API rejects a logs-threshold rule without it (400 `Required` at `rules.0.override`), so always set it; use `{ "priority": "ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED" }` to keep the alert-level priority.
 - **notificationPayloadFilter**: List of log/span field paths to include in notifications (e.g. `["obj.field"]`).
+- **Cases mode**: do not copy `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` from an existing alert into a new one unless the user explicitly wants alert-based notifications.
 - **Best practice**: Fetch an existing alert with `cx alerts get <id> -o json` to see the exact response shape, then use it as a template for creating new alerts.

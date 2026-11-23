@@ -62,18 +62,49 @@ Always ask the user what priority to use when creating alerts:
 | P4 | Low - informational, check when convenient |
 | P5 | Info - logging/tracking only |
 
+## Notification Mode: Cases by Default
+
+Alerts can notify in two modes. **Always create alerts in Cases mode** unless the user explicitly asks for alert-based notifications.
+
+| Mode | How it is stored | Use |
+|---|---|---|
+| **Cases** (default) | `notificationGroup` has **no `router`**; optional `caseSettings` | Alert events are grouped into Cases, which handle routing and notifying (see `cx-cases`) |
+| Alerts (legacy) | `notificationGroup.router` present, or `destinations` / `webhooks` set | The alert sends notification requests itself, one per trigger, with no case grouping |
+
+Rules for the payload:
+
+- **Omit `notificationGroup` and `incidentsSettings` entirely.** The API fills in Cases-mode defaults. Do not add `router`, `destinations`, `webhooks`, `notifyOn` or retriggering periods "to be safe".
+- **Do not turn a request to "send it to Slack/PagerDuty/email" into `notificationGroup.destinations`.** In Cases mode, send to a connector with `caseSettings.destinations` (below), or route with `routing.*` entity labels matched by a notification router (see `cx-observability-setup`).
+- **Strip alert-mode fields from templates.** If you build the payload from `cx alerts get <id> -o json`, delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` from the copy unless the user wants them.
+- **Only use alert-based notifications when the user explicitly asks for them**, and tell them it bypasses Cases.
+- DataPrime (analytics) alerts and Error Tracking alerts notify through Cases only.
+
+Cases-mode destination example (connector notified for every case event):
+
+```json
+"caseSettings": {
+  "destinations": [
+    { "connectorId": "<connector-id>", "presetId": "<preset-id>", "condition": "true" }
+  ]
+}
+```
+
+`presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise it is a notification-center routing condition, e.g. `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Find connector and preset IDs with `cx notifications connectors list` and `cx notifications presets list`.
+
 ## Create Workflow
 
 1. Ask the user what they want to alert on (logs, metrics, traces)
 2. Ask for priority (P1–P5)
-3. Build the JSON payload with `alertDefProperties` - use the **API wire format** (see `references/alert-schemas.md` for all enum values)
-4. **Tip:** use `cx alerts get <existing-id> -o json` to get a working template, modify it, and pipe into create
+3. Build the JSON payload with `alertDefProperties` - use the **API wire format** (see `references/alert-schemas.md` for all enum values). Keep it in **Cases mode**: no `notificationGroup` / `incidentsSettings` (see Notification Mode above)
+4. **Tip:** use `cx alerts get <existing-id> -o json` to get a working template, modify it, and pipe into create - but remove the alert-mode notification fields from the copy first
 5. Create using: `echo '<json>' | cx alerts create` or `cx alerts create --from-file alert.json`
 6. Verify with `cx alerts list --name "<alert name>"`
 
 **Important structural note:** The `type` field is a **string enum** (e.g. `"ALERT_DEF_TYPE_LOGS_THRESHOLD"`), and the alert type config (e.g. `"logsThreshold": {...}`) is a **sibling** field at the same level - NOT nested inside `type`.
 
 ### Example: Logs Threshold Alert
+
+Every logs-threshold rule needs an `override` block (the API returns 400 `Required` at `rules.0.override` without it). Set it to the alert priority.
 
 ```json
 {
@@ -101,7 +132,8 @@ Always ask the user what priority to use when creating alerts:
           "timeWindow": {
             "logsTimeWindowSpecificValue": "LOGS_TIME_WINDOW_VALUE_MINUTES_5_OR_UNSPECIFIED"
           }
-        }
+        },
+        "override": { "priority": "ALERT_DEF_PRIORITY_P2" }
       }]
     }
   }
@@ -230,6 +262,7 @@ cx alerts suppression-rules delete <unique-identifier> --yes
 ## Key Principles
 
 - **Always ask for priority** (P1–P5) when creating alerts - never assume
+- **Cases mode by default** - never set `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly asks for alert-based notifications
 - **Use `--name` filter** for large accounts with many alerts
 - **Use `-o json` with `jq`** for filtering and transformation
 - **Use `--from-file -`** to pipe JSON from stdin when constructing alerts programmatically
@@ -248,7 +281,7 @@ cx alerts suppression-rules delete <unique-identifier> --yes
 
 ### Reference Files
 
-- **[`references/alert-schemas.md`](references/alert-schemas.md)** - Complete JSON schema reference for all 12 alert types: field names, enum values (condition types, time windows, filter operations), common sub-objects (logs filter, tracing filter, notification groups, activity schedules), and important gotchas
+- **[`references/alert-schemas.md`](references/alert-schemas.md)** - Complete JSON schema reference for all 12 alert types: field names, enum values (condition types, time windows, filter operations), common sub-objects (logs filter, tracing filter, Cases-mode `caseSettings`, alert-mode notification groups, activity schedules), and important gotchas
 - **[`references/dataprime-reference.md`](references/dataprime-reference.md)** - DataPrime query language reference for log-based and span-based alert conditions (filter syntax, operators, severity values)
 - **[`references/logs-querying.md`](references/logs-querying.md)** - Log data model, field discovery, and query patterns for building log alert conditions
 - **[`references/promql-guidelines.md`](references/promql-guidelines.md)** - PromQL reference for metric-based alert conditions (counters, gauges, histograms, threshold patterns)

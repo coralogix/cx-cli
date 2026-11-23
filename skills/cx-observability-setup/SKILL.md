@@ -142,7 +142,7 @@ cx notifications connectors create --from-file slack-connector.json
 
 ### 3. Configure Notification Routing
 
-Route alerts to the right channels:
+Route alerts to the right channels. Alerts created with `cx alerts create` notify through **Cases** by default (see the `cx-alerts` skill): attach a router to them with `routing.*` entity labels that match the router's matcher, or notify a connector directly with `caseSettings.destinations`. Do **not** point an alert at a router with `notificationGroup.router`, or add `destinations` / `webhooks` to its `notificationGroup`, unless the user explicitly asks for alert-based notifications - that bypasses Cases.
 
 ```bash
 cx notifications routers create --from-file router.json

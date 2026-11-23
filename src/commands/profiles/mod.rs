@@ -1,6 +1,6 @@
 use std::io::IsTerminal;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{
@@ -14,6 +14,16 @@ use crate::region::{region_from_url, RegionMatch};
 // ── Option lists ──────────────────────────────────────────────────────────────
 
 const AUTH_METHODS: &[&str] = &["OAuth (browser login)", "API key (paste manually)"];
+
+#[cfg(target_os = "macos")]
+const API_KEY_SECRET: &str = "api_key";
+#[cfg(target_os = "macos")]
+const OAUTH_SECRETS: &[&str] = &[
+    "oauth_access_token",
+    "oauth_refresh_token",
+    "oauth_id_token",
+    "oauth_token_expiry",
+];
 
 /// Label for the manual custom-endpoint (BYOC / private-link) option.
 const CUSTOM_ENDPOINT_OPTION: &str = "Custom endpoint (BYOC / private link)";
@@ -954,6 +964,121 @@ pub fn run_delete(profile_name: String, force: bool) -> Result<()> {
     Ok(())
 }
 
+// ── Migrate ───────────────────────────────────────────────────────────────────
+
+/// Recreate OS-store secrets with the Keychain backend selected by this binary.
+///
+/// This repairs profiles after switching between a Coralogix-signed build and
+/// an unsigned build such as Homebrew or Cargo. The profile remains OS-store
+/// backed throughout; file-backed profiles are deliberately skipped.
+#[cfg(target_os = "macos")]
+pub fn run_migrate() -> Result<()> {
+    let mut migrated = 0;
+    let mut skipped = 0;
+    let mut failed = 0;
+
+    for name in list_profile_names()? {
+        let profile = match load_profile(&name) {
+            Ok(profile) => profile,
+            Err(err) => {
+                eprintln!("Profile {name}: error: could not load: {err}");
+                failed += 1;
+                continue;
+            }
+        };
+        if profile.credential_storage != CredentialStorage::OsStore {
+            println!("Profile {name}: skipped (credentials are stored in the profile file).");
+            skipped += 1;
+            continue;
+        }
+
+        match recreate_os_store_secrets(&name, &profile) {
+            Ok(()) => {
+                println!("Profile {name}: migrated.");
+                migrated += 1;
+            }
+            Err(err) => {
+                eprintln!("Profile {name}: error: could not migrate: {err}");
+                failed += 1;
+            }
+        }
+    }
+
+    println!("Migration complete: {migrated} migrated, {skipped} skipped, {failed} failed.");
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn recreate_os_store_secrets(name: &str, profile: &Profile) -> Result<()> {
+    let (required_secret, secret_names) = macos_profile_secrets(profile.auth);
+    let target = keyring_store::current_macos_backend();
+    let mut secrets = Vec::new();
+
+    for key_name in secret_names {
+        let value = read_macos_secret(name, key_name, target)?;
+        if let Some(value) = value {
+            secrets.push((*key_name, value));
+        } else if *key_name == required_secret {
+            anyhow::bail!("required secret '{key_name}' was not found in either Keychain backend");
+        }
+    }
+
+    for (key_name, value) in &secrets {
+        keyring_store::store_secret_in_macos_backend(name, key_name, value, target)?;
+    }
+    for (key_name, expected) in &secrets {
+        let actual = keyring_store::get_secret_from_macos_backend(name, key_name, target)?
+            .with_context(|| {
+                format!("secret '{key_name}' could not be read through the target backend")
+            })?;
+        if actual != *expected {
+            anyhow::bail!("secret '{key_name}' did not match after rewriting it");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_profile_secrets(auth: AuthKind) -> (&'static str, &'static [&'static str]) {
+    match auth {
+        AuthKind::ApiKey => (API_KEY_SECRET, &[API_KEY_SECRET]),
+        AuthKind::OAuth => ("oauth_access_token", OAUTH_SECRETS),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn read_macos_secret(
+    profile_name: &str,
+    key_name: &str,
+    target: keyring_store::MacosKeychainBackend,
+) -> Result<Option<String>> {
+    let alternate = match target {
+        keyring_store::MacosKeychainBackend::NativeKeyring => {
+            keyring_store::MacosKeychainBackend::SecurityCli
+        }
+        keyring_store::MacosKeychainBackend::SecurityCli => {
+            keyring_store::MacosKeychainBackend::NativeKeyring
+        }
+    };
+
+    match keyring_store::get_secret_from_macos_backend(profile_name, key_name, target) {
+        Ok(Some(value)) => Ok(Some(value)),
+        Ok(None) => keyring_store::get_secret_from_macos_backend(profile_name, key_name, alternate),
+        Err(target_err) => {
+            match keyring_store::get_secret_from_macos_backend(profile_name, key_name, alternate) {
+                Ok(Some(value)) => Ok(Some(value)),
+                Ok(None) => Err(target_err).with_context(|| {
+                    format!("secret '{key_name}' could not be read from either Keychain backend")
+                }),
+                Err(alternate_err) => Err(anyhow::anyhow!(
+                    "secret '{key_name}' could not be read from either Keychain backend \
+                     (target: {target_err}; alternate: {alternate_err})"
+                )),
+            }
+        }
+    }
+}
+
 // ── Set Default ───────────────────────────────────────────────────────────────
 
 pub fn run_set_default(profile_name: String) -> Result<()> {
@@ -1339,6 +1464,19 @@ mod tests {
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_uses_the_expected_secret_set_for_each_auth_kind() {
+        assert_eq!(
+            macos_profile_secrets(AuthKind::ApiKey),
+            (API_KEY_SECRET, &[API_KEY_SECRET][..])
+        );
+        assert_eq!(
+            macos_profile_secrets(AuthKind::OAuth),
+            ("oauth_access_token", OAUTH_SECRETS)
+        );
     }
 
     #[test]

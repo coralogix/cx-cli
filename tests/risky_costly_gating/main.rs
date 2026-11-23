@@ -141,7 +141,7 @@ fn olly_disabled_blocks_olly_ask() {
 }
 
 #[test]
-fn olly_disabled_allows_olly_artifacts() {
+fn olly_disabled_blocks_olly_artifacts() {
     let tmp = temp_home();
     let output = cx_with_config(&tmp, "olly_enabled = false\n")
         .args([
@@ -155,11 +155,9 @@ fn olly_disabled_allows_olly_artifacts() {
         ])
         .output()
         .expect("failed to run cx");
+    assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("disabled"),
-        "artifacts should not be blocked, stderr: {stderr}"
-    );
+    assert!(stderr.contains("disabled"), "stderr: {stderr}");
 }
 
 #[test]

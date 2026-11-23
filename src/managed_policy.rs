@@ -87,8 +87,9 @@ fn parse_policy(raw: &str, path: &Path) -> Result<bool> {
 
 /// Returns whether the IT policy requires OS credential storage.
 ///
-/// A missing file means no policy. An invalid value is rejected rather than
-/// silently weakening an administrator's intended configuration.
+/// A missing or inaccessible policy file means no policy. An invalid value is
+/// rejected rather than silently weakening an administrator's intended
+/// configuration.
 pub fn requires_os_store() -> Result<bool> {
     if !supported_platform() {
         return Ok(false);
@@ -100,14 +101,34 @@ fn requires_os_store_at(path: &Path) -> Result<bool> {
     match std::fs::metadata(path) {
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            return inaccessible_policy_warning(path, &error);
+        }
         Err(error) => {
             return Err(error)
                 .with_context(|| format!("Cannot access managed policy {}", path.display()));
         }
     }
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read managed policy {}", path.display()))?;
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            return inaccessible_policy_warning(path, &error);
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("Failed to read managed policy {}", path.display()));
+        }
+    };
     parse_policy(&raw, path)
+}
+
+fn inaccessible_policy_warning(path: &Path, error: &std::io::Error) -> Result<bool> {
+    eprintln!(
+        "Warning: cannot access managed policy {}: {error}. \
+         Treating it as absent; managed credential storage is not enforced.",
+        path.display()
+    );
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -162,6 +183,16 @@ mod tests {
     fn missing_policy_file_means_no_policy() {
         let path = std::env::temp_dir().join("cx_policy_that_does_not_exist.toml");
         assert!(!requires_os_store_at(&path).expect("missing file is no policy"));
+    }
+
+    #[test]
+    fn inaccessible_policy_file_means_no_policy() {
+        let path = Path::new("/managed/policy.toml");
+        let result = inaccessible_policy_warning(
+            path,
+            &std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        );
+        assert!(!result.expect("permission denial is treated as no policy"));
     }
 
     #[test]

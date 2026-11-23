@@ -145,7 +145,7 @@ cx olly artifacts get <artifact-id>
 cx olly ask "List top 5 error messages" -o json --agent-to-agent-mode | jq '.response'
 
 # Parse artifacts
-cx olly artifacts list -o json | jq '.[] | {id, filename, created_at}'
+cx olly artifacts list -o json | jq '.[] | {id, type, chat_title, created_at}'
 ```
 
 ### Detailed analysis with specific model

@@ -324,12 +324,12 @@ pub async fn run_artifacts_list(
     filters.start = filters
         .start
         .as_deref()
-        .map(crate::time::parse_timestamp)
+        .map(crate::time::parse_timestamp_micros)
         .transpose()?;
     filters.end = filters
         .end
         .as_deref()
-        .map(crate::time::parse_timestamp)
+        .map(crate::time::parse_timestamp_micros)
         .transpose()?;
 
     let target = &targets[0];

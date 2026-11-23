@@ -752,11 +752,11 @@ async fn artifacts_list_sends_each_filter_as_its_query_param() {
         ),
         (
             &["--start", "2026-01-01T00:00:00Z"],
-            ("start_time", "2026-01-01T00:00:00.000Z"),
+            ("start_time", "2026-01-01T00:00:00.000000Z"),
         ),
         (
-            &["--end", "2026-01-02T00:00:00Z"],
-            ("end_time", "2026-01-02T00:00:00.000Z"),
+            &["--end", "2026-01-02T03:04:05.123456Z"],
+            ("end_time", "2026-01-02T03:04:05.123456Z"),
         ),
         (&["--limit", "5"], ("limit", "5")),
         (&["--offset", "0"], ("offset", "0")),
@@ -794,8 +794,8 @@ async fn artifacts_list_combines_filters() {
         vec![pairs(&[
             ("chat_id", "chat-1"),
             ("artifact_type", "coralogix_dataprime"),
-            ("start_time", "2026-01-01T00:00:00.000Z"),
-            ("end_time", "2026-01-01T22:00:00.000Z"),
+            ("start_time", "2026-01-01T00:00:00.000000Z"),
+            ("end_time", "2026-01-01T22:00:00.000000Z"),
             ("limit", "5"),
             ("offset", "5"),
         ])]
@@ -812,9 +812,9 @@ async fn artifacts_list_sends_relative_time_as_iso8601() {
     let (name, value) = &queries[0][0];
     assert_eq!(name, "start_time");
     let sent = chrono::DateTime::parse_from_rfc3339(value).expect("ISO 8601 start_time");
-    // The CLI sends millisecond precision, so allow for the truncation.
+    // The CLI sends microsecond precision, so allow for the truncation.
     assert!(
-        sent >= before - chrono::Duration::milliseconds(1) && sent <= after,
+        sent >= before - chrono::Duration::microseconds(1) && sent <= after,
         "start_time {value} is not one hour ago"
     );
 }
@@ -823,7 +823,7 @@ async fn artifacts_list_sends_relative_time_as_iso8601() {
 async fn artifacts_list_rejects_bad_flags_before_any_request() {
     let cases: [(&[&str], &str); 4] = [
         (&["--type", "coralogix_logs"], "schema_health_suggestions"),
-        (&["--offset", "-1"], "-1"),
+        (&["--offset", "-1"], "unexpected argument '-1'"),
         (&["--limit", "0"], "0 is not in"),
         (&["--start", "not-a-time"], "Could not parse time"),
     ];

@@ -165,8 +165,6 @@ pub struct Artifact {
     pub filename: Option<String>,
     pub content_type: Option<String>,
     pub size: Option<u64>,
-    pub created_at: Option<String>,
-    pub artifact_type: Option<String>,
 }
 
 /// One row of `GET /artifacts/`. The list response carries no download URL or

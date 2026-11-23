@@ -22,6 +22,14 @@ pub fn parse_timestamp_nanos(input: &str) -> Result<String> {
     Ok(parse_datetime(input)?.to_rfc3339_opts(SecondsFormat::Nanos, true))
 }
 
+/// Parse the same time expressions as [`parse_timestamp`], returning an RFC 3339
+/// instant at microsecond precision. For APIs (like Olly artifacts) whose
+/// timestamps carry microseconds, so a returned timestamp can be sent back as
+/// an inclusive bound.
+pub fn parse_timestamp_micros(input: &str) -> Result<String> {
+    Ok(parse_datetime(input)?.to_rfc3339_opts(SecondsFormat::Micros, true))
+}
+
 /// Parse the same time expressions as [`parse_timestamp`], returning a Unix
 /// epoch in seconds. For APIs (like service-catalog v2) that take an
 /// `int64` seconds timestamp rather than an RFC3339 string.

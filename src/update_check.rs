@@ -57,8 +57,7 @@ pub async fn fetch_if_stale() {
         return;
     }
 
-    let mut state = VersionCheckCache::load();
-    if !state.check_is_stale() {
+    if !VersionCheckCache::load().check_is_stale() {
         return;
     }
 
@@ -70,24 +69,15 @@ pub async fn fetch_if_stale() {
         return;
     };
 
-    if let Some(v) = fetch_latest_binary(&client).await {
-        state.latest_binary = Some(v);
-    }
+    let latest = fetch_latest_binary(&client).await;
 
-    // Always update the timestamp, even when fetches fail (e.g. GitHub is
-    // unreachable).  This prevents hammering the API on every command during
-    // an outage — we accept missing one 24 h window rather than spamming.
-    state.last_checked_at = Some(Utc::now());
-    // Re-read the fields other commands may have written while we fetched
-    // (`cx skills install` records its version), so we don't overwrite them.
-    let latest_state = VersionCheckCache::load();
-    state.installation_id = latest_state.installation_id.or(state.installation_id);
-    state.skills_installed_for = latest_state.skills_installed_for;
-    state.skills_unknown_noticed_for = latest_state.skills_unknown_noticed_for;
-    state.skills_agents = latest_state.skills_agents;
-    state.skills_refresh_attempted_for = latest_state.skills_refresh_attempted_for;
-    state.skills_refresh_attempted_at = latest_state.skills_refresh_attempted_at;
-    let _ = state.save();
+    let _ = VersionCheckCache::update(|state| {
+        if let Some(version) = latest {
+            state.latest_binary = Some(version);
+        }
+        // Throttle checks for 24 hours even if the release API is unreachable.
+        state.last_checked_at = Some(Utc::now());
+    });
 }
 
 /// Homebrew installs ask homebrew-core instead of GitHub: a release reaches the

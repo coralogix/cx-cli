@@ -11,16 +11,26 @@ default-run = "cx"
 name = "cx"
 path = "src/main.rs"
 
+[workspace]
+members = ["crates/cli-otel"]
+
 [dependencies]
 # CLI argument parsing
 clap = { version = "=4.5.37", features = ["derive", "env", "color"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
+
+# CLI execution telemetry
+cli-otel = { version = "0.1.0", path = "crates/cli-otel", features = ["clap", "command-failure-logs", "reqwest-middleware"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "trace"] }
+prost = "0.14"
+os_info = { version = "3.15", default-features = false }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
 # HTTP client
 reqwest = { version = "0.13", features = ["json", "query", "form", "rustls-no-provider", "rustls-native-certs"], default-features = false }
+reqwest-middleware = { version = "0.5", features = ["json", "query"] }
 rustls = { version = "0.23", features = ["ring"], default-features = false }
 
 # Serialization

@@ -8,6 +8,9 @@ default_profile = "default"
 # Valid values: "text", "json", "agents"
 default_output_format = "text"
 
+# Set to false to opt out of cx usage telemetry.
+# telemetry = false
+
 # Maximum serialized byte size of a non-aggregated Dataprime response that can
 # be printed directly to stdout in "agents" output mode. If the payload exceeds
 # this limit the results are written to a temp file instead, and a short summary

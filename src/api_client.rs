@@ -1,11 +1,13 @@
 use std::time::Duration;
 
 use reqwest::{header, Client, StatusCode};
+use reqwest_middleware::{ClientWithMiddleware, RequestBuilder};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::{CxError, Result};
 use crate::safety::AGENT_ENV_VARS;
+use crate::telemetry;
 
 fn cli_user_agent(agent_env_var: Option<&str>) -> String {
     match agent_env_var {
@@ -17,7 +19,7 @@ fn cli_user_agent(agent_env_var: Option<&str>) -> String {
 /// Thin wrapper around reqwest::Client pre-configured with Coralogix auth.
 #[derive(Clone)]
 pub struct CxClient {
-    inner: Client,
+    inner: ClientWithMiddleware,
     endpoint: String,
 }
 
@@ -57,7 +59,7 @@ impl CxClient {
         if let Some(timeout) = timeout {
             builder = builder.timeout(timeout);
         }
-        let inner = builder.build()?;
+        let inner = telemetry::instrument_http(builder.build()?);
 
         Ok(Self {
             inner,
@@ -76,15 +78,13 @@ impl CxClient {
     /// Used for NDJSON / streaming endpoints (e.g. DataPrime query).
     pub async fn post_raw(&self, path: &str, body: &Value) -> Result<String> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.post(&url).json(body).send().await?;
-        self.checked_text(resp).await
+        self.send_text(self.inner.post(&url).json(body)).await
     }
 
     /// GET with optional query params, deserialize response into T.
     pub async fn get<T: DeserializeOwned>(&self, path: &str, params: &[(&str, &str)]) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.get(&url).query(params).send().await?;
-        let text = self.checked_text(resp).await?;
+        let text = self.send_text(self.inner.get(&url).query(params)).await?;
         Ok(serde_json::from_str(&text)?)
     }
 
@@ -100,8 +100,7 @@ impl CxClient {
         for (key, value) in headers {
             req = req.header(*key, *value);
         }
-        let resp = req.send().await?;
-        self.checked_text(resp).await
+        self.send_text(req).await
     }
 
     /// POST JSON body, deserialize response into T.
@@ -126,16 +125,14 @@ impl CxClient {
         for (key, value) in headers {
             req = req.header(*key, *value);
         }
-        let resp = req.send().await?;
-        let text = self.checked_text(resp).await?;
+        let text = self.send_text(req).await?;
         Ok(serde_json::from_str(&text)?)
     }
 
     /// PUT JSON body, deserialize response into T.
     pub async fn put<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.put(&url).json(body).send().await?;
-        let text = self.checked_text(resp).await?;
+        let text = self.send_text(self.inner.put(&url).json(body)).await?;
         Ok(serde_json::from_str(&text)?)
     }
 
@@ -143,8 +140,7 @@ impl CxClient {
     /// Falls back to deserializing `{}` when the response body is empty.
     pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.delete(&url).send().await?;
-        let text = self.checked_text(resp).await?;
+        let text = self.send_text(self.inner.delete(&url)).await?;
         let json = if text.trim().is_empty() { "{}" } else { &text };
         Ok(serde_json::from_str(json)?)
     }
@@ -157,8 +153,7 @@ impl CxClient {
         body: &Value,
     ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.delete(&url).json(body).send().await?;
-        let text = self.checked_text(resp).await?;
+        let text = self.send_text(self.inner.delete(&url).json(body)).await?;
         let json = if text.trim().is_empty() { "{}" } else { &text };
         Ok(serde_json::from_str(json)?)
     }
@@ -166,8 +161,7 @@ impl CxClient {
     /// PATCH JSON body, deserialize response into T.
     pub async fn patch<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.patch(&url).json(body).send().await?;
-        let text = self.checked_text(resp).await?;
+        let text = self.send_text(self.inner.patch(&url).json(body)).await?;
         Ok(serde_json::from_str(&text)?)
     }
 
@@ -180,10 +174,13 @@ impl CxClient {
         params: &[(&str, &str)],
     ) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
-        let resp = self.inner.post(&url).query(params).send().await?;
-        let text = self.checked_text(resp).await?;
+        let text = self.send_text(self.inner.post(&url).query(params)).await?;
         let json = if text.trim().is_empty() { "{}" } else { &text };
         Ok(serde_json::from_str(json)?)
+    }
+
+    async fn send_text(&self, request: RequestBuilder) -> Result<String> {
+        self.checked_text(request.send().await?).await
     }
 
     /// Validate the HTTP status of a response and read the body as text.

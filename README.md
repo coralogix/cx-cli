@@ -44,6 +44,7 @@ Connect your agents to live logs, traces, metrics, dashboards, and alerts so the
 - [Time syntax](docs/time-syntax.md)
 - [Architecture](contributing/architecture.md)
 - [Development guide](contributing/development.md)
+- [CLI telemetry](docs/cli-telemetry.md)
 
 ## Contributing
 

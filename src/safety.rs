@@ -142,6 +142,10 @@ pub fn prompt_optional_text(
     Ok(Some(prompt.prompt()?))
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Cancelled.")]
+pub(crate) struct ConfirmationCancelled;
+
 pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<()> {
     if yes {
         eprintln!("[auto-approved via --yes] {action}");
@@ -162,7 +166,7 @@ pub fn confirm_destructive(action: &str, yes: bool, agent_mode: bool) -> Result<
     }
     let confirmed = Confirm::new(action).with_default(false).prompt()?;
     if !confirmed {
-        bail!("Cancelled.");
+        return Err(ConfirmationCancelled.into());
     }
     Ok(())
 }

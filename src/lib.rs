@@ -1,4 +1,5 @@
 pub mod api_client;
+pub(crate) mod atomic_file;
 pub mod banner;
 pub mod cases_query_rules;
 #[cfg(target_os = "macos")]
@@ -19,6 +20,7 @@ pub mod render;
 pub mod safety;
 pub mod serde_helpers;
 pub mod spill;
+pub mod telemetry;
 pub mod tier;
 pub mod time;
 pub mod update_check;

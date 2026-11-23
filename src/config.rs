@@ -1,4 +1,4 @@
-use std::io::IsTerminal;
+use std::io::{ErrorKind, IsTerminal};
 use std::path::PathBuf;
 
 #[cfg(unix)]
@@ -213,6 +213,10 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub allow_risky_commands: bool,
 
+    /// Whether this installation permits CLI execution telemetry.
+    #[serde(default = "default_true")]
+    pub telemetry: bool,
+
     /// Whether the Olly AI assistant (`olly ask`) is enabled.
     /// When false, `olly ask` is blocked.
     #[serde(default = "default_true")]
@@ -282,6 +286,7 @@ impl Default for Config {
             max_dataprime_direct_output_size: default_max_dataprime_direct_output_size(),
             temp_dir: default_temp_dir(),
             allow_risky_commands: true,
+            telemetry: true,
             olly_enabled: true,
             read_only: false,
             strict_fields_validation: false,
@@ -664,6 +669,26 @@ pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }
 
+/// Read consent independently of the CLI's typed configuration.
+pub(crate) fn telemetry_allowed() -> bool {
+    let Ok(path) = config_file() else {
+        return false;
+    };
+    match std::fs::symlink_metadata(&path) {
+        Err(error) => return error.kind() == ErrorKind::NotFound,
+        Ok(_) if !path.is_file() => return false,
+        Ok(_) => {}
+    }
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    raw.parse::<toml::Table>().is_ok_and(|table| {
+        table
+            .get("telemetry")
+            .is_none_or(|value| value.as_bool() == Some(true))
+    })
+}
+
 pub fn profiles_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("profiles"))
 }
@@ -708,6 +733,13 @@ pub fn load_config() -> Result<Config> {
     let raw = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     toml::from_str(&raw).context("Failed to parse config.toml")
+}
+
+/// Preserve fail-closed consent when editing a config with unrelated errors.
+pub(crate) fn load_config_for_update() -> Config {
+    let mut config = load_config().unwrap_or_default();
+    config.telemetry &= telemetry_allowed();
+    config
 }
 
 /// Write the global config to disk, creating directories as needed.
@@ -1307,7 +1339,7 @@ pub fn managed_completions() -> Result<Vec<ManagedCompletion>> {
 /// If an entry for this shell already exists, its path is updated in place.
 /// The updated config is persisted to `~/.cx/config.toml`.
 pub fn upsert_managed_completion(shell: &str, path: PathBuf) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config_for_update();
     if let Some(existing) = config
         .managed_completions
         .iter_mut()

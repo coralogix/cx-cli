@@ -302,11 +302,11 @@ to users. A suitable macOS setup is `755` on the `Coralogix` and `cx`
 directories and `644` on `policy.toml`.
 
 When enabled, `cx` stores credentials only in macOS Keychain or Windows
-Credential Manager. The interactive setup flow does not offer `file`, and
-`CX_CREDENTIAL_STORAGE=file` is rejected. Before running any command other than
-`cx profiles delete`, `cx` copies the API keys and OAuth tokens it finds in
-profile files to the OS store, and removes the plaintext fields only after
-every write succeeds.
+Credential Manager. The interactive setup flow skips the credential-storage
+prompt and saves directly to the OS store; `CX_CREDENTIAL_STORAGE=file` is
+rejected. Before running any command other than `cx profiles delete`, `cx`
+copies the API keys and OAuth tokens it finds in profile files to the OS store,
+and removes the plaintext fields only after every write succeeds.
 
 A profile that cannot be read or copied keeps its file unchanged and is skipped
 with a warning, so other profiles and the `cx profiles` commands keep working.

@@ -235,6 +235,12 @@ fn select_credential_storage(
     help_message: &str,
     managed: bool,
 ) -> Result<CredentialStorage> {
+    // A managed policy mandates OS-backed storage, so there is no choice to
+    // present. Skipping the picker also keeps policy-controlled setup fully
+    // non-interactive after authentication.
+    if managed {
+        return Ok(CredentialStorage::OsStore);
+    }
     if let Some(storage) = credential_storage_override().filter(|_| !managed) {
         return Ok(storage);
     }
@@ -1572,6 +1578,15 @@ mod tests {
             );
             assert_eq!(credential_storage_cursor(platform, true), 0);
         }
+    }
+
+    #[test]
+    fn managed_policy_skips_credential_storage_picker() {
+        assert_eq!(
+            select_credential_storage("ignored", "ignored", true)
+                .expect("managed policy should not prompt"),
+            CredentialStorage::OsStore
+        );
     }
 
     #[test]

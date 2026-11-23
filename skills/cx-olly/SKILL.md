@@ -16,7 +16,7 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | Command | Purpose | Key flags |
 |---|---|---|
 | `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
-| `cx olly artifacts list` | List all generated artifacts | - |
+| `cx olly artifacts list` | List generated artifacts, newest first | `--chat-id`, `--type`, `--start`, `--end`, `--limit`, `--offset` |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
 **Output format:** append `-o json` or `-o toon` for machine-readable output.
@@ -83,12 +83,26 @@ cx olly ask "Analyze this for me" --agent-to-agent-mode
 
 Olly can generate artifacts like query results, previews, and citations. Artifact IDs appear as links in the agent's response text.
 
-### List all artifacts
+### List artifacts
 
 ```bash
 cx olly artifacts list
 cx olly artifacts list -o json
+cx olly artifacts list --chat-id <chat-id>
+cx olly artifacts list --type coralogix_metrics --start now-1d
+cx olly artifacts list --limit 5 --offset 5
 ```
+
+With no flags it returns the newest 100 artifacts across all chats. Narrow it with:
+
+| Flag | Meaning |
+|---|---|
+| `--chat-id <id>` | Only artifacts from one chat (the chat ID that `cx olly ask` prints) |
+| `--type <type>` | One of `coralogix_dataprime`, `coralogix_metrics`, `kubernetes_query_results`, `alert_watch_data`, `github_file_content`, `sandbox_generated_file`, `schema_health_suggestions` |
+| `--start <time>` / `--end <time>` | Creation time window, inclusive. ISO 8601 or relative (`now-1h`) |
+| `--limit <n>` / `--offset <n>` | Paging. `--limit 5 --offset 5` is the second page of five |
+
+Each row has `id`, `type`, `chat_id`, `chat_title`, `chat_type`, `interaction_id` and `created_at`. The list carries no content: `download_url`, `filename`, `content_type` and `size` are always null here. Use `artifacts get <id>` for the content.
 
 ### Get artifact content
 
@@ -120,7 +134,7 @@ cx olly ask "Why is the checkout service showing high latency? Check logs with '
 cx olly ask "What changed in the last hour?" --chat-id abc-123-def --agent-to-agent-mode
 
 # Once the interaction has completed, get any generated charts
-cx olly artifacts list -o json | jq '.[0].id'
+cx olly artifacts list --chat-id abc-123-def -o json | jq -r '.[].id'
 cx olly artifacts get <artifact-id>
 ```
 

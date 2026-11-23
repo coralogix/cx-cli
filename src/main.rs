@@ -819,6 +819,7 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
   cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
+  cx olly artifacts list --chat-id <chat-id>
   cx olly artifacts get <artifact-id>")]
     Olly {
         #[command(subcommand)]

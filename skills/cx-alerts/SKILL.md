@@ -89,12 +89,24 @@ Two separate things decide where an alert's notifications go:
 - A value can be a template such as `{{ groups.service | default(value="na") }}` only when that key is in `notificationGroup.groupByKeys` (one case per group).
 - Setting up the router itself is in `cx-observability-setup`.
 
+### Case grouping
+
+When the alert groups by something (`groupByKeys`, or the `by` labels of a metric query), `notificationGroup.groupByKeys` decides how its groups become Cases. It is the one `notificationGroup` field used in Cases mode:
+
+```json
+"notificationGroup": { "groupByKeys": ["service"] }
+```
+
+- **One case per group:** list the keys. Except for metric and SLO alerts, they must be a subset of the alert's `groupByKeys`.
+- **One combined case for all groups:** leave `notificationGroup` out, or send `"groupByKeys": []`. This is what you get by default, so an alert that groups by `service` opens a single case for every service unless you list `service` here.
+- When the alert has a group-by, ask the user which one they want.
+
 ### Rules for the payload
 
-- **Default:** routing labels when the user wants notifications, and **no `notificationGroup` or `incidentsSettings`**. The API fills in Cases-mode defaults.
+- **Default:** routing labels when the user wants notifications, `notificationGroup` with **only `groupByKeys`** when the user wants one case per group (otherwise leave it out), and **no `incidentsSettings`**. The API fills in Cases-mode defaults.
 - **Never add `notificationGroup.router`** unless the user explicitly asks for alert-based notifications, and tell them it skips Cases.
 - **Don't add `notificationGroup.destinations` or `webhooks`.** They are older direct notifications sent by the alert itself. To send case notifications straight to a connector, use `caseSettings.destinations` (below).
-- **Copying an alert:** if you build the payload from `cx alerts get <id> -o json`, keep its `routing.*` labels but delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` unless the user wants them.
+- **Copying an alert:** if you build the payload from `cx alerts get <id> -o json`, keep its `routing.*` labels and `notificationGroup.groupByKeys` but delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` unless the user wants them.
 - DataPrime (analytics) alerts and Error Tracking alerts notify through Cases only.
 
 ### Optional: a connector for this alert's cases
@@ -111,10 +123,10 @@ This notifies the connector in addition to whatever the routers send. `presetId`
 
 ## Create Workflow
 
-1. Ask the user what they want to alert on (logs, metrics, traces)
+1. Ask the user what they want to alert on (logs, metrics, traces) and, if it groups by a field, whether each group should open its own case (see Case grouping)
 2. Ask for priority (P1–P5)
-3. Build the JSON payload with `alertDefProperties` - use the **API wire format** (see `references/alert-schemas.md` for all enum values). Keep it in **Cases mode**: routing labels if wanted, no `notificationGroup` / `incidentsSettings` (see Notifications above)
-4. **Tip:** use `cx alerts get <existing-id> -o json` to get a working template, modify it, and pipe into create - but remove the alert-mode notification fields from the copy first (keep `routing.*` labels)
+3. Build the JSON payload with `alertDefProperties` - use the **API wire format** (see `references/alert-schemas.md` for all enum values). Keep it in **Cases mode**: routing labels if wanted, `notificationGroup` with only `groupByKeys` if wanted, no `incidentsSettings` (see Notifications above)
+4. **Tip:** use `cx alerts get <existing-id> -o json` to get a working template, modify it, and pipe into create - but remove the alert-mode notification fields from the copy first (keep `routing.*` labels and `notificationGroup.groupByKeys`)
 5. Create using: `echo '<json>' | cx alerts create` or `cx alerts create --from-file alert.json`
 6. Verify with `cx alerts list --name "<alert name>"`
 
@@ -280,7 +292,7 @@ cx alerts suppression-rules delete <unique-identifier> --yes
 ## Key Principles
 
 - **Always ask for priority** (P1–P5) when creating alerts - never assume
-- **Cases mode by default** - route with `routing.*` labels; never set `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly asks for alert-based notifications
+- **Cases mode by default** - route with `routing.*` labels and set case grouping with `notificationGroup.groupByKeys`; never set `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly asks for alert-based notifications
 - **Use `--name` filter** for large accounts with many alerts
 - **Use `-o json` with `jq`** for filtering and transformation
 - **Use `--from-file -`** to pipe JSON from stdin when constructing alerts programmatically

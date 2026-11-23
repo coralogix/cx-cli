@@ -1057,6 +1057,7 @@ fn recreate_os_store_secrets(name: &str, profile: &Profile) -> Result<()> {
 #[cfg(any(target_os = "macos", test))]
 trait ProfileSecretMigrator {
     fn read_source(&self, key_name: &str) -> Result<Option<String>>;
+    fn validate_target(&self, key_name: &str, value: &str) -> Result<()>;
     fn delete_target(&self, key_name: &str) -> Result<()>;
     fn store_target(&self, key_name: &str, value: &str) -> Result<()>;
     fn read_target(&self, key_name: &str) -> Result<Option<String>>;
@@ -1080,6 +1081,7 @@ fn migrate_profile_secrets(
             continue;
         };
 
+        migrator.validate_target(key_name, &value)?;
         migrator.delete_target(key_name)?;
         store_and_verify_secret(profile_name, key_name, &value, migrator)?;
     }
@@ -1150,6 +1152,15 @@ struct MacosProfileSecretMigrator<'a> {
 impl ProfileSecretMigrator for MacosProfileSecretMigrator<'_> {
     fn read_source(&self, key_name: &str) -> Result<Option<String>> {
         read_macos_secret(self.profile_name, key_name, self.target)
+    }
+
+    fn validate_target(&self, key_name: &str, value: &str) -> Result<()> {
+        keyring_store::validate_secret_in_macos_backend(
+            self.profile_name,
+            key_name,
+            value,
+            self.target,
+        )
     }
 
     fn delete_target(&self, key_name: &str) -> Result<()> {
@@ -1630,6 +1641,7 @@ mod tests {
         target: RefCell<HashMap<String, String>>,
         operations: RefCell<Vec<String>>,
         source_error: Option<String>,
+        target_validation_error: Option<String>,
         verification_override: Option<String>,
         verification_failures: RefCell<usize>,
         store_failures: RefCell<usize>,
@@ -1644,6 +1656,16 @@ mod tests {
                 anyhow::bail!("{error}");
             }
             Ok(self.source.get(key_name).cloned())
+        }
+
+        fn validate_target(&self, key_name: &str, _value: &str) -> Result<()> {
+            self.operations
+                .borrow_mut()
+                .push(format!("validate:{key_name}"));
+            if let Some(error) = &self.target_validation_error {
+                anyhow::bail!("{error}");
+            }
+            Ok(())
         }
 
         fn delete_target(&self, key_name: &str) -> Result<()> {
@@ -1710,10 +1732,12 @@ mod tests {
             migrator.operations.into_inner(),
             vec![
                 "read:oauth_access_token",
+                "validate:oauth_access_token",
                 "delete:oauth_access_token",
                 "store:oauth_access_token:access",
                 "verify:oauth_access_token",
                 "read:oauth_refresh_token",
+                "validate:oauth_refresh_token",
                 "delete:oauth_refresh_token",
                 "store:oauth_refresh_token:refresh",
                 "verify:oauth_refresh_token",
@@ -1747,6 +1771,25 @@ mod tests {
     }
 
     #[test]
+    fn migration_does_not_delete_when_target_cannot_store_a_secret() {
+        let migrator = MockSecretMigrator {
+            source: HashMap::from([("api_key".to_string(), "too-long".to_string())]),
+            target_validation_error: Some("exceeds the interactive command buffer".to_string()),
+            ..Default::default()
+        };
+
+        let error = migrate_profile_secrets("test", AuthKind::ApiKey, &migrator).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("exceeds the interactive command buffer"));
+        assert_eq!(
+            migrator.operations.into_inner(),
+            vec!["read:api_key", "validate:api_key"]
+        );
+    }
+
+    #[test]
     fn migration_fails_when_target_readback_does_not_match() {
         let migrator = MockSecretMigrator {
             source: HashMap::from([("api_key".to_string(), "expected".to_string())]),
@@ -1762,6 +1805,7 @@ mod tests {
             migrator.operations.into_inner(),
             vec![
                 "read:api_key",
+                "validate:api_key",
                 "delete:api_key",
                 "store:api_key:expected",
                 "verify:api_key",
@@ -1789,6 +1833,7 @@ mod tests {
             migrator.operations.into_inner(),
             vec![
                 "read:api_key",
+                "validate:api_key",
                 "delete:api_key",
                 "store:api_key:value",
                 "store:api_key:value",
@@ -1811,6 +1856,7 @@ mod tests {
             migrator.operations.into_inner(),
             vec![
                 "read:api_key",
+                "validate:api_key",
                 "delete:api_key",
                 "store:api_key:value",
                 "verify:api_key",

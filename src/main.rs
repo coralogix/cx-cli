@@ -103,7 +103,7 @@ Examples:
   cx datasets fields --contains pod
   cx datasets fields --prefix '$d.kubernetes' --prefix '$d.k8s'
   cx datasets fields --prefix '$l' --prefix '$m' --dataset logs --dataset spans
-  cx datasets fields --exact \"\\$d.tags['http.method']\" --label subsystemName=api --start now-24h")]
+  cx datasets fields --exact \"\\$d.tags['http.method']\" --label-filter subsystemName=api --start now-24h")]
     Fields(FieldsSearchArgs),
 
     /// Show sample values of one field.
@@ -113,7 +113,7 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx datasets field-values '$m.severity'
-  cx datasets field-values \"\\$d.tags['http.method']\" --label applicationName=checkout --label applicationName=payments
+  cx datasets field-values \"\\$d.tags['http.method']\" --label-filter applicationName=checkout --label-filter applicationName=payments
   cx datasets field-values '$l.subsystemName' --dataset logs --dataset spans --start now-6h
   cx datasets field-values '$d.kubernetes.pod_name' --prefix checkout- --prefix payments-")]
     FieldValues(FieldValuesArgs),
@@ -141,7 +141,7 @@ struct FieldsSearchArgs {
 
     /// Only fields seen with this label value, as 'name=value'. Repeat a name to allow
     /// several values; different names must all match.
-    #[arg(long = "label", visible_alias = "labels")]
+    #[arg(long = "label-filter")]
     labels: Vec<String>,
 
     /// Start time in ISO 8601 or relative format (at most 7 days before --end).
@@ -181,7 +181,7 @@ struct FieldValuesArgs {
 
     /// Only values seen with this label value, as 'name=value'. Repeat a name to allow
     /// several values; different names must all match.
-    #[arg(long = "label", visible_alias = "labels")]
+    #[arg(long = "label-filter")]
     labels: Vec<String>,
 
     /// Start time in ISO 8601 or relative format (at most 7 days before --end).

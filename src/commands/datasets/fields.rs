@@ -34,20 +34,20 @@ pub fn parse_dataset(input: &str) -> Result<NamedDataset> {
     })
 }
 
-/// `--label name=value` flags as a dimension filter: `name` may also be written `$l.name`,
+/// `--label-filter name=value` flags as a dimension filter: `name` may also be written `$l.name`,
 /// repeating a name adds a value it may match, and different names must all match.
 pub fn parse_labels(inputs: &[String]) -> Result<Option<DimensionFilter>> {
     let mut labels: Vec<(String, Vec<DimensionFilter>)> = Vec::new();
     for input in inputs {
         let Some((name, value)) = input.split_once('=') else {
             bail!(
-                "invalid --label '{input}': expected 'name=value', e.g. 'applicationName=checkout'"
+                "invalid --label-filter '{input}': expected 'name=value', e.g. 'applicationName=checkout'"
             );
         };
         let name = name.trim();
         let name = name.strip_prefix("$l.").unwrap_or(name);
         if name.is_empty() {
-            bail!("invalid --label '{input}': the label name is empty");
+            bail!("invalid --label-filter '{input}': the label name is empty");
         }
         let keypath = format!("$l.{name}");
         let condition = DimensionFilter::Match(DimensionMatch {

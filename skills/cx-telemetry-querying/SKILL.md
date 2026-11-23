@@ -102,7 +102,7 @@ When you know part of a field's name, list the fields a dataset actually has wit
 cx datasets fields --contains amount --start now-24h
 cx datasets fields --prefix '$d.kubernetes' --dataset spans
 cx datasets fields --prefix '$l' --prefix '$m'
-cx datasets field-values '$d.payment.status' --label applicationName=checkout
+cx datasets field-values '$d.payment.status' --label-filter applicationName=checkout
 ```
 
 Repeating `--exact`, `--prefix` or `--contains` means any of the values; different flags must all hold. Some combinations are rejected with an error that names the problem; split them into separate searches. The time range is at most 7 days.

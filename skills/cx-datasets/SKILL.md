@@ -29,7 +29,7 @@ queryable instead of guessing names.
 | `cx datasets list` | List every dataset queryable by the current profile's team | `--filter <DPXL>` |
 | `cx datasets list -o json` | Same, as a JSON array of dataset rows | - |
 | `cx datasets fields` | List a dataset's fields as DataPrime keypaths, with their types | `--dataset`, `--exact`, `--prefix`, `--contains`, `--start`/`--end` |
-| `cx datasets field-values '<keypath>'` | Show sample values of one field | `--dataset`, `--label`, `--exact`/`--prefix`/`--contains` (on values) |
+| `cx datasets field-values '<keypath>'` | Show sample values of one field | `--dataset`, `--label-filter`, `--exact`/`--prefix`/`--contains` (on values) |
 
 - Supports `-p <profile>` (repeatable) for multi-profile fan-out; a `profile`
   key is added to each JSON row when more than one profile is targeted.
@@ -70,7 +70,7 @@ text output is the copy-pasteable `source` argument.
 
    ```bash
    cx datasets fields --dataset system/engine.queries --contains duration
-   cx datasets field-values '$d.payment.status' --label applicationName=checkout
+   cx datasets field-values '$d.payment.status' --label-filter applicationName=checkout
    ```
 
    See `cx-telemetry-querying` for the full field-discovery workflow and how

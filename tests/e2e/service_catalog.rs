@@ -211,16 +211,8 @@ fn service_catalog_insight_drilldown() {
     if harness::require_creds("service_catalog_insight_drilldown").is_none() {
         return;
     }
-    let listed = harness::run_ok_json(&[
-        "service-catalog",
-        "insights",
-        "service",
-        "--exclude-category",
-        "deployment",
-        "-o",
-        "json",
-    ]);
-    harness::assert_object_with_keys(&listed, &["perEntityType"]);
+    let listed = setup_insights();
+    harness::assert_object_with_keys(listed, &["perEntityType"]);
     let Some(insight_type) = first_unscoped_insight_type(&listed["perEntityType"][0]["insights"])
     else {
         eprintln!(
@@ -285,6 +277,466 @@ fn service_catalog_entity_insight_drilldown() {
     ]);
     harness::assert_object_with_keys(&v, &["insight"]);
     assert_eq!(v["insight"]["type"], insight_type.as_str(), "{v}");
+}
+
+/// `--breakdown` / `--top-values` / `--breakdown-sort count` shape every
+/// breakdown, and `--filter deployment_environment_name=<env>` (an
+/// environment taken from that breakdown) narrows it to that environment.
+#[test]
+#[ignore]
+fn service_catalog_insights_breakdowns_and_filter() {
+    if harness::require_creds("service_catalog_insights_breakdowns_and_filter").is_none() {
+        return;
+    }
+    let broken_down = harness::run_ok_json(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "--breakdown",
+        "environment",
+        "--top-values",
+        "2",
+        "--breakdown-sort",
+        "count",
+        "-o",
+        "json",
+    ]);
+    let breakdowns = environment_breakdowns(&broken_down);
+    for breakdown in &breakdowns {
+        let counts: Vec<i64> = breakdown["topValues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|top_value| top_value["insightCount"].as_i64().unwrap_or(0))
+            .collect();
+        assert!(counts.len() <= 2, "--top-values 2: {breakdown}");
+        assert!(
+            counts.windows(2).all(|pair| pair[0] >= pair[1]),
+            "--breakdown-sort count: {breakdown}"
+        );
+    }
+    let Some(environment) = breakdowns
+        .iter()
+        .find_map(|breakdown| breakdown["topValues"][0]["value"].as_str())
+    else {
+        eprintln!(
+            "[e2e] not covered: service-catalog insights --breakdown/--filter - no environment \
+             breakdown on the test team"
+        );
+        return;
+    };
+
+    let filter = format!("deployment_environment_name={environment}");
+    let filtered = harness::run_ok_json(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "--breakdown",
+        "environment",
+        "--filter",
+        &filter,
+        "-o",
+        "json",
+    ]);
+    let filtered_breakdowns = environment_breakdowns(&filtered);
+    assert!(!filtered_breakdowns.is_empty(), "{filtered}");
+    for breakdown in filtered_breakdowns {
+        for top_value in breakdown["topValues"].as_array().unwrap() {
+            assert_eq!(
+                top_value["value"], environment,
+                "--filter {filter}: {breakdown}"
+            );
+        }
+    }
+
+    let text = harness::run_ok_nonempty(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "--breakdown",
+        "environment",
+        "--filter",
+        &filter,
+        "-o",
+        "text",
+    ]);
+    let text = String::from_utf8_lossy(&text);
+    assert!(text.contains("Breakdowns:"), "{text}");
+    assert!(
+        text.contains(&format!("environment (1 value): {environment} ")),
+        "{text}"
+    );
+}
+
+/// `--sort name` with `--sort-order` and `--page-index`/`--page-size`, checked
+/// against the insight's whole list rather than a local collation, which
+/// may order punctuation differently from the backend.
+#[test]
+#[ignore]
+fn service_catalog_insight_drilldown_sort_and_pages() {
+    if harness::require_creds("service_catalog_insight_drilldown_sort_and_pages").is_none() {
+        return;
+    }
+    let Some(insight_type) =
+        first_setup_insight_type(|insight| affected_entity_count(insight) <= 200)
+    else {
+        eprintln!(
+            "[e2e] not covered: service-catalog insight-drilldown --sort/--page-index - no setup \
+             insight affecting at most 200 services on the test team"
+        );
+        return;
+    };
+    let ascending = drilldown_json(
+        &insight_type,
+        &[
+            "--sort",
+            "name",
+            "--sort-order",
+            "asc",
+            "--page-size",
+            "200",
+        ],
+    );
+    let total = ascending["totalEntities"].as_i64().unwrap_or(0);
+    let ascending_names = entity_names(&ascending);
+    assert_eq!(ascending_names.len() as i64, total, "{ascending}");
+
+    let descending = drilldown_json(
+        &insight_type,
+        &[
+            "--sort",
+            "name",
+            "--sort-order",
+            "desc",
+            "--page-size",
+            "200",
+        ],
+    );
+    let mut reversed = entity_names(&descending);
+    reversed.reverse();
+    assert_eq!(reversed, ascending_names, "desc must reverse asc");
+
+    let second_page = drilldown_json(
+        &insight_type,
+        &[
+            "--sort",
+            "name",
+            "--sort-order",
+            "asc",
+            "--page-size",
+            "2",
+            "--page-index",
+            "1",
+        ],
+    );
+    assert_eq!(second_page["totalEntities"], total, "{second_page}");
+    let page_end = ascending_names.len().min(4);
+    assert_eq!(
+        entity_names(&second_page),
+        ascending_names[ascending_names.len().min(2)..page_end],
+        "--page-index 1 --page-size 2"
+    );
+
+    let past_the_end = ((total - 1) / 2 + 1).to_string();
+    let text = harness::run_ok_nonempty(&[
+        "service-catalog",
+        "insight-drilldown",
+        &insight_type,
+        "service",
+        "--page-size",
+        "2",
+        "--page-index",
+        &past_the_end,
+        "-o",
+        "text",
+    ]);
+    let text = String::from_utf8_lossy(&text);
+    assert!(
+        text.contains(&format!(
+            "No entities on --page-index {past_the_end}: {total} in total"
+        )),
+        "{text}"
+    );
+}
+
+/// `--name-search`, `--environment-match every` and `--filter
+/// deployment_environment_name` each narrow the entities of one insight;
+/// `--scope language=<name>` drills into a per-language insight.
+#[test]
+#[ignore]
+fn service_catalog_insight_drilldown_narrowing() {
+    if harness::require_creds("service_catalog_insight_drilldown_narrowing").is_none() {
+        return;
+    }
+    let Some(insight_type) = first_setup_insight_type(|_| true) else {
+        eprintln!(
+            "[e2e] not covered: service-catalog insight-drilldown --name-search/--filter - no \
+             setup insight fired on the test team"
+        );
+        return;
+    };
+    let first_page = drilldown_json(&insight_type, &["--page-size", "20"]);
+    let name = first_page["entities"][0]["entity"]["name"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(!name.is_empty(), "{first_page}");
+
+    let search = name.to_uppercase();
+    let searched = drilldown_json(&insight_type, &["--name-search", &search]);
+    let searched_names = entity_names(&searched);
+    assert!(searched_names.iter().any(|n| n == name), "{searched}");
+    for searched_name in &searched_names {
+        assert!(
+            searched_name
+                .to_lowercase()
+                .contains(&search.to_lowercase()),
+            "--name-search {search}: {searched_name}"
+        );
+    }
+
+    let every = drilldown_json(&insight_type, &["--environment-match", "every"]);
+    for entity in every["entities"].as_array().unwrap() {
+        assert_eq!(
+            entity["affectedEnvironmentCount"], entity["environmentCount"],
+            "--environment-match every: {entity}"
+        );
+    }
+    assert!(
+        every["totalEntities"].as_i64().unwrap_or(0)
+            <= first_page["totalEntities"].as_i64().unwrap_or(0),
+        "{every}"
+    );
+
+    if let Some((_, environment)) = affected_environment_of(&first_page) {
+        let filter = format!("deployment_environment_name={environment}");
+        let filtered = drilldown_json(&insight_type, &["--filter", &filter]);
+        let filtered_entities = filtered["entities"].as_array().unwrap();
+        assert!(!filtered_entities.is_empty(), "{filtered}");
+        for entity in filtered_entities {
+            assert_eq!(
+                entity["affectedEnvironments"],
+                serde_json::json!([environment]),
+                "--filter {filter}: {entity}"
+            );
+        }
+    } else {
+        eprintln!(
+            "[e2e] not covered: service-catalog insight-drilldown --filter - no entity of \
+             {insight_type} is affected in a known environment"
+        );
+    }
+
+    let language = setup_insights()["perEntityType"][0]["insights"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|insight| insight["type"] == "INSIGHT_TYPE_MISSING_RUNTIME_METRICS")
+        .find_map(|insight| insight["language"]["name"].as_str());
+    let Some(language) = language else {
+        eprintln!(
+            "[e2e] not covered: service-catalog insight-drilldown --scope - no \
+             missing-runtime-metrics insight on the test team"
+        );
+        return;
+    };
+    let scope = format!("language={language}");
+    let scoped = drilldown_json(
+        "missing-runtime-metrics",
+        &["--scope", &scope, "--page-size", "1"],
+    );
+    assert_eq!(scoped["insight"]["language"]["name"], language, "{scoped}");
+}
+
+/// `--environment` narrows `entity-insights` and `entity-insight-drilldown`
+/// to one environment, and `--dimension owner` lists owners instead.
+#[test]
+#[ignore]
+fn service_catalog_entity_insights_environment_and_dimension() {
+    if harness::require_creds("service_catalog_entity_insights_environment_and_dimension").is_none()
+    {
+        return;
+    }
+    let Some(insight_type) = first_setup_insight_type(|_| true) else {
+        eprintln!(
+            "[e2e] not covered: service-catalog entity-insights --environment - no setup insight \
+             fired on the test team"
+        );
+        return;
+    };
+    let page = drilldown_json(&insight_type, &["--page-size", "20"]);
+    if let Some((service_name, environment)) = affected_environment_of(&page) {
+        let insights = harness::run_ok_json(&[
+            "service-catalog",
+            "entity-insights",
+            "service",
+            service_name,
+            "--exclude-category",
+            "deployment",
+            "--environment",
+            environment,
+            "-o",
+            "json",
+        ]);
+        let listed = insights["insights"].as_array().unwrap();
+        assert!(
+            listed
+                .iter()
+                .any(|insight| insight["type"] == insight_type.as_str()),
+            "{insights}"
+        );
+        for insight in listed {
+            for insight_environment in insight["environments"].as_array().into_iter().flatten() {
+                assert_eq!(
+                    insight_environment, environment,
+                    "--environment {environment}: {insight}"
+                );
+            }
+        }
+
+        let by_environment = harness::run_ok_json(&[
+            "service-catalog",
+            "entity-insight-drilldown",
+            &insight_type,
+            "service",
+            service_name,
+            "--environment",
+            environment,
+            "-o",
+            "json",
+        ]);
+        assert_eq!(by_environment["dimension"], "INSIGHT_DIMENSION_ENVIRONMENT");
+        let values = by_environment["values"].as_array().unwrap();
+        assert!(!values.is_empty(), "{by_environment}");
+        for value in values {
+            assert_eq!(
+                value["value"], environment,
+                "--environment {environment}: {value}"
+            );
+        }
+    } else {
+        eprintln!(
+            "[e2e] not covered: service-catalog entity-insights --environment - no entity of \
+             {insight_type} is affected in a known environment"
+        );
+    }
+
+    // An insight type has an owner breakdown only if the owner dimension
+    // applies to it, as `--dimension owner` needs.
+    let owner_listing = harness::run_ok_json(&[
+        "service-catalog",
+        "insights",
+        "service",
+        "--exclude-category",
+        "deployment",
+        "--breakdown",
+        "owner",
+        "-o",
+        "json",
+    ]);
+    let with_owner_breakdown: Vec<serde_json::Value> = owner_listing["perEntityType"][0]
+        ["insights"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|insight| {
+            insight["breakdowns"]
+                .as_array()
+                .is_some_and(|breakdowns| !breakdowns.is_empty())
+        })
+        .cloned()
+        .collect();
+    let Some(owner_insight_type) =
+        first_unscoped_insight_type(&serde_json::Value::Array(with_owner_breakdown))
+    else {
+        eprintln!(
+            "[e2e] not covered: service-catalog entity-insight-drilldown --dimension - no setup \
+             insight with an owner breakdown on the test team"
+        );
+        return;
+    };
+    let owner_page = drilldown_json(&owner_insight_type, &["--page-size", "1"]);
+    let service_name = owner_page["entities"][0]["entity"]["name"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(!service_name.is_empty(), "{owner_page}");
+    let by_owner = harness::run_ok_json(&[
+        "service-catalog",
+        "entity-insight-drilldown",
+        &owner_insight_type,
+        "service",
+        service_name,
+        "--dimension",
+        "owner",
+        "-o",
+        "json",
+    ]);
+    assert_eq!(
+        by_owner["dimension"], "INSIGHT_DIMENSION_OWNER",
+        "{by_owner}"
+    );
+    assert_eq!(
+        by_owner["insight"]["type"],
+        owner_insight_type.as_str(),
+        "{by_owner}"
+    );
+}
+
+/// `--system` names a database for `entity-insights` and
+/// `entity-insight-drilldown`.
+#[test]
+#[ignore]
+fn service_catalog_database_entity_insights_with_system() {
+    if harness::require_creds("service_catalog_database_entity_insights_with_system").is_none() {
+        return;
+    }
+    let Some((database, system)) = discover_database() else {
+        eprintln!(
+            "[e2e] not covered: service-catalog entity-insights --system - no databases on the \
+             test team"
+        );
+        return;
+    };
+    let database_insights = harness::run_ok_json(&[
+        "service-catalog",
+        "entity-insights",
+        "database",
+        &database,
+        "--system",
+        &system,
+        "--exclude-category",
+        "deployment",
+        "-o",
+        "json",
+    ]);
+    let Some(insight_type) = first_unscoped_insight_type(&database_insights["insights"]) else {
+        eprintln!(
+            "[e2e] not covered: service-catalog entity-insight-drilldown --system - no setup \
+             insight fired for database {database}"
+        );
+        return;
+    };
+    let drilldown = harness::run_ok_json(&[
+        "service-catalog",
+        "entity-insight-drilldown",
+        &insight_type,
+        "database",
+        &database,
+        "--system",
+        &system,
+        "-o",
+        "json",
+    ]);
+    assert_eq!(
+        drilldown["insight"]["type"],
+        insight_type.as_str(),
+        "{drilldown}"
+    );
 }
 
 /// Archives an insight type that is not archived yet and unarchives it again,
@@ -377,6 +829,101 @@ fn first_unscoped_insight_type(insights: &serde_json::Value) -> Option<String> {
             return None;
         }
         insight.get("type")?.as_str().map(String::from)
+    })
+}
+
+/// The setup insights of services. Cached across the insight tests.
+fn setup_insights() -> &'static serde_json::Value {
+    static CACHE: OnceLock<serde_json::Value> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        harness::run_ok_json(&[
+            "service-catalog",
+            "insights",
+            "service",
+            "--exclude-category",
+            "deployment",
+            "-o",
+            "json",
+        ])
+    })
+}
+
+/// The first unscoped setup insight of services that `accept` keeps.
+fn first_setup_insight_type(accept: impl Fn(&serde_json::Value) -> bool) -> Option<String> {
+    let accepted: Vec<serde_json::Value> = setup_insights()["perEntityType"][0]["insights"]
+        .as_array()?
+        .iter()
+        .filter(|insight| accept(insight))
+        .cloned()
+        .collect();
+    first_unscoped_insight_type(&serde_json::Value::Array(accepted))
+}
+
+/// The services an insight affects in at least one environment; 0 for a cap.
+fn affected_entity_count(insight: &serde_json::Value) -> i64 {
+    insight
+        .pointer("/entities/insightCount")
+        .or_else(|| insight.pointer("/environmentCoverage/atLeastOne/insightCount"))
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0)
+}
+
+fn drilldown_json(insight_type: &str, extra_args: &[&str]) -> serde_json::Value {
+    let mut args = vec![
+        "service-catalog",
+        "insight-drilldown",
+        insight_type,
+        "service",
+    ];
+    args.extend_from_slice(extra_args);
+    args.extend_from_slice(&["-o", "json"]);
+    harness::run_ok_json(&args)
+}
+
+/// `(name, environment)` of the first entity on a drilldown page affected in
+/// a named environment: an entity with no environment label has none.
+fn affected_environment_of(page: &serde_json::Value) -> Option<(&str, &str)> {
+    page["entities"].as_array()?.iter().find_map(|entity| {
+        let name = entity["entity"]["name"].as_str()?;
+        let environment = entity["affectedEnvironments"][0]
+            .as_str()
+            .filter(|environment| !environment.is_empty())?;
+        Some((name, environment))
+    })
+}
+
+fn environment_breakdowns(response: &serde_json::Value) -> Vec<&serde_json::Value> {
+    response["perEntityType"][0]["insights"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|insight| insight["breakdowns"].as_array().into_iter().flatten())
+        .inspect(|breakdown| {
+            assert_eq!(
+                breakdown["dimension"], "INSIGHT_DIMENSION_ENVIRONMENT",
+                "only the requested dimension: {breakdown}"
+            );
+        })
+        .collect()
+}
+
+fn entity_names(drilldown: &serde_json::Value) -> Vec<String> {
+    drilldown["entities"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entity| entity["entity"]["name"].as_str().map(String::from))
+        .collect()
+}
+
+/// A database's `(name, system)`: databases are identified by both.
+fn discover_database() -> Option<(String, String)> {
+    let stdout = harness::run_ok(&["service-catalog", "entities", "database", "-o", "json"]);
+    let v = harness::parse_json(&stdout)?;
+    v.as_array()?.iter().find_map(|item| {
+        let name = item.get("name")?.as_str()?;
+        let system = item.get("system")?.as_str().filter(|s| !s.is_empty())?;
+        Some((name.to_string(), system.to_string()))
     })
 }
 

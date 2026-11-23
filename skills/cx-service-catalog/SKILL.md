@@ -164,7 +164,7 @@ exception: `language=` scopes (`missing-runtime-metrics`) are for
 `insight-drilldown` only; omit `--scope` for `entity-insight-drilldown`.
 
 ```bash
-# 1. What is wrong across services?
+# 1. What is wrong across services? (one environment: --filter deployment_environment_name=<env>)
 cx service-catalog insights service --exclude-category deployment
 cx service-catalog insights service --category deployment
 
@@ -189,9 +189,20 @@ cx service-catalog entity-insight-drilldown operation-regression service <entity
   fields equal to 0 are omitted (e.g. a measurement's `before: 0`): read an
   absent number as 0.
 - Text output of `insights` ends with how many service changes the deployment
-  insights compared (`275 of 2000 eligible changes compared`); an
+  insights compared (`275 of 2000 eligible changes compared`), then, with
+  `--breakdown`, each insight's top values per dimension
+  (`owner (19 values, 26 unattributed): team-a 6/9 (66.7%)`: affected of all
+  entities with that value; unattributed = affected entities with no value). An
   `insight-drilldown` page footer shows its rows within the total
-  (`101-200 of 977 entities`).
+  (`101-200 of 977 entities`); a page past the end names the last
+  `--page-index`.
+- `--filter` on `insights` and `insight-drilldown` accepts a fixed label set,
+  not the `schema` labels: `deployment_environment_name`,
+  `deployment_environment_type`, `k8s_cluster_name`, `service_name`,
+  `service.name`, `service_namespace`, `tenant_name`, and for `database` also
+  `db_system`, `db.system`, `db_name`, `db_namespace`. Any other label is a 400
+  that lists the accepted ones. Filter environments with
+  `--filter deployment_environment_name=<env>`, never `environment=`.
 - **Unchecked insights** (`uncheckedInsights`, "Not checked" in text) mean a
   source could not be read, not that the entity is fine.
 - Databases are identified by name and system: pass `--system`.

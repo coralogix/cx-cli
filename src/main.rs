@@ -3340,7 +3340,8 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx service-catalog insights service
-  cx service-catalog insights service --filter environment=prod --exclude-category deployment
+  cx service-catalog insights service --filter deployment_environment_name=prod \\
+    --exclude-category deployment
   cx service-catalog insights service --category deployment
   cx service-catalog insights service database --breakdown environment --top-values 5
   cx service-catalog insights service --archived include")]
@@ -3486,15 +3487,21 @@ struct ServiceCatalogEntityDataArgs {
     aggregation: String,
 }
 
+/// `--filter` of `insights` and `insight-drilldown`, which accept a fixed
+/// label set rather than the `schema` labels.
+const INSIGHT_FILTER_HELP: &str = "Filter as label=value1,value2; repeatable across different \
+labels, at most once per label. Multiple labels combine with AND. Accepted labels: \
+deployment_environment_name, deployment_environment_type, k8s_cluster_name, service_name, \
+service.name, service_namespace, tenant_name; for databases also db_system, db.system, \
+db_name, db_namespace";
+
 #[derive(Args)]
 struct InsightsArgs {
     /// Entity type(s) (see `schema` for accepted values).
     #[arg(required = true)]
     entity_types: Vec<String>,
 
-    /// Filter as label=value1,value2; repeatable across different labels,
-    /// at most once per label. Multiple labels combine with AND.
-    #[arg(long = "filter")]
+    #[arg(long = "filter", help = INSIGHT_FILTER_HELP)]
     filters: Vec<String>,
 
     #[command(flatten)]
@@ -3552,9 +3559,7 @@ struct InsightDrilldownArgs {
     /// Entity type (see `schema` for accepted values).
     entity_type: String,
 
-    /// Filter as label=value1,value2; repeatable across different labels,
-    /// at most once per label. Multiple labels combine with AND.
-    #[arg(long = "filter")]
+    #[arg(long = "filter", help = INSIGHT_FILTER_HELP)]
     filters: Vec<String>,
 
     /// The insight's scope, as `insights` prints it: `language=<name>` or

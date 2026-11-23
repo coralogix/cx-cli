@@ -519,9 +519,12 @@ pub async fn run_insight_drilldown(
     .await;
 
     let results = report_errors_and_collect_successes(per_profile)?;
-    let first_row = i64::from(page_index.unwrap_or(0)) * i64::from(page_size);
     render_insight_results(results, targets.len() > 1, output, |response| {
-        print_entities_insight_drilldown(response, first_row)
+        print_entities_insight_drilldown(
+            response,
+            i64::from(page_index.unwrap_or(0)),
+            i64::from(page_size),
+        )
     })
 }
 
@@ -1195,12 +1198,14 @@ fn print_entities_insights(response: &Value) {
     let mut insight_rows: Vec<Vec<String>> = Vec::new();
     let mut unchecked_rows: Vec<Vec<String>> = Vec::new();
     let mut coverage_lines: Vec<String> = Vec::new();
+    let mut breakdown_lines: Vec<String> = Vec::new();
     for per_entity_type in json_array(response, "perEntityType") {
         let entity_type =
             short_enum_name(json_str(per_entity_type, "entityType"), ENTITY_TYPE_PREFIX);
         coverage_lines.extend(format_behavior_coverage(&entity_type, per_entity_type));
         for insight in json_array(per_entity_type, "insights") {
             insight_rows.push(listed_insight_row(&entity_type, insight));
+            breakdown_lines.extend(format_insight_breakdowns(&entity_type, insight));
         }
         for unchecked in json_array(per_entity_type, "uncheckedInsights") {
             unchecked_rows.push(unchecked_insight_row(Some(&entity_type), unchecked));
@@ -1235,7 +1240,58 @@ fn print_entities_insights(response: &Value) {
     {
         println!("{}", line.dimmed());
     }
+    if !breakdown_lines.is_empty() {
+        println!();
+        println!("{}", "Breakdowns:".bold());
+        for line in breakdown_lines {
+            println!("{line}");
+        }
+    }
     print_unchecked_insights(&["Entity Type", "Type", "Reason"], unchecked_rows);
+}
+
+/// The `--breakdown` top values under a heading naming the insight as the
+/// table does, one line per dimension, e.g.
+/// `    owner (19 values, 26 unattributed): team-a 6/9 (66.7%), team-b 4/9 (44.4%)`.
+/// `unattributed` counts affected entities with no value for the dimension.
+fn format_insight_breakdowns(entity_type: &str, insight: &Value) -> Vec<String> {
+    let dimension_lines: Vec<String> = json_array(insight, "breakdowns")
+        .map(|breakdown| {
+            let value_count = json_i64(breakdown, "affectedValueCount");
+            let mut counts = format!(
+                "{value_count} {}",
+                if value_count == 1 { "value" } else { "values" }
+            );
+            let unattributed = json_i64(breakdown, "unattributedCount");
+            if unattributed > 0 {
+                counts.push_str(&format!(", {unattributed} unattributed"));
+            }
+            let top_values = json_array(breakdown, "topValues")
+                .map(|top_value| {
+                    format!(
+                        "{} {}",
+                        json_str(top_value, "value"),
+                        format_affected_count(top_value)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "    {} ({counts}): {top_values}",
+                short_enum_name(json_str(breakdown, "dimension"), INSIGHT_DIMENSION_PREFIX)
+            )
+        })
+        .collect();
+    if dimension_lines.is_empty() {
+        return dimension_lines;
+    }
+    let mut heading = format!("  {entity_type} {}", insight_type_short(insight));
+    let scope = format_insight_scope(insight);
+    if scope != "-" {
+        heading.push(' ');
+        heading.push_str(&scope);
+    }
+    std::iter::once(heading).chain(dimension_lines).collect()
 }
 
 fn print_entity_insights(response: &Value) {
@@ -1270,8 +1326,7 @@ fn print_entity_insights(response: &Value) {
     print_unchecked_insights(&["Type", "Reason"], unchecked_rows);
 }
 
-/// `first_row` is the zero-based offset of the requested page.
-fn print_entities_insight_drilldown(response: &Value, first_row: i64) {
+fn print_entities_insight_drilldown(response: &Value, page_index: i64, page_size: i64) {
     print_drilldown_title(response);
     let entity_rows: Vec<Vec<String>> = json_array(response, "entities")
         .map(|entity| {
@@ -1290,7 +1345,10 @@ fn print_entities_insight_drilldown(response: &Value, first_row: i64) {
         })
         .collect();
 
-    if entity_rows.is_empty() {
+    let total = json_i64(response, "totalEntities");
+    if entity_rows.is_empty() && total > 0 {
+        render::print_no_results(&format_empty_page(page_index, page_size, total));
+    } else if entity_rows.is_empty() {
         render::print_no_results("No affected entities found.");
     } else {
         let shown = entity_rows.len() as i64;
@@ -1307,9 +1365,18 @@ fn print_entities_insight_drilldown(response: &Value, first_row: i64) {
         );
         println!(
             "{}",
-            format_page_range(first_row, shown, json_i64(response, "totalEntities")).dimmed()
+            format_page_range(page_index * page_size, shown, total).dimmed()
         );
     }
+}
+
+/// A page past the last one, named by `--page-index` (zero-based) so the
+/// last page can be requested as printed.
+fn format_empty_page(page_index: i64, page_size: i64, total: i64) -> String {
+    format!(
+        "No entities on --page-index {page_index}: {total} in total, the last page is --page-index {}.",
+        (total - 1) / page_size
+    )
 }
 
 /// The rows on screen within the whole result, e.g. `201-300 of 977 entities`.
@@ -1464,19 +1531,21 @@ fn format_insight_affected(insight: &Value) -> String {
             json_f64(cap_usage, "percentage")
         );
     }
-    let affected_count = insight
+    insight
         .get("entities")
         .or_else(|| insight.pointer("/environmentCoverage/atLeastOne"))
-        .or_else(|| insight.pointer("/behaviorCoverage/atLeastOne"));
-    match affected_count {
-        Some(count) => format!(
-            "{}/{} ({:.1}%)",
-            json_i64(count, "insightCount"),
-            json_i64(count, "totalEntities"),
-            json_f64(count, "percentage")
-        ),
-        None => "-".to_string(),
-    }
+        .or_else(|| insight.pointer("/behaviorCoverage/atLeastOne"))
+        .map_or_else(|| "-".to_string(), format_affected_count)
+}
+
+/// An affected count or a breakdown value as `count/total (pct%)`.
+fn format_affected_count(count: &Value) -> String {
+    format!(
+        "{}/{} ({:.1}%)",
+        json_i64(count, "insightCount"),
+        json_i64(count, "totalEntities"),
+        json_f64(count, "percentage")
+    )
 }
 
 /// The `scope` oneof in `--scope` syntax, e.g. `request-kind=server`.
@@ -2066,6 +2135,57 @@ mod tests {
     fn format_page_range_counts_from_the_page_offset() {
         assert_eq!(format_page_range(0, 3, 77), "1-3 of 77 entities");
         assert_eq!(format_page_range(200, 100, 977), "201-300 of 977 entities");
+    }
+
+    #[test]
+    fn format_empty_page_names_the_last_page_index() {
+        assert_eq!(
+            format_empty_page(5, 50, 74),
+            "No entities on --page-index 5: 74 in total, the last page is --page-index 1."
+        );
+        assert_eq!(
+            format_empty_page(1, 50, 50),
+            "No entities on --page-index 1: 50 in total, the last page is --page-index 0."
+        );
+    }
+
+    #[test]
+    fn format_insight_breakdowns_lists_top_values_per_dimension() {
+        let insight = json!({
+            "type": "INSIGHT_TYPE_MISSING_RUNTIME_METRICS",
+            "language": { "name": "java" },
+            "breakdowns": [
+                {
+                    "dimension": "INSIGHT_DIMENSION_ENVIRONMENT",
+                    "topValues": [
+                        { "value": "prod", "insightCount": 3, "totalEntities": 19, "percentage": 15.8 },
+                        { "value": "staging", "insightCount": 1, "totalEntities": 4, "percentage": 25 }
+                    ],
+                    "affectedValueCount": 12
+                },
+                {
+                    "dimension": "INSIGHT_DIMENSION_OWNER",
+                    "topValues": [
+                        { "value": "team-a", "insightCount": 6, "totalEntities": 9, "percentage": 66.7 }
+                    ],
+                    "affectedValueCount": 1,
+                    "unattributedCount": 26
+                }
+            ]
+        });
+        assert_eq!(
+            format_insight_breakdowns("service", &insight),
+            vec![
+                "  service missing-runtime-metrics language=java",
+                "    environment (12 values): prod 3/19 (15.8%), staging 1/4 (25.0%)",
+                "    owner (1 value, 26 unattributed): team-a 6/9 (66.7%)",
+            ]
+        );
+        assert!(format_insight_breakdowns(
+            "service",
+            &json!({ "type": "INSIGHT_TYPE_NO_OWNER", "breakdowns": [] })
+        )
+        .is_empty());
     }
 
     #[test]

@@ -634,7 +634,16 @@ fn entities_insights_body() -> serde_json::Value {
                         "behaviorCoverage": {
                             "atLeastOne": { "insightCount": 2, "totalEntities": 10, "percentage": 20 }
                         },
-                        "requestKind": { "kind": "REQUEST_KIND_SERVER" }
+                        "requestKind": { "kind": "REQUEST_KIND_SERVER" },
+                        "breakdowns": [
+                            {
+                                "dimension": "INSIGHT_DIMENSION_ENVIRONMENT",
+                                "topValues": [
+                                    { "value": "prod", "insightCount": 2, "totalEntities": 8, "percentage": 25 }
+                                ],
+                                "affectedValueCount": 1
+                            }
+                        ]
                     }
                 ],
                 "uncheckedInsights": [
@@ -667,7 +676,7 @@ async fn insights_posts_the_selection_and_renders_every_format() {
             .and(path(INSIGHTS))
             .and(body_json(json!({
                 "entityTypes": ["ENTITY_TYPE_SERVICE"],
-                "filters": [{ "labelName": "environment", "labelValues": ["prod"] }],
+                "filters": [{ "labelName": "deployment_environment_name", "labelValues": ["prod"] }],
                 "breakdowns": ["INSIGHT_DIMENSION_ENVIRONMENT"],
                 "types": [],
                 "categories": ["INSIGHT_CATEGORY_DEPLOYMENT"],
@@ -688,7 +697,7 @@ async fn insights_posts_the_selection_and_renders_every_format() {
         run_insights(
             &targets,
             &["service".to_string()],
-            &["environment=prod".to_string()],
+            &["deployment_environment_name=prod".to_string()],
             &InsightSelectionInput {
                 types: &[],
                 categories: &categories,
@@ -1001,6 +1010,49 @@ async fn insight_drilldown_posts_scope_sort_and_pagination() {
     )
     .await
     .expect("run_insight_drilldown should succeed");
+}
+
+/// A page past the last one comes back empty with the total still set.
+#[tokio::test]
+async fn insight_drilldown_renders_a_page_past_the_end() {
+    for format in [OutputFormat::Text, OutputFormat::Json] {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path(format!("{INSIGHTS}/drilldown")))
+            .and(body_json(json!({
+                "type": "INSIGHT_TYPE_NO_OWNER",
+                "entityType": "ENTITY_TYPE_SERVICE",
+                "filters": [],
+                "pagination": { "pageIndex": 5, "pageSize": 50 }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "insight": { "type": "INSIGHT_TYPE_NO_OWNER", "title": "74 services with no owner" },
+                "totalEntities": 74
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let targets = vec![common::test_target("test-profile", &server.uri())];
+
+        run_insight_drilldown(
+            &targets,
+            "no-owner",
+            "service",
+            &[],
+            None,
+            None,
+            None,
+            None,
+            Some(5),
+            50,
+            None,
+            format,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("an empty page should render {format:?}: {e:#}"));
+    }
 }
 
 #[tokio::test]

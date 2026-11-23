@@ -480,9 +480,9 @@ fn labels_from_file(label: Option<String>, labels: Option<Vec<String>>) -> Vec<S
 ///
 /// `credential_storage` selects where secrets live for both auth modes:
 ///   - `"file"` (the value when the key is omitted, so existing profiles stay
-///     file-based, and the setup default off macOS): API keys / OAuth tokens
+///     file-based, and the setup default on Linux): API keys / OAuth tokens
 ///     are written inline in the TOML, which is created with `0600` permissions.
-///   - `"os_store"` (the setup default on macOS): secrets are stored in the OS
+///   - `"os_store"` (the setup default on macOS and Windows): secrets are stored in the OS
 ///     credential store (macOS Keychain, Windows Credential Manager, etc.) and
 ///     the inline fields are absent from the TOML.
 #[derive(Debug, Clone, Serialize)]

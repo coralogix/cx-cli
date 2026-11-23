@@ -77,6 +77,7 @@ const OUTPUT_FORMATS: &[&str] = &["text", "json", "toon"];
 enum OsStorePlatform {
     LinuxMusl,
     Macos { apple_signed: bool },
+    Windows,
     Other,
 }
 
@@ -87,6 +88,8 @@ fn current_os_store_platform() -> OsStorePlatform {
         OsStorePlatform::Macos {
             apple_signed: apple_developer_id(),
         }
+    } else if cfg!(target_os = "windows") {
+        OsStorePlatform::Windows
     } else {
         OsStorePlatform::Other
     }
@@ -111,7 +114,8 @@ fn os_store_offered_on(platform: OsStorePlatform) -> bool {
 
 /// Storage choices for the setup prompt. `file` is listed first. `os-store` is
 /// appended only when [`os_store_offered_on`] is true. The highlighted default
-/// is [`default_credential_storage`]: `os-store` on macOS, `file` elsewhere.
+/// is [`default_credential_storage`]: `os-store` on macOS and Windows, `file`
+/// elsewhere.
 /// `managed` (an IT policy requires the OS store) leaves only `os-store`.
 fn credential_storage_options_for(
     platform: OsStorePlatform,
@@ -138,7 +142,7 @@ fn default_credential_storage(platform: OsStorePlatform, managed: bool) -> Crede
         return storage;
     }
     match platform {
-        OsStorePlatform::Macos { .. } => CredentialStorage::OsStore,
+        OsStorePlatform::Macos { .. } | OsStorePlatform::Windows => CredentialStorage::OsStore,
         OsStorePlatform::LinuxMusl | OsStorePlatform::Other => CredentialStorage::File,
     }
 }
@@ -214,10 +218,14 @@ fn credential_storage_help(file_description: &str, platform: OsStorePlatform) ->
              tied to this Developer ID-signed cx. 'file' {file_description} Falls back to file \
              if the Keychain is unavailable."
         ),
+        OsStorePlatform::Windows => format!(
+            "'os-store' is preselected and stores the secret in Windows Credential Manager. \
+             'file' {file_description} Falls back to file if Windows Credential Manager is \
+             unavailable."
+        ),
         OsStorePlatform::Other => format!(
             "'file' is preselected and {file_description} 'os-store' uses the OS credential store \
-             (Windows Credential Manager, Linux Secret Service). Falls back to file if the OS \
-             store is unavailable."
+             (Linux Secret Service). Falls back to file if the OS store is unavailable."
         ),
     }
 }
@@ -1098,8 +1106,9 @@ fn labels_line(profile_name: &str, labels: &[String]) -> String {
 /// Build an API-key profile from flags alone — no terminal involved. OAuth is
 /// unavailable here (it needs a browser), and consequential values are never
 /// invented: a missing API key or region is an error naming the exact flag to
-/// add. On macOS the secret goes to the Keychain, falling back to the profile
-/// file if that write fails. Everywhere else it is written to the profile file.
+/// add. On macOS and Windows the secret goes to the OS credential store,
+/// falling back to the profile file if that write fails. On Linux it is written
+/// to the profile file.
 fn build_profile_non_interactive(
     name: &str,
     api_key: Option<String>,
@@ -1550,6 +1559,7 @@ mod tests {
                 apple_signed: false,
             },
             OsStorePlatform::Macos { apple_signed: true },
+            OsStorePlatform::Windows,
             OsStorePlatform::Other,
             OsStorePlatform::LinuxMusl,
         ] {
@@ -1592,7 +1602,19 @@ mod tests {
     }
 
     #[test]
-    fn non_macos_defaults_to_file() {
+    fn windows_defaults_to_os_store() {
+        let platform = OsStorePlatform::Windows;
+        assert_eq!(
+            default_credential_storage(platform, false),
+            CredentialStorage::OsStore
+        );
+        let options = credential_storage_options_for(platform, false);
+        let cursor = credential_storage_cursor(platform, false);
+        assert_eq!(options[cursor].1, CredentialStorage::OsStore);
+    }
+
+    #[test]
+    fn unix_defaults_to_file() {
         for platform in [OsStorePlatform::Other, OsStorePlatform::LinuxMusl] {
             assert_eq!(
                 default_credential_storage(platform, false),

@@ -26,7 +26,7 @@ Every alert definition has this top-level shape. The alert type config (e.g. `lo
 }
 ```
 
-**Notification mode:** create alerts in **Cases mode** — leave out `notificationGroup` and `incidentsSettings` (the API defaults them) and use `caseSettings` only when you need to send case notifications to a connector. `notificationGroup` and `incidentsSettings` are the **Alerts-mode** (legacy) notification fields; see their sections below and only use them when the user explicitly asks for alert-based notifications.
+**Notifications:** routing labels in `entityLabels` decide which routers pick the alert up, in either mode. The mode is set only by `notificationGroup.router`: leave it out for **Cases mode** (the default), which also means leaving out `notificationGroup` and `incidentsSettings` entirely. `notificationGroup` and `incidentsSettings` are **Alerts-mode** fields; only use them when the user explicitly asks for alert-based notifications. See the sections below.
 
 ### Priority values
 
@@ -71,9 +71,21 @@ Every alert definition has this top-level shape. The alert type config (e.g. `lo
 
 Day values: `DAY_OF_WEEK_MONDAY_OR_UNSPECIFIED`, `DAY_OF_WEEK_TUESDAY`, `DAY_OF_WEEK_WEDNESDAY`, `DAY_OF_WEEK_THURSDAY`, `DAY_OF_WEEK_FRIDAY`, `DAY_OF_WEEK_SATURDAY`, `DAY_OF_WEEK_SUNDAY`
 
+### Routing labels (`entityLabels`) — both modes
+
+```json
+{
+  "routing.team": "payments",
+  "routing.service": "checkout",
+  "routing.environment": "production"
+}
+```
+
+Only these three keys route, and the `routing.` prefix is required: a bare `team` key is an ordinary label that no router matches (no error is reported). A router's `routingLabels` hold the same values without the prefix (`{"team": "payments"}`). Each router rule has an `entityType`: `CASES` rules handle Cases-mode alerts, `ALERTS` rules handle alerts with `notificationGroup.router`. A value may be a template such as `{{ groups.service | default(value="na") }}` only when that key is in `notificationGroup.groupByKeys`. Other `entityLabels` keys are free-form labels.
+
 ### Case Settings (`caseSettings`) — Cases mode
 
-Optional. Settings for the cases this alert creates. In Cases mode the alert sends no notifications itself: the case does, via `destinations` here and via any notification router whose matcher matches the alert's `routing.*` entity labels.
+Optional. Settings for the cases this alert creates. In Cases mode the alert sends no notifications itself: the case does, through the routers its routing labels match and through `destinations` here.
 
 ```json
 {
@@ -102,7 +114,7 @@ Optional. Settings for the cases this alert creates. In Cases mode the alert sen
 
 ### Notification Group (`notificationGroup`) — Alerts mode only
 
-**Do not set `router`, `destinations` or `webhooks` when creating alerts in Cases mode.** A `notificationGroup` with a `router` (or with `destinations` / `webhooks`) makes the alert send its own notifications and bypasses Cases. Omit the whole object to stay in Cases mode; use `caseSettings.destinations` to notify a connector instead.
+**Leave this object out when creating alerts in Cases mode.** `router` is the mode switch: when it is present the alert sends its own notifications through router rules with `entityType: "ALERTS"` and opens no Case. `router.id` pins one router. `destinations` and `webhooks` are older direct notifications sent by the alert itself. Only set any of these when the user explicitly asks for alert-based notifications; to notify a connector about this alert's cases, use `caseSettings.destinations` instead.
 
 ```json
 {
@@ -656,7 +668,7 @@ Monitor error budget consumption or burn rate. Exactly one of `errorBudget` or `
 
 - **groupByKeys for metric alerts**: Leave empty to let the API infer from the PromQL `by` clause. If provided, keys must be in **alphabetical order** (the API infers alphabetically, not in query order).
 - **Priority**: Always ask the user -- never pick a default.
-- **override in rules**: Per-rule priority override using the same `ALERT_DEF_PRIORITY_*` enum values. The create API rejects a logs-threshold rule without it (400 `Required` at `rules.0.override`), so always set it; use `{ "priority": "ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED" }` to keep the alert-level priority.
+- **override in rules**: The rule's own priority, using the same `ALERT_DEF_PRIORITY_*` enum values. The create API rejects a logs-threshold rule without it (400 `Required` at `rules.0.override`), so always set it. With one rule, use the alert's `priority`. `ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED` means P5 (info); it does not inherit the alert-level priority. Rules in one alert must have different priorities.
 - **notificationPayloadFilter**: List of log/span field paths to include in notifications (e.g. `["obj.field"]`).
-- **Cases mode**: do not copy `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` from an existing alert into a new one unless the user explicitly wants alert-based notifications.
+- **Cases mode**: when copying an existing alert, keep its `routing.*` labels but do not copy `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly wants alert-based notifications.
 - **Best practice**: Fetch an existing alert with `cx alerts get <id> -o json` to see the exact response shape, then use it as a template for creating new alerts.

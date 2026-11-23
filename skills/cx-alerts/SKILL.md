@@ -62,24 +62,42 @@ Always ask the user what priority to use when creating alerts:
 | P4 | Low - informational, check when convenient |
 | P5 | Info - logging/tracking only |
 
-## Notification Mode: Cases by Default
+## Notifications: Cases by Default
 
-Alerts can notify in two modes. **Always create alerts in Cases mode** unless the user explicitly asks for alert-based notifications.
+Two separate things decide where an alert's notifications go:
 
-| Mode | How it is stored | Use |
+1. **Routing labels** (`entityLabels`) decide which Notification Center routers pick the alert up. They work the same way in both modes.
+2. **The mode** decides who sends the notification. It is set by one field: whether `notificationGroup.router` exists.
+
+| Mode | Stored as | What happens |
 |---|---|---|
-| **Cases** (default) | `notificationGroup` has **no `router`**; optional `caseSettings` | Alert events are grouped into Cases, which handle routing and notifying (see `cx-cases`) |
-| Alerts (legacy) | `notificationGroup.router` present, or `destinations` / `webhooks` set | The alert sends notification requests itself, one per trigger, with no case grouping |
+| **Cases** (default) | no `notificationGroup.router` | Alert events open Cases; matching routers notify through their rules with `entityType: "CASES"` |
+| Alerts (only when asked) | `notificationGroup.router` present | The alert notifies on its own, through router rules with `entityType: "ALERTS"`, and opens no Case |
 
-Rules for the payload:
+### Routing labels
 
-- **Omit `notificationGroup` and `incidentsSettings` entirely.** The API fills in Cases-mode defaults. Do not add `router`, `destinations`, `webhooks`, `notifyOn` or retriggering periods "to be safe".
-- **Do not turn a request to "send it to Slack/PagerDuty/email" into `notificationGroup.destinations`.** In Cases mode, send to a connector with `caseSettings.destinations` (below), or route with `routing.*` entity labels matched by a notification router (see `cx-observability-setup`).
-- **Strip alert-mode fields from templates.** If you build the payload from `cx alerts get <id> -o json`, delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` from the copy unless the user wants them.
-- **Only use alert-based notifications when the user explicitly asks for them**, and tell them it bypasses Cases.
+```json
+"entityLabels": {
+  "routing.team": "payments",
+  "routing.service": "checkout",
+  "routing.environment": "production"
+}
+```
+
+- Only `routing.team`, `routing.service` and `routing.environment` route. **The `routing.` prefix is required:** a bare `team` key is an ordinary label, no router matches it, and nothing reports an error.
+- Set only the labels the user gives; one is enough. A router's `routingLabels` use the same values without the prefix (`{"team": "payments"}`); see them with `cx notifications routers list` / `get`.
+- A value can be a template such as `{{ groups.service | default(value="na") }}` only when that key is in `notificationGroup.groupByKeys` (one case per group).
+- Setting up the router itself is in `cx-observability-setup`.
+
+### Rules for the payload
+
+- **Default:** routing labels when the user wants notifications, and **no `notificationGroup` or `incidentsSettings`**. The API fills in Cases-mode defaults.
+- **Never add `notificationGroup.router`** unless the user explicitly asks for alert-based notifications, and tell them it skips Cases.
+- **Don't add `notificationGroup.destinations` or `webhooks`.** They are older direct notifications sent by the alert itself. To send case notifications straight to a connector, use `caseSettings.destinations` (below).
+- **Copying an alert:** if you build the payload from `cx alerts get <id> -o json`, keep its `routing.*` labels but delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` unless the user wants them.
 - DataPrime (analytics) alerts and Error Tracking alerts notify through Cases only.
 
-Cases-mode destination example (connector notified for every case event):
+### Optional: a connector for this alert's cases
 
 ```json
 "caseSettings": {
@@ -89,14 +107,14 @@ Cases-mode destination example (connector notified for every case event):
 }
 ```
 
-`presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise it is a notification-center routing condition, e.g. `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Find connector and preset IDs with `cx notifications connectors list` and `cx notifications presets list`.
+This notifies the connector in addition to whatever the routers send. `presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise it is a Notification Center routing condition, e.g. `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Find connector and preset IDs with `cx notifications connectors list` and `cx notifications presets list`.
 
 ## Create Workflow
 
 1. Ask the user what they want to alert on (logs, metrics, traces)
 2. Ask for priority (P1–P5)
-3. Build the JSON payload with `alertDefProperties` - use the **API wire format** (see `references/alert-schemas.md` for all enum values). Keep it in **Cases mode**: no `notificationGroup` / `incidentsSettings` (see Notification Mode above)
-4. **Tip:** use `cx alerts get <existing-id> -o json` to get a working template, modify it, and pipe into create - but remove the alert-mode notification fields from the copy first
+3. Build the JSON payload with `alertDefProperties` - use the **API wire format** (see `references/alert-schemas.md` for all enum values). Keep it in **Cases mode**: routing labels if wanted, no `notificationGroup` / `incidentsSettings` (see Notifications above)
+4. **Tip:** use `cx alerts get <existing-id> -o json` to get a working template, modify it, and pipe into create - but remove the alert-mode notification fields from the copy first (keep `routing.*` labels)
 5. Create using: `echo '<json>' | cx alerts create` or `cx alerts create --from-file alert.json`
 6. Verify with `cx alerts list --name "<alert name>"`
 
@@ -104,7 +122,7 @@ Cases-mode destination example (connector notified for every case event):
 
 ### Example: Logs Threshold Alert
 
-Every logs-threshold rule needs an `override` block (the API returns 400 `Required` at `rules.0.override` without it). Set it to the alert priority.
+Every logs-threshold rule needs an `override` block (the API returns 400 `Required` at `rules.0.override` without it). `override.priority` is that rule's priority; with one rule, use the alert's `priority`.
 
 ```json
 {
@@ -262,7 +280,7 @@ cx alerts suppression-rules delete <unique-identifier> --yes
 ## Key Principles
 
 - **Always ask for priority** (P1–P5) when creating alerts - never assume
-- **Cases mode by default** - never set `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly asks for alert-based notifications
+- **Cases mode by default** - route with `routing.*` labels; never set `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly asks for alert-based notifications
 - **Use `--name` filter** for large accounts with many alerts
 - **Use `-o json` with `jq`** for filtering and transformation
 - **Use `--from-file -`** to pipe JSON from stdin when constructing alerts programmatically
@@ -281,7 +299,7 @@ cx alerts suppression-rules delete <unique-identifier> --yes
 
 ### Reference Files
 
-- **[`references/alert-schemas.md`](references/alert-schemas.md)** - Complete JSON schema reference for all 12 alert types: field names, enum values (condition types, time windows, filter operations), common sub-objects (logs filter, tracing filter, Cases-mode `caseSettings`, alert-mode notification groups, activity schedules), and important gotchas
+- **[`references/alert-schemas.md`](references/alert-schemas.md)** - Complete JSON schema reference for all 12 alert types: field names, enum values (condition types, time windows, filter operations), common sub-objects (logs filter, tracing filter, routing labels, `caseSettings`, alert-mode notification groups, activity schedules), and important gotchas
 - **[`references/dataprime-reference.md`](references/dataprime-reference.md)** - DataPrime query language reference for log-based and span-based alert conditions (filter syntax, operators, severity values)
 - **[`references/logs-querying.md`](references/logs-querying.md)** - Log data model, field discovery, and query patterns for building log alert conditions
 - **[`references/promql-guidelines.md`](references/promql-guidelines.md)** - PromQL reference for metric-based alert conditions (counters, gauges, histograms, threshold patterns)

@@ -142,7 +142,23 @@ cx notifications connectors create --from-file slack-connector.json
 
 ### 3. Configure Notification Routing
 
-Route alerts to the right channels. Alerts created with `cx alerts create` notify through **Cases** by default (see the `cx-alerts` skill): attach a router to them with `routing.*` entity labels that match the router's matcher, or notify a connector directly with `caseSettings.destinations`. Do **not** point an alert at a router with `notificationGroup.router`, or add `destinations` / `webhooks` to its `notificationGroup`, unless the user explicitly asks for alert-based notifications - that bypasses Cases.
+Route alerts to the right channels. A router picks up alerts by routing labels: the router's `routingLabels` use bare keys (`{"team": "payments"}`), and the alert carries the same values in `entityLabels` with a `routing.` prefix (`"routing.team": "payments"`). This works in both notification modes. Each rule's `entityType` says which mode it serves: `CASES` for Cases-mode alerts (the default for alerts made with the `cx-alerts` skill), `ALERTS` for alerts that set `notificationGroup.router`. Add `CASES` rules unless the user explicitly wants alert-based notifications.
+
+```json
+{
+  "router": {
+    "name": "payments",
+    "routingLabels": { "team": "payments" },
+    "rules": [{
+      "name": "payments-cases",
+      "condition": "_context.entityLabels['routing.team'][0] == 'payments'",
+      "entityType": "CASES",
+      "targets": [{ "connectorId": "<connector-id>", "presetId": "<preset-id>" }]
+    }],
+    "fallbackTargets": []
+  }
+}
+```
 
 ```bash
 cx notifications routers create --from-file router.json

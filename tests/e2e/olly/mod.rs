@@ -1,5 +1,6 @@
-//! `cx olly`: one paid, slow `ask` round-trip (skippable with
-//! `CX_E2E_SKIP_OLLY=1`) and the artifact commands.
+//! `cx olly`: one paid, slow `ask` round-trip and one `ask --no-wait` +
+//! `interactions get` (both skippable with `CX_E2E_SKIP_OLLY=1`), and the
+//! artifact commands.
 
 use crate::harness;
 
@@ -90,6 +91,71 @@ fn olly_ask_round_trip_with_all_flags() {
     assert!(
         text.contains(&chat_id),
         "--chat-id continues the same chat: {text}"
+    );
+}
+
+/// Ask without waiting, then read the interaction back with the IDs it
+/// printed. Does not wait for Olly to finish: any of the five statuses is a
+/// valid answer here.
+#[test]
+#[ignore]
+fn olly_ask_no_wait_then_interactions_get() {
+    if harness::require_creds("olly_ask_no_wait_then_interactions_get").is_none()
+        || skip_olly_ask("olly_ask_no_wait_then_interactions_get")
+    {
+        return;
+    }
+    let asked = harness::cx()
+        .args([
+            "olly",
+            "ask",
+            "Reply with the single word OK and nothing else.",
+            "--no-wait",
+            "--agent-to-agent-mode",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("cx must run");
+    if !asked.status.success() {
+        let stderr = String::from_utf8_lossy(&asked.stderr);
+        if stderr.contains("AI features are not enabled") {
+            eprintln!(
+                "[e2e] not covered: olly ask --no-wait / interactions get - AI features are not \
+                 enabled for the test team (API answered: {})",
+                stderr.trim()
+            );
+            return;
+        }
+        panic!("cx olly ask --no-wait failed: {stderr}");
+    }
+    let keys = ["chat_id", "interaction_id", "status"];
+    let v: serde_json::Value =
+        serde_json::from_slice(&asked.stdout).expect("olly ask -o json must print valid JSON");
+    harness::assert_nonempty_array_of_objects_with_keys(&v, &keys);
+    let chat_id = v[0]["chat_id"].as_str().expect("chat_id is a string");
+    let interaction_id = v[0]["interaction_id"]
+        .as_str()
+        .expect("interaction_id is a string");
+
+    let got = harness::run_ok_nonempty(&[
+        "olly",
+        "interactions",
+        "get",
+        chat_id,
+        interaction_id,
+        "-o",
+        "json",
+    ]);
+    let got: serde_json::Value =
+        serde_json::from_slice(&got).expect("interactions get -o json must print valid JSON");
+    harness::assert_nonempty_array_of_objects_with_keys(&got, &keys);
+    assert_eq!(got[0]["chat_id"], v[0]["chat_id"]);
+    assert_eq!(got[0]["interaction_id"], v[0]["interaction_id"]);
+    let status = got[0]["status"].as_str().unwrap_or_default().to_lowercase();
+    assert!(
+        ["in_progress", "completed", "error", "stopped", "timed_out"].contains(&status.as_str()),
+        "unexpected status: {got}"
     );
 }
 

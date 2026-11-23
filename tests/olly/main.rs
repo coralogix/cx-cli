@@ -11,7 +11,7 @@ use serde_json::json;
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use coralogix_cli::commands::olly::{run_artifacts_get, run_ask};
+use coralogix_cli::commands::olly::{run_artifacts_get, run_ask, run_interactions_get};
 use coralogix_cli::config::OutputFormat;
 
 // ── CLI-level `--agent-to-agent-mode` flag tests ─────────────────────────────
@@ -162,7 +162,7 @@ async fn ask_creates_chat_and_sends_message() {
         "What alerts fired today?",
         None,
         "gpt-5.2",
-        900,
+        Some(900),
         true,
         OutputFormat::Json,
     )
@@ -202,7 +202,7 @@ async fn ask_continues_existing_chat() {
         "Tell me more",
         Some("existing-chat"),
         "gpt-5.2",
-        900,
+        Some(900),
         true,
         OutputFormat::Json,
     )
@@ -253,7 +253,7 @@ async fn ask_with_different_models() {
         "Analyze this complex issue",
         None,
         "advanced",
-        900,
+        Some(900),
         true,
         OutputFormat::Json,
     )
@@ -296,7 +296,7 @@ async fn ask_handles_cancelled_response() {
         "Query that gets cancelled",
         None,
         "gpt-5.2",
-        900,
+        Some(900),
         true,
         OutputFormat::Json,
     )
@@ -315,7 +315,7 @@ async fn ask_rejects_multi_profile() {
         "Hello",
         None,
         "gpt-5.2",
-        900,
+        Some(900),
         true,
         OutputFormat::Json,
     )
@@ -368,7 +368,7 @@ async fn ask_sends_skill_interaction_mode() {
         "Test message",
         None,
         "gpt-5.2",
-        900,
+        Some(900),
         true,
         OutputFormat::Json,
     )
@@ -418,7 +418,7 @@ async fn ask_sends_agent_to_agent_mode_when_enabled() {
         "Test message",
         None,
         "gpt-5.2",
-        900,
+        Some(900),
         true,
         OutputFormat::Json,
     )
@@ -468,7 +468,7 @@ async fn ask_can_disable_agent_to_agent_mode() {
         "Test message",
         None,
         "gpt-5.2",
-        900,
+        Some(900),
         false,
         OutputFormat::Json,
     )
@@ -671,4 +671,247 @@ async fn agent_to_agent_mode_does_not_swallow_positional_message() {
         .args(["olly", "ask", "--agent-to-agent-mode", "hello world"])
         .assert()
         .success();
+}
+
+// ── `ask --no-wait` and `interactions get` ───────────────────────────────────
+
+#[tokio::test]
+async fn ask_no_wait_does_not_block_and_prints_the_next_command() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/existing-chat/interactions/"))
+        .and(body_partial_json(json!({"should_block": false})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-1",
+            "chat_id": "existing-chat",
+            "status": "in_progress",
+            "responses": null
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let output = cx_olly(&home)
+        .env("NO_COLOR", "1")
+        .args([
+            "olly",
+            "ask",
+            "Investigate the checkout latency",
+            "--chat-id",
+            "existing-chat",
+            "--no-wait",
+            "-o",
+            "text",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Status: in_progress"), "stdout: {stdout}");
+    assert!(
+        stdout
+            .trim_end()
+            .ends_with("cx olly interactions get existing-chat interaction-1"),
+        "stdout: {stdout}"
+    );
+
+    // The timeout only applies to blocking requests, so it is not sent.
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(body.get("timeout_seconds").is_none(), "body: {body}");
+}
+
+#[tokio::test]
+async fn ask_no_wait_json_has_the_ask_shape() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/existing-chat/interactions/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-1",
+            "chat_id": "existing-chat",
+            "status": "in_progress",
+            "responses": null
+        })))
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let output = cx_olly(&home)
+        .args([
+            "olly",
+            "ask",
+            "Investigate",
+            "--chat-id",
+            "existing-chat",
+            "--no-wait",
+            "-o",
+            "json",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success(), "{output:?}");
+    let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        v,
+        json!([{
+            "chat_id": "existing-chat",
+            "interaction_id": "interaction-1",
+            "status": "in_progress"
+        }])
+    );
+}
+
+#[tokio::test]
+async fn ask_without_no_wait_still_blocks() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/existing-chat/interactions/"))
+        .and(body_partial_json(
+            json!({"should_block": true, "timeout_seconds": 900}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-1",
+            "chat_id": "existing-chat",
+            "status": "completed",
+            "responses": []
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    cx_olly(&home)
+        .args(["olly", "ask", "Quick one", "--chat-id", "existing-chat"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn ask_no_wait_rejects_timeout() {
+    let home = cli_temp_home();
+    cli_write_profile(&home, "http://127.0.0.1:1");
+
+    let output = cx_olly(&home)
+        .args(["olly", "ask", "Investigate", "--no-wait", "--timeout", "60"])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cannot be used with"), "stderr: {stderr}");
+}
+
+/// Runs `cx olly interactions get` against a mock that answers with `status`
+/// and `responses`, and returns stdout.
+async fn interactions_get_stdout(
+    status: &str,
+    responses: serde_json::Value,
+    format: &str,
+) -> String {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/v2/olly/v2/chats/chat-1/interactions/interaction-1",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-1",
+            "chat_id": "chat-1",
+            "created_at": "2026-11-23T10:00:00Z",
+            "status": status,
+            "model_choice": "gpt-5.2",
+            "reasoning_effort": null,
+            "responses": responses
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let output = cx_olly(&home)
+        .env("NO_COLOR", "1")
+        .args([
+            "olly",
+            "interactions",
+            "get",
+            "chat-1",
+            "interaction-1",
+            "-o",
+            format,
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success(), "{status}: {output:?}");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn answer(text: &str) -> serde_json::Value {
+    json!([{
+        "id": "msg-1",
+        "role": "assistant",
+        "content": [{"type": "text", "text": text}]
+    }])
+}
+
+#[tokio::test]
+async fn interactions_get_prints_the_answer_for_statuses_that_have_one() {
+    for status in ["completed", "stopped", "timed_out"] {
+        let stdout =
+            interactions_get_stdout(status, answer("Latency rose at 14:02."), "text").await;
+        assert!(
+            stdout.contains(&format!("Status: {status}")),
+            "stdout: {stdout}"
+        );
+        assert!(
+            stdout.contains("Latency rose at 14:02."),
+            "stdout: {stdout}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn interactions_get_says_plainly_when_there_is_no_answer() {
+    let stdout = interactions_get_stdout("in_progress", json!(null), "text").await;
+    assert!(stdout.contains("Status: in_progress"), "stdout: {stdout}");
+    assert!(stdout.contains("No answer yet"), "stdout: {stdout}");
+
+    let stdout = interactions_get_stdout("error", json!(null), "text").await;
+    assert!(stdout.contains("Status: error"), "stdout: {stdout}");
+    assert!(stdout.contains("There is no answer"), "stdout: {stdout}");
+}
+
+#[tokio::test]
+async fn interactions_get_json_has_the_ask_shape() {
+    let stdout = interactions_get_stdout("completed", answer("Done."), "json").await;
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        v,
+        json!([{
+            "chat_id": "chat-1",
+            "interaction_id": "interaction-1",
+            "status": "completed",
+            "response": "Done.",
+            "model_choice": "gpt-5.2"
+        }])
+    );
+}
+
+#[tokio::test]
+async fn interactions_get_rejects_multi_profile() {
+    let targets = vec![
+        common::test_target("a", "http://127.0.0.1:1"),
+        common::test_target("b", "http://127.0.0.1:1"),
+    ];
+    let err = run_interactions_get(&targets, "chat-1", "interaction-1", OutputFormat::Json)
+        .await
+        .expect_err("multi-profile must be rejected");
+    assert!(err.to_string().contains("multi-profile"), "{err}");
 }

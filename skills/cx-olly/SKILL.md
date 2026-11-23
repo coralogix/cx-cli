@@ -15,7 +15,8 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 
 | Command | Purpose | Key flags |
 |---|---|---|
-| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
+| `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--no-wait`, `--agent-to-agent-mode` |
+| `cx olly interactions get <chat-id> <interaction-id>` | Check the status of a question and read the answer | - |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
@@ -25,9 +26,30 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 
 ## Running Olly (async by default)
 
-**Run `cx olly ask` asynchronously by default:** launch it as a **background process and poll it for completion** rather than blocking on it. Olly investigations routinely take minutes, so this is the normal mode for `cx olly ask`.
+**Run `cx olly ask` with `--no-wait` by default.** Olly investigations routinely take minutes. With `--no-wait` the command returns at once with a `chat_id` and an `interaction_id`, and you check on the answer later:
 
-Only run `cx olly ask` inline (foreground, blocking) for a short question you expect Olly to answer quickly — a quick lookup or a one-line follow-up. When in doubt, run it in the background.
+```bash
+cx olly ask "Why is checkout latency high?" --no-wait --agent-to-agent-mode -o json
+# [{"chat_id": "<chat-id>", "interaction_id": "<interaction-id>", "status": "in_progress"}]
+
+cx olly interactions get <chat-id> <interaction-id> -o json
+```
+
+Do other work between checks, and leave some time between them (30 seconds or more). Run `interactions get` again until `status` is no longer `in_progress`:
+
+| `status` | Meaning | Answer in `response` |
+|---|---|---|
+| `in_progress` | Olly is still working | No |
+| `completed` | Olly finished | Yes |
+| `stopped` | Someone stopped the generation | Yes, what was written before the stop |
+| `timed_out` | Olly ran out of time | Yes, what was written before the timeout |
+| `error` | The generation failed | No |
+
+The JSON output of `interactions get` has the same shape as the JSON output of `ask`.
+
+`--no-wait` cannot be combined with `--timeout`: the timeout only applies when `ask` waits.
+
+Only run `cx olly ask` without `--no-wait` (it then blocks until Olly answers) for a short question you expect Olly to answer quickly, such as a quick lookup or a one-line follow-up. When in doubt, use `--no-wait`.
 
 ## Chat Commands
 
@@ -46,7 +68,7 @@ Remove `--agent-to-agent-mode` if you don't have context to share (like quick ac
 cx olly ask "Tell me more about the error rates" --chat-id <chat-id> --agent-to-agent-mode
 ```
 
-Use `--chat-id` to continue a conversation and maintain context from previous messages. Background the follow-up too when it kicks off another investigation.
+Use `--chat-id` to continue a conversation and maintain context from previous messages. Use `--no-wait` on the follow-up too when it starts another investigation.
 
 ### Model selection
 
@@ -113,11 +135,14 @@ Output behavior:
 ### Investigate an issue
 
 ```bash
-# Start investigation — run in the background and poll for completion
-cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics" --agent-to-agent-mode
+# Start the investigation without waiting
+cx olly ask "Why is the checkout service showing high latency? Check logs with 'checkout:' strings and aws related metrics" --no-wait --agent-to-agent-mode
 
-# Follow up with the chat ID from the response — also background and poll
-cx olly ask "What changed in the last hour?" --chat-id abc-123-def --agent-to-agent-mode
+# Check on it with the IDs from the output, until the status is no longer in_progress
+cx olly interactions get <chat-id> <interaction-id>
+
+# Follow up on the same chat, again without waiting
+cx olly ask "What changed in the last hour?" --chat-id <chat-id> --no-wait --agent-to-agent-mode
 
 # Once the interaction has completed, get any generated charts
 cx olly artifacts list -o json | jq '.[0].id'
@@ -145,7 +170,7 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 
 ## Key Principles
 
-- **Async by default** - run `cx olly ask` as a background process and poll it for completion; only run inline (blocking) for short questions you expect Olly to answer quickly
+- **Async by default** - run `cx olly ask --no-wait` and check on the answer with `cx olly interactions get`; only wait inline (no `--no-wait`) for short questions you expect Olly to answer quickly
 - **Chat IDs enable context** - save the Chat ID from responses to continue conversations
 - **Use `-o json` for scripting** - pipe to `jq` for filtering and extraction
 - **Artifact IDs are in response text** - look for markdown links like `[Chart](https://...artifact_view/<id>)`

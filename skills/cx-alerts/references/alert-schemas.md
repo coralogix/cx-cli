@@ -116,7 +116,7 @@ Optional. Settings for the cases this alert creates. In Cases mode the alert sen
 
 **`groupByKeys` — both modes.** Decides how the alert's groups become Cases (or notifications): list keys for one per group, or leave it empty (or the whole object out) for one combined case. Except for metric and SLO alerts, the keys must be a subset of the alert's `groupByKeys`. In Cases mode this is the only field to set: `{"groupByKeys": ["service"]}`.
 
-**`router`, `destinations`, `webhooks` — Alerts mode only.** `router` is the mode switch: when it is present the alert sends its own notifications through router rules with `entityType: "ALERTS"` and opens no Case. `router.id` pins one router. `destinations` and `webhooks` are older direct notifications sent by the alert itself. Only set any of these when the user explicitly asks for alert-based notifications; to notify a connector about this alert's cases, use `caseSettings.destinations` instead.
+**`router`, `destinations`, `webhooks` — Alerts mode only.** `router` is the mode switch: when it is present the alert sends its own notifications through router rules with `entityType: "ALERTS"`. Cases are opened in both modes. `router.id` pins one router. `destinations` and `webhooks` are older direct notifications sent by the alert itself. Only set any of these when the user explicitly asks for alert-based notifications; to notify a connector about this alert's cases, use `caseSettings.destinations` instead.
 
 ```json
 {

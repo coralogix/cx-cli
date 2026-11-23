@@ -69,10 +69,12 @@ Two separate things decide where an alert's notifications go:
 1. **Routing labels** (`entityLabels`) decide which Notification Center routers pick the alert up. They work the same way in both modes.
 2. **The mode** decides who sends the notification. It is set by one field: whether `notificationGroup.router` exists.
 
-| Mode | Stored as | What happens |
+Cases are opened in both modes; the mode only changes where notifications come from.
+
+| Mode | Stored as | Who notifies |
 |---|---|---|
-| **Cases** (default) | no `notificationGroup.router` | Alert events open Cases; matching routers notify through their rules with `entityType: "CASES"` |
-| Alerts (only when asked) | `notificationGroup.router` present | The alert notifies on its own, through router rules with `entityType: "ALERTS"`, and opens no Case |
+| **Cases** (default) | no `notificationGroup.router` | The alert sends no notifications itself; its Cases do, through router rules with `entityType: "CASES"` |
+| Alerts (only when asked) | `notificationGroup.router` present | The alert sends its own notifications, through router rules with `entityType: "ALERTS"` |
 
 ### Routing labels
 
@@ -104,7 +106,7 @@ When the alert groups by something (`groupByKeys`, or the `by` labels of a metri
 ### Rules for the payload
 
 - **Default:** routing labels when the user wants notifications, `notificationGroup` with **only `groupByKeys`** when the user wants one case per group (otherwise leave it out), and **no `incidentsSettings`**. The API fills in Cases-mode defaults.
-- **Never add `notificationGroup.router`** unless the user explicitly asks for alert-based notifications, and tell them it skips Cases.
+- **Never add `notificationGroup.router`** unless the user explicitly asks for alert-based notifications, and tell them the notifications will then come from the alert rather than from its Cases.
 - **Don't add `notificationGroup.destinations` or `webhooks`.** They are older direct notifications sent by the alert itself. To send case notifications straight to a connector, use `caseSettings.destinations` (below).
 - **Copying an alert:** if you build the payload from `cx alerts get <id> -o json`, keep its `routing.*` labels and `notificationGroup.groupByKeys` but delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` unless the user wants them.
 - DataPrime (analytics) alerts and Error Tracking alerts notify through Cases only.

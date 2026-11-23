@@ -4,10 +4,15 @@
 //! IT can deploy it through Jamf or a Windows management tool to require the
 //! platform credential store.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
+
+static INACCESSIBLE_POLICY_WARNING: OnceLock<()> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
 struct ManagedPolicy {
@@ -123,11 +128,13 @@ fn requires_os_store_at(path: &Path) -> Result<bool> {
 }
 
 fn inaccessible_policy_warning(path: &Path, error: &std::io::Error) -> Result<bool> {
-    eprintln!(
-        "Warning: cannot access managed policy {}: {error}. \
-         Treating it as absent; managed credential storage is not enforced.",
-        path.display()
-    );
+    if INACCESSIBLE_POLICY_WARNING.set(()).is_ok() {
+        eprintln!(
+            "Warning: cannot access managed policy {}: {error}. \
+             Treating it as absent; managed credential storage is not enforced.",
+            path.display()
+        );
+    }
     Ok(false)
 }
 

@@ -223,6 +223,22 @@ fn saved_lifecycle(kind: &str, body: fn(&str, &str) -> Value) {
     assert_eq!(created["name"], name);
     assert_eq!(created["version"], 1);
 
+    if kind == "funnels" {
+        harness::run_ok_json(&["product-analytics", "funnels", "query", &id, "-o", "json"]);
+        harness::run_ok_json(&[
+            "product-analytics",
+            "funnels",
+            "matches",
+            &id,
+            "--step",
+            "s2",
+            "--outcome",
+            "converted",
+            "-o",
+            "json",
+        ]);
+    }
+
     let got = harness::run_ok_json(&["product-analytics", kind, "get", &id, "-o", "json"]);
     assert_eq!(got["name"], name);
     let list = harness::run_ok_json(&[

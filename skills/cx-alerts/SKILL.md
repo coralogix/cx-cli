@@ -99,7 +99,7 @@ When the alert groups by something (`groupByKeys`, or the `by` labels of a metri
 "notificationGroup": { "groupByKeys": ["service"] }
 ```
 
-- **One case per group:** list the keys. Except for metric and SLO alerts, they must be a subset of the alert's `groupByKeys`.
+- **One case per group:** list the keys. They must be among the alert's own group-by keys: its `groupByKeys`, or for metric alerts the labels in the PromQL query's `by (...)` clause, which the API uses as the alert's `groupByKeys`. The API rejects other keys, except on metric alerts, where it does not check them, so take metric keys only from the query's `by` clause.
 - **One combined case for all groups:** leave `notificationGroup` out, or send `"groupByKeys": []`. This is what you get by default, so an alert that groups by `service` opens a single case for every service unless you list `service` here.
 - When the alert has a group-by, ask the user which one they want.
 

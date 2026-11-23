@@ -1,6 +1,8 @@
 use std::io::IsTerminal;
 
-use anyhow::{Context, Result};
+#[cfg(any(target_os = "macos", test))]
+use anyhow::Context;
+use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{

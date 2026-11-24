@@ -12,7 +12,7 @@ description: >
   "custom events", "create a funnel", "save a pathway", "is product analytics
   enabled", or wants product analytics on RUM data.
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # Product Analytics Skill
@@ -51,15 +51,23 @@ Commands that query data take `--start` / `--end` (default `now-1h` / `now`):
 `now`, `now-7d`-style relative expressions, or ISO-8601 timestamps. The CLI sends
 them as Unix **seconds** (`fromTimestamp` / `toTimestamp`).
 
-When you run a saved funnel, pathway or heatmap by ID without `--start`/`--end`, the
-CLI uses the saved time range: a fixed range as is, `relativeMinutes` back from now,
-and `CALENDAR_WINDOW_TODAY` / `_YESTERDAY` as UTC days. `--start`/`--end` override it.
+When you run a saved funnel, pathway or heatmap by ID, the CLI uses the saved time
+range: a fixed range as is, `relativeMinutes` back from now, and
+`CALENDAR_WINDOW_TODAY` / `_YESTERDAY` as days in the local timezone, like the UI.
+`--start` and `--end` override their side; a lone `--start` or `--end` keeps the other
+side of the saved range. The window actually used goes to stderr, e.g.
+`Using time range 2026-11-24T00:00:00+02:00 – 2026-11-24T13:05:00+02:00 (saved: today)`;
+quote it when you report results.
+
+Saved IDs belong to one team: `get`, `update`, `delete` and running a saved ID accept a
+single `-p` profile only.
 
 ## Paging
 
-`views list`, `actions list` and `filter-values` return one page (the server caps it,
-1000 rows today). Pass `--offset <rows>` for the next page. `funnels matching-users`
-takes `--limit` and `--offset`.
+`views list`, `actions list` and `filter-values` return at most one server-configured
+page of rows, with no total. If the row count looks like a full page (a round number
+such as 100 or 1000), fetch the next page with `--offset <rows so far>` until a page
+comes back shorter. `funnels matching-users` takes `--limit` and `--offset`.
 
 ## Workflow
 
@@ -83,9 +91,9 @@ cx product-analytics actions list --app web-shop --type custom --start now-7d
 cx product-analytics filter-values --app web-shop --field browser-name --start now-7d
 ```
 
-Pass views exactly as `views list` prints them. `--field` takes a filter field name
-(`URL_DOMAIN`, `PLATFORM`, `COUNTRY_NAME`, ...; lower case and dashes work too); use the
-values it returns in `filters` (see `references/request-bodies.md`).
+Pass views exactly as `views list` prints them. `--field` takes a session filter field
+(`url-domain`, `platform`, `country-name`, ...; upper case with underscores works too,
+full list in `references/request-bodies.md`); use the values it returns in `filters`.
 
 ### 3. Funnels
 
@@ -97,7 +105,8 @@ cx product-analytics funnels query --from-file funnel-query.json --start now-7d
 cx product-analytics funnels matching-users 42 --outcome dropped --start-step 2 --limit 20
 ```
 
-- `--group-by` counts sessions (default), users or accounts at each step.
+- `--group-by` counts sessions (default), users or accounts at each step. `funnels list`
+  shows a saved funnel's grouping with the same names (`by users`).
 - An inline funnel is a `--from-file` request: `{"query": {"appNames": [...], "steps": [...],
   "filters": [...]}, "breakdown": {"field": "PLATFORM", "limit": 5}}` (see
   `references/request-bodies.md`). The same file works for `matching-users`.

@@ -1,4 +1,6 @@
 use anyhow::bail;
+use chrono::{DateTime, NaiveTime, TimeZone};
+use clap::ValueEnum;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -21,8 +23,8 @@ const TIME_RANGE_FIELD: &str = "timeRange";
 const SETTINGS_ENABLED_FIELD: &str = "enabled";
 const READ_ONLY_FIELDS: &[&str] = &["id", APP_NAME_FIELD, "createdAt"];
 
-const ENUM_PREFIXES: &[&str] = &["GROUP_BY_", "PATHWAYS_MODE_", "CALENDAR_WINDOW_"];
-const SECONDS_PER_DAY: i64 = 86_400;
+const ENUM_PREFIXES: &[&str] = &["PATHWAYS_MODE_", "CALENDAR_WINDOW_"];
+const MILLIS_PER_SECOND: i64 = 1_000;
 
 pub fn display_enum(value: Option<&str>) -> String {
     let Some(value) = value else {
@@ -82,6 +84,18 @@ impl FunnelGroupBy {
             Self::Accounts => "GROUP_BY_ACCOUNT_ID",
         }
     }
+
+    fn flag_name(wire: &str) -> String {
+        Self::value_variants()
+            .iter()
+            .find(|variant| variant.wire() == wire)
+            .and_then(|variant| variant.to_possible_value())
+            .map_or_else(|| wire.to_string(), |value| value.get_name().to_string())
+    }
+}
+
+pub fn filter_field_wire(field: &str) -> String {
+    field.trim().to_uppercase().replace('-', "_")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -235,7 +249,8 @@ impl QueryKind {
 pub struct QueryInput {
     pub app_name: Option<String>,
     pub view: Option<String>,
-    pub time_range: Option<(i64, i64)>,
+    pub start: Option<i64>,
+    pub end: Option<i64>,
     pub filter_field: Option<String>,
     pub action_type: Option<ActionType>,
     pub action_name_filter: Option<ActionNameFilter>,
@@ -278,7 +293,12 @@ pub fn build_query_body(
     body.insert(TO_TIMESTAMP_FIELD.to_string(), json!(time_range.1));
     let action_name_filter = input.action_name_filter.map(|v| json!(v.wire()));
     if kind == QueryKind::Actions {
-        let action_type = input.action_type.unwrap_or(ActionType::Click);
+        let Some(action_type) = input.action_type else {
+            bail!("an actions query needs an action type");
+        };
+        for variant in ActionType::value_variants() {
+            body.remove(variant.field());
+        }
         let mut action = Map::new();
         insert_some(
             &mut action,
@@ -379,7 +399,10 @@ fn int64(value: &Value) -> Option<i64> {
         .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
 }
 
-pub fn resolve_saved_time_range(saved: &Value, now: i64) -> anyhow::Result<(i64, i64)> {
+pub fn resolve_saved_time_range<Tz: TimeZone>(
+    saved: &Value,
+    now: DateTime<Tz>,
+) -> anyhow::Result<((i64, i64), String)> {
     let time_range = &saved[TIME_RANGE_FIELD];
     if let Some(fixed) = time_range.get("fixed") {
         let (Some(from), Some(to)) = (
@@ -390,15 +413,39 @@ pub fn resolve_saved_time_range(saved: &Value, now: i64) -> anyhow::Result<(i64,
                 "the saved fixed time range has no start or end: {fixed}; pass --start and --end"
             );
         };
-        return Ok((from, to));
+        return Ok((
+            (from / MILLIS_PER_SECOND, to / MILLIS_PER_SECOND),
+            "fixed".to_string(),
+        ));
     }
+    let now_seconds = now.timestamp();
     if let Some(minutes) = int64(&time_range["relativeMinutes"]) {
-        return Ok((now - minutes * 60, now));
+        return Ok((
+            (now_seconds - minutes * 60, now_seconds),
+            format!("last {minutes} minutes"),
+        ));
     }
-    let midnight = now - now.rem_euclid(SECONDS_PER_DAY);
+    let timezone = now.timezone();
+    let today = now.date_naive();
+    let today_start = timezone
+        .from_local_datetime(&today.and_time(NaiveTime::MIN))
+        .earliest();
+    let yesterday_start = today.pred_opt().and_then(|day| {
+        timezone
+            .from_local_datetime(&day.and_time(NaiveTime::MIN))
+            .earliest()
+    });
+    let (Some(today_start), Some(yesterday_start)) = (today_start, yesterday_start) else {
+        bail!("could not resolve local midnight of {today}; pass --start and --end");
+    };
     match time_range.get("calendar").and_then(Value::as_str) {
-        Some("CALENDAR_WINDOW_TODAY") => Ok((midnight, now)),
-        Some("CALENDAR_WINDOW_YESTERDAY") => Ok((midnight - SECONDS_PER_DAY, midnight)),
+        Some("CALENDAR_WINDOW_TODAY") => {
+            Ok(((today_start.timestamp(), now_seconds), "today".to_string()))
+        }
+        Some("CALENDAR_WINDOW_YESTERDAY") => Ok((
+            (yesterday_start.timestamp(), today_start.timestamp()),
+            "yesterday".to_string(),
+        )),
         _ => bail!("unsupported saved time range {time_range}; pass --start and --end"),
     }
 }
@@ -563,11 +610,13 @@ impl SavedObject {
     pub fn details(&self) -> String {
         if !self.steps.is_empty() {
             return format!(
-                "{} steps, {}",
+                "{} steps, by {}",
                 self.steps.len(),
-                display_enum(Some(
-                    self.group_by.as_deref().unwrap_or("GROUP_BY_SESSION_ID")
-                ))
+                FunnelGroupBy::flag_name(
+                    self.group_by
+                        .as_deref()
+                        .unwrap_or(FunnelGroupBy::Sessions.wire())
+                )
             );
         }
         if let Some(page) = &self.page_name {
@@ -670,6 +719,7 @@ impl<'a> ProductAnalyticsApi<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::FixedOffset;
 
     const RANGE: (i64, i64) = (1_763_251_200, 1_763_337_600);
 
@@ -758,7 +808,17 @@ mod tests {
             "createdAt": "1783433258498", "timeRange": {"relativeMinutes": "720"}
         }))
         .unwrap();
-        assert_eq!(funnel.details(), "2 steps, SESSION_ID");
+        assert_eq!(funnel.details(), "2 steps, by sessions");
+        for (wire, flag) in [
+            ("GROUP_BY_CX_USER_ID", "users"),
+            ("GROUP_BY_ACCOUNT_ID", "accounts"),
+            ("GROUP_BY_SESSION_ID", "sessions"),
+        ] {
+            let grouped: SavedObject =
+                serde_json::from_value(json!({"steps": [{}], "groupBy": wire})).unwrap();
+            assert_eq!(grouped.details(), format!("1 steps, by {flag}"));
+            assert!(FunnelGroupBy::from_str(flag, false).is_ok());
+        }
         assert!(funnel.created().starts_with("2026-07-"));
         let pathway: SavedObject =
             serde_json::from_value(json!({"id": "2", "pageName": "explore/metrics"})).unwrap();
@@ -806,6 +866,7 @@ mod tests {
     fn actions_body_nests_the_click_filter() {
         let input = QueryInput {
             app_name: Some("web-app".into()),
+            action_type: Some(ActionType::Click),
             action_name_filter: Some(ActionNameFilter::Named),
             ..Default::default()
         };
@@ -819,6 +880,30 @@ mod tests {
         let body = build_query_body(QueryKind::Actions, None, &custom, RANGE).unwrap();
         assert_eq!(body["custom"], json!({}));
         assert!(body.get("click").is_none());
+    }
+
+    #[test]
+    fn actions_body_replaces_the_file_action_type_with_the_flag() {
+        let input = QueryInput {
+            action_type: Some(ActionType::Click),
+            ..Default::default()
+        };
+        let body = build_query_body(
+            QueryKind::Actions,
+            Some(json!({"custom": {}, "appNames": ["web-app"]})),
+            &input,
+            RANGE,
+        )
+        .unwrap();
+        assert_eq!(body["click"], json!({}));
+        assert!(body.get("custom").is_none());
+        assert!(build_query_body(QueryKind::Actions, None, &QueryInput::default(), RANGE).is_err());
+    }
+
+    #[test]
+    fn filter_field_accepts_lower_case_and_dashes() {
+        assert_eq!(filter_field_wire(" browser-name "), "BROWSER_NAME");
+        assert_eq!(filter_field_wire("URL_DOMAIN"), "URL_DOMAIN");
     }
 
     #[test]
@@ -934,25 +1019,39 @@ mod tests {
     }
 
     #[test]
-    fn saved_time_ranges_resolve_to_seconds() {
-        let now = 1_763_337_600 + 3_600;
-        let midnight = 1_763_337_600;
-        let fixed = json!({"timeRange": {"fixed": {"fromTimestamp": "100", "toTimestamp": 200}}});
-        assert_eq!(resolve_saved_time_range(&fixed, now).unwrap(), (100, 200));
+    fn saved_time_ranges_resolve_to_seconds_in_the_viewer_timezone() {
+        let plus_two = FixedOffset::east_opt(2 * 3_600).unwrap();
+        let now = plus_two.with_ymd_and_hms(2026, 11, 24, 13, 5, 0).unwrap();
+        let local_midnight = plus_two
+            .with_ymd_and_hms(2026, 11, 24, 0, 0, 0)
+            .unwrap()
+            .timestamp();
+        let now_seconds = now.timestamp();
+        let fixed = json!({"timeRange": {"fixed": {"fromTimestamp": "1795424702000", "toTimestamp": 1795428302000_i64}}});
+        assert_eq!(
+            resolve_saved_time_range(&fixed, now).unwrap(),
+            ((1_795_424_702, 1_795_428_302), "fixed".to_string())
+        );
         let relative = json!({"timeRange": {"relativeMinutes": "1440"}});
         assert_eq!(
             resolve_saved_time_range(&relative, now).unwrap(),
-            (now - 86_400, now)
+            (
+                (now_seconds - 86_400, now_seconds),
+                "last 1440 minutes".to_string()
+            )
         );
         let today = json!({"timeRange": {"calendar": "CALENDAR_WINDOW_TODAY"}});
         assert_eq!(
             resolve_saved_time_range(&today, now).unwrap(),
-            (midnight, now)
+            ((local_midnight, now_seconds), "today".to_string())
         );
         let yesterday = json!({"timeRange": {"calendar": "CALENDAR_WINDOW_YESTERDAY"}});
         assert_eq!(
             resolve_saved_time_range(&yesterday, now).unwrap(),
-            (midnight - 86_400, midnight)
+            (
+                (local_midnight - 86_400, local_midnight),
+                "yesterday".to_string()
+            )
         );
         assert!(resolve_saved_time_range(&json!({}), now).is_err());
         assert!(resolve_saved_time_range(&json!({"timeRange": {"fixed": {}}}), now).is_err());
@@ -970,7 +1069,7 @@ mod tests {
 
     #[test]
     fn display_enum_strips_known_prefixes() {
-        assert_eq!(display_enum(Some("GROUP_BY_CX_USER_ID")), "CX_USER_ID");
+        assert_eq!(display_enum(Some("PATHWAYS_MODE_BACKWARD")), "BACKWARD");
         assert_eq!(display_enum(Some("TOP_ELEMENTS")), "TOP_ELEMENTS");
         assert_eq!(display_enum(None), "-");
     }

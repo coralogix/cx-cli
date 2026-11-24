@@ -17,12 +17,14 @@ one of:
 
 ```json
 {"relativeMinutes": "1440"}
-{"fixed": {"fromTimestamp": "1763251200", "toTimestamp": "1763337600"}}
+{"fixed": {"fromTimestamp": "1763251200000", "toTimestamp": "1763337600000"}}
 {"calendar": "CALENDAR_WINDOW_TODAY"}
 ```
 
-`fixed` is in Unix seconds. `calendar` is `CALENDAR_WINDOW_TODAY` or
-`CALENDAR_WINDOW_YESTERDAY`. `conversionWindowSeconds` (funnels) is in seconds too.
+`fixed` in a saved object is in Unix **milliseconds**, unlike the query
+`fromTimestamp` / `toTimestamp`, which are seconds. `calendar` is
+`CALENDAR_WINDOW_TODAY` or `CALENDAR_WINDOW_YESTERDAY`, resolved in the viewer's local
+timezone. `conversionWindowSeconds` (funnels) is in seconds.
 
 ## Filters (`filters`)
 
@@ -86,10 +88,12 @@ and `actions list` accepts `"actionFilters": [...]` (action conditions).
 ```
 
 - A step is reached when any of its `conditions` matches (OR). A condition holds a
-  `page` and/or an `action`, plus optional per-condition `filters`.
-- `page` is `{"any": {}}` or `{"match": <string condition>}` on the view name.
-- `action` is `{"any": {}}`, `{"specificEvent": <string condition>}` (event name such as
-  `click`) or `{"specificWithTargetElement": {"eventName": ..., "targetElement": ...}}`.
+  `page` and/or an `action` (at least one), plus optional per-condition `filters`.
+- `page` is `{"match": <string condition>}` on the view name. To match any page, leave
+  `page` out of the condition.
+- `action` is `{"specificEvent": <string condition>}` (event name such as `click`) or
+  `{"specificWithTargetElement": {"eventName": ..., "targetElement": ...}}`. To match any
+  action, leave `action` out of the condition.
 - A condition with both `page` and `action` needs `"combinator": "OR"`.
 - `groupBy` (or `--group-by`): `GROUP_BY_SESSION_ID` (default), `GROUP_BY_CX_USER_ID`,
   `GROUP_BY_ACCOUNT_ID`.

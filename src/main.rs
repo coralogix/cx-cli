@@ -3115,16 +3115,22 @@ enum ProductAnalyticsCmd {
     #[command(
         about = "Values of one session field, most common first, to build filters",
         after_help = "\
---field is a FunnelFilterField name such as URL_DOMAIN, PLATFORM, BROWSER_NAME, COUNTRY_NAME.
+--field is a session field, in lower case with dashes or upper case with underscores:
+  url-domain, url-path, platform, environment, app-version, browser-name, os, device-type,
+  country-name, city-name, user-id, user-email, account-name, ...
+The full list is under \"Filters\" in the cx-product-analytics skill (references/request-bodies.md).
 
 Examples:
   cx product-analytics filter-values --app web-shop --field browser-name
-  cx product-analytics filter-values --app web-shop --field COUNTRY_NAME --start now-7d"
+  cx product-analytics filter-values --app web-shop --field country-name --start now-7d"
     )]
     FilterValues {
         #[arg(long, help = "RUM application name")]
         app: String,
-        #[arg(long, help = "Session field, e.g. URL_DOMAIN or browser-name")]
+        #[arg(
+            long,
+            help = "Session field, e.g. browser-name, country-name or url-domain (see below)"
+        )]
         field: String,
         #[command(flatten)]
         time: commands::product_analytics::TimeRangeArgs,
@@ -4290,8 +4296,10 @@ fn run_product_analytics(
             ProductAnalyticsCmd::Applications {
                 cmd: ProductAnalyticsApplicationsCmd::List { time },
             } => {
+                let (start, end) = time.resolve(false)?;
                 let input = QueryInput {
-                    time_range: time.resolve(false)?,
+                    start,
+                    end,
                     ..Default::default()
                 };
                 run_list_query(targets, QueryKind::Applications, None, None, &input, output)
@@ -4306,10 +4314,12 @@ fn run_product_analytics(
                         from_file,
                     },
             } => {
+                let (start, end) = time.resolve(false)?;
                 let input = QueryInput {
                     app_name: Some(app),
                     offset,
-                    time_range: time.resolve(false)?,
+                    start,
+                    end,
                     ..Default::default()
                 };
                 run_list_query(
@@ -4338,12 +4348,14 @@ fn run_product_analytics(
                 {
                     anyhow::bail!("--action-name-filter only applies to --type click");
                 }
+                let (start, end) = time.resolve(false)?;
                 let input = QueryInput {
                     app_name: Some(app),
                     action_type: Some(action_type),
                     action_name_filter,
                     offset,
-                    time_range: time.resolve(false)?,
+                    start,
+                    end,
                     ..Default::default()
                 };
                 run_list_query(
@@ -4363,11 +4375,13 @@ fn run_product_analytics(
                 offset,
                 from_file,
             } => {
+                let (start, end) = time.resolve(false)?;
                 let input = QueryInput {
                     app_name: Some(app),
                     offset,
-                    filter_field: Some(field.trim().to_uppercase().replace('-', "_")),
-                    time_range: time.resolve(false)?,
+                    filter_field: Some(commands::product_analytics::api::filter_field_wire(&field)),
+                    start,
+                    end,
                     ..Default::default()
                 };
                 run_list_query(
@@ -4399,8 +4413,10 @@ fn run_product_analytics(
                     time,
                     group_by,
                 } => {
+                    let (start, end) = time.resolve(id.is_some())?;
                     let input = QueryInput {
-                        time_range: time.resolve(id.is_some())?,
+                        start,
+                        end,
                         app_name: app,
                         group_by,
                         ..Default::default()
@@ -4425,8 +4441,10 @@ fn run_product_analytics(
                     app,
                     time,
                 } => {
+                    let (start, end) = time.resolve(id.is_some())?;
                     let input = QueryInput {
-                        time_range: time.resolve(id.is_some())?,
+                        start,
+                        end,
                         app_name: app,
                         outcome: Some(outcome),
                         start_step,
@@ -4467,8 +4485,10 @@ fn run_product_analytics(
                     limit,
                     from_file,
                 } => {
+                    let (start, end) = time.resolve(id.is_some())?;
                     let input = QueryInput {
-                        time_range: time.resolve(id.is_some())?,
+                        start,
+                        end,
                         app_name: app,
                         view,
                         direction,
@@ -4508,8 +4528,10 @@ fn run_product_analytics(
                     top_n,
                     from_file,
                 } => {
+                    let (start, end) = time.resolve(id.is_some())?;
                     let input = QueryInput {
-                        time_range: time.resolve(id.is_some())?,
+                        start,
+                        end,
                         app_name: app,
                         view,
                         action_name_filter,
@@ -4533,8 +4555,10 @@ fn run_product_analytics(
                     time,
                     from_file,
                 } => {
+                    let (start, end) = time.resolve(id.is_some())?;
                     let input = QueryInput {
-                        time_range: time.resolve(id.is_some())?,
+                        start,
+                        end,
                         app_name: app,
                         view,
                         ..Default::default()
@@ -4596,6 +4620,7 @@ async fn run_product_analytics_saved(
                 .await
         }
         ProductAnalyticsSavedCmd::Update { id, from_file } => {
+            commands::product_analytics::require_single_target(targets, &id)?;
             confirm_destructive(
                 &format!("Replace Product Analytics {label} '{id}'?"),
                 yes,
@@ -4611,6 +4636,7 @@ async fn run_product_analytics_saved(
             .await
         }
         ProductAnalyticsSavedCmd::Delete { id } => {
+            commands::product_analytics::require_single_target(targets, &id)?;
             confirm_destructive(
                 &format!("Delete Product Analytics {label} '{id}'?"),
                 yes,

@@ -153,8 +153,8 @@ fn funnel_body(app: &str, name: &str) -> Value {
         "appNames": [app],
         "name": name,
         "steps": [
-            {"stepId": "s1", "conditions": [{"page": {"any": {}}}]},
-            {"stepId": "s2", "conditions": [{"action": {"any": {}}}]}
+            {"stepId": "s1", "conditions": [{"page": {"match": {"values": ["/"], "operator": "EQUAL"}}}]},
+            {"stepId": "s2", "conditions": [{"page": {"match": {"values": ["explore"], "operator": "EQUAL"}}}]}
         ],
         "timeRange": {"relativeMinutes": "1440"}
     })
@@ -245,6 +245,20 @@ fn saved_lifecycle(kind: &str, body: fn(&str, &str) -> Value) {
     ]);
     let updated = harness::run_ok_json(&["product-analytics", kind, "get", &id, "-o", "json"]);
     assert_eq!(updated["name"], format!("{name}-2"));
+    let mut kept = updated.clone();
+    let mut original = got.clone();
+    for value in [&mut kept, &mut original] {
+        let map = value
+            .as_object_mut()
+            .unwrap_or_else(|| panic!("{kind} get returned a non-object"));
+        for field in ["name", "id", "appName", "createdAt", "updatedAt"] {
+            map.remove(field);
+        }
+    }
+    assert_eq!(
+        kept, original,
+        "{kind} update must keep every field it was sent"
+    );
     harness::run_ok_nonempty(&["product-analytics", kind, "get", &id]);
     harness::run_ok_nonempty(&["product-analytics", kind, "list", "-o", "toon"]);
 

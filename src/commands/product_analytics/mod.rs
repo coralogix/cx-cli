@@ -20,21 +20,31 @@ use api::{
 pub struct TimeRangeArgs {
     #[arg(
         long,
-        help = "Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601. Default: now-1h, or the saved range when running a saved object"
+        help = "Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601. Default: now-1h, or the start of the saved range when running a saved ID"
     )]
     pub start: Option<String>,
 
     #[arg(
         long,
-        help = "End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601. Default: now"
+        help = "End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601. Default: now, or the end of the saved range when running a saved ID"
     )]
     pub end: Option<String>,
 }
 
 impl TimeRangeArgs {
-    pub fn resolve(&self, runs_saved_object: bool) -> Result<Option<(i64, i64)>> {
-        if runs_saved_object && self.start.is_none() && self.end.is_none() {
-            return Ok(None);
+    pub fn resolve(&self, runs_saved_object: bool) -> Result<(Option<i64>, Option<i64>)> {
+        if runs_saved_object {
+            let start = self
+                .start
+                .as_deref()
+                .map(parse_timestamp_epoch_seconds)
+                .transpose()?;
+            let end = self
+                .end
+                .as_deref()
+                .map(parse_timestamp_epoch_seconds)
+                .transpose()?;
+            return Ok((start, end));
         }
         let start = self.start.as_deref().unwrap_or("now-1h");
         let end = self.end.as_deref().unwrap_or("now");
@@ -43,7 +53,7 @@ impl TimeRangeArgs {
         if end_seconds <= start_seconds {
             bail!("--end ({end}) must be strictly after --start ({start})");
         }
-        Ok(Some((start_seconds, end_seconds)))
+        Ok((Some(start_seconds), Some(end_seconds)))
     }
 }
 
@@ -68,6 +78,23 @@ fn parse_id(id: &str) -> Result<i64> {
         Ok(parsed) if parsed > 0 => Ok(parsed),
         _ => bail!("ID must be a positive decimal number, got '{id}'"),
     }
+}
+
+pub fn require_single_target(targets: &[Arc<ExecutionTarget>], id: &str) -> Result<()> {
+    if targets.len() > 1 {
+        bail!(
+            "saved ID {id} is scoped to one team, but {} profiles were given; the same ID can \
+             name a different object in each team. Re-run once per profile with a single -p.",
+            targets.len()
+        );
+    }
+    Ok(())
+}
+
+fn format_local_time(seconds: i64) -> String {
+    chrono::DateTime::from_timestamp(seconds, 0)
+        .map(|time| time.with_timezone(&chrono::Local).to_rfc3339())
+        .unwrap_or_else(|| seconds.to_string())
 }
 
 fn or_dash(value: Option<&str>) -> String {
@@ -257,18 +284,6 @@ fn render_responses(
     render_machine(output, &all_results)
 }
 
-fn print_saved_object(response: &Value) -> Result<()> {
-    let saved: SavedObject = serde_json::from_value(response.clone())?;
-    println!("{}: {}", "Name".bold(), or_dash(saved.name.as_deref()));
-    println!("{}: {}", "ID".bold(), or_dash(saved.id.as_deref()));
-    println!("{}: {}", "App".bold(), or_dash(saved.app_name.as_deref()));
-    println!("{}: {}", "Details".bold(), saved.details());
-    println!("{}: {}", "Created".bold(), saved.created());
-    println!();
-    println!("{}", serde_json::to_string_pretty(response)?);
-    Ok(())
-}
-
 fn print_funnel(response: &Value) -> Result<()> {
     let parsed: FunnelResponse = serde_json::from_value(response.clone())?;
     let with_groups = parsed.groups.len() > 1
@@ -359,19 +374,37 @@ async fn build_body(
     input: &QueryInput,
 ) -> Result<Value> {
     let (Some(id), Some(saved_kind)) = (saved_id, kind.saved_kind()) else {
-        let Some(time_range) = input.time_range else {
+        let (Some(start), Some(end)) = (input.start, input.end) else {
             bail!("pass --start and --end");
         };
-        return api::build_query_body(kind, file_body, input, time_range);
+        return api::build_query_body(kind, file_body, input, (start, end));
     };
     let saved = api
         .get_saved(saved_kind, id)
         .await?
         .ok_or_else(|| anyhow!("{} {id} not found", saved_kind.label()))?;
-    let time_range = match input.time_range {
-        Some(range) => range,
-        None => api::resolve_saved_time_range(&saved, chrono::Utc::now().timestamp())?,
+    let (time_range, source) = match (input.start, input.end) {
+        (Some(start), Some(end)) => ((start, end), "--start/--end".to_string()),
+        (start, end) => {
+            let ((saved_start, saved_end), label) =
+                api::resolve_saved_time_range(&saved, chrono::Local::now())?;
+            (
+                (start.unwrap_or(saved_start), end.unwrap_or(saved_end)),
+                format!("saved: {label}"),
+            )
+        }
     };
+    let (start, end) = (
+        format_local_time(time_range.0),
+        format_local_time(time_range.1),
+    );
+    if time_range.1 <= time_range.0 {
+        bail!("the end of the time range ({end}) must be after its start ({start})");
+    }
+    eprintln!(
+        "{}",
+        format!("Using time range {start} – {end} ({source})").dimmed()
+    );
     api::build_query_body(
         kind,
         Some(api::request_from_saved(kind, &saved)),
@@ -387,6 +420,9 @@ async fn run_queries(
     from_file: Option<&str>,
     input: &QueryInput,
 ) -> Result<Vec<(String, Value)>> {
+    if let Some(id) = saved_id {
+        require_single_target(targets, id)?;
+    }
     let saved_id = saved_id.map(parse_id).transpose()?;
     let file_body = from_file.map(read_from_file).transpose()?;
     eprintln!("{}", "Running Product Analytics query...".dimmed());
@@ -493,6 +529,7 @@ pub async fn run_saved_get(
     id: &str,
     output: OutputFormat,
 ) -> Result<()> {
+    require_single_target(targets, id)?;
     let id = parse_id(id)?;
     eprintln!("{}", format!("Fetching {} {id}...", kind.label()).dimmed());
     let per_profile = fan_out(targets, |t| async move {
@@ -502,12 +539,34 @@ pub async fn run_saved_get(
             .ok_or_else(|| anyhow!("{} {id} not found", kind.label()))
     })
     .await;
-    render_responses(
-        report_errors_and_collect_successes(per_profile)?,
-        targets.len() > 1,
-        output,
-        print_saved_object,
-    )
+    let include_profile = targets.len() > 1;
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, mut response) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut response, &profile);
+        }
+        all_results.push(response);
+    }
+    match output {
+        OutputFormat::Text => render::render_get_text(
+            &all_results,
+            include_profile,
+            &format!("{} {id} not found.", kind.label()),
+            Some(
+                &|response| match serde_json::from_value::<SavedObject>(response.clone()) {
+                    Ok(saved) => {
+                        println!("{}: {}", "Name".bold(), or_dash(saved.name.as_deref()));
+                        println!("{}: {}", "ID".bold(), or_dash(saved.id.as_deref()));
+                        println!("{}: {}", "App".bold(), or_dash(saved.app_name.as_deref()));
+                        println!("{}: {}", "Details".bold(), saved.details());
+                        println!("{}: {}", "Created".bold(), saved.created());
+                    }
+                    Err(error) => eprintln!("could not read the {} summary: {error}", kind.label()),
+                },
+            ),
+        ),
+        _ => render_machine(output, &all_results),
+    }
 }
 
 pub async fn run_saved_write(
@@ -517,6 +576,9 @@ pub async fn run_saved_write(
     update_id: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
+    if let Some(id) = update_id {
+        require_single_target(targets, id)?;
+    }
     let update_id = update_id.map(parse_id).transpose()?;
     let file_body = read_from_file(from_file)?;
     let name = file_body
@@ -572,6 +634,7 @@ pub async fn run_saved_delete(
     kind: SavedObjectKind,
     id: &str,
 ) -> Result<()> {
+    require_single_target(targets, id)?;
     let id = parse_id(id)?;
     eprintln!("{}", format!("Deleting {} {id}...", kind.label()).dimmed());
     let per_profile = fan_out(targets, |t| async move {
@@ -643,19 +706,23 @@ mod tests {
         let args = time_range(Some("2026-11-16T00:00:00Z"), Some("2026-11-17T00:00:00Z"));
         assert_eq!(
             args.resolve(false).unwrap(),
-            Some((1_794_787_200, 1_794_873_600))
+            (Some(1_794_787_200), Some(1_794_873_600))
         );
     }
 
     #[test]
     fn no_flags_default_to_last_hour_unless_running_a_saved_object() {
-        let (start, end) = time_range(None, None).resolve(false).unwrap().unwrap();
+        let (Some(start), Some(end)) = time_range(None, None).resolve(false).unwrap() else {
+            panic!("both sides should default");
+        };
         assert!((3_600..=3_601).contains(&(end - start)));
-        assert_eq!(time_range(None, None).resolve(true).unwrap(), None);
-        assert!(time_range(Some("now-1d"), None)
-            .resolve(true)
-            .unwrap()
-            .is_some());
+        assert_eq!(time_range(None, None).resolve(true).unwrap(), (None, None));
+        let (start, end) = time_range(Some("now-1d"), None).resolve(true).unwrap();
+        assert!(start.is_some());
+        assert!(end.is_none());
+        let (start, end) = time_range(None, Some("now-1d")).resolve(true).unwrap();
+        assert!(start.is_none());
+        assert!(end.is_some());
     }
 
     #[test]

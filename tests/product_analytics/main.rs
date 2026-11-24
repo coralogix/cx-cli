@@ -20,7 +20,8 @@ const FIXED_RANGE: (i64, i64) = (1_763_251_200, 1_763_337_600);
 
 fn fixed_input() -> QueryInput {
     QueryInput {
-        time_range: Some(FIXED_RANGE),
+        start: Some(FIXED_RANGE.0),
+        end: Some(FIXED_RANGE.1),
         ..Default::default()
     }
 }
@@ -446,7 +447,7 @@ async fn funnel_query_runs_a_saved_funnel_with_its_fixed_range() {
         "funnels",
         42,
         saved_funnel(
-            json!({"fixed": {"fromTimestamp": "1763251200", "toTimestamp": "1763337600"}}),
+            json!({"fixed": {"fromTimestamp": "1763251200000", "toTimestamp": "1763337600000"}}),
         ),
     )
     .await;
@@ -518,6 +519,142 @@ async fn funnel_query_flags_override_the_saved_range_and_group_by() {
     )
     .await
     .expect("saved funnel query with flags should succeed");
+}
+
+#[tokio::test]
+async fn a_lone_start_or_end_takes_the_other_side_from_the_saved_range() {
+    let server = MockServer::start().await;
+    let saved_range = (FIXED_RANGE.0 - 86_400, FIXED_RANGE.1 + 86_400);
+    mount_saved_search(
+        &server,
+        "funnels",
+        42,
+        saved_funnel(json!({"fixed": {
+            "fromTimestamp": (saved_range.0 * 1000).to_string(),
+            "toTimestamp": (saved_range.1 * 1000).to_string()
+        }})),
+    )
+    .await;
+    for (from, to) in [
+        (saved_range.0, FIXED_RANGE.1),
+        (FIXED_RANGE.0, saved_range.1),
+    ] {
+        Mock::given(method("POST"))
+            .and(path(format!("{BASE}/funnels/v1/query")))
+            .and(body_partial_json(
+                json!({"query": {"fromTimestamp": from, "toTimestamp": to}}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(funnel_response()))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let end_only = QueryInput {
+        end: Some(FIXED_RANGE.1),
+        ..Default::default()
+    };
+    let start_only = QueryInput {
+        start: Some(FIXED_RANGE.0),
+        ..Default::default()
+    };
+    for input in [end_only, start_only] {
+        run_query(
+            &targets,
+            QueryKind::Funnel,
+            Some("42"),
+            None,
+            &input,
+            OutputFormat::Json,
+        )
+        .await
+        .expect("a lone --start or --end should keep the other saved side");
+    }
+    let past_saved_end = QueryInput {
+        start: Some(saved_range.1 + 60),
+        ..Default::default()
+    };
+    let error = run_query(
+        &targets,
+        QueryKind::Funnel,
+        Some("42"),
+        None,
+        &past_saved_end,
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("a start after the saved end must fail");
+    assert!(format!("{error:#}").contains("must be after its start"));
+}
+
+#[tokio::test]
+async fn saved_ids_refuse_more_than_one_profile() {
+    let first = MockServer::start().await;
+    let second = MockServer::start().await;
+    let targets = vec![
+        common::test_target("prod", &first.uri()),
+        common::test_target("staging", &second.uri()),
+    ];
+    let file = write_json("multi_profile_update", &json!({"name": "n"}));
+    let mut errors = vec![
+        run_saved_get(&targets, SavedObjectKind::Funnel, "42", OutputFormat::Json)
+            .await
+            .expect_err("get must refuse two profiles"),
+        run_saved_write(
+            &targets,
+            SavedObjectKind::Pathway,
+            file.to_str().unwrap(),
+            Some("42"),
+            OutputFormat::Json,
+        )
+        .await
+        .expect_err("update must refuse two profiles"),
+        run_saved_delete(&targets, SavedObjectKind::Heatmap, "42")
+            .await
+            .expect_err("delete must refuse two profiles"),
+    ];
+    std::fs::remove_file(file).ok();
+    for kind in [QueryKind::Funnel, QueryKind::ScrollMap] {
+        errors.push(
+            run_query(
+                &targets,
+                kind,
+                Some("42"),
+                None,
+                &fixed_input(),
+                OutputFormat::Json,
+            )
+            .await
+            .expect_err("a saved query must refuse two profiles"),
+        );
+    }
+    for kind in [
+        QueryKind::MatchingUsers,
+        QueryKind::Pathways,
+        QueryKind::Clicks,
+    ] {
+        errors.push(
+            run_list_query(
+                &targets,
+                kind,
+                Some("42"),
+                None,
+                &fixed_input(),
+                OutputFormat::Json,
+            )
+            .await
+            .expect_err("a saved list query must refuse two profiles"),
+        );
+    }
+    for error in errors {
+        let message = format!("{error:#}");
+        assert!(message.contains("scoped to one team"), "{message}");
+        assert!(message.contains("single -p"), "{message}");
+    }
+    for server in [&first, &second] {
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
 }
 
 #[tokio::test]
@@ -647,7 +784,7 @@ async fn pathway_queries_saved_and_inline() {
         44,
         json!({"id": "44", "appName": "docs", "name": "From setup", "pageName": "/setup",
                "pagesCount": 4, "limit": 8, "mode": "PATHWAYS_MODE_BACKWARD",
-               "timeRange": {"fixed": {"fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1}}}),
+               "timeRange": {"fixed": {"fromTimestamp": FIXED_RANGE.0 * 1000, "toTimestamp": FIXED_RANGE.1 * 1000}}}),
     )
     .await;
     Mock::given(method("POST"))
@@ -716,7 +853,7 @@ async fn heatmap_clicks_and_scroll_map_of_a_saved_heatmap() {
         43,
         json!({"id": "43", "appName": "web-app", "name": "Explore", "viewName": "explore",
                "mode": "TOP_ELEMENTS", "snapshotId": "s", "actionNameFilter": "NAMED_ONLY",
-               "timeRange": {"fixed": {"fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1}}}),
+               "timeRange": {"fixed": {"fromTimestamp": FIXED_RANGE.0 * 1000, "toTimestamp": FIXED_RANGE.1 * 1000}}}),
     )
     .await;
     Mock::given(method("POST"))

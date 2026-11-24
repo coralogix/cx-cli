@@ -388,6 +388,16 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_rejects_user_owned_policy_directory() {
+        let path = Path::new(r"C:\ProgramData\Coralogix\cx\policy.toml");
+        let trusted =
+            policy_directories_are_trusted(path, &|directory| Ok(!directory.ends_with("cx")))
+                .expect("directory ownership check");
+        assert!(!trusted, "a user-owned cx directory must not be trusted");
+    }
+
     #[test]
     fn policy_requires_os_store() {
         assert!(parse_policy(

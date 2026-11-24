@@ -302,9 +302,10 @@ or by `SYSTEM` or the local Administrators group on Windows. On Windows, the
 `Coralogix` and `cx` policy directories must have the same trusted ownership;
 otherwise their owner could delete an administrator-owned `policy.toml`. `cx`
 enforces OS-store storage when it sees an untrusted or inaccessible Windows
-policy path, so a user-created directory cannot bypass the policy. A suitable
-macOS setup is `755` on the `Coralogix` and `cx` directories and `644` on a
-root-owned `policy.toml`.
+policy path, so a user-created directory cannot bypass the policy. IT must
+also restrict the Windows directory ACLs so unprivileged users cannot modify
+or delete the policy path. A suitable macOS setup is `755` on the `Coralogix`
+and `cx` directories and `644` on a root-owned `policy.toml`.
 
 When enabled, `cx` stores credentials only in macOS Keychain or Windows
 Credential Manager. The interactive setup flow skips the credential-storage

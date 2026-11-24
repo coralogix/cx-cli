@@ -22,9 +22,11 @@ jobs:
           filters: |
             code:
               - 'src/**'
+              - 'crates/cli-otel/**'
               - 'tests/**'
               - 'Cargo.*'
               - 'rust-toolchain.toml'
+              - '.github/workflows/lint.yml'
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: steps.filter.outputs.code == 'true'
@@ -44,8 +46,8 @@ jobs:
 
       - name: Check formatting
         if: steps.filter.outputs.code == 'true'
-        run: cargo fmt --check
+        run: cargo fmt --all -- --check
 
       - name: Clippy
         if: steps.filter.outputs.code == 'true'
-        run: cargo clippy --locked -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings

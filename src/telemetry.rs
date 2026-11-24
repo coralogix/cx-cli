@@ -22,6 +22,7 @@ use crate::region::{region_from_url, RegionMatch};
 mod delivery;
 mod key;
 mod notice;
+mod platform;
 mod privacy;
 mod sender;
 
@@ -118,16 +119,11 @@ fn truthy(value: &str) -> bool {
 }
 
 fn resource_attributes(discovered: bool) -> Vec<KeyValue> {
-    let platform = os_info::get();
     let os_type = match env::consts::OS {
         "macos" => "darwin",
         os => os,
     };
-    let architecture = platform
-        .architecture()
-        .and_then(architecture_name)
-        .or_else(|| architecture_name(env::consts::ARCH))
-        .unwrap_or(env::consts::ARCH);
+    let architecture = architecture_name(env::consts::ARCH).unwrap_or(env::consts::ARCH);
 
     let install_method = match install_method::detect() {
         InstallMethod::Brew => "brew",
@@ -139,7 +135,7 @@ fn resource_attributes(discovered: bool) -> Vec<KeyValue> {
         KeyValue::new("host.arch", architecture),
         KeyValue::new("cli.installation.method", install_method),
     ];
-    if let Some(version) = numeric_os_version(platform.version()) {
+    if let Some(version) = platform::os_version() {
         attributes.push(KeyValue::new("os.version", version));
     }
     if let Ok(id) = uuid::Uuid::parse_str(&crate::version_cache::installation_id()) {
@@ -163,21 +159,6 @@ fn architecture_name(architecture: &str) -> Option<&'static str> {
         "s390x" => "s390x",
         _ => return None,
     })
-}
-
-fn numeric_os_version(version: &os_info::Version) -> Option<String> {
-    match version {
-        os_info::Version::Semantic(_, _, _) => Some(version.to_string()),
-        os_info::Version::Custom(version)
-            if version.len() <= 32
-                && version.split('.').all(|component| {
-                    !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
-                }) =>
-        {
-            Some(version.clone())
-        }
-        _ => None,
-    }
 }
 
 enum CiProvider {

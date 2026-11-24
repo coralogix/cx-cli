@@ -26,9 +26,11 @@ jobs:
           filters: |
             code:
               - 'src/**'
+              - 'crates/cli-otel/**'
               - 'tests/**'
               - 'Cargo.*'
               - 'rust-toolchain.toml'
+              - '.github/workflows/test.yml'
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: steps.filter.outputs.code == 'true'
@@ -49,4 +51,58 @@ jobs:
 
       - name: Run tests
         if: steps.filter.outputs.code == 'true'
-        run: cargo test --locked
+        run: cargo test --locked --workspace
+
+  cli-otel-features:
+    name: cli-otel no-default-features subsets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'crates/cli-otel/**'
+              - 'tests/**'
+              - 'Cargo.*'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/test.yml'
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.filter.outputs.code == 'true'
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        if: steps.filter.outputs.code == 'true'
+        with:
+          toolchain: "1.96.1"
+          components: clippy
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: steps.filter.outputs.code == 'true'
+        with:
+          key: cli-otel-features
+
+      - name: Test and clippy cli-otel feature subsets
+        if: steps.filter.outputs.code == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          feature_sets=(
+            ""
+            "clap"
+            "command-failure-logs"
+            "reqwest-middleware"
+            "clap,command-failure-logs"
+            "clap,reqwest-middleware"
+            "command-failure-logs,reqwest-middleware"
+            "clap,command-failure-logs,reqwest-middleware"
+          )
+          for features in "${feature_sets[@]}"; do
+            args=(--locked -p cli-otel --no-default-features)
+            if [[ -n "${features}" ]]; then
+              args+=(--features "${features}")
+            fi
+            cargo test "${args[@]}"
+            cargo clippy "${args[@]}" --all-targets -- -D warnings
+          done

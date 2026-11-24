@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
+#[cfg(not(windows))]
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -11,6 +12,9 @@ use tokio::time::{sleep, timeout};
 
 use super::delivery::{explicit_headers, retryable, Destination};
 use super::key::{self, FetchFailure, Target};
+
+#[cfg(windows)]
+mod windows;
 
 const SENDER_ARG: &str = "__telemetry-send";
 const LIFETIME: Duration = Duration::from_secs(30);
@@ -27,28 +31,28 @@ pub(super) fn spawn(directory: &Path) {
     if deferred(directory) {
         return;
     }
-    let Ok(exe) = env::current_exe() else {
-        return;
-    };
-    let mut command = Command::new(exe);
-    command
-        .arg(SENDER_ARG)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        let _ = windows::spawn(SENDER_ARG);
     }
-    let _ = command.spawn();
+    #[cfg(not(windows))]
+    {
+        let Ok(exe) = env::current_exe() else {
+            return;
+        };
+        let mut command = Command::new(exe);
+        command
+            .arg(SENDER_ARG)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let _ = command.spawn();
+    }
 }
 
 pub(super) fn run(build_command: impl FnOnce() -> clap::Command) {

@@ -104,6 +104,7 @@ security-framework = "3"
 # Windows: Credential Manager
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Security"] }
 
 # Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)
 # NOTE: musl builds have no keyring backend - users must use file-based credential storage

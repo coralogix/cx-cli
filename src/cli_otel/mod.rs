@@ -465,7 +465,7 @@ pub(crate) fn http_client_builder(endpoint: &Url) -> Option<ClientBuilder> {
     Some(builder)
 }
 
-#[cfg(all(test, not(cli_otel_embedded)))]
+#[cfg(all(test, not(cli_otel_embedded), feature = "reqwest-middleware"))]
 fn inline_client(timeout: Duration) -> Option<Client> {
     let endpoint = Url::parse("https://localhost").ok()?;
     inline_client_for_endpoint(timeout, &endpoint)

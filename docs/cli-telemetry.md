@@ -100,6 +100,12 @@ stored installation UUID and detected install method. Current installation
 detection distinguishes Homebrew, install script and unknown. The installation
 UUID uses the standard OpenTelemetry application attribute.
 [OpenTelemetry application attributes](https://opentelemetry.io/docs/specs/semconv/registry/attributes/app/)
+On Linux, cx reads `/proc/sys/kernel/osrelease` and keeps only the leading
+numeric dotted prefix before distro suffixes. On macOS, cx reads
+`/System/Library/CoreServices/SystemVersion.plist` and uses `ProductVersion`
+when it is a valid numeric dotted string. On Windows, cx uses `os_info::get()`
+through native WinAPI. cx does not spawn `uname`, `lsb_release` or `sw_vers`
+for telemetry platform metadata.
 
 Known CI providers are identified by their standard boolean environment markers.
 Known agent callers get a normalized `gen_ai.agent.name` from cx's caller

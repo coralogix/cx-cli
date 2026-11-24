@@ -14,6 +14,14 @@ use serde::Deserialize;
 
 static UNTRUSTED_POLICY_WARNING: OnceLock<()> = OnceLock::new();
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PolicyOwner {
+    Trusted,
+    Untrusted,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    Inaccessible,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ManagedPolicy {
@@ -109,10 +117,12 @@ fn requires_os_store_at(path: &Path) -> Result<bool> {
 
 fn requires_os_store_at_with(
     path: &Path,
-    owner_is_trusted: impl Fn(&Path) -> Result<bool>,
+    owner_is_trusted: impl Fn(&Path) -> Result<PolicyOwner>,
 ) -> Result<bool> {
-    if !policy_directories_are_trusted(path, &owner_is_trusted)? {
-        return untrusted_policy_path(path);
+    match policy_directories_are_trusted(path, &owner_is_trusted)? {
+        PolicyOwner::Trusted => {}
+        PolicyOwner::Untrusted => return untrusted_policy_path(path),
+        PolicyOwner::Inaccessible => return Ok(inaccessible_policy_requires_os_store()),
     }
     match std::fs::metadata(path) {
         Ok(_) => {}
@@ -125,8 +135,10 @@ fn requires_os_store_at_with(
                 .with_context(|| format!("Cannot access managed policy {}", path.display()));
         }
     }
-    if !owner_is_trusted(path)? {
-        return untrusted_policy_warning(path);
+    match owner_is_trusted(path)? {
+        PolicyOwner::Trusted => {}
+        PolicyOwner::Untrusted => return untrusted_policy_warning(path),
+        PolicyOwner::Inaccessible => return Ok(inaccessible_policy_requires_os_store()),
     }
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
@@ -148,14 +160,18 @@ fn requires_os_store_at_with(
 #[cfg(target_os = "windows")]
 fn policy_directories_are_trusted(
     path: &Path,
-    owner_is_trusted: &impl Fn(&Path) -> Result<bool>,
-) -> Result<bool> {
+    owner_is_trusted: &impl Fn(&Path) -> Result<PolicyOwner>,
+) -> Result<PolicyOwner> {
     for directory in path.ancestors().skip(1).take(2) {
         match std::fs::metadata(directory) {
-            Ok(_) if !owner_is_trusted(directory)? => return Ok(false),
-            Ok(_) => {}
+            Ok(_) => match owner_is_trusted(directory)? {
+                PolicyOwner::Trusted => {}
+                trust => return Ok(trust),
+            },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return Ok(false),
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                return Ok(PolicyOwner::Inaccessible);
+            }
             Err(error) => {
                 return Err(error).with_context(|| {
                     format!(
@@ -166,15 +182,15 @@ fn policy_directories_are_trusted(
             }
         }
     }
-    Ok(true)
+    Ok(PolicyOwner::Trusted)
 }
 
 #[cfg(not(target_os = "windows"))]
 fn policy_directories_are_trusted(
     _path: &Path,
-    _owner_is_trusted: &impl Fn(&Path) -> Result<bool>,
-) -> Result<bool> {
-    Ok(true)
+    _owner_is_trusted: &impl Fn(&Path) -> Result<PolicyOwner>,
+) -> Result<PolicyOwner> {
+    Ok(PolicyOwner::Trusted)
 }
 
 // On Windows, an inaccessible path under ProgramData could have been created
@@ -221,17 +237,21 @@ fn untrusted_policy_path(path: &Path) -> Result<bool> {
 }
 
 #[cfg(target_os = "macos")]
-fn policy_owner_is_trusted(path: &Path) -> Result<bool> {
+fn policy_owner_is_trusted(path: &Path) -> Result<PolicyOwner> {
     use std::os::unix::fs::MetadataExt;
 
-    Ok(std::fs::metadata(path)?.uid() == 0)
+    Ok(if std::fs::metadata(path)?.uid() == 0 {
+        PolicyOwner::Trusted
+    } else {
+        PolicyOwner::Untrusted
+    })
 }
 
 #[cfg(target_os = "windows")]
-fn policy_owner_is_trusted(path: &Path) -> Result<bool> {
+fn policy_owner_is_trusted(path: &Path) -> Result<PolicyOwner> {
     use std::{os::windows::ffi::OsStrExt, ptr::null_mut};
     use windows_sys::Win32::{
-        Foundation::LocalFree,
+        Foundation::{LocalFree, ERROR_ACCESS_DENIED},
         Security::{
             Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
             WinBuiltinAdministratorsSid, WinLocalSystemSid, OWNER_SECURITY_INFORMATION, PSID,
@@ -253,10 +273,13 @@ fn policy_owner_is_trusted(path: &Path) -> Result<bool> {
             &mut descriptor,
         )
     };
+    if status == ERROR_ACCESS_DENIED {
+        return Ok(PolicyOwner::Inaccessible);
+    }
     if status != 0 {
         anyhow::bail!(
-            "Cannot determine owner of managed policy {}",
-            path.display()
+            "Cannot determine owner of managed policy {} (Windows error {status})",
+            path.display(),
         );
     }
     let trusted = unsafe {
@@ -266,7 +289,11 @@ fn policy_owner_is_trusted(path: &Path) -> Result<bool> {
     unsafe {
         LocalFree(descriptor);
     }
-    Ok(trusted)
+    Ok(if trusted {
+        PolicyOwner::Trusted
+    } else {
+        PolicyOwner::Untrusted
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -290,8 +317,8 @@ unsafe fn sid_matches_well_known(
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn policy_owner_is_trusted(_path: &Path) -> Result<bool> {
-    Ok(false)
+fn policy_owner_is_trusted(_path: &Path) -> Result<PolicyOwner> {
+    Ok(PolicyOwner::Untrusted)
 }
 
 #[cfg(test)]
@@ -359,7 +386,7 @@ mod tests {
     #[test]
     fn policy_file_requires_os_store() {
         let path = write_policy("requires", "require_credential_storage = \"os_store\"");
-        let required = requires_os_store_at_with(&path, |_| Ok(true));
+        let required = requires_os_store_at_with(&path, |_| Ok(PolicyOwner::Trusted));
         let _ = std::fs::remove_file(&path);
         assert!(required.expect("valid policy"));
     }
@@ -367,7 +394,7 @@ mod tests {
     #[test]
     fn policy_file_with_invalid_value_fails_closed() {
         let path = write_policy("invalid", "require_credential_storage = \"file\"");
-        let result = requires_os_store_at_with(&path, |_| Ok(true));
+        let result = requires_os_store_at_with(&path, |_| Ok(PolicyOwner::Trusted));
         let _ = std::fs::remove_file(&path);
         let err = result.expect_err("file weakens the policy");
         assert!(
@@ -379,7 +406,7 @@ mod tests {
     #[test]
     fn untrusted_policy_file_is_ignored() {
         let path = write_policy("untrusted", "require_credential_storage = \"os_store\"");
-        let required = requires_os_store_at_with(&path, |_| Ok(false));
+        let required = requires_os_store_at_with(&path, |_| Ok(PolicyOwner::Untrusted));
         let _ = std::fs::remove_file(&path);
         if cfg!(target_os = "windows") {
             assert!(required.expect("Windows enforces an untrusted policy path"));
@@ -388,14 +415,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn inaccessible_owner_lookup_uses_platform_inaccessible_policy_behavior() {
+        let path = write_policy(
+            "owner_inaccessible",
+            "require_credential_storage = \"os_store\"",
+        );
+        let required = requires_os_store_at_with(&path, |_| Ok(PolicyOwner::Inaccessible));
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            required.expect("inaccessible owner lookup"),
+            cfg!(target_os = "windows")
+        );
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_rejects_user_owned_policy_directory() {
         let path = Path::new(r"C:\ProgramData\Coralogix\cx\policy.toml");
-        let trusted =
-            policy_directories_are_trusted(path, &|directory| Ok(!directory.ends_with("cx")))
-                .expect("directory ownership check");
-        assert!(!trusted, "a user-owned cx directory must not be trusted");
+        let trust = policy_directories_are_trusted(path, &|directory| {
+            Ok(if directory.ends_with("cx") {
+                PolicyOwner::Untrusted
+            } else {
+                PolicyOwner::Trusted
+            })
+        })
+        .expect("directory ownership check");
+        assert_eq!(
+            trust,
+            PolicyOwner::Untrusted,
+            "a user-owned cx directory must not be trusted"
+        );
     }
 
     #[test]

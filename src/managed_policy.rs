@@ -12,11 +12,12 @@ use std::{
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-static INACCESSIBLE_POLICY_WARNING: OnceLock<()> = OnceLock::new();
+static UNTRUSTED_POLICY_WARNING: OnceLock<()> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ManagedPolicy {
-    require_credential_storage: Option<String>,
+    require_credential_storage: String,
 }
 
 /// Whether this build supports an IT-managed credential policy.
@@ -79,10 +80,9 @@ fn policy_file() -> Result<PathBuf> {
 fn parse_policy(raw: &str, path: &Path) -> Result<bool> {
     let policy: ManagedPolicy = toml::from_str(raw)
         .with_context(|| format!("Failed to parse managed policy {}", path.display()))?;
-    match policy.require_credential_storage.as_deref() {
-        None => Ok(false),
-        Some("os_store") => Ok(true),
-        Some(value) => anyhow::bail!(
+    match policy.require_credential_storage.as_str() {
+        "os_store" => Ok(true),
+        value => anyhow::bail!(
             "Invalid require_credential_storage={value:?} in managed policy {}. \
              Expected \"os_store\".",
             path.display()
@@ -92,9 +92,10 @@ fn parse_policy(raw: &str, path: &Path) -> Result<bool> {
 
 /// Returns whether the IT policy requires OS credential storage.
 ///
-/// A missing or inaccessible policy file means no policy. An invalid value is
-/// rejected rather than silently weakening an administrator's intended
-/// configuration.
+/// A missing or untrusted policy file means no policy. On Windows, an
+/// inaccessible policy path enforces OS storage to prevent a policy bypass. An
+/// invalid policy is rejected rather than silently weakening an administrator's
+/// intended configuration.
 pub fn requires_os_store() -> Result<bool> {
     if !supported_platform() {
         return Ok(false);
@@ -103,21 +104,31 @@ pub fn requires_os_store() -> Result<bool> {
 }
 
 fn requires_os_store_at(path: &Path) -> Result<bool> {
+    requires_os_store_at_with(path, policy_owner_is_trusted)
+}
+
+fn requires_os_store_at_with(
+    path: &Path,
+    owner_is_trusted: impl FnOnce(&Path) -> Result<bool>,
+) -> Result<bool> {
     match std::fs::metadata(path) {
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-            return inaccessible_policy_warning(path, &error);
+            return Ok(inaccessible_policy_requires_os_store());
         }
         Err(error) => {
             return Err(error)
                 .with_context(|| format!("Cannot access managed policy {}", path.display()));
         }
     }
+    if !owner_is_trusted(path)? {
+        return untrusted_policy_warning(path);
+    }
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-            return inaccessible_policy_warning(path, &error);
+            return Ok(inaccessible_policy_requires_os_store());
         }
         Err(error) => {
             return Err(error)
@@ -127,14 +138,103 @@ fn requires_os_store_at(path: &Path) -> Result<bool> {
     parse_policy(&raw, path)
 }
 
-fn inaccessible_policy_warning(path: &Path, error: &std::io::Error) -> Result<bool> {
-    if INACCESSIBLE_POLICY_WARNING.set(()).is_ok() {
+// On Windows, an inaccessible path under ProgramData could have been created
+// by a standard user before IT deploys the policy. Enforcing OS storage avoids
+// turning that access denial into a policy bypass. macOS instead treats it as
+// absent because enterprise software commonly makes the shared Coralogix
+// directory root-only even when no cx policy has been deployed.
+#[cfg(target_os = "windows")]
+const fn inaccessible_policy_requires_os_store() -> bool {
+    true
+}
+
+#[cfg(not(target_os = "windows"))]
+const fn inaccessible_policy_requires_os_store() -> bool {
+    false
+}
+
+fn untrusted_policy_warning(path: &Path) -> Result<bool> {
+    if UNTRUSTED_POLICY_WARNING.set(()).is_ok() {
         eprintln!(
-            "Warning: cannot access managed policy {}: {error}. \
-             Treating it as absent; managed credential storage is not enforced.",
+            "Warning: ignoring managed policy {} because it is not owned by \
+             an administrator. Managed credential storage is not enforced.",
             path.display()
         );
     }
+    Ok(false)
+}
+
+#[cfg(target_os = "macos")]
+fn policy_owner_is_trusted(path: &Path) -> Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+
+    Ok(std::fs::metadata(path)?.uid() == 0)
+}
+
+#[cfg(target_os = "windows")]
+fn policy_owner_is_trusted(path: &Path) -> Result<bool> {
+    use std::{os::windows::ffi::OsStrExt, ptr::null_mut};
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::{
+            Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
+            WinBuiltinAdministratorsSid, WinLocalSystemSid, OWNER_SECURITY_INFORMATION, PSID,
+        },
+    };
+
+    let policy_path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut owner: PSID = null_mut();
+    let mut descriptor = null_mut();
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            policy_path.as_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        anyhow::bail!(
+            "Cannot determine owner of managed policy {}",
+            path.display()
+        );
+    }
+    let trusted = unsafe {
+        sid_matches_well_known(owner, WinLocalSystemSid)
+            || sid_matches_well_known(owner, WinBuiltinAdministratorsSid)
+    };
+    unsafe {
+        LocalFree(descriptor);
+    }
+    Ok(trusted)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn sid_matches_well_known(
+    owner: windows_sys::Win32::Security::PSID,
+    well_known_sid: windows_sys::Win32::Security::WELL_KNOWN_SID_TYPE,
+) -> bool {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Security::{CreateWellKnownSid, EqualSid};
+
+    let mut length = 0;
+    CreateWellKnownSid(well_known_sid, null_mut(), null_mut(), &mut length);
+    let mut sid = vec![0u8; length as usize];
+    CreateWellKnownSid(
+        well_known_sid,
+        null_mut(),
+        sid.as_mut_ptr().cast(),
+        &mut length,
+    ) != 0
+        && EqualSid(owner, sid.as_mut_ptr().cast()) != 0
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn policy_owner_is_trusted(_path: &Path) -> Result<bool> {
     Ok(false)
 }
 
@@ -193,19 +293,17 @@ mod tests {
     }
 
     #[test]
-    fn inaccessible_policy_file_means_no_policy() {
-        let path = Path::new("/managed/policy.toml");
-        let result = inaccessible_policy_warning(
-            path,
-            &std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+    fn inaccessible_policy_is_enforced_only_on_windows() {
+        assert_eq!(
+            inaccessible_policy_requires_os_store(),
+            cfg!(target_os = "windows")
         );
-        assert!(!result.expect("permission denial is treated as no policy"));
     }
 
     #[test]
     fn policy_file_requires_os_store() {
         let path = write_policy("requires", "require_credential_storage = \"os_store\"");
-        let required = requires_os_store_at(&path);
+        let required = requires_os_store_at_with(&path, |_| Ok(true));
         let _ = std::fs::remove_file(&path);
         assert!(required.expect("valid policy"));
     }
@@ -213,13 +311,21 @@ mod tests {
     #[test]
     fn policy_file_with_invalid_value_fails_closed() {
         let path = write_policy("invalid", "require_credential_storage = \"file\"");
-        let result = requires_os_store_at(&path);
+        let result = requires_os_store_at_with(&path, |_| Ok(true));
         let _ = std::fs::remove_file(&path);
         let err = result.expect_err("file weakens the policy");
         assert!(
             err.to_string().contains("Expected \"os_store\""),
             "got: {err}"
         );
+    }
+
+    #[test]
+    fn untrusted_policy_file_is_ignored() {
+        let path = write_policy("untrusted", "require_credential_storage = \"os_store\"");
+        let required = requires_os_store_at_with(&path, |_| Ok(false));
+        let _ = std::fs::remove_file(&path);
+        assert!(!required.expect("untrusted policy is ignored"));
     }
 
     #[test]
@@ -239,5 +345,22 @@ mod tests {
         )
         .expect_err("file weakens the policy");
         assert!(err.to_string().contains("Expected \"os_store\""));
+    }
+
+    #[test]
+    fn policy_rejects_unknown_key() {
+        let err = parse_policy(
+            "require_credential_store = \"os_store\"",
+            Path::new("/managed/policy.toml"),
+        )
+        .expect_err("unknown policy key must not disable enforcement");
+        assert!(format!("{err:#}").contains("unknown field"));
+    }
+
+    #[test]
+    fn policy_rejects_missing_storage_requirement() {
+        let err = parse_policy("", Path::new("/managed/policy.toml"))
+            .expect_err("missing storage requirement must not disable enforcement");
+        assert!(format!("{err:#}").contains("missing field"));
     }
 }

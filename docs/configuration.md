@@ -296,13 +296,14 @@ change for their own processes.
 require_credential_storage = "os_store"
 ```
 
-The policy file and every parent directory should be readable and traversable
-by the user running `cx`. If `cx` gets `Permission denied` while checking it,
-it prints a warning and treats the policy as absent, so IT cannot enforce the
-policy until the permissions are corrected. Keep the file owned by IT (for
-example `root:admin` on macOS) while granting read access to users. A suitable
-macOS setup is `755` on the `Coralogix` and `cx` directories and `644` on
-`policy.toml`.
+The policy file and every parent directory must be readable and traversable by
+the user running `cx`. The policy file must also be owned by `root` on macOS,
+or by `SYSTEM` or the local Administrators group on Windows. `cx` ignores an
+untrusted policy file with a warning, so a standard user cannot enforce a
+policy for other users. On Windows, an inaccessible policy path enforces
+OS-store storage to prevent a user-created, locked directory from bypassing
+the policy. A suitable macOS setup is `755` on the `Coralogix` and `cx`
+directories and `644` on a root-owned `policy.toml`.
 
 When enabled, `cx` stores credentials only in macOS Keychain or Windows
 Credential Manager. The interactive setup flow skips the credential-storage

@@ -253,7 +253,7 @@ fn select_credential_storage(
     if managed {
         return Ok(CredentialStorage::OsStore);
     }
-    if let Some(storage) = credential_storage_override().filter(|_| !managed) {
+    if let Some(storage) = credential_storage_override() {
         return Ok(storage);
     }
     let platform = current_os_store_platform();

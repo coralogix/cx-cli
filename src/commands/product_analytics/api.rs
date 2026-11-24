@@ -460,6 +460,10 @@ pub fn strip_read_only_fields(body: Value) -> anyhow::Result<Value> {
     Ok(Value::Object(map))
 }
 
+pub fn next_page_offset(response: &Value, offset: Option<u32>, rows: usize) -> Option<usize> {
+    (response["hasMore"].as_bool() == Some(true)).then(|| offset.unwrap_or(0) as usize + rows)
+}
+
 pub fn items(response: &Value, key: &str) -> Vec<Value> {
     match response.get(key) {
         Some(Value::Array(items)) => items.clone(),
@@ -898,6 +902,19 @@ mod tests {
         assert_eq!(body["click"], json!({}));
         assert!(body.get("custom").is_none());
         assert!(build_query_body(QueryKind::Actions, None, &QueryInput::default(), RANGE).is_err());
+    }
+
+    #[test]
+    fn next_page_offset_follows_has_more() {
+        assert_eq!(
+            next_page_offset(&json!({"hasMore": true}), None, 1000),
+            Some(1000)
+        );
+        assert_eq!(
+            next_page_offset(&json!({"hasMore": true}), Some(1000), 1000),
+            Some(2000)
+        );
+        assert_eq!(next_page_offset(&json!({}), Some(1000), 210), None);
     }
 
     #[test]

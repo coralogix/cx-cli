@@ -64,10 +64,10 @@ single `-p` profile only.
 
 ## Paging
 
-`views list`, `actions list` and `filter-values` return at most one server-configured
-page of rows, with no total. If the row count looks like a full page (a round number
-such as 100 or 1000), fetch the next page with `--offset <rows so far>` until a page
-comes back shorter. `funnels matching-users` takes `--limit` and `--offset`.
+`views list`, `actions list`, `filter-values` and `funnels matching-users` return one
+page of rows, with no total. When more rows exist, stderr says
+`More rows are available: rerun with --offset <N>`; run the same command with that
+`--offset` to get the next page. `funnels matching-users` also takes `--limit`.
 
 ## Workflow
 

@@ -469,7 +469,19 @@ pub async fn run_list_query(
     let responses = run_queries(targets, kind, saved_id, from_file, input).await?;
     let results = responses
         .into_iter()
-        .map(|(profile, response)| (profile, api::items(&response, kind.items_key())))
+        .map(|(profile, response)| {
+            let items = api::items(&response, kind.items_key());
+            if let Some(next_offset) = api::next_page_offset(&response, input.offset, items.len()) {
+                eprintln!(
+                    "{}",
+                    format!(
+                        "[{profile}] More rows are available: rerun with --offset {next_offset}."
+                    )
+                    .dimmed()
+                );
+            }
+            (profile, items)
+        })
         .collect();
     render_items(
         results,

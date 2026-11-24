@@ -446,7 +446,7 @@ mod tests {
         let cx_dir = root.join("Coralogix").join("cx");
         std::fs::create_dir_all(&cx_dir).expect("create policy directory");
         let path = cx_dir.join("policy.toml");
-        let trust = policy_directories_are_trusted(path, &|directory| {
+        let trust = policy_directories_are_trusted(&path, &|directory| {
             Ok(if directory == cx_dir {
                 PolicyOwner::Untrusted
             } else {

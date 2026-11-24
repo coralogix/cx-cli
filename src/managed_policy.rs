@@ -109,8 +109,11 @@ fn requires_os_store_at(path: &Path) -> Result<bool> {
 
 fn requires_os_store_at_with(
     path: &Path,
-    owner_is_trusted: impl FnOnce(&Path) -> Result<bool>,
+    owner_is_trusted: impl Fn(&Path) -> Result<bool>,
 ) -> Result<bool> {
+    if !policy_directories_are_trusted(path, &owner_is_trusted)? {
+        return untrusted_policy_path(path);
+    }
     match std::fs::metadata(path) {
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
@@ -138,6 +141,42 @@ fn requires_os_store_at_with(
     parse_policy(&raw, path)
 }
 
+/// On Windows, the policy's `Coralogix` and `cx` directories are part of the
+/// trust boundary: their owner could delete an otherwise admin-owned policy
+/// file. Only inspect these two product-specific directories; ProgramData and
+/// its ancestors are OS-owned locations outside this policy's control.
+#[cfg(target_os = "windows")]
+fn policy_directories_are_trusted(
+    path: &Path,
+    owner_is_trusted: &impl Fn(&Path) -> Result<bool>,
+) -> Result<bool> {
+    for directory in path.ancestors().skip(1).take(2) {
+        match std::fs::metadata(directory) {
+            Ok(_) if !owner_is_trusted(directory)? => return Ok(false),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return Ok(false),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "Cannot inspect managed policy directory {}",
+                        directory.display()
+                    )
+                });
+            }
+        }
+    }
+    Ok(true)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn policy_directories_are_trusted(
+    _path: &Path,
+    _owner_is_trusted: &impl Fn(&Path) -> Result<bool>,
+) -> Result<bool> {
+    Ok(true)
+}
+
 // On Windows, an inaccessible path under ProgramData could have been created
 // by a standard user before IT deploys the policy. Enforcing OS storage avoids
 // turning that access denial into a policy bypass. macOS instead treats it as
@@ -162,6 +201,23 @@ fn untrusted_policy_warning(path: &Path) -> Result<bool> {
         );
     }
     Ok(false)
+}
+
+#[cfg(target_os = "windows")]
+fn untrusted_policy_path(path: &Path) -> Result<bool> {
+    if UNTRUSTED_POLICY_WARNING.set(()).is_ok() {
+        eprintln!(
+            "Warning: managed policy path {} is not owned by an administrator. \
+             Enforcing OS credential storage until IT secures the policy directories.",
+            path.display()
+        );
+    }
+    Ok(true)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn untrusted_policy_path(path: &Path) -> Result<bool> {
+    untrusted_policy_warning(path)
 }
 
 #[cfg(target_os = "macos")]
@@ -325,7 +381,11 @@ mod tests {
         let path = write_policy("untrusted", "require_credential_storage = \"os_store\"");
         let required = requires_os_store_at_with(&path, |_| Ok(false));
         let _ = std::fs::remove_file(&path);
-        assert!(!required.expect("untrusted policy is ignored"));
+        if cfg!(target_os = "windows") {
+            assert!(required.expect("Windows enforces an untrusted policy path"));
+        } else {
+            assert!(!required.expect("untrusted policy is ignored"));
+        }
     }
 
     #[test]

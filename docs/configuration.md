@@ -307,6 +307,11 @@ also restrict the Windows directory ACLs so unprivileged users cannot modify
 or delete the policy path. A suitable macOS setup is `755` on the `Coralogix`
 and `cx` directories and `644` on a root-owned `policy.toml`.
 
+On macOS, an inaccessible policy path is silently treated as absent so an
+unrelated root-only Coralogix directory does not produce warnings on every
+`cx` invocation. IT must ensure the policy directory is readable and
+traversable before rollout; a root-only directory disables enforcement.
+
 When enabled, `cx` stores credentials only in macOS Keychain or Windows
 Credential Manager. The interactive setup flow skips the credential-storage
 prompt and saves directly to the OS store; `CX_CREDENTIAL_STORAGE=file` is

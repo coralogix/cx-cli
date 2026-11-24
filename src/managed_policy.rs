@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 static UNTRUSTED_POLICY_WARNING: OnceLock<()> = OnceLock::new();
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PolicyOwner {
     Trusted,
     Untrusted,
@@ -137,7 +137,7 @@ fn requires_os_store_at_with(
     }
     match owner_is_trusted(path)? {
         PolicyOwner::Trusted => {}
-        PolicyOwner::Untrusted => return untrusted_policy_warning(path),
+        PolicyOwner::Untrusted => return untrusted_policy_file(path),
         PolicyOwner::Inaccessible => return Ok(inaccessible_policy_requires_os_store()),
     }
     let raw = match std::fs::read_to_string(path) {
@@ -217,6 +217,16 @@ fn untrusted_policy_warning(path: &Path) -> Result<bool> {
         );
     }
     Ok(false)
+}
+
+#[cfg(target_os = "windows")]
+fn untrusted_policy_file(path: &Path) -> Result<bool> {
+    untrusted_policy_path(path)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn untrusted_policy_file(path: &Path) -> Result<bool> {
+    untrusted_policy_warning(path)
 }
 
 #[cfg(target_os = "windows")]

@@ -836,10 +836,7 @@ impl Commands {
     }
 
     fn is_olly(&self) -> bool {
-        match self {
-            Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
-            _ => false,
-        }
+        matches!(self, Self::Olly { .. })
     }
 }
 
@@ -908,7 +905,7 @@ Examples:
         #[arg(long)]
         set_default: bool,
         /// When creating the first profile, disable the Olly AI assistant
-        /// (`cx olly ask`). Olly is enabled by default; this opts out. Only
+        /// (`cx olly`). Olly is enabled by default; this opts out. Only
         /// affects first-profile setup, where the global Olly setting is
         /// written. No prompt either way.
         #[arg(long)]
@@ -3801,7 +3798,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Olly gating (olly ask).
+    // Olly gating (every `cx olly` subcommand).
     if cli.command.is_olly() && !global_cfg_early.olly_enabled {
         bail!(
             "The Olly AI assistant is currently disabled in your global configuration.\n\

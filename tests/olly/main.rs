@@ -164,6 +164,7 @@ async fn ask_creates_chat_and_sends_message() {
         "gpt-5.2",
         Some(900),
         true,
+        None,
         OutputFormat::Json,
     )
     .await
@@ -204,6 +205,7 @@ async fn ask_continues_existing_chat() {
         "gpt-5.2",
         Some(900),
         true,
+        None,
         OutputFormat::Json,
     )
     .await
@@ -255,6 +257,7 @@ async fn ask_with_different_models() {
         "advanced",
         Some(900),
         true,
+        None,
         OutputFormat::Json,
     )
     .await
@@ -298,6 +301,7 @@ async fn ask_handles_cancelled_response() {
         "gpt-5.2",
         Some(900),
         true,
+        None,
         OutputFormat::Json,
     )
     .await
@@ -317,6 +321,7 @@ async fn ask_rejects_multi_profile() {
         "gpt-5.2",
         Some(900),
         true,
+        None,
         OutputFormat::Json,
     )
     .await;
@@ -370,6 +375,7 @@ async fn ask_sends_skill_interaction_mode() {
         "gpt-5.2",
         Some(900),
         true,
+        None,
         OutputFormat::Json,
     )
     .await
@@ -420,6 +426,7 @@ async fn ask_sends_agent_to_agent_mode_when_enabled() {
         "gpt-5.2",
         Some(900),
         true,
+        None,
         OutputFormat::Json,
     )
     .await
@@ -470,6 +477,7 @@ async fn ask_can_disable_agent_to_agent_mode() {
         "gpt-5.2",
         Some(900),
         false,
+        None,
         OutputFormat::Json,
     )
     .await
@@ -687,7 +695,7 @@ async fn ask_no_wait_does_not_block_and_prints_the_next_command() {
             "status": "in_progress",
             "responses": null
         })))
-        .expect(1)
+        .expect(2)
         .mount(&server)
         .await;
 
@@ -716,6 +724,21 @@ async fn ask_no_wait_does_not_block_and_prints_the_next_command() {
         stdout
             .trim_end()
             .ends_with("cx olly interactions get existing-chat interaction-1"),
+        "stdout: {stdout}"
+    );
+
+    // A selected profile is repeated, so the copied command reaches the same team.
+    let output = cx_olly(&home)
+        .env("NO_COLOR", "1")
+        .args(["-p", "default", "olly", "ask", "Again", "--no-wait"])
+        .args(["--chat-id", "existing-chat", "-o", "text"])
+        .output()
+        .expect("failed to run cx");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .trim_end()
+            .ends_with("cx olly interactions get existing-chat interaction-1 -p default"),
         "stdout: {stdout}"
     );
 

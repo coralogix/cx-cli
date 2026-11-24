@@ -23,7 +23,8 @@ use crate::spill::{self, maybe_spill, SpillOutcome};
 ///
 /// Creates a new chat if `chat_id` is None, otherwise continues an existing chat.
 /// `timeout` is how long to wait for the answer; `None` returns at once with
-/// the IDs to pass to `cx olly interactions get`.
+/// the IDs to pass to `cx olly interactions get`. `profile` is the profile the
+/// user selected, if any; the no-wait hint repeats it.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_ask(
     targets: &[Arc<ExecutionTarget>],
@@ -32,6 +33,7 @@ pub async fn run_ask(
     model: &str,
     timeout: Option<u32>,
     agent_to_agent_mode: bool,
+    profile: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
     // Olly is single-profile only - chats belong to a specific user/team
@@ -79,7 +81,12 @@ pub async fn run_ask(
             render_interaction_header(&chat_id, &interaction);
             println!();
             println!("{}", "Check on it with:".dimmed());
-            println!("  cx olly interactions get {chat_id} {}", interaction.id);
+            // The chat belongs to one team, so repeat the profile the user chose.
+            let profile = profile.map(|p| format!(" -p {p}")).unwrap_or_default();
+            println!(
+                "  cx olly interactions get {chat_id} {}{profile}",
+                interaction.id
+            );
         }
         OutputFormat::Text => {
             render_ask_text(&chat_id, &interaction)?;

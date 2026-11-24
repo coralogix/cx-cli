@@ -141,21 +141,47 @@ fn olly_disabled_blocks_olly_ask() {
 }
 
 #[test]
-fn olly_disabled_blocks_every_olly_subcommand() {
-    for args in [
-        &["olly", "artifacts", "list"][..],
-        &["olly", "interactions", "get", "chat-1", "interaction-1"][..],
-    ] {
-        let tmp = temp_home();
-        let output = cx_with_config(&tmp, "olly_enabled = false\n")
-            .args(args)
-            .args(["--api-key", "fake", "--region", "us1"])
-            .output()
-            .expect("failed to run cx");
-        assert!(!output.status.success(), "{args:?}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("disabled"), "{args:?} stderr: {stderr}");
-    }
+fn olly_disabled_blocks_olly_interactions() {
+    let tmp = temp_home();
+    let output = cx_with_config(&tmp, "olly_enabled = false\n")
+        .args([
+            "olly",
+            "interactions",
+            "get",
+            "chat-1",
+            "interaction-1",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
+        .output()
+        .expect("failed to run cx");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("disabled"), "stderr: {stderr}");
+}
+
+#[test]
+fn olly_disabled_allows_olly_artifacts() {
+    let tmp = temp_home();
+    let output = cx_with_config(&tmp, "olly_enabled = false\n")
+        .args([
+            "olly",
+            "artifacts",
+            "list",
+            "--api-key",
+            "fake",
+            "--region",
+            "us1",
+        ])
+        .output()
+        .expect("failed to run cx");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("disabled"),
+        "artifacts should not be blocked, stderr: {stderr}"
+    );
 }
 
 #[test]

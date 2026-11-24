@@ -2,20 +2,18 @@ pub mod api;
 
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use colored::Colorize;
-use serde_json::Value;
-use toon_format::encode_default as toon_encode;
+use serde_json::{json, Value};
 
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use crate::time::parse_timestamp_epoch_millis;
+use crate::time::parse_timestamp_epoch_seconds;
 use api::{
-    display_enum, Application, Event, FunnelMatchedUser, HeatmapElement, Page, ProductAnalyticsApi,
-    QueryFunnelConversionResponse, QueryHeatmapTopElementsResponse, QueryInput, QueryKind,
-    QueryPathwayPathsResponse, QueryRumEventResponse, SavedObject, SavedObjectKind, Settings,
-    ViewSessions,
+    ActionResult, Application, ClickResult, FilterValue, FunnelResponse, MatchingUser,
+    PathwayResult, ProductAnalyticsApi, QueryInput, QueryKind, SavedObject, SavedObjectKind,
+    ScrollMapResponse, Settings, ViewResult,
 };
 
 #[derive(clap::Args, Clone, Debug, Default)]
@@ -34,35 +32,19 @@ pub struct TimeRangeArgs {
 }
 
 impl TimeRangeArgs {
-    // Fixed range in epoch milliseconds, or None to keep a saved object's own range.
     pub fn resolve(&self, runs_saved_object: bool) -> Result<Option<(i64, i64)>> {
         if runs_saved_object && self.start.is_none() && self.end.is_none() {
             return Ok(None);
         }
         let start = self.start.as_deref().unwrap_or("now-1h");
         let end = self.end.as_deref().unwrap_or("now");
-        let start_millis = parse_timestamp_epoch_millis(start)?;
-        let end_millis = parse_timestamp_epoch_millis(end)?;
-        if end_millis <= start_millis {
+        let start_seconds = parse_timestamp_epoch_seconds(start)?;
+        let end_seconds = parse_timestamp_epoch_seconds(end)?;
+        if end_seconds <= start_seconds {
             bail!("--end ({end}) must be strictly after --start ({start})");
         }
-        Ok(Some((start_millis, end_millis)))
+        Ok(Some((start_seconds, end_seconds)))
     }
-}
-
-#[derive(clap::Args, Clone, Debug, Default)]
-pub struct PageArgs {
-    #[arg(
-        long,
-        help = "Maximum items to return (server default 50, or 20 for saved lists; capped at 500)"
-    )]
-    pub page_size: Option<u32>,
-
-    #[arg(
-        long,
-        help = "The nextPageToken printed by the previous page. Valid for 15 minutes"
-    )]
-    pub page_token: Option<String>,
 }
 
 type RowRenderer = fn(&Value) -> Result<Vec<String>>;
@@ -81,79 +63,97 @@ fn read_from_file(path: &str) -> Result<Value> {
     serde_json::from_str(&raw).map_err(|error| anyhow::anyhow!("invalid JSON in {path}: {error}"))
 }
 
-fn profile_prefix(include_profile: bool, profile: &str) -> String {
-    if include_profile {
-        format!("profile '{profile}': ")
-    } else {
-        String::new()
+fn parse_id(id: &str) -> Result<i64> {
+    match id.parse::<i64>() {
+        Ok(parsed) if parsed > 0 => Ok(parsed),
+        _ => bail!("ID must be a positive decimal number, got '{id}'"),
     }
-}
-
-fn warn_if_costly(costly: bool, include_profile: bool, profile: &str) {
-    if costly {
-        eprintln!(
-            "{}",
-            format!(
-                "warning: {}the time range is over 90 days, so this query was costly.",
-                profile_prefix(include_profile, profile)
-            )
-            .yellow()
-        );
-    }
-}
-
-fn format_pct(value: Option<f64>) -> String {
-    value
-        .map(|pct| format!("{pct:.1}%"))
-        .unwrap_or_else(|| "-".to_string())
 }
 
 fn or_dash(value: Option<&str>) -> String {
     value.unwrap_or("-").to_string()
 }
 
+fn count(value: Option<&str>) -> String {
+    value.unwrap_or("0").to_string()
+}
+
+fn render_machine(output: OutputFormat, results: &[Value]) -> Result<()> {
+    match output {
+        OutputFormat::Json => render::render_json_auto(results),
+        OutputFormat::Toon => render::render_toon(results),
+        OutputFormat::Text => Ok(()),
+    }
+}
+
 fn application_row(item: &Value) -> Result<Vec<String>> {
     let app: Application = serde_json::from_value(item.clone())?;
     Ok(vec![
         or_dash(app.app_name.as_deref()),
-        or_dash(app.sessions.as_deref()),
-        or_dash(app.crash_free_sessions.as_deref()),
-        or_dash(app.users.as_deref()),
-        or_dash(app.crash_free_users.as_deref()),
+        or_dash(app.platform.as_deref()),
+        count(app.session_count.as_deref()),
+        count(app.crash_free_session_count.as_deref()),
+        count(app.total_users.as_deref()),
+        count(app.crash_free_user_count.as_deref()),
     ])
 }
 
 fn view_row(item: &Value) -> Result<Vec<String>> {
-    let view: ViewSessions = serde_json::from_value(item.clone())?;
+    let view: ViewResult = serde_json::from_value(item.clone())?;
     Ok(vec![
-        or_dash(view.view.as_deref()),
-        or_dash(view.sessions.as_deref()),
+        or_dash(view.view_name.as_deref()),
+        count(view.session_count.as_deref()),
     ])
 }
 
-fn event_row(item: &Value) -> Result<Vec<String>> {
-    let event: Event = serde_json::from_value(item.clone())?;
-    let event_ref = event.event.as_ref();
+fn action_row(item: &Value) -> Result<Vec<String>> {
+    let action: ActionResult = serde_json::from_value(item.clone())?;
     Ok(vec![
-        or_dash(event.event_id.as_deref()),
-        display_enum(event_ref.and_then(|e| e.source.as_deref())),
-        or_dash(event_ref.and_then(|e| e.name.as_deref())),
-        or_dash(event.count.as_deref()),
-        format_pct(event.dead_clicks_pct),
-        format_pct(event.rage_clicks_pct),
-        or_dash(event.session_count.as_deref()),
+        or_dash(action.event_type.as_deref()),
+        or_dash(action.event_target.as_deref()),
+        count(action.session_count.as_deref()),
     ])
 }
 
-fn matched_user_row(item: &Value) -> Result<Vec<String>> {
-    let user: FunnelMatchedUser = serde_json::from_value(item.clone())?;
+fn filter_value_row(item: &Value) -> Result<Vec<String>> {
+    let value: FilterValue = serde_json::from_value(item.clone())?;
+    Ok(vec![
+        or_dash(value.value.as_deref()),
+        count(value.count.as_deref()),
+    ])
+}
+
+fn matching_user_row(item: &Value) -> Result<Vec<String>> {
+    let user: MatchingUser = serde_json::from_value(item.clone())?;
     Ok(vec![
         or_dash(user.user_id.as_deref()),
+        or_dash(user.user_name.as_deref()),
+        or_dash(user.user_email.as_deref()),
         or_dash(user.example_session_id.as_deref()),
-        render::bool_display(user.has_session_replay),
+        render::bool_display(Some(user.has_session_replay.unwrap_or(false))),
         or_dash(user.platform.as_deref()),
         or_dash(user.os.as_deref()),
-        or_dash(user.country.as_deref()),
+        or_dash(user.country_name.as_deref()),
+        or_dash(user.account_name.as_deref()),
+    ])
+}
+
+fn pathway_row(item: &Value) -> Result<Vec<String>> {
+    let pathway: PathwayResult = serde_json::from_value(item.clone())?;
+    Ok(vec![
+        count(pathway.count.as_deref()),
+        pathway.pages.join(" -> "),
+    ])
+}
+
+fn click_row(item: &Value) -> Result<Vec<String>> {
+    let click: ClickResult = serde_json::from_value(item.clone())?;
+    Ok(vec![
+        or_dash(click.click_name.as_deref()),
+        or_dash(click.cx_action_name.as_deref()),
+        count(click.click_count.as_deref()),
+        count(click.dead_click_count.as_deref()),
+        count(click.rage_click_count.as_deref()),
     ])
 }
 
@@ -164,37 +164,38 @@ fn saved_object_row(item: &Value) -> Result<Vec<String>> {
         or_dash(saved.name.as_deref()),
         or_dash(saved.app_name.as_deref()),
         saved.details(),
-        or_dash(saved.updated_at.as_deref()),
-        saved
-            .version
-            .map(|version| version.to_string())
-            .unwrap_or_else(|| "-".to_string()),
+        saved.created(),
     ])
 }
 
 const APPLICATION_HEADERS: &[&str] = &[
     "App",
+    "Platform",
     "Sessions",
     "Crash-free sessions",
     "Users",
     "Crash-free users",
 ];
 const VIEW_HEADERS: &[&str] = &["View", "Sessions"];
-const EVENT_HEADERS: &[&str] = &[
-    "Event ID", "Source", "Name", "Clicks", "Dead", "Rage", "Sessions",
-];
-const MATCHED_USER_HEADERS: &[&str] = &[
-    "User",
+const ACTION_HEADERS: &[&str] = &["Type", "Target", "Sessions"];
+const FILTER_VALUE_HEADERS: &[&str] = &["Value", "Count"];
+const MATCHING_USER_HEADERS: &[&str] = &[
+    "User ID",
+    "Name",
+    "Email",
     "Example session",
     "Replay",
     "Platform",
     "OS",
     "Country",
+    "Account",
 ];
-const SAVED_OBJECT_HEADERS: &[&str] = &["ID", "Name", "App", "Details", "Updated", "Version"];
+const PATHWAY_HEADERS: &[&str] = &["Sessions", "Path"];
+const CLICK_HEADERS: &[&str] = &["Element", "Action name", "Clicks", "Dead", "Rage"];
+const SAVED_OBJECT_HEADERS: &[&str] = &["ID", "Name", "App", "Details", "Created"];
 
-fn render_pages(
-    pages: Vec<(String, Page)>,
+fn render_items(
+    results: Vec<(String, Vec<Value>)>,
     include_profile: bool,
     output: OutputFormat,
     headers: &[&str],
@@ -203,24 +204,8 @@ fn render_pages(
 ) -> Result<()> {
     let mut all_json: Vec<Value> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for (profile, page) in pages {
-        warn_if_costly(page.costly, include_profile, &profile);
-        if let Some(token) = &page.next_page_token {
-            let total = page
-                .total_size
-                .as_deref()
-                .map(|total| format!(" ({total} in total)"))
-                .unwrap_or_default();
-            eprintln!(
-                "{}",
-                format!(
-                    "{}more results{total}: pass --page-token {token}",
-                    profile_prefix(include_profile, &profile)
-                )
-                .dimmed()
-            );
-        }
-        for mut item in page.items {
+    for (profile, items) in results {
+        for mut item in items {
             if matches!(output, OutputFormat::Text) {
                 let mut cells = vec![profile.clone()];
                 cells.extend(row(&item)?);
@@ -237,11 +222,7 @@ fn render_pages(
 
     match output {
         OutputFormat::Json => render::render_json(&all_json)?,
-        OutputFormat::Toon => {
-            let toon =
-                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
+        OutputFormat::Toon => render::render_toon(&all_json)?,
         OutputFormat::Text => {
             if rows.is_empty() {
                 render::print_no_results(empty_message);
@@ -261,7 +242,6 @@ fn render_responses(
 ) -> Result<()> {
     let mut all_results: Vec<Value> = Vec::new();
     for (profile, mut response) in responses {
-        warn_if_costly(api::is_costly(&response), include_profile, &profile);
         if matches!(output, OutputFormat::Text) {
             if include_profile {
                 println!("{}", format!("[{profile}]").dimmed());
@@ -274,35 +254,7 @@ fn render_responses(
         }
         all_results.push(response);
     }
-
-    match output {
-        OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Toon => {
-            let toon = toon_encode(&all_results)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
-        OutputFormat::Text => {}
-    }
-    Ok(())
-}
-
-fn print_application(response: &Value) -> Result<()> {
-    let app: Application = serde_json::from_value(response.clone())?;
-    println!("{}: {}", "App".bold(), or_dash(app.app_name.as_deref()));
-    println!(
-        "{}: {} ({} crash-free)",
-        "Sessions (30d)".bold(),
-        or_dash(app.sessions.as_deref()),
-        or_dash(app.crash_free_sessions.as_deref())
-    );
-    println!(
-        "{}: {} ({} crash-free)",
-        "Users (30d)".bold(),
-        or_dash(app.users.as_deref()),
-        or_dash(app.crash_free_users.as_deref())
-    );
-    Ok(())
+    render_machine(output, &all_results)
 }
 
 fn print_saved_object(response: &Value) -> Result<()> {
@@ -311,131 +263,48 @@ fn print_saved_object(response: &Value) -> Result<()> {
     println!("{}: {}", "ID".bold(), or_dash(saved.id.as_deref()));
     println!("{}: {}", "App".bold(), or_dash(saved.app_name.as_deref()));
     println!("{}: {}", "Details".bold(), saved.details());
-    println!("{}: {}", "Owner".bold(), or_dash(saved.owner.as_deref()));
-    println!(
-        "{}: {}",
-        "Updated".bold(),
-        or_dash(saved.updated_at.as_deref())
-    );
+    println!("{}: {}", "Created".bold(), saved.created());
     println!();
     println!("{}", serde_json::to_string_pretty(response)?);
     Ok(())
 }
 
-fn print_event(response: &Value) -> Result<()> {
-    let parsed: QueryRumEventResponse = serde_json::from_value(response.clone())?;
-    let Some(event) = parsed.event else {
-        render::print_no_results("Event not found.");
-        return Ok(());
-    };
-    let event_ref = event.event.as_ref();
-    println!(
-        "{}: {}",
-        "Event ID".bold(),
-        or_dash(event.event_id.as_deref())
-    );
-    println!(
-        "{}: {}",
-        "Source".bold(),
-        display_enum(event_ref.and_then(|e| e.source.as_deref()))
-    );
-    println!(
-        "{}: {}",
-        "Name".bold(),
-        or_dash(event_ref.and_then(|e| e.name.as_deref()))
-    );
-    if let Some(count) = &event.count {
-        println!("{}: {count}", "Clicks".bold());
-        println!(
-            "{}: {} ({})",
-            "Dead clicks".bold(),
-            or_dash(event.dead_clicks.as_deref()),
-            format_pct(event.dead_clicks_pct)
-        );
-        println!(
-            "{}: {} ({})",
-            "Rage clicks".bold(),
-            or_dash(event.rage_clicks.as_deref()),
-            format_pct(event.rage_clicks_pct)
-        );
-    }
-    if let Some(sessions) = &event.session_count {
-        println!("{}: {sessions}", "Sessions".bold());
-    }
-    Ok(())
-}
-
-fn print_funnel_conversion(response: &Value) -> Result<()> {
-    let parsed: QueryFunnelConversionResponse = serde_json::from_value(response.clone())?;
-    let Some(conversion) = parsed.conversion else {
-        render::print_no_results("No funnel result.");
-        return Ok(());
-    };
-    println!(
-        "{}: {}  {}: {}",
-        "App".bold(),
-        or_dash(conversion.app_name.as_deref()),
-        "Mode".bold(),
-        display_enum(conversion.mode.as_deref())
-    );
-    if let Some(summary) = &conversion.summary {
-        println!(
-            "{}: {} entered, {} converted ({})",
-            "Summary".bold(),
-            or_dash(summary.entered_count.as_deref()),
-            or_dash(summary.converted_count.as_deref()),
-            format_pct(summary.converted_pct)
-        );
-        if let Some(drop_off) = &summary.biggest_drop_off {
-            println!(
-                "{}: {} -> {} ({} of previous)",
-                "Biggest drop-off".bold(),
-                or_dash(drop_off.from_step_id.as_deref()),
-                or_dash(drop_off.to_step_id.as_deref()),
-                format_pct(drop_off.dropped_pct_of_previous)
-            );
-        }
-    }
-    let groups: Vec<(String, &Vec<api::FunnelStepResult>)> = if conversion.groups.is_empty() {
-        vec![(String::new(), &conversion.steps)]
-    } else {
-        conversion
+fn print_funnel(response: &Value) -> Result<()> {
+    let parsed: FunnelResponse = serde_json::from_value(response.clone())?;
+    let with_groups = parsed.groups.len() > 1
+        || parsed
             .groups
             .iter()
-            .map(|group| (or_dash(group.group.as_deref()), &group.steps))
-            .collect()
-    };
-    let with_groups = !conversion.groups.is_empty();
-    let rows: Vec<Vec<String>> = groups
+            .any(|group| group.group_value.as_deref().is_some_and(|v| !v.is_empty()));
+    let rows: Vec<Vec<String>> = parsed
+        .groups
         .iter()
-        .flat_map(|(group, steps)| {
-            steps.iter().map(move |step| {
+        .flat_map(|group| {
+            group.steps.iter().map(move |step| {
                 let mut row = vec![String::new()];
                 if with_groups {
-                    row.push(group.clone());
+                    row.push(or_dash(group.group_value.as_deref()));
                 }
                 row.extend([
-                    or_dash(step.step_id.as_deref()),
-                    or_dash(step.label.as_deref()),
-                    or_dash(step.count.as_deref()),
-                    format_pct(step.converted_pct_of_total),
-                    format_pct(step.converted_pct_of_previous),
-                    or_dash(step.dropped_count.as_deref()),
-                    or_dash(step.avg_time_from_previous.as_deref()),
+                    step.step_number.to_string(),
+                    count(step.session_count.as_deref()),
+                    format!("{:.1}%", step.conversion_rate * 100.0),
+                    or_dash(step.avg_time_from_prev_ms.as_deref()),
                 ]);
                 row
             })
         })
         .collect();
+    if rows.is_empty() {
+        render::print_no_results("No funnel result.");
+        return Ok(());
+    }
     let headers = [
         "Group",
         "Step",
-        "Label",
         "Count",
-        "Of first",
-        "Of previous",
-        "Dropped",
-        "Avg time",
+        "Conversion",
+        "Avg ms from previous",
     ];
     let headers = if with_groups {
         &headers[..]
@@ -446,74 +315,29 @@ fn print_funnel_conversion(response: &Value) -> Result<()> {
     Ok(())
 }
 
-fn print_pathway_paths(response: &Value) -> Result<()> {
-    let parsed: QueryPathwayPathsResponse = serde_json::from_value(response.clone())?;
-    let Some(paths) = parsed.pathway_paths else {
-        render::print_no_results("No pathway result.");
-        return Ok(());
-    };
+fn print_scroll_map(response: &Value) -> Result<()> {
+    let parsed: ScrollMapResponse = serde_json::from_value(response.clone())?;
     println!(
-        "{}: {}  {}: {}  {}: {}",
-        "App".bold(),
-        or_dash(paths.app_name.as_deref()),
-        "View".bold(),
-        or_dash(paths.view.as_deref()),
-        "Direction".bold(),
-        display_enum(paths.direction.as_deref())
+        "{}: {} px",
+        "Average viewport height".bold(),
+        parsed.avg_viewport_height
     );
-    if paths.paths.is_empty() {
-        render::print_no_results("No paths found.");
+    if parsed.page_covers.is_empty() {
+        render::print_no_results("No scroll data found.");
         return Ok(());
     }
-    let rows: Vec<Vec<String>> = paths
-        .paths
+    let rows: Vec<Vec<String>> = parsed
+        .page_covers
         .iter()
-        .map(|path| {
+        .map(|cover| {
             vec![
                 String::new(),
-                or_dash(path.count.as_deref()),
-                path.pages.join(" -> "),
+                format!("{}%", cover.page_percentage),
+                count(cover.user_count.as_deref()),
             ]
         })
         .collect();
-    render::render_table(&["Sessions", "Path"], rows, false);
-    Ok(())
-}
-
-fn print_heatmap_elements(response: &Value) -> Result<()> {
-    let parsed: QueryHeatmapTopElementsResponse = serde_json::from_value(response.clone())?;
-    let Some(data) = parsed.heatmap_data else {
-        render::print_no_results("No heatmap result.");
-        return Ok(());
-    };
-    println!(
-        "{}: {}  {}: {}  {}: {}",
-        "App".bold(),
-        or_dash(data.app_name.as_deref()),
-        "View".bold(),
-        or_dash(data.view.as_deref()),
-        "Clicks".bold(),
-        display_enum(data.action_name_filter.as_deref())
-    );
-    if data.elements.is_empty() {
-        render::print_no_results("No clicked elements found.");
-        return Ok(());
-    }
-    let rows: Vec<Vec<String>> = data
-        .elements
-        .iter()
-        .map(|element: &HeatmapElement| {
-            vec![
-                String::new(),
-                or_dash(element.event_id.as_deref()),
-                or_dash(element.name.as_deref()),
-                or_dash(element.clicks.as_deref()),
-                format_pct(element.dead_clicks_pct),
-                format_pct(element.rage_clicks_pct),
-            ]
-        })
-        .collect();
-    render::render_table(&["Event ID", "Name", "Clicks", "Dead", "Rage"], rows, false);
+    render::render_table(&["Scroll depth", "Users"], rows, false);
     Ok(())
 }
 
@@ -527,79 +351,93 @@ fn print_settings(response: &Value) -> Result<()> {
     Ok(())
 }
 
-fn read_optional_file(from_file: Option<&str>) -> Result<Option<Value>> {
-    from_file.map(read_from_file).transpose()
-}
-
-pub async fn run_applications_list(
-    targets: &[Arc<ExecutionTarget>],
-    app_names: &[String],
-    output: OutputFormat,
-) -> Result<()> {
-    eprintln!("{}", "Fetching Product Analytics applications...".dimmed());
-    let include_profile = targets.len() > 1;
-    let per_profile = fan_out(targets, |t| async move {
-        let api = ProductAnalyticsApi::new(&t.client);
-        Ok(api.list_applications(app_names).await?)
-    })
-    .await;
-    render_pages(
-        report_errors_and_collect_successes(per_profile)?,
-        include_profile,
-        output,
-        APPLICATION_HEADERS,
-        application_row,
-        "No applications with sessions in the last 30 days.",
+async fn build_body(
+    api: &ProductAnalyticsApi<'_>,
+    kind: QueryKind,
+    saved_id: Option<i64>,
+    file_body: Option<Value>,
+    input: &QueryInput,
+) -> Result<Value> {
+    let (Some(id), Some(saved_kind)) = (saved_id, kind.saved_kind()) else {
+        let Some(time_range) = input.time_range else {
+            bail!("pass --start and --end");
+        };
+        return api::build_query_body(kind, file_body, input, time_range);
+    };
+    let saved = api
+        .get_saved(saved_kind, id)
+        .await?
+        .ok_or_else(|| anyhow!("{} {id} not found", saved_kind.label()))?;
+    let time_range = match input.time_range {
+        Some(range) => range,
+        None => api::resolve_saved_time_range(&saved, chrono::Utc::now().timestamp())?,
+    };
+    api::build_query_body(
+        kind,
+        Some(api::request_from_saved(kind, &saved)),
+        input,
+        time_range,
     )
 }
 
-pub async fn run_applications_get(
+async fn run_queries(
     targets: &[Arc<ExecutionTarget>],
-    app_name: &str,
-    output: OutputFormat,
-) -> Result<()> {
-    eprintln!("{}", format!("Fetching application {app_name}...").dimmed());
-    let include_profile = targets.len() > 1;
-    let per_profile = fan_out(targets, |t| async move {
-        let api = ProductAnalyticsApi::new(&t.client);
-        Ok(api.get_application(app_name).await?)
+    kind: QueryKind,
+    saved_id: Option<&str>,
+    from_file: Option<&str>,
+    input: &QueryInput,
+) -> Result<Vec<(String, Value)>> {
+    let saved_id = saved_id.map(parse_id).transpose()?;
+    let file_body = from_file.map(read_from_file).transpose()?;
+    eprintln!("{}", "Running Product Analytics query...".dimmed());
+    let per_profile = fan_out(targets, |t| {
+        let file_body = file_body.clone();
+        async move {
+            let api = ProductAnalyticsApi::new(&t.client);
+            let body = build_body(&api, kind, saved_id, file_body, input).await?;
+            Ok(api.query(kind, &body).await?)
+        }
     })
     .await;
-    render_responses(
-        report_errors_and_collect_successes(per_profile)?,
-        include_profile,
-        output,
-        print_application,
-    )
+    report_errors_and_collect_successes(per_profile)
 }
 
 pub async fn run_list_query(
     targets: &[Arc<ExecutionTarget>],
     kind: QueryKind,
+    saved_id: Option<&str>,
     from_file: Option<&str>,
     input: &QueryInput,
     output: OutputFormat,
 ) -> Result<()> {
     let (headers, row, empty_message): (&[&str], RowRenderer, &str) = match kind {
+        QueryKind::Applications => (
+            APPLICATION_HEADERS,
+            application_row,
+            "No applications with sessions in the time range.",
+        ),
         QueryKind::Views => (VIEW_HEADERS, view_row, "No views found."),
-        QueryKind::Events => (EVENT_HEADERS, event_row, "No events found."),
-        QueryKind::FunnelMatches => (MATCHED_USER_HEADERS, matched_user_row, "No matches found."),
-        _ => unreachable!("{kind:?} is not a paged query"),
-    };
-    let body = api::build_query_body(kind, read_optional_file(from_file)?, input)?;
-    eprintln!("{}", "Running Product Analytics query...".dimmed());
-    let include_profile = targets.len() > 1;
-    let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
-        async move {
-            let api = ProductAnalyticsApi::new(&t.client);
-            Ok(api.query_page(kind, &body).await?)
+        QueryKind::Actions => (ACTION_HEADERS, action_row, "No actions found."),
+        QueryKind::FilterValues => (FILTER_VALUE_HEADERS, filter_value_row, "No values found."),
+        QueryKind::MatchingUsers => (
+            MATCHING_USER_HEADERS,
+            matching_user_row,
+            "No matching users found.",
+        ),
+        QueryKind::Pathways => (PATHWAY_HEADERS, pathway_row, "No paths found."),
+        QueryKind::Clicks => (CLICK_HEADERS, click_row, "No clicked elements found."),
+        QueryKind::Funnel | QueryKind::ScrollMap => {
+            unreachable!("{kind:?} is not a list query")
         }
-    })
-    .await;
-    render_pages(
-        report_errors_and_collect_successes(per_profile)?,
-        include_profile,
+    };
+    let responses = run_queries(targets, kind, saved_id, from_file, input).await?;
+    let results = responses
+        .into_iter()
+        .map(|(profile, response)| (profile, api::items(&response, kind.items_key())))
+        .collect();
+    render_items(
+        results,
+        targets.len() > 1,
         output,
         headers,
         row,
@@ -610,83 +448,38 @@ pub async fn run_list_query(
 pub async fn run_query(
     targets: &[Arc<ExecutionTarget>],
     kind: QueryKind,
+    saved_id: Option<&str>,
     from_file: Option<&str>,
     input: &QueryInput,
     output: OutputFormat,
 ) -> Result<()> {
     let text: fn(&Value) -> Result<()> = match kind {
-        QueryKind::FunnelConversion => print_funnel_conversion,
-        QueryKind::PathwayPaths => print_pathway_paths,
-        QueryKind::HeatmapTopElements => print_heatmap_elements,
+        QueryKind::Funnel => print_funnel,
+        QueryKind::ScrollMap => print_scroll_map,
         _ => unreachable!("{kind:?} is not a single-result query"),
     };
-    let body = api::build_query_body(kind, read_optional_file(from_file)?, input)?;
-    eprintln!("{}", "Running Product Analytics query...".dimmed());
-    let include_profile = targets.len() > 1;
-    let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
-        async move {
-            let api = ProductAnalyticsApi::new(&t.client);
-            Ok(api.query(kind, &body).await?)
-        }
-    })
-    .await;
-    render_responses(
-        report_errors_and_collect_successes(per_profile)?,
-        include_profile,
-        output,
-        text,
-    )
-}
-
-pub async fn run_events_get(
-    targets: &[Arc<ExecutionTarget>],
-    event_id: &str,
-    from_file: Option<&str>,
-    input: &QueryInput,
-    output: OutputFormat,
-) -> Result<()> {
-    let body = api::build_query_body(QueryKind::Event, read_optional_file(from_file)?, input)?;
-    eprintln!("{}", format!("Fetching event {event_id}...").dimmed());
-    let include_profile = targets.len() > 1;
-    let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
-        async move {
-            let api = ProductAnalyticsApi::new(&t.client);
-            Ok(api.query_event(event_id, &body).await?)
-        }
-    })
-    .await;
-    render_responses(
-        report_errors_and_collect_successes(per_profile)?,
-        include_profile,
-        output,
-        print_event,
-    )
+    let responses = run_queries(targets, kind, saved_id, from_file, input).await?;
+    render_responses(responses, targets.len() > 1, output, text)
 }
 
 pub async fn run_saved_list(
     targets: &[Arc<ExecutionTarget>],
     kind: SavedObjectKind,
     app_names: &[String],
-    page: &PageArgs,
     output: OutputFormat,
 ) -> Result<()> {
     eprintln!(
         "{}",
         format!("Fetching saved {}s...", kind.label()).dimmed()
     );
-    let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| async move {
         let api = ProductAnalyticsApi::new(&t.client);
-        Ok(api
-            .list_saved(kind, app_names, page.page_size, page.page_token.as_deref())
-            .await?)
+        Ok(api.list_saved(kind, app_names).await?)
     })
     .await;
-    render_pages(
+    render_items(
         report_errors_and_collect_successes(per_profile)?,
-        include_profile,
+        targets.len() > 1,
         output,
         SAVED_OBJECT_HEADERS,
         saved_object_row,
@@ -700,16 +493,18 @@ pub async fn run_saved_get(
     id: &str,
     output: OutputFormat,
 ) -> Result<()> {
+    let id = parse_id(id)?;
     eprintln!("{}", format!("Fetching {} {id}...", kind.label()).dimmed());
-    let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| async move {
         let api = ProductAnalyticsApi::new(&t.client);
-        Ok(api.get_saved(kind, id).await?)
+        api.get_saved(kind, id)
+            .await?
+            .ok_or_else(|| anyhow!("{} {id} not found", kind.label()))
     })
     .await;
     render_responses(
         report_errors_and_collect_successes(per_profile)?,
-        include_profile,
+        targets.len() > 1,
         output,
         print_saved_object,
     )
@@ -719,64 +514,57 @@ pub async fn run_saved_write(
     targets: &[Arc<ExecutionTarget>],
     kind: SavedObjectKind,
     from_file: &str,
-    update: Option<(&str, Option<&str>)>,
+    update_id: Option<&str>,
     output: OutputFormat,
 ) -> Result<()> {
+    let update_id = update_id.map(parse_id).transpose()?;
     let file_body = read_from_file(from_file)?;
-    let (body, update_mask) = match update {
-        Some((_, mask)) => {
-            let (body, mask) = api::prepare_update(file_body, mask)?;
-            (body, Some(mask))
-        }
-        None => (file_body, None),
+    let name = file_body
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let body = match update_id {
+        Some(_) => api::strip_read_only_fields(file_body)?,
+        None => file_body,
     };
-    let (progress, verb) = if update.is_some() {
-        ("Updating", "Updated")
-    } else {
-        ("Creating", "Created")
+    let (progress, verb) = match update_id {
+        Some(_) => ("Updating", "Updated"),
+        None => ("Creating", "Created"),
     };
     eprintln!("{}", format!("{progress} {}...", kind.label()).dimmed());
     let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| {
         let body = body.clone();
-        let update_mask = update_mask.clone();
         async move {
             let api = ProductAnalyticsApi::new(&t.client);
-            let saved = match (update, update_mask) {
-                (Some((id, _)), Some(mask)) => api.update_saved(kind, id, &body, &mask).await?,
-                _ => api.create_saved(kind, &body).await?,
+            let response = match update_id {
+                Some(id) => {
+                    api.update_saved(kind, id, &body).await?;
+                    json!({"id": id.to_string()})
+                }
+                None => api.create_saved(kind, &body).await?,
             };
-            Ok(saved)
+            Ok(response)
         }
     })
     .await;
 
     let mut all_results: Vec<Value> = Vec::new();
-    for (profile, mut saved) in report_errors_and_collect_successes(per_profile)? {
-        let parsed: SavedObject = serde_json::from_value(saved.clone())?;
+    for (profile, mut response) in report_errors_and_collect_successes(per_profile)? {
+        let parsed: SavedObject = serde_json::from_value(response.clone())?;
         render::print_created(
             verb,
             kind.label(),
-            parsed.name.as_deref(),
+            name.as_deref(),
             parsed.id.as_deref(),
             &profile,
         );
         if include_profile {
-            render::tag_get_result(&mut saved, &profile);
+            render::tag_get_result(&mut response, &profile);
         }
-        all_results.push(saved);
+        all_results.push(response);
     }
-
-    match output {
-        OutputFormat::Json => render::render_json_auto(&all_results)?,
-        OutputFormat::Toon => {
-            let toon = toon_encode(&all_results)
-                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
-            println!("{toon}");
-        }
-        OutputFormat::Text => {}
-    }
-    Ok(())
+    render_machine(output, &all_results)
 }
 
 pub async fn run_saved_delete(
@@ -784,6 +572,7 @@ pub async fn run_saved_delete(
     kind: SavedObjectKind,
     id: &str,
 ) -> Result<()> {
+    let id = parse_id(id)?;
     eprintln!("{}", format!("Deleting {} {id}...", kind.label()).dimmed());
     let per_profile = fan_out(targets, |t| async move {
         let api = ProductAnalyticsApi::new(&t.client);
@@ -805,7 +594,6 @@ pub async fn run_settings_get(
     output: OutputFormat,
 ) -> Result<()> {
     eprintln!("{}", "Fetching Product Analytics settings...".dimmed());
-    let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| async move {
         let api = ProductAnalyticsApi::new(&t.client);
         Ok(api.get_settings().await?)
@@ -813,7 +601,7 @@ pub async fn run_settings_get(
     .await;
     render_responses(
         report_errors_and_collect_successes(per_profile)?,
-        include_profile,
+        targets.len() > 1,
         output,
         print_settings,
     )
@@ -825,15 +613,15 @@ pub async fn run_settings_update(
     output: OutputFormat,
 ) -> Result<()> {
     eprintln!("{}", "Updating Product Analytics settings...".dimmed());
-    let include_profile = targets.len() > 1;
     let per_profile = fan_out(targets, |t| async move {
         let api = ProductAnalyticsApi::new(&t.client);
-        Ok(api.update_settings(enabled).await?)
+        api.update_settings(enabled).await?;
+        Ok(api.get_settings().await?)
     })
     .await;
     render_responses(
         report_errors_and_collect_successes(per_profile)?,
-        include_profile,
+        targets.len() > 1,
         output,
         print_settings,
     )
@@ -851,30 +639,18 @@ mod tests {
     }
 
     #[test]
-    fn start_and_end_become_fixed_millis() {
+    fn start_and_end_become_unix_seconds() {
         let args = time_range(Some("2026-11-16T00:00:00Z"), Some("2026-11-17T00:00:00Z"));
         assert_eq!(
             args.resolve(false).unwrap(),
-            Some((1_794_787_200_000, 1_794_873_600_000))
-        );
-    }
-
-    #[test]
-    fn subsecond_start_and_end_keep_their_milliseconds() {
-        let args = time_range(
-            Some("2026-11-16T00:00:00.100Z"),
-            Some("2026-11-16T00:00:00.900Z"),
-        );
-        assert_eq!(
-            args.resolve(false).unwrap(),
-            Some((1_794_787_200_100, 1_794_787_200_900))
+            Some((1_794_787_200, 1_794_873_600))
         );
     }
 
     #[test]
     fn no_flags_default_to_last_hour_unless_running_a_saved_object() {
         let (start, end) = time_range(None, None).resolve(false).unwrap().unwrap();
-        assert!((3_600_000..=3_601_000).contains(&(end - start)));
+        assert!((3_600..=3_601).contains(&(end - start)));
         assert_eq!(time_range(None, None).resolve(true).unwrap(), None);
         assert!(time_range(Some("now-1d"), None)
             .resolve(true)
@@ -890,8 +666,21 @@ mod tests {
     }
 
     #[test]
-    fn saved_object_row_has_one_cell_per_header() {
-        let row = saved_object_row(&serde_json::json!({"id": "1", "name": "n"})).unwrap();
-        assert_eq!(row.len(), SAVED_OBJECT_HEADERS.len());
+    fn ids_must_be_positive_numbers() {
+        assert_eq!(parse_id("42").unwrap(), 42);
+        assert!(parse_id("0").is_err());
+        assert!(parse_id("abc").is_err());
+    }
+
+    #[test]
+    fn rows_have_one_cell_per_header() {
+        let saved = saved_object_row(&json!({"id": "1", "name": "n"})).unwrap();
+        assert_eq!(saved.len(), SAVED_OBJECT_HEADERS.len());
+        let user = matching_user_row(&json!({"userId": "u1"})).unwrap();
+        assert_eq!(user.len(), MATCHING_USER_HEADERS.len());
+        let app = application_row(&json!({"appName": "web"})).unwrap();
+        assert_eq!(app.len(), APPLICATION_HEADERS.len());
+        let click = click_row(&json!({"clickName": "run"})).unwrap();
+        assert_eq!(click.len(), CLICK_HEADERS.len());
     }
 }

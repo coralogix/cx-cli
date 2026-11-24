@@ -69,29 +69,17 @@ const SWEEPABLES: &[Sweepable] = &[
     },
     Sweepable {
         label: "product analytics funnels",
-        list: &["product-analytics", "funnels", "list", "--page-size", "500"],
+        list: &["product-analytics", "funnels", "list"],
         delete: &["product-analytics", "funnels", "delete"],
     },
     Sweepable {
         label: "product analytics pathways",
-        list: &[
-            "product-analytics",
-            "pathways",
-            "list",
-            "--page-size",
-            "500",
-        ],
+        list: &["product-analytics", "pathways", "list"],
         delete: &["product-analytics", "pathways", "delete"],
     },
     Sweepable {
         label: "product analytics heatmaps",
-        list: &[
-            "product-analytics",
-            "heatmaps",
-            "list",
-            "--page-size",
-            "500",
-        ],
+        list: &["product-analytics", "heatmaps", "list"],
         delete: &["product-analytics", "heatmaps", "delete"],
     },
     Sweepable {

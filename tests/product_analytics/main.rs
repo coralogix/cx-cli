@@ -2,44 +2,54 @@
 mod common;
 
 use serde_json::{json, Value};
-use wiremock::matchers::{body_json, body_partial_json, method, path, query_param};
+use wiremock::matchers::{body_json, body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::product_analytics::api::{
-    EventSource, FunnelOutcome, PathwayDirection, QueryInput, QueryKind, SavedObjectKind,
+    ActionNameFilter, ActionType, FunnelGroupBy, FunnelOutcome, PathwayDirection, QueryInput,
+    QueryKind, SavedObjectKind,
 };
 use coralogix_cli::commands::product_analytics::{
-    run_applications_get, run_applications_list, run_events_get, run_list_query, run_query,
-    run_saved_delete, run_saved_get, run_saved_list, run_saved_write, run_settings_get,
-    run_settings_update, PageArgs,
+    run_list_query, run_query, run_saved_delete, run_saved_get, run_saved_list, run_saved_write,
+    run_settings_get, run_settings_update,
 };
 use coralogix_cli::config::OutputFormat;
 
-const BASE: &str = "/mgmt/openapi/5/product-analytics";
-const FIXED_RANGE: (i64, i64) = (1_763_251_200_000, 1_763_337_600_000);
+const BASE: &str = "/product-analytics";
+const FIXED_RANGE: (i64, i64) = (1_763_251_200, 1_763_337_600);
 
-fn fixed_range_json() -> Value {
-    json!({"fixed": {"fromTimestampMs": FIXED_RANGE.0, "toTimestampMs": FIXED_RANGE.1}})
+fn fixed_input() -> QueryInput {
+    QueryInput {
+        time_range: Some(FIXED_RANGE),
+        ..Default::default()
+    }
 }
 
-fn saved_funnel() -> Value {
+fn funnel_steps() -> Value {
+    json!([
+        {"stepId": "s1", "conditions": [{"page": {"match": {"values": ["login/user"], "operator": "EQUAL"}}}]},
+        {"stepId": "s2", "conditions": [{"page": {"match": {"values": ["explore"], "operator": "EQUAL"}}}]}
+    ])
+}
+
+fn saved_funnel(time_range: Value) -> Value {
     json!({
         "id": "42",
         "appName": "web-shop",
         "name": "Checkout funnel",
-        "definition": {
-            "mode": "FUNNEL_MODE_USERS",
-            "steps": [
-                {"stepId": "s1", "conditions": [{"view": {"name": {"values": ["/cart"], "operator": "STRING_CONDITION_OPERATOR_EQUAL"}}}]}
-            ]
-        },
-        "filters": [],
-        "timeRange": {"relativeMinutes": "1440"},
-        "owner": "dana@example.com",
-        "createdAt": "2026-11-16T10:00:00Z",
-        "updatedAt": "2026-11-16T10:00:00Z",
-        "version": 1
+        "steps": funnel_steps(),
+        "filters": [{"field": "PLATFORM", "stringCondition": {"values": ["browser"]}}],
+        "groupBy": "GROUP_BY_CX_USER_ID",
+        "createdAt": "1783433258498",
+        "timeRange": time_range
     })
+}
+
+fn funnel_response() -> Value {
+    json!({"groups": [{"steps": [
+        {"stepNumber": 1, "sessionCount": "30122", "conversionRate": 1.0},
+        {"stepNumber": 2, "sessionCount": "21877", "conversionRate": 0.726, "avgTimeFromPrevMs": "192000"}
+    ]}]})
 }
 
 fn write_json(name: &str, body: &Value) -> std::path::PathBuf {
@@ -48,14 +58,27 @@ fn write_json(name: &str, body: &Value) -> std::path::PathBuf {
     file
 }
 
+async fn mount_saved_search(server: &MockServer, kind: &str, id: i64, saved: Value) {
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/{kind}/v1/saved/search")))
+        .and(body_json(json!({"ids": {"ids": [id]}})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({kind: [saved]})))
+        .expect(1..)
+        .mount(server)
+        .await;
+}
+
 #[tokio::test]
-async fn applications_list_sends_app_filter() {
+async fn applications_list_posts_the_range_in_seconds() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
+    Mock::given(method("POST"))
         .and(path(format!("{BASE}/applications/v1")))
-        .and(query_param("app_names", "web-shop"))
+        .and(body_json(
+            json!({"fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1}),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "applications": [{"appName": "web-shop", "sessions": "18420", "crashFreeSessions": "18391", "users": "6210", "crashFreeUsers": "6198"}]
+            "apps": [{"appName": "web-shop", "sessionCount": "18420", "crashFreeSessionCount": "18391",
+                      "totalUsers": "6210", "crashFreeUserCount": "6198", "platform": "browser"}, {"appName": "ios-shop"}]
         })))
         .expect(3)
         .mount(&server)
@@ -63,16 +86,23 @@ async fn applications_list_sends_app_filter() {
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
     for output in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Toon] {
-        run_applications_list(&targets, &["web-shop".to_string()], output)
-            .await
-            .expect("applications list should succeed");
+        run_list_query(
+            &targets,
+            QueryKind::Applications,
+            None,
+            None,
+            &fixed_input(),
+            output,
+        )
+        .await
+        .expect("applications list should succeed");
     }
 }
 
 #[tokio::test]
-async fn applications_list_empty() {
+async fn applications_list_empty_response() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
+    Mock::given(method("POST"))
         .and(path(format!("{BASE}/applications/v1")))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
@@ -80,97 +110,74 @@ async fn applications_list_empty() {
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_applications_list(&targets, &[], OutputFormat::Text)
-        .await
-        .expect("empty applications list should succeed");
-}
-
-#[tokio::test]
-async fn applications_get_encodes_the_app_name() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path(format!("{BASE}/applications/v1/web%20shop")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "appName": "web shop", "sessions": "1", "crashFreeSessions": "1", "users": "1", "crashFreeUsers": "1"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_applications_get(&targets, "web shop", OutputFormat::Text)
-        .await
-        .expect("applications get should succeed");
-}
-
-#[tokio::test]
-async fn disabled_team_error_carries_the_server_message() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path(format!("{BASE}/funnels/v1")))
-        .respond_with(ResponseTemplate::new(412).set_body_json(json!({
-            "code": 9,
-            "message": "Product Analytics is not enabled for this team. A team admin can enable it in Coralogix.",
-            "details": []
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    let error = run_saved_list(
+    run_list_query(
         &targets,
-        SavedObjectKind::Funnel,
-        &[],
-        &PageArgs::default(),
-        OutputFormat::Json,
+        QueryKind::Applications,
+        None,
+        None,
+        &fixed_input(),
+        OutputFormat::Text,
     )
     .await
-    .expect_err("412 must fail");
+    .expect("empty applications list should succeed");
+}
+
+#[tokio::test]
+async fn service_error_carries_the_server_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/funnels/v1/saved/search")))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "code": "INVALID_ARGUMENT",
+            "message": "Failed to deserialize the JSON body"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let error = run_saved_list(&targets, SavedObjectKind::Funnel, &[], OutputFormat::Json)
+        .await
+        .expect_err("400 must fail");
     let message = format!("{error:#}");
-    assert!(message.contains("412"), "{message}");
+    assert!(message.contains("400"), "{message}");
     assert!(
-        message.contains("A team admin can enable it in Coralogix."),
+        message.contains("Failed to deserialize the JSON body"),
         "{message}"
     );
 }
 
 #[tokio::test]
-async fn views_list_posts_app_time_range_and_paging() {
+async fn views_list_posts_app_range_offset_and_file_filters() {
     let server = MockServer::start().await;
+    let filters = json!([{"field": "PLATFORM", "stringCondition": {"values": ["browser"], "operator": "EQUAL"}}]);
     Mock::given(method("POST"))
         .and(path(format!("{BASE}/views/v1")))
         .and(body_json(json!({
-            "appName": "web-shop",
-            "timeRange": fixed_range_json(),
-            "pageSize": 2,
-            "pageToken": "tok",
-            "filters": [{"stringFilter": {"field": "STRING_FILTER_FIELD_PLATFORM", "condition": {"values": ["web"], "operator": "STRING_CONDITION_OPERATOR_EQUAL"}}}]
+            "appNames": ["web-shop"],
+            "fromTimestamp": FIXED_RANGE.0,
+            "toTimestamp": FIXED_RANGE.1,
+            "offset": 1000,
+            "filters": filters
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "views": [{"view": "/", "sessions": "18420"}, {"view": "/pricing", "sessions": "9870"}],
-            "nextPageToken": "eyJvIjo1MH0",
-            "costly": true
+            "views": [{"viewName": "explore", "sessionCount": "35814"}, {"viewName": "login/user"}]
         })))
         .expect(1)
         .mount(&server)
         .await;
 
-    let file = write_json(
-        "views",
-        &json!({"filters": [{"stringFilter": {"field": "STRING_FILTER_FIELD_PLATFORM", "condition": {"values": ["web"], "operator": "STRING_CONDITION_OPERATOR_EQUAL"}}}]}),
-    );
+    let file = write_json("views", &json!({"filters": filters}));
     let input = QueryInput {
         app_name: Some("web-shop".into()),
-        time_range: Some(FIXED_RANGE),
-        page_size: Some(2),
-        page_token: Some("tok".into()),
-        ..Default::default()
+        offset: Some(1000),
+        ..fixed_input()
     };
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_list_query(
         &targets,
         QueryKind::Views,
+        None,
         file.to_str(),
         &input,
         OutputFormat::Text,
@@ -181,21 +188,79 @@ async fn views_list_posts_app_time_range_and_paging() {
 }
 
 #[tokio::test]
-async fn events_list_sends_source_and_fixed_time_range() {
+async fn actions_list_sends_click_or_custom() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path(format!("{BASE}/events/v1")))
+        .and(path(format!("{BASE}/actions/v1")))
         .and(body_json(json!({
-            "appName": "web-shop",
-            "view": "/cart",
-            "source": "EVENT_SOURCE_AUTO",
-            "timeRange": fixed_range_json()
+            "appNames": ["web-shop"],
+            "fromTimestamp": FIXED_RANGE.0,
+            "toTimestamp": FIXED_RANGE.1,
+            "click": {"actionNameFilter": "UNNAMED_ONLY"}
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "events": [{"eventId": "ev_Y2xpY2s6R290IGl0", "event": {"source": "EVENT_SOURCE_AUTO", "name": "Got it"},
-                        "count": "5", "deadClicks": "0", "deadClicksPct": 0, "rageClicks": "2", "rageClicksPct": 40}],
-            "nextPageToken": "",
-            "costly": false
+            "actions": [{"eventType": "click", "eventTarget": "Log in with SSO", "sessionCount": "4459"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/actions/v1")))
+        .and(body_partial_json(json!({"custom": {}})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "actions": [{"eventType": "custom", "eventTarget": "App loaded", "sessionCount": "118224"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let click = QueryInput {
+        app_name: Some("web-shop".into()),
+        action_type: Some(ActionType::Click),
+        action_name_filter: Some(ActionNameFilter::Unnamed),
+        ..fixed_input()
+    };
+    run_list_query(
+        &targets,
+        QueryKind::Actions,
+        None,
+        None,
+        &click,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("click actions should succeed");
+    let custom = QueryInput {
+        app_name: Some("web-shop".into()),
+        action_type: Some(ActionType::Custom),
+        ..fixed_input()
+    };
+    run_list_query(
+        &targets,
+        QueryKind::Actions,
+        None,
+        None,
+        &custom,
+        OutputFormat::Json,
+    )
+    .await
+    .expect("custom actions should succeed");
+}
+
+#[tokio::test]
+async fn filter_values_sends_the_field() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/filter-values/v1")))
+        .and(body_json(json!({
+            "appNames": ["web-shop"],
+            "fromTimestamp": FIXED_RANGE.0,
+            "toTimestamp": FIXED_RANGE.1,
+            "filterField": "URL_DOMAIN"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "values": [{"value": "coralogix.com", "count": "102853"}]
         })))
         .expect(1)
         .mount(&server)
@@ -203,72 +268,31 @@ async fn events_list_sends_source_and_fixed_time_range() {
 
     let input = QueryInput {
         app_name: Some("web-shop".into()),
-        view: Some("/cart".into()),
-        source: Some(EventSource::Auto),
-        time_range: Some(FIXED_RANGE),
-        ..Default::default()
+        filter_field: Some("URL_DOMAIN".into()),
+        ..fixed_input()
     };
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_list_query(
         &targets,
-        QueryKind::Events,
+        QueryKind::FilterValues,
+        None,
         None,
         &input,
-        OutputFormat::Text,
+        OutputFormat::Toon,
     )
     .await
-    .expect("events list should succeed");
+    .expect("filter values should succeed");
 }
 
 #[tokio::test]
-async fn events_get_posts_to_the_event_path() {
+async fn saved_lists_search_each_kind_by_app_names() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path(format!("{BASE}/events/v1/ev_Y2xpY2s6R290IGl0")))
-        .and(body_partial_json(json!({"appName": "web-shop", "view": "/cart"})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "event": {"eventId": "ev_Y2xpY2s6R290IGl0", "event": {"source": "EVENT_SOURCE_AUTO", "name": "Got it"},
-                      "count": "5", "deadClicks": "0", "deadClicksPct": 0, "rageClicks": "2", "rageClicksPct": 40},
-            "costly": false
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let input = QueryInput {
-        app_name: Some("web-shop".into()),
-        view: Some("/cart".into()),
-        ..Default::default()
-    };
-    let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_events_get(
-        &targets,
-        "ev_Y2xpY2s6R290IGl0",
-        None,
-        &input,
-        OutputFormat::Text,
-    )
-    .await
-    .expect("events get should succeed");
-}
-
-#[tokio::test]
-async fn saved_lists_use_each_kind_path_and_paging_params() {
-    let server = MockServer::start().await;
-    for (kind_path, key) in [
-        ("funnels", "funnels"),
-        ("pathways", "pathways"),
-        ("heatmaps", "heatmaps"),
-    ] {
-        Mock::given(method("GET"))
-            .and(path(format!("{BASE}/{kind_path}/v1")))
-            .and(query_param("app_names", "web-shop"))
-            .and(query_param("page_size", "2"))
-            .and(query_param("page_token", "next"))
+    for kind in ["funnels", "pathways", "heatmaps"] {
+        Mock::given(method("POST"))
+            .and(path(format!("{BASE}/{kind}/v1/saved/search")))
+            .and(body_json(json!({"appNames": {"values": ["web-shop"]}})))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                key: [saved_funnel()],
-                "nextPageToken": "more",
-                "totalSize": 3
+                kind: [saved_funnel(json!({"relativeMinutes": "1440"}))]
             })))
             .expect(1)
             .mount(&server)
@@ -276,10 +300,6 @@ async fn saved_lists_use_each_kind_path_and_paging_params() {
     }
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    let page = PageArgs {
-        page_size: Some(2),
-        page_token: Some("next".into()),
-    };
     for kind in [
         SavedObjectKind::Funnel,
         SavedObjectKind::Pathway,
@@ -289,7 +309,6 @@ async fn saved_lists_use_each_kind_path_and_paging_params() {
             &targets,
             kind,
             &["web-shop".to_string()],
-            &page,
             OutputFormat::Text,
         )
         .await
@@ -298,17 +317,16 @@ async fn saved_lists_use_each_kind_path_and_paging_params() {
 }
 
 #[tokio::test]
-async fn saved_list_merges_profiles() {
+async fn saved_list_merges_profiles_and_all_apps_sends_empty_values() {
     let first = MockServer::start().await;
     let second = MockServer::start().await;
     for server in [&first, &second] {
-        Mock::given(method("GET"))
-            .and(path(format!("{BASE}/heatmaps/v1")))
+        Mock::given(method("POST"))
+            .and(path(format!("{BASE}/heatmaps/v1/saved/search")))
+            .and(body_json(json!({"appNames": {"values": []}})))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "heatmaps": [{"id": "43", "appName": "web-shop", "viewName": "/checkout", "name": "Checkout clicks",
-                              "mode": "HEATMAP_MODE_CLICK_MAP", "version": 1}],
-                "nextPageToken": "",
-                "totalSize": 1
+                "heatmaps": [{"id": "3", "appName": "web-shop", "viewName": "/checkout", "name": "Checkout clicks",
+                              "mode": "CLICK_MAP", "timeRange": {"calendar": "CALENDAR_WINDOW_TODAY"}}]
             })))
             .expect(1)
             .mount(server)
@@ -318,38 +336,45 @@ async fn saved_list_merges_profiles() {
         common::test_target("prod", &first.uri()),
         common::test_target("staging", &second.uri()),
     ];
-    run_saved_list(
-        &targets,
-        SavedObjectKind::Heatmap,
-        &[],
-        &PageArgs::default(),
-        OutputFormat::Text,
-    )
-    .await
-    .expect("multi-profile list should succeed");
+    run_saved_list(&targets, SavedObjectKind::Heatmap, &[], OutputFormat::Text)
+        .await
+        .expect("multi-profile list should succeed");
 }
 
 #[tokio::test]
-async fn saved_get_create_and_delete() {
+async fn saved_get_create_update_and_delete() {
     let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path(format!("{BASE}/funnels/v1/42")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(saved_funnel()))
+    mount_saved_search(
+        &server,
+        "funnels",
+        42,
+        saved_funnel(json!({"relativeMinutes": "1440"})),
+    )
+    .await;
+    let pathway = json!({"appName": "web-shop", "name": "After cart", "pageName": "/cart", "pagesCount": 5,
+                         "limit": 20, "timeRange": {"calendar": "CALENDAR_WINDOW_TODAY"}});
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/pathways/v1/saved")))
+        .and(body_json(&pathway))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "44"})))
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("POST"))
-        .and(path(format!("{BASE}/pathways/v1")))
-        .and(body_json(json!({"appName": "web-shop", "name": "After cart", "view": "/cart", "timeRange": {"calendar": "CALENDAR_WINDOW_TODAY"}})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "44", "appName": "web-shop", "name": "After cart", "view": "/cart",
-            "direction": "PATHWAY_DIRECTION_AFTER", "pagesCount": 5, "topN": 20, "version": 1
+    Mock::given(method("PUT"))
+        .and(path(format!("{BASE}/funnels/v1/saved/42")))
+        .and(body_json(json!({
+            "name": "Renamed",
+            "steps": funnel_steps(),
+            "filters": [{"field": "PLATFORM", "stringCondition": {"values": ["browser"]}}],
+            "groupBy": "GROUP_BY_CX_USER_ID",
+            "timeRange": {"relativeMinutes": "1440"}
         })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
-        .and(path(format!("{BASE}/heatmaps/v1/43")))
+        .and(path(format!("{BASE}/heatmaps/v1/saved/43")))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
         .mount(&server)
@@ -360,20 +385,31 @@ async fn saved_get_create_and_delete() {
         .await
         .expect("get should succeed");
 
-    let file = write_json(
-        "pathway_create",
-        &json!({"appName": "web-shop", "name": "After cart", "view": "/cart", "timeRange": {"calendar": "CALENDAR_WINDOW_TODAY"}}),
-    );
+    let create_file = write_json("pathway_create", &pathway);
     run_saved_write(
         &targets,
         SavedObjectKind::Pathway,
-        file.to_str().unwrap(),
+        create_file.to_str().unwrap(),
         None,
         OutputFormat::Json,
     )
     .await
     .expect("create should succeed");
-    std::fs::remove_file(file).ok();
+    std::fs::remove_file(create_file).ok();
+
+    let mut edited = saved_funnel(json!({"relativeMinutes": "1440"}));
+    edited["name"] = json!("Renamed");
+    let update_file = write_json("funnel_update", &edited);
+    run_saved_write(
+        &targets,
+        SavedObjectKind::Funnel,
+        update_file.to_str().unwrap(),
+        Some("42"),
+        OutputFormat::Json,
+    )
+    .await
+    .expect("update should succeed");
+    std::fs::remove_file(update_file).ok();
 
     run_saved_delete(&targets, SavedObjectKind::Heatmap, "43")
         .await
@@ -381,114 +417,146 @@ async fn saved_get_create_and_delete() {
 }
 
 #[tokio::test]
-async fn update_sends_mask_and_strips_read_only_fields() {
+async fn saved_get_of_a_missing_id_fails() {
     let server = MockServer::start().await;
-    let mut renamed = saved_funnel();
-    renamed["name"] = json!("Renamed");
-    renamed["version"] = json!(2);
-    let expected_body = json!({
-        "name": "Renamed",
-        "definition": saved_funnel()["definition"],
-        "filters": [],
-        "timeRange": {"relativeMinutes": "1440"}
-    });
-    Mock::given(method("PATCH"))
-        .and(path(format!("{BASE}/funnels/v1/42")))
-        .and(query_param(
-            "updateMask",
-            "definition,filters,name,timeRange",
-        ))
-        .and(body_json(expected_body))
-        .respond_with(ResponseTemplate::new(200).set_body_json(&renamed))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("PATCH"))
-        .and(path(format!("{BASE}/funnels/v1/42")))
-        .and(query_param("updateMask", "name"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(&renamed))
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/pathways/v1/saved/search")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
         .mount(&server)
         .await;
 
-    let file = write_json("funnel_update", &renamed);
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    run_saved_write(
-        &targets,
-        SavedObjectKind::Funnel,
-        file.to_str().unwrap(),
-        Some(("42", None)),
-        OutputFormat::Json,
-    )
-    .await
-    .expect("update with derived mask should succeed");
-    run_saved_write(
-        &targets,
-        SavedObjectKind::Funnel,
-        file.to_str().unwrap(),
-        Some(("42", Some("name"))),
-        OutputFormat::Text,
-    )
-    .await
-    .expect("update with explicit mask should succeed");
-    std::fs::remove_file(file).ok();
+    let error = run_saved_get(&targets, SavedObjectKind::Pathway, "7", OutputFormat::Json)
+        .await
+        .expect_err("a missing pathway must fail");
+    assert!(format!("{error:#}").contains("pathway 7 not found"));
+    assert!(
+        run_saved_get(&targets, SavedObjectKind::Pathway, "x", OutputFormat::Json)
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
-async fn funnel_query_runs_a_saved_funnel() {
+async fn funnel_query_runs_a_saved_funnel_with_its_fixed_range() {
     let server = MockServer::start().await;
+    mount_saved_search(
+        &server,
+        "funnels",
+        42,
+        saved_funnel(
+            json!({"fixed": {"fromTimestamp": "1763251200", "toTimestamp": "1763337600"}}),
+        ),
+    )
+    .await;
     Mock::given(method("POST"))
-        .and(path(format!("{BASE}/funnels/v1:queryConversion")))
-        .and(body_json(json!({"funnelId": "42", "mode": "FUNNEL_MODE_USERS"})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "conversion": {
-                "appName": "web-shop", "mode": "FUNNEL_MODE_USERS",
-                "summary": {"enteredCount": "30122", "convertedCount": "21877", "convertedPct": 72.6,
-                            "droppedCount": "8245", "droppedPct": 27.4,
-                            "biggestDropOff": {"fromStepId": "s1", "toStepId": "s2", "droppedCount": "8245", "droppedPctOfPrevious": 27.4}},
-                "steps": [
-                    {"stepId": "s1", "label": "Viewed cart", "count": "30122", "convertedPctOfTotal": 100, "convertedPctOfPrevious": 100,
-                     "droppedCount": "0", "droppedPctOfTotal": 0, "droppedPctOfPrevious": 0},
-                    {"stepId": "s2", "label": "Clicked pay", "count": "21877", "convertedPctOfTotal": 72.6, "convertedPctOfPrevious": 72.6,
-                     "droppedCount": "8245", "droppedPctOfTotal": 27.4, "droppedPctOfPrevious": 27.4, "avgTimeFromPrevious": "192s"}
-                ],
-                "groups": []
+        .and(path(format!("{BASE}/funnels/v1/query")))
+        .and(body_json(json!({
+            "query": {
+                "appNames": ["web-shop"],
+                "fromTimestamp": FIXED_RANGE.0,
+                "toTimestamp": FIXED_RANGE.1,
+                "steps": funnel_steps(),
+                "filters": [{"field": "PLATFORM", "stringCondition": {"values": ["browser"]}}]
             },
-            "costly": false
+            "groupBy": "GROUP_BY_CX_USER_ID"
         })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(funnel_response()))
         .expect(2)
         .mount(&server)
         .await;
 
-    let input = QueryInput {
-        saved_id: Some("42".into()),
-        funnel_mode: Some(coralogix_cli::commands::product_analytics::api::FunnelMode::Users),
-        ..Default::default()
-    };
     let targets = vec![common::test_target("test-profile", &server.uri())];
     for output in [OutputFormat::Text, OutputFormat::Json] {
-        run_query(&targets, QueryKind::FunnelConversion, None, &input, output)
-            .await
-            .expect("funnel query should succeed");
+        run_query(
+            &targets,
+            QueryKind::Funnel,
+            Some("42"),
+            None,
+            &QueryInput::default(),
+            output,
+        )
+        .await
+        .expect("saved funnel query should succeed");
     }
 }
 
 #[tokio::test]
-async fn funnel_query_with_breakdown_groups_renders() {
+async fn funnel_query_flags_override_the_saved_range_and_group_by() {
     let server = MockServer::start().await;
-    let step = json!({"stepId": "s1", "count": "10", "convertedPctOfTotal": 100, "convertedPctOfPrevious": 100,
-                      "droppedCount": "0", "droppedPctOfTotal": 0, "droppedPctOfPrevious": 0});
+    mount_saved_search(
+        &server,
+        "funnels",
+        42,
+        saved_funnel(json!({"relativeMinutes": "1440"})),
+    )
+    .await;
     Mock::given(method("POST"))
-        .and(path(format!("{BASE}/funnels/v1:queryConversion")))
-        .and(body_partial_json(json!({"appName": "web-shop", "breakdown": {"field": "BREAKDOWN_FIELD_PLATFORM", "limit": 5}})))
+        .and(path(format!("{BASE}/funnels/v1/query")))
+        .and(body_partial_json(json!({
+            "query": {"fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1},
+            "groupBy": "GROUP_BY_ACCOUNT_ID"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(funnel_response()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let input = QueryInput {
+        group_by: Some(FunnelGroupBy::Accounts),
+        ..fixed_input()
+    };
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    run_query(
+        &targets,
+        QueryKind::Funnel,
+        Some("42"),
+        None,
+        &input,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("saved funnel query with flags should succeed");
+}
+
+#[tokio::test]
+async fn funnel_query_of_a_missing_saved_funnel_fails() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/funnels/v1/saved/search")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let error = run_query(
+        &targets,
+        QueryKind::Funnel,
+        Some("9"),
+        None,
+        &QueryInput::default(),
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("a missing funnel must fail");
+    assert!(format!("{error:#}").contains("funnel 9 not found"));
+}
+
+#[tokio::test]
+async fn inline_funnel_query_with_breakdown_groups_renders() {
+    let server = MockServer::start().await;
+    let step = json!({"stepNumber": 1, "sessionCount": "10", "conversionRate": 1.0});
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/funnels/v1/query")))
+        .and(body_json(json!({
+            "query": {"appNames": ["web-shop"], "fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1,
+                      "steps": funnel_steps()},
+            "breakdown": {"field": "PLATFORM", "limit": 5}
+        })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "conversion": {
-                "appName": "web-shop", "mode": "FUNNEL_MODE_USERS", "steps": [],
-                "groups": [{"group": "web", "steps": [step]}, {"group": "ios", "steps": [step]}],
-                "groupComparison": {"bestConverting": {"group": "web", "convertedPct": 100},
-                                    "worstConverting": {"group": "ios", "convertedPct": 100}, "conversionGapPct": 0}
-            },
-            "costly": true
+            "groups": [{"groupValue": "web", "steps": [step]}, {"groupValue": "ios", "steps": [step]}]
         })))
         .expect(1)
         .mount(&server)
@@ -496,19 +564,17 @@ async fn funnel_query_with_breakdown_groups_renders() {
 
     let file = write_json(
         "funnel_inline",
-        &json!({
-            "definition": {"mode": "FUNNEL_MODE_USERS", "steps": [{"stepId": "s1", "conditions": [{"view": {}}]}]},
-            "breakdown": {"field": "BREAKDOWN_FIELD_PLATFORM", "limit": 5}
-        }),
+        &json!({"query": {"appNames": ["other"], "steps": funnel_steps()}, "breakdown": {"field": "PLATFORM", "limit": 5}}),
     );
     let input = QueryInput {
         app_name: Some("web-shop".into()),
-        ..Default::default()
+        ..fixed_input()
     };
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_query(
         &targets,
-        QueryKind::FunnelConversion,
+        QueryKind::Funnel,
+        None,
         file.to_str(),
         &input,
         OutputFormat::Text,
@@ -519,107 +585,195 @@ async fn funnel_query_with_breakdown_groups_renders() {
 }
 
 #[tokio::test]
-async fn funnel_matches_lists_users() {
+async fn matching_users_of_a_saved_funnel_end_at_its_last_step() {
     let server = MockServer::start().await;
+    mount_saved_search(
+        &server,
+        "funnels",
+        42,
+        saved_funnel(json!({"relativeMinutes": "1440"})),
+    )
+    .await;
     Mock::given(method("POST"))
-        .and(path(format!("{BASE}/funnels/v1:listMatches")))
+        .and(path(format!("{BASE}/funnels/v1/matching-users")))
         .and(body_json(json!({
-            "funnelId": "42",
-            "stepId": "s2",
-            "outcome": "FUNNEL_OUTCOME_DROPPED",
-            "pageSize": 100
+            "query": {
+                "appNames": ["web-shop"],
+                "fromTimestamp": FIXED_RANGE.0,
+                "toTimestamp": FIXED_RANGE.1,
+                "steps": funnel_steps(),
+                "filters": [{"field": "PLATFORM", "stringCondition": {"values": ["browser"]}}]
+            },
+            "mode": "DROPOFF",
+            "startStep": 1,
+            "endStep": 2,
+            "limit": 100,
+            "offset": 100
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "appName": "web-shop", "stepId": "s2", "outcome": "FUNNEL_OUTCOME_DROPPED", "mode": "FUNNEL_MODE_USERS",
-            "users": [{"userId": "a3f9c1d27b4e8f60a1c2d3e4f5061728", "exampleSessionId": "5b2e9f10",
-                       "hasSessionReplay": true, "platform": "web", "os": "macOS", "country": "Germany"}],
-            "sessions": [], "accounts": [], "nextPageToken": ""
+            "users": [{"userId": "a3f9c1d2", "userName": "Dana", "userEmail": "dana@example.com",
+                       "exampleSessionId": "5b2e9f10", "hasSessionReplay": true, "platform": "browser",
+                       "os": "macos", "countryName": "Germany"}]
         })))
         .expect(1)
         .mount(&server)
         .await;
 
     let input = QueryInput {
-        saved_id: Some("42".into()),
-        step_id: Some("s2".into()),
         outcome: Some(FunnelOutcome::Dropped),
-        page_size: Some(100),
-        ..Default::default()
+        limit: Some(100),
+        offset: Some(100),
+        ..fixed_input()
     };
     let targets = vec![common::test_target("test-profile", &server.uri())];
     run_list_query(
         &targets,
-        QueryKind::FunnelMatches,
+        QueryKind::MatchingUsers,
+        Some("42"),
         None,
         &input,
         OutputFormat::Text,
     )
     .await
-    .expect("funnel matches should succeed");
+    .expect("matching users should succeed");
 }
 
 #[tokio::test]
-async fn pathway_and_heatmap_inline_queries() {
+async fn pathway_queries_saved_and_inline() {
     let server = MockServer::start().await;
+    mount_saved_search(
+        &server,
+        "pathways",
+        44,
+        json!({"id": "44", "appName": "docs", "name": "From setup", "pageName": "/setup",
+               "pagesCount": 4, "limit": 8, "mode": "PATHWAYS_MODE_BACKWARD",
+               "timeRange": {"fixed": {"fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1}}}),
+    )
+    .await;
     Mock::given(method("POST"))
-        .and(path(format!("{BASE}/pathways/v1:queryPaths")))
+        .and(path(format!("{BASE}/pathways/v1/query")))
         .and(body_json(json!({
-            "appName": "docs", "view": "/setup", "direction": "PATHWAY_DIRECTION_BEFORE", "pagesCount": 3,
-            "timeRange": fixed_range_json()
+            "appNames": ["docs"], "pageName": "/setup", "pagesCount": 4, "limit": 3,
+            "mode": "PATHWAYS_MODE_BACKWARD", "fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "pathwayPaths": {"appName": "docs", "view": "/setup", "direction": "PATHWAY_DIRECTION_BEFORE",
-                             "paths": [{"pages": ["/", "/setup"], "count": "41"}]},
-            "costly": false
+            "pathways": [{"pages": ["/", "/setup"], "count": "41"}]
         })))
         .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("POST"))
-        .and(path(format!("{BASE}/heatmaps/v1:queryTopElements")))
-        .and(body_json(json!({"heatmapId": "43", "topN": 10})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "heatmapData": {"appName": "web-app", "view": "explore", "actionNameFilter": "ACTION_NAME_FILTER_ALL_CLICKS",
-                            "elements": [{"eventId": "ev_Y2xpY2s6cnVu", "name": "query-builder-run", "clicks": "12420",
-                                          "deadClicksPct": 0, "rageClicksPct": 1}]},
-            "costly": false
+        .and(path(format!("{BASE}/pathways/v1/query")))
+        .and(body_json(json!({
+            "appNames": ["docs"], "pageName": "/tools", "mode": "PATHWAYS_MODE_FORWARD",
+            "pagesCount": 3, "fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1
         })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
         .mount(&server)
         .await;
 
     let targets = vec![common::test_target("test-profile", &server.uri())];
-    let pathway = QueryInput {
-        app_name: Some("docs".into()),
-        view: Some("/setup".into()),
-        direction: Some(PathwayDirection::Before),
-        pages_count: Some(3),
-        time_range: Some(FIXED_RANGE),
+    let saved = QueryInput {
+        limit: Some(3),
         ..Default::default()
     };
-    run_query(
+    run_list_query(
         &targets,
-        QueryKind::PathwayPaths,
+        QueryKind::Pathways,
+        Some("44"),
         None,
-        &pathway,
+        &saved,
         OutputFormat::Text,
     )
     .await
-    .expect("pathway query should succeed");
-    let heatmap = QueryInput {
-        saved_id: Some("43".into()),
+    .expect("saved pathway query should succeed");
+    let inline = QueryInput {
+        app_name: Some("docs".into()),
+        view: Some("/tools".into()),
+        direction: Some(PathwayDirection::Forward),
+        pages_count: Some(3),
+        ..fixed_input()
+    };
+    run_list_query(
+        &targets,
+        QueryKind::Pathways,
+        None,
+        None,
+        &inline,
+        OutputFormat::Text,
+    )
+    .await
+    .expect("inline pathway query should succeed");
+}
+
+#[tokio::test]
+async fn heatmap_clicks_and_scroll_map_of_a_saved_heatmap() {
+    let server = MockServer::start().await;
+    mount_saved_search(
+        &server,
+        "heatmaps",
+        43,
+        json!({"id": "43", "appName": "web-app", "name": "Explore", "viewName": "explore",
+               "mode": "TOP_ELEMENTS", "snapshotId": "s", "actionNameFilter": "NAMED_ONLY",
+               "timeRange": {"fixed": {"fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1}}}),
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/clicks/v1")))
+        .and(body_json(json!({
+            "appName": "web-app", "pageName": "explore", "actionNameFilter": "NAMED_ONLY", "topK": 10,
+            "fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "clicks": [{"clickName": "run", "cxActionName": "query-builder-run", "clickCount": "12420",
+                        "deadClickCount": "2", "fingerprint": "BUTTON",
+                        "coordinates": [{"coordinate": {"height": 10, "width": 20}, "count": "4"}]}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(format!("{BASE}/scroll-map/v1")))
+        .and(body_json(json!({
+            "appName": "web-app", "pageName": "explore",
+            "fromTimestamp": FIXED_RANGE.0, "toTimestamp": FIXED_RANGE.1
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "pageCovers": [{"userCount": "8728"}, {"pagePercentage": 100, "userCount": "8723"}],
+            "avgViewportHeight": 957
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let clicks = QueryInput {
         top_n: Some(10),
         ..Default::default()
     };
-    run_query(
+    run_list_query(
         &targets,
-        QueryKind::HeatmapTopElements,
+        QueryKind::Clicks,
+        Some("43"),
         None,
-        &heatmap,
-        OutputFormat::Toon,
+        &clicks,
+        OutputFormat::Text,
     )
     .await
     .expect("heatmap query should succeed");
+    for output in [OutputFormat::Text, OutputFormat::Toon] {
+        run_query(
+            &targets,
+            QueryKind::ScrollMap,
+            Some("43"),
+            None,
+            &QueryInput::default(),
+            output,
+        )
+        .await
+        .expect("scroll map should succeed");
+    }
 }
 
 #[tokio::test]
@@ -627,15 +781,14 @@ async fn settings_get_and_update() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(format!("{BASE}/settings/v1")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-        .expect(1)
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
+        .expect(2)
         .mount(&server)
         .await;
-    Mock::given(method("PATCH"))
+    Mock::given(method("PUT"))
         .and(path(format!("{BASE}/settings/v1")))
-        .and(query_param("updateMask", "enabled"))
         .and(body_json(json!({"enabled": true})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"enabled": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
         .expect(1)
         .mount(&server)
         .await;

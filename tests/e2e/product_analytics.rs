@@ -20,7 +20,15 @@ fn product_analytics_available(test_name: &str) -> bool {
 }
 
 fn discover_app() -> Option<String> {
-    let apps = harness::run_ok_json(&["product-analytics", "applications", "list", "-o", "json"]);
+    let apps = harness::run_ok_json(&[
+        "product-analytics",
+        "applications",
+        "list",
+        "--start",
+        "now-7d",
+        "-o",
+        "json",
+    ]);
     harness::assert_array(&apps)
         .first()
         .and_then(|app| app["appName"].as_str())
@@ -82,14 +90,6 @@ fn product_analytics_read_commands() {
         eprintln!("[e2e] product_analytics_read_commands: no RUM application with sessions");
         return;
     };
-    harness::run_ok_json(&[
-        "product-analytics",
-        "applications",
-        "get",
-        &app,
-        "-o",
-        "json",
-    ]);
     let views = harness::run_ok_json(&[
         "product-analytics",
         "views",
@@ -101,37 +101,28 @@ fn product_analytics_read_commands() {
         "-o",
         "json",
     ]);
+    for args in [
+        vec!["actions", "list", "--app", &app],
+        vec!["actions", "list", "--app", &app, "--type", "custom"],
+        vec!["filter-values", "--app", &app, "--field", "platform"],
+    ] {
+        let mut command = vec!["product-analytics"];
+        command.extend(args);
+        command.extend(["--start", "now-7d", "-o", "json"]);
+        harness::assert_array(&harness::run_ok_json(&command));
+    }
     let Some(view) = harness::assert_array(&views)
         .first()
-        .and_then(|v| v["view"].as_str())
+        .and_then(|v| v["viewName"].as_str())
         .map(str::to_string)
     else {
         return;
     };
-    let events = harness::run_ok_json(&[
-        "product-analytics",
-        "events",
-        "list",
-        "--app",
-        &app,
-        "--view",
-        &view,
-        "--source",
-        "auto",
-        "--start",
-        "now-7d",
-        "-o",
-        "json",
-    ]);
-    if let Some(event_id) = harness::assert_array(&events)
-        .first()
-        .and_then(|e| e["eventId"].as_str())
-    {
+    for kind in [["pathways", "query"], ["heatmaps", "query"]] {
         harness::run_ok_json(&[
             "product-analytics",
-            "events",
-            "get",
-            event_id,
+            kind[0],
+            kind[1],
             "--app",
             &app,
             "--view",
@@ -144,21 +135,8 @@ fn product_analytics_read_commands() {
     }
     harness::run_ok_json(&[
         "product-analytics",
-        "pathways",
-        "query",
-        "--app",
-        &app,
-        "--view",
-        &view,
-        "--start",
-        "now-7d",
-        "-o",
-        "json",
-    ]);
-    harness::run_ok_json(&[
-        "product-analytics",
         "heatmaps",
-        "query",
+        "scroll-map",
         "--app",
         &app,
         "--view",
@@ -172,15 +150,12 @@ fn product_analytics_read_commands() {
 
 fn funnel_body(app: &str, name: &str) -> Value {
     json!({
-        "appName": app,
+        "appNames": [app],
         "name": name,
-        "definition": {
-            "mode": "FUNNEL_MODE_USERS",
-            "steps": [
-                {"stepId": "s1", "conditions": [{"view": {}}]},
-                {"stepId": "s2", "conditions": [{"action": {}}]}
-            ]
-        },
+        "steps": [
+            {"stepId": "s1", "conditions": [{"page": {"any": {}}}]},
+            {"stepId": "s2", "conditions": [{"action": {"any": {}}}]}
+        ],
         "timeRange": {"relativeMinutes": "1440"}
     })
 }
@@ -189,7 +164,9 @@ fn pathway_body(app: &str, name: &str) -> Value {
     json!({
         "appName": app,
         "name": name,
-        "view": "/",
+        "pageName": "/",
+        "pagesCount": 5,
+        "limit": 20,
         "timeRange": {"relativeMinutes": "1440"}
     })
 }
@@ -199,7 +176,7 @@ fn heatmap_body(app: &str, name: &str) -> Value {
         "appName": app,
         "name": name,
         "viewName": "/",
-        "mode": "HEATMAP_MODE_TOP_ELEMENTS",
+        "mode": "TOP_ELEMENTS",
         "timeRange": {"calendar": "CALENDAR_WINDOW_TODAY"}
     })
 }
@@ -220,20 +197,18 @@ fn saved_lifecycle(kind: &str, body: fn(&str, &str) -> Value) {
     let id = harness::id_from_response(&created)
         .unwrap_or_else(|| panic!("{kind} create returned no id: {created}"));
     let mut cleanup = harness::Cleanup::new(&["product-analytics", kind, "delete", &id]);
-    assert_eq!(created["name"], name);
-    assert_eq!(created["version"], 1);
 
     if kind == "funnels" {
         harness::run_ok_json(&["product-analytics", "funnels", "query", &id, "-o", "json"]);
         harness::run_ok_json(&[
             "product-analytics",
             "funnels",
-            "matches",
+            "matching-users",
             &id,
-            "--step",
-            "s2",
             "--outcome",
             "converted",
+            "--limit",
+            "5",
             "-o",
             "json",
         ]);
@@ -247,8 +222,6 @@ fn saved_lifecycle(kind: &str, body: fn(&str, &str) -> Value) {
         "list",
         "--app",
         &app,
-        "--page-size",
-        "500",
         "-o",
         "json",
     ]);
@@ -260,7 +233,7 @@ fn saved_lifecycle(kind: &str, body: fn(&str, &str) -> Value) {
     let mut edited = got.clone();
     edited["name"] = json!(format!("{name}-2"));
     let upd = harness::JsonFile::new(&format!("{kind}-upd"), &edited);
-    let updated = harness::run_write_json(&[
+    harness::run_write_json(&[
         "product-analytics",
         kind,
         "update",
@@ -270,8 +243,8 @@ fn saved_lifecycle(kind: &str, body: fn(&str, &str) -> Value) {
         "-o",
         "json",
     ]);
+    let updated = harness::run_ok_json(&["product-analytics", kind, "get", &id, "-o", "json"]);
     assert_eq!(updated["name"], format!("{name}-2"));
-    assert_eq!(updated["version"], 2);
     harness::run_ok_nonempty(&["product-analytics", kind, "get", &id]);
     harness::run_ok_nonempty(&["product-analytics", kind, "list", "-o", "toon"]);
 

@@ -3,16 +3,16 @@ name: cx-product-analytics
 description: >
   Analyze how users move through a web or mobile app with Coralogix Product
   Analytics and the `cx product-analytics` CLI — RUM applications, most visited
-  pages, clicks, dead and rage clicks, custom events, funnels, conversion and
-  drop-off, who dropped at a step, page paths, and heatmaps. Use when the user
-  asks "where do users drop off", "funnel conversion", "conversion rate of
-  checkout", "which users dropped at step 2", "what pages do users visit after
-  /cart", "user journey", "user paths", "most clicked buttons", "rage clicks",
-  "dead clicks", "heatmap", "top pages", "custom events", "create a funnel",
-  "save a pathway", "is product analytics enabled", or wants product analytics
-  on RUM data.
+  pages, clicks, rage and dead clicks, custom actions, funnels, conversion and
+  drop-off, which users converted or dropped, page paths, heatmaps and scroll
+  depth. Use when the user asks "where do users drop off", "funnel conversion",
+  "conversion rate of checkout", "which users dropped out of the funnel", "what
+  pages do users visit after /cart", "user journey", "user paths", "most clicked
+  buttons", "rage clicks", "dead clicks", "heatmap", "scroll depth", "top pages",
+  "custom events", "create a funnel", "save a pathway", "is product analytics
+  enabled", or wants product analytics on RUM data.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Product Analytics Skill
@@ -26,39 +26,40 @@ or web vitals, use `cx-telemetry-querying` (`rum.events`) instead.
 
 | Command | Purpose |
 |---|---|
-| `cx product-analytics applications list` / `get <app>` | RUM applications with 30-day session and user counts |
+| `cx product-analytics applications list` | RUM applications with their platform and session and user counts |
 | `cx product-analytics views list --app <app>` | Pages of an app, most visited first |
-| `cx product-analytics events list --app <app> --view <view> --source auto\|custom` | Clicks (with dead and rage clicks) or custom events on a page |
-| `cx product-analytics events get <eventId> --app <app> --view <view>` | One event's counts |
+| `cx product-analytics actions list --app <app> [--type click\|custom]` | Clicks or custom actions of an app, by session count |
+| `cx product-analytics filter-values --app <app> --field <FIELD>` | Values of one session field (browser, country, domain, ...) to build filters |
 | `cx product-analytics funnels list\|get\|create\|update\|delete` | Saved funnels |
-| `cx product-analytics funnels query [id]` | Conversion and drop-off per step, saved or inline |
-| `cx product-analytics funnels matches [id] --step <s> --outcome converted\|dropped` | Users who reached or dropped at a step |
+| `cx product-analytics funnels query [id]` | Count and conversion of each step, saved or inline |
+| `cx product-analytics funnels matching-users [id] --outcome converted\|dropped` | Users who converted or dropped out (personal data) |
 | `cx product-analytics pathways list\|get\|create\|update\|delete` | Saved pathways |
-| `cx product-analytics pathways query [id] \| --app <app> --view <view>` | Most common page paths after or before a page |
+| `cx product-analytics pathways query [id] \| --app <app> --view <view>` | Most common page paths from or to a page |
 | `cx product-analytics heatmaps list\|get\|create\|update\|delete` | Saved heatmaps |
-| `cx product-analytics heatmaps query [id] \| --app <app> --view <view>` | Most clicked elements on a page (web only) |
+| `cx product-analytics heatmaps query [id] \| --app <app> --view <view>` | Most clicked elements on a page, with rage and dead clicks (web only) |
+| `cx product-analytics heatmaps scroll-map [id] \| --app <app> --view <view>` | How many users scrolled to each depth of a page (web only) |
 | `cx product-analytics settings get` / `update --enabled true\|false` | Whether Product Analytics is on for the team |
 
 - `create`, `update`, `delete` and `settings update` are writes: they need `--yes`
   in agent mode and are blocked by `--read-only`. Ask the user before running them.
+  `settings update` also needs the `product-analytics:Enable` permission.
 - Every command supports `-o json`, `-o toon` and `-p <profile>` (repeatable).
 
 ## Time ranges
 
 Commands that query data take `--start` / `--end` (default `now-1h` / `now`):
 `now`, `now-7d`-style relative expressions, or ISO-8601 timestamps. The CLI sends
-them as a fixed millisecond range.
+them as Unix **seconds** (`fromTimestamp` / `toTimestamp`).
 
-When you run a saved funnel, pathway or heatmap by ID without `--start`/`--end`, no
-time range is sent and the saved one applies. Ranges over 90 days work but print a
-`costly` warning; prefer shorter ranges.
+When you run a saved funnel, pathway or heatmap by ID without `--start`/`--end`, the
+CLI uses the saved time range: a fixed range as is, `relativeMinutes` back from now,
+and `CALENDAR_WINDOW_TODAY` / `_YESTERDAY` as UTC days. `--start`/`--end` override it.
 
 ## Paging
 
-`views list`, `events list`, `funnels matches` and the saved `list` commands return
-one page. When there is more, stderr prints `more results: pass --page-token <token>`.
-Repeat the same command with that `--page-token` within 15 minutes. `--page-size`
-goes up to 500.
+`views list`, `actions list` and `filter-values` return one page (the server caps it,
+1000 rows today). Pass `--offset <rows>` for the next page. `funnels matching-users`
+takes `--limit` and `--offset`.
 
 ## Workflow
 
@@ -66,49 +67,57 @@ goes up to 500.
 
 ```bash
 cx product-analytics settings get
-cx product-analytics applications list
+cx product-analytics applications list --start now-7d
 ```
 
-Every call fails with 412 when Product Analytics is off for the team. Tell the user;
-only a team admin should turn it on (`settings update --enabled true --yes`). For
-what users did meanwhile, fall back to `cx-telemetry-querying` (`rum.events`).
+If `settings get` says Product Analytics is not enabled, tell the user; only a team
+admin should turn it on (`settings update --enabled true --yes`). For what users did
+meanwhile, fall back to `cx-telemetry-querying` (`rum.events`).
 
-### 2. Explore pages and clicks
+### 2. Explore pages, actions and filter values
 
 ```bash
 cx product-analytics views list --app web-shop --start now-7d
-cx product-analytics events list --app web-shop --view /cart --source auto --start now-7d
-cx product-analytics events list --app web-shop --view /cart --source custom --start now-7d
+cx product-analytics actions list --app web-shop --start now-7d
+cx product-analytics actions list --app web-shop --type custom --start now-7d
+cx product-analytics filter-values --app web-shop --field browser-name --start now-7d
 ```
 
-Pass `view` exactly as `views list` prints it. Clicks carry dead-click and rage-click
-percentages, a good signal of UX problems.
+Pass views exactly as `views list` prints them. `--field` takes a filter field name
+(`URL_DOMAIN`, `PLATFORM`, `COUNTRY_NAME`, ...; lower case and dashes work too); use the
+values it returns in `filters` (see `references/request-bodies.md`).
 
 ### 3. Funnels
 
 ```bash
 cx product-analytics funnels list --app web-shop
 cx product-analytics funnels query 42 --start now-30d
-cx product-analytics funnels matches 42 --step s2 --outcome dropped --start now-30d --end now
+cx product-analytics funnels query 42 --group-by users
+cx product-analytics funnels query --from-file funnel-query.json --start now-7d
+cx product-analytics funnels matching-users 42 --outcome dropped --start-step 2 --limit 20
 ```
 
-- Run an inline funnel with `--from-file` holding the request body (see
-  `references/request-bodies.md`): `{"appName": ..., "definition": {...}}`.
-- Break a funnel down by a dimension with `"breakdown": {"field": "BREAKDOWN_FIELD_PLATFORM", "limit": 5}` in the file.
-- `matches` takes the same input as `query`. Only users mode works for now: sessions
-  and accounts return 501. User IDs are hashed unless you pass `--user-id-mode raw`.
-- To make `matches` agree with a `query`, send the same `--start`/`--end`, filters
-  and breakdown to both.
+- `--group-by` counts sessions (default), users or accounts at each step.
+- An inline funnel is a `--from-file` request: `{"query": {"appNames": [...], "steps": [...],
+  "filters": [...]}, "breakdown": {"field": "PLATFORM", "limit": 5}}` (see
+  `references/request-bodies.md`). The same file works for `matching-users`.
+- `matching-users` evaluates from `--start-step` (default 1) to the last step:
+  `converted` reached the last step, `dropped` reached the start step but not the last.
+  Send the same `--start`/`--end` as the `query` so the two agree.
+- **`matching-users` returns real user names, emails, user and account IDs.** Treat
+  them as personal data: show only what the user asked for, prefer counts or user IDs
+  over names and emails, and never copy them into files, tickets or other tools unless
+  the user explicitly asks.
 
 ### 4. Pathways and heatmaps
 
 ```bash
-cx product-analytics pathways query --app web-shop --view /cart --direction after --start now-7d
+cx product-analytics pathways query --app web-shop --view /cart --direction forward --start now-7d
+cx product-analytics pathways query --app web-shop --view /checkout --direction backward --pages-count 3
 cx product-analytics heatmaps query --app web-shop --view /checkout --top-n 10 --start now-7d
-cx product-analytics events get <eventId> --app web-shop --view /checkout --start now-7d
+cx product-analytics heatmaps scroll-map --app web-shop --view /pricing --start now-7d
+cx product-analytics heatmaps query 43
 ```
-
-A heatmap element's `eventId` is the same ID `events list` returns.
 
 ### 5. Save or change a funnel, pathway or heatmap
 
@@ -116,21 +125,19 @@ A heatmap element's `eventId` is the same ID `events list` returns.
 cx product-analytics funnels create --from-file funnel.json --yes
 cx product-analytics funnels get 42 -o json > funnel.json   # edit it
 cx product-analytics funnels update 42 --from-file funnel.json --yes
-cx product-analytics funnels update 42 --from-file funnel.json --update-mask name --yes
 cx product-analytics funnels delete 42 --yes
 ```
 
-`update` changes only the fields in the update mask. Without `--update-mask` the mask
-is every top-level field of the file except read-only ones (`id`, `appName`,
-`createdAt`, `updatedAt`, `owner`, `version`), so a `get` output can be edited and sent
-back. A field in the mask but missing from the file is cleared.
+`update` replaces the whole definition: a field missing from the file is cleared
+(for example an omitted `breakdown`). `id`, `appName` and `createdAt` are dropped from
+the file, so an edited `get` output can be sent back. The app of a saved object cannot
+change.
 
 ## Filters
 
-Filters go in the JSON file as `"filters": [...]`, combined with AND. Each filter is
-exactly one of `stringFilter`, `numericFilter` or `boolFilter`; see
-`references/request-bodies.md` for the fields and operators. When running a saved
-object, sent filters are added to its saved filters.
+Filters go in the JSON file as `"filters": [...]`, combined with AND. Each filter is a
+`field` plus one of `stringCondition`, `numericCondition` or `boolCondition`; see
+`references/request-bodies.md`. Use `filter-values` to find the values a field takes.
 
 ## Key principles
 
@@ -139,10 +146,11 @@ object, sent filters are added to its saved filters.
 - **Prefer saved objects** when the user names an existing funnel, pathway or heatmap.
 - **Never write without asking**: `create`, `update`, `delete` and `settings update`
   change shared team state.
+- **Protect personal data** from `funnels matching-users` (names, emails, IDs).
 - **Empty results are not errors** — an app or view with no sessions in the range
   returns empty lists; widen `--start` before concluding there is no traffic.
-- **No Product Analytics data** — if `applications list` is empty, the app has no
-  RUM sessions in the last 30 days. Do not guess other app names: answer from
+- **No Product Analytics data** — if `applications list --start now-30d` is empty, the
+  team has no RUM sessions. Do not guess other app names: answer from
   `cx-telemetry-querying` (`rum.events`) and say that Product Analytics needs the RUM
   SDK sending data (`cx-rum-setup`).
 
@@ -155,4 +163,4 @@ object, sent filters are added to its saved filters.
 
 ### Reference files
 
-- **`references/request-bodies.md`** - JSON shapes for filters, time ranges, funnel definitions, breakdowns, and create bodies
+- **`references/request-bodies.md`** - JSON shapes for filters, funnel steps, saved time ranges, breakdowns, and create bodies

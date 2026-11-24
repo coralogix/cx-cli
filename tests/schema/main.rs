@@ -101,6 +101,30 @@ fn schema_outputs_valid_json_with_expected_commands() {
     assert!(iam_subs.contains(&"groups"));
     assert!(iam_subs.contains(&"ip-access"));
 
+    let product_analytics = commands
+        .iter()
+        .find(|c| c["name"] == "product-analytics")
+        .unwrap();
+    let product_analytics_subs: Vec<&str> = product_analytics["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        product_analytics_subs,
+        [
+            "applications",
+            "views",
+            "actions",
+            "filter-values",
+            "funnels",
+            "pathways",
+            "heatmaps",
+            "settings"
+        ]
+    );
+
     // Verify docs subcommands
     let docs = commands.iter().find(|c| c["name"] == "docs").unwrap();
     let docs_subs: Vec<&str> = docs["subcommands"]

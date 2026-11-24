@@ -420,15 +420,9 @@ fn render_ask_text(chat_id: &str, interaction: &api::Interaction) -> Result<()> 
     Ok(())
 }
 
-/// The list response has no download URL, filename, content type or size.
-/// Those keys stay in the output as null so existing consumers keep working.
 fn artifact_list_item_to_json(artifact: &api::ArtifactListItem) -> Value {
     json!({
         "id": artifact.id,
-        "download_url": null,
-        "filename": null,
-        "content_type": null,
-        "size": null,
         "type": artifact.artifact_type,
         "chat_id": artifact.chat_id,
         "chat_title": artifact.chat_title,

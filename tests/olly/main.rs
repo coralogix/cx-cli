@@ -861,10 +861,6 @@ async fn artifacts_list_shows_type_and_chat() {
         rows,
         json!([{
             "id": "artifact-1",
-            "download_url": null,
-            "filename": null,
-            "content_type": null,
-            "size": null,
             "type": "coralogix_metrics",
             "chat_id": "chat-1",
             "chat_title": "Checkout latency",

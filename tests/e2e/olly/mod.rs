@@ -104,10 +104,6 @@ fn olly_artifacts_list() {
         &v,
         &[
             "id",
-            "download_url",
-            "filename",
-            "content_type",
-            "size",
             "type",
             "chat_id",
             "chat_title",

@@ -102,7 +102,7 @@ With no flags it returns the newest 100 artifacts across all chats. Narrow it wi
 | `--start <time>` / `--end <time>` | Creation time window, inclusive. ISO 8601 or relative (`now-1h`) |
 | `--limit <n>` / `--offset <n>` | Paging. `--limit 5 --offset 5` is the second page of five |
 
-Each row has `id`, `type`, `chat_id`, `chat_title`, `chat_type`, `interaction_id` and `created_at`. The list carries no content: `download_url`, `filename`, `content_type` and `size` are always null here. Use `artifacts get <id>` for the content.
+Each row has `id`, `type`, `chat_id`, `chat_title`, `chat_type`, `interaction_id` and `created_at`. The list carries no content. Use `artifacts get <id>` for the content.
 
 ### Get artifact content
 

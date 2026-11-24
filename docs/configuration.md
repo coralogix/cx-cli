@@ -65,6 +65,7 @@ Run `cx init` to set up a profile and get started.
 | `cx profiles add [NAME]` | Create or reconfigure a profile (see below). |
 | `cx profiles refresh <NAME>` | Sign an OAuth profile in again. Keeps its region and settings; only the tokens change. |
 | `cx profiles set-default <NAME>` | Make an existing profile the default, so commands without `-p` use it. |
+| `cx profiles migrate` | macOS only. Recreate every `os_store` profile's Keychain secrets using the currently running `cx` installation's Keychain backend. Use it after switching between a signed release and Homebrew, Cargo, or another unsigned build. File-backed profiles are skipped. |
 | `cx profiles labels <VERB> <NAME>` | Show or change a profile's labels without reconfiguring it. Verbs: `get`, `add`, `remove`, `set`, `clear`. Labels go behind `--label` (repeatable or comma-separated), for example `cx profiles labels add prod-eu --label prod,eu`. Credentials and region are untouched. |
 | `cx profiles delete <NAME>` | Delete a profile and its stored credentials. Asks for confirmation; `-f`/`--force` skips it. |
 
@@ -379,7 +380,7 @@ each `brew upgrade` asked again.
 Upgrade with `brew upgrade cx`.
 
 - If the profile stores the secret in the file (`credential_storage = "file"`, or the key is missing), you are done. `cx` does not open the Keychain for that profile.
-- If the profile uses the Keychain (`credential_storage = "os_store"`), upgrading does not rewrite the existing item. The next command may ask once for `/usr/bin/security`. Allow it, and later upgrades do not ask, because the Keychain then trusts that Apple tool rather than a particular `cx` build. If `cx` reports that the Keychain refused access, run `cx profiles add <name>`, confirm reconfigure, and leave `os-store` selected. That stores a new item. You do not need to delete the old item yourself. `cx init` will not do this.
+- If the profile uses the Keychain (`credential_storage = "os_store"`), upgrading does not rewrite the existing item. The next command may ask once for `/usr/bin/security`. Allow it, and later upgrades do not ask, because the Keychain then trusts that Apple tool rather than a particular `cx` build. When switching between a signed release and Homebrew, Cargo, or another unsigned build, run `cx profiles migrate` to recreate every OS-store profile's secrets through the current installation's Keychain backend. If it reports a failure, run `cx profiles add <name>`, confirm reconfigure, and leave `os-store` selected. `cx init` will not do this.
 
 ### Stronger isolation (optional)
 

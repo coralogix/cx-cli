@@ -420,6 +420,8 @@ Alert when unique value count in a field crosses a threshold.
 
 **logsUniqueValueTimeWindowSpecificValue:** `LOGS_UNIQUE_VALUE_TIME_WINDOW_VALUE_MINUTE_1_OR_UNSPECIFIED`, `..._MINUTES_5`, `..._MINUTES_10`, `..._MINUTES_15`, `..._MINUTES_20`, `..._MINUTES_30`, `..._HOURS_1`, `..._HOURS_2`, `..._HOURS_4`, `..._HOURS_6`, `..._HOURS_12`, `..._HOURS_24`, `..._HOURS_36`
 
+**groupByKeys:** at most one key. A create with two or more returns 400 "Logs Unique Count alerts support at most one group-by key". Older alerts that already have two or more keys can still be replaced with the same keys, but a copy of one cannot be created as-is: ask the user which single key to keep, and use it for `notificationGroup.groupByKeys` too.
+
 ### 7. Logs New Value (`logsNewValue`)
 
 Alert when a value not previously seen appears in a field.
@@ -469,17 +471,13 @@ Trigger when a PromQL expression crosses a threshold.
           "conditionType": "METRIC_THRESHOLD_CONDITION_TYPE_MORE_THAN_OR_UNSPECIFIED",
           "threshold": 90,
           "ofTheLast": {
-            "dynamicDuration": "5m"
+            "metricTimeWindowSpecificValue": "METRIC_TIME_WINDOW_VALUE_MINUTES_5"
           },
           "forOverPct": 100
-        }
+        },
+        "override": { "priority": "ALERT_DEF_PRIORITY_P1" }
       }],
-      "missingValues": {
-        "replaceWithZero": true,
-        "minNonNullValuesPct": 0
-      },
-      "undetectedValuesManagement": null,
-      "evaluationDelayMs": 0
+      "missingValues": { "replaceWithZero": true }
     }
   }
 }
@@ -487,7 +485,13 @@ Trigger when a PromQL expression crosses a threshold.
 
 **conditionType:** `METRIC_THRESHOLD_CONDITION_TYPE_MORE_THAN_OR_UNSPECIFIED`, `..._MORE_THAN_OR_EQUALS`, `..._LESS_THAN`, `..._LESS_THAN_OR_EQUALS`
 
-**dynamicDuration:** any PromQL duration string (e.g. `5m`, `1h`, `24h`) within 1-2160 minutes. This is a free-form string, not an enum.
+**override:** required on every rule, same as Logs Threshold (the API returns 400 `Required` at `rules.0.override` without it).
+
+**ofTheLast:** exactly one of:
+- `metricTimeWindowSpecificValue`: one of the `METRIC_TIME_WINDOW_VALUE_*` values listed under Metric Anomaly below.
+- `metricTimeWindowDynamicDuration`: a duration string such as `"5m"`, `"1h"` or `"1h 5m"`, within 1-2160 minutes. Not allowed on Metric Anomaly.
+
+**missingValues:** required, and exactly one of `{"replaceWithZero": true}` or `{"minNonNullValuesPct": <0-100>}`. Setting both returns a 400.
 
 **forOverPct:** percentage of data points that must breach (0-100).
 
@@ -511,7 +515,7 @@ ML-based anomaly detection on metrics.
           "conditionType": "METRIC_ANOMALY_CONDITION_TYPE_MORE_THAN_USUAL_OR_UNSPECIFIED",
           "threshold": 10,
           "ofTheLast": {
-            "specificValue": "METRIC_TIME_WINDOW_VALUE_HOUR_1"
+            "metricTimeWindowSpecificValue": "METRIC_TIME_WINDOW_VALUE_HOUR_1"
           },
           "forOverPct": 100,
           "minNonNullValuesPct": 50
@@ -526,7 +530,7 @@ ML-based anomaly detection on metrics.
 
 **conditionType:** `METRIC_ANOMALY_CONDITION_TYPE_MORE_THAN_USUAL_OR_UNSPECIFIED`, `METRIC_ANOMALY_CONDITION_TYPE_LESS_THAN_USUAL`
 
-**specificValue (timeWindow):** `METRIC_TIME_WINDOW_VALUE_MINUTES_1_OR_UNSPECIFIED`, `..._MINUTES_5`, `..._MINUTES_10`, `..._MINUTES_15`, `..._MINUTES_20`, `..._MINUTES_30`, `..._HOUR_1`, `..._HOURS_2`, `..._HOURS_4`, `..._HOURS_6`, `..._HOURS_12`, `..._HOURS_24`, `..._HOURS_36`
+**metricTimeWindowSpecificValue (ofTheLast):** `METRIC_TIME_WINDOW_VALUE_MINUTES_1_OR_UNSPECIFIED`, `..._MINUTES_5`, `..._MINUTES_10`, `..._MINUTES_15`, `..._MINUTES_20`, `..._MINUTES_30`, `..._HOUR_1`, `..._HOURS_2`, `..._HOURS_4`, `..._HOURS_6`, `..._HOURS_12`, `..._HOURS_24`, `..._HOURS_36`
 
 ### 10. Tracing Immediate (`tracingImmediate`)
 

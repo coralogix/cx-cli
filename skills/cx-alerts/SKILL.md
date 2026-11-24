@@ -108,7 +108,7 @@ When the alert groups by something (`groupByKeys`, or the `by` labels of a metri
 - **Default:** routing labels when the user wants notifications, `notificationGroup` with **only `groupByKeys`** when the user wants one case per group (otherwise leave it out), and **no `incidentsSettings`**. The API fills in Cases-mode defaults.
 - **Never add `notificationGroup.router`** unless the user explicitly asks for alert-based notifications, and tell them the notifications will then come from the alert rather than from its Cases.
 - **Don't add `notificationGroup.destinations` or `webhooks`.** They are older direct notifications sent by the alert itself. To send case notifications straight to a connector, use `caseSettings.destinations` (below).
-- **Copying an alert:** if you build the payload from `cx alerts get <id> -o json`, keep its `routing.*` labels and `notificationGroup.groupByKeys` but delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` unless the user wants them.
+- **Copying an alert:** if you build the payload from `cx alerts get <id> -o json`, keep its `routing.*` labels and `notificationGroup.groupByKeys` but delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` unless the user wants them. A Logs Unique Count alert allows only one group-by key; if the source has more, ask the user which one to keep rather than picking one.
 - DataPrime (analytics) alerts and Error Tracking alerts notify through Cases only.
 
 ### Optional: a connector for this alert's cases
@@ -187,10 +187,12 @@ Every logs-threshold rule needs an `override` block (the API returns 400 `Requir
         "condition": {
           "conditionType": "METRIC_THRESHOLD_CONDITION_TYPE_MORE_THAN_OR_UNSPECIFIED",
           "threshold": 90,
-          "ofTheLast": { "dynamicDuration": "5m" },
+          "ofTheLast": { "metricTimeWindowSpecificValue": "METRIC_TIME_WINDOW_VALUE_MINUTES_5" },
           "forOverPct": 100
-        }
-      }]
+        },
+        "override": { "priority": "ALERT_DEF_PRIORITY_P1" }
+      }],
+      "missingValues": { "replaceWithZero": true }
     }
   }
 }

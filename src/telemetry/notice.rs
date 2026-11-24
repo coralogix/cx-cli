@@ -179,8 +179,8 @@ fn release_notice_enabled() -> bool {
 fn force_release_notice_for_tests() -> bool {
     #[cfg(debug_assertions)]
     {
-        env::var("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE")
-            .is_ok_and(|value| super::truthy(&value))
+        let requested = env::var("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE");
+        requested.is_ok_and(|value| super::truthy(&value))
     }
     #[cfg(not(debug_assertions))]
     {

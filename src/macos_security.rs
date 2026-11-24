@@ -172,7 +172,7 @@ pub(crate) fn store(
 }
 
 /// Validate that a value can be represented by `security -i` without writing it.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(target_os = "macos")]
 pub(crate) fn validate_store(service: &str, account: &str, secret: &str) -> Result<()> {
     add_command(service, account, secret).map(|_| ())
 }

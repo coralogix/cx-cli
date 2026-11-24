@@ -949,6 +949,12 @@ Examples:
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
     },
+    /// Recreate OS-store credentials using this cx binary's Keychain backend.
+    ///
+    /// This is useful after switching between a Coralogix-signed installation
+    /// and a Homebrew, Cargo, or other unsigned installation.
+    #[cfg(target_os = "macos")]
+    Migrate,
     /// Show or change a profile's labels without reconfiguring it.
     ///
     /// Credentials, region and settings are not touched.
@@ -3654,6 +3660,21 @@ mod label_position_tests {
     }
 }
 
+#[cfg(all(test, target_os = "macos"))]
+mod profile_migration_tests {
+    use clap::Parser;
+
+    use super::{ProfilesCli, ProfilesCmd, ProfilesTopLevel};
+
+    #[test]
+    fn profiles_migrate_is_available_on_macos() {
+        let cli = ProfilesCli::try_parse_from(["cx", "profiles", "migrate"])
+            .expect("migrate command should parse on macOS");
+        let ProfilesTopLevel::Profiles { cmd } = cli.command;
+        assert!(matches!(cmd, ProfilesCmd::Migrate));
+    }
+}
+
 fn main() -> Result<()> {
     if telemetry::run_sender_if_requested(Cli::command) {
         return Ok(());
@@ -3740,6 +3761,8 @@ async fn run_profiles(cmd: ProfilesCmd) -> Result<()> {
         ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
         ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
         ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+        #[cfg(target_os = "macos")]
+        ProfilesCmd::Migrate => commands::profiles::run_migrate(),
         ProfilesCmd::Labels { cmd } => cmd.run(),
     };
     update_check::maybe_print_notice(OutputFormat::Text);

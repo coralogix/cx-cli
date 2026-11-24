@@ -67,6 +67,38 @@ region = "eu1"
     fs::write(profiles_dir.join(format!("{name}.toml")), profile_toml).unwrap();
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn migrate_skips_file_profiles_and_returns_nonzero_for_unreadable_profiles() {
+    let tmp = temp_home();
+    seed_profile(&tmp, "file-backed");
+    let profiles_dir = tmp.join(".cx").join("profiles");
+    fs::write(profiles_dir.join("unreadable.toml"), "not = [valid").unwrap();
+
+    let output = cx(&tmp)
+        .args(["profiles", "migrate"])
+        .output()
+        .expect("failed to run cx profiles migrate");
+
+    assert!(
+        !output.status.success(),
+        "a failed profile must return non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Profile file-backed: skipped"),
+        "file-backed profile should be skipped: {stderr}"
+    );
+    assert!(
+        stderr.contains("Profile unreadable: error: could not load"),
+        "invalid profile should be reported as failed: {stderr}"
+    );
+    assert!(
+        stderr.contains("Migration complete: 0 migrated, 1 skipped, 1 failed."),
+        "summary should count skipped and failed profiles: {stderr}"
+    );
+}
+
 fn seed_config(home: &std::path::Path, content: &str) {
     let cx_dir = home.join(".cx");
     fs::create_dir_all(&cx_dir).unwrap();

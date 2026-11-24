@@ -13,6 +13,17 @@ const SECRET_NAMES: &[&str] = &[
     "oauth_token_expiry",
 ];
 
+/// A macOS Keychain implementation used to access a profile's credentials.
+///
+/// Signed cx releases use [`NativeKeyring`]; unsigned builds such as Homebrew
+/// and Cargo use [`SecurityCli`] so their credentials survive binary upgrades.
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MacosKeychainBackend {
+    NativeKeyring,
+    SecurityCli,
+}
+
 /// Legacy keyring layout: all secrets for a profile in one JSON blob.
 ///
 /// This is retained only to read and remove credentials written by older
@@ -73,9 +84,101 @@ pub fn store_secret(profile: &str, key_name: &str, secret: &str) -> Result<()> {
             secret,
         );
     }
-    secret_entry(profile, key_name)?
-        .set_password(secret)
-        .with_context(|| format!("Failed to store '{key_name}' in keyring"))
+    store_native_secret(profile, key_name, secret)
+}
+
+/// The Keychain implementation selected for the currently running macOS binary.
+#[cfg(target_os = "macos")]
+pub(crate) fn current_macos_backend() -> MacosKeychainBackend {
+    if security_cli_backend() {
+        MacosKeychainBackend::SecurityCli
+    } else {
+        MacosKeychainBackend::NativeKeyring
+    }
+}
+
+/// Check whether the selected macOS backend can represent a secret before a
+/// migration deletes the existing Keychain item.
+#[cfg(target_os = "macos")]
+pub(crate) fn validate_secret_in_macos_backend(
+    profile: &str,
+    key_name: &str,
+    secret: &str,
+    backend: MacosKeychainBackend,
+) -> Result<()> {
+    match backend {
+        MacosKeychainBackend::NativeKeyring => Ok(()),
+        MacosKeychainBackend::SecurityCli => {
+            macos_security::validate_store(&service_name(profile), key_name, secret).with_context(
+                || format!("Cannot store '{key_name}' in the selected Keychain backend"),
+            )
+        }
+    }
+}
+
+/// Read a secret through a specific macOS Keychain implementation.
+///
+/// Profile migration uses this instead of [`get_secret`] so it can read
+/// credentials written by the alternate installation type.
+#[cfg(target_os = "macos")]
+pub(crate) fn get_secret_from_macos_backend(
+    profile: &str,
+    key_name: &str,
+    backend: MacosKeychainBackend,
+) -> Result<Option<String>> {
+    match backend {
+        MacosKeychainBackend::NativeKeyring => get_native_secret(profile, key_name),
+        MacosKeychainBackend::SecurityCli => {
+            get_security_cli_secret_with(&macos_security::SystemSecurityRunner, profile, key_name)
+        }
+    }
+}
+
+/// Write a secret through a specific macOS Keychain implementation.
+#[cfg(target_os = "macos")]
+pub(crate) fn store_secret_in_macos_backend(
+    profile: &str,
+    key_name: &str,
+    secret: &str,
+    backend: MacosKeychainBackend,
+) -> Result<()> {
+    match backend {
+        MacosKeychainBackend::NativeKeyring => store_native_secret(profile, key_name, secret),
+        MacosKeychainBackend::SecurityCli => store_security_cli_secret_with(
+            &macos_security::SystemSecurityRunner,
+            profile,
+            key_name,
+            secret,
+        ),
+    }
+}
+
+/// Delete a secret through a specific macOS Keychain implementation.
+///
+/// A missing item is accepted so migration can recreate it with the current
+/// binary's access controls.
+#[cfg(target_os = "macos")]
+pub(crate) fn delete_secret_in_macos_backend(
+    profile: &str,
+    key_name: &str,
+    backend: MacosKeychainBackend,
+) -> Result<()> {
+    match backend {
+        MacosKeychainBackend::NativeKeyring => {
+            let entry = secret_entry(profile, key_name)?;
+            match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                Err(err) => Err(anyhow::anyhow!(
+                    "Failed to delete '{key_name}' from keyring: {err}"
+                )),
+            }
+        }
+        MacosKeychainBackend::SecurityCli => delete_security_cli_secret_with(
+            &macos_security::SystemSecurityRunner,
+            profile,
+            key_name,
+        ),
+    }
 }
 
 /// Retrieve a secret from the system keyring.
@@ -86,6 +189,10 @@ pub fn get_secret(profile: &str, key_name: &str) -> Result<Option<String>> {
     if security_cli_backend() {
         return get_secret_with(&macos_security::SystemSecurityRunner, profile, key_name);
     }
+    get_native_secret(profile, key_name)
+}
+
+fn get_native_secret(profile: &str, key_name: &str) -> Result<Option<String>> {
     let entry = secret_entry(profile, key_name)?;
     match entry.get_password() {
         Ok(secret) => Ok(Some(secret)),
@@ -96,6 +203,12 @@ pub fn get_secret(profile: &str, key_name: &str) -> Result<Option<String>> {
             "Failed to read '{key_name}' from keyring: {e}"
         )),
     }
+}
+
+fn store_native_secret(profile: &str, key_name: &str, secret: &str) -> Result<()> {
+    secret_entry(profile, key_name)?
+        .set_password(secret)
+        .with_context(|| format!("Failed to store '{key_name}' in keyring"))
 }
 
 /// Delete a secret from the system keyring. Best-effort - does not fail if missing.
@@ -168,6 +281,16 @@ fn store_secret_with(
         .with_context(|| format!("Failed to store '{key_name}' in keyring"))
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn store_security_cli_secret_with(
+    runner: &impl SecurityRunner,
+    profile: &str,
+    key_name: &str,
+    secret: &str,
+) -> Result<()> {
+    store_secret_with(runner, profile, key_name, secret)
+}
+
 fn get_secret_with(
     runner: &impl SecurityRunner,
     profile: &str,
@@ -182,6 +305,25 @@ fn get_secret_with(
     let map: SecretMap =
         serde_json::from_str(&json).context("Failed to parse legacy keyring secrets")?;
     Ok(map.get(key_name).cloned())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn get_security_cli_secret_with(
+    runner: &impl SecurityRunner,
+    profile: &str,
+    key_name: &str,
+) -> Result<Option<String>> {
+    get_secret_with(runner, profile, key_name)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn delete_security_cli_secret_with(
+    runner: &impl SecurityRunner,
+    profile: &str,
+    key_name: &str,
+) -> Result<()> {
+    macos_security::delete(runner, &service_name(profile), key_name)
+        .with_context(|| format!("Failed to delete '{key_name}' from keyring"))
 }
 
 fn delete_secret_with(runner: &impl SecurityRunner, profile: &str, key_name: &str) {
@@ -354,6 +496,37 @@ mod tests {
     fn security_get_missing_primary_and_legacy_is_none() {
         let runner = ScriptedRunner::new(vec![missing(), missing()]);
         assert_eq!(get_secret_with(&runner, "prod", "api_key").unwrap(), None);
+    }
+
+    #[test]
+    fn security_cli_migration_uses_read_delete_store_read_sequence() {
+        let runner = ScriptedRunner::new(vec![
+            found("secret\n"),
+            found(""),
+            found(""),
+            found("secret\n"),
+        ]);
+
+        assert_eq!(
+            get_security_cli_secret_with(&runner, "prod", "api_key")
+                .unwrap()
+                .as_deref(),
+            Some("secret")
+        );
+        delete_security_cli_secret_with(&runner, "prod", "api_key").unwrap();
+        store_security_cli_secret_with(&runner, "prod", "api_key", "secret").unwrap();
+        assert_eq!(
+            get_security_cli_secret_with(&runner, "prod", "api_key")
+                .unwrap()
+                .as_deref(),
+            Some("secret")
+        );
+
+        let calls = runner.calls();
+        assert!(calls[0].stdin.contains("find-generic-password"));
+        assert!(calls[1].stdin.contains("delete-generic-password"));
+        assert!(calls[2].stdin.contains("add-generic-password"));
+        assert!(calls[3].stdin.contains("find-generic-password"));
     }
 
     #[test]

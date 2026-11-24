@@ -368,6 +368,8 @@ dependencies = [
  "clap",
  "clap_complete",
  "colored",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
  "dirs",
  "dotenvy",
  "flate2",

@@ -82,14 +82,14 @@ uuid = { version = "1.24.0", features = ["v4"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 security-framework = "3"
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
 
-# Windows: Credential Manager, plus the Windows directory that locates the IT policy
+# Windows: Credential Manager and the machine-managed registry policy
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 windows-sys = { version = "0.61", features = [
-    "Win32_Security",
-    "Win32_Security_Authorization",
-    "Win32_System_SystemInformation",
+    "Win32_System_Registry",
 ] }
 
 # Linux (glibc): D-Bus Secret Service (GNOME Keyring, KWallet, etc.)

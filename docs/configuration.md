@@ -281,36 +281,21 @@ OS store and fall back to file storage if its write fails.
 ## Managed credential-storage policy
 
 IT can require platform credential-store storage on managed macOS and Windows
-devices. Deploy a root/admin-owned TOML file through device management:
+devices with their native policy mechanisms. The policy is named
+`RequireCredentialStorage`; a true/non-zero value requires OS credential
+storage.
 
-| Platform | Policy file |
+| Platform | Policy location | Deployment |
 |---|---|
-| macOS | `/Library/Application Support/Coralogix/cx/policy.toml` |
-| Windows | `%SystemDrive%\ProgramData\Coralogix\cx\policy.toml` (usually `C:\ProgramData\Coralogix\cx\policy.toml`) |
+| macOS | Managed Preferences domain `com.coralogix.cx` | Deploy a configuration profile through Jamf or another MDM tool with the Boolean key `RequireCredentialStorage = true`. |
+| Windows | `HKLM\SOFTWARE\Policies\Coralogix\cx` | Deploy `RequireCredentialStorage` as a non-zero `REG_DWORD` through Group Policy or Intune. |
 
-On Windows, `cx` takes the drive from the system Windows directory, not from
-the `ProgramData` or `SystemDrive` environment variables, which a user can
-change for their own processes.
-
-```toml
-require_credential_storage = "os_store"
-```
-
-The policy file and every parent directory must be readable and traversable by
-the user running `cx`. The policy file must also be owned by `root` on macOS,
-or by `SYSTEM` or the local Administrators group on Windows. On Windows, the
-`Coralogix` and `cx` policy directories must have the same trusted ownership;
-otherwise their owner could delete an administrator-owned `policy.toml`. `cx`
-enforces OS-store storage when it sees an untrusted or inaccessible Windows
-policy path, so a user-created directory cannot bypass the policy. IT must
-also restrict the Windows directory ACLs so unprivileged users cannot modify
-or delete the policy path. A suitable macOS setup is `755` on the `Coralogix`
-and `cx` directories and `644` on a root-owned `policy.toml`.
-
-On macOS, an inaccessible policy path is silently treated as absent so an
-unrelated root-only Coralogix directory does not produce warnings on every
-`cx` invocation. IT must ensure the policy directory is readable and
-traversable before rollout; a root-only directory disables enforcement.
+`cx` reads the managed preference through the macOS preferences API and the
+Windows value through the Registry API. It does not read a policy file, so
+users cannot redirect, replace, or bypass the policy through filesystem
+permissions. The former `policy.toml` location is not supported. A missing
+policy means the device is unmanaged. An unreadable or malformed native policy
+is an error rather than a fallback to file storage.
 
 When enabled, `cx` stores credentials only in macOS Keychain or Windows
 Credential Manager. The interactive setup flow skips the credential-storage
@@ -325,8 +310,8 @@ A command that uses that profile stops instead of reading its plaintext
 credentials. Replace the profile with `cx profiles add <name> --force`, or
 remove it with `cx profiles delete <name>`.
 
-An invalid policy file, or an access error other than `Permission denied`, is
-an error: `cx` stops instead of falling back to file storage.
+An unreadable or malformed native policy is an error: `cx` stops instead of
+falling back to file storage.
 
 Linux ignores this policy and retains its existing credential-storage behavior.
 

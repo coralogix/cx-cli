@@ -750,15 +750,31 @@ pub fn load_profile(name: &str) -> Result<Profile> {
 /// `cx profiles` commands that repair it. [`resolve_single`] retries the move
 /// and refuses to use the plaintext copy.
 pub fn migrate_managed_profiles_to_os_store() -> Result<()> {
-    if !crate::managed_policy::requires_os_store()? {
+    migrate_managed_profiles_with(
+        crate::managed_policy::requires_os_store()?,
+        list_profile_names,
+        |name| {
+            load_profile(name)
+                .with_context(|| {
+                    format!("Could not check profile '{name}' for plaintext credentials")
+                })
+                .and_then(|mut profile| migrate_profile_to_os_store(name, &mut profile))
+                .map(|_| ())
+        },
+    )
+}
+
+fn migrate_managed_profiles_with(
+    managed: bool,
+    list_profiles: impl FnOnce() -> Result<Vec<String>>,
+    migrate_profile: impl Fn(&str) -> Result<()>,
+) -> Result<()> {
+    if !managed {
         return Ok(());
     }
 
-    for name in list_profile_names()? {
-        let migrated = load_profile(&name)
-            .with_context(|| format!("Could not check profile '{name}' for plaintext credentials"))
-            .and_then(|mut profile| migrate_profile_to_os_store(&name, &mut profile));
-        if let Err(err) = migrated {
+    for name in list_profiles()? {
+        if let Err(err) = migrate_profile(&name) {
             eprintln!("Warning: {err:#}");
         }
     }
@@ -2661,5 +2677,35 @@ labels = [" eu ", "prod", "eu", "", "staging"]
 
         assert_eq!(profile.credential_storage, CredentialStorage::File);
         assert_eq!(profile.oauth_tokens, Some(stored_tokens("new")));
+    }
+
+    #[test]
+    fn unmanaged_profile_migration_does_not_list_profiles() {
+        let result = migrate_managed_profiles_with(
+            false,
+            || Err(anyhow::anyhow!("profile listing must not run")),
+            |_| Ok(()),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn managed_profile_migration_warns_and_continues_after_a_failed_profile() {
+        let migrated = std::cell::RefCell::new(Vec::new());
+        migrate_managed_profiles_with(
+            true,
+            || Ok(vec!["broken".into(), "working".into()]),
+            |name| {
+                migrated.borrow_mut().push(name.to_owned());
+                if name == "broken" {
+                    anyhow::bail!("invalid profile")
+                }
+                Ok(())
+            },
+        )
+        .expect("one broken profile must not stop migration");
+
+        assert_eq!(*migrated.borrow(), vec!["broken", "working"]);
     }
 }

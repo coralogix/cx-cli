@@ -77,7 +77,10 @@ pub async fn run_ask(
                 .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
         }
-        OutputFormat::Text if timeout.is_none() => {
+        // Still running: with `--no-wait`, or when a blocking ask came back
+        // before Olly finished. Asking again would start a second
+        // investigation, so point at `interactions get` instead.
+        OutputFormat::Text if !interaction.is_terminal() => {
             render_interaction_header(&chat_id, &interaction);
             println!();
             println!("{}", "Check on it with:".dimmed());

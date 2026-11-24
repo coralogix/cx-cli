@@ -749,6 +749,46 @@ async fn ask_no_wait_does_not_block_and_prints_the_next_command() {
 }
 
 #[tokio::test]
+async fn blocking_ask_that_is_still_in_progress_points_at_interactions_get() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/existing-chat/interactions/"))
+        .and(body_partial_json(json!({"should_block": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "interaction-1",
+            "chat_id": "existing-chat",
+            "status": "in_progress",
+            "responses": null
+        })))
+        .mount(&server)
+        .await;
+
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let output = cx_olly(&home)
+        .env("NO_COLOR", "1")
+        .args(["olly", "ask", "Investigate", "--chat-id", "existing-chat"])
+        .args(["-o", "text"])
+        .output()
+        .expect("failed to run cx");
+    assert!(output.status.success(), "{output:?}");
+
+    // Running `ask` again would send the question again.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .trim_end()
+            .ends_with("cx olly interactions get existing-chat interaction-1"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Run this command again"),
+        "stdout: {stdout}"
+    );
+}
+
+#[tokio::test]
 async fn ask_no_wait_json_has_the_ask_shape() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

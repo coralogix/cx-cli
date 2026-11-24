@@ -5,7 +5,9 @@
 
 use anyhow::Result;
 
+#[cfg(any(target_os = "macos", test))]
 const POLICY_DOMAIN: &str = "com.coralogix.cx";
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 const POLICY_KEY: &str = "RequireCredentialStorage";
 #[cfg(target_os = "windows")]
 const WINDOWS_POLICY_PATH: &str = r"SOFTWARE\Policies\Coralogix\cx";
@@ -34,6 +36,7 @@ pub fn requires_os_store() -> Result<bool> {
     Ok(false)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn forced_preference_value(is_forced: bool, value: Option<bool>) -> Result<bool> {
     if !is_forced {
         return Ok(false);
@@ -113,7 +116,7 @@ fn requires_os_store_windows() -> Result<bool> {
             name.as_ptr(),
             RRF_RT_REG_DWORD,
             null_mut(),
-            (&mut value).cast(),
+            (&mut value as *mut u32).cast(),
             &mut size,
         )
     };

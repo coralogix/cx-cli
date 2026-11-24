@@ -286,7 +286,7 @@ devices with their native policy mechanisms. The policy is named
 storage.
 
 | Platform | Policy location | Deployment |
-|---|---|
+|---|---|---|
 | macOS | Managed Preferences domain `com.coralogix.cx` | Deploy a configuration profile through Jamf or another MDM tool with the Boolean key `RequireCredentialStorage = true`. |
 | Windows | `HKLM\SOFTWARE\Policies\Coralogix\cx` | Deploy `RequireCredentialStorage` as a non-zero `REG_DWORD` through Group Policy or Intune. |
 

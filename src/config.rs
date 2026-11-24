@@ -214,7 +214,7 @@ pub struct Config {
     pub allow_risky_commands: bool,
 
     /// Whether this installation permits CLI execution telemetry.
-    #[serde(default = "default_true")]
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub telemetry: bool,
 
     /// Whether the Olly AI assistant (`olly ask`) is enabled.
@@ -258,6 +258,10 @@ fn default_profile() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 fn default_max_dataprime_direct_output_size() -> Option<usize> {
@@ -1491,6 +1495,29 @@ default_profile = "my-profile"
         assert!(
             !toml.contains("managed_completions"),
             "empty managed_completions should be skipped in TOML output"
+        );
+    }
+
+    #[test]
+    fn telemetry_true_is_not_serialized() {
+        let config = Config::default();
+        let toml = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            !toml.contains("telemetry"),
+            "default true telemetry must not be serialized as explicit consent"
+        );
+    }
+
+    #[test]
+    fn telemetry_false_is_serialized() {
+        let config = Config {
+            telemetry: false,
+            ..Config::default()
+        };
+        let toml = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            toml.contains("telemetry = false"),
+            "telemetry false must remain explicit in serialized config"
         );
     }
 

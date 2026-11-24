@@ -1207,6 +1207,80 @@ async fn release_default_notice_write_failure_disables_collection() {
 }
 
 #[tokio::test]
+async fn config_write_after_notice_failure_does_not_persist_explicit_telemetry_true() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let home = Sandbox::new();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", ingress.uri());
+    home.profile(&ingress.uri());
+
+    let failed_notice = home
+        .cx(&["profiles", "set-default", PROFILE])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .env("CX_TELEMETRY_TEST_FAIL_NOTICE_STDERR", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        failed_notice.status.success(),
+        "cx exited with {}",
+        failed_notice.status
+    );
+    assert!(requests(&ingress).await.is_empty());
+    assert!(!home.notice_marker().exists());
+    let saved = fs::read_to_string(home.cx_dir().join("config.toml"))
+        .unwrap()
+        .parse::<toml::Table>()
+        .unwrap();
+    assert_eq!(saved["default_profile"].as_str(), Some(PROFILE));
+    assert!(
+        !saved.contains_key("telemetry"),
+        "telemetry=true must not be serialized as explicit consent"
+    );
+
+    let disclosed = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        disclosed.status.success(),
+        "cx exited with {}",
+        disclosed.status
+    );
+    assert!(String::from_utf8_lossy(&disclosed.stderr).contains(RELEASE_NOTICE));
+    wait_for_requests(&ingress, 1).await;
+
+    let subsequent = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        subsequent.status.success(),
+        "cx exited with {}",
+        subsequent.status
+    );
+    assert!(!String::from_utf8_lossy(&subsequent.stderr).contains(RELEASE_NOTICE));
+    wait_for_requests(&ingress, 2).await;
+}
+
+#[tokio::test]
 async fn release_default_notice_ignores_invalid_marker_directory() {
     let home = Sandbox::new();
     fs::create_dir_all(home.notice_dir()).unwrap();

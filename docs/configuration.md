@@ -290,6 +290,25 @@ storage.
 | macOS | Managed Preferences domain `com.coralogix.cx` | Deploy a configuration profile through Jamf or another MDM tool with the Boolean key `RequireCredentialStorage = true`. |
 | Windows | `HKLM\SOFTWARE\Policies\Coralogix\cx` | Deploy `RequireCredentialStorage` as a non-zero `REG_DWORD` through Group Policy or Intune. |
 
+### Jamf Pro deployment
+
+In Jamf Pro, create a computer configuration profile and add an **Application &
+Custom Settings** payload. Set the preference domain to `com.coralogix.cx`,
+then paste this preference plist into the custom-settings editor:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>RequireCredentialStorage</key>
+  <true/>
+</dict>
+</plist>
+```
+
+Jamf installs this as a forced Managed Preference. Scope the profile to the
+managed Macs where Keychain-only credential storage is required.
+
 `cx` reads the managed preference through the macOS preferences API and the
 Windows value through the Registry API. It does not read a policy file, so
 users cannot redirect, replace, or bypass the policy through filesystem

@@ -184,6 +184,25 @@ fn olly_enabled_allows_olly_ask() {
     );
 }
 
+#[test]
+fn olly_disabled_blocks_olly_chats_and_models() {
+    let tmp = temp_home();
+    for args in [
+        &["olly", "chats", "list"][..],
+        &["olly", "chats", "get", "chat-1"],
+        &["olly", "models"],
+    ] {
+        let output = cx_with_config(&tmp, "olly_enabled = false\n")
+            .args(args)
+            .args(["--api-key", "fake", "--region", "us1"])
+            .output()
+            .expect("failed to run cx");
+        assert!(!output.status.success(), "{args:?} should be blocked");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("disabled"), "{args:?} stderr: {stderr}");
+    }
+}
+
 // ── Read-only config gating ──────────────────────────────────────────────────
 
 #[test]

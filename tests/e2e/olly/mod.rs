@@ -1,5 +1,6 @@
 //! `cx olly`: one paid, slow `ask` round-trip (skippable with
-//! `CX_E2E_SKIP_OLLY=1`) and the artifact commands.
+//! `CX_E2E_SKIP_OLLY=1`), the artifact commands, and the read-only chat and
+//! model commands.
 
 use crate::harness;
 
@@ -149,5 +150,80 @@ fn olly_artifacts_get() {
         .expect("cx must run");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("404"), "{stderr}");
+}
+
+#[test]
+#[ignore]
+fn olly_models() {
+    if harness::require_creds("olly_models").is_none() {
+        return;
+    }
+    let v = harness::run_ok_json(&["olly", "models", "-o", "json"]);
+    harness::assert_array_of_strings(&v);
+    assert!(!v.as_array().unwrap().is_empty(), "no models listed");
+    let text = harness::run_ok_nonempty(&["olly", "models"]);
+    let text = String::from_utf8_lossy(&text);
+    assert_eq!(text.lines().count(), v.as_array().unwrap().len(), "{text}");
+    harness::run_ok(&["olly", "models", "-o", "toon"]);
+}
+
+/// `list` with paging and a type filter, then `get` on a listed chat when the
+/// team has one; a made-up id is a 404 either way.
+#[test]
+#[ignore]
+fn olly_chats_list_and_get() {
+    if harness::require_creds("olly_chats_list_and_get").is_none() {
+        return;
+    }
+    let v = harness::run_ok_json(&["olly", "chats", "list", "--limit", "2", "-o", "json"]);
+    harness::assert_array_of_objects_with_keys(&v, &["id", "title", "type", "created_at"]);
+    let chats = v.as_array().unwrap();
+    assert!(chats.len() <= 2, "--limit 2 returned {}", chats.len());
+
+    let text = harness::run_ok_nonempty(&["olly", "chats", "list", "--limit", "2"]);
+    let text = String::from_utf8_lossy(&text);
+    if chats.is_empty() {
+        assert!(text.contains("No chats found"), "{text}");
+    } else {
+        assert!(text.contains("TITLE"), "{text}");
+    }
+    harness::run_ok(&["olly", "chats", "list", "--limit", "2", "-o", "toon"]);
+
+    let typed = harness::run_ok_json(&[
+        "olly",
+        "chats",
+        "list",
+        "--type",
+        "ai_connector",
+        "--limit",
+        "5",
+        "--offset",
+        "1",
+        "-o",
+        "json",
+    ]);
+    for chat in harness::assert_array(&typed) {
+        assert_eq!(chat["type"], "ai_connector", "{chat}");
+    }
+
+    match chats.first() {
+        Some(first) => {
+            let id = first["id"].as_str().expect("chat id").to_string();
+            let chat = harness::run_ok_json(&["olly", "chats", "get", &id, "-o", "json"]);
+            harness::assert_object_with_keys(&chat, &["id", "messages", "interactions"]);
+            assert_eq!(chat["id"], id);
+            let text = harness::run_ok_nonempty(&["olly", "chats", "get", &id]);
+            assert!(String::from_utf8_lossy(&text).contains(&id));
+        }
+        None => eprintln!("[e2e] olly chats get: no chats on test team, only the 404 path runs"),
+    }
+
+    let stderr = harness::run_fail(&[
+        "olly",
+        "chats",
+        "get",
+        "00000000-0000-0000-0000-000000000000",
+    ]);
     assert!(stderr.contains("404"), "{stderr}");
 }

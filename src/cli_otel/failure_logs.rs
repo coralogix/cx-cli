@@ -7,8 +7,8 @@ use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs, S
 use opentelemetry_proto::tonic::trace::v1::{span::SpanKind, status::StatusCode, Span};
 use prost::Message;
 
-use crate::limits::{flag, label, MAX_ARRAY_ITEMS, MAX_BATCH_BYTES, MAX_COMMAND_DEPTH};
-use crate::{otlp, Url};
+use super::limits::{flag, label, MAX_ARRAY_ITEMS, MAX_BATCH_BYTES, MAX_COMMAND_DEPTH};
+use super::{otlp, Url};
 
 /// Resolve the standard OTLP logs sibling on the same origin. Paths and
 /// parameters intended for a custom trace receiver are left alone.

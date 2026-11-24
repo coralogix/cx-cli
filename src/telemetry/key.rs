@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cli_otel::{command_failure_logs_endpoint, header, Url};
+use crate::cli_otel::{command_failure_logs_endpoint, header, Url};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use url::Host;

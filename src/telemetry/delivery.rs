@@ -2,7 +2,7 @@ use std::env;
 use std::fmt::Write;
 use std::path::PathBuf;
 
-use cli_otel::{header, Url};
+use crate::cli_otel::{header, Url};
 use reqwest::StatusCode;
 use sha2::{Digest, Sha256};
 use url::Host;

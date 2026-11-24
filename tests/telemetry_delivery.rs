@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use cli_otel::Spool;
@@ -24,6 +25,8 @@ const PROFILE_KEY: &str = "queue-sensitive-profile-key";
 const COLLECTOR_KEY: &str = "queue-private-collector-key";
 const QUERY: &str = "queue-sensitive-query";
 const ERROR: &str = "queue-sensitive-api-error";
+const RELEASE_NOTICE: &str =
+    "cx sends usage telemetry by default. Opt out with CX_TELEMETRY=off, DO_NOT_TRACK=1, or telemetry=false in ~/.cx/config.toml.";
 
 struct Sandbox(PathBuf);
 
@@ -88,6 +91,14 @@ impl Sandbox {
         let path = dirs.next().unwrap().unwrap().path();
         assert!(dirs.next().is_none());
         path
+    }
+
+    fn notice_dir(&self) -> PathBuf {
+        self.cx_dir().join("telemetry-notice")
+    }
+
+    fn notice_marker(&self) -> PathBuf {
+        self.notice_dir().join("release-default-notice-shown")
     }
 }
 
@@ -324,6 +335,67 @@ async fn global_config_updates_preserve_consent_when_another_setting_is_invalid(
 }
 
 #[tokio::test]
+async fn inline_delivery_drops_running_command_when_consent_is_revoked_before_shutdown() {
+    let home = Sandbox::new();
+    let api = MockServer::start().await;
+    home.profile(&api.uri());
+    home.config(b"telemetry = true\n");
+    let (arrived_tx, arrived_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let release_rx = Arc::new(Mutex::new(Some(release_rx)));
+    Mock::given(method("GET"))
+        .and(path("/metrics/api/v1/query"))
+        .respond_with({
+            let release_rx = Arc::clone(&release_rx);
+            move |_: &Request| {
+                let _ = arrived_tx.send(());
+                if let Some(receiver) = release_rx.lock().unwrap().as_ref() {
+                    let _ = receiver.recv_timeout(Duration::from_secs(5));
+                }
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "status": "success",
+                    "data": { "resultType": "vector", "result": [] }
+                }))
+            }
+        })
+        .mount(&api)
+        .await;
+    let collector = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&collector)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/logs"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&collector)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", collector.uri());
+
+    let child = home
+        .cx(&[
+            "metrics",
+            "query",
+            "up",
+            "-p",
+            PROFILE,
+            "--no-console-link",
+            "-o",
+            "json",
+        ])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .spawn()
+        .unwrap();
+    arrived_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    home.config(b"telemetry = false\n");
+    release_tx.send(()).unwrap();
+    assert_success(child.wait_with_output().await.unwrap());
+    assert!(requests(&collector).await.is_empty());
+}
+
+#[tokio::test]
 async fn replay_retains_original_bytes_and_obeys_current_consent() {
     let home = Sandbox::new();
     let api = MockServer::start().await;
@@ -483,6 +555,74 @@ async fn replay_retains_original_bytes_and_obeys_current_consent() {
     assert_eq!(got.len(), 5);
     assert_eq!(got[4].body, older_bytes);
     assert!(batches(&directory).is_empty());
+}
+
+#[tokio::test]
+async fn background_delivery_drops_running_command_when_consent_is_revoked_before_shutdown() {
+    let home = Sandbox::new();
+    let api = MockServer::start().await;
+    home.profile(&api.uri());
+    home.config(b"telemetry = true\n");
+    let (arrived_tx, arrived_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let release_rx = Arc::new(Mutex::new(Some(release_rx)));
+    Mock::given(method("GET"))
+        .and(path("/metrics/api/v1/query"))
+        .respond_with({
+            let release_rx = Arc::clone(&release_rx);
+            move |_: &Request| {
+                let _ = arrived_tx.send(());
+                if let Some(receiver) = release_rx.lock().unwrap().as_ref() {
+                    let _ = receiver.recv_timeout(Duration::from_secs(5));
+                }
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "status": "success",
+                    "data": { "resultType": "vector", "result": [] }
+                }))
+            }
+        })
+        .mount(&api)
+        .await;
+    let collector = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&collector)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", collector.uri());
+
+    let child = home
+        .background(
+            &[
+                "metrics",
+                "query",
+                "up",
+                "-p",
+                PROFILE,
+                "--no-console-link",
+                "-o",
+                "json",
+            ],
+            &endpoint,
+        )
+        .spawn()
+        .unwrap();
+    arrived_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    home.config(b"telemetry = false\n");
+    release_tx.send(()).unwrap();
+    assert_success(child.wait_with_output().await.unwrap());
+    assert!(requests(&collector).await.is_empty());
+    let telemetry = home.cx_dir().join("telemetry");
+    assert!(!telemetry.exists());
+
+    home.config(b"telemetry = true\n");
+    assert_success(
+        home.background(&["__telemetry-send"], &endpoint)
+            .output()
+            .await
+            .unwrap(),
+    );
+    assert!(requests(&collector).await.is_empty());
 }
 
 #[tokio::test]
@@ -916,4 +1056,355 @@ async fn discovery_rejects_unsafe_hosts_and_never_follows_redirects() {
         assert_eq!(requests(&keys).await.len(), 1);
         assert!(requests(&wrong).await.is_empty());
     }
+}
+
+#[tokio::test]
+async fn release_default_notice_prints_once_before_collection() {
+    let home = Sandbox::new();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let keys = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(KEY_PATH))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"key": COLLECTOR_KEY, "host_url": ingress.uri()})),
+        )
+        .mount(&keys)
+        .await;
+    let key_url = format!("{}{KEY_PATH}", keys.uri());
+
+    let first = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_KEY_URL", &key_url)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(first.status.success(), "cx exited with {}", first.status);
+    let first_stderr = String::from_utf8_lossy(&first.stderr);
+    assert!(first_stderr.contains(RELEASE_NOTICE));
+    wait_for_requests(&ingress, 1).await;
+
+    let second = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_KEY_URL", &key_url)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(second.status.success(), "cx exited with {}", second.status);
+    let second_stderr = String::from_utf8_lossy(&second.stderr);
+    assert!(!second_stderr.contains(RELEASE_NOTICE));
+    wait_for_requests(&ingress, 2).await;
+}
+
+#[tokio::test]
+async fn release_default_notice_is_suppressed_when_opted_out() {
+    let home = Sandbox::new();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let keys = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(KEY_PATH))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"key": COLLECTOR_KEY, "host_url": ingress.uri()})),
+        )
+        .mount(&keys)
+        .await;
+    let key_url = format!("{}{KEY_PATH}", keys.uri());
+
+    for (variable, value) in [("CX_TELEMETRY", "off"), ("DO_NOT_TRACK", "1")] {
+        let output = home
+            .cx(&["--version"])
+            .env("CX_TELEMETRY_KEY_URL", &key_url)
+            .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+            .env(variable, value)
+            .output()
+            .await
+            .unwrap();
+        assert!(output.status.success(), "cx exited with {}", output.status);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains(RELEASE_NOTICE), "{variable}={value}");
+    }
+    assert!(requests(&keys).await.is_empty());
+    assert!(requests(&ingress).await.is_empty());
+}
+
+#[tokio::test]
+async fn release_default_notice_repeats_when_marker_persistence_is_unavailable() {
+    let home = Sandbox::new();
+    fs::create_dir_all(home.notice_dir().parent().unwrap()).unwrap();
+    fs::write(home.notice_dir(), "not-a-directory").unwrap();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", ingress.uri());
+
+    let first = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(first.status.success(), "cx exited with {}", first.status);
+    assert!(String::from_utf8_lossy(&first.stderr).contains(RELEASE_NOTICE));
+
+    let second = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(second.status.success(), "cx exited with {}", second.status);
+    assert!(String::from_utf8_lossy(&second.stderr).contains(RELEASE_NOTICE));
+    wait_for_requests(&ingress, 2).await;
+}
+
+#[tokio::test]
+async fn release_default_notice_write_failure_disables_collection() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let home = Sandbox::new();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", ingress.uri());
+
+    let output = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .env("CX_TELEMETRY_TEST_FAIL_NOTICE_STDERR", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(output.status.success(), "cx exited with {}", output.status);
+    assert!(requests(&ingress).await.is_empty());
+    assert!(!home.cx_dir().join("state.json").exists());
+    assert!(!home.notice_marker().exists());
+}
+
+#[tokio::test]
+async fn release_default_notice_ignores_invalid_marker_directory() {
+    let home = Sandbox::new();
+    fs::create_dir_all(home.notice_dir()).unwrap();
+    fs::create_dir_all(home.notice_marker()).unwrap();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", ingress.uri());
+
+    let output = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(output.status.success(), "cx exited with {}", output.status);
+    assert!(String::from_utf8_lossy(&output.stderr).contains(RELEASE_NOTICE));
+    wait_for_requests(&ingress, 1).await;
+}
+
+#[tokio::test]
+async fn release_default_notice_ignores_empty_marker_file() {
+    let home = Sandbox::new();
+    fs::create_dir_all(home.notice_dir()).unwrap();
+    fs::write(home.notice_marker(), []).unwrap();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", ingress.uri());
+
+    let first = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(first.status.success(), "cx exited with {}", first.status);
+    assert!(String::from_utf8_lossy(&first.stderr).contains(RELEASE_NOTICE));
+
+    let second = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(second.status.success(), "cx exited with {}", second.status);
+    assert!(!String::from_utf8_lossy(&second.stderr).contains(RELEASE_NOTICE));
+}
+
+#[tokio::test]
+async fn release_default_notice_retries_after_stderr_failure() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let home = Sandbox::new();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", ingress.uri());
+
+    let failed = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .env("CX_TELEMETRY_TEST_FAIL_NOTICE_STDERR", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(failed.status.success(), "cx exited with {}", failed.status);
+    assert!(requests(&ingress).await.is_empty());
+    assert!(!home.notice_marker().exists());
+
+    let first_success = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        first_success.status.success(),
+        "cx exited with {}",
+        first_success.status
+    );
+    assert!(String::from_utf8_lossy(&first_success.stderr).contains(RELEASE_NOTICE));
+
+    let second_success = home
+        .cx(&["--version"])
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        !String::from_utf8_lossy(&second_success.stderr).contains(RELEASE_NOTICE),
+        "completed marker should suppress repeated notice"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_first_run_claims_notice_marker_once() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let home = Sandbox::new();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&ingress)
+        .await;
+    let endpoint = format!("{}{TRACE_PATH}", ingress.uri());
+
+    let mut first = home.cx(&["--version"]);
+    first
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1");
+    let mut second = home.cx(&["--version"]);
+    second
+        .env("CX_TELEMETRY_ENDPOINT", &endpoint)
+        .env("CX_TELEMETRY_API_KEY", COLLECTOR_KEY)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1");
+
+    let (first, second) = tokio::join!(first.output(), second.output());
+    let first = first.unwrap();
+    let second = second.unwrap();
+    assert!(first.status.success());
+    assert!(second.status.success());
+    let notices = [first, second]
+        .iter()
+        .filter(|output| String::from_utf8_lossy(&output.stderr).contains(RELEASE_NOTICE))
+        .count();
+    assert_eq!(notices, 1);
+}
+
+#[tokio::test]
+async fn sender_never_prints_release_default_notice() {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let home = Sandbox::new();
+    let ingress = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TRACE_PATH))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&ingress)
+        .await;
+    let keys = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(KEY_PATH))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"key": COLLECTOR_KEY, "host_url": ingress.uri()})),
+        )
+        .mount(&keys)
+        .await;
+    let key_url = format!("{}{KEY_PATH}", keys.uri());
+    assert_success(
+        home.cx(&["--version"])
+            .env("CX_TELEMETRY_KEY_URL", &key_url)
+            .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+            .output()
+            .await
+            .unwrap(),
+    );
+    let telemetry_directory = home.cx_dir().join("telemetry");
+    wait_until(|| telemetry_directory.is_dir()).await;
+    let partition = home.partition();
+    wait_until(|| partition.join(RETRY_AFTER).is_file()).await;
+    wait_for_idle(&partition).await;
+
+    let sender = home
+        .cx(&["__telemetry-send"])
+        .env("CX_TELEMETRY_KEY_URL", &key_url)
+        .env("CX_TELEMETRY_TEST_FORCE_RELEASE_NOTICE", "1")
+        .output()
+        .await
+        .unwrap();
+    assert!(sender.status.success(), "cx exited with {}", sender.status);
+    assert!(sender.stderr.is_empty());
+    assert!(sender.stdout.is_empty());
 }

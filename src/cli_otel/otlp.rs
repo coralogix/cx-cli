@@ -6,7 +6,7 @@ use opentelemetry_proto::tonic::common::v1::{any_value::Value, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::{span, status, Span};
 use prost::Message;
 
-use crate::limits::{
+use super::limits::{
     bounded_text, MAX_ARRAY_ITEMS, MAX_ATTRIBUTES, MAX_BATCH_BYTES, MAX_EVENTS_OR_LINKS,
     MAX_KEY_BYTES, MAX_LABEL_BYTES, MAX_SPANS, MAX_SPAN_BYTES, MAX_SPAN_NAME_BYTES,
     MAX_TRACE_STATE_BYTES, MAX_VALUE_BYTES,

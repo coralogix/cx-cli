@@ -12,8 +12,8 @@ use opentelemetry_sdk::{trace::SpanExporter as _, Resource};
 use prost::Message;
 use reqwest::{header, Client, Url};
 
-use crate::limits::{MAX_BATCH_BYTES, MAX_SPANS, MAX_SPAN_BYTES};
-use crate::{inline_client, otlp, Config, Delivery, Spool};
+use super::limits::{MAX_BATCH_BYTES, MAX_SPANS, MAX_SPAN_BYTES};
+use super::{inline_client, otlp, Config, Delivery, DeliveryAllowed, Spool};
 
 // Allow the full span buffer to reach the fitter, plus protobuf framing and
 // resource/scope metadata. Only a fitted, 512 KiB batch can go out or to disk.
@@ -21,17 +21,22 @@ const MAX_EXPORT_BYTES: usize = MAX_SPANS * MAX_SPAN_BYTES + MAX_BATCH_BYTES;
 
 pub(crate) fn build(config: Config, resource: &Resource) -> Option<SpanExporter> {
     let timeout = config.export_timeout;
+    let delivery_allowed = config.delivery_allowed;
     let transport = match config.delivery {
         Delivery::Inline => Transport::Inline {
             client: inline_client(timeout)?,
             endpoint: config.endpoint,
             headers: config.headers,
-            #[cfg(feature = "command-failure-logs")]
+            delivery_allowed,
+            #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
             failure_logs_enabled: config.command_failure_logs,
-            #[cfg(feature = "command-failure-logs")]
+            #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
             timeout,
         },
-        Delivery::Spool(spool) => Transport::Spool(spool),
+        Delivery::Spool(spool) => Transport::Spool {
+            spool,
+            delivery_allowed,
+        },
     };
     let mut exporter = SpanExporter::builder()
         .with_http()
@@ -54,12 +59,16 @@ enum Transport {
         client: Client,
         endpoint: Url,
         headers: header::HeaderMap,
-        #[cfg(feature = "command-failure-logs")]
+        delivery_allowed: Option<DeliveryAllowed>,
+        #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
         failure_logs_enabled: bool,
-        #[cfg(feature = "command-failure-logs")]
+        #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
         timeout: std::time::Duration,
     },
-    Spool(Spool),
+    Spool {
+        spool: Spool,
+        delivery_allowed: Option<DeliveryAllowed>,
+    },
 }
 
 impl fmt::Debug for Transport {
@@ -71,29 +80,36 @@ impl fmt::Debug for Transport {
 #[async_trait]
 impl HttpClient for Transport {
     async fn send_bytes(&self, request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
+        if !self.delivery_allowed() {
+            return response(StatusCode::ACCEPTED);
+        }
         // The upstream HTTP builder merges ambient headers. Keep only its
         // serialized body, and build the real request from explicit settings.
         let payload = decode_payload(&request.into_body())?;
+        if !self.delivery_allowed() {
+            return response(StatusCode::ACCEPTED);
+        }
         let status = match self {
             Self::Inline {
                 client,
                 endpoint,
                 headers,
-                #[cfg(feature = "command-failure-logs")]
+                delivery_allowed: _,
+                #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
                 failure_logs_enabled,
-                #[cfg(feature = "command-failure-logs")]
+                #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
                 timeout,
             } => {
-                #[cfg(feature = "command-failure-logs")]
+                #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
                 let logs = if *failure_logs_enabled {
-                    crate::command_failure_logs_endpoint(endpoint).and_then(|endpoint| {
-                        Some((endpoint, crate::encode_command_failure_logs(&payload)?))
+                    super::command_failure_logs_endpoint(endpoint).and_then(|endpoint| {
+                        Some((endpoint, super::encode_command_failure_logs(&payload)?))
                     })
                 } else {
                     None
                 };
                 let traces = post(client, endpoint.clone(), headers, payload);
-                #[cfg(feature = "command-failure-logs")]
+                #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
                 if let Some((endpoint, payload)) = logs {
                     let logs = post(client, endpoint, headers, payload);
                     let (traces, logs) =
@@ -105,12 +121,28 @@ impl HttpClient for Transport {
                 }
                 traces.await?
             }
-            Self::Spool(spool) => {
+            Self::Spool {
+                spool,
+                delivery_allowed: _,
+            } => {
                 spool.enqueue(&payload)?;
                 StatusCode::ACCEPTED
             }
         };
         response(status)
+    }
+}
+
+impl Transport {
+    fn delivery_allowed(&self) -> bool {
+        match self {
+            Self::Inline {
+                delivery_allowed, ..
+            }
+            | Self::Spool {
+                delivery_allowed, ..
+            } => delivery_allowed.as_ref().is_none_or(|allowed| allowed()),
+        }
     }
 }
 

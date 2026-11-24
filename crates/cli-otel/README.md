@@ -5,6 +5,11 @@ A Rust library for tracing short-lived CLI invocations. It starts an OpenTelemet
 exit code. The application supplies the endpoint, auth headers, resource fields
 and an exit classifier.
 
+In this repository, the implementation source is shared at `src/cli_otel/`.
+This package is a workspace facade (`publish = false`) that points its library
+path to that shared source so the root `coralogix-cli` publish artifact has no
+registry dependency on `cli-otel`.
+
 The optional `clap` adapter builds sanitized `process.command_args` from the
 declared executable, canonical subcommand path and explicitly passed flag names.
 It uses the long flag name when one is declared and falls back to the short

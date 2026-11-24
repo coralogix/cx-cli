@@ -4,18 +4,9 @@
 //! All errors are silently swallowed — state is best-effort, never fatal.
 
 use chrono::{DateTime, Duration, Utc};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::fs::{self, File, OpenOptions, TryLockError};
-use std::io;
-use std::path::{Path, PathBuf};
-use std::time::{Duration as StdDuration, Instant};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use uuid::Uuid;
-
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
-
-const LOCK_TIMEOUT: StdDuration = StdDuration::from_millis(100);
-const LOCK_RETRY_INTERVAL: StdDuration = StdDuration::from_millis(5);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VersionCheckCache {
@@ -62,68 +53,35 @@ pub struct VersionCheckCache {
     pub skills_refresh_attempted_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Default, Serialize, Deserialize)]
-struct StateFile {
-    #[serde(flatten)]
-    cache: VersionCheckCache,
-    #[serde(flatten)]
-    additional_fields: serde_json::Map<String, serde_json::Value>,
-}
-
-impl StateFile {
-    fn write_to(&self, path: &Path) -> anyhow::Result<()> {
-        let contents = serde_json::to_vec_pretty(self)?;
-        crate::atomic_file::write(path, &contents)?;
-        Ok(())
-    }
-}
-
-fn read_state<T: Default + DeserializeOwned>(path: &Path) -> io::Result<T> {
-    match fs::read(path) {
-        Ok(contents) => Ok(serde_json::from_slice(&contents).unwrap_or_default()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(T::default()),
-        Err(error) => Err(error),
-    }
-}
-
 impl VersionCheckCache {
-    fn path() -> anyhow::Result<PathBuf> {
-        Ok(crate::config::config_dir()?.join("state.json"))
+    fn path() -> Option<PathBuf> {
+        crate::config::config_dir()
+            .ok()
+            .map(|d| d.join("state.json"))
     }
 
     /// Load state from disk, returning `Default` on any error.
     pub fn load() -> Self {
-        let Ok(path) = Self::path() else {
+        let Some(path) = Self::path() else {
             return Self::default();
         };
-        read_state(&path).unwrap_or_default()
+        let Ok(contents) = std::fs::read_to_string(path) else {
+            return Self::default();
+        };
+        serde_json::from_str(&contents).unwrap_or_default()
     }
 
     /// Persist state to disk. Errors are non-fatal.
     pub fn save(&self) -> anyhow::Result<()> {
-        let Ok(path) = Self::path() else {
+        let Some(path) = Self::path() else {
             return Ok(());
         };
-        let _lock = lock_state(&path)?;
-        let mut state: StateFile = read_state(&path)?;
-        state.cache = self.clone();
-        state.write_to(&path)
-    }
-
-    /// Read current state, mutate it and persist it while holding the writer lock.
-    pub(crate) fn update(change: impl FnOnce(&mut Self)) -> anyhow::Result<()> {
-        Self::with_locked_state(|path, mut state| {
-            change(&mut state.cache);
-            state.write_to(path)
-        })
-    }
-
-    fn with_locked_state<T>(
-        change: impl FnOnce(&Path, StateFile) -> anyhow::Result<T>,
-    ) -> anyhow::Result<T> {
-        let path = Self::path()?;
-        let _lock = lock_state(&path)?;
-        change(&path, read_state(&path)?)
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let contents = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, contents)?;
+        Ok(())
     }
 
     /// True if version info should be re-fetched (older than 24 h or never fetched).
@@ -141,58 +99,28 @@ impl VersionCheckCache {
     }
 }
 
-fn lock_state(path: &Path) -> io::Result<File> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    // Keep a separate lock inode so replacement of state.json does not change the lock.
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create(true).truncate(false);
-    #[cfg(unix)]
-    options.mode(0o600);
-    let file = options.open(path.with_extension("lock"))?;
-
-    let deadline = Instant::now() + LOCK_TIMEOUT;
-    loop {
-        match file.try_lock() {
-            Ok(()) => return Ok(file),
-            Err(TryLockError::WouldBlock) => {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "version cache is locked",
-                    ));
-                }
-                std::thread::sleep(remaining.min(LOCK_RETRY_INTERVAL));
-            }
-            Err(TryLockError::Error(error)) => return Err(error),
-        }
-    }
-}
-
 /// Record a successful global skills install for the running `cx` version,
 /// with the agents it targeted.
 pub fn record_global_skills_install(agents: &[String]) {
-    let _ = VersionCheckCache::update(|state| {
-        state.skills_installed_for = Some(env!("CARGO_PKG_VERSION").to_string());
-        state.skills_agents = agents.to_vec();
-    });
+    let mut state = VersionCheckCache::load();
+    state.skills_installed_for = Some(env!("CARGO_PKG_VERSION").to_string());
+    state.skills_agents = agents.to_vec();
+    let _ = state.save();
 }
 
 /// Record that the background skills refresh started for `version` now.
 pub fn record_skills_refresh_attempt(version: &str) {
-    let _ = VersionCheckCache::update(|state| {
-        state.skills_refresh_attempted_for = Some(version.to_string());
-        state.skills_refresh_attempted_at = Some(Utc::now());
-    });
+    let mut state = VersionCheckCache::load();
+    state.skills_refresh_attempted_for = Some(version.to_string());
+    state.skills_refresh_attempted_at = Some(Utc::now());
+    let _ = state.save();
 }
 
 /// Record that the "unknown skills version" notice was shown for `version`.
 pub fn record_skills_unknown_noticed(version: &str) {
-    let _ = VersionCheckCache::update(|state| {
-        state.skills_unknown_noticed_for = Some(version.to_string());
-    });
+    let mut state = VersionCheckCache::load();
+    state.skills_unknown_noticed_for = Some(version.to_string());
+    let _ = state.save();
 }
 
 /// Returns the stable random identifier for this local CLI installation.
@@ -200,21 +128,13 @@ pub fn record_skills_unknown_noticed(version: &str) {
 /// The value is generated only when missing and persisted best-effort in the
 /// existing `~/.cx/state.json` cache file.
 pub fn installation_id() -> String {
-    VersionCheckCache::load()
-        .installation_id
-        .or_else(|| {
-            VersionCheckCache::with_locked_state(|path, mut state| {
-                if let Some(id) = state.cache.installation_id {
-                    return Ok(id);
-                }
-                let id = state.cache.ensure_installation_id();
-                state.write_to(path)?;
-                Ok(id)
-            })
-            .ok()
-        })
-        .or_else(|| VersionCheckCache::load().installation_id)
-        .unwrap_or_else(|| Uuid::new_v4().to_string())
+    let mut state = VersionCheckCache::load();
+    let was_missing = state.installation_id.is_none();
+    let installation_id = state.ensure_installation_id();
+    if was_missing {
+        let _ = state.save();
+    }
+    installation_id
 }
 
 #[cfg(test)]

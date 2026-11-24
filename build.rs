@@ -4,6 +4,11 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(cli_otel_embedded)");
+    println!(
+        "cargo:rustc-check-cfg=cfg(feature, values(\"clap\", \"command-failure-logs\", \"reqwest-middleware\"))"
+    );
+    println!("cargo:rustc-cfg=cli_otel_embedded");
     let skills_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("skills");
     println!("cargo:rerun-if-changed={}", skills_dir.display());
 

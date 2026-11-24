@@ -5,6 +5,10 @@ edition = "2021"
 description = "OpenTelemetry execution spans for short-lived CLI commands"
 license = "Apache-2.0"
 repository = "https://github.com/coralogix/cx-cli"
+publish = false
+
+[lib]
+path = "../../src/cli_otel/mod.rs"
 
 [features]
 clap = ["dep:clap"]

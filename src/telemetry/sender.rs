@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cli_otel::{encode_command_failure_logs, header, PendingBatch, Spool};
+use crate::cli_otel::{encode_command_failure_logs, header, PendingBatch, Spool};
 use reqwest::{redirect::Policy, Client, StatusCode};
 use tokio::time::{sleep, timeout};
 

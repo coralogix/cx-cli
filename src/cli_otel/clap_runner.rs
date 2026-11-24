@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::future::Future;
 
-use crate::{record_command_metadata, CommandMetadata, Outcome, ParentTrace, Telemetry};
+use super::{record_command_metadata, CommandMetadata, Outcome, ParentTrace, Telemetry};
 
 /// The parser's original error (including help/version) or a command failure.
 #[derive(Debug)]

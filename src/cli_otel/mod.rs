@@ -13,7 +13,7 @@ pub use opentelemetry::{Array, KeyValue, Value};
 use opentelemetry::propagation::{Extractor, TextMapPropagator};
 use opentelemetry::trace::{FutureExt, TraceContextExt, Tracer, TracerProvider};
 use opentelemetry::{Context, InstrumentationScope};
-#[cfg(test)]
+#[cfg(all(test, not(cli_otel_embedded)))]
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_sdk::error::OTelSdkResult;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -31,9 +31,9 @@ mod limits;
 mod otlp;
 mod spool;
 
-#[cfg(feature = "command-failure-logs")]
+#[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
 mod failure_logs;
-#[cfg(feature = "command-failure-logs")]
+#[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
 pub use failure_logs::{command_failure_logs_endpoint, encode_command_failure_logs};
 
 use limits::{
@@ -44,14 +44,14 @@ use limits::{
 pub use spool::{PendingBatch, Spool};
 const DEFAULT_EXPORT_TIMEOUT: Duration = Duration::from_secs(1);
 
-#[cfg(feature = "clap")]
+#[cfg(any(feature = "clap", cli_otel_embedded))]
 mod clap_runner;
-#[cfg(feature = "clap")]
+#[cfg(any(feature = "clap", cli_otel_embedded))]
 pub use clap_runner::{run_clap, ClapError};
 
-#[cfg(feature = "reqwest-middleware")]
+#[cfg(any(feature = "reqwest-middleware", cli_otel_embedded))]
 mod http_middleware;
-#[cfg(feature = "reqwest-middleware")]
+#[cfg(any(feature = "reqwest-middleware", cli_otel_embedded))]
 pub use http_middleware::HttpMiddleware;
 
 /// Export settings supplied by the application. The library does not resolve
@@ -64,9 +64,12 @@ pub struct Config {
     /// Deadline for inline export.
     pub export_timeout: Duration,
     /// Export a correlated failure log inline when the endpoint has a standard logs sibling.
-    #[cfg(feature = "command-failure-logs")]
+    #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
     pub command_failure_logs: bool,
     pub delivery: Delivery,
+    /// Optional application-owned consent predicate checked before exporting
+    /// buffered spans and again at the transport boundary.
+    pub delivery_allowed: Option<DeliveryAllowed>,
     /// Declared executable name, without a filesystem path.
     pub executable_name: &'static str,
     pub service_version: &'static str,
@@ -92,15 +95,18 @@ impl Config {
             endpoint,
             headers: header::HeaderMap::new(),
             export_timeout: DEFAULT_EXPORT_TIMEOUT,
-            #[cfg(feature = "command-failure-logs")]
+            #[cfg(any(feature = "command-failure-logs", cli_otel_embedded))]
             command_failure_logs: false,
             delivery: Delivery::Inline,
+            delivery_allowed: None,
             executable_name,
             service_version,
             resource_attributes: Vec::new(),
         }
     }
 }
+
+pub type DeliveryAllowed = Arc<dyn Fn() -> bool + Send + Sync>;
 
 /// Application-declared command metadata. Use the canonical names of declared
 /// subcommands and flags. Do not include argument values or argv fragments.
@@ -113,7 +119,7 @@ pub struct CommandMetadata {
 impl CommandMetadata {
     /// Extract declared flag and canonical command names from a successful
     /// clap parse. Defaults, environment-sourced options and positionals are omitted.
-    #[cfg(feature = "clap")]
+    #[cfg(any(feature = "clap", cli_otel_embedded))]
     pub fn from_clap(command: &clap::Command, matches: &clap::ArgMatches) -> Self {
         use clap::parser::ValueSource;
         use std::collections::BTreeSet;
@@ -286,6 +292,7 @@ pub struct Telemetry {
     exporter: opentelemetry_otlp::SpanExporter,
     provider: SdkTracerProvider,
     buffer: SpanBuffer,
+    delivery_allowed: Option<DeliveryAllowed>,
 }
 
 impl Telemetry {
@@ -309,6 +316,7 @@ impl Telemetry {
             .with_attributes([KeyValue::new("service.version", config.service_version)])
             .build();
         let executable_name = config.executable_name;
+        let delivery_allowed = config.delivery_allowed.clone();
         let exporter = exporter::build(config, &resource)?;
         let buffer = SpanBuffer::default();
         let provider = SdkTracerProvider::builder()
@@ -323,6 +331,7 @@ impl Telemetry {
             exporter,
             provider,
             buffer,
+            delivery_allowed,
         })
     }
 
@@ -412,9 +421,15 @@ impl Telemetry {
     pub async fn shutdown(self) {
         let _ = self.provider.shutdown();
         let spans = self.buffer.drain();
-        if !spans.is_empty() {
+        if !spans.is_empty() && self.delivery_allowed() {
             let _ = self.exporter.export(spans).await;
         }
+    }
+
+    fn delivery_allowed(&self) -> bool {
+        self.delivery_allowed
+            .as_ref()
+            .is_none_or(|allowed| allowed())
     }
 }
 
@@ -510,9 +525,16 @@ pub fn with_current_context<F: Future>(future: F) -> impl Future<Output = F::Out
     future.with_current_context()
 }
 
-#[cfg(all(test, any(feature = "clap", feature = "reqwest-middleware")))]
+#[cfg(all(
+    test,
+    not(cli_otel_embedded),
+    any(feature = "clap", feature = "reqwest-middleware")
+))]
+#[path = "../../crates/cli-otel/src/hook_tests.rs"]
 mod hook_tests;
-#[cfg(test)]
+#[cfg(all(test, not(cli_otel_embedded)))]
+#[path = "../../crates/cli-otel/src/production_tests.rs"]
 mod production_tests;
-#[cfg(test)]
+#[cfg(all(test, not(cli_otel_embedded)))]
+#[path = "../../crates/cli-otel/src/tests.rs"]
 mod tests;

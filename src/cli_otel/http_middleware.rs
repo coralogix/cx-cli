@@ -6,7 +6,7 @@ use http_body::{Body, Frame, SizeHint};
 use reqwest::{Request, Response, ResponseBuilderExt};
 use reqwest_middleware::{Middleware, Next, Result};
 
-use crate::{start_child_span, KeyValue, Span, SpanKind, Status};
+use super::{start_child_span, KeyValue, Span, SpanKind, Status, Value};
 
 /// Records HTTP client spans inside an active CLI invocation.
 ///
@@ -142,7 +142,7 @@ fn trace_body<S: Span + Send + Sync + Unpin + 'static>(
     http::Response::from_parts(parts, body).into()
 }
 
-fn record_error(span: &mut impl Span, error_type: impl Into<crate::Value>) {
+fn record_error(span: &mut impl Span, error_type: impl Into<Value>) {
     span.set_attribute(KeyValue::new("error.type", error_type));
     span.set_status(Status::error(""));
 }

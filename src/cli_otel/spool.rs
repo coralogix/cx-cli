@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use crate::limits::MAX_BATCH_BYTES;
-use crate::otlp::validate_and_encode;
+use super::limits::MAX_BATCH_BYTES;
+use super::otlp::validate_and_encode;
 
 const MAX_BATCHES: usize = 128;
 const MAX_DIRECTORY_ENTRIES: usize = 4096;

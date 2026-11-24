@@ -23,6 +23,19 @@ Consent values are case-insensitive and trimmed. Any opt-out wins, including an
 unreadable or invalid config file and a non-boolean `telemetry` setting. cx checks
 consent before loading installation identity, queueing and sending.
 
+Before implicit-default collection, a release build prints a first-run stderr
+notice with opt-out instructions. A completed marker under
+`~/.cx/telemetry-notice/` is saved atomically after the notice is written.
+Invalid markers trigger disclosure again. If the marker cannot be saved, the
+notice may repeat. If stderr cannot be written, that invocation skips implicit
+collection. Explicit consent settings or a configured developer destination do
+not need the default notice. The detached sender stays silent.
+
+cx checks consent again before exporting a completed command and at the delivery
+boundary. Changing `telemetry` to `false` while a command is running drops its
+buffered trace and failure log instead of sending or queueing them. Re-enabling
+telemetry later does not recover data dropped by that invocation.
+
 ## Background delivery
 
 The default release discovery URL is
@@ -157,7 +170,9 @@ protobuf. They cover command and HTTP spans, failure log correlation, parent
 propagation, consent, privacy, bounded queues, background replay and key
 rotation.
 
-The reusable [cli-otel crate](../crates/cli-otel/README.md) documents its standard
-attributes and generic extensions. Before publishing a cx crate release with
-this dependency, publish the extracted `cli-otel` package under its chosen name
-and version.
+The reusable [`cli-otel` facade crate](../crates/cli-otel/README.md) documents
+the standard attributes and generic extensions. The generic implementation
+source is bundled once under `src/cli_otel/` in this repository and compiled
+directly into `coralogix-cli` for release packaging. The local
+`crates/cli-otel` package is `publish = false` and points its library path at
+that shared source for workspace reuse and focused library tests.

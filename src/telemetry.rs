@@ -3,23 +3,25 @@
 use std::env;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use crate::cli_otel::{
+    ClapError, Config, Delivery, HttpMiddleware, KeyValue, Outcome, ParentTrace, Telemetry,
+    Termination,
+};
 use crate::config::OutputFormat;
 use crate::error::CxError;
 use crate::install_method::{self, InstallMethod};
 use crate::safety::{ConfirmationCancelled, AGENT_ENV_VARS};
-use cli_otel::{
-    ClapError, Config, Delivery, HttpMiddleware, KeyValue, Outcome, ParentTrace, Telemetry,
-    Termination,
-};
 use reqwest::{Client, Request};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 
+pub use crate::cli_otel::with_current_context;
 use crate::region::{region_from_url, RegionMatch};
-pub use cli_otel::with_current_context;
 
 mod delivery;
 mod key;
+mod notice;
 mod privacy;
 mod sender;
 
@@ -46,7 +48,7 @@ where
     let command = build_command();
     let traceparent = env::var("TRACEPARENT").ok();
     let tracestate = env::var("TRACESTATE").ok();
-    let result = cli_otel::run_clap(
+    let result = crate::cli_otel::run_clap(
         telemetry,
         ParentTrace {
             traceparent: traceparent.as_deref(),
@@ -78,10 +80,14 @@ fn initialize() -> Option<(Telemetry, Option<PathBuf>)> {
     }
 
     let destination = Destination::resolve()?;
+    if !notice::allow_collection_after_notice() {
+        return None;
+    }
     let mut config = Config::new(destination.url().clone(), "cx", env!("CARGO_PKG_VERSION"));
+    config.delivery_allowed = Some(Arc::new(consent_allows as fn() -> bool));
     let background = if destination.is_background() {
         let directory = destination.spool_path()?;
-        config.delivery = Delivery::Spool(cli_otel::Spool::new(directory.clone()));
+        config.delivery = Delivery::Spool(crate::cli_otel::Spool::new(directory.clone()));
         Some(directory)
     } else {
         config.headers = delivery::explicit_headers()?;
@@ -268,15 +274,15 @@ impl AgentCaller {
 
 fn record_invocation_context() {
     if let Some(provider) = CiProvider::from_env() {
-        cli_otel::record_attribute(KeyValue::new("cli.ci.provider", provider.as_str()));
+        crate::cli_otel::record_attribute(KeyValue::new("cli.ci.provider", provider.as_str()));
     }
     if let Some(caller) = AgentCaller::from_env() {
-        cli_otel::record_attribute(KeyValue::new("gen_ai.agent.name", caller.as_str()));
+        crate::cli_otel::record_attribute(KeyValue::new("gen_ai.agent.name", caller.as_str()));
     }
 }
 
 pub fn record_output_format(format: OutputFormat) {
-    cli_otel::record_attribute(KeyValue::new("cli.output.format", format.as_str()));
+    crate::cli_otel::record_attribute(KeyValue::new("cli.output.format", format.as_str()));
 }
 
 pub enum QueryLanguage {
@@ -285,13 +291,13 @@ pub enum QueryLanguage {
 }
 
 pub fn record_command(risky_write: bool, query_language: Option<QueryLanguage>) {
-    cli_otel::record_attribute(KeyValue::new("cx.cli.command.risky", risky_write));
+    crate::cli_otel::record_attribute(KeyValue::new("cx.cli.command.risky", risky_write));
     if let Some(language) = query_language {
         let language = match language {
             QueryLanguage::Dataprime => "dataprime",
             QueryLanguage::Promql => "promql",
         };
-        cli_otel::record_attribute(KeyValue::new("cx.cli.query.language", language));
+        crate::cli_otel::record_attribute(KeyValue::new("cx.cli.query.language", language));
     }
 }
 
@@ -302,7 +308,7 @@ pub fn record_legacy_profiles() {
 
 pub fn record_profile_count(count: usize) {
     if let Ok(count) = i64::try_from(count) {
-        cli_otel::record_attribute(KeyValue::new("cx.cli.profile.count", count));
+        crate::cli_otel::record_attribute(KeyValue::new("cx.cli.profile.count", count));
     }
 }
 

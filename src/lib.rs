@@ -2,6 +2,7 @@ pub mod api_client;
 pub(crate) mod atomic_file;
 pub mod banner;
 pub mod cases_query_rules;
+pub mod cli_otel;
 #[cfg(target_os = "macos")]
 mod code_sign;
 pub mod commands;

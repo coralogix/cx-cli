@@ -20,10 +20,18 @@ clap = { version = "=4.5.37", features = ["derive", "env", "color"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 
 # CLI execution telemetry
-cli-otel = { version = "0.1.0", path = "crates/cli-otel", features = ["clap", "command-failure-logs", "reqwest-middleware"] }
-opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "trace"] }
+async-trait = "0.1"
+bytes = "1"
+http = "1"
+http-body = "1"
+opentelemetry = { version = "0.32", default-features = false, features = ["trace"] }
+opentelemetry-http = { version = "0.32", default-features = false }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "gzip-http"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "trace", "logs"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
 prost = "0.14"
 os_info = { version = "3.15", default-features = false }
+rustls-platform-verifier = "0.6"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -103,6 +111,7 @@ keyring = { version = "3", features = ["windows-native"] }
 keyring = { version = "3", features = ["sync-secret-service"] }
 
 [dev-dependencies]
+cli-otel = { path = "crates/cli-otel", features = ["clap", "command-failure-logs", "reqwest-middleware"] }
 wiremock = "0.6"
 assert_cmd = "2"
 dotenvy = "0.15"

@@ -673,24 +673,40 @@ pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TelemetryConsent {
+    Implicit,
+    Enabled,
+    Disabled,
+}
+
 /// Read consent independently of the CLI's typed configuration.
-pub(crate) fn telemetry_allowed() -> bool {
+pub(crate) fn telemetry_consent() -> TelemetryConsent {
     let Ok(path) = config_file() else {
-        return false;
+        return TelemetryConsent::Disabled;
     };
     match std::fs::symlink_metadata(&path) {
-        Err(error) => return error.kind() == ErrorKind::NotFound,
-        Ok(_) if !path.is_file() => return false,
+        Err(error) if error.kind() == ErrorKind::NotFound => return TelemetryConsent::Implicit,
+        Err(_) => return TelemetryConsent::Disabled,
+        Ok(_) if !path.is_file() => return TelemetryConsent::Disabled,
         Ok(_) => {}
     }
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return false;
+        return TelemetryConsent::Disabled;
     };
-    raw.parse::<toml::Table>().is_ok_and(|table| {
-        table
-            .get("telemetry")
-            .is_none_or(|value| value.as_bool() == Some(true))
-    })
+    let Ok(table) = raw.parse::<toml::Table>() else {
+        return TelemetryConsent::Disabled;
+    };
+    match table.get("telemetry") {
+        None => TelemetryConsent::Implicit,
+        Some(value) if value.as_bool() == Some(true) => TelemetryConsent::Enabled,
+        Some(_) => TelemetryConsent::Disabled,
+    }
+}
+
+/// Read consent independently of the CLI's typed configuration.
+pub(crate) fn telemetry_allowed() -> bool {
+    !matches!(telemetry_consent(), TelemetryConsent::Disabled)
 }
 
 pub fn profiles_dir() -> Result<PathBuf> {

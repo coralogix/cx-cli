@@ -134,17 +134,10 @@ fn implicit_release_default_consent() -> bool {
     {
         return false;
     }
-    let Ok(path) = crate::config::config_file() else {
-        return false;
-    };
-    match fs::symlink_metadata(&path) {
-        Err(error) => error.kind() == ErrorKind::NotFound,
-        Ok(metadata) if !metadata.is_file() => false,
-        Ok(_) => fs::read_to_string(path)
-            .ok()
-            .and_then(|raw| raw.parse::<toml::Table>().ok())
-            .is_some_and(|table| !table.contains_key("telemetry")),
-    }
+    matches!(
+        crate::config::telemetry_consent(),
+        crate::config::TelemetryConsent::Implicit
+    )
 }
 
 fn explicit_destination_is_configured() -> bool {

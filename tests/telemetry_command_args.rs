@@ -38,6 +38,10 @@ impl Home {
             .env("CX_TELEMETRY_FAILURE_LOGS", "1")
             .kill_on_drop(true)
             .args(args);
+        #[cfg(windows)]
+        if let Some(system_root) = std::env::var_os("SystemRoot") {
+            cx.env("SystemRoot", system_root);
+        }
         cx
     }
 }

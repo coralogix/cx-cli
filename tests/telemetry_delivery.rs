@@ -65,6 +65,10 @@ impl Sandbox {
             .env("CX_NO_SKILLS_AUTO_UPDATE", "1")
             .kill_on_drop(true)
             .args(args);
+        #[cfg(windows)]
+        if let Some(system_root) = std::env::var_os("SystemRoot") {
+            command.env("SystemRoot", system_root);
+        }
         command
     }
 

@@ -23,7 +23,7 @@ use opentelemetry_sdk::trace::{
 use opentelemetry_sdk::Resource;
 pub use reqwest::header;
 pub use reqwest::Url;
-use reqwest::{redirect::Policy, Client};
+use reqwest::{redirect::Policy, Client, ClientBuilder};
 use rustls_platform_verifier::BuilderVerifierExt;
 
 mod exporter;
@@ -433,22 +433,46 @@ impl Telemetry {
     }
 }
 
-fn inline_client(timeout: Duration) -> Option<Client> {
+pub(crate) fn http_client_builder(endpoint: &Url) -> Option<ClientBuilder> {
     let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
         rustls::crypto::ring::default_provider(),
     ))
     .with_safe_default_protocol_versions()
     .ok()?
     .with_platform_verifier()
-    .ok()?
-    .with_no_client_auth();
-    Client::builder()
-        .tls_backend_preconfigured(tls)
-        .redirect(Policy::none())
-        .no_proxy()
-        .timeout(timeout)
-        .build()
-        .ok()
+    .ok()
+    .map(|builder| builder.with_no_client_auth());
+
+    let mut builder = Client::builder().redirect(Policy::none());
+    match tls {
+        Some(tls) => {
+            builder = builder.tls_backend_preconfigured(tls);
+        }
+        None if endpoint.scheme() == "http" => {
+            // Allow cleartext HTTP when the platform trust store is unavailable.
+            // The empty root store ensures any TLS peer or HTTPS proxy trust check fails closed.
+            let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .ok()?
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth();
+            builder = builder.tls_backend_preconfigured(tls);
+        }
+        None => return None,
+    }
+    Some(builder)
+}
+
+#[cfg(all(test, not(cli_otel_embedded)))]
+fn inline_client(timeout: Duration) -> Option<Client> {
+    let endpoint = Url::parse("https://localhost").ok()?;
+    inline_client_for_endpoint(timeout, &endpoint)
+}
+
+fn inline_client_for_endpoint(timeout: Duration, endpoint: &Url) -> Option<Client> {
+    http_client_builder(endpoint)?.timeout(timeout).build().ok()
 }
 
 /// Update command metadata after a parser runs inside the command future.

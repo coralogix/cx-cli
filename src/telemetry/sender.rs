@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::cli_otel::{encode_command_failure_logs, header, PendingBatch, Spool};
-use reqwest::{redirect::Policy, Client, StatusCode};
+use reqwest::{Client, StatusCode};
 use tokio::time::{sleep, timeout};
 
 use super::delivery::{explicit_headers, retryable, Destination};
@@ -127,10 +127,10 @@ async fn deliver(
         return true;
     }
 
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    let Ok(client) = Client::builder()
-        .no_proxy()
-        .redirect(Policy::none())
+    let Some(builder) = crate::cli_otel::http_client_builder(destination.url()) else {
+        return false;
+    };
+    let Ok(client) = builder
         .retry(reqwest::retry::never())
         .connect_timeout(REQUEST_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)

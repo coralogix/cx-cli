@@ -34,6 +34,10 @@ impl Home {
             .env("CX_NO_SKILLS_AUTO_UPDATE", "1")
             .kill_on_drop(true)
             .arg(arg);
+        #[cfg(windows)]
+        if let Some(system_root) = std::env::var_os("SystemRoot") {
+            cx.env("SystemRoot", system_root);
+        }
         cx
     }
 

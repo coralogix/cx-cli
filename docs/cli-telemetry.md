@@ -48,6 +48,12 @@ token. Custom traces paths or traces URLs with a query string keep trace-only
 delivery.
 Both delivery modes are independent of Coralogix profile credentials and
 `OTEL_*` environment variables.
+Telemetry HTTP transport follows reqwest's standard proxy environment handling
+(`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`).
+When platform trust initialization fails, cleartext HTTP endpoints can still
+send through a fallback client with an empty TLS root store. That fallback
+trusts no TLS peers: HTTPS endpoints and TLS proxy handshakes fail closed until
+platform trust is available again.
 
 With background delivery, cx writes the finished trace under
 `~/.cx/telemetry/` and launches a detached sender after the command. A separate

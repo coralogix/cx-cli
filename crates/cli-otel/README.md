@@ -145,14 +145,18 @@ counts.
 
 `Config::new` selects `Delivery::Inline`. At shutdown, the library sends one
 OTLP/HTTP protobuf trace request to the configured URL. The deadline defaults
-to one second. The export client connects directly and skips redirects.
+to one second. The export client honors reqwest proxy environment variables
+(`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`) and skips redirects.
 The upstream `opentelemetry-otlp` span exporter serializes finalized spans for
 inline delivery and the local spool. Its custom HTTP client uses the explicit
 destination and headers. Upstream 0.32 merges environment headers and has no
 explicit uncompressed setting, so cli-otel discards the exporter's HTTP
 headers and selects gzip internally to override ambient compression. The
 adapter bounds and decompresses that body before sending or storing ordinary
-protobuf. The library leaves the process environment untouched.
+protobuf. The library leaves the process environment untouched. If platform
+trust roots cannot be initialized, cleartext HTTP endpoints still work through
+a fallback client with an empty TLS root store. That fallback trusts no TLS
+peers, so HTTPS endpoints and TLS proxy handshakes fail closed.
 
 Enable the `command-failure-logs` feature and set
 `config.command_failure_logs = true` to add inline failure logs. The trace URL

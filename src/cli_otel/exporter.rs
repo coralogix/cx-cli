@@ -13,7 +13,7 @@ use prost::Message;
 use reqwest::{header, Client, Url};
 
 use super::limits::{MAX_BATCH_BYTES, MAX_SPANS, MAX_SPAN_BYTES};
-use super::{inline_client, otlp, Config, Delivery, DeliveryAllowed, Spool};
+use super::{inline_client_for_endpoint, otlp, Config, Delivery, DeliveryAllowed, Spool};
 
 // Allow the full span buffer to reach the fitter, plus protobuf framing and
 // resource/scope metadata. Only a fitted, 512 KiB batch can go out or to disk.
@@ -24,7 +24,7 @@ pub(crate) fn build(config: Config, resource: &Resource) -> Option<SpanExporter>
     let delivery_allowed = config.delivery_allowed;
     let transport = match config.delivery {
         Delivery::Inline => Transport::Inline {
-            client: inline_client(timeout)?,
+            client: inline_client_for_endpoint(timeout, &config.endpoint)?,
             endpoint: config.endpoint,
             headers: config.headers,
             delivery_allowed,

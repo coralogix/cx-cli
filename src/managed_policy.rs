@@ -442,15 +442,19 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_rejects_user_owned_policy_directory() {
-        let path = Path::new(r"C:\ProgramData\Coralogix\cx\policy.toml");
+        let root = std::env::temp_dir().join(format!("cx_policy_parent_{}", std::process::id()));
+        let cx_dir = root.join("Coralogix").join("cx");
+        std::fs::create_dir_all(&cx_dir).expect("create policy directory");
+        let path = cx_dir.join("policy.toml");
         let trust = policy_directories_are_trusted(path, &|directory| {
-            Ok(if directory.ends_with("cx") {
+            Ok(if directory == cx_dir {
                 PolicyOwner::Untrusted
             } else {
                 PolicyOwner::Trusted
             })
         })
         .expect("directory ownership check");
+        let _ = std::fs::remove_dir_all(root);
         assert_eq!(
             trust,
             PolicyOwner::Untrusted,

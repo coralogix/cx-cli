@@ -845,7 +845,9 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
   cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
-  cx olly artifacts get <artifact-id>")]
+  cx olly artifacts get <artifact-id>
+  cx olly rules list
+  cx olly rules create --rule \"Answer in English\" --team --yes")]
     Olly {
         #[command(subcommand)]
         cmd: OllyCmd,
@@ -861,10 +863,7 @@ impl Commands {
     }
 
     fn is_olly(&self) -> bool {
-        match self {
-            Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
-            _ => false,
-        }
+        matches!(self, Self::Olly { cmd } if !matches!(cmd, OllyCmd::Artifacts { .. }))
     }
 }
 
@@ -933,9 +932,9 @@ Examples:
         #[arg(long)]
         set_default: bool,
         /// When creating the first profile, disable the Olly AI assistant
-        /// (`cx olly ask`). Olly is enabled by default; this opts out. Only
-        /// affects first-profile setup, where the global Olly setting is
-        /// written. No prompt either way.
+        /// (every `cx olly` command except `artifacts`). Olly is enabled by
+        /// default; this opts out. Only affects first-profile setup, where
+        /// the global Olly setting is written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
         /// Labels for this profile, such as `prod` or `eu`.
@@ -1222,6 +1221,123 @@ Examples:
         #[command(subcommand)]
         cmd: OllyArtifactsCmd,
     },
+
+    /// Manage rules: instructions Olly follows in your chats, or in everyone's with --team.
+    #[command(after_help = "\
+Without --team the commands act on your personal rules. Personal rules need a
+personal API key or a logged-in profile; a team API key gets a 403.
+With --team they act on team rules, which apply to everyone on the team.
+Changing team rules needs the olly-team-rules:Manage permission.
+
+Examples:
+  cx olly rules list
+  cx olly rules list --team -o json
+  cx olly rules create --rule \"Answer in English\" --yes
+  cx olly rules disable <rule-id> --team --yes")]
+    Rules {
+        /// Act on team rules instead of your personal rules.
+        #[arg(long, global = true)]
+        team: bool,
+
+        #[command(subcommand)]
+        cmd: OllyRulesCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OllyRulesCmd {
+    /// List rules.
+    #[command(after_help = "\
+Disabled team rules are listed only for callers with olly-team-rules:Manage.
+The table cuts long rule text; -o json has the full text.
+
+Examples:
+  cx olly rules list
+  cx olly rules list --team
+  cx olly rules list -o json")]
+    List,
+
+    /// Show one rule with its full text.
+    #[command(after_help = "\
+Examples:
+  cx olly rules get <rule-id>
+  cx olly rules get <rule-id> --team -o json")]
+    Get {
+        /// Rule ID (from `cx olly rules list`).
+        #[arg(value_parser = parse_rule_id)]
+        rule_id: String,
+    },
+
+    /// Create a rule [requires --yes].
+    #[command(after_help = "\
+Olly checks the text and rejects prompt injection and foul language (422).
+
+Examples:
+  cx olly rules create --rule \"Answer in English\" --yes
+  cx olly rules create --rule \"Always link the runbook\" --team --yes
+  cat rule.txt | cx olly rules create --rule - --yes")]
+    Create {
+        /// The rule text. Pass `-` to read it from stdin.
+        #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
+        rule: String,
+    },
+
+    /// Replace a rule's text [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx olly rules update <rule-id> --rule \"Answer in English, briefly\" --yes
+  cat rule.txt | cx olly rules update <rule-id> --rule - --team --yes")]
+    Update {
+        /// Rule ID.
+        #[arg(value_parser = parse_rule_id)]
+        rule_id: String,
+
+        /// The new rule text. Pass `-` to read it from stdin.
+        #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
+        rule: String,
+    },
+
+    /// Turn a rule on [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx olly rules enable <rule-id> --yes
+  cx olly rules enable <rule-id> --team --yes")]
+    Enable {
+        /// Rule ID.
+        #[arg(value_parser = parse_rule_id)]
+        rule_id: String,
+    },
+
+    /// Turn a rule off without deleting it [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx olly rules disable <rule-id> --yes
+  cx olly rules disable <rule-id> --team --yes")]
+    Disable {
+        /// Rule ID.
+        #[arg(value_parser = parse_rule_id)]
+        rule_id: String,
+    },
+
+    /// Delete a rule [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx olly rules delete <rule-id> --yes
+  cx olly rules delete <rule-id> --team --yes")]
+    Delete {
+        /// Rule ID.
+        #[arg(value_parser = parse_rule_id)]
+        rule_id: String,
+    },
+}
+
+/// Rule IDs are UUIDs. Checking here keeps a typo, or an empty value, from
+/// reaching another endpoint as part of the URL path.
+fn parse_rule_id(raw: &str) -> Result<String, String> {
+    match uuid::Uuid::parse_str(raw) {
+        Ok(_) => Ok(raw.to_string()),
+        Err(_) => Err("not a rule ID. Rule IDs are UUIDs; see `cx olly rules list`".to_string()),
+    }
 }
 
 #[derive(Subcommand)]
@@ -4889,7 +5005,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Olly gating (olly ask).
+    // Olly gating (everything under `cx olly` except `artifacts`).
     if cli.command.is_olly() && !global_cfg_early.olly_enabled {
         bail!(
             "The Olly AI assistant is currently disabled in your global configuration.\n\
@@ -7116,6 +7232,87 @@ async fn main() -> Result<()> {
                         .await?;
                     }
                 },
+                OllyCmd::Rules { team, cmd } => {
+                    use commands::olly::api::RuleScope;
+                    let scope = RuleScope::from_team_flag(team);
+                    let kind = scope.label();
+                    match cmd {
+                        OllyRulesCmd::List => {
+                            commands::olly::run_rules_list(&targets, scope, output).await?;
+                        }
+                        OllyRulesCmd::Get { rule_id } => {
+                            commands::olly::run_rules_get(&targets, scope, &rule_id, output)
+                                .await?;
+                        }
+                        OllyRulesCmd::Create { rule } => {
+                            let text = commands::olly::read_rule_text(&rule)?;
+                            confirm_destructive(
+                                &format!("Create a {kind} rule?"),
+                                yes,
+                                agent_mode,
+                            )?;
+                            commands::olly::run_rules_create(&targets, scope, &text, output)
+                                .await?;
+                        }
+                        OllyRulesCmd::Update { rule_id, rule } => {
+                            let text = commands::olly::read_rule_text(&rule)?;
+                            confirm_destructive(
+                                &format!("Replace the text of {kind} rule '{rule_id}'?"),
+                                yes,
+                                agent_mode,
+                            )?;
+                            commands::olly::run_rules_update(
+                                &targets,
+                                scope,
+                                &rule_id,
+                                Some(&text),
+                                None,
+                                output,
+                            )
+                            .await?;
+                        }
+                        OllyRulesCmd::Enable { rule_id } => {
+                            confirm_destructive(
+                                &format!("Enable {kind} rule '{rule_id}'?"),
+                                yes,
+                                agent_mode,
+                            )?;
+                            commands::olly::run_rules_update(
+                                &targets,
+                                scope,
+                                &rule_id,
+                                None,
+                                Some(true),
+                                output,
+                            )
+                            .await?;
+                        }
+                        OllyRulesCmd::Disable { rule_id } => {
+                            confirm_destructive(
+                                &format!("Disable {kind} rule '{rule_id}'?"),
+                                yes,
+                                agent_mode,
+                            )?;
+                            commands::olly::run_rules_update(
+                                &targets,
+                                scope,
+                                &rule_id,
+                                None,
+                                Some(false),
+                                output,
+                            )
+                            .await?;
+                        }
+                        OllyRulesCmd::Delete { rule_id } => {
+                            confirm_destructive(
+                                &format!("Delete {kind} rule '{rule_id}'?"),
+                                yes,
+                                agent_mode,
+                            )?;
+                            commands::olly::run_rules_delete(&targets, scope, &rule_id).await?;
+                        }
+                    }
+                }
             },
         } // end match cli.command
         Ok::<(), anyhow::Error>(())

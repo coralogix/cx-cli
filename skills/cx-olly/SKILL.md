@@ -1,6 +1,6 @@
 ---
 name: cx-olly
-description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
+description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", "Olly rules", "list Olly rules", "add a rule for Olly", "team rules", "custom instructions for Olly", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
 metadata:
   version: "0.1.0"
 ---
@@ -18,6 +18,12 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
+| `cx olly rules list` | List rules | `--team` |
+| `cx olly rules get <rule-id>` | Show one rule with its full text | `--team` |
+| `cx olly rules create --rule <text>` | Create a rule | `--team`, `--yes` |
+| `cx olly rules update <rule-id> --rule <text>` | Replace a rule's text | `--team`, `--yes` |
+| `cx olly rules enable <rule-id>` / `disable <rule-id>` | Turn a rule on or off | `--team`, `--yes` |
+| `cx olly rules delete <rule-id>` | Delete a rule | `--team`, `--yes` |
 
 **Output format:** append `-o json` or `-o toon` for machine-readable output.
 
@@ -107,6 +113,41 @@ The `artifacts get` command automatically:
 Output behavior:
 - **JSON content**: Displayed directly, or spilled to file if large
 - **Text content**: Saved to temp file (e.g., `/tmp/cx_results_artifact_<id>_<hash>.txt`)
+
+## Rules
+
+Rules are instructions Olly follows when it answers. Personal rules apply to your own chats. Team rules apply to everyone on the team. Without `--team` the commands act on personal rules; with `--team` they act on team rules.
+
+### List and read rules
+
+```bash
+cx olly rules list
+cx olly rules list --team -o json
+cx olly rules get <rule-id>
+cx olly rules get <rule-id> --team -o json
+```
+
+A rule has `id`, `rule` (the text), `enabled` and `created_at`. The `list` table cuts long rule text; `-o json` and `rules get` show the full text.
+
+### Create and change rules
+
+```bash
+cx olly rules create --rule "Answer in English" --yes
+cx olly rules create --rule "Always link the runbook" --team --yes
+cat rule.txt | cx olly rules create --rule - --yes
+cx olly rules update <rule-id> --rule "Answer in English, briefly" --yes
+cx olly rules disable <rule-id> --team --yes
+cx olly rules enable <rule-id> --team --yes
+cx olly rules delete <rule-id> --yes
+```
+
+- `--rule -` reads the rule text from stdin.
+- `create`, `update`, `enable`, `disable` and `delete` ask for confirmation. In agent mode they fail without `--yes`: ask the user to confirm, then re-run with `--yes`. `--read-only` blocks all five.
+- `create` and `update` print the rule with `-o json`, so the new rule's `id` can be read from the output.
+- **422** means Olly rejected the rule text (it looks like a prompt injection or contains foul language). The error shows Olly's reason.
+- **403 on personal rules** usually means the profile uses a team API key. Personal rules need a personal API key or a logged-in profile. Team rules work with any API key that has the permissions below.
+- **Team rule permissions:** reading needs `olly-team-rules:Read` or `olly-team-rules:Manage`; writing needs `olly-team-rules:Manage`.
+- **Disabled team rules** are visible only with `olly-team-rules:Manage`. Without it, `list` leaves them out and `get` returns 404.
 
 ## Workflow Examples
 

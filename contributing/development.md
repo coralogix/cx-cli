@@ -104,6 +104,7 @@ off this list only with a safe, repeatable way to run it.
 | `notifications presets set-default` | No command reads the current default, so it cannot be restored. |
 | `cases` writes on a real case (`cases_write_roundtrip`) | Manual only, with `CX_TEST_CASE_ID`; it mutates one shared case and is not parallel-safe. The 404 paths of every verb run in CI. |
 | `olly ask` | AI features are not enabled on the test team (403); the test skips. |
+| `olly rules` | Personal rules: a team API key gets 403 on every command, so the whole personal lifecycle skips. Team rules: `list` always runs; the write lifecycle skips when the test key lacks `olly-team-rules:Manage` (403 on `create`). The test prints what was not covered. |
 
 ### CI
 

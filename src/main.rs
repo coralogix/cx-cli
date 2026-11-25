@@ -1332,10 +1332,12 @@ Examples:
 }
 
 /// Rule IDs are UUIDs. Checking here keeps a typo, or an empty value, from
-/// reaching another endpoint as part of the URL path.
+/// reaching another endpoint as part of the URL path. The parser also accepts
+/// the braced, `urn:uuid:` and unhyphenated forms, so the ID is rewritten to
+/// the hyphenated form the API uses.
 fn parse_rule_id(raw: &str) -> Result<String, String> {
     match uuid::Uuid::parse_str(raw) {
-        Ok(_) => Ok(raw.to_string()),
+        Ok(id) => Ok(id.hyphenated().to_string()),
         Err(_) => Err("not a rule ID. Rule IDs are UUIDs; see `cx olly rules list`".to_string()),
     }
 }

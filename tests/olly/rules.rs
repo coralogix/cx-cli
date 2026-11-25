@@ -444,3 +444,26 @@ async fn rule_text_may_start_with_a_hyphen_and_a_bad_id_sends_nothing() {
         assert!(stderr.contains("not a rule ID"), "{id}: {stderr}");
     }
 }
+
+#[tokio::test]
+async fn other_uuid_spellings_are_sent_in_the_hyphenated_form() {
+    let (server, home) = server_with_profile().await;
+    Mock::given(method("GET"))
+        .and(path(format!("{TEAM}/11111111-1111-4111-8111-111111111111")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(rule_row(
+            "11111111-1111-4111-8111-111111111111",
+            "Be brief",
+            true,
+        )))
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    for id in [
+        "urn:uuid:11111111-1111-4111-8111-111111111111",
+        "{11111111-1111-4111-8111-111111111111}",
+        "11111111111141118111111111111111",
+    ] {
+        stdout_of(cx(&home).args(["olly", "rules", "get", id, "--team"]));
+    }
+}

@@ -220,6 +220,50 @@ impl OllyApi {
             .await
     }
 
+    pub async fn rename_chat(&self, chat_id: &str, title: &str) -> Result<()> {
+        let path = format!("{CHATS_BASE}/{chat_id}/title");
+        let _: Value = self.client.patch(&path, &json!({ "title": title })).await?;
+        Ok(())
+    }
+
+    /// Delete a chat with its interactions, artifacts and uploaded files.
+    /// Only the owner can delete; the API answers 404 for anyone else.
+    pub async fn delete_chat(&self, chat_id: &str) -> Result<()> {
+        let _: Value = self
+            .client
+            .delete(&format!("{CHATS_BASE}/{chat_id}"))
+            .await?;
+        Ok(())
+    }
+
+    /// Change who can see a chat. `shared_type` is `private`,
+    /// `specific_entities` or `entire_organization`; the API requires
+    /// `entity_ids` for `specific_entities` and rejects them otherwise.
+    pub async fn share_chat(
+        &self,
+        chat_id: &str,
+        shared_type: &str,
+        entity_ids: &[String],
+    ) -> Result<()> {
+        let path = format!("{CHATS_BASE}/{chat_id}/shared");
+        let mut body = json!({ "shared_type": shared_type });
+        if !entity_ids.is_empty() {
+            body["shared_entity_ids"] = json!(entity_ids);
+        }
+        let _: Value = self.client.patch(&path, &body).await?;
+        Ok(())
+    }
+
+    /// Stop an answer that is still running. The API answers 400 when the
+    /// interaction has already finished.
+    pub async fn stop_interaction(&self, chat_id: &str, interaction_id: &str) -> Result<()> {
+        let path = format!("{CHATS_BASE}/{chat_id}/stop");
+        self.client
+            .post_raw(&path, &json!({ "interaction_id": interaction_id }))
+            .await?;
+        Ok(())
+    }
+
     pub async fn list_models(&self) -> Result<Vec<String>> {
         self.client.get(&format!("{CHATS_BASE}/models"), &[]).await
     }

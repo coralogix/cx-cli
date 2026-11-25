@@ -1197,7 +1197,7 @@ Examples:
         cmd: OllyArtifactsCmd,
     },
 
-    /// List and read chats.
+    /// List, read and manage chats.
     Chats {
         #[command(subcommand)]
         cmd: OllyChatsCmd,
@@ -1249,6 +1249,66 @@ Examples:
     Get {
         /// Chat ID (from `cx olly chats list` or the output of `cx olly ask`).
         chat_id: String,
+    },
+
+    /// Change a chat's title [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx olly chats rename <chat-id> \"Checkout latency investigation\" --yes")]
+    Rename {
+        /// Chat ID.
+        chat_id: String,
+
+        /// The new title.
+        title: String,
+    },
+
+    /// Delete a chat with its interactions, artifacts and uploaded files [requires --yes].
+    #[command(after_help = "\
+Only the chat's owner can delete it.
+
+Examples:
+  cx olly chats delete <chat-id> --yes")]
+    Delete {
+        /// Chat ID.
+        chat_id: String,
+    },
+
+    /// Change who can see a chat [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx olly chats share <chat-id> --with org --yes
+  cx olly chats share <chat-id> --with private --yes
+  cx olly chats share <chat-id> --with entities --entity-id <id> --entity-id <id> --yes")]
+    Share {
+        /// Chat ID.
+        chat_id: String,
+
+        /// Who can see the chat: only you, the whole organization, or the
+        /// entities named with --entity-id.
+        #[arg(long, value_parser = ["private", "org", "entities"])]
+        with: String,
+
+        /// An entity to share with (repeatable). Required with `--with entities`,
+        /// not allowed otherwise.
+        #[arg(long, value_name = "ID", required_if_eq("with", "entities"))]
+        entity_id: Vec<String>,
+    },
+
+    /// Stop an answer that is still running. Runs without a confirmation prompt.
+    #[command(after_help = "\
+The interaction ID is printed by `cx olly ask` and listed under `interactions`
+in `cx olly chats get <chat-id> -o json`. Stopping an answer that has already
+finished fails with the API's message.
+
+Examples:
+  cx olly chats stop <chat-id> <interaction-id>")]
+    Stop {
+        /// Chat ID.
+        chat_id: String,
+
+        /// The interaction (one question and its answer) to stop.
+        interaction_id: String,
     },
 }
 
@@ -5990,6 +6050,50 @@ async fn main() -> Result<()> {
                             &temp_dir,
                         )
                         .await?;
+                    }
+                    OllyChatsCmd::Rename { chat_id, title } => {
+                        confirm_destructive(
+                            &format!("Rename chat '{chat_id}' to '{title}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_chats_rename(&targets, &chat_id, &title).await?;
+                    }
+                    OllyChatsCmd::Delete { chat_id } => {
+                        confirm_destructive(
+                            &format!(
+                                "Delete chat '{chat_id}'? Its interactions, artifacts and \
+                                 uploaded files are deleted too."
+                            ),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_chats_delete(&targets, &chat_id).await?;
+                    }
+                    OllyChatsCmd::Share {
+                        chat_id,
+                        with,
+                        entity_id,
+                    } => {
+                        if with != "entities" && !entity_id.is_empty() {
+                            bail!("--entity-id is only allowed with `--with entities`.");
+                        }
+                        confirm_destructive(
+                            &format!("Share chat '{chat_id}' with: {with}?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_chats_share(&targets, &chat_id, &with, &entity_id)
+                            .await?;
+                    }
+                    // Stopping is urgent and only ends a running answer, so it
+                    // does not prompt. `--read-only` still blocks it.
+                    OllyChatsCmd::Stop {
+                        chat_id,
+                        interaction_id,
+                    } => {
+                        commands::olly::run_chats_stop(&targets, &chat_id, &interaction_id)
+                            .await?;
                     }
                 },
                 OllyCmd::Models => {

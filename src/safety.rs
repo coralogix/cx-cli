@@ -20,6 +20,7 @@ const WRITE_VERBS: &[&str] = &[
     "enable",
     "overwrite",
     "remove",
+    "rename",
     "reorder",
     "replace",
     "resolve",
@@ -30,6 +31,8 @@ const WRITE_VERBS: &[&str] = &[
     "set-priority",
     "set-status",
     "settings-update",
+    "share",
+    "stop",
     "unacknowledge",
     "unassign",
     "undeploy",
@@ -238,6 +241,9 @@ mod tests {
             "batch",
             "activate",
             "settings-update",
+            "rename",
+            "share",
+            "stop",
         ];
         for verb in verbs {
             assert!(

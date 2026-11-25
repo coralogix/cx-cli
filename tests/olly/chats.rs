@@ -1,10 +1,10 @@
-//! `cx olly chats list|get` and `cx olly models`, driven through the real
+//! `cx olly chats` and `cx olly models`, driven through the real
 //! binary so the flags, the request and the printed output are all covered.
 
 use std::fs;
 
 use serde_json::{json, Value};
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{body_json, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::olly::run_chats_list;
@@ -245,4 +245,213 @@ async fn models_prints_one_id_per_line_in_text_and_an_array_in_json() {
         serde_json::from_str::<Value>(&json).unwrap(),
         json!(["gpt-5.2", "claude-sonnet-4-5"])
     );
+}
+
+// ── Write commands ───────────────────────────────────────────────────────────
+
+fn stderr_of_failure(cmd: &mut assert_cmd::Command) -> String {
+    let output = cmd.output().expect("cx must run");
+    assert!(!output.status.success(), "expected the command to fail");
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[tokio::test]
+async fn chats_rename_sends_the_title_and_accepts_an_empty_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/api/v2/olly/v2/chats/chat-1/title"))
+        .and(body_json(json!({"title": "Checkout latency"})))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let output = cx_olly(&home)
+        .args([
+            "olly",
+            "chats",
+            "rename",
+            "chat-1",
+            "Checkout latency",
+            "--yes",
+        ])
+        .output()
+        .expect("cx must run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.contains("Renamed chat chat-1"), "{stderr}");
+}
+
+#[tokio::test]
+async fn chats_delete_needs_confirmation_and_names_what_else_is_deleted() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/api/v2/olly/v2/chats/chat-1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let stderr = stderr_of_failure(
+        cx_olly(&home)
+            .env("CX_AGENT_MODE", "1")
+            .args(["olly", "chats", "delete", "chat-1"]),
+    );
+    assert!(stderr.contains("requires user confirmation"), "{stderr}");
+    assert!(
+        stderr.contains("interactions, artifacts and uploaded files"),
+        "{stderr}"
+    );
+
+    cx_olly(&home)
+        .args(["olly", "chats", "delete", "chat-1", "--yes"])
+        .assert()
+        .success();
+}
+
+#[tokio::test]
+async fn chats_share_maps_with_to_the_api_shared_type() {
+    let server = MockServer::start().await;
+    for body in [
+        json!({"shared_type": "private"}),
+        json!({"shared_type": "entire_organization"}),
+        json!({"shared_type": "specific_entities", "shared_entity_ids": ["team-a", "user-b"]}),
+    ] {
+        Mock::given(method("PATCH"))
+            .and(path("/api/v2/olly/v2/chats/chat-1/shared"))
+            .and(body_json(body))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    for extra in [
+        &["--with", "private"][..],
+        &["--with", "org"],
+        &[
+            "--with",
+            "entities",
+            "--entity-id",
+            "team-a",
+            "--entity-id",
+            "user-b",
+        ],
+    ] {
+        cx_olly(&home)
+            .args(["olly", "chats", "share", "chat-1", "--yes"])
+            .args(extra)
+            .assert()
+            .success();
+    }
+}
+
+#[tokio::test]
+async fn chats_share_checks_entity_ids_before_any_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    let missing = stderr_of_failure(cx_olly(&home).args([
+        "olly", "chats", "share", "chat-1", "--with", "entities", "--yes",
+    ]));
+    assert!(missing.contains("--entity-id"), "{missing}");
+
+    for with in ["private", "org"] {
+        let extra = stderr_of_failure(cx_olly(&home).args([
+            "olly",
+            "chats",
+            "share",
+            "chat-1",
+            "--with",
+            with,
+            "--entity-id",
+            "team-a",
+            "--yes",
+        ]));
+        assert!(
+            extra.contains("only allowed with `--with entities`"),
+            "{with}: {extra}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn chats_stop_runs_without_confirmation_and_shows_the_api_400() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-1/stop"))
+        .and(body_json(json!({"interaction_id": "running"})))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/olly/v2/chats/chat-1/stop"))
+        .and(body_json(json!({"interaction_id": "finished"})))
+        .respond_with(
+            ResponseTemplate::new(400)
+                .set_body_json(json!({"detail": "Interaction is not in progress"})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    // No --yes, and agent mode on: `stop` must still go through.
+    cx_olly(&home)
+        .env("CX_AGENT_MODE", "1")
+        .args(["olly", "chats", "stop", "chat-1", "running"])
+        .assert()
+        .success();
+
+    let stderr =
+        stderr_of_failure(cx_olly(&home).args(["olly", "chats", "stop", "chat-1", "finished"]));
+    assert!(stderr.contains("400"), "{stderr}");
+    assert!(
+        stderr.contains("Interaction is not in progress"),
+        "{stderr}"
+    );
+}
+
+#[tokio::test]
+async fn read_only_blocks_every_chat_write() {
+    let server = MockServer::start().await;
+    Mock::given(wiremock::matchers::any())
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let home = cli_temp_home();
+    cli_write_profile(&home, &server.uri());
+
+    for args in [
+        &["rename", "chat-1", "New title"][..],
+        &["delete", "chat-1"],
+        &["share", "chat-1", "--with", "org"],
+        &["stop", "chat-1", "interaction-1"],
+    ] {
+        let stderr = stderr_of_failure(
+            cx_olly(&home)
+                .args(["--read-only", "olly", "chats"])
+                .args(args)
+                .arg("--yes"),
+        );
+        assert!(
+            stderr.to_lowercase().contains("read-only"),
+            "{args:?}: {stderr}"
+        );
+    }
 }

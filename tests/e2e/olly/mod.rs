@@ -1,6 +1,6 @@
 //! `cx olly`: one paid, slow `ask` round-trip (skippable with
-//! `CX_E2E_SKIP_OLLY=1`), the artifact commands, and the read-only chat and
-//! model commands.
+//! `CX_E2E_SKIP_OLLY=1`), the artifact commands, the read-only chat and
+//! model commands, and the chat write lifecycle.
 
 use crate::harness;
 
@@ -225,5 +225,57 @@ fn olly_chats_list_and_get() {
         "get",
         "00000000-0000-0000-0000-000000000000",
     ]);
+    assert!(stderr.contains("404"), "{stderr}");
+}
+
+/// rename -> share -> stop -> delete on a chat this test creates. The CLI has
+/// no command that creates an empty chat (`ask` does, but it is paid and
+/// slow), so the chat comes from the API client directly.
+#[test]
+#[ignore]
+fn olly_chats_write_lifecycle() {
+    if harness::require_write_creds("olly_chats_write_lifecycle").is_none() {
+        return;
+    }
+    let api = coralogix_cli::commands::olly::api::OllyApi::from_client(harness::api_client());
+    let chat_id = match harness::block_on(api.create_chat()) {
+        Ok(chat) => chat.id,
+        // Olly is a per-team entitlement: without it, creating a chat is a 403.
+        Err(e) if e.to_string().contains("AI features are not enabled") => {
+            eprintln!(
+                "[e2e] not covered: olly chats rename/share/stop/delete - AI features are \
+                 not enabled for the test team (API answered: {e})"
+            );
+            return;
+        }
+        Err(e) => panic!("creating a chat failed: {e}"),
+    };
+    let mut cleanup = harness::Cleanup::new(&["olly", "chats", "delete", &chat_id]);
+
+    let title = harness::unique_name("olly-chat");
+    harness::run_write_ok(&["olly", "chats", "rename", &chat_id, &title]);
+    let chat = harness::run_ok_json(&["olly", "chats", "get", &chat_id, "-o", "json"]);
+    assert_eq!(chat["title"], title, "{chat}");
+
+    harness::run_write_ok(&["olly", "chats", "share", &chat_id, "--with", "org"]);
+    let chat = harness::run_ok_json(&["olly", "chats", "get", &chat_id, "-o", "json"]);
+    assert_eq!(
+        chat["shared_options"]["shared_type"], "entire_organization",
+        "{chat}"
+    );
+    harness::run_write_ok(&["olly", "chats", "share", &chat_id, "--with", "private"]);
+
+    // Nothing is running in an empty chat, so `stop` has nothing to stop.
+    harness::run_fail(&[
+        "olly",
+        "chats",
+        "stop",
+        &chat_id,
+        "00000000-0000-0000-0000-000000000000",
+    ]);
+
+    harness::run_write_ok(&["olly", "chats", "delete", &chat_id]);
+    cleanup.disarm();
+    let stderr = harness::run_fail(&["olly", "chats", "get", &chat_id]);
     assert!(stderr.contains("404"), "{stderr}");
 }

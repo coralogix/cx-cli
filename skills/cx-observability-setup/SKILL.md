@@ -97,7 +97,7 @@ Use this skill when setting up or configuring the observability stack - saved vi
 | `cx integrations update <id> --from-file` | Update an integration |
 | `cx integrations delete <id>` | Delete an integration |
 | `cx integrations test --from-file` | Test integration config |
-| `cx integrations template` | Get integration template |
+| `cx integrations template --integration-id <deployed-id>` | Get the template of a deployed (managed) integration |
 | `cx integrations definition <id>` | Get integration definition |
 | `cx integrations deployed <id>` | Get deployed integration |
 | `cx integrations extensions list` | List available extensions |
@@ -142,7 +142,23 @@ cx notifications connectors create --from-file slack-connector.json
 
 ### 3. Configure Notification Routing
 
-Route alerts to the right channels:
+Route alerts to the right channels. A router picks up alerts by routing labels: the router's `routingLabels` use bare keys (`{"team": "payments"}`), and the alert carries the same values in `entityLabels` with a `routing.` prefix (`"routing.team": "payments"`). This works in both notification modes. Each rule's `entityType` says which mode it serves: `CASES` for Cases-mode alerts (the default for alerts made with the `cx-alerts` skill), `ALERTS` for alerts that set `notificationGroup.router`. Add `CASES` rules unless the user explicitly wants alert-based notifications. The `routingLabels` already choose which alerts reach the router, so a rule's `condition` is usually `"true"`; use a condition only to filter further, for example by priority.
+
+```json
+{
+  "router": {
+    "name": "payments",
+    "routingLabels": { "team": "payments" },
+    "rules": [{
+      "name": "payments-cases",
+      "condition": "true",
+      "entityType": "CASES",
+      "targets": [{ "connectorId": "<connector-id>", "presetId": "<preset-id>" }]
+    }],
+    "fallbackTargets": []
+  }
+}
+```
 
 ```bash
 cx notifications routers create --from-file router.json

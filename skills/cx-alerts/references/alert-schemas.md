@@ -20,12 +20,14 @@ Every alert definition has this top-level shape. The alert type config (e.g. `lo
     "entityLabels": {},
     "phantomMode": false,
     "activeOn": { ... },
-    "incidentsSettings": { ... },
-    "notificationGroup": { ... },
+    "notificationGroup": { "groupByKeys": [] },
+    "caseSettings": { ... },
     "logsThreshold": { ... }
   }
 }
 ```
+
+**Notifications:** routing labels in `entityLabels` decide which routers pick the alert up, in either mode. The mode is set only by `notificationGroup.router`: leave it out for **Cases mode** (the default). In Cases mode, `notificationGroup` holds at most `groupByKeys` (one case per group vs one combined case) and `incidentsSettings` is left out. `notificationGroup.router`, `destinations`, `webhooks` and `incidentsSettings` are **Alerts-mode** fields; only use them when the user explicitly asks for alert-based notifications. See the sections below.
 
 ### Priority values
 
@@ -70,7 +72,37 @@ Every alert definition has this top-level shape. The alert type config (e.g. `lo
 
 Day values: `DAY_OF_WEEK_MONDAY_OR_UNSPECIFIED`, `DAY_OF_WEEK_TUESDAY`, `DAY_OF_WEEK_WEDNESDAY`, `DAY_OF_WEEK_THURSDAY`, `DAY_OF_WEEK_FRIDAY`, `DAY_OF_WEEK_SATURDAY`, `DAY_OF_WEEK_SUNDAY`
 
-### Incident Settings (`incidentsSettings`)
+### Routing labels (`entityLabels`) — both modes
+
+```json
+{
+  "routing.team": "payments",
+  "routing.service": "checkout",
+  "routing.environment": "production"
+}
+```
+
+Only these three keys route, and the `routing.` prefix is required: a bare `team` key is an ordinary label that no router matches (no error is reported). A router's `routingLabels` hold the same values without the prefix (`{"team": "payments"}`), and a router picks the alert up when all of its `routingLabels` match the alert's routing labels; see a router's labels with `cx notifications routers get <id>` (`list` does not show them). `routing.group` is a deprecated key the web editor still displays; routers cannot match on it, so don't set it. Each router rule has an `entityType`: `CASES` rules handle Cases-mode alerts, `ALERTS` rules handle alerts with `notificationGroup.router`. A value may be a template such as `{{ groups.service | default(value="na") }}` only when that key is in `notificationGroup.groupByKeys`. Other `entityLabels` keys are free-form labels.
+
+### Case Settings (`caseSettings`) — Cases mode
+
+Optional. Settings for the cases this alert creates. In Cases mode the alert sends no notifications itself: the case does, through the routers its routing labels match and through `destinations` here.
+
+```json
+{
+  "destinations": [
+    { "connectorId": "uuid", "presetId": "uuid", "condition": "true" }
+  ]
+}
+```
+
+- `destinations[]` — connectors notified directly about the case (max 100). `presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise a notification-center routing condition such as `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Two destinations with the same connector, preset and condition are rejected. These connectors are notified in addition to whatever the routers send. Find IDs with `cx notifications connectors list` and `cx notifications presets list`.
+- `autoResolveMode` — `ALERT_DEF_CASE_AUTO_RESOLVE_MODE_UNSPECIFIED`, `_ENABLED`, `_DISABLED`. Leave unset unless the user asks.
+- `enrichmentQueries` — optional enrichment query for the case (max 1). Leave empty unless the user asks.
+
+### Incident Settings (`incidentsSettings`) — Alerts mode only
+
+**Do not set this when creating alerts in Cases mode.** It is the alert-level notify-on and retriggering period used by alert-based notifications.
 
 ```json
 {
@@ -82,6 +114,10 @@ Day values: `DAY_OF_WEEK_MONDAY_OR_UNSPECIFIED`, `DAY_OF_WEEK_TUESDAY`, `DAY_OF_
 `notifyOn` values: `NOTIFY_ON_TRIGGERED_ONLY_UNSPECIFIED`, `NOTIFY_ON_TRIGGERED_AND_RESOLVED`
 
 ### Notification Group (`notificationGroup`)
+
+**`groupByKeys` — both modes.** Decides how the alert's groups become Cases (or notifications): list keys for one per group, or leave it empty (or the whole object out) for one combined case. The keys must be a subset of the alert's `groupByKeys`; for metric alerts those are the PromQL query's `by (...)` labels. The API rejects other keys (for SLO alerts, when it checks the SLO), but does not check metric alerts, so a key outside the query's `by` clause is accepted without an error. In Cases mode this is the only field to set: `{"groupByKeys": ["service"]}`.
+
+**`router`, `destinations`, `webhooks` — Alerts mode only.** `router` is the mode switch: when it is present the alert sends its own notifications through router rules with `entityType: "ALERTS"`. Cases are opened in both modes. `router.id` pins one router. `destinations` and `webhooks` are older direct notifications sent by the alert itself. Only set any of these when the user explicitly asks for alert-based notifications; to notify a connector about this alert's cases, use `caseSettings.destinations` instead.
 
 ```json
 {
@@ -385,6 +421,8 @@ Alert when unique value count in a field crosses a threshold.
 
 **logsUniqueValueTimeWindowSpecificValue:** `LOGS_UNIQUE_VALUE_TIME_WINDOW_VALUE_MINUTE_1_OR_UNSPECIFIED`, `..._MINUTES_5`, `..._MINUTES_10`, `..._MINUTES_15`, `..._MINUTES_20`, `..._MINUTES_30`, `..._HOURS_1`, `..._HOURS_2`, `..._HOURS_4`, `..._HOURS_6`, `..._HOURS_12`, `..._HOURS_24`, `..._HOURS_36`
 
+**groupByKeys:** at most one key. A create with two or more returns 400 "Logs Unique Count alerts support at most one group-by key". Older alerts that already have two or more keys can still be replaced with the same keys, but a copy of one cannot be created as-is: ask the user which single key to keep, and use it for `notificationGroup.groupByKeys` too.
+
 ### 7. Logs New Value (`logsNewValue`)
 
 Alert when a value not previously seen appears in a field.
@@ -434,17 +472,13 @@ Trigger when a PromQL expression crosses a threshold.
           "conditionType": "METRIC_THRESHOLD_CONDITION_TYPE_MORE_THAN_OR_UNSPECIFIED",
           "threshold": 90,
           "ofTheLast": {
-            "dynamicDuration": "5m"
+            "metricTimeWindowSpecificValue": "METRIC_TIME_WINDOW_VALUE_MINUTES_5"
           },
           "forOverPct": 100
-        }
+        },
+        "override": { "priority": "ALERT_DEF_PRIORITY_P1" }
       }],
-      "missingValues": {
-        "replaceWithZero": true,
-        "minNonNullValuesPct": 0
-      },
-      "undetectedValuesManagement": null,
-      "evaluationDelayMs": 0
+      "missingValues": { "replaceWithZero": true }
     }
   }
 }
@@ -452,7 +486,13 @@ Trigger when a PromQL expression crosses a threshold.
 
 **conditionType:** `METRIC_THRESHOLD_CONDITION_TYPE_MORE_THAN_OR_UNSPECIFIED`, `..._MORE_THAN_OR_EQUALS`, `..._LESS_THAN`, `..._LESS_THAN_OR_EQUALS`
 
-**dynamicDuration:** any PromQL duration string (e.g. `5m`, `1h`, `24h`) within 1-2160 minutes. This is a free-form string, not an enum.
+**override:** required on every rule, same as Logs Threshold (the API returns 400 `Required` at `rules.0.override` without it).
+
+**ofTheLast:** exactly one of:
+- `metricTimeWindowSpecificValue`: one of the `METRIC_TIME_WINDOW_VALUE_*` values listed under Metric Anomaly below.
+- `metricTimeWindowDynamicDuration`: a duration string such as `"5m"`, `"1h"` or `"1h 5m"`, within 1-2160 minutes. Not allowed on Metric Anomaly.
+
+**missingValues:** required, and exactly one of `{"replaceWithZero": true}` or `{"minNonNullValuesPct": <0-100>}`. Setting both returns a 400.
 
 **forOverPct:** percentage of data points that must breach (0-100).
 
@@ -476,7 +516,7 @@ ML-based anomaly detection on metrics.
           "conditionType": "METRIC_ANOMALY_CONDITION_TYPE_MORE_THAN_USUAL_OR_UNSPECIFIED",
           "threshold": 10,
           "ofTheLast": {
-            "specificValue": "METRIC_TIME_WINDOW_VALUE_HOUR_1"
+            "metricTimeWindowSpecificValue": "METRIC_TIME_WINDOW_VALUE_HOUR_1"
           },
           "forOverPct": 100,
           "minNonNullValuesPct": 50
@@ -491,7 +531,7 @@ ML-based anomaly detection on metrics.
 
 **conditionType:** `METRIC_ANOMALY_CONDITION_TYPE_MORE_THAN_USUAL_OR_UNSPECIFIED`, `METRIC_ANOMALY_CONDITION_TYPE_LESS_THAN_USUAL`
 
-**specificValue (timeWindow):** `METRIC_TIME_WINDOW_VALUE_MINUTES_1_OR_UNSPECIFIED`, `..._MINUTES_5`, `..._MINUTES_10`, `..._MINUTES_15`, `..._MINUTES_20`, `..._MINUTES_30`, `..._HOUR_1`, `..._HOURS_2`, `..._HOURS_4`, `..._HOURS_6`, `..._HOURS_12`, `..._HOURS_24`, `..._HOURS_36`
+**metricTimeWindowSpecificValue (ofTheLast):** `METRIC_TIME_WINDOW_VALUE_MINUTES_1_OR_UNSPECIFIED`, `..._MINUTES_5`, `..._MINUTES_10`, `..._MINUTES_15`, `..._MINUTES_20`, `..._MINUTES_30`, `..._HOUR_1`, `..._HOURS_2`, `..._HOURS_4`, `..._HOURS_6`, `..._HOURS_12`, `..._HOURS_24`, `..._HOURS_36`
 
 ### 10. Tracing Immediate (`tracingImmediate`)
 
@@ -635,6 +675,7 @@ Monitor error budget consumption or burn rate. Exactly one of `errorBudget` or `
 
 - **groupByKeys for metric alerts**: Leave empty to let the API infer from the PromQL `by` clause. If provided, keys must be in **alphabetical order** (the API infers alphabetically, not in query order).
 - **Priority**: Always ask the user -- never pick a default.
-- **override in rules**: Optional per-rule priority override using the same `ALERT_DEF_PRIORITY_*` enum values. Omit to use the alert-level priority.
+- **override in rules**: The rule's own priority, using the same `ALERT_DEF_PRIORITY_*` enum values. The create API rejects a logs-threshold rule without it (400 `Required` at `rules.0.override`), so always set it. With one rule, use the alert's `priority`. `ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED` means P5 (info); it does not inherit the alert-level priority. Rules in one alert must have different priorities (the API returns 400 "Different condition rules cannot have the same priority").
 - **notificationPayloadFilter**: List of log/span field paths to include in notifications (e.g. `["obj.field"]`).
+- **Cases mode**: when copying an existing alert, keep its `routing.*` labels but do not copy `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly wants alert-based notifications.
 - **Best practice**: Fetch an existing alert with `cx alerts get <id> -o json` to see the exact response shape, then use it as a template for creating new alerts.

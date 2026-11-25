@@ -1,16 +1,18 @@
 pub mod api;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use colored::Colorize;
+use futures::future::try_join_all;
 use serde_json::{json, Value};
 use toon_format::encode_default as toon_encode;
 
 use crate::config::OutputFormat;
 use crate::execution::{fan_out, report_errors_and_collect_successes, ExecutionTarget};
 use crate::render;
-use api::{Slo, SlosApi};
+use api::{Slo, SloStatus, SloStatusQuery, SlosApi};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,41 @@ fn slo_to_json(slo: &Slo, include_profile: bool, profile: &str) -> Value {
         }
     }
     v
+}
+
+struct NamedSloStatus {
+    id: String,
+    name: Option<String>,
+    status: SloStatus,
+}
+
+impl NamedSloStatus {
+    fn to_json(&self, include_profile: bool, profile: &str) -> Value {
+        let mut v = json!({
+            "id": self.id,
+            "name": self.name,
+            "lowest_compliance_percentage": ratio_to_percentage(self.status.lowest_compliance),
+            "lowest_remaining_error_budget_percentage": ratio_to_percentage(self.status.lowest_remaining_error_budget),
+            "effective_from": self.status.effective_from,
+            "effective_to": self.status.effective_to,
+            "computed_at": self.status.computed_at,
+            "complete_data": self.status.effective_window_complete_data,
+        });
+        if include_profile {
+            if let Value::Object(ref mut m) = v {
+                m.insert("profile".to_string(), Value::String(profile.to_string()));
+            }
+        }
+        v
+    }
+}
+
+fn ratio_to_percentage(ratio: f64) -> f64 {
+    (ratio * 100.0 * 1e6).round() / 1e6
+}
+
+fn display_ratio_as_percentage(ratio: f64) -> String {
+    format!("{:.3}%", ratio * 100.0)
 }
 
 fn read_from_file(path: &str) -> Result<Value> {
@@ -176,6 +213,114 @@ pub async fn run_get(
                     }
                 }),
             )?;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn run_status(
+    targets: &[Arc<ExecutionTarget>],
+    ids: &[String],
+    query: &SloStatusQuery,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching status of {} SLO(s)...", ids.len()).dimmed()
+    );
+
+    let include_profile = targets.len() > 1;
+
+    let per_profile = fan_out(targets, |target| async move {
+        let api = SlosApi::new(&target.client);
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let names: HashMap<String, String> = api
+            .batch_get(&id_refs)
+            .await?
+            .slos
+            .into_iter()
+            .filter_map(|slo| Some((slo.id?, slo.name?)))
+            .collect();
+
+        let api = &api;
+        let names = &names;
+        try_join_all(ids.iter().map(|id| async move {
+            let status = api
+                .status(id, query)
+                .await
+                .map_err(|error| anyhow!("SLO '{id}': {error}"))?;
+            Ok(NamedSloStatus {
+                id: id.clone(),
+                name: names.get(id).cloned(),
+                status,
+            })
+        }))
+        .await
+    })
+    .await;
+
+    let mut all_json: Vec<Value> = Vec::new();
+    let mut all_items: Vec<(String, NamedSloStatus)> = Vec::new();
+    for (profile, statuses) in report_errors_and_collect_successes(per_profile)? {
+        for status in statuses {
+            all_json.push(status.to_json(include_profile, &profile));
+            all_items.push((profile.clone(), status));
+        }
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json(&all_json)?,
+        OutputFormat::Toon => {
+            let toon =
+                toon_encode(&all_json).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            if all_items
+                .iter()
+                .any(|(_, item)| item.status.is_no_data_or_total_failure())
+            {
+                eprintln!(
+                    "{}",
+                    "0% with incomplete data means no events in the window, or every event failed."
+                        .yellow()
+                );
+            }
+            let rows: Vec<Vec<String>> = all_items
+                .iter()
+                .map(|(profile, item)| {
+                    vec![
+                        profile.clone(),
+                        item.id.clone(),
+                        item.name.clone().unwrap_or_else(|| "-".to_string()),
+                        display_ratio_as_percentage(item.status.lowest_compliance),
+                        display_ratio_as_percentage(item.status.lowest_remaining_error_budget),
+                        item.status
+                            .effective_from
+                            .clone()
+                            .unwrap_or_else(|| "-".to_string()),
+                        item.status
+                            .effective_to
+                            .clone()
+                            .unwrap_or_else(|| "-".to_string()),
+                        render::bool_display(Some(item.status.effective_window_complete_data)),
+                    ]
+                })
+                .collect();
+            render::render_table(
+                &[
+                    "ID",
+                    "Name",
+                    "Compliance",
+                    "Remaining budget",
+                    "From",
+                    "To",
+                    "Complete data",
+                ],
+                rows,
+                include_profile,
+            );
         }
     }
 

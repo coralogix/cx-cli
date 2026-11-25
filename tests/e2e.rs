@@ -4,12 +4,16 @@
 //! `cargo test` run. To execute against a real Coralogix test team:
 //!
 //! ```bash
-//! export CX_API_KEY=...           # or populate .env
-//! export CX_REGION=stg1
-//! cargo test --test e2e -- --ignored --test-threads=1
+//! export CX_API_KEY=...                # or populate .env
+//! export CX_REGION=eu2
+//! export CX_E2E_ALLOW_WRITES=1         # write tests, and ...
+//! export CX_E2E_TEAM_ID=<team id>      # ... only on the writable test team
+//! cargo test --test e2e -- --ignored   # tests are independent; parallel is fine
 //! ```
 //!
-//! See `docs/development.md` for full setup instructions.
+//! See `contributing/development.md` § "E2E tests" for full setup
+//! instructions, the parallel-safety rules and the list of commands the
+//! suite deliberately does not exercise.
 
 #[path = "e2e/harness.rs"]
 mod harness;
@@ -38,6 +42,8 @@ mod data_archive;
 mod data_usage;
 #[path = "e2e/dataprime/mod.rs"]
 mod dataprime;
+#[path = "e2e/datasets/mod.rs"]
+mod datasets;
 #[path = "e2e/e2m.rs"]
 mod e2m;
 #[path = "e2e/enrichments.rs"]
@@ -60,6 +66,8 @@ mod olly;
 mod output_formats;
 #[path = "e2e/parsing_rules.rs"]
 mod parsing_rules;
+#[path = "e2e/product_analytics.rs"]
+mod product_analytics;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
 #[path = "e2e/profiling.rs"]
@@ -88,6 +96,8 @@ mod slos;
 mod spans;
 #[path = "e2e/suppression_rules.rs"]
 mod suppression_rules;
+#[path = "e2e/sweeper.rs"]
+mod sweeper;
 #[path = "e2e/tco_policies.rs"]
 mod tco_policies;
 #[path = "e2e/team_groups.rs"]

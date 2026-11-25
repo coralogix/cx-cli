@@ -11,6 +11,8 @@ pub mod execution;
 pub mod identity;
 pub mod install_method;
 pub mod keyring_store;
+mod macos_security;
+pub mod managed_policy;
 pub mod oauth;
 pub mod onboarding;
 pub mod region;

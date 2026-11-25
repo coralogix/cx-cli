@@ -20,20 +20,40 @@ Or, you can [Install manually](#install-manually).
 
 ### 1. Install the CLI
 
-**macOS / Linux** - Homebrew is the recommended route on macOS:
-
-```bash
-brew install cx
-```
-
-Or use the cross-platform install script:
+**macOS** - use the install script. It installs the Coralogix Developer
+ID-signed binary. Credentials are stored in the Keychain with access limited
+to that signed `cx`:
 
 ```bash
 curl -fsSL https://get.coralogix.dev/cli | sh
 ```
 
 If your security policy blocks piped shell scripts, use a signed release binary
-instead - see [Installation reference](configuration.md#installation-reference).
+instead - see
+[Installation reference](configuration.md#installation-reference).
+
+Use Homebrew only if you want it, or the script can't be used:
+
+```bash
+brew install cx
+```
+
+Homebrew builds aren't Coralogix-signed, so credentials are stored in the
+Keychain via `/usr/bin/security`. Upgrades don't trigger new Keychain prompts,
+but any process running as your macOS user can read those credentials. See
+[Credentials on macOS](configuration.md#credentials-on-macos).
+
+**Linux** - use the install script:
+
+```bash
+curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Homebrew is an alternative:
+
+```bash
+brew install cx
+```
 
 **Windows** - download
 [`cx-x86_64-pc-windows-msvc.zip`](https://github.com/coralogix/cx-cli/releases/latest/download/cx-x86_64-pc-windows-msvc.zip)
@@ -56,9 +76,18 @@ What it asks you:
 |---|---|
 | **Region / Coralogix URL** | **Don't know your region? You don't need to.** Paste the URL you use to reach Coralogix in the browser (e.g. `https://myteam.app.eu2.coralogix.com`) and `cx` works the region out for you. Pick it from the list instead if you do know it, or look yours up in the [Coralogix domain](https://coralogix.com/docs/user-guides/account-management/account-settings/coralogix-domain/) table. A URL `cx` doesn't recognise - a bring-your-own-cloud or private-link deployment - becomes a custom API endpoint instead of an error. |
 | **Sign in** | Opens your browser for [OAuth login](https://coralogix.com/docs/user-guides/account-management/user-management/oauth/). Approve the scopes and choose which team the CLI may access, then come back to the terminal. |
-| **Where should OAuth tokens be stored?** | `file` is preselected and writes tokens into the profile TOML (`0600`). `os-store` is available on Windows, on glibc Linux, and on macOS when this `cx` binary is Developer ID signed. An ad-hoc or unsigned macOS build offers only `file`. On Linux musl builds, `file` is the only storage option. A prompt-free `cx init` also keeps `file`. If you choose `os-store` and that store is unavailable, setup saves the tokens in the profile file instead. |
+| **Where should OAuth tokens be stored?** | On macOS, `os-store` (the Keychain) is preselected. See [Credentials on macOS](configuration.md#credentials-on-macos) for how Homebrew and signed installs differ. Windows also preselects `os-store` (Windows Credential Manager). On glibc Linux, `file` is preselected and writes tokens into the profile TOML (`0600`); `os-store` is the other choice. On Linux musl builds, `file` is the only option. If the OS store is unavailable, setup saves the tokens in the profile file instead. |
 | **Where to put the agent skills** | Local to this project (`./`) or global (`~/`). `cx` installs them for you and tells you how to update them later. |
 | **Install shell completions?** | Turns on `<Tab>` completion for `cx`. Pick `zsh`, `bash`, or `fish`, or keep the default and skip it. **Other** lets you name a shell and an install path yourself. Skipped without asking when completions are already installed. |
+
+> **Managed macOS and Windows devices:** IT can require Keychain or Windows
+> Credential Manager storage and reject plaintext profile files. When that
+> managed policy is enabled, setup skips the storage question and uses
+> `os-store`; an explicit `CX_CREDENTIAL_STORAGE=file` override is rejected.
+> Linux does not support this policy and keeps its existing credential-storage
+> behavior. See [Managed
+> credential-storage policy](configuration.md#managed-credential-storage-policy)
+> for Jamf, Group Policy, and Intune deployment.
 
 Everything else is defaulted rather than asked: profile name `default`, no
 label, and `json` as the profile's default output format
@@ -72,7 +101,9 @@ start. To switch either off, set `olly_enabled` or `allow_risky_commands` to
 `cx init` is idempotent: on a machine that already has a profile it skips the
 profile step, and on one that already has the skills it skips the install. Nothing
 is re-prompted or overwritten. To reconfigure a profile later use
-`cx profiles add --force`; to pull the latest skills use `cx skills install`.
+`cx profiles add --force`; to reinstall the skills use `cx skills install`. After a
+cx upgrade, cx updates global skills by itself in the background (turn this off
+with `auto_update_skills = false` in `~/.cx/config.toml`).
 
 For CI, containers, and coding agents, spell the whole thing out and the run is
 prompt-free:
@@ -265,7 +296,7 @@ These need no API credentials and are exempt from the risky-command confirmation
 | Command | Purpose |
 |---|---|
 | `cx init` | One-step onboarding: configure a profile and install the agent skills |
-| `cx profiles` | Manage profiles: `list`, `add`, `delete`, `set-default` |
+| `cx profiles` | Manage profiles: `list`, `add`, `labels`, `delete`, `set-default` |
 | `cx skills` | Install or update the cx agent skills for coding agents: `install` |
 | `cx completions` | Shell tab-completion: `install`, `refresh`, `generate` |
 | `cx cleanup` | Remove `cx_results*` temp files older than 30 minutes |
@@ -275,6 +306,7 @@ These need no API credentials and are exempt from the risky-command confirmation
 
 ```
 -p, --profile <PROFILE>      Profile to use. Repeat to fan out across multiple profiles.
+    --label <LABEL>          Fan out across every profile that has one of these labels.
     --api-key <API_KEY>      Override the profile API key
     --region <REGION>        Override the profile region
 -o, --output <FORMAT>        text | json | toon (default: text)

@@ -48,6 +48,14 @@ fn parse_completions_shell(value: &str) -> Result<Shell, String> {
     }
 }
 
+fn parse_target_percentage(value: &str) -> Result<f64, String> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|target| (0.0..=100.0).contains(target))
+        .ok_or_else(|| format!("'{value}' is not a percentage from 0 to 100"))
+}
+
 /// How `search-fields` searches: by semantic description or by value content.
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum SearchType {
@@ -82,15 +90,17 @@ pub enum SearchByValueDataset {
   \x1b[1mdataprime\x1b[0m          DataPrime language reference and raw queries
   \x1b[1mdocs\x1b[0m               Search and fetch official Coralogix product documentation
   \x1b[1msearch-fields\x1b[0m      Search log/span fields by description or value content
+  \x1b[1mdatasets\x1b[0m           List queryable datasets for DataPrime sources
 
 \x1b[1m\x1b[4mObserve:\x1b[0m
   \x1b[1mdashboards\x1b[0m         Manage dashboards and dashboard folders
   \x1b[1mviews\x1b[0m              Manage saved views and view folders
   \x1b[1mslos\x1b[0m               Manage SLO definitions
   \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
-  \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities and their RED/health/saturation data
+  \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities, their RED/health/saturation data, and insights
   \x1b[1mprofiling\x1b[0m          Query continuous-profiling data: services, metrics, flame graphs
   \x1b[1mrum\x1b[0m                Map RUM stack traces to source code with uploaded source maps
+  \x1b[1mproduct-analytics\x1b[0m  Query RUM product analytics: funnels, pathways, heatmaps, views, actions
 
 \x1b[1m\x1b[4mAI:\x1b[0m
   \x1b[1mai-center\x1b[0m (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -127,7 +137,7 @@ pub enum SearchByValueDataset {
 
 \x1b[1m\x1b[4mLocal:\x1b[0m
   \x1b[1minit\x1b[0m               One-step onboarding: configure a profile and install the agent skills
-  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, delete, set-default)
+  \x1b[1mprofiles\x1b[0m           Manage profiles (list, add, labels, delete, set-default)
   \x1b[1mskills\x1b[0m             Install or update the cx agent skills for coding agents
   \x1b[1mcleanup\x1b[0m            Remove stale temp files"
 )]
@@ -143,6 +153,17 @@ struct Cli {
         add = ArgValueCompleter::new(complete_profile_names)
     )]
     profile: Vec<String>,
+
+    /// Run against every profile that has one of these labels. Repeat the flag
+    /// or pass a comma-separated list (`--label prod,eu`). Matching profiles
+    /// fan out like repeated --profile and can be combined with it.
+    #[arg(
+        long,
+        global = true,
+        value_name = "LABEL",
+        help_heading = "Global Options"
+    )]
+    label: Vec<String>,
 
     /// Coralogix API key (overrides a single profile; incompatible with multiple --profile).
     #[arg(
@@ -207,7 +228,7 @@ struct ProfilesCli {
 
 #[derive(Subcommand)]
 enum ProfilesTopLevel {
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, labels, delete, set-default).
     #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
@@ -257,8 +278,10 @@ enum SkillsCmd {
     /// Install or update the cx agent skills bundle via the `skills` npx installer.
     ///
     /// By default this asks one question (install scope) and then runs the
-    /// installer fully non-interactively with agent auto-detection. Re-running
-    /// updates already-installed skills to the latest published bundle.
+    /// installer fully non-interactively with agent auto-detection. Installs
+    /// the skills from this cx version's release tag; re-running updates
+    /// already-installed skills. After a cx upgrade, a global install refreshes
+    /// itself in the background (`auto_update_skills` in config.toml).
     /// Requires Node.js (npx).
     #[command(after_help = "\
 Examples:
@@ -286,6 +309,11 @@ Examples:
         #[arg(long)]
         interactive: bool,
     },
+
+    /// Started in the background by the update check after a cx upgrade:
+    /// repeats the recorded global install with this version's skills.
+    #[command(hide = true)]
+    AutoRefresh,
 }
 
 #[derive(Subcommand)]
@@ -353,7 +381,7 @@ Examples:
         install_completions: Option<Shell>,
     },
 
-    /// Manage profiles (list, add, delete, set-default).
+    /// Manage profiles (list, add, labels, delete, set-default).
     #[command(alias = "profile")]
     Profiles {
         #[command(subcommand)]
@@ -383,7 +411,10 @@ Examples:
 Examples:
   cx logs 'filter $m.severity == ERROR'
   cx logs 'filter $d.message ~ \"timeout\"' --start now-6h --tier archive
-  cx logs 'filter $l.applicationname == \"api\"' --limit 200 -o json")]
+  cx logs 'filter $l.applicationname == \"api\"' --limit 200 -o json
+
+RUM (frontend) data: query cx dataprime query --source rum.events '<query>' first.
+Legacy cx_rum logs are only a fallback when rum.events has no data.")]
     Logs {
         /// DataPrime query string. e.g. 'filter $m.severity == ERROR'
         query: String,
@@ -542,7 +573,6 @@ Examples:
   cx e2m create --from-file e2m.json
   cx e2m update --from-file e2m.json
   cx e2m delete <e2m-id>
-  cx e2m labels-cardinality
   cx e2m limits")]
     E2m {
         #[command(subcommand)]
@@ -676,6 +706,7 @@ Examples:
 Examples:
   cx slos list
   cx slos get <slo-id>
+  cx slos status <slo-id> --last 4h
   cx slos create --from-file slo.json
   cx slos update --from-file slo.json
   cx slos delete <slo-id>")]
@@ -702,7 +733,9 @@ Examples:
   cx service-catalog schema service
   cx service-catalog entities service
   cx service-catalog data service --start now-1h --end now --column latency_p99
-  cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99")]
+  cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99
+  cx service-catalog insights service --category deployment
+  cx service-catalog entity-insights service checkout")]
     ServiceCatalog {
         #[command(subcommand)]
         cmd: ServiceCatalogCmd,
@@ -733,6 +766,29 @@ Examples:
         cmd: RumCmd,
     },
 
+    #[command(
+        about = "Query RUM Product Analytics: applications, views, actions, funnels, pathways, heatmaps, and settings",
+        after_help = "\
+Examples:
+  cx product-analytics applications list
+  cx product-analytics views list --app web-shop --start now-7d
+  cx product-analytics actions list --app web-shop --type click
+  cx product-analytics filter-values --app web-shop --field browser-name
+  cx product-analytics funnels list --app web-shop
+  cx product-analytics funnels query 42 --start now-30d
+  cx product-analytics funnels matching-users 42 --outcome dropped
+  cx product-analytics pathways query --app web-shop --view /cart --direction forward
+  cx product-analytics heatmaps query 43 --top-n 10
+  cx product-analytics settings get
+
+Time ranges: --start/--end (default now-1h to now); a saved object run without them uses its saved range.
+Filters, breakdowns and inline funnel definitions go in a JSON request file (--from-file)."
+    )]
+    ProductAnalytics {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsCmd,
+    },
+
     /// Search log/span fields by description or by value content.
     #[command(after_help = "\
 Examples:
@@ -759,6 +815,17 @@ Examples:
         /// Number of results to skip for pagination (only used with -s value).
         #[arg(long, default_value_t = 0)]
         offset: u32,
+    },
+
+    /// List the datasets queryable by the current team, for DataPrime sources.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
+  cx datasets list -o json")]
+    Datasets {
+        #[command(subcommand)]
+        cmd: DatasetsCmd,
     },
 
     /// DataPrime language reference and documentation.
@@ -808,7 +875,18 @@ impl Commands {
 #[derive(Subcommand)]
 enum ProfilesCmd {
     /// List all configured profiles.
-    List,
+    ///
+    /// `--label` filters the table. Repeat the flag or pass a comma-separated
+    /// list. A profile is shown when it has any of the given labels.
+    List {
+        /// Only show profiles that have any of these labels.
+        ///
+        /// Repeat the flag (`--label prod --label eu`) or pass a comma-separated
+        /// list (`--label prod,eu`). A profile matches when it has at least one
+        /// of the labels. Matching is exact after surrounding whitespace is trimmed.
+        #[arg(long = "label", value_name = "LABEL")]
+        label: Vec<String>,
+    },
     /// Add or reconfigure a profile.
     ///
     /// Values supplied via flags/env are never prompted for. On a terminal,
@@ -822,6 +900,7 @@ Examples:
   cx profiles add prod --region eu2                      # region answered, rest prompted
   cx profiles add --oauth --region eu2                   # straight to browser login
   cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
+  cx profiles add prod --region eu2 --label prod --label eu
   CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite")]
     Add {
         /// Profile name to configure (prompted if not provided; defaults to
@@ -863,12 +942,19 @@ Examples:
         /// written. No prompt either way.
         #[arg(long)]
         disable_olly: bool,
+        /// Labels for this profile, such as `prod` or `eu`.
+        ///
+        /// Repeat the flag or pass a comma-separated list (`--label prod,eu`).
+        /// Whitespace is trimmed; empty values and duplicates are dropped.
+        /// When reconfiguring, omit this flag to keep the profile's existing labels.
+        #[arg(long = "label", value_name = "LABEL")]
+        label: Vec<String>,
     },
     /// Sign an OAuth profile in again, keeping its settings.
     ///
     /// Opens the browser sign-in with the profile's team preselected and saves
     /// the new tokens only when the sign-in is for that same team. Region,
-    /// credential storage, output format and label are not changed. To change
+    /// credential storage, output format and labels are not changed. To change
     /// those, use `cx profiles add <name>`.
     Refresh {
         /// Profile name to sign in again.
@@ -890,6 +976,110 @@ Examples:
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
     },
+    /// Recreate OS-store credentials using this cx binary's Keychain backend.
+    ///
+    /// This is useful after switching between a Coralogix-signed installation
+    /// and a Homebrew, Cargo, or other unsigned installation.
+    #[cfg(target_os = "macos")]
+    Migrate,
+    /// Show or change a profile's labels without reconfiguring it.
+    ///
+    /// Credentials, region and settings are not touched.
+    #[command(after_help = "\
+Examples:
+  cx profiles labels get team-a                        # show labels
+  cx profiles labels add team-a --label kuku           # add one label
+  cx profiles labels remove team-a --label staging     # remove one label
+  cx profiles labels set team-a --label prod,eu        # replace all labels
+  cx profiles labels clear team-a                      # remove every label")]
+    Labels {
+        #[command(subcommand)]
+        cmd: ProfileLabelsCmd,
+    },
+}
+
+/// `cx profiles labels <verb> <NAME>`: the profile name is the one positional;
+/// labels always travel behind `--label`, the same flag as `cx profiles add`
+/// and the global selector. Each verb owns its own `label` arg, so the global
+/// `--label` is not propagated into it.
+#[derive(Subcommand)]
+enum ProfileLabelsCmd {
+    /// Show a profile's labels.
+    Get {
+        /// Profile name.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+    },
+    /// Add labels. Labels already on the profile are kept.
+    Add {
+        /// Profile name.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+        /// Labels to add. Repeat the flag or pass a comma-separated list.
+        #[arg(long = "label", value_name = "LABEL", required = true)]
+        label: Vec<String>,
+    },
+    /// Remove labels. Labels not on the profile are ignored.
+    Remove {
+        /// Profile name.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+        /// Labels to remove. Repeat the flag or pass a comma-separated list.
+        #[arg(long = "label", value_name = "LABEL", required = true)]
+        label: Vec<String>,
+    },
+    /// Replace every label with the given list.
+    Set {
+        /// Profile name.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+        /// The new labels. Repeat the flag or pass a comma-separated list.
+        #[arg(long = "label", value_name = "LABEL", required = true)]
+        label: Vec<String>,
+    },
+    /// Remove every label.
+    Clear {
+        /// Profile name.
+        #[arg(add = ArgValueCompleter::new(complete_profile_names))]
+        name: String,
+    },
+}
+
+impl ProfileLabelsCmd {
+    fn run(self) -> Result<()> {
+        use commands::profiles::{run_label, LabelEdit};
+        match self {
+            Self::Get { name } => run_label(name, LabelEdit::default()),
+            Self::Add { name, label } => run_label(
+                name,
+                LabelEdit {
+                    add: label,
+                    ..LabelEdit::default()
+                },
+            ),
+            Self::Remove { name, label } => run_label(
+                name,
+                LabelEdit {
+                    remove: label,
+                    ..LabelEdit::default()
+                },
+            ),
+            Self::Set { name, label } => run_label(
+                name,
+                LabelEdit {
+                    set: label,
+                    ..LabelEdit::default()
+                },
+            ),
+            Self::Clear { name } => run_label(
+                name,
+                LabelEdit {
+                    clear: true,
+                    ..LabelEdit::default()
+                },
+            ),
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -915,6 +1105,26 @@ Example:
     Fetch {
         /// Path suffix from `cx docs search` (not a full URL).
         suffix: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DatasetsCmd {
+    /// List the datasets queryable by the current team's API key.
+    ///
+    /// Each row is a fully qualified `<dataspace>/<dataset>` name usable in a
+    /// DataPrime `source` command. Only read-enabled, latest-version datasets
+    /// are returned.
+    #[command(after_help = "\
+Examples:
+  cx datasets list
+  cx datasets list --filter \"<v1> \\$d.pillar == 'logs'\"
+  cx datasets list --filter \"<v1> \\$d.dataspace == 'default'\" -o json")]
+    List {
+        /// DPXL filter over $d.dataspace, $d.dataset, $d.pillar, $d.entityType and $d.teamId.
+        /// Must start with the version tag, e.g. "<v1> \$d.pillar == 'logs'".
+        #[arg(long)]
+        filter: Option<String>,
     },
 }
 
@@ -1947,7 +2157,10 @@ enum E2mCmd {
         /// E2M definition ID.
         id: String,
     },
-    /// Get E2M labels cardinality.
+    /// Get E2M labels cardinality. Hidden: the REST gateway cannot accept the
+    /// draft's metric labels, so the forecast is always empty; the command
+    /// exits with an error that points to the UI until that changes.
+    #[command(hide = true)]
     LabelsCardinality,
     /// Get E2M limits.
     Limits,
@@ -2038,7 +2251,7 @@ enum EnrichmentsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Overwrite all enrichment rules from a JSON file [requires --yes].
+    /// Replace ALL enrichment rules from a JSON file; custom enrichment tables the file does not reference are deleted too [requires --yes].
     Overwrite {
         /// Path to JSON file. Use '-' for stdin.
         #[arg(long, default_value = "-")]
@@ -2087,7 +2300,7 @@ enum CustomEnrichmentsCmd {
         /// Custom enrichment table ID.
         id: String,
     },
-    /// Search data in a custom enrichment table.
+    /// Search rows in a custom enrichment table (downloads every table's full content, then filters locally).
     Search {
         /// Custom enrichment table ID.
         #[arg(long)]
@@ -2145,8 +2358,12 @@ enum IntegrationsCmd {
         #[arg(long, default_value = "-")]
         from_file: String,
     },
-    /// Get integration template.
-    Template,
+    /// Get the deployment template of a deployed integration.
+    Template {
+        /// Deployed integration (instance) ID, as listed by `integrations get <key>`.
+        #[arg(long)]
+        integration_id: String,
+    },
     /// Manage extensions.
     #[command(after_help = "\
 Examples:
@@ -2923,6 +3140,41 @@ enum SlosCmd {
         /// SLO ID (UUID).
         id: String,
     },
+    /// Show compliance and remaining error budget for one or more SLOs.
+    #[command(after_help = "\
+Examples:
+  cx slos status <slo-id>
+  cx slos status <slo-id> <slo-id> --last 4h -o json
+  cx slos status <slo-id> --from now-7d --to now-1d
+  cx slos status <slo-id> --grouping-key service,api --target 99.9
+
+Without --last or --from the SLO's own window is used. Times are cut to the whole minute.
+Compliance and remaining budget are the lowest across the matching permutations.")]
+    Status {
+        /// SLO IDs (UUID).
+        #[arg(required = true)]
+        ids: Vec<String>,
+
+        /// Window length back from now, e.g. `4h` or `7d`.
+        #[arg(long, conflicts_with_all = ["from", "to"])]
+        last: Option<String>,
+
+        /// Start of the window. Accepts `now-4h` or ISO-8601.
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End of the window (default: latest available minute). Accepts `now-1d` or ISO-8601.
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Only permutations matching `label,value`. Repeatable.
+        #[arg(long = "grouping-key")]
+        grouping_keys: Vec<String>,
+
+        /// What-if target percentage (0-100) instead of the SLO's own target.
+        #[arg(long, value_parser = parse_target_percentage)]
+        target: Option<f64>,
+    },
     /// Create an SLO from a JSON definition file [requires --yes].
     #[command(after_help = "\
 Examples:
@@ -2946,6 +3198,395 @@ Examples:
     Delete {
         /// SLO ID (UUID).
         id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsCmd {
+    #[command(about = "RUM applications with Product Analytics data")]
+    Applications {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsApplicationsCmd,
+    },
+    #[command(about = "Views (pages) of a RUM application and their session counts")]
+    Views {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsViewsCmd,
+    },
+    #[command(about = "Clicks and custom actions of a RUM application")]
+    Actions {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsActionsCmd,
+    },
+    #[command(
+        about = "Values of one session field, most common first, to build filters",
+        after_help = "\
+--field is a session field, in lower case with dashes or upper case with underscores:
+  url-domain, url-path, platform, environment, app-version, browser-name, os, device-type,
+  country-name, city-name, user-id, user-email, account-name, ...
+The full list is under \"Filters\" in the cx-product-analytics skill (references/request-bodies.md).
+
+Examples:
+  cx product-analytics filter-values --app web-shop --field browser-name
+  cx product-analytics filter-values --app web-shop --field country-name --start now-7d"
+    )]
+    FilterValues {
+        #[arg(long, help = "RUM application name")]
+        app: String,
+        #[arg(
+            long,
+            help = "Session field, e.g. browser-name, country-name or url-domain (see below)"
+        )]
+        field: String,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(long, help = "Rows to skip, for paging past the server's page size")]
+        offset: Option<u32>,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters; flags override its values. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+    #[command(about = "Saved funnels, funnel conversion, and who converted or dropped")]
+    Funnels {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsFunnelsCmd,
+    },
+    #[command(about = "Saved pathways and the most common page paths from or to a view")]
+    Pathways {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsPathwaysCmd,
+    },
+    #[command(about = "Saved heatmaps, the most clicked elements and scroll depth of a view")]
+    Heatmaps {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsHeatmapsCmd,
+    },
+    #[command(about = "Whether Product Analytics is enabled for the team")]
+    Settings {
+        #[command(subcommand)]
+        cmd: ProductAnalyticsSettingsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsApplicationsCmd {
+    #[command(about = "List RUM applications with their session and user counts")]
+    List {
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsViewsCmd {
+    #[command(
+        about = "List the views of an application, most visited first",
+        after_help = "\
+Examples:
+  cx product-analytics views list --app web-shop
+  cx product-analytics views list --app web-shop --start 2026-11-01T00:00:00Z --end 2026-11-08T00:00:00Z
+  cx product-analytics views list --app web-shop --from-file filters.json   # {\"filters\": [...]}"
+    )]
+    List {
+        #[arg(long, help = "RUM application name")]
+        app: String,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(long, help = "Rows to skip, for paging past the server's page size")]
+        offset: Option<u32>,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters; flags override its values. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsActionsCmd {
+    #[command(
+        about = "List the clicks or custom actions of an application, most sessions first",
+        after_help = "\
+Examples:
+  cx product-analytics actions list --app web-shop
+  cx product-analytics actions list --app web-shop --type custom --start now-7d
+  cx product-analytics actions list --app web-shop --action-name-filter named"
+    )]
+    List {
+        #[arg(long, help = "RUM application name")]
+        app: String,
+        #[arg(
+            long = "type",
+            value_enum,
+            default_value = "click",
+            help = "click: clicks the RUM SDK captured; custom: actions the application sends"
+        )]
+        action_type: commands::product_analytics::api::ActionType,
+        #[arg(long, value_enum, help = "Which clicks to include (default: all)")]
+        action_name_filter: Option<commands::product_analytics::api::ActionNameFilter>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(long, help = "Rows to skip, for paging past the server's page size")]
+        offset: Option<u32>,
+        #[arg(
+            long,
+            help = "JSON request body with extra fields such as filters; flags override its values. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsSavedCmd {
+    #[command(about = "List saved definitions")]
+    List {
+        #[arg(long = "app", help = "Only these applications. Repeatable")]
+        apps: Vec<String>,
+    },
+    #[command(about = "Get a saved definition by ID")]
+    Get {
+        #[arg(help = "Saved ID, a decimal number")]
+        id: String,
+    },
+    #[command(
+        about = "Create a saved definition from a JSON file [requires --yes]",
+        after_help = "\
+The file is the definition itself (name, timeRange, ...), not wrapped in a key.
+
+Examples:
+  cx product-analytics funnels create --from-file funnel.json
+  cat heatmap.json | cx product-analytics heatmaps create"
+    )]
+    Create {
+        #[arg(
+            long,
+            default_value = "-",
+            help = "JSON file with the definition. '-' for stdin"
+        )]
+        from_file: String,
+    },
+    #[command(
+        about = "Replace a saved definition with a JSON file [requires --yes]",
+        after_help = "\
+The file replaces the whole definition: a field missing from it is cleared. id, appName and
+createdAt are dropped from the file, so the output of `get` can be edited and sent back.
+
+Examples:
+  cx product-analytics funnels update 42 --from-file funnel.json"
+    )]
+    Update {
+        #[arg(help = "Saved ID, a decimal number")]
+        id: String,
+        #[arg(
+            long,
+            default_value = "-",
+            help = "JSON file with the full definition. '-' for stdin"
+        )]
+        from_file: String,
+    },
+    #[command(about = "Delete a saved definition [requires --yes]")]
+    Delete {
+        #[arg(help = "Saved ID, a decimal number")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsFunnelsCmd {
+    #[command(flatten)]
+    Saved(ProductAnalyticsSavedCmd),
+    #[command(
+        about = "Run a saved or inline funnel: count and conversion of each step",
+        after_help = "\
+Pass a saved funnel ID, or an inline request in --from-file:
+  {\"query\": {\"appNames\": [\"web-shop\"], \"steps\": [...], \"filters\": [...]}, \"breakdown\": {\"field\": \"PLATFORM\", \"limit\": 5}}
+The time range always comes from --start/--end, or from the saved funnel when running one without them.
+
+Examples:
+  cx product-analytics funnels query 42
+  cx product-analytics funnels query 42 --start now-30d --group-by users
+  cx product-analytics funnels query --from-file funnel-query.json --app web-shop"
+    )]
+    Query {
+        #[arg(help = "Saved funnel ID. Omit to run an inline request from --from-file")]
+        id: Option<String>,
+        #[arg(
+            long,
+            required_unless_present = "id",
+            conflicts_with = "id",
+            help = "JSON request body with a \"query\" object. '-' for stdin"
+        )]
+        from_file: Option<String>,
+        #[arg(long, help = "RUM application name; overrides the request's appNames")]
+        app: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            value_enum,
+            help = "Count sessions (default), users or accounts at each step"
+        )]
+        group_by: Option<commands::product_analytics::api::FunnelGroupBy>,
+    },
+    #[command(
+        about = "List the users who converted through or dropped out of a funnel",
+        after_help = "\
+Takes the same funnel input as `funnels query` and evaluates it from --start-step to the
+last step. The result holds user names and emails: treat it as personal data.
+
+Examples:
+  cx product-analytics funnels matching-users 42 --outcome dropped
+  cx product-analytics funnels matching-users 42 --outcome converted --start-step 2 --limit 100"
+    )]
+    MatchingUsers {
+        #[arg(help = "Saved funnel ID. Omit to run an inline request from --from-file")]
+        id: Option<String>,
+        #[arg(
+            long,
+            value_enum,
+            help = "converted: reached the last step; dropped: reached --start-step but not the last step"
+        )]
+        outcome: commands::product_analytics::api::FunnelOutcome,
+        #[arg(long, help = "1-based step to evaluate from (default 1)")]
+        start_step: Option<u32>,
+        #[arg(long, help = "Maximum users to return (server default and cap apply)")]
+        limit: Option<u32>,
+        #[arg(long, help = "Users to skip, for paging")]
+        offset: Option<u32>,
+        #[arg(
+            long,
+            required_unless_present = "id",
+            conflicts_with = "id",
+            help = "JSON request body with a \"query\" object. '-' for stdin"
+        )]
+        from_file: Option<String>,
+        #[arg(long, help = "RUM application name; overrides the request's appNames")]
+        app: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsPathwaysCmd {
+    #[command(flatten)]
+    Saved(ProductAnalyticsSavedCmd),
+    #[command(
+        about = "Run a saved or inline pathway: the most common page paths from or to a view",
+        after_help = "\
+Examples:
+  cx product-analytics pathways query 44
+  cx product-analytics pathways query --app web-shop --view /cart --direction backward --pages-count 3"
+    )]
+    Query {
+        #[arg(help = "Saved pathway ID. Omit and pass --app and --view for an inline pathway")]
+        id: Option<String>,
+        #[arg(long, required_unless_present = "id", help = "RUM application name")]
+        app: Option<String>,
+        #[arg(
+            long,
+            required_unless_present = "id",
+            help = "View (page) to trace paths from or to"
+        )]
+        view: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            value_enum,
+            help = "Pages after (forward, default) or before (backward) the view"
+        )]
+        direction: Option<commands::product_analytics::api::PathwayDirection>,
+        #[arg(long, help = "Pages in each path (default 5)")]
+        pages_count: Option<u32>,
+        #[arg(long, help = "Number of paths, most common first (default 20)")]
+        limit: Option<u32>,
+        #[arg(
+            long,
+            conflicts_with = "id",
+            help = "JSON request body with extra fields such as filters. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsHeatmapsCmd {
+    #[command(flatten)]
+    Saved(ProductAnalyticsSavedCmd),
+    #[command(
+        about = "Run a saved or inline heatmap: the most clicked elements on a view (web only)",
+        after_help = "\
+Examples:
+  cx product-analytics heatmaps query 43
+  cx product-analytics heatmaps query --app web-shop --view /checkout --action-name-filter named --top-n 10"
+    )]
+    Query {
+        #[arg(help = "Saved heatmap ID. Omit and pass --app and --view for an inline heatmap")]
+        id: Option<String>,
+        #[arg(long, required_unless_present = "id", help = "RUM application name")]
+        app: Option<String>,
+        #[arg(long, required_unless_present = "id", help = "View (page) to query")]
+        view: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            value_enum,
+            help = "Which clicks to include (default: all, or the saved value)"
+        )]
+        action_name_filter: Option<commands::product_analytics::api::ActionNameFilter>,
+        #[arg(long, help = "Number of elements, most clicked first (default 10)")]
+        top_n: Option<u32>,
+        #[arg(
+            long,
+            conflicts_with = "id",
+            help = "JSON request body with extra fields such as filters. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+    #[command(
+        about = "Run a saved or inline scroll map: how many users scrolled to each depth of a view (web only)",
+        after_help = "\
+Examples:
+  cx product-analytics heatmaps scroll-map 43
+  cx product-analytics heatmaps scroll-map --app web-shop --view /pricing --start now-7d"
+    )]
+    ScrollMap {
+        #[arg(help = "Saved heatmap ID. Omit and pass --app and --view for an inline scroll map")]
+        id: Option<String>,
+        #[arg(long, required_unless_present = "id", help = "RUM application name")]
+        app: Option<String>,
+        #[arg(long, required_unless_present = "id", help = "View (page) to query")]
+        view: Option<String>,
+        #[command(flatten)]
+        time: commands::product_analytics::TimeRangeArgs,
+        #[arg(
+            long,
+            conflicts_with = "id",
+            help = "JSON request body with extra fields such as filters. '-' for stdin"
+        )]
+        from_file: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProductAnalyticsSettingsCmd {
+    #[command(about = "Show whether Product Analytics is enabled for the team")]
+    Get,
+    #[command(
+        about = "Turn Product Analytics on or off for the whole team [requires --yes]",
+        after_help = "\
+Needs the product-analytics:Enable permission.
+
+Examples:
+  cx product-analytics settings update --enabled true"
+    )]
+    Update {
+        #[arg(long, required = true, action = clap::ArgAction::Set, help = "true to enable, false to disable")]
+        enabled: bool,
     },
 }
 
@@ -3204,85 +3845,354 @@ Examples:
   cx service-catalog data service --start now-1h --end now --column latency_p99 \\
     --filter environment=prod --aggregation table --sort-column latency_p99 --sort-order desc --limit 10
   cx service-catalog data service --start now-1h --end now --column latency_p99 --aggregation timeseries")]
-    Data {
-        /// Entity type (see `schema` for accepted values).
-        entity_type: String,
-
-        /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        start: String,
-
-        /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        end: String,
-
-        /// Column id to fetch. Repeatable; at least one required. Discover
-        /// valid ids with `cx service-catalog schema <entity-type>`.
-        #[arg(long = "column", required = true)]
-        columns: Vec<String>,
-
-        /// Label to group rows by, on top of the entity identity. Repeatable.
-        #[arg(long = "group-by")]
-        group_by: Vec<String>,
-
-        /// Filter as label=value1,value2; repeatable across different labels,
-        /// at most once per label. Multiple labels combine with AND.
-        #[arg(long = "filter")]
-        filters: Vec<String>,
-
-        /// Response shape: `table` (default) or `timeseries`.
-        #[arg(long, default_value = "table")]
-        aggregation: String,
-
-        /// Max rows to return. `table` aggregation only.
-        #[arg(long)]
-        limit: Option<i32>,
-
-        /// Column id to sort by. `table` aggregation only.
-        #[arg(long)]
-        sort_column: Option<String>,
-
-        /// Sort direction: `asc` or `desc`. `table` aggregation only.
-        #[arg(long)]
-        sort_order: Option<String>,
-    },
+    Data(ServiceCatalogDataArgs),
     /// Get column data for exactly one named entity (drilldown).
     #[command(after_help = "\
 Examples:
   cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99")]
-    EntityData {
-        /// Entity type (see `schema` for accepted values).
-        entity_type: String,
-
-        /// Entity id, exactly as returned by `cx service-catalog entities`.
-        entity_id: String,
-
-        /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        start: String,
-
-        /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        end: String,
-
-        /// Column id to fetch. Repeatable; at least one required. Discover
-        /// valid ids with `cx service-catalog schema <entity-type>`.
-        #[arg(long = "column", required = true)]
-        columns: Vec<String>,
-
-        /// Label to group rows by, on top of the entity identity. Repeatable.
-        #[arg(long = "group-by")]
-        group_by: Vec<String>,
-
-        /// Filter as label=value1,value2; repeatable across different labels,
-        /// at most once per label. Multiple labels combine with AND.
-        #[arg(long = "filter")]
-        filters: Vec<String>,
-
-        /// Response shape: `table` (default) or `timeseries`.
-        #[arg(long, default_value = "table")]
-        aggregation: String,
+    EntityData(ServiceCatalogEntityDataArgs),
+    /// List insights over every entity of one or more types: setup gaps
+    /// (missing spans, SLOs, profiling), catalog limits, and behavior changes
+    /// after recent deployments.
+    ///
+    /// Deployment insights currently compare only
+    /// the most recently deployed services (by default up to 50, deployed
+    /// within 7 days and at least 1 hour ago, skipping very low-traffic
+    /// environments); the "eligible changes compared" line shows how many.
+    /// Use `entity-insights` to check one service. Deployment insights are
+    /// enabled per account; when they are off, none are returned and there is
+    /// no coverage line.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog insights service
+  cx service-catalog insights service --filter deployment_environment_name=prod \\
+    --exclude-category deployment
+  cx service-catalog insights service --category deployment
+  cx service-catalog insights service database --breakdown environment --top-values 5
+  cx service-catalog insights service --archived include")]
+    Insights(InsightsArgs),
+    /// List the insights of one entity, with the environments each fired in.
+    /// For a service, deployment insights also judge its operations and
+    /// dependencies.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog entity-insights service checkout
+  cx service-catalog entity-insights service checkout --category deployment --environment prod
+  cx service-catalog entity-insights database orders --system postgresql")]
+    EntityInsights(EntityInsightsArgs),
+    /// List the entities behind one insight from `insights`, each with the
+    /// environments it is affected in.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog insight-drilldown no-slo service
+  cx service-catalog insight-drilldown latency-regression service --scope request-kind=server
+  cx service-catalog insight-drilldown missing-runtime-metrics service --scope language=java \\
+    --sort name --sort-order asc --page-size 20")]
+    InsightDrilldown(InsightDrilldownArgs),
+    /// Show one entity's values of a dimension (environments by default)
+    /// under one insight from `entity-insights`.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog entity-insight-drilldown no-spans service checkout
+  cx service-catalog entity-insight-drilldown operation-regression service checkout \\
+    --scope 'operation=GET /cart'
+  cx service-catalog entity-insight-drilldown dependency-regression service checkout \\
+    --scope database=postgresql/orders")]
+    EntityInsightDrilldown(EntityInsightDrilldownArgs),
+    /// Archive or unarchive insight types for the whole company.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog insight-types archive --type no-slo --type no-owner --yes
+  cx service-catalog insight-types unarchive --type no-slo --yes")]
+    InsightTypes {
+        #[command(subcommand)]
+        cmd: InsightTypesCmd,
     },
+}
+
+#[derive(Subcommand)]
+enum InsightTypesCmd {
+    /// Archive insight types for the whole company [requires --yes].
+    ///
+    /// `insights` and `entity-insights` then hide them unless `--archived`
+    /// asks for them. Prints the company's archived types after the change.
+    /// Needs the service-catalog:Update permission.
+    Archive(InsightTypesArgs),
+    /// Unarchive insight types, so they are shown by default again [requires --yes].
+    ///
+    /// Prints the company's archived types after the change. Needs the
+    /// service-catalog:Update permission.
+    Unarchive(InsightTypesArgs),
+}
+
+#[derive(Args)]
+struct InsightTypesArgs {
+    /// Insight type, e.g. `no-slo` or `latency-regression` (also accepts the
+    /// full INSIGHT_TYPE_* proto name). Repeatable; at least one required.
+    #[arg(long = "type", required = true)]
+    types: Vec<String>,
+}
+
+#[derive(Args)]
+struct ServiceCatalogDataArgs {
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    end: String,
+
+    /// Column id to fetch. Repeatable; at least one required. Discover
+    /// valid ids with `cx service-catalog schema <entity-type>`.
+    #[arg(long = "column", required = true)]
+    columns: Vec<String>,
+
+    /// Label to group rows by, on top of the entity identity. Repeatable.
+    #[arg(long = "group-by")]
+    group_by: Vec<String>,
+
+    /// Filter as label=value1,value2; repeatable across different labels,
+    /// at most once per label. Multiple labels combine with AND.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Response shape: `table` (default) or `timeseries`.
+    #[arg(long, default_value = "table")]
+    aggregation: String,
+
+    /// Max rows to return. `table` aggregation only.
+    #[arg(long)]
+    limit: Option<i32>,
+
+    /// Column id to sort by. `table` aggregation only.
+    #[arg(long)]
+    sort_column: Option<String>,
+
+    /// Sort direction: `asc` or `desc`. `table` aggregation only.
+    #[arg(long)]
+    sort_order: Option<String>,
+}
+
+#[derive(Args)]
+struct ServiceCatalogEntityDataArgs {
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Entity id, exactly as returned by `cx service-catalog entities`.
+    entity_id: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    end: String,
+
+    /// Column id to fetch. Repeatable; at least one required. Discover
+    /// valid ids with `cx service-catalog schema <entity-type>`.
+    #[arg(long = "column", required = true)]
+    columns: Vec<String>,
+
+    /// Label to group rows by, on top of the entity identity. Repeatable.
+    #[arg(long = "group-by")]
+    group_by: Vec<String>,
+
+    /// Filter as label=value1,value2; repeatable across different labels,
+    /// at most once per label. Multiple labels combine with AND.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Response shape: `table` (default) or `timeseries`.
+    #[arg(long, default_value = "table")]
+    aggregation: String,
+}
+
+/// `--filter` of `insights` and `insight-drilldown`, which accept a fixed
+/// label set rather than the `schema` labels.
+const INSIGHT_FILTER_HELP: &str = "Filter as label=value1,value2; repeatable across different \
+labels, at most once per label. Multiple labels combine with AND. Accepted labels: \
+deployment_environment_name, deployment_environment_type, k8s_cluster_name, service_name, \
+service.name, service_namespace, tenant_name; for databases also db_system, db.system, \
+db_name, db_namespace";
+
+#[derive(Args)]
+struct InsightsArgs {
+    /// Entity type(s) (see `schema` for accepted values).
+    #[arg(required = true)]
+    entity_types: Vec<String>,
+
+    #[arg(long = "filter", help = INSIGHT_FILTER_HELP)]
+    filters: Vec<String>,
+
+    #[command(flatten)]
+    selection: InsightSelectionArgs,
+
+    /// Break each insight down by a dimension: environment, owner,
+    /// language, db-system, missing-compact-metric, or
+    /// missing-runtime-metric. Repeatable.
+    #[arg(long = "breakdown")]
+    breakdowns: Vec<String>,
+
+    /// Values to return per breakdown (1-50).
+    #[arg(long, value_parser = clap::value_parser!(i32).range(1..=50))]
+    top_values: Option<i32>,
+
+    /// Order of breakdown values: `percentage` (default) or `count`.
+    #[arg(long)]
+    breakdown_sort: Option<String>,
+}
+
+#[derive(Args)]
+struct EntityInsightsArgs {
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Entity id, exactly as returned by `cx service-catalog entities`.
+    entity_id: String,
+
+    /// The entity's system, e.g. `postgresql`. Required for databases.
+    #[arg(long)]
+    system: Option<String>,
+
+    /// Environment to consider. Repeatable; all environments when omitted.
+    #[arg(long = "environment")]
+    environments: Vec<String>,
+
+    #[command(flatten)]
+    selection: InsightSelectionArgs,
+
+    /// Environments to list per insight (1-50).
+    #[arg(long, value_parser = clap::value_parser!(i32).range(1..=50))]
+    top_values: Option<i32>,
+
+    /// Order of breakdown values: `percentage` (default) or `count`.
+    #[arg(long)]
+    breakdown_sort: Option<String>,
+}
+
+#[derive(Args)]
+struct InsightDrilldownArgs {
+    /// Insight type, e.g. `no-slo` or `latency-regression` (also accepts
+    /// the full INSIGHT_TYPE_* proto name).
+    insight_type: String,
+
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    #[arg(long = "filter", help = INSIGHT_FILTER_HELP)]
+    filters: Vec<String>,
+
+    /// The insight's scope, as `insights` prints it: `language=<name>` or
+    /// `request-kind=server|consumer`. Required for insights listed once
+    /// per language or request kind.
+    #[arg(long)]
+    scope: Option<String>,
+
+    /// Which entities count as affected: `at-least-one` environment or
+    /// `every` environment.
+    #[arg(long)]
+    environment_match: Option<String>,
+
+    /// Sort: percentage, affected-environments, name, or severity.
+    #[arg(long)]
+    sort: Option<String>,
+
+    /// Sort direction: `asc` or `desc`.
+    #[arg(long)]
+    sort_order: Option<String>,
+
+    /// Zero-based page index.
+    #[arg(long, value_parser = clap::value_parser!(i32).range(0..))]
+    page_index: Option<i32>,
+
+    /// Entities per page (1-200; 100 when omitted).
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(i32).range(1..=200))]
+    page_size: i32,
+
+    /// Case-insensitive substring the entity name must contain.
+    #[arg(long)]
+    name_search: Option<String>,
+}
+
+#[derive(Args)]
+struct EntityInsightDrilldownArgs {
+    /// Insight type, e.g. `no-spans` or `operation-regression`.
+    insight_type: String,
+
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Entity id, exactly as returned by `cx service-catalog entities`.
+    entity_id: String,
+
+    /// The entity's system, e.g. `postgresql`. Required for databases.
+    #[arg(long)]
+    system: Option<String>,
+
+    /// Dimension to list: environment, owner, language, db-system,
+    /// missing-compact-metric, or missing-runtime-metric.
+    #[arg(long, default_value = "environment")]
+    dimension: String,
+
+    /// Environment to consider. Repeatable; all environments when omitted.
+    #[arg(long = "environment")]
+    environments: Vec<String>,
+
+    /// The insight's scope, as `entity-insights` prints it:
+    /// `operation=<span name>`, `request-kind=server|consumer`,
+    /// `database=<db-system>/<db-namespace>`, or `external-services`.
+    /// Required for deployment insights. `language=` scopes are for
+    /// `insight-drilldown` only; omit `--scope` here for those.
+    #[arg(long)]
+    scope: Option<String>,
+}
+
+/// Which insights to compute, shared by `insights` and `entity-insights`.
+#[derive(Args)]
+struct InsightSelectionArgs {
+    /// Only this insight type, e.g. `no-slo` or `latency-regression`. Repeatable.
+    /// `traffic-drop`, `mix-shift` and `dependency-regression` are opt-in:
+    /// returned only when named here, never for `--category deployment`.
+    #[arg(long = "type")]
+    types: Vec<String>,
+
+    /// Only this category: instrumentation, enablement, configuration,
+    /// limits, or deployment. Repeatable. Deployment insights are slower;
+    /// request them separately from the others. On `insights` they cover only
+    /// the most recently deployed services, not every service.
+    #[arg(long = "category")]
+    categories: Vec<String>,
+
+    /// Leave out this insight type. Repeatable.
+    #[arg(long = "exclude-type")]
+    exclude_types: Vec<String>,
+
+    /// Leave out this category. Repeatable.
+    #[arg(long = "exclude-category")]
+    exclude_categories: Vec<String>,
+
+    /// Archived (dismissed) insight types: `exclude` (default) hides them,
+    /// `only` returns just them, `include` returns them with the rest. The
+    /// response lists the company's archived types either way.
+    #[arg(long)]
+    archived: Option<String>,
+}
+
+impl InsightSelectionArgs {
+    fn as_input(&self) -> commands::service_catalog::InsightSelectionInput<'_> {
+        commands::service_catalog::InsightSelectionInput {
+            types: &self.types,
+            categories: &self.categories,
+            excluded_types: &self.exclude_types,
+            excluded_categories: &self.exclude_categories,
+            archived: self.archived.as_deref(),
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -3478,21 +4388,486 @@ struct ProfilingFlameGraphArgs {
     top_functions: usize,
 }
 
-fn main() -> Result<()> {
-    // Debug-build clap/dispatch frames exceed the 1 MiB Windows main-thread stack.
-    std::thread::Builder::new()
-        .stack_size(8 * 1024 * 1024)
-        .spawn(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()?
-                .block_on(run())
-        })?
-        .join()
-        .unwrap_or_else(|e| std::panic::resume_unwind(e))
+fn run_product_analytics(
+    targets: &[std::sync::Arc<coralogix_cli::execution::ExecutionTarget>],
+    cmd: ProductAnalyticsCmd,
+    yes: bool,
+    agent_mode: bool,
+    output: OutputFormat,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + '_>> {
+    Box::pin(async move {
+        use commands::product_analytics::api::{QueryInput, QueryKind, SavedObjectKind};
+        use commands::product_analytics::{run_list_query, run_query};
+        match cmd {
+            ProductAnalyticsCmd::Applications {
+                cmd: ProductAnalyticsApplicationsCmd::List { time },
+            } => {
+                let (start, end) = time.resolve(false)?;
+                let input = QueryInput {
+                    start,
+                    end,
+                    ..Default::default()
+                };
+                run_list_query(targets, QueryKind::Applications, None, None, &input, output)
+                    .await?;
+            }
+            ProductAnalyticsCmd::Views {
+                cmd:
+                    ProductAnalyticsViewsCmd::List {
+                        app,
+                        time,
+                        offset,
+                        from_file,
+                    },
+            } => {
+                let (start, end) = time.resolve(false)?;
+                let input = QueryInput {
+                    app_name: Some(app),
+                    offset,
+                    start,
+                    end,
+                    ..Default::default()
+                };
+                run_list_query(
+                    targets,
+                    QueryKind::Views,
+                    None,
+                    from_file.as_deref(),
+                    &input,
+                    output,
+                )
+                .await?;
+            }
+            ProductAnalyticsCmd::Actions {
+                cmd:
+                    ProductAnalyticsActionsCmd::List {
+                        app,
+                        action_type,
+                        action_name_filter,
+                        time,
+                        offset,
+                        from_file,
+                    },
+            } => {
+                if action_type == commands::product_analytics::api::ActionType::Custom
+                    && action_name_filter.is_some()
+                {
+                    anyhow::bail!("--action-name-filter only applies to --type click");
+                }
+                let (start, end) = time.resolve(false)?;
+                let input = QueryInput {
+                    app_name: Some(app),
+                    action_type: Some(action_type),
+                    action_name_filter,
+                    offset,
+                    start,
+                    end,
+                    ..Default::default()
+                };
+                run_list_query(
+                    targets,
+                    QueryKind::Actions,
+                    None,
+                    from_file.as_deref(),
+                    &input,
+                    output,
+                )
+                .await?;
+            }
+            ProductAnalyticsCmd::FilterValues {
+                app,
+                field,
+                time,
+                offset,
+                from_file,
+            } => {
+                let (start, end) = time.resolve(false)?;
+                let input = QueryInput {
+                    app_name: Some(app),
+                    offset,
+                    filter_field: Some(commands::product_analytics::api::filter_field_wire(&field)),
+                    start,
+                    end,
+                    ..Default::default()
+                };
+                run_list_query(
+                    targets,
+                    QueryKind::FilterValues,
+                    None,
+                    from_file.as_deref(),
+                    &input,
+                    output,
+                )
+                .await?;
+            }
+            ProductAnalyticsCmd::Funnels { cmd } => match cmd {
+                ProductAnalyticsFunnelsCmd::Saved(cmd) => {
+                    run_product_analytics_saved(
+                        targets,
+                        SavedObjectKind::Funnel,
+                        cmd,
+                        yes,
+                        agent_mode,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsFunnelsCmd::Query {
+                    id,
+                    from_file,
+                    app,
+                    time,
+                    group_by,
+                } => {
+                    let (start, end) = time.resolve(id.is_some())?;
+                    let input = QueryInput {
+                        start,
+                        end,
+                        app_name: app,
+                        group_by,
+                        ..Default::default()
+                    };
+                    run_query(
+                        targets,
+                        QueryKind::Funnel,
+                        id.as_deref(),
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsFunnelsCmd::MatchingUsers {
+                    id,
+                    outcome,
+                    start_step,
+                    limit,
+                    offset,
+                    from_file,
+                    app,
+                    time,
+                } => {
+                    let (start, end) = time.resolve(id.is_some())?;
+                    let input = QueryInput {
+                        start,
+                        end,
+                        app_name: app,
+                        outcome: Some(outcome),
+                        start_step,
+                        limit,
+                        offset,
+                        ..Default::default()
+                    };
+                    run_list_query(
+                        targets,
+                        QueryKind::MatchingUsers,
+                        id.as_deref(),
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+            ProductAnalyticsCmd::Pathways { cmd } => match cmd {
+                ProductAnalyticsPathwaysCmd::Saved(cmd) => {
+                    run_product_analytics_saved(
+                        targets,
+                        SavedObjectKind::Pathway,
+                        cmd,
+                        yes,
+                        agent_mode,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsPathwaysCmd::Query {
+                    id,
+                    app,
+                    view,
+                    time,
+                    direction,
+                    pages_count,
+                    limit,
+                    from_file,
+                } => {
+                    let (start, end) = time.resolve(id.is_some())?;
+                    let input = QueryInput {
+                        start,
+                        end,
+                        app_name: app,
+                        view,
+                        direction,
+                        pages_count,
+                        limit,
+                        ..Default::default()
+                    };
+                    run_list_query(
+                        targets,
+                        QueryKind::Pathways,
+                        id.as_deref(),
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+            ProductAnalyticsCmd::Heatmaps { cmd } => match cmd {
+                ProductAnalyticsHeatmapsCmd::Saved(cmd) => {
+                    run_product_analytics_saved(
+                        targets,
+                        SavedObjectKind::Heatmap,
+                        cmd,
+                        yes,
+                        agent_mode,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsHeatmapsCmd::Query {
+                    id,
+                    app,
+                    view,
+                    time,
+                    action_name_filter,
+                    top_n,
+                    from_file,
+                } => {
+                    let (start, end) = time.resolve(id.is_some())?;
+                    let input = QueryInput {
+                        start,
+                        end,
+                        app_name: app,
+                        view,
+                        action_name_filter,
+                        top_n,
+                        ..Default::default()
+                    };
+                    run_list_query(
+                        targets,
+                        QueryKind::Clicks,
+                        id.as_deref(),
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+                ProductAnalyticsHeatmapsCmd::ScrollMap {
+                    id,
+                    app,
+                    view,
+                    time,
+                    from_file,
+                } => {
+                    let (start, end) = time.resolve(id.is_some())?;
+                    let input = QueryInput {
+                        start,
+                        end,
+                        app_name: app,
+                        view,
+                        ..Default::default()
+                    };
+                    run_query(
+                        targets,
+                        QueryKind::ScrollMap,
+                        id.as_deref(),
+                        from_file.as_deref(),
+                        &input,
+                        output,
+                    )
+                    .await?;
+                }
+            },
+            ProductAnalyticsCmd::Settings { cmd } => match cmd {
+                ProductAnalyticsSettingsCmd::Get => {
+                    commands::product_analytics::run_settings_get(targets, output).await?;
+                }
+                ProductAnalyticsSettingsCmd::Update { enabled } => {
+                    let action = if enabled { "on" } else { "off" };
+                    confirm_destructive(
+                        &format!("Turn Product Analytics {action} for the whole team?"),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::product_analytics::run_settings_update(targets, enabled, output)
+                        .await?;
+                }
+            },
+        }
+        Ok(())
+    })
 }
 
-async fn run() -> Result<()> {
+async fn run_product_analytics_saved(
+    targets: &[std::sync::Arc<coralogix_cli::execution::ExecutionTarget>],
+    kind: commands::product_analytics::api::SavedObjectKind,
+    cmd: ProductAnalyticsSavedCmd,
+    yes: bool,
+    agent_mode: bool,
+    output: OutputFormat,
+) -> Result<()> {
+    let label = kind.label();
+    match cmd {
+        ProductAnalyticsSavedCmd::List { apps } => {
+            commands::product_analytics::run_saved_list(targets, kind, &apps, output).await
+        }
+        ProductAnalyticsSavedCmd::Get { id } => {
+            commands::product_analytics::run_saved_get(targets, kind, &id, output).await
+        }
+        ProductAnalyticsSavedCmd::Create { from_file } => {
+            confirm_destructive(
+                &format!("Create a Product Analytics {label}?"),
+                yes,
+                agent_mode,
+            )?;
+            commands::product_analytics::run_saved_write(targets, kind, &from_file, None, output)
+                .await
+        }
+        ProductAnalyticsSavedCmd::Update { id, from_file } => {
+            commands::product_analytics::require_single_target(targets, &id)?;
+            confirm_destructive(
+                &format!("Replace Product Analytics {label} '{id}'?"),
+                yes,
+                agent_mode,
+            )?;
+            commands::product_analytics::run_saved_write(
+                targets,
+                kind,
+                &from_file,
+                Some(&id),
+                output,
+            )
+            .await
+        }
+        ProductAnalyticsSavedCmd::Delete { id } => {
+            commands::product_analytics::require_single_target(targets, &id)?;
+            confirm_destructive(
+                &format!("Delete Product Analytics {label} '{id}'?"),
+                yes,
+                agent_mode,
+            )?;
+            commands::product_analytics::run_saved_delete(targets, kind, &id).await
+        }
+    }
+}
+
+/// True when a `--label` (or `--label=...`) appears before the `profiles`
+/// token on the command line, where clap may overwrite it with the
+/// subcommand's own `--label`.
+fn label_flag_precedes_profiles(args: impl IntoIterator<Item = String>) -> bool {
+    let args: Vec<String> = args.into_iter().collect();
+    let Some(profiles_at) = args
+        .iter()
+        .position(|arg| arg == "profiles" || arg == "profile")
+    else {
+        return false;
+    };
+    args[..profiles_at]
+        .iter()
+        .any(|arg| arg == "--label" || arg.starts_with("--label="))
+}
+
+#[cfg(test)]
+mod label_position_tests {
+    use super::label_flag_precedes_profiles;
+
+    fn argv(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn label_before_profiles_is_detected_in_both_spellings() {
+        assert!(label_flag_precedes_profiles(argv(&[
+            "--label", "prod", "profiles", "list"
+        ])));
+        assert!(label_flag_precedes_profiles(argv(&[
+            "--label=prod",
+            "profiles",
+            "add",
+            "x"
+        ])));
+        assert!(label_flag_precedes_profiles(argv(&[
+            "-p", "a", "--label", "b", "profile", "list"
+        ])));
+    }
+
+    #[test]
+    fn label_after_profiles_or_absent_is_not_flagged() {
+        assert!(!label_flag_precedes_profiles(argv(&[
+            "profiles", "list", "--label", "prod"
+        ])));
+        assert!(!label_flag_precedes_profiles(argv(&[
+            "profiles", "labels", "add", "x", "--label", "y"
+        ])));
+        assert!(!label_flag_precedes_profiles(argv(&[
+            "--read-only",
+            "profiles",
+            "list"
+        ])));
+        assert!(!label_flag_precedes_profiles(argv(&[
+            "alerts", "list", "--label", "prod"
+        ])));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod profile_migration_tests {
+    use clap::Parser;
+
+    use super::{ProfilesCli, ProfilesCmd, ProfilesTopLevel};
+
+    #[test]
+    fn profiles_migrate_is_available_on_macos() {
+        let cli = ProfilesCli::try_parse_from(["cx", "profiles", "migrate"])
+            .expect("migrate command should parse on macOS");
+        let ProfilesTopLevel::Profiles { cmd } = cli.command;
+        assert!(matches!(cmd, ProfilesCmd::Migrate));
+    }
+}
+
+fn should_migrate_profiles_command(command: &ProfilesCmd) -> bool {
+    !matches!(command, ProfilesCmd::Delete { .. })
+}
+
+fn should_migrate_command(command: &Commands) -> bool {
+    !matches!(
+        command,
+        Commands::Profiles {
+            cmd: ProfilesCmd::Delete { .. }
+        }
+    )
+}
+
+#[cfg(test)]
+mod managed_profile_migration_tests {
+    use clap::Parser;
+
+    use super::{
+        should_migrate_command, should_migrate_profiles_command, Cli, ProfilesCli, ProfilesTopLevel,
+    };
+
+    #[test]
+    fn profiles_delete_skips_the_startup_migration_with_and_without_global_flags() {
+        let plain = Cli::try_parse_from(["cx", "profiles", "delete", "broken"])
+            .expect("plain profiles delete parses");
+        let with_global_flag =
+            Cli::try_parse_from(["cx", "--read-only", "profiles", "delete", "broken"])
+                .expect("profiles delete with a global flag parses");
+
+        assert!(!should_migrate_command(&plain.command));
+        assert!(!should_migrate_command(&with_global_flag.command));
+
+        let early = ProfilesCli::try_parse_from(["cx", "profiles", "delete", "broken"])
+            .expect("early profiles delete parses");
+        let ProfilesTopLevel::Profiles { cmd } = early.command;
+        assert!(!should_migrate_profiles_command(&cmd));
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
     // When the COMPLETE env var is set (e.g. `COMPLETE=zsh cx`), this generates
     // completion scripts and exits. Otherwise it is a no-op.
@@ -3518,8 +4893,12 @@ async fn run() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        // Deleting is how a user removes a profile that cannot be migrated.
+        if should_migrate_profiles_command(&cmd) {
+            config::migrate_managed_profiles_to_os_store()?;
+        }
         let result = match cmd {
-            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::List { label } => commands::profiles::run_list(label),
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3531,6 +4910,7 @@ async fn run() -> Result<()> {
                 force,
                 set_default,
                 disable_olly,
+                label,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3543,12 +4923,16 @@ async fn run() -> Result<()> {
                     set_default,
                     disable_olly,
                     quick: false,
+                    labels: (!label.is_empty()).then_some(label),
                 })
                 .await
             }
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            #[cfg(target_os = "macos")]
+            ProfilesCmd::Migrate => commands::profiles::run_migrate(),
+            ProfilesCmd::Labels { cmd } => cmd.run(),
         };
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
@@ -3565,6 +4949,13 @@ async fn run() -> Result<()> {
 
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
+    // A managed credential-storage policy applies before every executed CLI
+    // command, including local commands that do not otherwise resolve API
+    // credentials (such as `cx profiles list`). `cx profiles delete` is
+    // exempt: it is how a user removes a profile that cannot be migrated.
+    if should_migrate_command(&cli.command) {
+        config::migrate_managed_profiles_to_os_store()?;
+    }
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();
@@ -3616,8 +5007,37 @@ async fn run() -> Result<()> {
     // but when global flags precede `profiles` (e.g. `cx --read-only profiles list`),
     // it falls through to here.
     if let Commands::Profiles { cmd } = cli.command {
+        // `list`, `add` and the `labels` verbs define their own `--label`, with
+        // the same id as the global selector. Clap fills the global value from
+        // the deepest subcommand, so a `--label` typed before `profiles` is
+        // overwritten whenever the subcommand also gets one, and ignored by the
+        // subcommands that have no use for it. Refuse both cases with the fix
+        // instead of dropping a label silently.
+        let label_before_profiles = label_flag_precedes_profiles(std::env::args().skip(1));
+        // Only the subcommands that own a `--label` may see `cli.label` set:
+        // for them it is their own value, copied up by clap. `labels get` and
+        // `labels clear` have none, so a `--label` there is a stray global.
+        let owns_label_flag = matches!(
+            cmd,
+            ProfilesCmd::List { .. }
+                | ProfilesCmd::Add { .. }
+                | ProfilesCmd::Labels {
+                    cmd: ProfileLabelsCmd::Add { .. }
+                        | ProfileLabelsCmd::Remove { .. }
+                        | ProfileLabelsCmd::Set { .. }
+                }
+        );
+        if label_before_profiles || (!cli.label.is_empty() && !owns_label_flag) {
+            bail!(
+                "`--label` selects profiles for fan-out and does not apply to `cx profiles` itself.\n\
+                 Put it after the subcommand to filter or tag:\n\
+                   cx profiles list --label <label>\n\
+                   cx profiles add <name> --label <label>\n\
+                   cx profiles labels add <name> --label <label>"
+            );
+        }
         let result = match cmd {
-            ProfilesCmd::List => commands::profiles::run_list(),
+            ProfilesCmd::List { label } => commands::profiles::run_list(label),
             ProfilesCmd::Add {
                 name,
                 name_flag,
@@ -3629,6 +5049,7 @@ async fn run() -> Result<()> {
                 force,
                 set_default,
                 disable_olly,
+                label,
             } => {
                 commands::profiles::run_add(commands::profiles::AddArgs {
                     name: name.or(name_flag),
@@ -3641,12 +5062,16 @@ async fn run() -> Result<()> {
                     set_default,
                     disable_olly,
                     quick: false,
+                    labels: (!label.is_empty()).then_some(label),
                 })
                 .await
             }
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            #[cfg(target_os = "macos")]
+            ProfilesCmd::Migrate => commands::profiles::run_migrate(),
+            ProfilesCmd::Labels { cmd } => cmd.run(),
         };
         update_check::maybe_print_notice(OutputFormat::Text);
         return result;
@@ -3687,6 +5112,7 @@ async fn run() -> Result<()> {
         install_completions,
     } = cli.command
     {
+        update_check::suppress_skills_refresh();
         let scope = if global_skills {
             Some(commands::skills::SkillsScope::Global)
         } else if local_skills {
@@ -3712,12 +5138,17 @@ async fn run() -> Result<()> {
 
     // Skills install shells out to npx locally - no API credentials.
     if let Commands::Skills { cmd } = cli.command {
+        update_check::suppress_skills_refresh();
         let SkillsCmd::Install {
             global,
             local,
             agents,
             interactive,
-        } = cmd;
+        } = cmd
+        else {
+            // No notice: this runs detached, with no terminal.
+            return commands::skills::run_auto_refresh();
+        };
         let result = if interactive {
             commands::skills::run_advanced_install()
         } else {
@@ -3789,7 +5220,8 @@ async fn run() -> Result<()> {
     // --api-key / --region on the command line, suppress the corresponding
     // env-var value (CX_API_KEY / CX_REGION) so the profile's own stored
     // credentials and region are used instead.
-    let profile_from_cli = matches.value_source("profile") == Some(ValueSource::CommandLine);
+    let profile_from_cli = matches.value_source("profile") == Some(ValueSource::CommandLine)
+        || matches.value_source("label") == Some(ValueSource::CommandLine);
     let api_key_from_cli = matches.value_source("api_key") == Some(ValueSource::CommandLine);
     let region_from_cli = matches.value_source("region") == Some(ValueSource::CommandLine);
     let effective_api_key: Option<&str> = if profile_from_cli && !api_key_from_cli {
@@ -3803,11 +5235,46 @@ async fn run() -> Result<()> {
         cli.region.as_deref()
     };
 
-    // Reject --api-key / --region when more than one --profile is supplied,
+    // Turn --profile and --label into the list of profile names to run
+    // against. Empty means "the default profile". A `--label` on the command
+    // line chooses the targets by itself: a CX_PROFILE from the environment
+    // must not sneak in as an extra target, the same way it must not override
+    // an explicit `-p`.
+    let label_from_cli = matches.value_source("label") == Some(ValueSource::CommandLine);
+    // `--label ""` (an unset shell variable) must not fall back to the
+    // default profile, which may be the wrong team.
+    let wanted_labels = config::parse_given_label_args(&cli.label)?;
+    let profile_from_env = matches.value_source("profile") == Some(ValueSource::EnvVariable);
+    let explicit_profiles: &[String] = if label_from_cli && profile_from_env {
+        &[]
+    } else {
+        &cli.profile
+    };
+    let selected_profiles = match config::select_profile_names(explicit_profiles, &wanted_labels) {
+        Ok(names) => names,
+        Err(error) => {
+            // The message already names the fix (`cx profiles list`, `cx
+            // profiles add --label`); exit here so it is not printed twice.
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    };
+
+    // A write that reaches several profiles says so up front, on stderr, so
+    // stdout stays clean for scripts. The per-command confirmation still
+    // follows; this only makes the blast radius visible.
+    if let Some(notice) = safety::multi_profile_write_notice(
+        &safety::get_subcommand_path(&matches),
+        &selected_profiles,
+    ) {
+        eprintln!("{notice}");
+    }
+
+    // Reject --api-key / --region when more than one profile is selected,
     // because it would be ambiguous which profile the override targets.
-    if cli.profile.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {
+    if selected_profiles.len() > 1 && (effective_api_key.is_some() || effective_region.is_some()) {
         bail!(
-            "Cannot combine multiple --profile values with --api-key or --region overrides.\n\
+            "Cannot combine multiple --profile or --label values with --api-key or --region overrides.\n\
              Store per-profile credentials with `cx profiles add <name>`."
         );
     }
@@ -3816,44 +5283,44 @@ async fn run() -> Result<()> {
     let global_config = config::load_config().unwrap_or_default();
     let output = cli
         .output
-        .or_else(|| config::first_profile_output_format(&cli.profile))
+        .or_else(|| config::first_profile_output_format(&selected_profiles))
         .unwrap_or(global_config.default_output_format);
     let max_direct = global_config.max_dataprime_direct_output_size;
     let temp_dir = global_config.temp_dir.clone();
 
     // Resolve one or more profiles into execution targets.
-    let configs = match config::resolve_all(&cli.profile, effective_api_key, effective_region).await
-    {
-        Ok(configs) => configs,
-        Err(error) => {
-            // First-run guidance: when nothing is configured at all (no profile
-            // on disk and no env-only credentials), don't dump the underlying
-            // config-resolution error. Point the user at the single guided entry
-            // point instead. The onboarding commands that *fix* this state
-            // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
-            // never reach here, so they can't be short-circuited by this branch.
-            if config::list_profile_names()
-                .map(|names| names.is_empty())
-                .unwrap_or(false)
-            {
-                eprintln!("No Coralogix profile is configured.");
-                eprintln!("Run `cx init` to set up a profile and get started.");
-                // Exit here instead of returning the error: propagating it
-                // would dump the anyhow config-resolution chain (with a second,
-                // contradicting `cx profiles add` instruction) after the
-                // guidance. The two lines above are the entire first-run story.
+    let configs =
+        match config::resolve_all(&selected_profiles, effective_api_key, effective_region).await {
+            Ok(configs) => configs,
+            Err(error) => {
+                // First-run guidance: when nothing is configured at all (no profile
+                // on disk and no env-only credentials), don't dump the underlying
+                // config-resolution error. Point the user at the single guided entry
+                // point instead. The onboarding commands that *fix* this state
+                // (`cx init`, `cx profiles add`, `cx skills`) are handled earlier and
+                // never reach here, so they can't be short-circuited by this branch.
+                if config::list_profile_names()
+                    .map(|names| names.is_empty())
+                    .unwrap_or(false)
+                {
+                    eprintln!("No Coralogix profile is configured.");
+                    eprintln!("Run `cx init` to set up a profile and get started.");
+                    // Exit here instead of returning the error: propagating it
+                    // would dump the anyhow config-resolution chain (with a second,
+                    // contradicting `cx profiles add` instruction) after the
+                    // guidance. The two lines above are the entire first-run story.
+                    std::process::exit(1);
+                }
+                // The error already names the fix (for example `cx profiles add
+                // <name>`). Exit here instead of returning it: propagating it
+                // would print the same message a second time as `Error: ...`,
+                // and a generic `cx profiles add` line would sit beside the
+                // specific instruction already in the error. `{:?}` keeps a
+                // single copy of the cause chain (parse errors, and so on).
+                eprintln!("Configuration error: {error:?}");
                 std::process::exit(1);
             }
-            // The error already names the fix (for example `cx profiles add
-            // <name>`). Exit here instead of returning it: propagating it
-            // would print the same message a second time as `Error: ...`,
-            // and a generic `cx profiles add` line would sit beside the
-            // specific instruction already in the error. `{:?}` keeps a
-            // single copy of the cause chain (parse errors, and so on).
-            eprintln!("Configuration error: {error:?}");
-            std::process::exit(1);
-        }
-    };
+        };
 
     let targets = build_targets(
         configs,
@@ -3878,6 +5345,12 @@ async fn run() -> Result<()> {
             Commands::Schema => unreachable!("handled above"),
             Commands::Completions { .. } => unreachable!("handled above"),
             Commands::Docs { .. } => unreachable!("handled above"),
+
+            Commands::Datasets { cmd } => match cmd {
+                DatasetsCmd::List { filter } => {
+                    commands::datasets::run_list(&targets, filter.as_deref(), output).await?;
+                }
+            },
 
             Commands::Dataprime { cmd } => match cmd {
                 DataprimeCmd::List { .. } | DataprimeCmd::Show { .. } => {
@@ -4564,7 +6037,12 @@ async fn run() -> Result<()> {
                     commands::e2m::run_delete(&targets, &id).await?;
                 }
                 E2mCmd::LabelsCardinality => {
-                    commands::e2m::run_labels_cardinality(&targets, output).await?;
+                    anyhow::bail!(
+                        "`cx e2m labels-cardinality` is not available through the REST API yet: \
+                         the gateway cannot accept the draft's metric labels, so the forecast \
+                         would always be empty. Forecast cardinality in the Coralogix UI \
+                         (Events2Metrics create flow) for now."
+                    );
                 }
                 E2mCmd::Limits => {
                     commands::e2m::run_limits(&targets, output).await?;
@@ -4642,7 +6120,11 @@ async fn run() -> Result<()> {
                     commands::enrichments::run_remove(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Overwrite { from_file } => {
-                    confirm_destructive("Overwrite enrichment rules?", yes, agent_mode)?;
+                    confirm_destructive(
+                        "Overwrite ALL enrichment rules? Custom enrichment tables the file does not reference are deleted too.",
+                        yes,
+                        agent_mode,
+                    )?;
                     commands::enrichments::run_overwrite(&targets, &from_file, output).await?;
                 }
                 EnrichmentsCmd::Limit => {
@@ -4718,8 +6200,9 @@ async fn run() -> Result<()> {
                     )
                     .await?;
                 }
-                IntegrationsCmd::Template => {
-                    commands::integrations::run_template(&targets, output).await?;
+                IntegrationsCmd::Template { integration_id } => {
+                    commands::integrations::run_template(&targets, &integration_id, output)
+                        .await?;
                 }
                 IntegrationsCmd::Extensions { cmd } => match cmd {
                     ExtensionsCmd::List => {
@@ -5279,6 +6762,23 @@ async fn run() -> Result<()> {
                 SlosCmd::Get { id } => {
                     commands::slos::run_get(&targets, &id, output).await?;
                 }
+                SlosCmd::Status {
+                    ids,
+                    last,
+                    from,
+                    to,
+                    grouping_keys,
+                    target,
+                } => {
+                    let query = commands::slos::api::SloStatusQuery::from_flags(
+                        last.as_deref(),
+                        from.as_deref(),
+                        to.as_deref(),
+                        grouping_keys,
+                        target,
+                    )?;
+                    commands::slos::run_status(&targets, &ids, &query, output).await?;
+                }
                 SlosCmd::Create { from_file } => {
                     confirm_destructive("Create a new SLO?", yes, agent_mode)?;
                     commands::slos::run_create(&targets, &from_file, output).await?;
@@ -5292,6 +6792,10 @@ async fn run() -> Result<()> {
                     commands::slos::run_delete(&targets, &id).await?;
                 }
             },
+
+            Commands::ProductAnalytics { cmd } => {
+                run_product_analytics(&targets, cmd, yes, agent_mode, output).await?;
+            }
 
             Commands::Infra { cmd } => match cmd {
                 InfraCmd::Resources { cmd } => match cmd {
@@ -5399,18 +6903,18 @@ async fn run() -> Result<()> {
                     commands::service_catalog::run_entities(&targets, &entity_type, output)
                         .await?;
                 }
-                ServiceCatalogCmd::Data {
-                    entity_type,
-                    start,
-                    end,
-                    columns,
-                    group_by,
-                    filters,
-                    aggregation,
-                    limit,
-                    sort_column,
-                    sort_order,
-                } => {
+                ServiceCatalogCmd::Data(ServiceCatalogDataArgs {
+                        entity_type,
+                        start,
+                        end,
+                        columns,
+                        group_by,
+                        filters,
+                        aggregation,
+                        limit,
+                        sort_column,
+                        sort_order,
+                }) => {
                     commands::service_catalog::run_data(
                         &targets,
                         &entity_type,
@@ -5427,16 +6931,16 @@ async fn run() -> Result<()> {
                     )
                     .await?;
                 }
-                ServiceCatalogCmd::EntityData {
-                    entity_type,
-                    entity_id,
-                    start,
-                    end,
-                    columns,
-                    group_by,
-                    filters,
-                    aggregation,
-                } => {
+                ServiceCatalogCmd::EntityData(ServiceCatalogEntityDataArgs {
+                        entity_type,
+                        entity_id,
+                        start,
+                        end,
+                        columns,
+                        group_by,
+                        filters,
+                        aggregation,
+                }) => {
                     commands::service_catalog::run_entity_data(
                         &targets,
                         &entity_type,
@@ -5447,6 +6951,119 @@ async fn run() -> Result<()> {
                         &group_by,
                         &filters,
                         &aggregation,
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::Insights(InsightsArgs {
+                        entity_types,
+                        filters,
+                        selection,
+                        breakdowns,
+                        top_values,
+                        breakdown_sort,
+                }) => {
+                    commands::service_catalog::run_insights(
+                        &targets,
+                        &entity_types,
+                        &filters,
+                        &selection.as_input(),
+                        &breakdowns,
+                        top_values,
+                        breakdown_sort.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::EntityInsights(EntityInsightsArgs {
+                        entity_type,
+                        entity_id,
+                        system,
+                        environments,
+                        selection,
+                        top_values,
+                        breakdown_sort,
+                }) => {
+                    commands::service_catalog::run_entity_insights(
+                        &targets,
+                        &entity_type,
+                        &entity_id,
+                        system.as_deref(),
+                        &environments,
+                        &selection.as_input(),
+                        top_values,
+                        breakdown_sort.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::InsightDrilldown(InsightDrilldownArgs {
+                        insight_type,
+                        entity_type,
+                        filters,
+                        scope,
+                        environment_match,
+                        sort,
+                        sort_order,
+                        page_index,
+                        page_size,
+                        name_search,
+                }) => {
+                    commands::service_catalog::run_insight_drilldown(
+                        &targets,
+                        &insight_type,
+                        &entity_type,
+                        &filters,
+                        scope.as_deref(),
+                        environment_match.as_deref(),
+                        sort.as_deref(),
+                        sort_order.as_deref(),
+                        page_index,
+                        page_size,
+                        name_search.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::EntityInsightDrilldown(EntityInsightDrilldownArgs {
+                        insight_type,
+                        entity_type,
+                        entity_id,
+                        system,
+                        dimension,
+                        environments,
+                        scope,
+                }) => {
+                    commands::service_catalog::run_entity_insight_drilldown(
+                        &targets,
+                        &insight_type,
+                        &entity_type,
+                        &entity_id,
+                        system.as_deref(),
+                        &dimension,
+                        &environments,
+                        scope.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::InsightTypes { cmd } => {
+                    let (archive, InsightTypesArgs { types }) = match cmd {
+                        InsightTypesCmd::Archive(args) => (true, args),
+                        InsightTypesCmd::Unarchive(args) => (false, args),
+                    };
+                    let insight_types =
+                        commands::service_catalog::normalize_insight_types(&types)?;
+                    let verb = if archive { "Archive" } else { "Unarchive" };
+                    confirm_destructive(
+                        &format!("{verb} insight types {} for the whole company?", types.join(", ")),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::service_catalog::run_archive_insight_types(
+                        &targets,
+                        &insight_types,
+                        archive,
                         output,
                     )
                     .await?;
@@ -5679,6 +7296,15 @@ async fn run() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_target_percentage_keeps_decimals_and_rejects_out_of_range() {
+        assert_eq!(parse_target_percentage("99.9").unwrap(), 99.9);
+        assert_eq!(parse_target_percentage("100").unwrap(), 100.0);
+        assert!(parse_target_percentage("100.1").is_err());
+        assert!(parse_target_percentage("-1").is_err());
+        assert!(parse_target_percentage("NaN").is_err());
+    }
 
     #[test]
     fn parse_completions_shell_accepts_supported_shells() {

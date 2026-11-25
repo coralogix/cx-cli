@@ -23,6 +23,7 @@ definitions, judge whether they are healthy, and manage their lifecycle.
 |---|---|
 | `cx slos list` | List all SLO definitions |
 | `cx slos get <id>` | Get a single SLO by ID |
+| `cx slos status <id> [<id>...]` | Compliance and remaining error budget for one or more SLOs |
 | `cx slos create --from-file <path>` | Create an SLO from a JSON definition [requires `--yes`] |
 | `cx slos update --from-file <path>` | Replace an SLO definition from JSON [requires `--yes`] |
 | `cx slos delete <id>` | Delete an SLO [requires `--yes`] |
@@ -54,8 +55,47 @@ cx slos list -o json | jq '[.[] | {name, targetThresholdPercentage, sloType, slo
 cx slos get <slo-id> -o json
 ```
 
-Compare the live attainment against `targetThresholdPercentage` to judge whether
-the SLO is healthy or burning error budget. A **request-based** SLO measures the
+```bash
+# Status over the SLO's own window, then over the last 4 hours
+cx slos status <slo-id>
+cx slos status <slo-id> <slo-id> --last 4h -o json
+
+# Explicit window, one permutation, what-if target
+cx slos status <slo-id> --from now-7d --to now-1d
+cx slos status <slo-id> --grouping-key service,api --target 99.9
+```
+
+`status` returns `lowest_compliance_percentage` and
+`lowest_remaining_error_budget_percentage`, both from 0 to 100 — the lowest value
+across the matching permutations — plus the window actually used (`effective_from`,
+`effective_to`) and `complete_data`.
+
+- `--last 4h` or `--from`/`--to` set the window; times are cut to the whole minute and
+  the server rejects windows over its limit. `--last` cannot be combined with `--from`/`--to`.
+- `--grouping-key label,value` (repeatable) narrows to permutations with that label
+  value; the label must be one of the SLO's grouping labels.
+- If any SLO fails (unknown id, bad label, window too long), the command fails and
+  prints nothing; the error names the first failed SLO. Fix the input and rerun.
+
+**`0` and `0` has two meanings.** Either the window has no events (or the label value
+is unknown), or some permutation failed every event, which is a real breach.
+`complete_data` does not tell them apart. Before reporting a breach, count the SLO's
+events: use `effective_to` as `--time` and the window length as the range.
+
+```bash
+# Request-based SLO (type REQUEST in `cx slos list`)
+cx metrics query 'sum(sum_over_time(cx:slo:request:total_events{slo_id="<slo-id>"}[4h]))' --time <effective_to>
+
+# Window-based SLO (type WINDOW)
+cx metrics query 'sum(count_over_time(cx:slo:window{slo_id="<slo-id>"}[4h]))' --time <effective_to>
+```
+
+- Empty result or `0`: no events. Report "no data", not a breach.
+- Positive number: events exist, so the zero is real and the SLO is breached.
+- With `--grouping-key label,value`, add `label="value"` to the selector.
+
+Compare `lowest_compliance_percentage` against `target` from `cx slos list -o json`
+(both are percentages) to judge whether the SLO is healthy or burning error budget. A **request-based** SLO measures the
 fraction of good events; a **window-based** SLO measures the fraction of good time
 windows. After triage, pivot to the `cx-telemetry-querying` skill to find the root
 cause of a breach in logs, spans, or metrics.

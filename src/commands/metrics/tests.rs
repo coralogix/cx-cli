@@ -22,6 +22,31 @@ fn make_instant_row(metric: &[(&str, &str)], value: &str, profile: Option<&str>)
     row
 }
 
+// ── get-labels text table ─────────────────────────────────────────────────────
+
+/// `render::format_table` treats the first cell of every row as the profile
+/// and drops it in single-profile mode. One-cell rows therefore rendered an
+/// empty table for `metrics get-labels -o text`: every label was skipped.
+#[test]
+fn labels_text_rows_keep_the_label_after_the_profile_cell() {
+    let labels = vec![
+        ("default".to_string(), "__name__".to_string()),
+        ("default".to_string(), "job".to_string()),
+    ];
+    let rows = labels_text_rows(&labels);
+    assert_eq!(rows[0], vec!["default", "__name__"]);
+
+    let single = render::format_table(&["Label"], rows.clone(), false);
+    assert!(
+        single.contains("__name__") && single.contains("job"),
+        "{single}"
+    );
+    assert!(!single.contains("Profile"), "{single}");
+
+    let multi = render::format_table(&["Label"], rows, true);
+    assert!(multi.contains("Profile") && multi.contains("default") && multi.contains("job"));
+}
+
 // ── instant_samples_to_toon_rows (multi-profile) ──────────────────────────────
 
 #[test]

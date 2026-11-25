@@ -39,13 +39,11 @@ remains `~/.cx/`.
 `cx init` creates your first profile as part of setup — see the
 [Quick start](quickstart.md) for that walkthrough. This page covers what it wrote.
 
-`cx init` asks where to store the secret and preselects `file` (the profile
-TOML, mode `0600`). `os-store` is the other choice on Windows, on glibc Linux,
-and on macOS when this `cx` binary is Developer ID signed. An ad-hoc or
-unsigned macOS build offers only `file`. Linux musl builds have no keyring
-backend, so `file` is their only storage option. It defaults these rather than
+`cx init` asks where to store the secret. The default on each platform, and
+what happens when that write fails, is in
+[Credentials on macOS](#credentials-on-macos). It defaults these rather than
 prompting: profile name `default`, no label, and `json` as the profile's
-default output format. A prompt-free run (no terminal) also writes `file`.
+default output format.
 
 Set `default_output_format` in the profile TOML (or pass `-o text`) if you would
 rather read the output by eye than hand it to an agent.
@@ -63,10 +61,12 @@ Run `cx init` to set up a profile and get started.
 
 | Command | Purpose |
 |---|---|
-| `cx profiles list` | List every configured profile and show which one is the default. |
+| `cx profiles list` | List every configured profile and show which one is the default. `--label <name>` (repeatable, or comma-separated) shows only profiles that have any of those labels, which is the set the global `--label` flag would run against. |
 | `cx profiles add [NAME]` | Create or reconfigure a profile (see below). |
 | `cx profiles refresh <NAME>` | Sign an OAuth profile in again. Keeps its region and settings; only the tokens change. |
 | `cx profiles set-default <NAME>` | Make an existing profile the default, so commands without `-p` use it. |
+| `cx profiles migrate` | macOS only. Recreate every `os_store` profile's Keychain secrets using the currently running `cx` installation's Keychain backend. Use it after switching between a signed release and Homebrew, Cargo, or another unsigned build. File-backed profiles are skipped. |
+| `cx profiles labels <VERB> <NAME>` | Show or change a profile's labels without reconfiguring it. Verbs: `get`, `add`, `remove`, `set`, `clear`. Labels go behind `--label` (repeatable or comma-separated), for example `cx profiles labels add prod-eu --label prod,eu`. Credentials and region are untouched. |
 | `cx profiles delete <NAME>` | Delete a profile and its stored credentials. Asks for confirmation; `-f`/`--force` skips it. |
 
 Naming a profile that doesn't exist is an error, not a fall back to the default:
@@ -90,8 +90,8 @@ At the prompts, in order:
 2. **Reconfigure?** — if a profile of that name already exists, `cx` asks `Reconfigure profile '<name>'?` before touching it. `--force` skips the confirmation.
 3. **Authentication method** — `OAuth (browser login)` (recommended) opens your browser and stores tokens securely. Select `API key (paste manually)` to use a static key instead.
 4. **Region / Coralogix URL** — your Coralogix region (e.g. `eu2`, `us1`), or paste your Coralogix URL. See [Regions](#regions) for the full list.
-5. **Label** — an optional tag to group or identify profiles (e.g. `production`).
-6. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. `file` is preselected and saves credentials in the profile TOML with `0600` permissions. `os-store` uses the OS keyring (macOS Keychain, Windows Credential Manager, or D-Bus Secret Service on Linux). On macOS it is offered only when this `cx` binary is signed with an Apple Developer ID certificate; an ad-hoc or unsigned build offers only `file`. On Linux musl builds, `file` is the only storage option. If you choose `os-store` and that store is unavailable (for example Linux without a Secret Service), setup saves the secret in the profile file instead.
+5. **Credential storage** — on the OAuth path this reads `Where should OAuth tokens be stored?`. On macOS and Windows, `os-store` is preselected and saves the secret in the Keychain or Windows Credential Manager. On glibc Linux, `file` is preselected and saves credentials in the profile TOML with `0600` permissions; `os-store` is the other choice (D-Bus Secret Service). On Linux musl builds, `file` is the only storage option. If you choose `os-store` and that store is unavailable (for example Linux without a Secret Service, or a Keychain or Credential Manager write that fails), setup saves the secret in the profile file instead. A prompt-free run uses the same default and the same fallback.
+6. **Labels** — optional tags to group or identify profiles (e.g. `prod, eu`). Leave the prompt empty to keep the labels already on the profile. `--label` sets them without asking; repeat it or separate values with commas. To change labels on an existing profile later, use `cx profiles labels add <name> --label <label>` instead of reconfiguring.
 7. **Default output format** — `text`, `json`, or `toon`.
 8. **Set as default?** — asked for every profile *after* the first (`Set '<name>' as the default profile?`). The first profile you create always becomes the default. `--set-default` answers this up front.
 
@@ -126,6 +126,7 @@ supplies both credentials and a region/URL prompts for nothing at all:
 cx profiles add prod --region eu2                      # region answered, rest prompted
 cx profiles add --oauth --region eu2                   # straight to browser login
 cx profiles add --url https://myteam.app.eu2.coralogix.com --api-key $KEY
+cx profiles add prod --region eu2 --label prod --label eu
 CX_API_KEY=$KEY cx profiles add --region us1 --force   # non-interactive overwrite
 ```
 
@@ -143,6 +144,7 @@ scripts unless you mean to write the default one.
 | `--oauth` | Use browser login and skip the auth-method prompt. Takes precedence over `--api-key`. Prints the sign-in URL, so it works without a terminal too (which then requires `--url` or `--region`). |
 | `--force` | Overwrite an existing profile without prompting. |
 | `--set-default` | Make this the default profile without prompting. |
+| `--label <LABEL>` | Labels for this profile. Repeat the flag or pass a comma-separated list (`--label prod,eu`). Whitespace is trimmed; empty values and duplicates are dropped. Omit it when reconfiguring to keep the profile's existing labels. |
 | `--disable-olly` | Create the first profile with the Olly AI assistant switched off. Only meaningful for the first profile, since that is when `olly_enabled` is written. No prompt either way. |
 | `-h` / `--help` | `--help` prints the full reference above; `-h` prints a short summary. |
 
@@ -158,7 +160,7 @@ For environments with no profile file at all, see
 
 OAuth uses the standard browser-based Authorization Code + PKCE flow.
 
-- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend. The prompt preselects `file`. On macOS, `os_store` is offered only when this `cx` binary is Developer ID signed; on Linux musl builds `file` is the only storage option. `file` writes them inline in the profile TOML, and that is also what a prompt-free run uses.
+- Tokens (`access_token`, `refresh_token`, `id_token`) are persisted using the chosen `credential_storage` backend. `file` writes them inline in the profile TOML. The default backend is `os-store` on macOS and Windows and `file` on Linux; an OS-store write failure falls back to `file`.
 - The access token is silently refreshed on each `cx` invocation when it is within 30 seconds of expiry. The refreshed token set is written back to the same backend.
 - If the session needs re-authentication, running a command opens the sign-in page showing only the profile's team, then continues. If the sign-in still comes back for a different team (for example, the first re-login of a profile that has not recorded its team yet), `cx` discards it, leaves the profile unchanged, and offers to reopen the sign-in page.
 - This happens only on an interactive terminal. When output is piped or `cx` runs under a coding agent, it exits with an actionable message instead:
@@ -266,19 +268,149 @@ Credentials stored in the OS keyring use the following backends:
 
 | Platform | Backend |
 |---|---|
-| macOS | Keychain |
+| macOS | Keychain (see [Credentials on macOS](#credentials-on-macos)). |
 | Windows | Credential Manager |
 | Linux (glibc) | D-Bus Secret Service (GNOME Keyring, KWallet) |
 | Linux (musl) | No keyring backend - `file` is the only storage option |
 
 The default install script and release binaries are built for musl on Linux, so
 `file` is their only credential-storage option. Keyring support is available
-only when building from source against glibc. The setup prompt preselects
-`file` on every platform. On macOS, `os-store` is listed only when `cx` checks
-its own signature and finds an Apple Developer ID certificate. An ad-hoc or
-unsigned build does not offer the Keychain, because an "Always Allow" entry is
-tied to that build and does not match the next one. If you choose `os-store` and that store fails at setup time, `cx`
-saves the secret in the profile file instead.
+only when building from source against glibc. macOS and Windows default to the
+OS store and fall back to file storage if its write fails.
+
+## Managed credential-storage policy
+
+IT can require platform credential-store storage on managed macOS and Windows
+devices with their native policy mechanisms. The policy is named
+`RequireCredentialStorage`; a true/non-zero value requires OS credential
+storage.
+
+| Platform | Policy location | Deployment |
+|---|---|---|
+| macOS | Managed Preferences domain `com.coralogix.cx` | Deploy a configuration profile through Jamf or another MDM tool with the Boolean key `RequireCredentialStorage = true`. |
+| Windows | `HKLM\SOFTWARE\Policies\Coralogix\cx` | Deploy `RequireCredentialStorage` as a non-zero `REG_DWORD` through Group Policy or Intune. |
+
+### Jamf Pro deployment
+
+In Jamf Pro, create a computer configuration profile and add an **Application &
+Custom Settings** payload. Set the preference domain to `com.coralogix.cx`,
+then paste this preference plist into the custom-settings editor:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>RequireCredentialStorage</key>
+  <true/>
+</dict>
+</plist>
+```
+
+Jamf installs this as a forced Managed Preference. Scope the profile to the
+managed Macs where Keychain-only credential storage is required.
+
+`cx` reads the managed preference through the macOS preferences API and the
+Windows value through the Registry API. It does not read a policy file, so
+users cannot redirect, replace, or bypass the policy through filesystem
+permissions. The former `policy.toml` location is not supported. A missing
+policy means the device is unmanaged. An unreadable or malformed native policy
+is an error rather than a fallback to file storage.
+
+When enabled, `cx` stores credentials only in macOS Keychain or Windows
+Credential Manager. The interactive setup flow skips the credential-storage
+prompt and saves directly to the OS store; `CX_CREDENTIAL_STORAGE=file` is
+rejected. Before running any command other than `cx profiles delete`, `cx`
+copies the API keys and OAuth tokens it finds in profile files to the OS store,
+and removes the plaintext fields only after every write succeeds.
+
+A profile that cannot be read or copied keeps its file unchanged and is skipped
+with a warning, so other profiles and the `cx profiles` commands keep working.
+A command that uses that profile stops instead of reading its plaintext
+credentials. Replace the profile with `cx profiles add <name> --force`, or
+remove it with `cx profiles delete <name>`.
+
+An unreadable or malformed native policy is an error: `cx` stops instead of
+falling back to file storage.
+
+Linux ignores this policy and retains its existing credential-storage behavior.
+
+## Credentials on macOS
+
+> Note: If you installed cx with Homebrew, Cargo, or Nix, any process running as your user can read your cx credentials without a prompt. To limit access to the Coralogix-signed cx, see [Stronger isolation](#stronger-isolation-optional).
+
+On macOS, `cx` saves new credentials in the Keychain. You can still choose `file`.
+
+`os-store` is preselected, including on a prompt-free run. Windows uses the
+same default with Windows Credential Manager; Linux defaults to `file`. Linux
+musl builds have no OS store, so `file` is the only option. A profile that
+already says `credential_storage = "file"`, or that omits the key, stays
+file-based. Upgrading `cx` does not move it. If an OS-store write fails, setup
+saves the secret in the profile file instead and prints a warning.
+
+For CI, coding agents, or any setup that must not open the Keychain, set
+`CX_CREDENTIAL_STORAGE=file`. It skips the credential-storage prompt and makes
+new profiles file-backed on every platform. `file` is the only accepted value;
+an unrecognised value prints a warning and is ignored.
+
+Which Keychain path `cx` uses depends on the signature of the binary you are
+running, not on a separate setting.
+
+**Homebrew, Cargo, and Nix builds** are compiled without the Coralogix
+certificate. Those builds read and write the Keychain through Apple's
+`/usr/bin/security` tool. The Keychain trusts that Apple-signed tool, which
+does not change when you upgrade `cx`, so you are not asked again after an
+upgrade. Any process running as your user can also read those credentials by
+invoking the same tool. Very long secrets are saved in the profile file
+instead. In a non-interactive session, `cx` waits at most five seconds for
+`/usr/bin/security`. When setup is saving credentials, a blocked Keychain
+prompt then falls back to the profile file; when reading an existing Keychain
+credential, it returns an error instead. For CI and coding agents, prefer
+`CX_API_KEY` and `CX_REGION`, or set `CX_CREDENTIAL_STORAGE=file` when a
+profile must be created. See [Environment variables](#environment-variables).
+
+### Move a file profile to the Keychain
+
+`cx init` does not change a profile that already exists. Editing
+`credential_storage` in the TOML does not copy the secret into the Keychain.
+The next command would look only in the Keychain and fail.
+
+Re-run setup for that profile. On macOS, `os-store` is preselected:
+
+```sh
+cx profiles add <name>
+```
+
+Confirm reconfigure, then sign in again or paste the API key. `cx` writes the
+new secret to the Keychain and leaves it out of the profile file. `--force`
+skips the confirmation.
+
+### If macOS keeps asking for your password
+
+An older Homebrew `cx` saved Keychain items with a rule tied to that build, so
+each `brew upgrade` asked again.
+
+Upgrade with `brew upgrade cx`.
+
+- If the profile stores the secret in the file (`credential_storage = "file"`, or the key is missing), you are done. `cx` does not open the Keychain for that profile.
+- If the profile uses the Keychain (`credential_storage = "os_store"`), upgrading does not rewrite the existing item. The next command may ask once for `/usr/bin/security`. Allow it, and later upgrades do not ask, because the Keychain then trusts that Apple tool rather than a particular `cx` build. When switching between a signed release and Homebrew, Cargo, or another unsigned build, run `cx profiles migrate` to recreate every OS-store profile's secrets through the current installation's Keychain backend. If it reports a failure, run `cx profiles add <name>`, confirm reconfigure, and leave `os-store` selected. `cx init` will not do this.
+
+### Stronger isolation (optional)
+
+Signed builds talk to the Keychain directly. The Keychain entry is tied to the
+Coralogix Developer ID signature, so only a `cx` signed with that certificate
+can read the secret without a prompt. That is what the install script and the
+GitHub release archives install:
+
+```bash
+curl -fsSL https://get.coralogix.dev/cli | sh
+```
+
+Release archives are listed under [Installation reference](#installation-reference).
+The five-second non-interactive timeout applies only to the unsigned
+`/usr/bin/security` path. Signed builds use the native Keychain API and may
+show the normal first-use approval prompt.
+
+> Note: `brew install coralogix/tap/cx` installs the same Homebrew build as `brew install cx`, so it uses `/usr/bin/security`. For the signed build, use the install script above.
 
 ## Global config (`~/.cx/config.toml`)
 
@@ -287,10 +419,11 @@ saves the secret in the profile file instead.
 | `default_profile` | `"default"` | Profile used when `-p` is not provided |
 | `default_output_format` | `"text"` | Output format when `-o` is not provided (`text`, `json`, `toon`; `agents` accepted as a deprecated alias) |
 | `max_dataprime_direct_output_size` | `102400` (100 KiB) | Max byte size for non-aggregated DataPrime results in `toon` mode before spilling to a temp file. Set to `-1` to disable |
-| `temp_dir` | `"/tmp/"` | Directory for spilled result files |
+| `temp_dir` | `"/tmp/"` (OS temp dir on Windows) | Directory for spilled result files |
 | `read_only` | `false` | Block all write operations globally (equivalent to always passing `--read-only`) |
 | `strict_fields_validation` | `false` | Reject `cx logs`, `cx spans`, and `cx dataprime query` queries that reference fields missing from the schema (equivalent to always passing `--strict-fields-validation`; `--no-strict-fields-validation` overrides it). Off, such queries run and print a `compileWarning` on stderr |
 | `no_console_link` | `false` | Suppress "View in Coralogix" console links globally (equivalent to always passing `--no-console-link`) |
+| `auto_update_skills` | `true` | After a cx upgrade, refresh the global cx agent skills in the background, pinned to the new version. Only for global cx skills that are older than the new version (installed with `cx skills install --global`, an older cx, or `npx` directly), and only when `npx` is on `PATH`. `CX_NO_SKILLS_AUTO_UPDATE=1` also turns it off. |
 | `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`). Written when you create your first profile; never prompted. |
 | `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`). Written when you create your first profile; never prompted. Use `cx profiles add --disable-olly` to create it switched off. |
 
@@ -320,7 +453,7 @@ See [TOON output format](toon-output.md) for the `toon` format specification.
 
 ## Profile files (`~/.cx/profiles/<name>.toml`)
 
-Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. The setup prompt preselects `"file"`. On macOS, `"os_store"` is offered only for a Developer ID-signed `cx`; on Linux musl builds `"file"` is the only storage option. A profile that omits the key is read as `"file"`.
+Each profile stores credentials and endpoint configuration. `credential_storage` selects where secrets live for both auth modes: with `"file"` the API key or OAuth token set is written inline in the TOML (`0600` perms on Unix); with `"os_store"` the secrets live in the OS keyring and the inline fields are absent. A profile that omits the key is read as `"file"`. Where new profiles store the secret is in [Credentials on macOS](#credentials-on-macos).
 
 ### Common fields
 
@@ -328,8 +461,8 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 |---|---|---|
 | `auth` | No | `"oauth"` or `"api_key"` (default `"api_key"` for backward compatibility) |
 | `region` | Yes | Coralogix region identifier or a custom URL (see below) |
-| `credential_storage` | No | `"file"` or `"os_store"` (default `"file"`) |
-| `label` | No | Free-form label, for example `"production"` |
+| `credential_storage` | No | `"file"` or `"os_store"`. Omitted means `"file"`. See [Credentials on macOS](#credentials-on-macos). |
+| `labels` | No | Free-form labels, for example `["production", "eu"]`. The global `--label` flag runs a command against every profile that has one of the given labels (see [Multi-profile fan-out](multi-profile.md)). A legacy `label = "production"` string still loads as a one-item list. New writes use `labels` only. |
 | `console_url` | No | Overrides the web console base URL used to build "View in Coralogix" links. If unset, `cx` resolves it automatically via `GET /identity/whoami` - see [Console links](#console-links). |
 
 ### OAuth-specific fields
@@ -346,7 +479,7 @@ Each profile stores credentials and endpoint configuration. `credential_storage`
 auth = "oauth"
 credential_storage = "file"
 region = "eu2"
-label = "production"
+labels = ["production", "eu"]
 
 [oauth_tokens]
 access_token = "..."
@@ -362,7 +495,7 @@ The token set is rewritten in place each time `cx` refreshes. The file is create
 auth = "oauth"
 credential_storage = "os_store"
 region = "eu2"
-label = "production"
+labels = ["production", "eu"]
 ```
 
 Tokens live in the OS keyring; nothing sensitive is in this file.
@@ -374,7 +507,7 @@ auth = "oauth"
 credential_storage = "file"
 region = "https://api.myenv.example.com"
 oauth_client_id = "abc123-my-client"
-label = "custom-env"
+labels = ["custom-env"]
 ```
 
 ### Example: API key profile (OS keyring)
@@ -383,7 +516,7 @@ label = "custom-env"
 auth = "api_key"
 credential_storage = "os_store"
 region = "eu1"
-label = "production"
+labels = ["production", "eu"]
 ```
 
 Secrets are stored in separate OS-keyring entries scoped to the profile. This
@@ -395,7 +528,7 @@ size limit.
 ```toml
 region = "eu1"
 api_key = "cxp_your_api_key_here"
-label = "production"
+labels = ["production", "eu"]
 ```
 
 Legacy profiles without an `auth` field behave as `auth = "api_key"` automatically.
@@ -442,13 +575,15 @@ There are three ways to enable it, listed from narrowest to broadest scope:
 
 ## Environment variables
 
-Environment variables override profile file values:
+Most environment variables override profile file values; `CX_CREDENTIAL_STORAGE`
+only controls where new profiles store credentials:
 
 | Variable | Overrides |
 |---|---|
 | `CX_PROFILE` | `-p` flag / `default_profile` |
 | `CX_API_KEY` | `api_key` in profile (also overrides OAuth - sets the bearer token directly) |
 | `CX_REGION` | `region` in profile |
+| `CX_CREDENTIAL_STORAGE=file` | Setup default only: forces new profiles created by `cx init` or `cx profiles add` to store credentials in the profile file. Useful for headless CI and coding agents that must not access an OS credential store. |
 | `CX_HTTP_TIMEOUT` | HTTP request deadline in seconds (equivalent to `--http-timeout`) |
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |

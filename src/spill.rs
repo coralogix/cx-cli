@@ -131,6 +131,10 @@ pub fn cleanup_old_files(temp_dir: &str) -> Result<usize> {
         .checked_sub(CLEANUP_AGE)
         .unwrap_or(SystemTime::UNIX_EPOCH);
 
+    // A temp dir that was never created holds no result files.
+    if !dir.exists() {
+        return Ok(0);
+    }
     let entries = std::fs::read_dir(dir)
         .with_context(|| format!("Cannot read temp directory: {}", dir.display()))?;
 
@@ -180,6 +184,13 @@ fn short_hash(s: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn cleanup_of_missing_temp_dir_removes_nothing() {
+        let dir = std::env::temp_dir().join("cx_spill_test_never_created_dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(cleanup_old_files(dir.to_str().unwrap()).unwrap(), 0);
+    }
 
     #[test]
     fn short_hash_is_eight_chars() {

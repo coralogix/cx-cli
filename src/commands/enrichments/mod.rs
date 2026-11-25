@@ -83,6 +83,37 @@ fn validate_enrichments_body(body: &Value, allow_empty: bool) -> Result<()> {
     Ok(())
 }
 
+/// Ids for `enrichments remove`. Accepts `{"enrichmentIds": [...]}`,
+/// `{"enrichment_ids": [...]}` or `{"ids": [...]}`; items may be numbers or
+/// strings. The API deletes by id only, so no other shape is accepted.
+fn enrichment_ids_from_body(body: &Value) -> Result<Vec<String>> {
+    let obj = body
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("request body must be a JSON object"))?;
+    let items = ["enrichmentIds", "enrichment_ids", "ids"]
+        .iter()
+        .find_map(|key| obj.get(*key))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "body must include `enrichmentIds` (array of enrichment rule ids, as shown \
+                 by `cx enrichments list`)"
+            )
+        })?;
+    if items.is_empty() {
+        anyhow::bail!("`enrichmentIds` must be a non-empty array of enrichment rule ids");
+    }
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| match item {
+            Value::Number(n) => Ok(n.to_string()),
+            Value::String(s) if !s.trim().is_empty() => Ok(s.trim().to_string()),
+            other => anyhow::bail!("enrichmentIds[{i}] must be a number or string, got {other}"),
+        })
+        .collect()
+}
+
 fn render_results(
     all_results: &[Value],
     output: OutputFormat,
@@ -171,12 +202,13 @@ pub async fn run_remove(
     output: OutputFormat,
 ) -> Result<()> {
     let body = read_from_file(from_file)?;
+    let ids = enrichment_ids_from_body(&body)?;
     eprintln!("{}", "Removing enrichment rules...".dimmed());
     let per_profile = fan_out(targets, |t| {
-        let body = body.clone();
+        let ids = ids.clone();
         async move {
             let api = EnrichmentsApi::new(&t.client);
-            Ok(api.remove(&body).await?)
+            Ok(api.remove(&ids).await?)
         }
     })
     .await;
@@ -355,5 +387,26 @@ mod tests {
         let body = json!({ "requestEnrichments": [{ "fieldName": "sourceIPs" }] });
         let err = validate_enrichments_body(&body, false).unwrap_err();
         assert!(err.to_string().contains("enrichmentType"));
+    }
+
+    #[test]
+    fn enrichment_ids_accepts_numbers_and_strings_under_any_key() {
+        let ids =
+            enrichment_ids_from_body(&json!({ "enrichmentIds": [272627, "272628"] })).unwrap();
+        assert_eq!(ids, vec!["272627", "272628"]);
+        let ids = enrichment_ids_from_body(&json!({ "enrichment_ids": [1] })).unwrap();
+        assert_eq!(ids, vec!["1"]);
+        let ids = enrichment_ids_from_body(&json!({ "ids": [" 7 "] })).unwrap();
+        assert_eq!(ids, vec!["7"]);
+    }
+
+    #[test]
+    fn enrichment_ids_rejects_bad_shapes() {
+        assert!(enrichment_ids_from_body(&json!([1])).is_err());
+        let err = enrichment_ids_from_body(&json!({ "requestEnrichments": [] })).unwrap_err();
+        assert!(err.to_string().contains("enrichmentIds"));
+        assert!(enrichment_ids_from_body(&json!({ "enrichmentIds": [] })).is_err());
+        assert!(enrichment_ids_from_body(&json!({ "enrichmentIds": [true] })).is_err());
+        assert!(enrichment_ids_from_body(&json!({ "enrichmentIds": [""] })).is_err());
     }
 }

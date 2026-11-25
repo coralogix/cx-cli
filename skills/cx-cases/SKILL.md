@@ -254,6 +254,30 @@ a recurrence reopens the resolved case rather than forking a new one — so a ca
 a non-null `lastReactivatedAt` is a repeat, which is usually the more interesting
 signal than the current occurrence.
 
+### Cases opened by an Olly scheduled task
+
+A case whose generic indicator has `indicatorType == "OLLY_SCHEDULED_TASK"` was
+opened by an **Olly scheduled task**: a recurring Olly run that loads the
+`/case-management` skill. It opens cases unattended, so nobody confirmed it.
+
+- **The task is named in the case.** The indicator's `metadata.olly_scheduled_task`
+  holds `scheduled_task_id`, `scheduled_task_title` and, when known,
+  `scheduled_task_owner` (the owner's email). Ask the owner about the task, not the
+  last person who touched the case.
+- **Only team-shared tasks open cases.** Olly refuses to create a case from a private
+  task, and a task that loads `/case-management` is shared with the whole team
+  automatically. So the task, its prompt and its run chats are visible to the
+  team in Olly, and that is where its reasoning lives.
+- **The dedup key is the task's.** `externalId` is the key the task chose for the
+  problem. While this case is unresolved, a later run with the same key cannot open
+  a second one.
+- **Scheduled runs only create.** Every other change — comment, assign, resolve,
+  link — comes from a person, so a case like this is yours to drive once it exists.
+- **The CLI cannot manage scheduled tasks.** There is no `cx` command to list,
+  pause or edit them; send the user to Olly for that. To find every case a task
+  opened, see
+  [Generic indicators](references/case-analytics.md#generic-indicators--non-alert-sources).
+
 ## Bulk Operations
 
 There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.

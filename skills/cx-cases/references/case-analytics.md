@@ -251,6 +251,17 @@ The explode and filter come **before** the collapse on purpose. A case's indicat
 
 To narrow further, reach into the metadata (`filter gi.metadata.<key> == '<value>'`) — but confirm the key name from a sample row first, since the shape is owned by the producer, not by this schema.
 
+**Cases opened by one Olly scheduled task.** For `OLLY_SCHEDULED_TASK`, the metadata
+is `{"olly_scheduled_task": {"scheduled_task_id", "scheduled_task_title",
+"scheduled_task_owner"}}`, so swap the filter in the query above for:
+
+```
+  | filter gi.indicatorType == 'OLLY_SCHEDULED_TASK'
+      && gi.metadata.olly_scheduled_task.scheduled_task_id == '<task-uuid>'
+```
+
+Confirm the path on a sample row first, as with any metadata key.
+
 #### Case relationships (parent / child)
 
 `relationship` — the case's place in a parent-child hierarchy. **Absent entirely for a standalone case**, so test for null before reading it.

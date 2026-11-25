@@ -50,6 +50,57 @@ pub fn parse_label(input: &str) -> Result<(String, String)> {
     }
 }
 
+const MAX_DESCRIPTION_CHARS: usize = 10_000;
+
+/// The Cases API rejects a description longer than this.
+fn validate_description_length(description: &str) -> Result<()> {
+    let len = description.chars().count();
+    if len > MAX_DESCRIPTION_CHARS {
+        return Err(anyhow!(
+            "--description must be at most {MAX_DESCRIPTION_CHARS} characters, got {len}"
+        ));
+    }
+    Ok(())
+}
+
+/// The create endpoint returns before the backend assigns the readable
+/// `CASE-…` id, so `create` re-reads the case briefly to report it.
+const READABLE_ID_POLL_ATTEMPTS: usize = 5;
+const READABLE_ID_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+fn has_readable_id(result: &Value) -> bool {
+    result
+        .get("case")
+        .and_then(|c| c.get("readableId"))
+        .and_then(Value::as_str)
+        .is_some_and(|r| !r.is_empty())
+}
+
+/// Re-read a just-created case until it has a readable id, for at most
+/// [`READABLE_ID_POLL_ATTEMPTS`] tries. A failed re-read keeps what we have:
+/// the case exists either way.
+async fn wait_for_readable_id(api: &CasesApi<'_>, mut result: Value) -> Value {
+    let Some(id) = result
+        .get("case")
+        .and_then(|c| c.get("id"))
+        .and_then(Value::as_str)
+        .map(String::from)
+    else {
+        return result;
+    };
+    for _ in 0..READABLE_ID_POLL_ATTEMPTS {
+        if has_readable_id(&result) {
+            break;
+        }
+        tokio::time::sleep(READABLE_ID_POLL_INTERVAL).await;
+        match api.get(&id).await {
+            Ok(fresh) => result = fresh,
+            Err(_) => break,
+        }
+    }
+    result
+}
+
 /// Fields of a manually created case, as given on the command line.
 pub struct CreateCaseArgs<'a> {
     pub title: &'a str,
@@ -71,6 +122,7 @@ fn build_create_body(args: &CreateCaseArgs<'_>) -> Result<Value> {
             "--description must not be empty: it is the only context a manual case carries"
         ));
     }
+    validate_description_length(args.description)?;
     let mut body = serde_json::Map::new();
     body.insert("title".into(), Value::String(args.title.to_string()));
     body.insert(
@@ -385,7 +437,8 @@ pub async fn run_create(
                 };
                 body["assignee"] = serde_json::json!({ "userId": user_id });
             }
-            let mut result = api.create(&body).await?;
+            let created = api.create(&body).await?;
+            let mut result = wait_for_readable_id(&api, created).await;
             if let (Some(case), Some(dir)) = (result.get_mut("case"), directory.as_ref()) {
                 substitute_assignee_email(case, dir);
             }
@@ -412,6 +465,14 @@ pub async fn run_create(
             "{}",
             format!("Created case {id}{readable} in profile '{profile}'.").green()
         );
+        if readable.is_empty() && id != "-" {
+            eprintln!(
+                "{}",
+                "Its readable CASE-… id is not assigned yet; it appears within moments. \
+                 The link below opens the case now."
+                    .yellow()
+            );
+        }
         if id != "-" {
             crate::execution::emit_console_link_for_profile(targets, &profile, |b| {
                 crate::console_url::case_url(b, &id)
@@ -544,8 +605,6 @@ pub async fn run_get(
     Ok(())
 }
 
-const MAX_DESCRIPTION_CHARS: usize = 10_000;
-
 fn build_update_patch(
     title: Option<&str>,
     resolution_reason: Option<&str>,
@@ -567,12 +626,7 @@ fn build_update_patch(
         if d.trim().is_empty() {
             return Err(anyhow!("--description must not be empty"));
         }
-        let len = d.chars().count();
-        if len > MAX_DESCRIPTION_CHARS {
-            return Err(anyhow!(
-                "--description must be at most {MAX_DESCRIPTION_CHARS} characters, got {len}"
-            ));
-        }
+        validate_description_length(d)?;
         patch.insert("description".to_string(), Value::String(d.to_string()));
     }
     Ok(Value::Object(patch))
@@ -905,6 +959,178 @@ pub async fn run_clear_priority(
         &format!("Cleared priority override of case '{case_id}'"),
     )
     .await
+}
+
+pub async fn run_mute(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", format!("Muting case {case_id}...").dimmed());
+    let id = case_id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            Ok(api.mute(&id).await?)
+        }
+    })
+    .await;
+    finish_lifecycle(
+        targets,
+        case_id,
+        per_profile,
+        targets.len() > 1,
+        output,
+        &format!("Muted case '{case_id}'"),
+    )
+    .await
+}
+
+pub async fn run_unmute(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!("{}", format!("Unmuting case {case_id}...").dimmed());
+    let id = case_id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            Ok(api.unmute(&id).await?)
+        }
+    })
+    .await;
+    finish_lifecycle(
+        targets,
+        case_id,
+        per_profile,
+        targets.len() > 1,
+        output,
+        &format!("Unmuted case '{case_id}'"),
+    )
+    .await
+}
+
+/// Make `case_id` a child of `parent_id`. Either may be a readable id; the
+/// parent is resolved to the UUID the link endpoint requires.
+pub async fn run_set_parent(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    parent_id: &str,
+    mute_child: bool,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Making case {case_id} a child of {parent_id}...").dimmed()
+    );
+    let id = case_id.to_string();
+    let parent = parent_id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        let parent = parent.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            let parent_uuid = api.resolve_case_uuid(&parent).await?;
+            Ok(api.set_parent(&id, &parent_uuid, mute_child).await?)
+        }
+    })
+    .await;
+    let muted = if mute_child { ", muted" } else { "" };
+    finish_lifecycle(
+        targets,
+        case_id,
+        per_profile,
+        targets.len() > 1,
+        output,
+        &format!("Case '{case_id}' is now a child of '{parent_id}'{muted}"),
+    )
+    .await
+}
+
+/// Remove the parent-child link between `case_id` and `linked_id`.
+pub async fn run_unlink(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    linked_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Unlinking case {case_id} from {linked_id}...").dimmed()
+    );
+    let id = case_id.to_string();
+    let linked = linked_id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        let linked = linked.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            let linked_uuid = api.resolve_case_uuid(&linked).await?;
+            Ok(api.unlink(&id, &linked_uuid).await?)
+        }
+    })
+    .await;
+    finish_lifecycle(
+        targets,
+        case_id,
+        per_profile,
+        targets.len() > 1,
+        output,
+        &format!("Unlinked case '{case_id}' from '{linked_id}'"),
+    )
+    .await
+}
+
+/// Read a case's parent or children.
+pub async fn run_linked(
+    targets: &[Arc<ExecutionTarget>],
+    case_id: &str,
+    output: OutputFormat,
+) -> Result<()> {
+    eprintln!(
+        "{}",
+        format!("Fetching cases linked to {case_id}...").dimmed()
+    );
+    let include_profile = targets.len() > 1;
+    let id = case_id.to_string();
+    let per_profile = fan_out(targets, |t| {
+        let id = id.clone();
+        async move {
+            let api = CasesApi::new(&t.client);
+            Ok(api.list_linked(&id).await?)
+        }
+    })
+    .await;
+
+    let mut all_results: Vec<Value> = Vec::new();
+    for (profile, mut val) in report_errors_and_collect_successes(per_profile)? {
+        if include_profile {
+            render::tag_get_result(&mut val, &profile);
+        }
+        all_results.push(val);
+    }
+
+    match output {
+        OutputFormat::Json => render::render_json_auto(&all_results)?,
+        OutputFormat::Toon => {
+            let toon = toon_encode(&all_results)
+                .map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
+            println!("{toon}");
+        }
+        OutputFormat::Text => {
+            render::render_get_text(
+                &all_results,
+                include_profile,
+                "No linked cases found.",
+                None,
+            )?;
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn run_events_list(

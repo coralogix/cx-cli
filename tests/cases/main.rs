@@ -9,8 +9,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use coralogix_cli::commands::cases::{
     run_acknowledge, run_assign, run_clear_priority, run_close, run_comment, run_create,
-    run_event_get, run_events_list, run_get, run_notifications, run_resolve, run_set_priority,
-    run_unassign, run_update, CreateCaseArgs,
+    run_event_get, run_events_list, run_get, run_linked, run_mute, run_notifications, run_resolve,
+    run_set_parent, run_set_priority, run_unassign, run_unlink, run_unmute, run_update,
+    CreateCaseArgs,
 };
 use coralogix_cli::config::OutputFormat;
 
@@ -631,4 +632,222 @@ async fn create_case_rejects_invalid_priority_without_calling_api() {
     .await
     .expect_err("invalid priority should fail");
     assert!(err.to_string().contains("invalid priority"));
+}
+
+const PARENT_UUID: &str = "11111111-2222-4333-8444-555555555555";
+
+#[tokio::test]
+async fn mute_puts_and_accepts_an_empty_response() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("PUT"))
+        .and(path("/mgmt/openapi/5/cases/muted/v1/CASE-390"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_mute(&targets, "CASE-390", OutputFormat::Json)
+        .await
+        .expect("run_mute should succeed on 204");
+}
+
+#[tokio::test]
+async fn unmute_calls_delete() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("DELETE"))
+        .and(path("/mgmt/openapi/5/cases/muted/v1/CASE-390"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_unmute(&targets, "CASE-390", OutputFormat::Json)
+        .await
+        .expect("run_unmute should succeed");
+}
+
+#[tokio::test]
+async fn set_parent_resolves_a_readable_parent_to_its_uuid() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-383"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"case": { "id": PARENT_UUID }})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-390/linked-cases"))
+        .and(body_json(json!({
+            "targetCaseId": PARENT_UUID,
+            "linkAs": "LINKED_CASE_RELATIONSHIP_CHILD",
+            "muteChild": true
+        })))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_set_parent(&targets, "CASE-390", "CASE-383", true, OutputFormat::Json)
+        .await
+        .expect("run_set_parent should succeed");
+}
+
+#[tokio::test]
+async fn set_parent_passes_a_uuid_parent_through() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/mgmt/openapi/5/cases/cases/v1/{PARENT_UUID}"
+        )))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-390/linked-cases"))
+        .and(body_partial_json(json!({
+            "targetCaseId": PARENT_UUID,
+            "muteChild": false
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_set_parent(&targets, "CASE-390", PARENT_UUID, false, OutputFormat::Json)
+        .await
+        .expect("run_set_parent should succeed");
+}
+
+#[tokio::test]
+async fn unlink_deletes_the_link_to_the_resolved_case() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-383"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"case": { "id": PARENT_UUID }})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path(format!(
+            "/mgmt/openapi/5/cases/cases/v1/CASE-390/linked-cases/{PARENT_UUID}"
+        )))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_unlink(&targets, "CASE-390", "CASE-383", OutputFormat::Json)
+        .await
+        .expect("run_unlink should succeed");
+}
+
+#[tokio::test]
+async fn linked_reads_the_linked_cases() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-383/linked-cases"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "children": [{ "id": "c1", "readableId": "CASE-390" }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_linked(&targets, "CASE-383", OutputFormat::Json)
+        .await
+        .expect("run_linked should succeed");
+}
+
+#[tokio::test]
+async fn create_re_reads_the_case_until_its_readable_id_is_assigned() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/mgmt/openapi/5/cases/cases/create/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "case": { "id": PARENT_UUID, "title": "Payments latency" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/mgmt/openapi/5/cases/cases/v1/{PARENT_UUID}"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "case": { "id": PARENT_UUID, "readableId": "CASE-8" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_create(
+        &targets,
+        &CreateCaseArgs {
+            title: "Payments latency",
+            description: "p99 up 3x since 10:00 UTC",
+            priority: "P2",
+            labels: &[],
+            assignee: None,
+            status: None,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .expect("run_create should succeed");
+}
+
+#[tokio::test]
+async fn create_rejects_an_overlong_description_without_calling_api() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+    let description = "x".repeat(10_001);
+
+    let err = run_create(
+        &targets,
+        &CreateCaseArgs {
+            title: "t",
+            description: &description,
+            priority: "P2",
+            labels: &[],
+            assignee: None,
+            status: None,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .expect_err("an overlong description must be rejected");
+    assert!(err.to_string().contains("at most 10000 characters"));
 }

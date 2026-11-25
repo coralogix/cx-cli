@@ -469,6 +469,9 @@ Examples:
   cx cases resolve <case-id> --reason \"Mitigated by rollback\"
   cx cases close <case-id>
   cx cases comment <case-id> --text \"Investigating the root cause\"
+  cx cases mute <case-id>
+  cx cases set-parent <child-case-id> --parent <parent-case-id> --mute-child
+  cx cases linked <case-id>
   cx cases events list <case-id>
   cx cases notifications <case-id>")]
     Cases {
@@ -1454,6 +1457,56 @@ Examples:
     },
     /// Clear a previously set priority override.
     ClearPriority {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Mute a case so it stops sending notifications. Its status does not change.
+    Mute {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Restore notifications for a muted case.
+    Unmute {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Make a case the child of another case.
+    #[command(
+        group(clap::ArgGroup::new("mute").required(true).args(["mute_child", "no_mute_child"])),
+        after_help = "\
+Examples:
+  cx cases set-parent CASE-390 --parent CASE-383 --mute-child
+  cx cases set-parent CASE-390 --parent CASE-383 --no-mute-child
+
+The case given first becomes the CHILD; --parent is the parent. Links are one
+level deep: a case has at most one parent and cannot be both a parent and a child."
+    )]
+    SetParent {
+        /// Case that becomes the child (UUID or readable ID, e.g. CASE-390).
+        id: String,
+        /// Case that becomes the parent (UUID or readable ID, e.g. CASE-383).
+        #[arg(long)]
+        parent: String,
+        /// Mute the child, so the parent is the single notifying case.
+        #[arg(long)]
+        mute_child: bool,
+        /// Leave the child notifying alongside the parent.
+        #[arg(long)]
+        no_mute_child: bool,
+    },
+    /// Remove the parent-child link between two cases.
+    #[command(after_help = "\
+Examples:
+  cx cases unlink CASE-390 --linked CASE-383")]
+    Unlink {
+        /// Case ID (UUID or readable ID, e.g. CASE-390).
+        id: String,
+        /// The case it is linked to (UUID or readable ID).
+        #[arg(long)]
+        linked: String,
+    },
+    /// Show a case's parent or children.
+    Linked {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
@@ -4192,6 +4245,27 @@ async fn run() -> Result<()> {
                 }
                 CasesCmd::ClearPriority { id } => {
                     commands::cases::run_clear_priority(&targets, &id, output).await?;
+                }
+                CasesCmd::Mute { id } => {
+                    commands::cases::run_mute(&targets, &id, output).await?;
+                }
+                CasesCmd::Unmute { id } => {
+                    commands::cases::run_unmute(&targets, &id, output).await?;
+                }
+                CasesCmd::SetParent {
+                    id,
+                    parent,
+                    mute_child,
+                    no_mute_child: _,
+                } => {
+                    commands::cases::run_set_parent(&targets, &id, &parent, mute_child, output)
+                        .await?;
+                }
+                CasesCmd::Unlink { id, linked } => {
+                    commands::cases::run_unlink(&targets, &id, &linked, output).await?;
+                }
+                CasesCmd::Linked { id } => {
+                    commands::cases::run_linked(&targets, &id, output).await?;
                 }
                 CasesCmd::Events { cmd } => match cmd {
                     CasesEventsCmd::List {

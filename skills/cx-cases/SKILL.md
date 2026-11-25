@@ -4,8 +4,9 @@ description: >
   This skill should be used when the user asks to "triage a case", "acknowledge a
   case", "assign a case", "resolve a case", "close a case", "comment on a case",
   "re-prioritize a case", "check case status", "see a case timeline", "check case
-  notifications", "create a case", "open a case", "link cases", "find the parent
-  case", "find child cases", "find where a case came from", or wants to inspect or drive Coralogix Cases through their lifecycle using
+  notifications", "create a case", "open a case", "mute a case", "link cases",
+  "make this a child of", "unlink a case", "find the parent case", "find child
+  cases", "find where a case came from", or wants to inspect or drive Coralogix Cases through their lifecycle using
   the cx CLI.
 metadata:
   version: "0.3.0"
@@ -35,6 +36,10 @@ lifecycle (active → acknowledged → resolved → closed).
 | `cx cases close <id>` | Close a case (terminal) |
 | `cx cases set-priority <id> --priority <P1..P5>` | Override the computed priority |
 | `cx cases clear-priority <id>` | Remove a priority override |
+| `cx cases mute <id>` / `cx cases unmute <id>` | Stop / restore a case's notifications; status is unchanged |
+| `cx cases set-parent <child-id> --parent <parent-id> --mute-child\|--no-mute-child` | Make the first case a child of `--parent` — see "Case relationships" |
+| `cx cases unlink <id> --linked <other-id>` | Remove a parent-child link |
+| `cx cases linked <id>` | Read a case's parent or children |
 | `cx cases events list <case-id>` | Event timeline (status changes, comments, assignments) |
 | `cx cases events list <case-id> --include-children-events` | Parent timeline merged with its children's events |
 | `cx cases events get <event-id>` | A single event — drill in, e.g. to expand a comment thread |
@@ -49,8 +54,7 @@ that does not exist.
 |---|---|
 | **Attaching indicators to a case** | A case created with `cx cases create` has no indicators, and none can be added later. If the issue should be tracked by an alert, fix or create the alert (`cx-alerts`) and let the Cases service open its own case. |
 | **Listing / searching cases** | `cx cases list` was removed. Case discovery lives in the dataset: run `cx dataprime query "source system/labs.cases.state_updates \| ..." --start now-24h` (there is no `--from`; the window is `--start`/`--end`). See [`references/case-analytics.md`](references/case-analytics.md). |
-| **Linking / unlinking cases** | Parent-child links are created in the Cases UI only. The linking API is internal and not in the public API, so neither the CLI nor a public API call can do it. You can still *read* the hierarchy from the dataset — see "Case relationships" below. |
-| **Muting a case** | No CLI verb. Mute in the UI. Muting stops notifications without changing status, which is the honest alternative to resolving work nobody has finished. |
+| **"Related" or "duplicate" links** | Only parent-child links exist. To tie two cases together, make one the child of the other (`cx cases set-parent`). |
 | **Changing labels** | Labels are fixed when the case is created. `cx cases update` patches only the title, resolution reason and description. |
 | **Reopening** | `RESOLVED` → `CLOSED` only. A recurrence of the same underlying indicator reopens the case automatically; a person cannot. |
 
@@ -109,10 +113,23 @@ A manual case is **fully managed by the user**:
   Unlike the description, they are fixed at creation.
 - **Initial status** is `ACTIVE` unless `--status ACKNOWLEDGED`. Only start it
   acknowledged when a person is actually on it.
+- **The readable `CASE-…` id comes a moment later.** The backend assigns it after
+  the create returns; `cx cases create` re-reads the case for up to 5 seconds to
+  report it. If it is still missing, refer to the case by its title and UUID —
+  the printed console link opens it now — and say the readable id will appear
+  shortly. Never compose a `CASE-…` id yourself.
+- **The description is write-only.** The Cases UI shows it, but `cx cases get`
+  does not return it. Don't re-fetch to check it, and don't report a case as having
+  no description on that basis.
 
 Before creating, ask the user to confirm title, priority, and description — a case
-notifies people. Prefer one case per issue; check for an existing open case on the
-same problem first (see [`references/case-analytics.md`](references/case-analytics.md)).
+notifies people. Prefer one case per issue. Nothing deduplicates a manual case, so
+check for an existing open case on the same problem first (see
+[`references/case-analytics.md`](references/case-analytics.md)); the dataset lags by
+seconds to minutes, so a case opened moments ago may not show yet. If one already
+covers it, ask whether to comment on that case or create a child; if you create,
+link yours as its **child** (`cx cases set-parent <new> --parent <existing>`) so
+their case stays the incident of record.
 
 ### Updating the description
 
@@ -173,9 +190,8 @@ parent, and a parent has at most 100 children,
 so there are no grandparents and no cycles. There is no "related" or "duplicate"
 link type.
 
-Linking a case as a child **mutes it** by default, so the parent becomes the single
-notifying case. Expect a child to be quiet; that is the design, not a delivery
-failure.
+A child is usually **muted**, so the parent becomes the single notifying case.
+Expect a child to be quiet; that is the design, not a delivery failure.
 
 `cx cases get <id>` returns the case's `relationship`: absent for a standalone case,
 `{"type": "PARENT"}` for a parent, `{"type": "CHILD", "parentCaseId": "<uuid>"}` for
@@ -183,8 +199,40 @@ a child. A parent does not inline its children — to list them, see
 [Case relationships](references/case-analytics.md#case-relationships-parent--child)
 in the analytics reference.
 
+`cx cases linked <id>` reads a case's parent or children directly.
+
 When triaging a child, read the parent first — the investigation usually lives
 there. When resolving a parent, check its children: they do not resolve with it.
+
+### Linking and unlinking
+
+**`cx cases set-parent <id> --parent <parent-id>` makes `<id>` the child.**
+`cx cases set-parent CASE-390 --parent CASE-383` makes **CASE-390 the child** and
+**CASE-383 the parent** — always this direction. To make CASE-383 the child instead,
+swap them. Both accept a readable ID or a UUID.
+
+Before linking:
+
+- Read the current hierarchy with `cx cases linked` for both cases.
+- Restate the result as a sentence — "CASE-390 becomes the child of CASE-383" — and
+  have the user confirm that sentence.
+- **Choose the mute explicitly**: `--mute-child` or `--no-mute-child` is required.
+  `--mute-child` stops the child notifying so the parent is the incident of record;
+  `--no-mute-child` leaves both notifying. If the child is notifying today, say so in
+  the confirmation — "CASE-390 is notifying <team>'s on-call; linking it with
+  `--mute-child` stops that." The user confirms that sentence, not just the link.
+
+The backend enforces the shape, each with a clear error:
+
+| Error | Meaning | Do |
+|---|---|---|
+| `Case is already a child of another case` | One parent maximum | Report the existing parent; offer to unlink first |
+| `Target case is already a child…` | No grandparents | The target cannot be a parent; offer the top of the chain |
+| `Cannot detach from parent: case is not a child` | Nothing to unlink | Run `cx cases linked` and report the real hierarchy |
+
+A parent takes at most 100 children. Linking a resolved or closed case is allowed.
+`cx cases unlink <id> --linked <other-id>` removes a link. If the child was linked
+with `--mute-child` and should notify again, run `cx cases unmute` on it.
 
 To read a parent's timeline together with its children's, run
 `cx cases events list <parent-id> --include-children-events`. Every event carries
@@ -220,9 +268,13 @@ There are no bulk endpoints. To act on many cases, pipe IDs through a loop, e.g.
 - **`P1`-style shorthand** is accepted anywhere a priority/status/category is expected.
 - **Acknowledging means a person is on it** — escalation, PagerDuty and ServiceNow
   all read that fact, so never acknowledge on someone's behalf to quiet a case.
-  Assign it, or mute it in the UI.
+  Assign it, or `cx cases mute` it.
 - **Prefer muting over resolving** when the work is real but nobody is on it. A
-  resolved case is a claim the system is healthy.
+  resolved case is a claim the system is healthy. Muting changes no status, but it
+  silences someone's on-call — confirm before muting.
+- **Confirm before every change** — create, update, comment, assign, priority,
+  resolve, close, mute, set-parent, unlink. Reads need no confirmation.
+- **Don't retry a change you aren't sure failed** — a retried `comment` posts twice.
 - **A case has no source field** — provenance is on its indicators. See
   "Where a case came from". A case with no indicators at all was created manually.
 - **Manual cases are user-owned** — nothing closes them automatically, and their

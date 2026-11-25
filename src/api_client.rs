@@ -139,6 +139,26 @@ impl CxClient {
         Ok(serde_json::from_str(&text)?)
     }
 
+    /// POST JSON body, deserialize response into T.
+    /// Falls back to deserializing `{}` when the response body is empty.
+    pub async fn post_or_empty<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self.inner.post(&url).json(body).send().await?;
+        let text = self.checked_text(resp).await?;
+        let json = if text.trim().is_empty() { "{}" } else { &text };
+        Ok(serde_json::from_str(json)?)
+    }
+
+    /// PUT JSON body, deserialize response into T.
+    /// Falls back to deserializing `{}` when the response body is empty.
+    pub async fn put_or_empty<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
+        let url = format!("{}{path}", self.endpoint);
+        let resp = self.inner.put(&url).json(body).send().await?;
+        let text = self.checked_text(resp).await?;
+        let json = if text.trim().is_empty() { "{}" } else { &text };
+        Ok(serde_json::from_str(json)?)
+    }
+
     /// DELETE a resource, deserialize response into T.
     /// Falls back to deserializing `{}` when the response body is empty.
     pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T> {

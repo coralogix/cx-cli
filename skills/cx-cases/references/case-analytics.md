@@ -283,7 +283,7 @@ The filter appears twice on purpose. The first one narrows the scan to rows that
 
 **Linking is not visible as its own event.** A link emits a state-update on both cases with `metadata.trigger == 'caseUpdated'` and no `metadata.change`, so you cannot find "when was this linked" by filtering on a trigger. Detect links from the current `relationship` value, or by diffing it across rows ordered by `$m.timestamp`.
 
-`muteStatus` is the related signal: linking a case as a child mutes it by default, and a child muted that way records a mute source of `AUTOMATIC_LINKING`.
+`muteStatus` is the related signal: a child linked with muting (the default in the UI, `--mute-child` in `cx cases set-parent`) records a mute source of `AUTOMATIC_LINKING`.
 
 #### Permutations & labels (routing / attribution)
 

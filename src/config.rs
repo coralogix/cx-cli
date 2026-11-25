@@ -1,5 +1,5 @@
-use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::io::{ErrorKind, IsTerminal};
+use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -213,6 +213,10 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub allow_risky_commands: bool,
 
+    /// Whether this installation permits CLI execution telemetry.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub telemetry: bool,
+
     /// Whether the Olly AI assistant (`olly ask`) is enabled.
     /// When false, `olly ask` is blocked.
     #[serde(default = "default_true")]
@@ -256,6 +260,10 @@ fn default_true() -> bool {
     true
 }
 
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
 fn default_max_dataprime_direct_output_size() -> Option<usize> {
     Some(100 * 1024) // 100 KiB
 }
@@ -282,6 +290,7 @@ impl Default for Config {
             max_dataprime_direct_output_size: default_max_dataprime_direct_output_size(),
             temp_dir: default_temp_dir(),
             allow_risky_commands: true,
+            telemetry: true,
             olly_enabled: true,
             read_only: false,
             strict_fields_validation: false,
@@ -664,6 +673,46 @@ pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TelemetryConsent {
+    Implicit,
+    Enabled,
+    Disabled,
+}
+
+/// Read consent independently of the CLI's typed configuration.
+pub(crate) fn telemetry_consent() -> TelemetryConsent {
+    let Ok(path) = config_file() else {
+        return TelemetryConsent::Disabled;
+    };
+    telemetry_consent_at(&path)
+}
+
+fn telemetry_consent_at(path: &Path) -> TelemetryConsent {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == ErrorKind::NotFound => return TelemetryConsent::Implicit,
+        Err(_) => return TelemetryConsent::Disabled,
+        Ok(_) if !path.is_file() => return TelemetryConsent::Disabled,
+        Ok(_) => {}
+    }
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return TelemetryConsent::Disabled;
+    };
+    let Ok(table) = raw.parse::<toml::Table>() else {
+        return TelemetryConsent::Disabled;
+    };
+    match table.get("telemetry") {
+        None => TelemetryConsent::Implicit,
+        Some(value) if value.as_bool() == Some(true) => TelemetryConsent::Enabled,
+        Some(_) => TelemetryConsent::Disabled,
+    }
+}
+
+/// Read consent independently of the CLI's typed configuration.
+pub(crate) fn telemetry_allowed() -> bool {
+    !matches!(telemetry_consent(), TelemetryConsent::Disabled)
+}
+
 pub fn profiles_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("profiles"))
 }
@@ -708,6 +757,16 @@ pub fn load_config() -> Result<Config> {
     let raw = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     toml::from_str(&raw).context("Failed to parse config.toml")
+}
+
+/// Preserve fail-closed consent when editing a config with unrelated errors.
+pub(crate) fn load_config_for_update() -> Config {
+    preserve_telemetry_consent(load_config().unwrap_or_default(), telemetry_allowed())
+}
+
+fn preserve_telemetry_consent(mut config: Config, allowed: bool) -> Config {
+    config.telemetry &= allowed;
+    config
 }
 
 /// Write the global config to disk, creating directories as needed.
@@ -1462,7 +1521,7 @@ pub fn managed_completions() -> Result<Vec<ManagedCompletion>> {
 /// If an entry for this shell already exists, its path is updated in place.
 /// The updated config is persisted to `~/.cx/config.toml`.
 pub fn upsert_managed_completion(shell: &str, path: PathBuf) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config_for_update();
     if let Some(existing) = config
         .managed_completions
         .iter_mut()
@@ -1615,6 +1674,64 @@ default_profile = "my-profile"
             !toml.contains("managed_completions"),
             "empty managed_completions should be skipped in TOML output"
         );
+    }
+
+    #[test]
+    fn telemetry_true_is_not_serialized() {
+        let config = Config::default();
+        let toml = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            !toml.contains("telemetry"),
+            "default true telemetry must not be serialized as explicit consent"
+        );
+    }
+
+    #[test]
+    fn telemetry_false_is_serialized() {
+        let config = Config {
+            telemetry: false,
+            ..Config::default()
+        };
+        let toml = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            toml.contains("telemetry = false"),
+            "telemetry false must remain explicit in serialized config"
+        );
+    }
+
+    #[test]
+    fn telemetry_consent_reads_false_and_fails_closed_without_global_env_mutation() {
+        let home = tempfile::TempDir::new().unwrap();
+        let cx_dir = home.path().join(".cx");
+        std::fs::create_dir_all(&cx_dir).unwrap();
+        let config_path = cx_dir.join("config.toml");
+
+        assert_eq!(
+            telemetry_consent_at(&config_path),
+            TelemetryConsent::Implicit
+        );
+
+        std::fs::write(&config_path, "telemetry = false\n").unwrap();
+        assert_eq!(
+            telemetry_consent_at(&config_path),
+            TelemetryConsent::Disabled
+        );
+        let updated = preserve_telemetry_consent(Config::default(), false);
+        assert!(!updated.telemetry);
+
+        std::fs::write(&config_path, "telemetry = \"false\"\n").unwrap();
+        assert_eq!(
+            telemetry_consent_at(&config_path),
+            TelemetryConsent::Disabled
+        );
+
+        std::fs::write(&config_path, "default_output_format = \"nope\"\n").unwrap();
+        assert_eq!(
+            telemetry_consent_at(&config_path),
+            TelemetryConsent::Implicit
+        );
+        let recovered = preserve_telemetry_consent(Config::default(), true);
+        assert!(recovered.telemetry);
     }
 
     // ── Unit tests (no disk I/O) ───────────────────────────────────────────────

@@ -150,7 +150,7 @@ This per-command layout drives `CODEOWNERS`: each domain in the file maps direct
 
 ### Config & Environment
 
-Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_REGION`, `OPENAI_API_KEY` override profile settings.
+Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_REGION`, `OPENAI_API_KEY` override profile settings. Opt-in CLI telemetry uses `CX_TELEMETRY`, standard `OTEL_EXPORTER_OTLP_*` settings or `CX_OTLP_ENDPOINT` / `CX_OTLP_API_KEY`, optional `CX_TELEMETRY_FAILURE_LOGS`, and `DO_NOT_TRACK` (see [docs/cli-telemetry.md](docs/cli-telemetry.md)); `telemetry = false` in `config.toml` opts out.
 
 ### Skills
 
@@ -160,7 +160,7 @@ Config lives in `~/.cx/`. Environment variables `CX_PROFILE`, `CX_API_KEY`, `CX_
 
 **Contributor guides:** [architecture](contributing/architecture.md), [adding a command](contributing/adding-a-command.md), [adding a skill](contributing/adding-a-skill.md), [development](contributing/development.md)
 
-**Reference docs:** [configuration](docs/configuration.md), [TOON output format](docs/toon-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md)
+**Reference docs:** [configuration](docs/configuration.md), [CLI telemetry](docs/cli-telemetry.md), [TOON output format](docs/toon-output.md), [multi-profile fan-out](docs/multi-profile.md), [time syntax](docs/time-syntax.md)
 
 ## Contributing
 

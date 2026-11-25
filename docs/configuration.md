@@ -426,6 +426,7 @@ show the normal first-use approval prompt.
 | `auto_update_skills` | `true` | After a cx upgrade, refresh the global cx agent skills in the background, pinned to the new version. Only for global cx skills that are older than the new version (installed with `cx skills install --global`, an older cx, or `npx` directly), and only when `npx` is on `PATH`. `CX_NO_SKILLS_AUTO_UPDATE=1` also turns it off. |
 | `allow_risky_commands` | `true` | Allow write operations under risky commands (`iam`, `archive`). Written when you create your first profile; never prompted. |
 | `olly_enabled` | `true` | Enable the Olly AI assistant (`olly ask`). Written when you create your first profile; never prompted. Use `cx profiles add --disable-olly` to create it switched off. |
+| `telemetry` | `true` (missing key allowed) | Opt out of CLI execution telemetry with `telemetry = false`. See [CLI telemetry](cli-telemetry.md). |
 
 Example:
 
@@ -588,6 +589,11 @@ only controls where new profiles store credentials:
 | `CX_READ_ONLY` | `read_only` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_NO_CONSOLE_LINK` | `no_console_link` in global config (accepts `1`, `true`, `yes`, `on`) |
 | `CX_HOME` | Parent directory for cx configuration (`$CX_HOME/.cx`) |
+| `CX_TELEMETRY` | Enables opt-in CLI execution telemetry when set to a truthy value (`1`/`true`/`on`/`yes`). See [CLI telemetry](cli-telemetry.md). |
+| `CX_OTLP_ENDPOINT` | cx-specific OTLP/HTTP traces URL. `https` for remote; `http` only for loopback. |
+| `CX_OTLP_API_KEY` | Bearer token for the cx-specific telemetry endpoint (attached only on `https`). |
+| `CX_TELEMETRY_FAILURE_LOGS` | When truthy, also export a correlated OTLP failure log on failed commands (`/v1/logs` sibling of the traces endpoint). |
+| `DO_NOT_TRACK` | When truthy, disables CLI telemetry regardless of other settings. |
 
 **Precedence order:** CLI flags > environment variables > profile file > global config defaults.
 

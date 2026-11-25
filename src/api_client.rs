@@ -1,11 +1,13 @@
 use std::time::Duration;
 
 use reqwest::{header, Client, StatusCode};
+use reqwest_middleware::ClientWithMiddleware;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::{CxError, Result};
 use crate::safety::AGENT_ENV_VARS;
+use crate::telemetry;
 
 fn cli_user_agent(agent_env_var: Option<&str>) -> String {
     match agent_env_var {
@@ -17,7 +19,7 @@ fn cli_user_agent(agent_env_var: Option<&str>) -> String {
 /// Thin wrapper around reqwest::Client pre-configured with Coralogix auth.
 #[derive(Clone)]
 pub struct CxClient {
-    inner: Client,
+    inner: ClientWithMiddleware,
     endpoint: String,
 }
 
@@ -57,7 +59,7 @@ impl CxClient {
         if let Some(timeout) = timeout {
             builder = builder.timeout(timeout);
         }
-        let inner = builder.build()?;
+        let inner = telemetry::instrument_http(builder.build()?);
 
         Ok(Self {
             inner,

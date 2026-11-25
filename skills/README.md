@@ -16,7 +16,8 @@ Supports Claude Code, Cursor, Codex, OpenCode, and [other supported agents](http
 | `cx-alerts` | Manage Coralogix alert definitions - list, inspect, create, enable/disable via `cx alerts`                                                        |
 | `cx-dashboards` | Build and deploy Coralogix dashboards - telemetry discovery, PromQL/DataPrime verification, JSON generation                                       |
 | `cx-infra` | Explore infrastructure resources - discover resource types and filterable attributes, list and filter resources, check per-resource data                                     |
-| `cx-service-catalog` | Query Service Catalog APM entities - services, databases, operations, JVMs, K8s pods; schema, entities, and aggregated/timeseries data          |
+| `cx-service-catalog` | Query Service Catalog APM entities - services, databases, operations, JVMs, K8s pods; schema, entities, aggregated/timeseries data, and insights |
+| `cx-product-analytics` | Analyze user behavior from RUM - top pages, clicks and rage clicks, funnels and drop-off, page paths, heatmaps; manage saved funnels, pathways, heatmaps |
 | `cx-profiling` | Query continuous profiling - top CPU/memory services, profile types, filters, usage over time by pod/label, flame graphs and hot functions |
 | `cx-ai-center` | Investigate GenAI applications and agents - behavior, prompts/responses, quality, hallucinations, guardrails, token cost - and manage AI Center config |
 | `cx-coding-agents` | Analyze AI Center Coding Agents data for Claude Code, Codex, Cursor, Gemini CLI, and Copilot CLI - usage, cost, tokens, sessions, tools, code impact |

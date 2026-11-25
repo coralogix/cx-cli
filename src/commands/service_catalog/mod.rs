@@ -8,8 +8,16 @@ use toon_format::encode_default as toon_encode;
 pub mod api;
 
 use api::{
-    normalize_entity_type, ApmFilterInput, ColumnMetadata, DataParams, EntitiesDataResult,
-    EntityItem, EntityTypeInfo, EntityTypeMetadata, ServiceCatalogApi, TableRow,
+    normalize_entity_type, normalize_proto_enum, short_enum_name, ApmFilterInput, ColumnMetadata,
+    DataParams, EntitiesDataResult, EntitiesInsightDrilldownParams, EntitiesInsightsParams,
+    EntityInsightDrilldownParams, EntityInsightsParams, EntityItem, EntityRef, EntityTypeInfo,
+    EntityTypeMetadata, InsightScope, InsightSelection, ServiceCatalogApi, TableRow,
+    ENTITY_TYPE_PREFIX, ENVIRONMENT_MATCH_PREFIX, INSIGHT_ARCHIVE_FILTER_ALL,
+    INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY, INSIGHT_BREAKDOWN_SORT_PREFIX, INSIGHT_CATEGORY_PREFIX,
+    INSIGHT_DIMENSION_PREFIX, INSIGHT_DRILLDOWN_SORT_PREFIX, INSIGHT_TYPE_PREFIX,
+    INSIGHT_UNCHECKED_REASON_PREFIX, REQUEST_KIND_PREFIX, VALID_ENVIRONMENT_MATCHES,
+    VALID_INSIGHT_BREAKDOWN_SORTS, VALID_INSIGHT_CATEGORIES, VALID_INSIGHT_DIMENSIONS,
+    VALID_INSIGHT_DRILLDOWN_SORTS, VALID_INSIGHT_TYPES, VALID_REQUEST_KINDS,
 };
 
 use crate::config::OutputFormat;
@@ -327,6 +335,300 @@ pub async fn run_entity_data(
     render_entities_data_results(results, include_profile, output)
 }
 
+/// Raw `--type` / `--category` / `--exclude-type` / `--exclude-category` /
+/// `--archived` values.
+pub struct InsightSelectionInput<'a> {
+    pub types: &'a [String],
+    pub categories: &'a [String],
+    pub excluded_types: &'a [String],
+    pub excluded_categories: &'a [String],
+    pub archived: Option<&'a str>,
+}
+
+/// `cx service-catalog insights <entity-type>...` - insights over every entity of the given types.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_insights(
+    targets: &[Arc<ExecutionTarget>],
+    entity_types: &[String],
+    filters: &[String],
+    selection: &InsightSelectionInput<'_>,
+    breakdowns: &[String],
+    top_values_per_breakdown: Option<i32>,
+    breakdown_sort: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    if entity_types.is_empty() {
+        bail!("at least one entity type is required");
+    }
+    let normalized_entity_types = entity_types
+        .iter()
+        .map(|entity_type| normalize_entity_type(entity_type))
+        .collect::<Result<Vec<_>>>()?;
+    let validated_filters = parse_filters(filters)?;
+    let normalized_selection = normalize_insight_selection(selection)?;
+    let normalized_breakdowns = normalize_insight_enums(
+        breakdowns,
+        INSIGHT_DIMENSION_PREFIX,
+        VALID_INSIGHT_DIMENSIONS,
+        "--breakdown",
+    )?;
+    let breakdown_sort_enum = breakdown_sort.map(parse_breakdown_sort).transpose()?;
+
+    eprintln!("{}", "Fetching insights...".dimmed());
+
+    let params = EntitiesInsightsParams {
+        entity_types: &normalized_entity_types,
+        filters: &validated_filters,
+        selection: &normalized_selection,
+        breakdowns: &normalized_breakdowns,
+        top_values_per_breakdown,
+        breakdown_sort: breakdown_sort_enum.as_deref(),
+    };
+    let per_profile = fan_out(targets, |target| {
+        let params = &params;
+        async move {
+            let api = ServiceCatalogApi::new(&target.client);
+            Ok(api.entities_insights(params).await?)
+        }
+    })
+    .await;
+
+    let results = report_errors_and_collect_successes(per_profile)?;
+    render_insight_results(results, targets.len() > 1, output, print_entities_insights)
+}
+
+/// `cx service-catalog entity-insights <entity-type> <entity-id>` - insights of one entity.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_entity_insights(
+    targets: &[Arc<ExecutionTarget>],
+    entity_type: &str,
+    entity_id: &str,
+    system: Option<&str>,
+    environments: &[String],
+    selection: &InsightSelectionInput<'_>,
+    top_values_per_breakdown: Option<i32>,
+    breakdown_sort: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let normalized_entity_type = normalize_entity_type(entity_type)?;
+    let entity_id = require_non_empty(entity_id, "entity id")?;
+    let system = system
+        .map(|s| require_non_empty(s, "--system"))
+        .transpose()?;
+    let validated_environments = trim_non_empty_values(environments, "--environment")?;
+    let normalized_selection = normalize_insight_selection(selection)?;
+    let breakdown_sort_enum = breakdown_sort.map(parse_breakdown_sort).transpose()?;
+
+    eprintln!(
+        "{}",
+        format!("Fetching insights for '{entity_id}' ({entity_type})...").dimmed()
+    );
+
+    let params = EntityInsightsParams {
+        entity: EntityRef {
+            entity_type: &normalized_entity_type,
+            name: entity_id,
+            system,
+        },
+        environments: &validated_environments,
+        selection: &normalized_selection,
+        top_values_per_breakdown,
+        breakdown_sort: breakdown_sort_enum.as_deref(),
+    };
+    let per_profile = fan_out(targets, |target| {
+        let params = &params;
+        async move {
+            let api = ServiceCatalogApi::new(&target.client);
+            Ok(api.entity_insights(params).await?)
+        }
+    })
+    .await;
+
+    let results = report_errors_and_collect_successes(per_profile)?;
+    render_insight_results(results, targets.len() > 1, output, print_entity_insights)
+}
+
+/// `cx service-catalog insight-drilldown <insight-type> <entity-type>` - the entities behind one insight.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_insight_drilldown(
+    targets: &[Arc<ExecutionTarget>],
+    insight_type: &str,
+    entity_type: &str,
+    filters: &[String],
+    scope: Option<&str>,
+    environment_match: Option<&str>,
+    sort: Option<&str>,
+    sort_order: Option<&str>,
+    page_index: Option<i32>,
+    page_size: i32,
+    name_search: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let normalized_insight_type = normalize_insight_type(insight_type)?;
+    let normalized_entity_type = normalize_entity_type(entity_type)?;
+    let validated_filters = parse_filters(filters)?;
+    let parsed_scope = scope
+        .map(|raw| parse_scope(raw, ENTITIES_DRILLDOWN_SCOPES))
+        .transpose()?;
+    let environment_match_enum = environment_match
+        .map(|value| {
+            normalize_proto_enum(
+                value,
+                ENVIRONMENT_MATCH_PREFIX,
+                VALID_ENVIRONMENT_MATCHES,
+                "--environment-match",
+            )
+        })
+        .transpose()?;
+    let sort_enum = sort
+        .map(|value| {
+            normalize_proto_enum(
+                value,
+                INSIGHT_DRILLDOWN_SORT_PREFIX,
+                VALID_INSIGHT_DRILLDOWN_SORTS,
+                "--sort",
+            )
+        })
+        .transpose()?;
+    let sort_order_enum = sort_order.map(parse_sort_order).transpose()?;
+
+    eprintln!(
+        "{}",
+        format!("Fetching {entity_type} entities behind insight '{insight_type}'...").dimmed()
+    );
+
+    let params = EntitiesInsightDrilldownParams {
+        insight_type: &normalized_insight_type,
+        entity_type: &normalized_entity_type,
+        filters: &validated_filters,
+        scope: parsed_scope.as_ref(),
+        environment_match: environment_match_enum.as_deref(),
+        sort: sort_enum.as_deref(),
+        sort_order: sort_order_enum,
+        page_index,
+        page_size,
+        name_search,
+    };
+    let per_profile = fan_out(targets, |target| {
+        let params = &params;
+        async move {
+            let api = ServiceCatalogApi::new(&target.client);
+            Ok(api.entities_insight_drilldown(params).await?)
+        }
+    })
+    .await;
+
+    let results = report_errors_and_collect_successes(per_profile)?;
+    render_insight_results(results, targets.len() > 1, output, |response| {
+        print_entities_insight_drilldown(
+            response,
+            i64::from(page_index.unwrap_or(0)),
+            i64::from(page_size),
+        )
+    })
+}
+
+/// `cx service-catalog entity-insight-drilldown <insight-type> <entity-type> <entity-id>` -
+/// one entity's values of a dimension (environments by default) under one insight.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_entity_insight_drilldown(
+    targets: &[Arc<ExecutionTarget>],
+    insight_type: &str,
+    entity_type: &str,
+    entity_id: &str,
+    system: Option<&str>,
+    dimension: &str,
+    environments: &[String],
+    scope: Option<&str>,
+    output: OutputFormat,
+) -> Result<()> {
+    let normalized_insight_type = normalize_insight_type(insight_type)?;
+    let normalized_entity_type = normalize_entity_type(entity_type)?;
+    let entity_id = require_non_empty(entity_id, "entity id")?;
+    let system = system
+        .map(|s| require_non_empty(s, "--system"))
+        .transpose()?;
+    let normalized_dimension = normalize_proto_enum(
+        dimension,
+        INSIGHT_DIMENSION_PREFIX,
+        VALID_INSIGHT_DIMENSIONS,
+        "--dimension",
+    )?;
+    let validated_environments = trim_non_empty_values(environments, "--environment")?;
+    let parsed_scope = scope
+        .map(|raw| parse_scope(raw, ENTITY_DRILLDOWN_SCOPES))
+        .transpose()?;
+
+    eprintln!(
+        "{}",
+        format!("Fetching insight '{insight_type}' for '{entity_id}' ({entity_type})...").dimmed()
+    );
+
+    let params = EntityInsightDrilldownParams {
+        insight_type: &normalized_insight_type,
+        entity: EntityRef {
+            entity_type: &normalized_entity_type,
+            name: entity_id,
+            system,
+        },
+        dimension: &normalized_dimension,
+        environments: &validated_environments,
+        scope: parsed_scope.as_ref(),
+    };
+    let per_profile = fan_out(targets, |target| {
+        let params = &params;
+        async move {
+            let api = ServiceCatalogApi::new(&target.client);
+            Ok(api.entity_insight_drilldown(params).await?)
+        }
+    })
+    .await;
+
+    let results = report_errors_and_collect_successes(per_profile)?;
+    render_insight_results(
+        results,
+        targets.len() > 1,
+        output,
+        print_entity_insight_drilldown,
+    )
+}
+
+/// `--type` values as full proto names, checked before the archive prompt so a
+/// typo fails without asking to confirm a company-wide write.
+pub fn normalize_insight_types(types: &[String]) -> Result<Vec<String>> {
+    normalize_insight_enums(types, INSIGHT_TYPE_PREFIX, VALID_INSIGHT_TYPES, "--type")
+}
+
+/// `cx service-catalog insight-types archive|unarchive --type <T>...` - archive
+/// or unarchive insight types (full proto names, from `normalize_insight_types`)
+/// for the whole company.
+pub async fn run_archive_insight_types(
+    targets: &[Arc<ExecutionTarget>],
+    normalized_types: &[String],
+    archive: bool,
+    output: OutputFormat,
+) -> Result<()> {
+    let action = if archive { "Archiving" } else { "Unarchiving" };
+    eprintln!("{}", format!("{action} insight types...").dimmed());
+
+    let per_profile = fan_out(targets, |target| async move {
+        let api = ServiceCatalogApi::new(&target.client);
+        Ok(api.archive_insight_types(normalized_types, archive).await?)
+    })
+    .await;
+
+    let results = report_errors_and_collect_successes(per_profile)?;
+    render_insight_results(results, targets.len() > 1, output, |response| {
+        let archived = archived_type_names(response);
+        let listed = if archived.is_empty() {
+            "none".to_string()
+        } else {
+            archived.join(", ")
+        };
+        println!("Archived insight types: {listed}");
+    })
+}
+
 // ── Entity type / aggregation / sort-order enum mapping ─────────────────────────
 
 const DATA_AGGREGATION_TABLE: &str = "DATA_AGGREGATION_TYPE_TABLE";
@@ -407,9 +709,13 @@ fn validate_columns(columns: &[String]) -> Result<Vec<String>> {
 }
 
 fn validate_group_by(group_by: &[String]) -> Result<Vec<String>> {
-    let trimmed: Vec<String> = group_by.iter().map(|g| g.trim().to_string()).collect();
-    if trimmed.iter().any(|g| g.is_empty()) {
-        bail!("--group-by values must not be empty");
+    trim_non_empty_values(group_by, "--group-by")
+}
+
+fn trim_non_empty_values(values: &[String], flag: &str) -> Result<Vec<String>> {
+    let trimmed: Vec<String> = values.iter().map(|v| v.trim().to_string()).collect();
+    if trimmed.iter().any(|v| v.is_empty()) {
+        bail!("{flag} values must not be empty");
     }
     Ok(trimmed)
 }
@@ -704,6 +1010,600 @@ fn render_table_rows(rows: &[Value], include_profile: bool) {
 
     let header_refs: Vec<&str> = headers.iter().map(String::as_str).collect();
     render::render_table(&header_refs, table_rows, include_profile);
+}
+
+// ── Insights input parsing ───────────────────────────────────────────────────────
+
+/// `--scope` kinds accepted by `insight-drilldown` and `entity-insight-drilldown`,
+/// matching the `scope` oneof of each request.
+const ENTITIES_DRILLDOWN_SCOPES: &[&str] = &["language", "request-kind"];
+const ENTITY_DRILLDOWN_SCOPES: &[&str] =
+    &["operation", "request-kind", "database", "external-services"];
+
+fn normalize_insight_type(insight_type: &str) -> Result<String> {
+    normalize_proto_enum(
+        insight_type,
+        INSIGHT_TYPE_PREFIX,
+        VALID_INSIGHT_TYPES,
+        "insight type",
+    )
+}
+
+fn normalize_insight_enums(
+    values: &[String],
+    prefix: &str,
+    valid: &[&str],
+    flag: &str,
+) -> Result<Vec<String>> {
+    values
+        .iter()
+        .map(|value| normalize_proto_enum(value, prefix, valid, flag))
+        .collect()
+}
+
+fn normalize_insight_selection(selection: &InsightSelectionInput<'_>) -> Result<InsightSelection> {
+    let normalize_types = |values: &[String], flag: &str| {
+        normalize_insight_enums(values, INSIGHT_TYPE_PREFIX, VALID_INSIGHT_TYPES, flag)
+    };
+    let normalize_categories = |values: &[String], flag: &str| {
+        normalize_insight_enums(
+            values,
+            INSIGHT_CATEGORY_PREFIX,
+            VALID_INSIGHT_CATEGORIES,
+            flag,
+        )
+    };
+    Ok(InsightSelection {
+        types: normalize_types(selection.types, "--type")?,
+        categories: normalize_categories(selection.categories, "--category")?,
+        excluded_types: normalize_types(selection.excluded_types, "--exclude-type")?,
+        excluded_categories: normalize_categories(
+            selection.excluded_categories,
+            "--exclude-category",
+        )?,
+        archive_filter: selection
+            .archived
+            .map(parse_archived)
+            .transpose()?
+            .flatten(),
+    })
+}
+
+/// `--archived`: `exclude` (the default) sends no filter, which already leaves
+/// archived types out.
+fn parse_archived(archived: &str) -> Result<Option<&'static str>> {
+    match archived.trim().to_lowercase().as_str() {
+        "exclude" => Ok(None),
+        "only" => Ok(Some(INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY)),
+        "include" => Ok(Some(INSIGHT_ARCHIVE_FILTER_ALL)),
+        other => bail!("unknown --archived '{other}'; allowed: exclude, only, include"),
+    }
+}
+
+fn parse_breakdown_sort(breakdown_sort: &str) -> Result<String> {
+    normalize_proto_enum(
+        breakdown_sort,
+        INSIGHT_BREAKDOWN_SORT_PREFIX,
+        VALID_INSIGHT_BREAKDOWN_SORTS,
+        "--breakdown-sort",
+    )
+}
+
+/// Parses `--scope kind=value` into the request's `scope` oneof case. The text
+/// output prints each insight's scope in this same syntax, so it can be pasted
+/// back as a flag.
+fn parse_scope(raw: &str, allowed: &[&str]) -> Result<InsightScope> {
+    let (kind, value) = match raw.split_once('=') {
+        Some((kind, value)) => (kind.trim(), Some(value.trim())),
+        None => (raw.trim(), None),
+    };
+    if !allowed.contains(&kind) {
+        bail!(
+            "invalid --scope '{raw}': expected one of {}",
+            allowed.join(", ")
+        );
+    }
+    let required_value = || {
+        value
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| anyhow!("invalid --scope '{raw}': expected {kind}=<value>"))
+    };
+    let scope = match kind {
+        "language" => InsightScope {
+            field: "language",
+            value: json!({ "name": required_value()? }),
+        },
+        "operation" => InsightScope {
+            field: "operation",
+            value: json!({ "name": required_value()? }),
+        },
+        "request-kind" => InsightScope {
+            field: "requestKind",
+            value: json!({
+                "kind": normalize_proto_enum(
+                    required_value()?,
+                    REQUEST_KIND_PREFIX,
+                    VALID_REQUEST_KINDS,
+                    "request kind",
+                )?
+            }),
+        },
+        "database" => {
+            let (db_system, db_namespace) = required_value()?
+                .split_once('/')
+                .map(|(system, namespace)| (system.trim(), namespace.trim()))
+                .filter(|(system, namespace)| !system.is_empty() && !namespace.is_empty())
+                .ok_or_else(|| {
+                    anyhow!("invalid --scope '{raw}': expected database=<db-system>/<db-namespace>")
+                })?;
+            InsightScope {
+                field: "dependency",
+                value: json!({ "database": { "dbSystem": db_system, "dbNamespace": db_namespace } }),
+            }
+        }
+        "external-services" => {
+            if value.is_some() {
+                bail!("invalid --scope '{raw}': external-services takes no value");
+            }
+            InsightScope {
+                field: "dependency",
+                value: json!({ "externalServices": {} }),
+            }
+        }
+        _ => unreachable!("kind was checked against the allowed scopes"),
+    };
+    Ok(scope)
+}
+
+// ── Insights rendering ───────────────────────────────────────────────────────────
+//
+// The insights responses stay raw JSON from `api.rs` on: json/toon output is
+// the API response as-is (camelCase, proto enum names), since the insight
+// payloads are nested `oneof`s with per-environment measurements that a flat
+// row would lose. Text output summarizes each response as tables.
+
+fn render_insight_results(
+    results: Vec<(String, Value)>,
+    include_profile: bool,
+    output: OutputFormat,
+    print_text: impl Fn(&Value),
+) -> Result<()> {
+    let tag_profiles = |results: Vec<(String, Value)>| -> Vec<Value> {
+        results
+            .into_iter()
+            .map(|(profile, mut response)| {
+                if include_profile {
+                    render::tag_get_result(&mut response, &profile);
+                }
+                response
+            })
+            .collect()
+    };
+    match output {
+        OutputFormat::Json => render::render_json_auto(&tag_profiles(results)),
+        OutputFormat::Toon => render::render_toon(&tag_profiles(results)),
+        OutputFormat::Text => {
+            for (profile, response) in &results {
+                if include_profile {
+                    println!("{}", format!("[{profile}]").dimmed());
+                }
+                print_text(response);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn print_entities_insights(response: &Value) {
+    let mut insight_rows: Vec<Vec<String>> = Vec::new();
+    let mut unchecked_rows: Vec<Vec<String>> = Vec::new();
+    let mut coverage_lines: Vec<String> = Vec::new();
+    let mut breakdown_lines: Vec<String> = Vec::new();
+    for per_entity_type in json_array(response, "perEntityType") {
+        let entity_type =
+            short_enum_name(json_str(per_entity_type, "entityType"), ENTITY_TYPE_PREFIX);
+        coverage_lines.extend(format_behavior_coverage(&entity_type, per_entity_type));
+        for insight in json_array(per_entity_type, "insights") {
+            insight_rows.push(listed_insight_row(&entity_type, insight));
+            breakdown_lines.extend(format_insight_breakdowns(&entity_type, insight));
+        }
+        for unchecked in json_array(per_entity_type, "uncheckedInsights") {
+            unchecked_rows.push(unchecked_insight_row(Some(&entity_type), unchecked));
+        }
+    }
+    for insight in json_array(response, "companyInsights") {
+        insight_rows.push(listed_insight_row("company", insight));
+    }
+    for unchecked in json_array(response, "uncheckedCompanyInsights") {
+        unchecked_rows.push(unchecked_insight_row(Some("company"), unchecked));
+    }
+
+    if insight_rows.is_empty() {
+        render::print_no_results("No insights found.");
+    } else {
+        render::render_table(
+            &[
+                "Entity Type",
+                "Type",
+                "Category",
+                "Scope",
+                "Affected",
+                "Title",
+            ],
+            insight_rows,
+            false,
+        );
+    }
+    for line in coverage_lines
+        .into_iter()
+        .chain(format_archive_notes(response))
+    {
+        println!("{}", line.dimmed());
+    }
+    if !breakdown_lines.is_empty() {
+        println!();
+        println!("{}", "Breakdowns:".bold());
+        for line in breakdown_lines {
+            println!("{line}");
+        }
+    }
+    print_unchecked_insights(&["Entity Type", "Type", "Reason"], unchecked_rows);
+}
+
+/// The `--breakdown` top values under a heading naming the insight as the
+/// table does, one line per dimension, e.g.
+/// `    owner (19 values, 26 unattributed): team-a 6/9 (66.7%), team-b 4/9 (44.4%)`.
+/// `unattributed` counts affected entities with no value for the dimension.
+fn format_insight_breakdowns(entity_type: &str, insight: &Value) -> Vec<String> {
+    let dimension_lines: Vec<String> = json_array(insight, "breakdowns")
+        .map(|breakdown| {
+            let value_count = json_i64(breakdown, "affectedValueCount");
+            let mut counts = format!(
+                "{value_count} {}",
+                if value_count == 1 { "value" } else { "values" }
+            );
+            let unattributed = json_i64(breakdown, "unattributedCount");
+            if unattributed > 0 {
+                counts.push_str(&format!(", {unattributed} unattributed"));
+            }
+            let top_values = json_array(breakdown, "topValues")
+                .map(|top_value| {
+                    format!(
+                        "{} {}",
+                        json_str(top_value, "value"),
+                        format_affected_count(top_value)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "    {} ({counts}): {top_values}",
+                short_enum_name(json_str(breakdown, "dimension"), INSIGHT_DIMENSION_PREFIX)
+            )
+        })
+        .collect();
+    if dimension_lines.is_empty() {
+        return dimension_lines;
+    }
+    let mut heading = format!("  {entity_type} {}", insight_type_short(insight));
+    let scope = format_insight_scope(insight);
+    if scope != "-" {
+        heading.push(' ');
+        heading.push_str(&scope);
+    }
+    std::iter::once(heading).chain(dimension_lines).collect()
+}
+
+fn print_entity_insights(response: &Value) {
+    let insight_rows: Vec<Vec<String>> = json_array(response, "insights")
+        .map(|insight| {
+            vec![
+                String::new(),
+                insight_type_short(insight),
+                insight_category_short(insight),
+                format_insight_scope(insight),
+                json_str_list(insight, "environments"),
+                display_or_dash(Some(json_str(insight, "title"))),
+            ]
+        })
+        .collect();
+    let unchecked_rows: Vec<Vec<String>> = json_array(response, "uncheckedInsights")
+        .map(|unchecked| unchecked_insight_row(None, unchecked))
+        .collect();
+
+    if insight_rows.is_empty() {
+        render::print_no_results("No insights found.");
+    } else {
+        render::render_table(
+            &["Type", "Category", "Scope", "Environments", "Title"],
+            insight_rows,
+            false,
+        );
+    }
+    for line in format_archive_notes(response) {
+        println!("{}", line.dimmed());
+    }
+    print_unchecked_insights(&["Type", "Reason"], unchecked_rows);
+}
+
+fn print_entities_insight_drilldown(response: &Value, page_index: i64, page_size: i64) {
+    print_drilldown_title(response);
+    let entity_rows: Vec<Vec<String>> = json_array(response, "entities")
+        .map(|entity| {
+            vec![
+                String::new(),
+                display_or_dash(entity.pointer("/entity/name").and_then(Value::as_str)),
+                display_or_dash(entity.pointer("/entity/system").and_then(Value::as_str)),
+                format!(
+                    "{}/{}",
+                    json_i64(entity, "affectedEnvironmentCount"),
+                    json_i64(entity, "environmentCount")
+                ),
+                format!("{:.1}%", json_f64(entity, "percentage")),
+                json_str_list(entity, "affectedEnvironments"),
+            ]
+        })
+        .collect();
+
+    let total = json_i64(response, "totalEntities");
+    if entity_rows.is_empty() && total > 0 {
+        render::print_no_results(&format_empty_page(page_index, page_size, total));
+    } else if entity_rows.is_empty() {
+        render::print_no_results("No affected entities found.");
+    } else {
+        let shown = entity_rows.len() as i64;
+        render::render_table(
+            &[
+                "Name",
+                "System",
+                "Affected Envs",
+                "Percentage",
+                "Affected Environments",
+            ],
+            entity_rows,
+            false,
+        );
+        println!(
+            "{}",
+            format_page_range(page_index * page_size, shown, total).dimmed()
+        );
+    }
+}
+
+/// A page past the last one, named by `--page-index` (zero-based) so the
+/// last page can be requested as printed.
+fn format_empty_page(page_index: i64, page_size: i64, total: i64) -> String {
+    format!(
+        "No entities on --page-index {page_index}: {total} in total, the last page is --page-index {}.",
+        (total - 1) / page_size
+    )
+}
+
+/// The rows on screen within the whole result, e.g. `201-300 of 977 entities`.
+fn format_page_range(first_row: i64, shown: i64, total: i64) -> String {
+    format!(
+        "{}-{} of {total} entities",
+        first_row + 1,
+        first_row + shown
+    )
+}
+
+/// How many service changes the deployment insights compared, when they were
+/// requested: without it, no deployment insight would read as nothing regressed.
+fn format_behavior_coverage(entity_type: &str, per_entity_type: &Value) -> Option<String> {
+    let coverage = per_entity_type.get("behaviorComparisonCoverage")?;
+    Some(format!(
+        "{entity_type}: {} of {} eligible changes compared",
+        json_i64(coverage, "compared"),
+        json_i64(coverage, "eligibleChanges")
+    ))
+}
+
+/// The company's archived insight types, which the default request leaves out,
+/// so a type listed here was hidden rather than not firing.
+fn format_archive_notes(response: &Value) -> Vec<String> {
+    let mut notes = Vec::new();
+    let archived = archived_type_names(response);
+    if !archived.is_empty() {
+        notes.push(format!(
+            "Archived (hidden by default): {}",
+            archived.join(", ")
+        ));
+    }
+    if response
+        .get("archiveUnavailable")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        notes.push(
+            "The archive could not be read: every insight type is shown, archived or not."
+                .to_string(),
+        );
+    }
+    notes
+}
+
+fn archived_type_names(response: &Value) -> Vec<String> {
+    json_array(response, "archivedTypes")
+        .filter_map(Value::as_str)
+        .map(|insight_type| short_enum_name(insight_type, INSIGHT_TYPE_PREFIX))
+        .collect()
+}
+
+fn print_entity_insight_drilldown(response: &Value) {
+    print_drilldown_title(response);
+    let value_rows: Vec<Vec<String>> = json_array(response, "values")
+        .map(|dimension_value| {
+            vec![
+                String::new(),
+                display_or_dash(Some(json_str(dimension_value, "value"))),
+                render::bool_display(Some(
+                    dimension_value
+                        .get("isAffected")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                )),
+                json_str_list(dimension_value, "affectedEnvironments"),
+            ]
+        })
+        .collect();
+
+    if value_rows.is_empty() {
+        render::print_no_results("No values found.");
+    } else {
+        render::render_table(
+            &["Value", "Affected", "Affected Environments"],
+            value_rows,
+            false,
+        );
+    }
+}
+
+/// Both drilldown responses carry the insight itself, or an unchecked insight
+/// when its source could not be read.
+fn print_drilldown_title(response: &Value) {
+    if let Some(title) = response.pointer("/insight/title").and_then(Value::as_str) {
+        println!("{}", title.bold());
+    }
+    if let Some(unchecked) = response.get("uncheckedInsight") {
+        println!(
+            "{}",
+            format!("Not checked: {}", unchecked_reason(unchecked)).yellow()
+        );
+    }
+}
+
+fn print_unchecked_insights(headers: &[&str], rows: Vec<Vec<String>>) {
+    if rows.is_empty() {
+        return;
+    }
+    println!();
+    println!("{}", "Not checked:".bold());
+    render::render_table(headers, rows, false);
+}
+
+fn listed_insight_row(entity_type: &str, insight: &Value) -> Vec<String> {
+    vec![
+        String::new(),
+        entity_type.to_string(),
+        insight_type_short(insight),
+        insight_category_short(insight),
+        format_insight_scope(insight),
+        format_insight_affected(insight),
+        display_or_dash(Some(json_str(insight, "title"))),
+    ]
+}
+
+fn unchecked_insight_row(entity_type: Option<&str>, unchecked: &Value) -> Vec<String> {
+    let mut row = vec![String::new()];
+    row.extend(entity_type.map(String::from));
+    row.push(insight_type_short(unchecked));
+    row.push(unchecked_reason(unchecked));
+    row
+}
+
+fn unchecked_reason(unchecked: &Value) -> String {
+    match unchecked.get("description").and_then(Value::as_str) {
+        Some(description) if !description.is_empty() => description.to_string(),
+        _ => short_enum_name(
+            json_str(unchecked, "reason"),
+            INSIGHT_UNCHECKED_REASON_PREFIX,
+        ),
+    }
+}
+
+fn insight_type_short(insight: &Value) -> String {
+    short_enum_name(json_str(insight, "type"), INSIGHT_TYPE_PREFIX)
+}
+
+fn insight_category_short(insight: &Value) -> String {
+    short_enum_name(json_str(insight, "category"), INSIGHT_CATEGORY_PREFIX)
+}
+
+/// The `affected` oneof as `count/total (pct%)`. Environment and behavior
+/// coverage report the entities affected in at least one environment.
+fn format_insight_affected(insight: &Value) -> String {
+    if let Some(cap_usage) = insight.get("capUsage") {
+        return format!(
+            "{}/{} cap ({:.1}%)",
+            json_i64(cap_usage, "used"),
+            json_i64(cap_usage, "cap"),
+            json_f64(cap_usage, "percentage")
+        );
+    }
+    insight
+        .get("entities")
+        .or_else(|| insight.pointer("/environmentCoverage/atLeastOne"))
+        .or_else(|| insight.pointer("/behaviorCoverage/atLeastOne"))
+        .map_or_else(|| "-".to_string(), format_affected_count)
+}
+
+/// An affected count or a breakdown value as `count/total (pct%)`.
+fn format_affected_count(count: &Value) -> String {
+    format!(
+        "{}/{} ({:.1}%)",
+        json_i64(count, "insightCount"),
+        json_i64(count, "totalEntities"),
+        json_f64(count, "percentage")
+    )
+}
+
+/// The `scope` oneof in `--scope` syntax, e.g. `request-kind=server`.
+fn format_insight_scope(insight: &Value) -> String {
+    if let Some(name) = insight.pointer("/language/name").and_then(Value::as_str) {
+        return format!("language={name}");
+    }
+    if let Some(name) = insight.pointer("/operation/name").and_then(Value::as_str) {
+        return format!("operation={name}");
+    }
+    if let Some(kind) = insight.pointer("/requestKind/kind").and_then(Value::as_str) {
+        return format!(
+            "request-kind={}",
+            short_enum_name(kind, REQUEST_KIND_PREFIX)
+        );
+    }
+    if let Some(database) = insight.pointer("/dependency/database") {
+        return format!(
+            "database={}/{}",
+            json_str(database, "dbSystem"),
+            json_str(database, "dbNamespace")
+        );
+    }
+    if insight.pointer("/dependency/externalServices").is_some() {
+        return "external-services".to_string();
+    }
+    "-".to_string()
+}
+
+// Proto JSON omits fields holding their default value, so a missing number
+// is 0, a missing string is empty and a missing list is empty.
+
+fn json_array<'v>(value: &'v Value, key: &str) -> impl Iterator<Item = &'v Value> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+}
+
+fn json_str<'v>(value: &'v Value, key: &str) -> &'v str {
+    value.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn json_i64(value: &Value, key: &str) -> i64 {
+    value.get(key).and_then(Value::as_i64).unwrap_or(0)
+}
+
+fn json_f64(value: &Value, key: &str) -> f64 {
+    value.get(key).and_then(Value::as_f64).unwrap_or(0.0)
+}
+
+fn json_str_list(value: &Value, key: &str) -> String {
+    let joined = json_array(value, key)
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    display_or_dash(Some(&joined))
 }
 
 // ── JSON row builders ────────────────────────────────────────────────────────────
@@ -1074,5 +1974,272 @@ mod tests {
         assert_eq!(tagged["profile"], "prod");
         let untagged = tag_profile(json!({"a": 1}), false, "prod");
         assert!(untagged.get("profile").is_none());
+    }
+
+    // ── insights input parsing ───────────────────────────────────────────────
+
+    #[test]
+    fn normalize_insight_selection_names_the_offending_flag() {
+        let categories = vec!["deployment".to_string()];
+        let excluded_types = vec!["slow".to_string()];
+        let err = normalize_insight_selection(&InsightSelectionInput {
+            types: &[],
+            categories: &categories,
+            excluded_types: &excluded_types,
+            excluded_categories: &[],
+            archived: None,
+        })
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("unknown --exclude-type 'slow'"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn normalize_insight_selection_expands_short_forms() {
+        let types = vec!["no-slo".to_string()];
+        let selection = normalize_insight_selection(&InsightSelectionInput {
+            types: &types,
+            categories: &[],
+            excluded_types: &[],
+            excluded_categories: &[],
+            archived: None,
+        })
+        .unwrap();
+        assert_eq!(selection.types, vec!["INSIGHT_TYPE_NO_SLO"]);
+        assert_eq!(selection.archive_filter, None);
+    }
+
+    #[test]
+    fn parse_archived_maps_exclude_to_no_filter() {
+        assert_eq!(parse_archived("exclude").unwrap(), None);
+        assert_eq!(
+            parse_archived("Only").unwrap(),
+            Some("INSIGHT_ARCHIVE_FILTER_ARCHIVED_ONLY")
+        );
+        assert_eq!(
+            parse_archived("include").unwrap(),
+            Some("INSIGHT_ARCHIVE_FILTER_ALL")
+        );
+        let err = parse_archived("all").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("unknown --archived 'all'; allowed: exclude, only, include"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_scope_maps_each_kind_to_its_oneof_case() {
+        let request_kind = parse_scope("request-kind=server", ENTITY_DRILLDOWN_SCOPES).unwrap();
+        assert_eq!(request_kind.field, "requestKind");
+        assert_eq!(request_kind.value, json!({ "kind": "REQUEST_KIND_SERVER" }));
+
+        let operation = parse_scope("operation=GET /cart?a=b", ENTITY_DRILLDOWN_SCOPES).unwrap();
+        assert_eq!(operation.field, "operation");
+        assert_eq!(operation.value, json!({ "name": "GET /cart?a=b" }));
+
+        let database = parse_scope("database=postgresql/orders", ENTITY_DRILLDOWN_SCOPES).unwrap();
+        assert_eq!(database.field, "dependency");
+        assert_eq!(
+            database.value,
+            json!({ "database": { "dbSystem": "postgresql", "dbNamespace": "orders" } })
+        );
+
+        let external = parse_scope("external-services", ENTITY_DRILLDOWN_SCOPES).unwrap();
+        assert_eq!(external.value, json!({ "externalServices": {} }));
+
+        let language = parse_scope("language=java", ENTITIES_DRILLDOWN_SCOPES).unwrap();
+        assert_eq!(language.field, "language");
+        assert_eq!(language.value, json!({ "name": "java" }));
+    }
+
+    #[test]
+    fn parse_scope_rejects_a_kind_the_request_does_not_take() {
+        let err = parse_scope("operation=GET /cart", ENTITIES_DRILLDOWN_SCOPES).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected one of language, request-kind"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_scope_rejects_missing_or_malformed_values() {
+        assert!(parse_scope("operation", ENTITY_DRILLDOWN_SCOPES).is_err());
+        assert!(parse_scope("database=postgresql", ENTITY_DRILLDOWN_SCOPES).is_err());
+        for empty_half in ["database=/orders", "database=postgresql/", "database= / "] {
+            let err = parse_scope(empty_half, ENTITY_DRILLDOWN_SCOPES).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("expected database=<db-system>/<db-namespace>"),
+                "{empty_half}: {err}"
+            );
+        }
+        assert!(parse_scope("request-kind=client", ENTITY_DRILLDOWN_SCOPES).is_err());
+        assert!(parse_scope("external-services=x", ENTITY_DRILLDOWN_SCOPES).is_err());
+    }
+
+    // ── insights rendering helpers ───────────────────────────────────────────
+
+    #[test]
+    fn format_insight_scope_round_trips_through_parse_scope() {
+        let insights = [
+            json!({ "operation": { "name": "GET /cart" } }),
+            json!({ "requestKind": { "kind": "REQUEST_KIND_CONSUMER" } }),
+            json!({ "dependency": { "database": { "dbSystem": "redis", "dbNamespace": "0" } } }),
+            json!({ "dependency": { "externalServices": {} } }),
+        ];
+        for insight in insights {
+            let printed = format_insight_scope(&insight);
+            let parsed = parse_scope(&printed, ENTITY_DRILLDOWN_SCOPES).unwrap();
+            assert_eq!(insight[parsed.field], parsed.value, "scope {printed}");
+        }
+        assert_eq!(format_insight_scope(&json!({})), "-");
+    }
+
+    #[test]
+    fn format_insight_affected_covers_each_oneof_case() {
+        assert_eq!(
+            format_insight_affected(&json!({
+                "entities": { "insightCount": 3, "totalEntities": 12, "percentage": 25 }
+            })),
+            "3/12 (25.0%)"
+        );
+        assert_eq!(
+            format_insight_affected(&json!({
+                "environmentCoverage": {
+                    "atLeastOne": { "insightCount": 2, "totalEntities": 4, "percentage": 50 },
+                    "every": { "totalEntities": 4 }
+                }
+            })),
+            "2/4 (50.0%)"
+        );
+        assert_eq!(
+            format_insight_affected(&json!({
+                "behaviorCoverage": { "atLeastOne": { "insightCount": 1, "totalEntities": 8, "percentage": 12.5 } }
+            })),
+            "1/8 (12.5%)"
+        );
+        assert_eq!(
+            format_insight_affected(&json!({
+                "capUsage": { "used": 9500, "cap": 10000, "percentage": 95 }
+            })),
+            "9500/10000 cap (95.0%)"
+        );
+        assert_eq!(format_insight_affected(&json!({})), "-");
+    }
+
+    #[test]
+    fn format_page_range_counts_from_the_page_offset() {
+        assert_eq!(format_page_range(0, 3, 77), "1-3 of 77 entities");
+        assert_eq!(format_page_range(200, 100, 977), "201-300 of 977 entities");
+    }
+
+    #[test]
+    fn format_empty_page_names_the_last_page_index() {
+        assert_eq!(
+            format_empty_page(5, 50, 74),
+            "No entities on --page-index 5: 74 in total, the last page is --page-index 1."
+        );
+        assert_eq!(
+            format_empty_page(1, 50, 50),
+            "No entities on --page-index 1: 50 in total, the last page is --page-index 0."
+        );
+    }
+
+    #[test]
+    fn format_insight_breakdowns_lists_top_values_per_dimension() {
+        let insight = json!({
+            "type": "INSIGHT_TYPE_MISSING_RUNTIME_METRICS",
+            "language": { "name": "java" },
+            "breakdowns": [
+                {
+                    "dimension": "INSIGHT_DIMENSION_ENVIRONMENT",
+                    "topValues": [
+                        { "value": "prod", "insightCount": 3, "totalEntities": 19, "percentage": 15.8 },
+                        { "value": "staging", "insightCount": 1, "totalEntities": 4, "percentage": 25 }
+                    ],
+                    "affectedValueCount": 12
+                },
+                {
+                    "dimension": "INSIGHT_DIMENSION_OWNER",
+                    "topValues": [
+                        { "value": "team-a", "insightCount": 6, "totalEntities": 9, "percentage": 66.7 }
+                    ],
+                    "affectedValueCount": 1,
+                    "unattributedCount": 26
+                }
+            ]
+        });
+        assert_eq!(
+            format_insight_breakdowns("service", &insight),
+            vec![
+                "  service missing-runtime-metrics language=java",
+                "    environment (12 values): prod 3/19 (15.8%), staging 1/4 (25.0%)",
+                "    owner (1 value, 26 unattributed): team-a 6/9 (66.7%)",
+            ]
+        );
+        assert!(format_insight_breakdowns(
+            "service",
+            &json!({ "type": "INSIGHT_TYPE_NO_OWNER", "breakdowns": [] })
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn format_behavior_coverage_only_when_deployment_insights_ran() {
+        assert_eq!(
+            format_behavior_coverage(
+                "service",
+                &json!({ "behaviorComparisonCoverage": { "eligibleChanges": 2000, "compared": 275 } })
+            )
+            .as_deref(),
+            Some("service: 275 of 2000 eligible changes compared")
+        );
+        // Proto JSON omits zero counts.
+        assert_eq!(
+            format_behavior_coverage("service", &json!({ "behaviorComparisonCoverage": {} }))
+                .as_deref(),
+            Some("service: 0 of 0 eligible changes compared")
+        );
+        assert_eq!(format_behavior_coverage("service", &json!({})), None);
+    }
+
+    #[test]
+    fn format_archive_notes_lists_archived_types_in_short_form() {
+        assert_eq!(
+            format_archive_notes(&json!({
+                "archivedTypes": ["INSIGHT_TYPE_NO_SLO", "INSIGHT_TYPE_NO_OWNER"]
+            })),
+            vec!["Archived (hidden by default): no-slo, no-owner"]
+        );
+        assert!(format_archive_notes(&json!({ "archivedTypes": [] })).is_empty());
+        assert!(format_archive_notes(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn format_archive_notes_says_when_the_archive_could_not_be_read() {
+        assert_eq!(
+            format_archive_notes(&json!({ "archiveUnavailable": true })),
+            vec!["The archive could not be read: every insight type is shown, archived or not."]
+        );
+        assert!(format_archive_notes(&json!({ "archiveUnavailable": false })).is_empty());
+    }
+
+    #[test]
+    fn unchecked_reason_prefers_description_over_reason_enum() {
+        assert_eq!(
+            unchecked_reason(&json!({
+                "reason": "INSIGHT_UNCHECKED_REASON_PERMISSION_DENIED",
+                "description": "Missing SLO read permission"
+            })),
+            "Missing SLO read permission"
+        );
+        assert_eq!(
+            unchecked_reason(&json!({ "reason": "INSIGHT_UNCHECKED_REASON_SOURCE_UNAVAILABLE" })),
+            "source-unavailable"
+        );
     }
 }

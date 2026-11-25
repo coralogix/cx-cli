@@ -9,9 +9,12 @@ description: >
   "which pods are using the most memory", "database operation performance",
   "JVM GC pauses", "service health over time", "compare services by latency",
   "what columns are available for this entity type", "service catalog schema",
-  or wants to explore APM entities and their metrics.
+  "what's wrong with my APM setup", "which services have no SLO",
+  "did the last deployment make a service slower", "APM insights",
+  "archive / dismiss an insight type", "hide an insight type", "unarchive an insight",
+  or wants to explore APM entities, their metrics, and their insights.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Service Catalog Skill
@@ -30,9 +33,14 @@ usage, etc.) via the v2 Service Catalog API.
 | `cx service-catalog entities <entity-type>` | Known entities of one type (e.g. service names) | - |
 | `cx service-catalog data <entity-type>` | Aggregated column data across every entity of a type | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation`, `--limit`, `--sort-column`, `--sort-order` |
 | `cx service-catalog entity-data <entity-type> <entity-id>` | Column data for one named entity (drilldown) | `--start`, `--end`, `--column` (required, repeatable); `--group-by`, `--filter`, `--aggregation` |
+| `cx service-catalog insights <entity-type>...` | Insights over every entity of the given types, plus company-wide limits | `--filter`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--archived`, `--breakdown`, `--top-values`, `--breakdown-sort` |
+| `cx service-catalog entity-insights <entity-type> <entity-id>` | Insights of one entity, with the environments each fired in | `--system` (databases), `--environment`, `--type`, `--category`, `--exclude-type`, `--exclude-category`, `--archived`, `--top-values`, `--breakdown-sort` |
+| `cx service-catalog insight-drilldown <insight-type> <entity-type>` | The entities behind one insight | `--scope`, `--filter`, `--environment-match`, `--sort`, `--sort-order`, `--page-size` (100 when omitted), `--page-index`, `--name-search` |
+| `cx service-catalog entity-insight-drilldown <insight-type> <entity-type> <entity-id>` | One entity's environments (or another `--dimension`) under one insight | `--scope`, `--dimension`, `--environment`, `--system` |
+| `cx service-catalog insight-types archive\|unarchive` | Archive or unarchive insight types for the whole company (write) | `--type` (required, repeatable), `--yes` |
 
-- All commands are **read-only** and support `-o json` / `-o toon` for
-  structured output.
+- All commands except `insight-types archive|unarchive` are **read-only**, and
+  all support `-o json` / `-o toon` for structured output.
 - **Entity type accepts short forms**: `service`, `database`, `operation`,
   `database-operation`, `jvm`, `jvm-gc`, `k8s-pod`, `transaction` (case-insensitive,
   hyphens or underscores). The full proto name (`ENTITY_TYPE_K8S_POD`) also works.
@@ -89,6 +97,115 @@ Four steps, and only because each one supplies an input the next one requires:
    cx service-catalog entity-data <entity-type> <entity-id> --start now-1h --end now \
      --column <column-id> -o json
    ```
+
+## Insights
+
+Insights are findings the catalog computes for you, so start here for "what's
+wrong" questions instead of pulling raw `data`:
+
+- **Setup** categories: `instrumentation` (no language, missing compact
+  metrics, no transactions), `enablement` (no spans, no CPU or memory
+  profiling, missing runtime metrics, no recent ops events, no logs),
+  `configuration` (no owner, no SLO, latency above the top histogram bucket),
+  and `limits`: the catalog entity and identity caps are company insights
+  (`companyInsights`), the cardinality caps are per-service insights under
+  `perEntityType`.
+- **`deployment`**: a service before and after its last deployment or version
+  change - latency regression, error-rate jump, slower dependencies, and per
+  operation or call regressions. It is slower than the setup categories;
+  request it in a call of its own (`--category deployment`) and leave it out of
+  the others (`--exclude-category deployment`).
+- **Deployment insights do not check every service.** On the services list
+  (`insights`), only the most recently deployed services are compared:
+  currently up to 50 by default (within a 500 service x environment budget),
+  whose latest deployment is within the last 7 days and at least 1 hour old by
+  default; environments with very low traffic (under about 0.2 requests/s) are
+  skipped. `behaviorComparisonCoverage` (`compared` of `eligibleChanges`, the
+  "N of M eligible changes compared" line in text) shows how much was checked.
+  Never conclude a service did not regress from its absence in the list: it may
+  not have been compared. To check one service, use `entity-insights service
+  <entity-id> --category deployment`.
+- **Deployment insights are behind a per-account feature flag** (rolling out,
+  soon generally available). When it is off they are simply absent: no
+  deployment insights, no `behaviorComparisonCoverage` (no coverage line), no
+  unchecked entry. Don't mention this unprompted; only when asked about
+  deployment changes or regressions and none were computed, say they are not
+  enabled for the account - never that nothing regressed.
+- **Opt-in types**: `traffic-drop`, `mix-shift` and `dependency-regression` are
+  returned only when named with `--type`, never by `--category deployment` or
+  the default request.
+- An insight missing from a response did not fire only if its type was
+  computed: requested (opt-in types by `--type`) and served to the company.
+  `no-logs` is served only to companies with logs-by-environment enabled, so its
+  absence elsewhere does not mean every service sends logs.
+- **Archived insight types are hidden by default.** A company can archive
+  (dismiss) insight types. `insights` and `entity-insights` leave them out
+  unless asked, and list the company's whole archived set in `archivedTypes`
+  ("Archived (hidden by default): ..." in text). A hidden type did not
+  "not fire": it was not shown. When asked about archived or dismissed
+  insights, or about a type listed as archived, pass `--archived include`
+  (archived types with the rest) or `--archived only` (just them).
+  `archiveUnavailable: true` means the archive could not be read: every type was
+  served and `archivedTypes` is empty (`--archived only` fails then).
+- **Archiving is a write, per company and per insight type** (not per entity):
+  `insight-types archive --type <type>` hides that type for everyone in the
+  company, `insight-types unarchive --type <type>` shows it again. Both are
+  idempotent, need the `service-catalog:Update` permission and `--yes` (ask
+  the user first; `--read-only` blocks them), and print the company's whole
+  archived set after the change (an empty set comes back as `{}` in json/toon).
+  To see what is archived, read `archivedTypes` from any `insights` call.
+
+Insight types and categories take the short form (`no-slo`,
+`latency-regression`, `deployment`) or the full proto name. Text output shows
+each insight's **scope** (`request-kind=server`, `language=java`,
+`operation=GET /cart`, `database=postgresql/orders`, `external-services`) in
+the exact syntax `--scope` takes, so a drilldown is a copy-paste. The one
+exception: `language=` scopes (`missing-runtime-metrics`) are for
+`insight-drilldown` only; omit `--scope` for `entity-insight-drilldown`.
+
+```bash
+# 1. What is wrong across services? (one environment: --filter deployment_environment_name=<env>)
+cx service-catalog insights service --exclude-category deployment
+cx service-catalog insights service --category deployment
+
+# 2. Which services are behind one insight? Pass --scope when the insight shows one.
+cx service-catalog insight-drilldown latency-regression service --scope request-kind=server
+
+# 3. Everything about one service, including which operations and dependencies regressed
+cx service-catalog entity-insights service <entity-id> --category deployment
+
+# 4. Archived (dismissed) types, hidden by the calls above
+cx service-catalog insights service --archived only
+
+# 5. Which environments of that service an insight fired in
+cx service-catalog entity-insight-drilldown operation-regression service <entity-id> \
+  --scope 'operation=GET /cart'
+```
+
+- `-o json` returns the API response as-is: camelCase fields and full proto
+  enum names, with the before/after measurements of deployment insights
+  (`overall`, `environmentMeasurements`, `serviceMeasurements`) and, for
+  `entity-insights`, the `behaviorSummary` of the compared windows. Numeric
+  fields equal to 0 are omitted (e.g. a measurement's `before: 0`): read an
+  absent number as 0.
+- Text output of `insights` ends with how many service changes the deployment
+  insights compared (`275 of 2000 eligible changes compared`), then, with
+  `--breakdown`, each insight's top values per dimension
+  (`owner (19 values, 26 unattributed): team-a 6/9 (66.7%)`: affected of all
+  entities with that value; unattributed = affected entities with no value). An
+  `insight-drilldown` page footer shows its rows within the total
+  (`101-200 of 977 entities`); a page past the end names the last
+  `--page-index`.
+- `--filter` on `insights` and `insight-drilldown` accepts a fixed label set,
+  not the `schema` labels: `deployment_environment_name`,
+  `deployment_environment_type`, `k8s_cluster_name`, `service_name`,
+  `service.name`, `service_namespace`, `tenant_name`, and for `database` also
+  `db_system`, `db.system`, `db_name`, `db_namespace`. Any other label is a 400
+  that lists the accepted ones. Filter environments with
+  `--filter deployment_environment_name=<env>`, never `environment=`.
+- **Unchecked insights** (`uncheckedInsights`, "Not checked" in text) mean a
+  source could not be read, not that the entity is fine.
+- Databases are identified by name and system: pass `--system`.
 
 ## Examples
 

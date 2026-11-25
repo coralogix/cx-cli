@@ -20,6 +20,7 @@ Every alert definition has this top-level shape. The alert type config (e.g. `lo
     "entityLabels": {},
     "phantomMode": false,
     "activeOn": { ... },
+    "notificationGroup": { "groupByKeys": [] },
     "caseSettings": { ... },
     "logsThreshold": { ... }
   }
@@ -81,7 +82,7 @@ Day values: `DAY_OF_WEEK_MONDAY_OR_UNSPECIFIED`, `DAY_OF_WEEK_TUESDAY`, `DAY_OF_
 }
 ```
 
-Only these three keys route, and the `routing.` prefix is required: a bare `team` key is an ordinary label that no router matches (no error is reported). A router's `routingLabels` hold the same values without the prefix (`{"team": "payments"}`). Each router rule has an `entityType`: `CASES` rules handle Cases-mode alerts, `ALERTS` rules handle alerts with `notificationGroup.router`. A value may be a template such as `{{ groups.service | default(value="na") }}` only when that key is in `notificationGroup.groupByKeys`. Other `entityLabels` keys are free-form labels.
+Only these three keys route, and the `routing.` prefix is required: a bare `team` key is an ordinary label that no router matches (no error is reported). A router's `routingLabels` hold the same values without the prefix (`{"team": "payments"}`), and a router picks the alert up when all of its `routingLabels` match the alert's routing labels; see a router's labels with `cx notifications routers get <id>` (`list` does not show them). `routing.group` is a deprecated key the web editor still displays; routers cannot match on it, so don't set it. Each router rule has an `entityType`: `CASES` rules handle Cases-mode alerts, `ALERTS` rules handle alerts with `notificationGroup.router`. A value may be a template such as `{{ groups.service | default(value="na") }}` only when that key is in `notificationGroup.groupByKeys`. Other `entityLabels` keys are free-form labels.
 
 ### Case Settings (`caseSettings`) — Cases mode
 
@@ -95,7 +96,7 @@ Optional. Settings for the cases this alert creates. In Cases mode the alert sen
 }
 ```
 
-- `destinations[]` — connectors notified directly about the case (max 100). `presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise a notification-center routing condition such as `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Two destinations with the same connector, preset and condition are rejected.
+- `destinations[]` — connectors notified directly about the case (max 100). `presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise a notification-center routing condition such as `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Two destinations with the same connector, preset and condition are rejected. These connectors are notified in addition to whatever the routers send. Find IDs with `cx notifications connectors list` and `cx notifications presets list`.
 - `autoResolveMode` — `ALERT_DEF_CASE_AUTO_RESOLVE_MODE_UNSPECIFIED`, `_ENABLED`, `_DISABLED`. Leave unset unless the user asks.
 - `enrichmentQueries` — optional enrichment query for the case (max 1). Leave empty unless the user asks.
 
@@ -674,7 +675,7 @@ Monitor error budget consumption or burn rate. Exactly one of `errorBudget` or `
 
 - **groupByKeys for metric alerts**: Leave empty to let the API infer from the PromQL `by` clause. If provided, keys must be in **alphabetical order** (the API infers alphabetically, not in query order).
 - **Priority**: Always ask the user -- never pick a default.
-- **override in rules**: The rule's own priority, using the same `ALERT_DEF_PRIORITY_*` enum values. The create API rejects a logs-threshold rule without it (400 `Required` at `rules.0.override`), so always set it. With one rule, use the alert's `priority`. `ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED` means P5 (info); it does not inherit the alert-level priority. Rules in one alert must have different priorities.
+- **override in rules**: The rule's own priority, using the same `ALERT_DEF_PRIORITY_*` enum values. The create API rejects a logs-threshold rule without it (400 `Required` at `rules.0.override`), so always set it. With one rule, use the alert's `priority`. `ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED` means P5 (info); it does not inherit the alert-level priority. Rules in one alert must have different priorities (the API returns 400 "Different condition rules cannot have the same priority").
 - **notificationPayloadFilter**: List of log/span field paths to include in notifications (e.g. `["obj.field"]`).
 - **Cases mode**: when copying an existing alert, keep its `routing.*` labels but do not copy `notificationGroup.router`, `destinations`, `webhooks` or `incidentsSettings` unless the user explicitly wants alert-based notifications.
 - **Best practice**: Fetch an existing alert with `cx alerts get <id> -o json` to see the exact response shape, then use it as a template for creating new alerts.

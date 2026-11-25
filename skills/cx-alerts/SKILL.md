@@ -76,56 +76,22 @@ Cases are opened in both modes; the mode only changes where notifications come f
 | **Cases** (default) | no `notificationGroup.router` | The alert sends no notifications itself; its Cases do, through router rules with `entityType: "CASES"` |
 | Alerts (only when asked) | `notificationGroup.router` present | The alert sends its own notifications, through router rules with `entityType: "ALERTS"` |
 
-### Routing labels
-
-```json
-"entityLabels": {
-  "routing.team": "payments",
-  "routing.service": "checkout",
-  "routing.environment": "production"
-}
-```
-
-- Only `routing.team`, `routing.service` and `routing.environment` route. **The `routing.` prefix is required:** a bare `team` key is an ordinary label, no router matches it, and nothing reports an error.
-- Set only the labels the user gives; one is enough. A router's `routingLabels` use the same values without the prefix (`{"team": "payments"}`); see them with `cx notifications routers list` / `get`.
-- A value can be a template such as `{{ groups.service | default(value="na") }}` only when that key is in `notificationGroup.groupByKeys` (one case per group).
-- Setting up the router itself is in `cx-observability-setup`.
-
-### Case grouping
-
-When the alert groups by something (`groupByKeys`, or the `by` labels of a metric query), `notificationGroup.groupByKeys` decides how its groups become Cases. It is the one `notificationGroup` field used in Cases mode:
-
-```json
-"notificationGroup": { "groupByKeys": ["service"] }
-```
-
-- **One case per group:** list the keys. They must be among the alert's own group-by keys: its `groupByKeys`, or for metric alerts the labels in the PromQL query's `by (...)` clause, which the API uses as the alert's `groupByKeys`. The API rejects other keys, except on metric alerts, where it does not check them, so take metric keys only from the query's `by` clause.
-- **One combined case for all groups:** leave `notificationGroup` out, or send `"groupByKeys": []`. This is what you get by default, so an alert that groups by `service` opens a single case for every service unless you list `service` here.
-- When the alert has a group-by, ask the user which one they want.
-
 ### Rules for the payload
 
+Field details and JSON examples are in `references/alert-schemas.md` (Routing labels, Notification Group, Case Settings).
+
 - **Default:** routing labels when the user wants notifications, `notificationGroup` with **only `groupByKeys`** when the user wants one case per group (otherwise leave it out), and **no `incidentsSettings`**. The API fills in Cases-mode defaults.
+- **Routing labels** go in `entityLabels` as `routing.team`, `routing.service` and `routing.environment`. **The `routing.` prefix is required:** a bare `team` key is an ordinary label that no router matches, and nothing reports an error. Set only the labels the user gives; one is enough.
+- **Case grouping:** when the alert groups by something, ask whether each group should open its own case. If yes, set `"notificationGroup": {"groupByKeys": [...]}` with keys taken from the alert's own group-by keys (for metric alerts, only from the PromQL `by (...)` clause). Otherwise leave it out: the alert then opens one combined case for all groups.
 - **Never add `notificationGroup.router`** unless the user explicitly asks for alert-based notifications, and tell them the notifications will then come from the alert rather than from its Cases.
-- **Don't add `notificationGroup.destinations` or `webhooks`.** They are older direct notifications sent by the alert itself. To send case notifications straight to a connector, use `caseSettings.destinations` (below).
+- **Don't add `notificationGroup.destinations` or `webhooks`.** They are older direct notifications sent by the alert itself. To send this alert's cases straight to a connector, use `caseSettings.destinations`.
 - **Copying an alert:** if you build the payload from `cx alerts get <id> -o json`, keep its `routing.*` labels and `notificationGroup.groupByKeys` but delete `notificationGroup.router`, `notificationGroup.destinations`, `notificationGroup.webhooks` and `incidentsSettings` unless the user wants them. A Logs Unique Count alert allows only one group-by key; if the source has more, ask the user which one to keep rather than picking one.
-- DataPrime (analytics) alerts and Error Tracking alerts notify through Cases only.
-
-### Optional: a connector for this alert's cases
-
-```json
-"caseSettings": {
-  "destinations": [
-    { "connectorId": "<connector-id>", "presetId": "<preset-id>", "condition": "true" }
-  ]
-}
-```
-
-This notifies the connector in addition to whatever the routers send. `presetId` is optional. `condition` is required: `"true"` notifies on every case trigger, otherwise it is a Notification Center routing condition, e.g. `(caseMetadata.notificationReason not in ["caseUnacknowledged","casePriorityChanged"])`. Find connector and preset IDs with `cx notifications connectors list` and `cx notifications presets list`.
+- DataPrime (analytics) alerts notify through Cases only; the web editor offers no alert-based notifications for them.
+- Setting up the routers themselves is in `cx-observability-setup`.
 
 ## Create Workflow
 
-1. Ask the user what they want to alert on (logs, metrics, traces) and, if it groups by a field, whether each group should open its own case (see Case grouping)
+1. Ask the user what they want to alert on (logs, metrics, traces) and, if it groups by a field, whether each group should open its own case (see Rules for the payload)
 2. Ask for priority (P1–P5)
 3. Build the JSON payload with `alertDefProperties` - use the **API wire format** (see `references/alert-schemas.md` for all enum values). Keep it in **Cases mode**: routing labels if wanted, `notificationGroup` with only `groupByKeys` if wanted, no `incidentsSettings` (see Notifications above)
 4. **Tip:** use `cx alerts get <existing-id> -o json` to get a working template, modify it, and pipe into create - but remove the alert-mode notification fields from the copy first (keep `routing.*` labels and `notificationGroup.groupByKeys`)

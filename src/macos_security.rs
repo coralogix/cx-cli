@@ -171,6 +171,12 @@ pub(crate) fn store(
     interpret_status(&output, "store a Keychain item")
 }
 
+/// Validate that a value can be represented by `security -i` without writing it.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn validate_store(service: &str, account: &str, secret: &str) -> Result<()> {
+    add_command(service, account, secret).map(|_| ())
+}
+
 /// Read a generic password. `Ok(None)` when the item does not exist.
 pub(crate) fn get(
     runner: &impl SecurityRunner,

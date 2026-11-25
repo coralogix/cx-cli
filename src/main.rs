@@ -946,6 +946,12 @@ Examples:
         #[arg(add = ArgValueCompleter::new(complete_profile_names))]
         name: String,
     },
+    /// Recreate OS-store credentials using this cx binary's Keychain backend.
+    ///
+    /// This is useful after switching between a Coralogix-signed installation
+    /// and a Homebrew, Cargo, or other unsigned installation.
+    #[cfg(target_os = "macos")]
+    Migrate,
     /// Show or change a profile's labels without reconfiguring it.
     ///
     /// Credentials, region and settings are not touched.
@@ -3651,6 +3657,60 @@ mod label_position_tests {
     }
 }
 
+#[cfg(all(test, target_os = "macos"))]
+mod profile_migration_tests {
+    use clap::Parser;
+
+    use super::{ProfilesCli, ProfilesCmd, ProfilesTopLevel};
+
+    #[test]
+    fn profiles_migrate_is_available_on_macos() {
+        let cli = ProfilesCli::try_parse_from(["cx", "profiles", "migrate"])
+            .expect("migrate command should parse on macOS");
+        let ProfilesTopLevel::Profiles { cmd } = cli.command;
+        assert!(matches!(cmd, ProfilesCmd::Migrate));
+    }
+}
+
+fn should_migrate_profiles_command(command: &ProfilesCmd) -> bool {
+    !matches!(command, ProfilesCmd::Delete { .. })
+}
+
+fn should_migrate_command(command: &Commands) -> bool {
+    !matches!(
+        command,
+        Commands::Profiles {
+            cmd: ProfilesCmd::Delete { .. }
+        }
+    )
+}
+
+#[cfg(test)]
+mod managed_profile_migration_tests {
+    use clap::Parser;
+
+    use super::{
+        should_migrate_command, should_migrate_profiles_command, Cli, ProfilesCli, ProfilesTopLevel,
+    };
+
+    #[test]
+    fn profiles_delete_skips_the_startup_migration_with_and_without_global_flags() {
+        let plain = Cli::try_parse_from(["cx", "profiles", "delete", "broken"])
+            .expect("plain profiles delete parses");
+        let with_global_flag =
+            Cli::try_parse_from(["cx", "--read-only", "profiles", "delete", "broken"])
+                .expect("profiles delete with a global flag parses");
+
+        assert!(!should_migrate_command(&plain.command));
+        assert!(!should_migrate_command(&with_global_flag.command));
+
+        let early = ProfilesCli::try_parse_from(["cx", "profiles", "delete", "broken"])
+            .expect("early profiles delete parses");
+        let ProfilesTopLevel::Profiles { cmd } = early.command;
+        assert!(!should_migrate_profiles_command(&cmd));
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Handle shell completions before any stdout output.
@@ -3678,6 +3738,10 @@ async fn main() -> Result<()> {
         let profile_matches = ProfilesCli::command().get_matches();
         let profiles_cli = ProfilesCli::from_arg_matches(&profile_matches)?;
         let ProfilesTopLevel::Profiles { cmd } = profiles_cli.command;
+        // Deleting is how a user removes a profile that cannot be migrated.
+        if should_migrate_profiles_command(&cmd) {
+            config::migrate_managed_profiles_to_os_store()?;
+        }
         let result = match cmd {
             ProfilesCmd::List { label } => commands::profiles::run_list(label),
             ProfilesCmd::Add {
@@ -3711,6 +3775,8 @@ async fn main() -> Result<()> {
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            #[cfg(target_os = "macos")]
+            ProfilesCmd::Migrate => commands::profiles::run_migrate(),
             ProfilesCmd::Labels { cmd } => cmd.run(),
         };
         update_check::maybe_print_notice(OutputFormat::Text);
@@ -3728,6 +3794,13 @@ async fn main() -> Result<()> {
 
     let matches = cmd.get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
+    // A managed credential-storage policy applies before every executed CLI
+    // command, including local commands that do not otherwise resolve API
+    // credentials (such as `cx profiles list`). `cx profiles delete` is
+    // exempt: it is how a user removes a profile that cannot be migrated.
+    if should_migrate_command(&cli.command) {
+        config::migrate_managed_profiles_to_os_store()?;
+    }
     let yes = cli.yes;
     // Load global config early for read-only / risky / olly gating.
     let global_cfg_early = config::load_config().unwrap_or_default();
@@ -3841,6 +3914,8 @@ async fn main() -> Result<()> {
             ProfilesCmd::Refresh { name } => commands::profiles::run_refresh(name).await,
             ProfilesCmd::Delete { name, force } => commands::profiles::run_delete(name, force),
             ProfilesCmd::SetDefault { name } => commands::profiles::run_set_default(name),
+            #[cfg(target_os = "macos")]
+            ProfilesCmd::Migrate => commands::profiles::run_migrate(),
             ProfilesCmd::Labels { cmd } => cmd.run(),
         };
         update_check::maybe_print_notice(OutputFormat::Text);

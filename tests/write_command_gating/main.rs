@@ -256,3 +256,27 @@ fn views_folders_delete() {
 fn slos_delete() {
     assert_gated(&["slos", "delete", "nonexistent"], "slos delete");
 }
+
+#[test]
+fn olly_chats_rename() {
+    assert_gated(
+        &["olly", "chats", "rename", "nonexistent", "New title"],
+        "olly chats rename",
+    );
+}
+
+#[test]
+fn olly_chats_delete() {
+    assert_gated(
+        &["olly", "chats", "delete", "nonexistent"],
+        "olly chats delete",
+    );
+}
+
+#[test]
+fn olly_chats_share() {
+    assert_gated(
+        &["olly", "chats", "share", "nonexistent", "--with", "org"],
+        "olly chats share",
+    );
+}

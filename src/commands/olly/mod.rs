@@ -10,7 +10,10 @@ pub mod api;
 mod artifact;
 mod chats;
 
-pub use chats::{run_chats_get, run_chats_list, run_models};
+pub use chats::{
+    run_chats_delete, run_chats_get, run_chats_list, run_chats_rename, run_chats_share,
+    run_chats_stop, run_models,
+};
 
 use api::OllyApi;
 use artifact::{download_content, ArtifactContent};

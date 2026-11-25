@@ -164,11 +164,13 @@ impl CxClient {
     }
 
     /// PATCH JSON body, deserialize response into T.
+    /// Falls back to deserializing `{}` when the response body is empty.
     pub async fn patch<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
         let url = format!("{}{path}", self.endpoint);
         let resp = self.inner.patch(&url).json(body).send().await?;
         let text = self.checked_text(resp).await?;
-        Ok(serde_json::from_str(&text)?)
+        let json = if text.trim().is_empty() { "{}" } else { &text };
+        Ok(serde_json::from_str(json)?)
     }
 
     /// POST with query params but no body, deserialize response into T.

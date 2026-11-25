@@ -108,6 +108,64 @@ fn format_conversation(chat: &ChatWithMessages) -> String {
     out
 }
 
+/// Change a chat's title.
+pub async fn run_chats_rename(
+    targets: &[Arc<ExecutionTarget>],
+    chat_id: &str,
+    title: &str,
+) -> Result<()> {
+    single_api(targets)?.rename_chat(chat_id, title).await?;
+    eprintln!("{}", format!("Renamed chat {chat_id}.").green());
+    Ok(())
+}
+
+/// Delete a chat.
+pub async fn run_chats_delete(targets: &[Arc<ExecutionTarget>], chat_id: &str) -> Result<()> {
+    single_api(targets)?.delete_chat(chat_id).await?;
+    eprintln!("{}", format!("Deleted chat {chat_id}.").green());
+    Ok(())
+}
+
+/// Change who can see a chat. `with` is the CLI value: `private`, `org` or
+/// `entities`.
+pub async fn run_chats_share(
+    targets: &[Arc<ExecutionTarget>],
+    chat_id: &str,
+    with: &str,
+    entity_ids: &[String],
+) -> Result<()> {
+    let shared_type = match with {
+        "private" => "private",
+        "org" => "entire_organization",
+        "entities" => "specific_entities",
+        other => bail!("unknown --with value '{other}'"),
+    };
+    single_api(targets)?
+        .share_chat(chat_id, shared_type, entity_ids)
+        .await?;
+    eprintln!(
+        "{}",
+        format!("Chat {chat_id} is now shared with: {with}.").green()
+    );
+    Ok(())
+}
+
+/// Stop an answer that is still running.
+pub async fn run_chats_stop(
+    targets: &[Arc<ExecutionTarget>],
+    chat_id: &str,
+    interaction_id: &str,
+) -> Result<()> {
+    single_api(targets)?
+        .stop_interaction(chat_id, interaction_id)
+        .await?;
+    eprintln!(
+        "{}",
+        format!("Stopped interaction {interaction_id}.").green()
+    );
+    Ok(())
+}
+
 /// List the models `cx olly ask --model` accepts in this region.
 pub async fn run_models(targets: &[Arc<ExecutionTarget>], output: OutputFormat) -> Result<()> {
     let api = single_api(targets)?;

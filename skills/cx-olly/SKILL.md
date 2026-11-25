@@ -1,6 +1,6 @@
 ---
 name: cx-olly
-description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "list chats", "find a chat ID", "show chat history", "which models does Olly support", "list Olly models", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
+description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "list chats", "find a chat ID", "show chat history", "rename a chat", "delete a chat", "share a chat", "stop Olly", "cancel a running answer", "which models does Olly support", "list Olly models", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
 metadata:
   version: "0.1.0"
 ---
@@ -18,6 +18,10 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
 | `cx olly chats list` | List chats, most recently active first | `--type`, `--metadata`, `--limit`, `--offset` |
 | `cx olly chats get <chat-id>` | Show a chat with its messages | - |
+| `cx olly chats rename <chat-id> <title>` | Change the title | `--yes` |
+| `cx olly chats delete <chat-id>` | Delete the chat and everything in it | `--yes` |
+| `cx olly chats share <chat-id>` | Change who can see the chat | `--with`, `--entity-id`, `--yes` |
+| `cx olly chats stop <chat-id> <interaction-id>` | Stop an answer that is still running | - |
 | `cx olly models` | List the model IDs `ask --model` accepts | - |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
@@ -107,6 +111,29 @@ cx olly chats get <chat-id> -o json
 ```
 
 Text mode prints the conversation in order (who said what). `-o json` prints the full API response, including `messages` and `interactions`. In text and toon mode a chat over the configured size limit is written to a temp file and the path is printed.
+
+### Rename, share, delete
+
+These change the chat, so they need confirmation. As an agent, ask the user first, then re-run with `--yes`. `--read-only` blocks them.
+
+```bash
+cx olly chats rename <chat-id> "Checkout latency investigation" --yes
+cx olly chats share <chat-id> --with org --yes
+cx olly chats share <chat-id> --with private --yes
+cx olly chats share <chat-id> --with entities --entity-id <id> --entity-id <id> --yes
+cx olly chats delete <chat-id> --yes
+```
+
+- `share --with` is `private` (only the owner), `org` (the whole organization) or `entities` (the IDs given with `--entity-id`, which is required for `entities` and rejected otherwise).
+- `delete` also deletes the chat's interactions, artifacts and uploaded files. It cannot be undone. Only the chat's owner can delete it; anyone else gets a 404.
+
+### Stop a running answer
+
+```bash
+cx olly chats stop <chat-id> <interaction-id>
+```
+
+`stop` runs without a confirmation prompt (`--read-only` still blocks it). The interaction ID is in the output of `cx olly ask -o json` and under `interactions` in `cx olly chats get <chat-id> -o json`. If the answer has already finished, the command fails with the API's message (400).
 
 ## Artifacts
 

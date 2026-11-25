@@ -5,6 +5,8 @@ use crate::harness;
 const FLAG: &str = "CX_FEATURE_FLAG_AGENT_CONTEXT";
 const REQUIRED: &str = "CX_E2E_CONTEXT_REQUIRED";
 const NOT_AVAILABLE: &str = "Agent context is not available in this environment.";
+/// What the gateway answers for a path no service is routed to.
+const NO_ROUTE: &str = "(503): no healthy upstream";
 const FORMATS: [&str; 3] = ["text", "json", "toon"];
 
 #[derive(Debug, PartialEq)]
@@ -17,7 +19,7 @@ enum Probe {
 fn decide(success: bool, stderr: &str, required: bool) -> Probe {
     if success {
         Probe::Available
-    } else if !stderr.contains(NOT_AVAILABLE) {
+    } else if !stderr.contains(NOT_AVAILABLE) && !stderr.contains(NO_ROUTE) {
         Probe::Fail(format!(
             "availability probe `cx context get` failed:\n{stderr}"
         ))
@@ -134,6 +136,13 @@ fn probe_not_available_skips() {
         decide(false, &format!("Error: {NOT_AVAILABLE}"), false),
         Probe::Skip
     );
+}
+
+#[test]
+fn probe_unrouted_path_skips_unless_required() {
+    let stderr = "Error: API request failed (503): no healthy upstream";
+    assert_eq!(decide(false, stderr, false), Probe::Skip);
+    assert!(matches!(decide(false, stderr, true), Probe::Fail(_)));
 }
 
 #[test]

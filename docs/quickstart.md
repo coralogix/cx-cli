@@ -80,6 +80,15 @@ What it asks you:
 | **Where to put the agent skills** | Local to this project (`./`) or global (`~/`). `cx` installs them for you and tells you how to update them later. |
 | **Install shell completions?** | Turns on `<Tab>` completion for `cx`. Pick `zsh`, `bash`, or `fish`, or keep the default and skip it. **Other** lets you name a shell and an install path yourself. Skipped without asking when completions are already installed. |
 
+> **Managed macOS and Windows devices:** IT can require Keychain or Windows
+> Credential Manager storage and reject plaintext profile files. When that
+> managed policy is enabled, setup skips the storage question and uses
+> `os-store`; an explicit `CX_CREDENTIAL_STORAGE=file` override is rejected.
+> Linux does not support this policy and keeps its existing credential-storage
+> behavior. See [Managed
+> credential-storage policy](configuration.md#managed-credential-storage-policy)
+> for Jamf, Group Policy, and Intune deployment.
+
 Everything else is defaulted rather than asked: profile name `default`, no
 label, and `json` as the profile's default output format
 (pass `-o text` for a run you want to read by eye, or set `default_output_format`

@@ -68,6 +68,21 @@ const SWEEPABLES: &[Sweepable] = &[
         delete: &["slos", "delete"],
     },
     Sweepable {
+        label: "product analytics funnels",
+        list: &["product-analytics", "funnels", "list"],
+        delete: &["product-analytics", "funnels", "delete"],
+    },
+    Sweepable {
+        label: "product analytics pathways",
+        list: &["product-analytics", "pathways", "list"],
+        delete: &["product-analytics", "pathways", "delete"],
+    },
+    Sweepable {
+        label: "product analytics heatmaps",
+        list: &["product-analytics", "heatmaps", "list"],
+        delete: &["product-analytics", "heatmaps", "delete"],
+    },
+    Sweepable {
         label: "webhooks",
         list: &["webhooks", "list"],
         delete: &["webhooks", "delete"],

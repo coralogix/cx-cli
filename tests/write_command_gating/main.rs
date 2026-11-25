@@ -301,3 +301,48 @@ fn service_catalog_insight_types_unarchive() {
         "service-catalog insight-types unarchive",
     );
 }
+
+#[test]
+fn product_analytics_saved_writes() {
+    for kind in ["funnels", "pathways", "heatmaps"] {
+        assert_gated(
+            &["product-analytics", kind, "delete", "1"],
+            &format!("product-analytics {kind} delete"),
+        );
+        assert_gated(
+            &[
+                "product-analytics",
+                kind,
+                "create",
+                "--from-file",
+                "missing.json",
+            ],
+            &format!("product-analytics {kind} create"),
+        );
+        assert_gated(
+            &[
+                "product-analytics",
+                kind,
+                "update",
+                "1",
+                "--from-file",
+                "missing.json",
+            ],
+            &format!("product-analytics {kind} update"),
+        );
+    }
+}
+
+#[test]
+fn product_analytics_settings_update() {
+    assert_gated(
+        &[
+            "product-analytics",
+            "settings",
+            "update",
+            "--enabled",
+            "false",
+        ],
+        "product-analytics settings update",
+    );
+}

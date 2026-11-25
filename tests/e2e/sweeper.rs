@@ -33,6 +33,11 @@ struct Sweepable {
 
 const SWEEPABLES: &[Sweepable] = &[
     Sweepable {
+        label: "olly scheduled tasks",
+        list: &["olly", "scheduled-tasks", "list"],
+        delete: &["olly", "scheduled-tasks", "delete"],
+    },
+    Sweepable {
         label: "views",
         list: &["views", "list"],
         delete: &["views", "delete"],

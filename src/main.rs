@@ -862,7 +862,9 @@ impl Commands {
 
     fn is_olly(&self) -> bool {
         match self {
-            Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
+            Self::Olly { cmd } => {
+                matches!(cmd, OllyCmd::Ask { .. } | OllyCmd::ScheduledTasks { .. })
+            }
             _ => false,
         }
     }
@@ -1221,6 +1223,173 @@ Examples:
     Artifacts {
         #[command(subcommand)]
         cmd: OllyArtifactsCmd,
+    },
+
+    /// Manage scheduled tasks: prompts Olly runs on a schedule as their owner.
+    #[command(after_help = "\
+Examples:
+  cx olly scheduled-tasks list
+  cx olly scheduled-tasks list --shared
+  cx olly scheduled-tasks create --title \"Checkout errors\" --prompt \"Check checkout error rate\" --every 1d
+  cx olly scheduled-tasks runs <task-id>
+  cx olly scheduled-tasks run <task-id>
+
+Requires a user identity: personal API key or `cx profiles login`. Team API keys are rejected.")]
+    ScheduledTasks {
+        #[command(subcommand)]
+        cmd: OllyScheduledTasksCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OllyScheduledTasksCmd {
+    /// List the scheduled tasks you own, or with --shared those others shared with you.
+    List {
+        /// List tasks other users shared with you instead of your own.
+        #[arg(long)]
+        shared: bool,
+    },
+    /// Show a scheduled task, including its prompt.
+    Get {
+        /// Task ID (UUID).
+        id: String,
+    },
+    /// List a task's runs, most recent first.
+    Runs {
+        /// Task ID (UUID).
+        id: String,
+    },
+    /// Create a scheduled task [requires confirmation; pass --yes to skip prompts].
+    #[command(
+        group(clap::ArgGroup::new("cadence").args(["every", "monthly", "once"])),
+        after_help = "\
+Examples:
+  cx olly scheduled-tasks create --title \"Daily checkout check\" \\
+    --prompt \"Check checkout error rate over the last 24h\" --every 1d --start-at now+1h
+  cx olly scheduled-tasks create --title \"Weekly SLO report\" --prompt - --every 1w \\
+    --notify every-run --connector <connector-id> < prompt.md
+  cx olly scheduled-tasks create --title \"Open cases for 5xx spikes\" \\
+    --prompt \"/case-management open a case when payments 5xx exceed 2%\" --every 1h
+
+Without --every or --monthly the task runs once, at --start-at. A prompt that uses
+/case-management is shared with the whole team automatically: only team-shared
+tasks may open cases."
+    )]
+    Create {
+        /// Task title.
+        #[arg(long)]
+        title: String,
+        /// Prompt Olly runs each time; `-` reads it from stdin.
+        #[arg(long, allow_hyphen_values = true)]
+        prompt: String,
+        /// Repeat every interval: whole hours from 1h to 1w (e.g. 1h, 6h, 1d, 1w).
+        #[arg(long)]
+        every: Option<String>,
+        /// Repeat every month.
+        #[arg(long)]
+        monthly: bool,
+        /// Run once, at --start-at (the default when no cadence is given).
+        #[arg(long)]
+        once: bool,
+        /// First run: now, now+<duration> (e.g. now+2h) or an ISO-8601 timestamp.
+        /// Must be in the future and within one month.
+        #[arg(long, default_value = "now+1m")]
+        start_at: String,
+        /// Model the runs use.
+        #[arg(long, default_value = "gpt-5.2")]
+        model: String,
+        /// Reasoning effort (e.g. low, medium, high). Olly's default when omitted.
+        #[arg(long)]
+        reasoning_effort: Option<String>,
+        /// Create the task paused.
+        #[arg(long)]
+        disabled: bool,
+        /// When runs notify: every-run, olly-judges or on-condition.
+        #[arg(long)]
+        notify: Option<String>,
+        /// Notification connector ID (email or Slack); repeatable, at most 5.
+        #[arg(long = "connector")]
+        connectors: Vec<String>,
+        /// Condition for --notify on-condition, in plain words.
+        #[arg(long)]
+        condition: Option<String>,
+        /// Share the task, its run history and run chats with the whole team.
+        #[arg(long)]
+        share_with_team: bool,
+    },
+    /// Change a scheduled task you own [requires confirmation; pass --yes to skip prompts].
+    #[command(group(clap::ArgGroup::new("cadence").args(["every", "monthly", "once"])))]
+    Update {
+        /// Task ID (UUID).
+        id: String,
+        /// New title.
+        #[arg(long)]
+        title: Option<String>,
+        /// New prompt; `-` reads it from stdin. Replaces the whole prompt.
+        #[arg(long, allow_hyphen_values = true)]
+        prompt: Option<String>,
+        /// New model.
+        #[arg(long)]
+        model: Option<String>,
+        /// New reasoning effort.
+        #[arg(long)]
+        reasoning_effort: Option<String>,
+        /// New notification: every-run, olly-judges or on-condition (replaces the current one).
+        #[arg(long)]
+        notify: Option<String>,
+        /// Notification connector ID for --notify; repeatable, at most 5.
+        #[arg(long = "connector")]
+        connectors: Vec<String>,
+        /// Condition for --notify on-condition.
+        #[arg(long)]
+        condition: Option<String>,
+        /// Stop notifying.
+        #[arg(long)]
+        no_notify: bool,
+        /// New schedule anchor: now, now+<duration> or an ISO-8601 timestamp.
+        #[arg(long)]
+        start_at: Option<String>,
+        /// Repeat every interval (1h to 1w, whole hours).
+        #[arg(long)]
+        every: Option<String>,
+        /// Repeat every month.
+        #[arg(long)]
+        monthly: bool,
+        /// Run once, at --start-at (required with --once).
+        #[arg(long)]
+        once: bool,
+    },
+    /// Resume a paused task [requires confirmation; pass --yes to skip prompts].
+    Enable {
+        /// Task ID (UUID).
+        id: String,
+    },
+    /// Pause a task; its schedule is kept [requires confirmation; pass --yes to skip prompts].
+    Disable {
+        /// Task ID (UUID).
+        id: String,
+    },
+    /// Share a task with the whole team, or make it private [requires confirmation].
+    #[command(group(clap::ArgGroup::new("audience").required(true).args(["team", "private"])))]
+    Share {
+        /// Task ID (UUID).
+        id: String,
+        /// Share the task, its run history and run chats with the whole team.
+        #[arg(long)]
+        team: bool,
+        /// Make the task private. Refused for a task whose prompt uses /case-management.
+        #[arg(long)]
+        private: bool,
+    },
+    /// Delete a task; its past run chats are kept [requires confirmation].
+    Delete {
+        /// Task ID (UUID).
+        id: String,
+    },
+    /// Start a run now, outside the schedule [requires confirmation].
+    Run {
+        /// Task ID (UUID).
+        id: String,
     },
 }
 
@@ -7100,6 +7269,138 @@ async fn main() -> Result<()> {
                         output,
                     )
                     .await?;
+                }
+                OllyCmd::ScheduledTasks { cmd } => {
+                    use commands::olly::scheduled_tasks as st;
+                    match cmd {
+                        OllyScheduledTasksCmd::List { shared } => {
+                            st::run_list(&targets, shared, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Get { id } => {
+                            st::run_get(&targets, &id, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Runs { id } => {
+                            st::run_runs(&targets, &id, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Create {
+                            title,
+                            prompt,
+                            every,
+                            monthly,
+                            once,
+                            start_at,
+                            model,
+                            reasoning_effort,
+                            disabled,
+                            notify,
+                            connectors,
+                            condition,
+                            share_with_team,
+                        } => {
+                            let cadence = st::Cadence::from_flags(every.as_deref(), monthly, once)?
+                                .unwrap_or(st::Cadence::Once);
+                            let args = st::CreateTaskArgs {
+                                title: &title,
+                                prompt: &prompt,
+                                model: &model,
+                                reasoning_effort: reasoning_effort.as_deref(),
+                                start_at: &start_at,
+                                cadence,
+                                disabled,
+                                notify: notify.as_deref(),
+                                connector_ids: &connectors,
+                                condition: condition.as_deref(),
+                                share_with_team,
+                            };
+                            confirm_destructive(
+                                &format!(
+                                    "Create scheduled task '{title}'? Olly will run its prompt \
+                                     as you on the schedule, using AI units."
+                                ),
+                                yes,
+                                agent_mode,
+                            )?;
+                            st::run_create(&targets, &args, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Update {
+                            id,
+                            title,
+                            prompt,
+                            model,
+                            reasoning_effort,
+                            notify,
+                            connectors,
+                            condition,
+                            no_notify,
+                            start_at,
+                            every,
+                            monthly,
+                            once,
+                        } => {
+                            let args = st::UpdateTaskArgs {
+                                title: title.as_deref(),
+                                prompt: prompt.as_deref(),
+                                model: model.as_deref(),
+                                reasoning_effort: reasoning_effort.as_deref(),
+                                notify: notify.as_deref(),
+                                connector_ids: &connectors,
+                                condition: condition.as_deref(),
+                                no_notify,
+                                start_at: start_at.as_deref(),
+                                cadence: st::Cadence::from_flags(every.as_deref(), monthly, once)?,
+                            };
+                            confirm_destructive(
+                                &format!("Update scheduled task '{id}'?"),
+                                yes,
+                                agent_mode,
+                            )?;
+                            st::run_update(&targets, &id, &args, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Enable { id } => {
+                            confirm_destructive(
+                                &format!("Enable scheduled task '{id}'? Its runs resume."),
+                                yes,
+                                agent_mode,
+                            )?;
+                            st::run_set_enabled(&targets, &id, true, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Disable { id } => {
+                            confirm_destructive(
+                                &format!("Disable scheduled task '{id}'? It stops running."),
+                                yes,
+                                agent_mode,
+                            )?;
+                            st::run_set_enabled(&targets, &id, false, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Share { id, team, private: _ } => {
+                            let action = if team {
+                                format!(
+                                    "Share scheduled task '{id}' with the whole team? Everyone \
+                                     can read its prompt, run history and run chats."
+                                )
+                            } else {
+                                format!("Make scheduled task '{id}' private?")
+                            };
+                            confirm_destructive(&action, yes, agent_mode)?;
+                            st::run_share(&targets, &id, team, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Delete { id } => {
+                            confirm_destructive(
+                                &format!("Delete scheduled task '{id}'? This cannot be undone."),
+                                yes,
+                                agent_mode,
+                            )?;
+                            st::run_delete(&targets, &id, output).await?;
+                        }
+                        OllyScheduledTasksCmd::Run { id } => {
+                            confirm_destructive(
+                                &format!("Run scheduled task '{id}' now? This uses AI units."),
+                                yes,
+                                agent_mode,
+                            )?;
+                            st::run_now(&targets, &id, output).await?;
+                        }
+                    }
                 }
                 OllyCmd::Artifacts { cmd } => match cmd {
                     OllyArtifactsCmd::List => {

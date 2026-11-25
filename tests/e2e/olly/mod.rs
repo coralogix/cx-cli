@@ -151,3 +151,106 @@ fn olly_artifacts_get() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("404"), "{stderr}");
 }
+
+/// Scheduled tasks need a user identity and Olly on the team; a team key or a
+/// team without Olly answers before anything is created.
+fn scheduled_tasks_unavailable(stderr: &str) -> bool {
+    stderr.contains("AI features are not enabled")
+        || stderr.contains("A user identity is required")
+        || stderr.contains("Team API keys are not supported")
+}
+
+/// create (paused, so it never runs) -> get -> list -> update -> share ->
+/// runs -> delete -> get fails.
+#[test]
+#[ignore]
+fn olly_scheduled_tasks_lifecycle() {
+    if harness::require_write_creds("olly_scheduled_tasks_lifecycle").is_none() {
+        return;
+    }
+    let title = harness::unique_name("scheduled-task");
+    let create = harness::run_raw(&[
+        "olly",
+        "scheduled-tasks",
+        "create",
+        "--title",
+        &title,
+        "--prompt",
+        "Reply with the single word OK.",
+        "--every",
+        "1d",
+        "--start-at",
+        "now+1d",
+        "--disabled",
+        "-o",
+        "json",
+        "--yes",
+    ]);
+    if !create.status.success() {
+        let stderr = String::from_utf8_lossy(&create.stderr);
+        if scheduled_tasks_unavailable(&stderr) {
+            eprintln!(
+                "[e2e] not covered: olly scheduled-tasks ({})",
+                stderr.trim()
+            );
+            return;
+        }
+        panic!("cx olly scheduled-tasks create failed: {stderr}");
+    }
+    let created: serde_json::Value =
+        serde_json::from_slice(&create.stdout).expect("create -o json must print valid JSON");
+    let id = harness::id_from_response(&created)
+        .unwrap_or_else(|| panic!("create returned no id: {created}"));
+    let mut cleanup = harness::Cleanup::new(&["olly", "scheduled-tasks", "delete", &id]);
+    assert_eq!(created["title"], title.as_str());
+    assert_eq!(created["enabled"], false);
+    assert_eq!(created["interval_seconds"], 86400);
+
+    let got = harness::run_ok_json(&["olly", "scheduled-tasks", "get", &id, "-o", "json"]);
+    assert_eq!(got["id"], id.as_str());
+    assert_eq!(got["is_owner"], true);
+
+    let list = harness::run_ok_json(&["olly", "scheduled-tasks", "list", "-o", "json"]);
+    harness::find_by_name(&list, "title", &title)
+        .unwrap_or_else(|| panic!("list should contain {title}"));
+
+    let updated = harness::run_write_json(&[
+        "olly",
+        "scheduled-tasks",
+        "update",
+        &id,
+        "--title",
+        &format!("{title}-upd"),
+        "--every",
+        "6h",
+        "-o",
+        "json",
+    ]);
+    assert_eq!(updated["interval_seconds"], 21600, "{updated}");
+    assert_eq!(
+        updated["enabled"], false,
+        "update must keep it paused: {updated}"
+    );
+
+    let shared = harness::run_write_json(&[
+        "olly",
+        "scheduled-tasks",
+        "share",
+        &id,
+        "--team",
+        "-o",
+        "json",
+    ]);
+    assert_eq!(
+        shared.pointer("/shared_options/shared_type"),
+        Some(&serde_json::json!("entire_organization"))
+    );
+
+    let runs = harness::run_ok_json(&["olly", "scheduled-tasks", "runs", &id, "-o", "json"]);
+    harness::assert_array(&runs);
+    harness::run_ok_nonempty(&["olly", "scheduled-tasks", "get", &id]);
+
+    harness::run_write_ok(&["olly", "scheduled-tasks", "delete", &id]);
+    cleanup.disarm();
+    harness::run_fail(&["olly", "scheduled-tasks", "get", &id]);
+}

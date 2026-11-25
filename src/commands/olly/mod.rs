@@ -8,6 +8,7 @@ use toon_format::encode_default as toon_encode;
 
 pub mod api;
 mod artifact;
+pub mod scheduled_tasks;
 
 use api::OllyApi;
 use artifact::{download_content, ArtifactContent};

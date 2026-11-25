@@ -8,6 +8,7 @@ use crate::error::Result;
 
 const CHATS_BASE: &str = "/api/v2/olly/v2/chats";
 const ARTIFACTS_BASE: &str = "/api/v2/olly/artifacts";
+const SCHEDULED_TASKS_BASE: &str = "/api/v2/olly/scheduled-tasks";
 const INTERACTION_SOURCE_HEADER: (&str, &str) = ("interaction-source", "cli");
 
 // ── Request types ──────────────────────────────────────────────────────────────
@@ -247,6 +248,71 @@ impl OllyApi {
     pub async fn get_artifact(&self, artifact_id: &str) -> Result<Artifact> {
         let path = format!("{ARTIFACTS_BASE}/{artifact_id}");
         self.client.get(&path, &[]).await
+    }
+
+    // ── Scheduled tasks ────────────────────────────────────────────────────────
+    // Responses are passed through as the API returns them (snake_case JSON).
+
+    /// Tasks the caller owns, or with `shared` the tasks others shared with them.
+    pub async fn list_scheduled_tasks(&self, shared: bool) -> Result<Vec<Value>> {
+        let scope = if shared { "shared" } else { "owner" };
+        self.client
+            .get(&format!("{SCHEDULED_TASKS_BASE}/"), &[("scope", scope)])
+            .await
+    }
+
+    pub async fn get_scheduled_task(&self, task_id: &str) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}");
+        self.client.get(&path, &[]).await
+    }
+
+    /// Run history of a task, most recent first.
+    pub async fn list_scheduled_task_runs(&self, task_id: &str) -> Result<Vec<Value>> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/scheduled-task-runs");
+        self.client.get(&path, &[]).await
+    }
+
+    pub async fn create_scheduled_task(&self, body: &Value) -> Result<Value> {
+        self.client
+            .post(&format!("{SCHEDULED_TASKS_BASE}/"), body)
+            .await
+    }
+
+    /// Partial update of title, prompt, model, reasoning effort or notification.
+    pub async fn update_scheduled_task_content(
+        &self,
+        task_id: &str,
+        body: &Value,
+    ) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}");
+        self.client.patch(&path, body).await
+    }
+
+    /// Replace the whole schedule: `start_at`, the interval and `enabled`.
+    pub async fn replace_scheduled_task_schedule(
+        &self,
+        task_id: &str,
+        body: &Value,
+    ) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/schedule");
+        self.client.put(&path, body).await
+    }
+
+    /// Set who the task (and its run chats) is shared with.
+    pub async fn set_scheduled_task_sharing(&self, task_id: &str, body: &Value) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/shared");
+        self.client.patch(&path, body).await
+    }
+
+    pub async fn delete_scheduled_task(&self, task_id: &str) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}");
+        self.client.delete(&path).await
+    }
+
+    /// Start a run now, outside the schedule. Answers 204.
+    pub async fn run_scheduled_task(&self, task_id: &str) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/manual-run");
+        self.client.post_empty(&path, &[]).await
     }
 }
 

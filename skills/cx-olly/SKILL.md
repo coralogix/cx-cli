@@ -1,8 +1,8 @@
 ---
 name: cx-olly
-description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
+description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", "schedule a task", "run this every day", "list my scheduled tasks", "pause a scheduled task", "run a scheduled task now", "share a scheduled task", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Olly Observability Agent Skill
@@ -18,6 +18,13 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
+| `cx olly scheduled-tasks list` | Your scheduled tasks; `--shared` for those teammates shared with you | `--shared` |
+| `cx olly scheduled-tasks get <id>` / `runs <id>` | One task with its prompt / its run history | - |
+| `cx olly scheduled-tasks create` | Schedule a prompt (one-off or recurring) | `--title`, `--prompt`, `--every`/`--monthly`/`--once`, `--start-at`, `--notify`, `--connector`, `--share-with-team` |
+| `cx olly scheduled-tasks update <id>` | Change content or schedule | same flags, `--no-notify` |
+| `cx olly scheduled-tasks enable\|disable <id>` | Resume / pause | - |
+| `cx olly scheduled-tasks share <id> --team\|--private` | Who can see the task, its runs and run chats | - |
+| `cx olly scheduled-tasks run <id>` / `delete <id>` | Run now / delete | - |
 
 **Output format:** append `-o json` or `-o toon` for machine-readable output.
 
@@ -108,6 +115,82 @@ Output behavior:
 - **JSON content**: Displayed directly, or spilled to file if large
 - **Text content**: Saved to temp file (e.g., `/tmp/cx_results_artifact_<id>_<hash>.txt`)
 
+## Scheduled Tasks
+
+A scheduled task stores a prompt that Olly runs later or repeatedly, **as its owner**,
+in a fresh chat. Nobody is there when it runs, so the prompt must stand on its own.
+
+**Needs a user identity.** Use a personal API key or `cx profiles login`; Olly
+rejects team API keys here. All writes ask for confirmation (pass `--yes` in agent
+mode); `--read-only` blocks them.
+
+### Before creating, gather the four essentials
+
+Confirm with the user in one short round, unless they already said it:
+
+1. **What to check** — the question, the data scope (service / dataset / signal) and
+   the output they want.
+2. **Cadence** — `--every 1h`…`1w` (whole hours), `--monthly`, or `--once` (the
+   default). No cron: "every weekday" or "Mon/Wed/Fri" is not possible.
+3. **First run** — `--start-at now+1m` by default; otherwise `now+2h` or an ISO-8601
+   timestamp with a timezone. It must be in the future and within one month.
+4. **Notifications** — always ask; users rarely mention it and a task that notifies
+   nobody is rarely what they wanted. `--notify every-run`, `olly-judges` (Olly decides
+   a run is worth flagging) or `on-condition --condition "error rate above 5%"`, with
+   one to five `--connector <id>` (email or Slack only; find them with
+   `cx notifications connectors list`). Keep the condition out of the prompt.
+
+A **monthly** task repeats on its first run's **UTC** day of the month; the CLI
+refuses a start on the 29th–31st, which would drift after shorter months. Say which
+day it repeats on.
+
+### Writing the prompt
+
+Write a standalone work order, formatted with line breaks: the goal, the scope and a
+concrete time window ("in the last 24 hours", not "recently"), each check as a `-`
+bullet, then the expected output. One responsibility per task. Mention a skill as
+`/name` (e.g. `/alerts`) to make every run load it. `--prompt -` reads it from stdin.
+
+```bash
+cx olly scheduled-tasks create --title "Payments error scan" --every 1d \
+  --start-at 2026-12-01T09:00:00Z --notify olly-judges --connector <connector-id> \
+  --prompt - --yes <<'PROMPT'
+Scan the payments service for recurring ERROR-level log entries.
+
+Scope: payments service logs from the last 24 hours.
+
+Checks:
+- Group ERROR entries by error message.
+- Flag any error that occurred more than 10 times.
+
+Output: the flagged errors with example log lines. If nothing exceeds the threshold, say so.
+PROMPT
+```
+
+### Sharing and tasks that open Cases
+
+- `share <id> --team` lets the whole team see the task, its run history and its run
+  chats (read-only). Only the owner can update, pause, run, share or delete it; a
+  task from `list --shared` has `is_owner: false` — send changes to `owner.email`.
+- **A task whose prompt mentions `/case-management` opens Cases and is always shared
+  with the team.** Creating it, or adding `/case-management` to an existing prompt,
+  shares it automatically, and `share --private` is refused while the prompt has it.
+  Tell the user before creating that the team will see it. Each case it opens records
+  the task's title and owner; see the `cx-cases` skill.
+
+### Acting on an existing task
+
+- Find the task with `list` and match the user's words to its **title**; ask which one
+  if it's ambiguous. One task per request — no bulk changes.
+- `update --prompt` **replaces** the prompt: rewrite the full work order, don't append.
+- `update --notify` replaces the notification; `--no-notify` stops it.
+- `disable` pauses and keeps the schedule; `enable` resumes it.
+- `run <id>` starts an extra run now and uses AI units; follow it with `runs <id>`,
+  whose `chat_id` opens the run in Olly.
+- `delete` cannot be undone; past run chats are kept.
+- A user has a limited number of tasks; a create refused for the limit means one must
+  be deleted first.
+
 ## Workflow Examples
 
 ### Investigate an issue
@@ -153,9 +236,11 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 - **Large artifacts auto-spill** - JSON content over the configured limit is saved to temp files
 - **Check source code before asking** - give Olly concrete context from the source code if available, such as which metric to start investigating from, before calling it
 - **Limit investigation scope** - guide Olly to the correct limited scope, for example limit to just logs or to specific time ranges
+- **Scheduled tasks run unattended** - confirm the what, cadence, first run and notifications before creating, and write the prompt to stand on its own
 - **Pass `--agent-to-agent-mode` when calling as an LLM/agent** - it defaults to `false` (human-facing); agents should opt in for shorter, sub-agent-style responses
 
 ## Related Skills
 
 - **`cx-telemetry-querying`** - for direct DataPrime/PromQL queries without AI agent assistance (covers logs, spans, metrics, RUM)
 - **`cx-alerts`** - for managing alert definitions
+- **`cx-cases`** - for cases a scheduled task opened (`OLLY_SCHEDULED_TASK` indicator)

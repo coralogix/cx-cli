@@ -346,3 +346,29 @@ fn product_analytics_settings_update() {
         "product-analytics settings update",
     );
 }
+
+#[test]
+fn olly_scheduled_tasks_delete() {
+    assert_gated(
+        &[
+            "olly",
+            "scheduled-tasks",
+            "delete",
+            "11111111-2222-4333-8444-555555555555",
+        ],
+        "olly scheduled-tasks delete",
+    );
+}
+
+#[test]
+fn olly_scheduled_tasks_run() {
+    assert_gated(
+        &[
+            "olly",
+            "scheduled-tasks",
+            "run",
+            "11111111-2222-4333-8444-555555555555",
+        ],
+        "olly scheduled-tasks run",
+    );
+}

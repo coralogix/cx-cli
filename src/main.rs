@@ -97,7 +97,7 @@ pub enum SearchByValueDataset {
   \x1b[1mviews\x1b[0m              Manage saved views and view folders
   \x1b[1mslos\x1b[0m               Manage SLO definitions
   \x1b[1minfra\x1b[0m              Query infrastructure resources and their data
-  \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities and their RED/health/saturation data
+  \x1b[1mservice-catalog\x1b[0m    Query service-catalog entities, their RED/health/saturation data, and insights
   \x1b[1mprofiling\x1b[0m          Query continuous-profiling data: services, metrics, flame graphs
   \x1b[1mrum\x1b[0m                Map RUM stack traces to source code with uploaded source maps
 
@@ -728,7 +728,9 @@ Examples:
   cx service-catalog schema service
   cx service-catalog entities service
   cx service-catalog data service --start now-1h --end now --column latency_p99
-  cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99")]
+  cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99
+  cx service-catalog insights service --category deployment
+  cx service-catalog entity-insights service checkout")]
     ServiceCatalog {
         #[command(subcommand)]
         cmd: ServiceCatalogCmd,
@@ -3324,85 +3326,354 @@ Examples:
   cx service-catalog data service --start now-1h --end now --column latency_p99 \\
     --filter environment=prod --aggregation table --sort-column latency_p99 --sort-order desc --limit 10
   cx service-catalog data service --start now-1h --end now --column latency_p99 --aggregation timeseries")]
-    Data {
-        /// Entity type (see `schema` for accepted values).
-        entity_type: String,
-
-        /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        start: String,
-
-        /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        end: String,
-
-        /// Column id to fetch. Repeatable; at least one required. Discover
-        /// valid ids with `cx service-catalog schema <entity-type>`.
-        #[arg(long = "column", required = true)]
-        columns: Vec<String>,
-
-        /// Label to group rows by, on top of the entity identity. Repeatable.
-        #[arg(long = "group-by")]
-        group_by: Vec<String>,
-
-        /// Filter as label=value1,value2; repeatable across different labels,
-        /// at most once per label. Multiple labels combine with AND.
-        #[arg(long = "filter")]
-        filters: Vec<String>,
-
-        /// Response shape: `table` (default) or `timeseries`.
-        #[arg(long, default_value = "table")]
-        aggregation: String,
-
-        /// Max rows to return. `table` aggregation only.
-        #[arg(long)]
-        limit: Option<i32>,
-
-        /// Column id to sort by. `table` aggregation only.
-        #[arg(long)]
-        sort_column: Option<String>,
-
-        /// Sort direction: `asc` or `desc`. `table` aggregation only.
-        #[arg(long)]
-        sort_order: Option<String>,
-    },
+    Data(ServiceCatalogDataArgs),
     /// Get column data for exactly one named entity (drilldown).
     #[command(after_help = "\
 Examples:
   cx service-catalog entity-data service checkout --start now-1h --end now --column latency_p99")]
-    EntityData {
-        /// Entity type (see `schema` for accepted values).
-        entity_type: String,
-
-        /// Entity id, exactly as returned by `cx service-catalog entities`.
-        entity_id: String,
-
-        /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        start: String,
-
-        /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
-        #[arg(long)]
-        end: String,
-
-        /// Column id to fetch. Repeatable; at least one required. Discover
-        /// valid ids with `cx service-catalog schema <entity-type>`.
-        #[arg(long = "column", required = true)]
-        columns: Vec<String>,
-
-        /// Label to group rows by, on top of the entity identity. Repeatable.
-        #[arg(long = "group-by")]
-        group_by: Vec<String>,
-
-        /// Filter as label=value1,value2; repeatable across different labels,
-        /// at most once per label. Multiple labels combine with AND.
-        #[arg(long = "filter")]
-        filters: Vec<String>,
-
-        /// Response shape: `table` (default) or `timeseries`.
-        #[arg(long, default_value = "table")]
-        aggregation: String,
+    EntityData(ServiceCatalogEntityDataArgs),
+    /// List insights over every entity of one or more types: setup gaps
+    /// (missing spans, SLOs, profiling), catalog limits, and behavior changes
+    /// after recent deployments.
+    ///
+    /// Deployment insights currently compare only
+    /// the most recently deployed services (by default up to 50, deployed
+    /// within 7 days and at least 1 hour ago, skipping very low-traffic
+    /// environments); the "eligible changes compared" line shows how many.
+    /// Use `entity-insights` to check one service. Deployment insights are
+    /// enabled per account; when they are off, none are returned and there is
+    /// no coverage line.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog insights service
+  cx service-catalog insights service --filter deployment_environment_name=prod \\
+    --exclude-category deployment
+  cx service-catalog insights service --category deployment
+  cx service-catalog insights service database --breakdown environment --top-values 5
+  cx service-catalog insights service --archived include")]
+    Insights(InsightsArgs),
+    /// List the insights of one entity, with the environments each fired in.
+    /// For a service, deployment insights also judge its operations and
+    /// dependencies.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog entity-insights service checkout
+  cx service-catalog entity-insights service checkout --category deployment --environment prod
+  cx service-catalog entity-insights database orders --system postgresql")]
+    EntityInsights(EntityInsightsArgs),
+    /// List the entities behind one insight from `insights`, each with the
+    /// environments it is affected in.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog insight-drilldown no-slo service
+  cx service-catalog insight-drilldown latency-regression service --scope request-kind=server
+  cx service-catalog insight-drilldown missing-runtime-metrics service --scope language=java \\
+    --sort name --sort-order asc --page-size 20")]
+    InsightDrilldown(InsightDrilldownArgs),
+    /// Show one entity's values of a dimension (environments by default)
+    /// under one insight from `entity-insights`.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog entity-insight-drilldown no-spans service checkout
+  cx service-catalog entity-insight-drilldown operation-regression service checkout \\
+    --scope 'operation=GET /cart'
+  cx service-catalog entity-insight-drilldown dependency-regression service checkout \\
+    --scope database=postgresql/orders")]
+    EntityInsightDrilldown(EntityInsightDrilldownArgs),
+    /// Archive or unarchive insight types for the whole company.
+    #[command(after_help = "\
+Examples:
+  cx service-catalog insight-types archive --type no-slo --type no-owner --yes
+  cx service-catalog insight-types unarchive --type no-slo --yes")]
+    InsightTypes {
+        #[command(subcommand)]
+        cmd: InsightTypesCmd,
     },
+}
+
+#[derive(Subcommand)]
+enum InsightTypesCmd {
+    /// Archive insight types for the whole company [requires --yes].
+    ///
+    /// `insights` and `entity-insights` then hide them unless `--archived`
+    /// asks for them. Prints the company's archived types after the change.
+    /// Needs the service-catalog:Update permission.
+    Archive(InsightTypesArgs),
+    /// Unarchive insight types, so they are shown by default again [requires --yes].
+    ///
+    /// Prints the company's archived types after the change. Needs the
+    /// service-catalog:Update permission.
+    Unarchive(InsightTypesArgs),
+}
+
+#[derive(Args)]
+struct InsightTypesArgs {
+    /// Insight type, e.g. `no-slo` or `latency-regression` (also accepts the
+    /// full INSIGHT_TYPE_* proto name). Repeatable; at least one required.
+    #[arg(long = "type", required = true)]
+    types: Vec<String>,
+}
+
+#[derive(Args)]
+struct ServiceCatalogDataArgs {
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    end: String,
+
+    /// Column id to fetch. Repeatable; at least one required. Discover
+    /// valid ids with `cx service-catalog schema <entity-type>`.
+    #[arg(long = "column", required = true)]
+    columns: Vec<String>,
+
+    /// Label to group rows by, on top of the entity identity. Repeatable.
+    #[arg(long = "group-by")]
+    group_by: Vec<String>,
+
+    /// Filter as label=value1,value2; repeatable across different labels,
+    /// at most once per label. Multiple labels combine with AND.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Response shape: `table` (default) or `timeseries`.
+    #[arg(long, default_value = "table")]
+    aggregation: String,
+
+    /// Max rows to return. `table` aggregation only.
+    #[arg(long)]
+    limit: Option<i32>,
+
+    /// Column id to sort by. `table` aggregation only.
+    #[arg(long)]
+    sort_column: Option<String>,
+
+    /// Sort direction: `asc` or `desc`. `table` aggregation only.
+    #[arg(long)]
+    sort_order: Option<String>,
+}
+
+#[derive(Args)]
+struct ServiceCatalogEntityDataArgs {
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Entity id, exactly as returned by `cx service-catalog entities`.
+    entity_id: String,
+
+    /// Start of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    start: String,
+
+    /// End of the time range: `now`, `now-1h`, `now - 3d`, or ISO-8601.
+    #[arg(long)]
+    end: String,
+
+    /// Column id to fetch. Repeatable; at least one required. Discover
+    /// valid ids with `cx service-catalog schema <entity-type>`.
+    #[arg(long = "column", required = true)]
+    columns: Vec<String>,
+
+    /// Label to group rows by, on top of the entity identity. Repeatable.
+    #[arg(long = "group-by")]
+    group_by: Vec<String>,
+
+    /// Filter as label=value1,value2; repeatable across different labels,
+    /// at most once per label. Multiple labels combine with AND.
+    #[arg(long = "filter")]
+    filters: Vec<String>,
+
+    /// Response shape: `table` (default) or `timeseries`.
+    #[arg(long, default_value = "table")]
+    aggregation: String,
+}
+
+/// `--filter` of `insights` and `insight-drilldown`, which accept a fixed
+/// label set rather than the `schema` labels.
+const INSIGHT_FILTER_HELP: &str = "Filter as label=value1,value2; repeatable across different \
+labels, at most once per label. Multiple labels combine with AND. Accepted labels: \
+deployment_environment_name, deployment_environment_type, k8s_cluster_name, service_name, \
+service.name, service_namespace, tenant_name; for databases also db_system, db.system, \
+db_name, db_namespace";
+
+#[derive(Args)]
+struct InsightsArgs {
+    /// Entity type(s) (see `schema` for accepted values).
+    #[arg(required = true)]
+    entity_types: Vec<String>,
+
+    #[arg(long = "filter", help = INSIGHT_FILTER_HELP)]
+    filters: Vec<String>,
+
+    #[command(flatten)]
+    selection: InsightSelectionArgs,
+
+    /// Break each insight down by a dimension: environment, owner,
+    /// language, db-system, missing-compact-metric, or
+    /// missing-runtime-metric. Repeatable.
+    #[arg(long = "breakdown")]
+    breakdowns: Vec<String>,
+
+    /// Values to return per breakdown (1-50).
+    #[arg(long, value_parser = clap::value_parser!(i32).range(1..=50))]
+    top_values: Option<i32>,
+
+    /// Order of breakdown values: `percentage` (default) or `count`.
+    #[arg(long)]
+    breakdown_sort: Option<String>,
+}
+
+#[derive(Args)]
+struct EntityInsightsArgs {
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Entity id, exactly as returned by `cx service-catalog entities`.
+    entity_id: String,
+
+    /// The entity's system, e.g. `postgresql`. Required for databases.
+    #[arg(long)]
+    system: Option<String>,
+
+    /// Environment to consider. Repeatable; all environments when omitted.
+    #[arg(long = "environment")]
+    environments: Vec<String>,
+
+    #[command(flatten)]
+    selection: InsightSelectionArgs,
+
+    /// Environments to list per insight (1-50).
+    #[arg(long, value_parser = clap::value_parser!(i32).range(1..=50))]
+    top_values: Option<i32>,
+
+    /// Order of breakdown values: `percentage` (default) or `count`.
+    #[arg(long)]
+    breakdown_sort: Option<String>,
+}
+
+#[derive(Args)]
+struct InsightDrilldownArgs {
+    /// Insight type, e.g. `no-slo` or `latency-regression` (also accepts
+    /// the full INSIGHT_TYPE_* proto name).
+    insight_type: String,
+
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    #[arg(long = "filter", help = INSIGHT_FILTER_HELP)]
+    filters: Vec<String>,
+
+    /// The insight's scope, as `insights` prints it: `language=<name>` or
+    /// `request-kind=server|consumer`. Required for insights listed once
+    /// per language or request kind.
+    #[arg(long)]
+    scope: Option<String>,
+
+    /// Which entities count as affected: `at-least-one` environment or
+    /// `every` environment.
+    #[arg(long)]
+    environment_match: Option<String>,
+
+    /// Sort: percentage, affected-environments, name, or severity.
+    #[arg(long)]
+    sort: Option<String>,
+
+    /// Sort direction: `asc` or `desc`.
+    #[arg(long)]
+    sort_order: Option<String>,
+
+    /// Zero-based page index.
+    #[arg(long, value_parser = clap::value_parser!(i32).range(0..))]
+    page_index: Option<i32>,
+
+    /// Entities per page (1-200; 100 when omitted).
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(i32).range(1..=200))]
+    page_size: i32,
+
+    /// Case-insensitive substring the entity name must contain.
+    #[arg(long)]
+    name_search: Option<String>,
+}
+
+#[derive(Args)]
+struct EntityInsightDrilldownArgs {
+    /// Insight type, e.g. `no-spans` or `operation-regression`.
+    insight_type: String,
+
+    /// Entity type (see `schema` for accepted values).
+    entity_type: String,
+
+    /// Entity id, exactly as returned by `cx service-catalog entities`.
+    entity_id: String,
+
+    /// The entity's system, e.g. `postgresql`. Required for databases.
+    #[arg(long)]
+    system: Option<String>,
+
+    /// Dimension to list: environment, owner, language, db-system,
+    /// missing-compact-metric, or missing-runtime-metric.
+    #[arg(long, default_value = "environment")]
+    dimension: String,
+
+    /// Environment to consider. Repeatable; all environments when omitted.
+    #[arg(long = "environment")]
+    environments: Vec<String>,
+
+    /// The insight's scope, as `entity-insights` prints it:
+    /// `operation=<span name>`, `request-kind=server|consumer`,
+    /// `database=<db-system>/<db-namespace>`, or `external-services`.
+    /// Required for deployment insights. `language=` scopes are for
+    /// `insight-drilldown` only; omit `--scope` here for those.
+    #[arg(long)]
+    scope: Option<String>,
+}
+
+/// Which insights to compute, shared by `insights` and `entity-insights`.
+#[derive(Args)]
+struct InsightSelectionArgs {
+    /// Only this insight type, e.g. `no-slo` or `latency-regression`. Repeatable.
+    /// `traffic-drop`, `mix-shift` and `dependency-regression` are opt-in:
+    /// returned only when named here, never for `--category deployment`.
+    #[arg(long = "type")]
+    types: Vec<String>,
+
+    /// Only this category: instrumentation, enablement, configuration,
+    /// limits, or deployment. Repeatable. Deployment insights are slower;
+    /// request them separately from the others. On `insights` they cover only
+    /// the most recently deployed services, not every service.
+    #[arg(long = "category")]
+    categories: Vec<String>,
+
+    /// Leave out this insight type. Repeatable.
+    #[arg(long = "exclude-type")]
+    exclude_types: Vec<String>,
+
+    /// Leave out this category. Repeatable.
+    #[arg(long = "exclude-category")]
+    exclude_categories: Vec<String>,
+
+    /// Archived (dismissed) insight types: `exclude` (default) hides them,
+    /// `only` returns just them, `include` returns them with the rest. The
+    /// response lists the company's archived types either way.
+    #[arg(long)]
+    archived: Option<String>,
+}
+
+impl InsightSelectionArgs {
+    fn as_input(&self) -> commands::service_catalog::InsightSelectionInput<'_> {
+        commands::service_catalog::InsightSelectionInput {
+            types: &self.types,
+            categories: &self.categories,
+            excluded_types: &self.exclude_types,
+            excluded_categories: &self.exclude_categories,
+            archived: self.archived.as_deref(),
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -5694,18 +5965,18 @@ async fn main() -> Result<()> {
                     commands::service_catalog::run_entities(&targets, &entity_type, output)
                         .await?;
                 }
-                ServiceCatalogCmd::Data {
-                    entity_type,
-                    start,
-                    end,
-                    columns,
-                    group_by,
-                    filters,
-                    aggregation,
-                    limit,
-                    sort_column,
-                    sort_order,
-                } => {
+                ServiceCatalogCmd::Data(ServiceCatalogDataArgs {
+                        entity_type,
+                        start,
+                        end,
+                        columns,
+                        group_by,
+                        filters,
+                        aggregation,
+                        limit,
+                        sort_column,
+                        sort_order,
+                }) => {
                     commands::service_catalog::run_data(
                         &targets,
                         &entity_type,
@@ -5722,16 +5993,16 @@ async fn main() -> Result<()> {
                     )
                     .await?;
                 }
-                ServiceCatalogCmd::EntityData {
-                    entity_type,
-                    entity_id,
-                    start,
-                    end,
-                    columns,
-                    group_by,
-                    filters,
-                    aggregation,
-                } => {
+                ServiceCatalogCmd::EntityData(ServiceCatalogEntityDataArgs {
+                        entity_type,
+                        entity_id,
+                        start,
+                        end,
+                        columns,
+                        group_by,
+                        filters,
+                        aggregation,
+                }) => {
                     commands::service_catalog::run_entity_data(
                         &targets,
                         &entity_type,
@@ -5742,6 +6013,119 @@ async fn main() -> Result<()> {
                         &group_by,
                         &filters,
                         &aggregation,
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::Insights(InsightsArgs {
+                        entity_types,
+                        filters,
+                        selection,
+                        breakdowns,
+                        top_values,
+                        breakdown_sort,
+                }) => {
+                    commands::service_catalog::run_insights(
+                        &targets,
+                        &entity_types,
+                        &filters,
+                        &selection.as_input(),
+                        &breakdowns,
+                        top_values,
+                        breakdown_sort.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::EntityInsights(EntityInsightsArgs {
+                        entity_type,
+                        entity_id,
+                        system,
+                        environments,
+                        selection,
+                        top_values,
+                        breakdown_sort,
+                }) => {
+                    commands::service_catalog::run_entity_insights(
+                        &targets,
+                        &entity_type,
+                        &entity_id,
+                        system.as_deref(),
+                        &environments,
+                        &selection.as_input(),
+                        top_values,
+                        breakdown_sort.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::InsightDrilldown(InsightDrilldownArgs {
+                        insight_type,
+                        entity_type,
+                        filters,
+                        scope,
+                        environment_match,
+                        sort,
+                        sort_order,
+                        page_index,
+                        page_size,
+                        name_search,
+                }) => {
+                    commands::service_catalog::run_insight_drilldown(
+                        &targets,
+                        &insight_type,
+                        &entity_type,
+                        &filters,
+                        scope.as_deref(),
+                        environment_match.as_deref(),
+                        sort.as_deref(),
+                        sort_order.as_deref(),
+                        page_index,
+                        page_size,
+                        name_search.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::EntityInsightDrilldown(EntityInsightDrilldownArgs {
+                        insight_type,
+                        entity_type,
+                        entity_id,
+                        system,
+                        dimension,
+                        environments,
+                        scope,
+                }) => {
+                    commands::service_catalog::run_entity_insight_drilldown(
+                        &targets,
+                        &insight_type,
+                        &entity_type,
+                        &entity_id,
+                        system.as_deref(),
+                        &dimension,
+                        &environments,
+                        scope.as_deref(),
+                        output,
+                    )
+                    .await?;
+                }
+                ServiceCatalogCmd::InsightTypes { cmd } => {
+                    let (archive, InsightTypesArgs { types }) = match cmd {
+                        InsightTypesCmd::Archive(args) => (true, args),
+                        InsightTypesCmd::Unarchive(args) => (false, args),
+                    };
+                    let insight_types =
+                        commands::service_catalog::normalize_insight_types(&types)?;
+                    let verb = if archive { "Archive" } else { "Unarchive" };
+                    confirm_destructive(
+                        &format!("{verb} insight types {} for the whole company?", types.join(", ")),
+                        yes,
+                        agent_mode,
+                    )?;
+                    commands::service_catalog::run_archive_insight_types(
+                        &targets,
+                        &insight_types,
+                        archive,
                         output,
                     )
                     .await?;

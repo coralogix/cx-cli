@@ -8,6 +8,7 @@ const WRITE_VERBS: &[&str] = &[
     "acknowledge",
     "activate",
     "add",
+    "archive",
     "assign",
     "batch",
     "bulk-delete",
@@ -31,6 +32,7 @@ const WRITE_VERBS: &[&str] = &[
     "set-status",
     "settings-update",
     "unacknowledge",
+    "unarchive",
     "unassign",
     "undeploy",
     "update",
@@ -238,6 +240,8 @@ mod tests {
             "batch",
             "activate",
             "settings-update",
+            "archive",
+            "unarchive",
         ];
         for verb in verbs {
             assert!(

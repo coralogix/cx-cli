@@ -256,3 +256,48 @@ fn views_folders_delete() {
 fn slos_delete() {
     assert_gated(&["slos", "delete", "nonexistent"], "slos delete");
 }
+
+#[test]
+fn service_catalog_insight_types_archive() {
+    assert_gated(
+        &[
+            "service-catalog",
+            "insight-types",
+            "archive",
+            "--type",
+            "no-slo",
+        ],
+        "service-catalog insight-types archive",
+    );
+}
+
+#[test]
+fn service_catalog_insight_types_archive_rejects_a_typo_before_confirming() {
+    let (failed, stderr) = cx_agent(&[
+        "service-catalog",
+        "insight-types",
+        "archive",
+        "--type",
+        "no-such-type",
+    ]);
+    assert!(
+        failed
+            && stderr.contains("unknown --type")
+            && !stderr.contains("requires user confirmation"),
+        "expected the type check before the confirmation gate, stderr: {stderr}"
+    );
+}
+
+#[test]
+fn service_catalog_insight_types_unarchive() {
+    assert_gated(
+        &[
+            "service-catalog",
+            "insight-types",
+            "unarchive",
+            "--type",
+            "no-slo",
+        ],
+        "service-catalog insight-types unarchive",
+    );
+}

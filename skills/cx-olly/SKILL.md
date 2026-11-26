@@ -1,6 +1,6 @@
 ---
 name: cx-olly
-description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
+description: This skill should be used when the user asks to "chat with AI", "ask Olly", "ask the agent", "send message to AI", "continue a chat", "follow up on chat", "list chats", "find a chat ID", "show chat history", "which models does Olly support", "list Olly models", "get artifact", "download artifact", "list artifacts", "retrieve generated content", "AI-generated charts", "AI analysis", "conversational observability", "natural language query", or wants to interact with the Coralogix Observability Agent (Olly) using the cx CLI.
 metadata:
   version: "0.1.0"
 ---
@@ -16,6 +16,9 @@ Use this skill to interact with Coralogix's Observability Agent (Olly) via the `
 | Command | Purpose | Key flags |
 |---|---|---|
 | `cx olly ask "message"` | Send a message to the Observability Agent | `--chat-id`, `--model`, `--timeout`, `--agent-to-agent-mode` |
+| `cx olly chats list` | List chats, most recently active first | `--type`, `--metadata`, `--limit`, `--offset` |
+| `cx olly chats get <chat-id>` | Show a chat with its messages | - |
+| `cx olly models` | List the model IDs `ask --model` accepts | - |
 | `cx olly artifacts list` | List all generated artifacts | - |
 | `cx olly artifacts get <id>` | Get artifact content by ID | - |
 
@@ -50,10 +53,11 @@ Use `--chat-id` to continue a conversation and maintain context from previous me
 
 ### Model selection
 
-Available models include `gpt-5.2` (default), `claude-sonnet-4-5`, `sonnet-4.6`, `gpt-5.4`, `claude-haiku-4-5`.
+The default is `gpt-5.2`. The available models differ by region and change over time, so list them instead of guessing:
 
 ```bash
-cx olly ask "Explain this error" --model claude-sonnet-4-5 --agent-to-agent-mode
+cx olly models
+cx olly ask "Explain this error" --model <model-id> --agent-to-agent-mode
 ```
 
 ### Timeout
@@ -78,6 +82,31 @@ cx olly ask "Analyze this for me" --agent-to-agent-mode
 ```
 
 **It's per-call, not per-chat.** `--chat-id` does not remember it - re-pass `--agent-to-agent-mode` on every follow-up turn, or the mode silently flips back to human-facing mid-conversation.
+
+## Chats
+
+### Find a chat
+
+```bash
+cx olly chats list
+cx olly chats list --type ai_connector --limit 10
+cx olly chats list --limit 50 --offset 50
+cx olly chats list --metadata '{"scheduled_task_id":"<id>"}' -o json
+```
+
+Chats are listed most recently active first, 50 at a time by default (`--limit` 1-10000, `--offset` to page). Use the `id` with `cx olly ask --chat-id` or `cx olly chats get`.
+
+- `--type` is one of `web`, `api`, `slack`, `teams`, `query_assistant`, `ai_connector`, `cases`, `scheduled`. Chats created by `cx olly ask` are `ai_connector`.
+- `--metadata` takes a JSON object and returns only the chats whose metadata contains it. Invalid JSON fails before any request is sent.
+
+### Read a chat
+
+```bash
+cx olly chats get <chat-id>
+cx olly chats get <chat-id> -o json
+```
+
+Text mode prints the conversation in order (who said what). `-o json` prints the full API response, including `messages` and `interactions`. In text and toon mode a chat over the configured size limit is written to a temp file and the path is printed.
 
 ## Artifacts
 
@@ -146,7 +175,8 @@ cx olly ask "Perform root cause analysis for the outage on 2024-01-15" \
 ## Key Principles
 
 - **Async by default** - run `cx olly ask` as a background process and poll it for completion; only run inline (blocking) for short questions you expect Olly to answer quickly
-- **Chat IDs enable context** - save the Chat ID from responses to continue conversations
+- **Chat IDs enable context** - save the Chat ID from responses to continue conversations; `cx olly chats list` finds one you lost
+- **Do not guess model IDs** - run `cx olly models`
 - **Use `-o json` for scripting** - pipe to `jq` for filtering and extraction
 - **Artifact IDs are in response text** - look for markdown links like `[Chart](https://...artifact_view/<id>)`
 - **Single-profile only** - `cx olly` does not support multi-profile queries

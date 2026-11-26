@@ -963,6 +963,9 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
   cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
+  cx olly chats list
+  cx olly chats get <chat-id>
+  cx olly models
   cx olly artifacts get <artifact-id>")]
     Olly {
         #[command(subcommand)]
@@ -979,10 +982,7 @@ impl Commands {
     }
 
     fn is_olly(&self) -> bool {
-        match self {
-            Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
-            _ => false,
-        }
+        matches!(self, Self::Olly { cmd } if !matches!(cmd, OllyCmd::Artifacts { .. }))
     }
 }
 
@@ -1299,7 +1299,7 @@ Examples:
         #[arg(long)]
         chat_id: Option<String>,
 
-        /// Model choice (e.g., gpt-5.2, claude-sonnet-4-5, gpt-5.4, claude-haiku-4-5).
+        /// Model choice. Run `cx olly models` to list the models available in your region.
         #[arg(long, default_value = "gpt-5.2")]
         model: String,
 
@@ -1320,6 +1320,70 @@ Examples:
         #[command(subcommand)]
         cmd: OllyArtifactsCmd,
     },
+
+    /// List and read chats.
+    Chats {
+        #[command(subcommand)]
+        cmd: OllyChatsCmd,
+    },
+
+    /// List the models available in this region (the values `ask --model` accepts).
+    #[command(after_help = "\
+Examples:
+  cx olly models
+  cx olly models -o json
+  cx olly ask \"What alerts fired today?\" --model <model-id>")]
+    Models,
+}
+
+#[derive(Subcommand)]
+enum OllyChatsCmd {
+    /// List chats, most recently active first.
+    #[command(after_help = "\
+Examples:
+  cx olly chats list
+  cx olly chats list --type ai_connector --limit 10
+  cx olly chats list --limit 50 --offset 50
+  cx olly chats list --metadata '{\"scheduled_task_id\":\"<id>\"}' -o json")]
+    List {
+        /// Only chats of this type. Chats created by `cx olly ask` are `ai_connector`.
+        #[arg(long = "type", value_parser = [
+            "web", "api", "slack", "teams", "query_assistant", "ai_connector", "cases", "scheduled",
+        ])]
+        chat_type: Option<String>,
+
+        /// Only chats whose metadata contains this JSON object.
+        #[arg(long, value_name = "JSON", value_parser = parse_json_object)]
+        metadata: Option<String>,
+
+        /// Maximum number of chats to return.
+        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=10000))]
+        limit: u32,
+
+        /// Number of chats to skip, for paging.
+        #[arg(long, default_value_t = 0)]
+        offset: u32,
+    },
+
+    /// Show a chat with its messages.
+    #[command(after_help = "\
+Examples:
+  cx olly chats get <chat-id>
+  cx olly chats get <chat-id> -o json")]
+    Get {
+        /// Chat ID (from `cx olly chats list` or the output of `cx olly ask`).
+        chat_id: String,
+    },
+}
+
+/// Accept a flag value only when it is a JSON object, so a typo fails before
+/// any request is sent.
+fn parse_json_object(raw: &str) -> Result<String, String> {
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(serde_json::Value::Object(_)) => Ok(raw.to_string()),
+        Ok(_) => Err("must be a JSON object, for example '{\"key\":\"value\"}'".to_string()),
+        Err(e) => Err(format!("invalid JSON: {e}")),
+    }
 }
 
 #[derive(Subcommand)]
@@ -4987,7 +5051,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Olly gating (olly ask).
+    // Olly gating (`olly ask` and `olly interactions`; artifacts stay readable).
     if cli.command.is_olly() && !global_cfg_early.olly_enabled {
         bail!(
             "The Olly AI assistant is currently disabled in your global configuration.\n\
@@ -7254,6 +7318,37 @@ async fn main() -> Result<()> {
                         .await?;
                     }
                 },
+                OllyCmd::Chats { cmd } => match cmd {
+                    OllyChatsCmd::List {
+                        chat_type,
+                        metadata,
+                        limit,
+                        offset,
+                    } => {
+                        commands::olly::run_chats_list(
+                            &targets,
+                            chat_type.as_deref(),
+                            metadata.as_deref(),
+                            limit,
+                            offset,
+                            output,
+                        )
+                        .await?;
+                    }
+                    OllyChatsCmd::Get { chat_id } => {
+                        commands::olly::run_chats_get(
+                            &targets,
+                            &chat_id,
+                            output,
+                            max_direct,
+                            &temp_dir,
+                        )
+                        .await?;
+                    }
+                },
+                OllyCmd::Models => {
+                    commands::olly::run_models(&targets, output).await?;
+                }
             },
         } // end match cli.command
         Ok::<(), anyhow::Error>(())

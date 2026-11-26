@@ -191,11 +191,37 @@ impl OllyApi {
             .await
     }
 
-    pub async fn get_chat(&self, chat_id: &str) -> Result<ChatWithMessages> {
+    /// List chats, most recently active first. `metadata` is a JSON object
+    /// the API matches by containment before it applies `skip` and `limit`.
+    pub async fn list_chats(
+        &self,
+        limit: u32,
+        skip: u32,
+        chat_type: Option<&str>,
+        metadata: Option<&str>,
+    ) -> Result<Vec<Value>> {
+        let (limit, skip) = (limit.to_string(), skip.to_string());
+        let mut params = vec![("limit", limit.as_str()), ("skip", skip.as_str())];
+        if let Some(chat_type) = chat_type {
+            params.push(("chat_type", chat_type));
+        }
+        if let Some(metadata) = metadata {
+            params.push(("metadata", metadata));
+        }
+        self.client.get(&format!("{CHATS_BASE}/"), &params).await
+    }
+
+    /// The full chat as the API returns it. Parse it into
+    /// [`ChatWithMessages`] to walk the conversation.
+    pub async fn get_chat(&self, chat_id: &str) -> Result<Value> {
         let path = format!("{CHATS_BASE}/{chat_id}");
         self.client
-            .get(&path, &[("response_format", "CONTENT_BLOCKS")])
+            .get(&path, &[("response_format", "content_blocks")])
             .await
+    }
+
+    pub async fn list_models(&self) -> Result<Vec<String>> {
+        self.client.get(&format!("{CHATS_BASE}/models"), &[]).await
     }
 
     /// Send a message to an Olly chat.
@@ -433,6 +459,37 @@ mod tests {
         assert_eq!(chat.id, "chat-123");
         assert_eq!(chat.title, "My Chat");
         assert_eq!(chat.messages.len(), 2);
+    }
+
+    #[test]
+    fn deserialize_chat_get_response_as_returned_by_the_api() {
+        let json = json!({
+            "title": "Reply with 'OK'",
+            "id": "chat-123",
+            "entity_id": "user-1",
+            "created_at": "2026-11-24T11:54:16.594717Z",
+            "shared_options": {"shared_type": "private", "shared_entity_ids": null},
+            "task_shared_options": null,
+            "type": "ai_connector",
+            "metadata": null,
+            "execution_runtime": "default",
+            "messages": [
+                {"id": "m1", "role": "user", "content": [{"type": "text", "text": "Reply OK"}]},
+                {"id": "m2", "role": "assistant", "content": [{"type": "text", "text": "OK"}]}
+            ],
+            "interactions": [{"id": "i1", "chat_id": "chat-123", "status": "COMPLETED"}]
+        });
+        let chat: ChatWithMessages = serde_json::from_value(json).unwrap();
+        assert_eq!(chat.messages[0].role, "user");
+        assert_eq!(chat.messages[1].text_content(), "OK");
+        assert!(chat.interactions[0].is_completed());
+    }
+
+    #[test]
+    fn deserialize_model_list() {
+        let models: Vec<String> =
+            serde_json::from_value(json!(["gpt-5.2", "claude-sonnet-4-5"])).unwrap();
+        assert_eq!(models, ["gpt-5.2", "claude-sonnet-4-5"]);
     }
 
     #[test]

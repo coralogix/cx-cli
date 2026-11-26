@@ -8,6 +8,9 @@ use toon_format::encode_default as toon_encode;
 
 pub mod api;
 mod artifact;
+mod chats;
+
+pub use chats::{run_chats_get, run_chats_list, run_models};
 
 use api::OllyApi;
 use artifact::{download_content, ArtifactContent};

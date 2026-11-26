@@ -1,6 +1,8 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod chats;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};

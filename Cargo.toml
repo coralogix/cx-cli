@@ -17,7 +17,7 @@ clap = { version = "=4.5.37", features = ["derive", "env", "color"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 
 # CLI execution telemetry
-cli-otel = { version = "0.1.0", registry = "coralogix-internal", features = ["clap"] }
+cli-otel = { git = "https://github.com/coralogix/coralogix-opentelemetry-rust", rev = "2c9f2e352f2657500d39909843732b169dd6fda3", features = ["clap", "coralogix"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

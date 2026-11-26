@@ -37,6 +37,7 @@ jobs:
       contents: read
       # dorny/paths-filter reads the PR's changed files through the API.
       pull-requests: read
+      id-token: write
     steps:
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -64,12 +65,23 @@ jobs:
         with:
           key: e2e-ubuntu
 
+      - uses: jfrog/setup-jfrog-cli@v4
+        id: jfrog
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        env:
+          JF_URL: https://cgx.jfrog.io
+        with:
+          oidc-provider-name: github
+          oidc-audience: jfrog-github
+
       - name: Install Linux system dependencies
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Build e2e test binary
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        env:
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         run: cargo test --locked --test e2e --no-run
 
       # Leftovers from crashed runs older than two hours. `--nocapture` so the
@@ -83,6 +95,7 @@ jobs:
           CX_E2E_TEAM_ID: ${{ vars.CX_E2E_TEAM_ID }}
           CX_E2E_ALLOW_WRITES: "1"
           CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         run: cargo test --locked --test e2e sweep_stale_e2e_resources -- --ignored --exact sweeper::sweep_stale_e2e_resources --nocapture
 
       - name: Run e2e suite
@@ -94,6 +107,7 @@ jobs:
           CX_E2E_ALLOW_WRITES: "1"
           CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
           CX_E2E_SKIP_OLLY: ${{ vars.CX_E2E_SKIP_OLLY || '' }}
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         # Tests are independent (unique names, own cleanup), so they run in
         # parallel. The sweeper is excluded here because it already ran.
         run: cargo test --locked --test e2e -- --ignored --test-threads=4 --skip sweep_stale_e2e_resources
@@ -110,4 +124,5 @@ jobs:
           CX_E2E_ALLOW_WRITES: "1"
           CX_E2E_RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
           CX_E2E_SWEEP_MODE: run
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         run: cargo test --locked --test e2e sweep_stale_e2e_resources -- --ignored --exact sweeper::sweep_stale_e2e_resources --nocapture

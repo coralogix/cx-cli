@@ -15,6 +15,9 @@ jobs:
   lint:
     name: Format & Clippy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -38,6 +41,15 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         if: steps.filter.outputs.code == 'true'
 
+      - uses: jfrog/setup-jfrog-cli@v4
+        id: jfrog
+        if: steps.filter.outputs.code == 'true'
+        env:
+          JF_URL: https://cgx.jfrog.io
+        with:
+          oidc-provider-name: github
+          oidc-audience: jfrog-github
+
       - name: Install Linux system dependencies
         if: steps.filter.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
@@ -48,4 +60,6 @@ jobs:
 
       - name: Clippy
         if: steps.filter.outputs.code == 'true'
+        env:
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         run: cargo clippy --locked -- -D warnings

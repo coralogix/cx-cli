@@ -31,10 +31,23 @@ jobs:
     needs: changes
     if: needs.changes.outputs.should_run == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - uses: jfrog/setup-jfrog-cli@v4
+        id: jfrog
+        env:
+          JF_URL: https://cgx.jfrog.io
+        with:
+          oidc-provider-name: github
+          oidc-audience: jfrog-github
+
       - uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb # v2.0.17
+        env:
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         with:
           command: check licenses
 

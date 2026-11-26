@@ -20,6 +20,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      id-token: write
     steps:
       # Path filter only applies on pull_request - on push to master we always
       # build (so the binary-size baseline gets refreshed). dorny/paths-filter
@@ -46,12 +47,23 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
 
+      - uses: jfrog/setup-jfrog-cli@v4
+        id: jfrog
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        env:
+          JF_URL: https://cgx.jfrog.io
+        with:
+          oidc-provider-name: github
+          oidc-audience: jfrog-github
+
       - name: Install Linux system dependencies
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Build release binary
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        env:
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         run: cargo build --release --locked
 
       - name: Report binary size
@@ -126,6 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -158,10 +171,21 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - uses: jfrog/setup-jfrog-cli@v4
+        id: jfrog
+        if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        env:
+          JF_URL: https://cgx.jfrog.io
+        with:
+          oidc-provider-name: github
+          oidc-audience: jfrog-github
+
       - name: Install cross
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build
         if: github.event_name != 'pull_request' || steps.filter.outputs.code == 'true'
+        env:
+          CARGO_REGISTRIES_CORALOGIX_INTERNAL_TOKEN: Bearer ${{ steps.jfrog.outputs.oidc-token }}
         run: cross build --release --locked --target ${{ matrix.target }}

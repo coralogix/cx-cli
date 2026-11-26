@@ -768,9 +768,12 @@ async fn linked_reads_the_linked_cases() {
     Mock::given(method("GET"))
         .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-383/linked-cases"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "children": [{ "id": "c1", "readableId": "CASE-390" }]
+            "linkedCases": {
+                "children": { "cases": [{ "id": "c1", "readableId": "CASE-390" }] }
+            },
+            "pbacTruncated": false
         })))
-        .expect(1)
+        .expect(2)
         .mount(&server)
         .await;
 
@@ -779,6 +782,9 @@ async fn linked_reads_the_linked_cases() {
     run_linked(&targets, "CASE-383", OutputFormat::Json)
         .await
         .expect("run_linked should succeed");
+    run_linked(&targets, "CASE-383", OutputFormat::Text)
+        .await
+        .expect("run_linked text output should succeed");
 }
 
 #[tokio::test]

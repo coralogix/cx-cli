@@ -1084,7 +1084,6 @@ pub async fn run_unlink(
     .await
 }
 
-/// Read a case's parent or children.
 fn has_linked_cases(v: &Value) -> bool {
     let links = &v["linkedCases"];
     !links["parent"]["case"].is_null()
@@ -1093,6 +1092,7 @@ fn has_linked_cases(v: &Value) -> bool {
             .is_some_and(|c| !c.is_empty())
 }
 
+/// Read a case's parent or children.
 pub async fn run_linked(
     targets: &[Arc<ExecutionTarget>],
     case_id: &str,

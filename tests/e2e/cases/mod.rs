@@ -40,6 +40,43 @@ fn cases_events_list() {
     };
     let v = harness::run_ok_json(&["cases", "events", "list", &id, "-o", "json"]);
     harness::assert_array(&v);
+    let v = harness::run_ok_json(&[
+        "cases",
+        "events",
+        "list",
+        &id,
+        "--include-children-events",
+        "-o",
+        "json",
+    ]);
+    harness::assert_array(&v);
+}
+
+#[test]
+#[ignore]
+fn cases_linked() {
+    if harness::require_creds("cases_linked").is_none() {
+        return;
+    }
+    let Some(id) = discover_case_id() else {
+        eprintln!("[e2e] skipping cases_linked: set CX_TEST_CASE_ID to a known case");
+        return;
+    };
+    let v = harness::run_ok_json(&["cases", "linked", &id, "-o", "json"]);
+    assert!(v.is_object(), "expected a JSON object, got: {v}");
+    if let Some(links) = v.get("linkedCases") {
+        if let Some(children) = links.pointer("/children/cases") {
+            harness::assert_array(children);
+        }
+        if let Some(parent) = links.pointer("/parent/case") {
+            assert!(parent.is_object(), "parent.case is not an object: {v}");
+        }
+        assert!(
+            links.pointer("/children/cases").is_some() || links.pointer("/parent/case").is_some(),
+            "linkedCases has neither children.cases nor parent.case: {v}"
+        );
+    }
+    harness::run_ok_nonempty(&["cases", "linked", &id]);
 }
 
 #[test]
@@ -192,8 +229,13 @@ fn cases_write_roundtrip() {
     let Some(id) = discover_case_id() else {
         eprintln!(
             "[e2e] not covered: cases update/comment/assign/unassign/acknowledge/unacknowledge/\
-             set-priority/clear-priority (success path) — no case on the team; set \
-             CX_TEST_CASE_ID to a case id to enable the paired-undo round-trip"
+             set-priority/clear-priority/mute/unmute, update --description (success path) — no \
+             case on the team; set CX_TEST_CASE_ID to a case id to enable the paired-undo \
+             round-trip"
+        );
+        eprintln!(
+            "[e2e] not covered: cases create — a new case is ACTIVE, may notify, and cannot be \
+             deleted; cases set-parent/unlink (success path) — needs a second seeded case"
         );
         return;
     };

@@ -2,17 +2,22 @@
 
 `cx` uses the Coralogix-owned `cli-otel` crate for one execution span per command. The
 generic crate owns OpenTelemetry environment configuration, HTTPS checks, host fields, CI
-and caller
-detection, and the one-second default export deadline. The cx adapter owns consent policy,
-Coralogix attributes, ingress headers, and its safe-field allowlist.
+and caller detection, and the one-second default export deadline. The cx adapter owns
+consent policy, Coralogix attributes, ingress headers, and its safe-field allowlist.
 
 ## Opt-in policy
 
 Telemetry is disabled by default. Set `CX_TELEMETRY=1` (or another truthy value) to opt
-in. `DO_NOT_TRACK` always disables export, even when `CX_TELEMETRY` is enabled. A telemetry
+in. To disable it for one command, prefix the command with `DO_NOT_TRACK=1`, for example:
+
+    DO_NOT_TRACK=1 cx schema
+
+To disable it for the current Bash or Zsh session, run `export DO_NOT_TRACK=1`. In
+PowerShell, run `$env:DO_NOT_TRACK = "1"`. To keep it disabled in future sessions, add the
+variable to your shell profile. `DO_NOT_TRACK` overrides `CX_TELEMETRY` when both are set.
+The opt-in is environment-only and is not remembered in `~/.cx/config.toml`. A telemetry
 destination must also be configured; cx does not export to the generic library's
-localhost default when no destination is set. The opt-in is environment-only and is not
-remembered in `~/.cx/config.toml`.
+localhost default when no destination is set.
 
 ## Export destination
 

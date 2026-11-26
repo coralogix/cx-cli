@@ -17,7 +17,6 @@ use reqwest::{Client, Request, Url};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 
 use crate::config::OutputFormat;
-use crate::config::{self, TelemetryConsent};
 use crate::error::CxError;
 use crate::region::{region_from_url, RegionMatch};
 use crate::safety::ConfirmationCancelled;
@@ -88,14 +87,7 @@ fn endpoint_is_configured() -> bool {
 }
 
 fn consent_allows(context: ConsentContext, endpoint_configured: bool) -> bool {
-    if !endpoint_configured || !config::telemetry_allowed() {
-        return false;
-    }
-    match context.source {
-        ConsentSource::ExplicitOptOut | ConsentSource::MalformedEnvironment => false,
-        ConsentSource::ExplicitOptIn => true,
-        ConsentSource::ImplicitDefault => config::telemetry_consent() == TelemetryConsent::Enabled,
-    }
+    endpoint_configured && matches!(context.source, ConsentSource::ExplicitOptIn)
 }
 
 fn default_resource_attributes() -> Vec<KeyValue> {

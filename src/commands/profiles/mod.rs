@@ -6,9 +6,8 @@ use anyhow::Result;
 use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 
 use crate::config::{
-    has_managed_completions, list_profile_names, load_config, load_config_for_update, load_profile,
-    profile_file, save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile,
-    Region,
+    has_managed_completions, list_profile_names, load_config, load_profile, profile_file,
+    save_config, save_profile, AuthKind, CredentialStorage, OutputFormat, Profile, Region,
 };
 use crate::keyring_store;
 use crate::oauth;
@@ -893,7 +892,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     // by default — no question, no flag. Olly is enabled by default; the
     // `--disable-olly` flag opts out. No prompt either way.
     if is_first_profile {
-        let mut global_config = load_config_for_update();
+        let mut global_config = load_config().unwrap_or_default();
 
         global_config.olly_enabled = !disable_olly;
 
@@ -902,7 +901,7 @@ pub async fn run_add(args: AddArgs) -> Result<()> {
     }
 
     if !is_first_profile {
-        let mut global_config = load_config_for_update();
+        let mut global_config = load_config().unwrap_or_default();
         let should_set_default = if set_default {
             true
         } else if interactive {
@@ -1290,7 +1289,7 @@ pub fn run_set_default(profile_name: String) -> Result<()> {
         anyhow::bail!("Profile '{profile_name}' not found.");
     }
 
-    let mut global_config = load_config_for_update();
+    let mut global_config = load_config().unwrap_or_default();
 
     if global_config.default_profile == profile_name {
         println!("Profile '{profile_name}' is already the default.");

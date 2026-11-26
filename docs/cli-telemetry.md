@@ -8,11 +8,11 @@ Coralogix attributes, ingress headers, and its safe-field allowlist.
 
 ## Opt-in policy
 
-Telemetry is disabled unless `CX_TELEMETRY=1` (or another truthy value) is set, or the
-user explicitly enables it with `telemetry = true` in `~/.cx/config.toml`. It remains
-disabled when `telemetry = false` or `DO_NOT_TRACK` is truthy. A telemetry destination
-must also be configured; cx does not export to the generic library's localhost default
-when no destination is set.
+Telemetry is disabled by default. Set `CX_TELEMETRY=1` (or another truthy value) to opt
+in. `DO_NOT_TRACK` always disables export, even when `CX_TELEMETRY` is enabled. A telemetry
+destination must also be configured; cx does not export to the generic library's
+localhost default when no destination is set. The opt-in is environment-only and is not
+remembered in `~/.cx/config.toml`.
 
 ## Export destination
 

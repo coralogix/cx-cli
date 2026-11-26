@@ -95,33 +95,3 @@ async fn telemetry_v1_skips_export_when_cx_telemetry_unset() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
-
-#[tokio::test]
-async fn telemetry_v1_skips_export_when_config_opts_out() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/traces"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(0)
-        .mount(&server)
-        .await;
-
-    let home = TempDir::new().expect("temp home");
-    let cx_dir = home.path().join(".cx");
-    std::fs::create_dir_all(&cx_dir).expect("cx dir");
-    std::fs::write(cx_dir.join("config.toml"), "telemetry = false\n").expect("config");
-
-    let mut cx = base_command(&home);
-    cx.env("CX_TELEMETRY", "1")
-        .env("CX_OTLP_ENDPOINT", format!("{}/v1/traces", server.uri()))
-        .env("CX_OTLP_API_KEY", "local-test-key")
-        .arg("schema");
-
-    let output = cx.output().expect("run cx");
-    assert!(
-        output.status.success(),
-        "stdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}

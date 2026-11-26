@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "coralogix-cli"
-version = "0.1.35"
+version = "0.1.37"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -368,6 +368,8 @@ dependencies = [
  "clap",
  "clap_complete",
  "colored",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
  "dirs",
  "dotenvy",
  "flate2",
@@ -396,6 +398,7 @@ dependencies = [
  "toon-format",
  "url",
  "uuid",
+ "windows-sys 0.61.2",
  "wiremock",
 ]
 

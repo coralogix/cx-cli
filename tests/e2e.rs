@@ -66,6 +66,8 @@ mod olly;
 mod output_formats;
 #[path = "e2e/parsing_rules.rs"]
 mod parsing_rules;
+#[path = "e2e/product_analytics.rs"]
+mod product_analytics;
 #[path = "e2e/profiles_and_local.rs"]
 mod profiles_and_local;
 #[path = "e2e/profiling.rs"]

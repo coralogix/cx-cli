@@ -34,7 +34,7 @@ Query:
   dataprime          DataPrime language reference and raw queries
   docs               Search and fetch official Coralogix product documentation
   search-fields      Search log/span fields by description or value content
-  datasets           List queryable datasets for DataPrime sources
+  datasets           Inspect datasets, their fields and sample values
 
 Observe:
   dashboards         Manage dashboards and dashboard folders
@@ -42,6 +42,7 @@ Observe:
   slos               Manage SLO definitions
   infra              Query infrastructure resources and their data
   rum                Map RUM stack traces to source code with uploaded source maps
+  product-analytics  Query RUM product analytics: funnels, pathways, heatmaps, views, actions
 
 AI:
   ai-center (risky)  Manage AI Center applications, evaluations, policies, and pricing
@@ -212,6 +213,7 @@ Which CLI commands have user-facing skills in `skills/`:
 | `cx schema` | `cx-telemetry-querying` | Covered (via gateway) |
 | `cx olly` | `cx-olly` | Covered |
 | `cx infra` | `cx-infra` | Covered |
+| `cx product-analytics` | `cx-product-analytics` | Covered |
 | `cx profiles` | - | Local command |
 | `cx skills` | - | Local command (installs the skills in this table) |
 | `cx cleanup` | - | Local command |

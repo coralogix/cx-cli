@@ -19,6 +19,7 @@ const WRITE_VERBS: &[&str] = &[
     "deploy",
     "disable",
     "enable",
+    "mute",
     "overwrite",
     "remove",
     "reorder",
@@ -28,6 +29,7 @@ const WRITE_VERBS: &[&str] = &[
     "set-active",
     "set-default",
     "set-idp",
+    "set-parent",
     "set-priority",
     "set-status",
     "settings-update",
@@ -35,6 +37,8 @@ const WRITE_VERBS: &[&str] = &[
     "unarchive",
     "unassign",
     "undeploy",
+    "unlink",
+    "unmute",
     "update",
 ];
 

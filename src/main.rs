@@ -617,11 +617,15 @@ Examples:
     #[command(after_help = "\
 Examples:
   cx cases get <case-id>
+  cx cases create --title \"Payments latency\" --priority P2 --description \"p99 up 3x since 10:00 UTC\"
   cx cases assign <case-id> --user alice@example.com
   cx cases acknowledge <case-id>
   cx cases resolve <case-id> --reason \"Mitigated by rollback\"
   cx cases close <case-id>
   cx cases comment <case-id> --text \"Investigating the root cause\"
+  cx cases mute <case-id>
+  cx cases set-parent <child-case-id> --parent <parent-case-id> --mute-child
+  cx cases linked <case-id>
   cx cases events list <case-id>
   cx cases notifications <case-id>")]
     Cases {
@@ -1789,12 +1793,58 @@ Request bodies:
 
 #[derive(Subcommand)]
 enum CasesCmd {
+    /// Create a case manually.
+    #[command(after_help = "\
+A manually created case is not linked to any alert or other indicator. The Cases
+service never updates, resolves, or reopens it on its own: you own its whole
+lifecycle (acknowledge, assign, resolve, close). The description is the only
+context the case carries, so put the evidence there - what is wrong, impact,
+time window, links to queries or dashboards.
+
+Labels feed filtering, category derivation, and notification routing
+(routing.* labels).
+
+Examples:
+  cx cases create --title \"Payments latency\" --priority P2 \\
+    --description \"p99 latency on payments-api up 3x since 10:00 UTC.\"
+  cx cases create --title \"Suspicious logins\" --priority P1 \\
+    --description \"...\" --case-label routing.team=security --assignee alice@example.com")]
+    Create {
+        /// Case title.
+        #[arg(long)]
+        title: String,
+        /// Case description - the only context a manual case carries.
+        #[arg(long)]
+        description: String,
+        /// Priority (P1, P2, P3, P4, P5).
+        #[arg(long)]
+        priority: String,
+        /// Case label as key=value (repeatable). Not `--label`, which selects
+        /// profiles for fan-out.
+        #[arg(long = "case-label", value_name = "KEY=VALUE")]
+        labels: Vec<String>,
+        /// Assignee - an email address (resolved via the team-members
+        /// directory) or a raw user ID.
+        #[arg(long)]
+        assignee: Option<String>,
+        /// Initial status: ACTIVE (default) or ACKNOWLEDGED.
+        #[arg(long)]
+        status: Option<String>,
+    },
     /// Get a single case by ID.
     Get {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
     /// Update mutable fields on a case.
+    #[command(after_help = "\
+--description replaces the whole description; nothing is appended. Pass the
+complete new text (at most 10,000 characters). Short follow-ups belong in
+`cx cases comment`.
+
+Examples:
+  cx cases update CASE-123 --title \"Payments latency (EU only)\"
+  cx cases update CASE-123 --description \"p99 up 3x since 10:00 UTC. Root cause: deploy v4.12, rolled back 11:05 UTC.\"")]
     Update {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
@@ -1804,6 +1854,9 @@ enum CasesCmd {
         /// Resolution reason.
         #[arg(long)]
         resolution_reason: Option<String>,
+        /// New case description. Replaces the whole description.
+        #[arg(long)]
+        description: Option<String>,
     },
     /// Add a comment to a case.
     Comment {
@@ -1868,10 +1921,61 @@ enum CasesCmd {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         id: String,
     },
+    /// Mute a case so it stops sending notifications. Its status does not change.
+    Mute {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Restore notifications for a muted case.
+    Unmute {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
+    /// Make a case the child of another case.
+    #[command(
+        group(clap::ArgGroup::new("mute").required(true).args(["mute_child", "no_mute_child"])),
+        after_help = "\
+Examples:
+  cx cases set-parent CASE-390 --parent CASE-383 --mute-child
+  cx cases set-parent CASE-390 --parent CASE-383 --no-mute-child
+
+The case given first becomes the CHILD; --parent is the parent. Links are one
+level deep: a case has at most one parent and cannot be both a parent and a child."
+    )]
+    SetParent {
+        /// Case that becomes the child (UUID or readable ID, e.g. CASE-390).
+        id: String,
+        /// Case that becomes the parent (UUID or readable ID, e.g. CASE-383).
+        #[arg(long)]
+        parent: String,
+        /// Mute the child, so the parent is the single notifying case.
+        #[arg(long)]
+        mute_child: bool,
+        /// Leave the child notifying alongside the parent.
+        #[arg(long)]
+        no_mute_child: bool,
+    },
+    /// Remove the parent-child link between two cases.
+    #[command(after_help = "\
+Examples:
+  cx cases unlink CASE-390 --linked CASE-383")]
+    Unlink {
+        /// Case ID (UUID or readable ID, e.g. CASE-390).
+        id: String,
+        /// The case it is linked to (UUID or readable ID).
+        #[arg(long)]
+        linked: String,
+    },
+    /// Show a case's parent or children.
+    Linked {
+        /// Case ID (UUID or readable ID, e.g. CASE-123).
+        id: String,
+    },
     /// Inspect the event timeline of a case.
     #[command(after_help = "\
 Examples:
   cx cases events list <case-id>
+  cx cases events list <parent-case-id> --include-children-events
   cx cases events get <event-id>")]
     Events {
         #[command(subcommand)]
@@ -1895,6 +1999,9 @@ enum CasesEventsCmd {
     List {
         /// Case ID (UUID or readable ID, e.g. CASE-123).
         case_id: String,
+        /// Also include events from the case's child cases (each event carries its caseId).
+        #[arg(long)]
+        include_children_events: bool,
     },
     /// Get a single case event by its event ID.
     Get {
@@ -5758,6 +5865,24 @@ async fn main() -> Result<()> {
             },
 
             Commands::Cases { cmd } => match cmd {
+                CasesCmd::Create {
+                    title,
+                    description,
+                    priority,
+                    labels,
+                    assignee,
+                    status,
+                } => {
+                    let args = commands::cases::CreateCaseArgs {
+                        title: &title,
+                        description: &description,
+                        priority: &priority,
+                        labels: &labels,
+                        assignee: assignee.as_deref(),
+                        status: status.as_deref(),
+                    };
+                    commands::cases::run_create(&targets, &args, output).await?;
+                }
                 CasesCmd::Get { id } => {
                     commands::cases::run_get(&targets, &id, output).await?;
                 }
@@ -5765,12 +5890,14 @@ async fn main() -> Result<()> {
                     id,
                     title,
                     resolution_reason,
+                    description,
                 } => {
                     commands::cases::run_update(
                         &targets,
                         &id,
                         title.as_deref(),
                         resolution_reason.as_deref(),
+                        description.as_deref(),
                         output,
                     )
                     .await?;
@@ -5837,9 +5964,39 @@ async fn main() -> Result<()> {
                 CasesCmd::ClearPriority { id } => {
                     commands::cases::run_clear_priority(&targets, &id, output).await?;
                 }
+                CasesCmd::Mute { id } => {
+                    commands::cases::run_mute(&targets, &id, output).await?;
+                }
+                CasesCmd::Unmute { id } => {
+                    commands::cases::run_unmute(&targets, &id, output).await?;
+                }
+                CasesCmd::SetParent {
+                    id,
+                    parent,
+                    mute_child,
+                    no_mute_child: _,
+                } => {
+                    commands::cases::run_set_parent(&targets, &id, &parent, mute_child, output)
+                        .await?;
+                }
+                CasesCmd::Unlink { id, linked } => {
+                    commands::cases::run_unlink(&targets, &id, &linked, output).await?;
+                }
+                CasesCmd::Linked { id } => {
+                    commands::cases::run_linked(&targets, &id, output).await?;
+                }
                 CasesCmd::Events { cmd } => match cmd {
-                    CasesEventsCmd::List { case_id } => {
-                        commands::cases::run_events_list(&targets, &case_id, output).await?;
+                    CasesEventsCmd::List {
+                        case_id,
+                        include_children_events,
+                    } => {
+                        commands::cases::run_events_list(
+                            &targets,
+                            &case_id,
+                            include_children_events,
+                            output,
+                        )
+                        .await?;
                     }
                     CasesEventsCmd::Get { event_id } => {
                         commands::cases::run_event_get(&targets, &event_id, output).await?;
@@ -7600,5 +7757,43 @@ mod tests {
         ] {
             assert!(datasets_command(args).is_ok(), "{args:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_definition_tests {
+    use clap::{CommandFactory, Parser};
+
+    use super::{CasesCmd, Cli, Commands};
+
+    #[test]
+    fn cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn cases_create_case_label_does_not_select_profiles() {
+        let cli = Cli::try_parse_from([
+            "cx",
+            "cases",
+            "create",
+            "--title",
+            "t",
+            "--priority",
+            "P5",
+            "--description",
+            "d",
+            "--case-label",
+            "routing.team=payments",
+        ])
+        .expect("cases create parses");
+        assert!(cli.label.is_empty());
+        let Commands::Cases {
+            cmd: CasesCmd::Create { labels, .. },
+        } = cli.command
+        else {
+            panic!("expected cases create");
+        };
+        assert_eq!(labels, ["routing.team=payments"]);
     }
 }

@@ -171,12 +171,16 @@ impl TeammateDirectory {
 // --- API client ---
 
 const CASES_BASE: &str = "/mgmt/openapi/5/cases/cases/v1";
+const CASES_CREATE: &str = "/mgmt/openapi/5/cases/cases/create/v1";
 const EVENTS_BASE: &str = "/mgmt/openapi/5/cases/events/v1";
 const PRIORITY_BASE: &str = "/mgmt/openapi/5/cases/priority-override/v1";
 const ASSIGNED_BASE: &str = "/mgmt/openapi/5/cases/assigned/v1";
 const ACKNOWLEDGED_BASE: &str = "/mgmt/openapi/5/cases/acknowledged/v1";
 const CLOSED_BASE: &str = "/mgmt/openapi/5/cases/closed/v1";
 const RESOLVED_BASE: &str = "/mgmt/openapi/5/cases/resolved/v1";
+const MUTED_BASE: &str = "/mgmt/openapi/5/cases/muted/v1";
+/// `linkAs` value that makes the case in the path the child of `targetCaseId`.
+const LINK_AS_CHILD: &str = "LINKED_CASE_RELATIONSHIP_CHILD";
 const NOTIFICATION_DELIVERIES_BASE: &str = "/mgmt/openapi/5/cases/notifications/v1/deliveries";
 const USERS_BASE: &str = "/mgmt/openapi/5/aaa/teams/v2";
 /// Page size for the paginated team-users search. The endpoint caps how many
@@ -196,6 +200,13 @@ impl<'a> CasesApi<'a> {
     pub async fn get(&self, id: &str) -> Result<Value> {
         let path = format!("{CASES_BASE}/{id}");
         self.client.get(&path, &[]).await
+    }
+
+    /// Create a case manually. The body is a `CreateCaseRequest` (title,
+    /// priority, and optional description, labels, assignee, status); the
+    /// created case is not linked to any indicator.
+    pub async fn create(&self, body: &Value) -> Result<Value> {
+        self.client.post(CASES_CREATE, body).await
     }
 
     /// Update a case (partial patch). The endpoint takes the updatable fields
@@ -261,10 +272,80 @@ impl<'a> CasesApi<'a> {
         self.client.delete(&path).await
     }
 
-    /// List events for a case.
-    pub async fn list_events(&self, case_id: &str) -> Result<ListEventsResponse> {
-        let path = format!("{CASES_BASE}/{case_id}/events");
+    /// Mute a case so it stops sending notifications. Its status is unchanged.
+    pub async fn mute(&self, id: &str) -> Result<Value> {
+        let path = format!("{MUTED_BASE}/{id}");
+        self.client
+            .put_or_empty(&path, &serde_json::json!({}))
+            .await
+    }
+
+    /// Restore notifications for a muted case.
+    pub async fn unmute(&self, id: &str) -> Result<Value> {
+        let path = format!("{MUTED_BASE}/{id}");
+        self.client.delete(&path).await
+    }
+
+    /// Read a case's parent or children.
+    pub async fn list_linked(&self, id: &str) -> Result<Value> {
+        let path = format!("{CASES_BASE}/{id}/linked-cases");
         self.client.get(&path, &[]).await
+    }
+
+    /// Make `child_id` a child of `parent_uuid`. The link endpoint takes the
+    /// parent only as a UUID.
+    pub async fn set_parent(
+        &self,
+        child_id: &str,
+        parent_uuid: &str,
+        mute_child: bool,
+    ) -> Result<Value> {
+        let path = format!("{CASES_BASE}/{child_id}/linked-cases");
+        let body = serde_json::json!({
+            "targetCaseId": parent_uuid,
+            "linkAs": LINK_AS_CHILD,
+            "muteChild": mute_child,
+        });
+        self.client.post_or_empty(&path, &body).await
+    }
+
+    /// Remove the parent-child link between `id` and `linked_uuid`.
+    pub async fn unlink(&self, id: &str, linked_uuid: &str) -> Result<Value> {
+        let path = format!("{CASES_BASE}/{id}/linked-cases/{linked_uuid}");
+        self.client.delete(&path).await
+    }
+
+    /// Resolve a case reference (UUID or readable ID such as CASE-123) to its
+    /// UUID, for the endpoints that accept only UUIDs.
+    pub async fn resolve_case_uuid(&self, id: &str) -> Result<String> {
+        let trimmed = id.trim();
+        if uuid::Uuid::parse_str(trimmed).is_ok() {
+            return Ok(trimmed.to_string());
+        }
+        let case: Value = self.get(trimmed).await?;
+        case.get("case")
+            .and_then(|c| c.get("id"))
+            .and_then(Value::as_str)
+            .map(String::from)
+            .ok_or_else(|| crate::error::CxError::Api {
+                status: 0,
+                message: format!("case '{trimmed}' has no id in the API response"),
+            })
+    }
+
+    /// List events for a case.
+    pub async fn list_events(
+        &self,
+        case_id: &str,
+        include_children: bool,
+    ) -> Result<ListEventsResponse> {
+        let path = format!("{CASES_BASE}/{case_id}/events");
+        let params: &[(&str, &str)] = if include_children {
+            &[("includeChildrenEvents", "true")]
+        } else {
+            &[]
+        };
+        self.client.get(&path, params).await
     }
 
     /// Add a comment to a case. The body field is `text`; the server stores it

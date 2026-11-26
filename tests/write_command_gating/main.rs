@@ -346,3 +346,30 @@ fn product_analytics_settings_update() {
         "product-analytics settings update",
     );
 }
+
+#[test]
+fn olly_scheduled_tasks_writes() {
+    let tasks = |args: &[&str]| {
+        let mut all = vec!["olly", "scheduled-tasks"];
+        all.extend_from_slice(args);
+        assert_gated(&all, &all.join(" "));
+    };
+    tasks(&[
+        "create",
+        "--title",
+        "T",
+        "--prompt",
+        "P",
+        "--model",
+        "gpt-5.2",
+        "--start-at",
+        "now+1h",
+    ]);
+    tasks(&["update", "nonexistent", "--title", "New title"]);
+    tasks(&["set-schedule", "nonexistent", "--start-at", "now+1h"]);
+    tasks(&["enable", "nonexistent"]);
+    tasks(&["disable", "nonexistent"]);
+    tasks(&["share", "nonexistent", "--with", "org"]);
+    tasks(&["delete", "nonexistent"]);
+    tasks(&["run", "nonexistent"]);
+}

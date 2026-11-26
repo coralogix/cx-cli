@@ -104,6 +104,7 @@ off this list only with a safe, repeatable way to run it.
 | `notifications presets set-default` | No command reads the current default, so it cannot be restored. |
 | `cases` writes on a real case (`cases_write_roundtrip`) | Manual only, with `CX_TEST_CASE_ID`; it mutates one shared case and is not parallel-safe. The 404 paths of every verb run in CI. |
 | `olly ask` | AI features are not enabled on the test team (403); the test skips. |
+| `olly scheduled-tasks` writes, `get`, `runs` | The API needs a user identity and CI runs with a team API key, which gets 403 on every endpoint; `create` and `run` also need AI consent. The e2e test runs `list` and accepts either a task list or that 403. Everything else is covered by wiremock only (`tests/olly/scheduled_tasks.rs`). |
 
 ### CI
 

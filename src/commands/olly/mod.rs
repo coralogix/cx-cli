@@ -12,6 +12,14 @@ mod artifact;
 use api::OllyApi;
 use artifact::{download_content, ArtifactContent};
 
+mod scheduled_tasks;
+
+pub use scheduled_tasks::{
+    parse_every, parse_id, parse_start_at, run_tasks_create, run_tasks_delete, run_tasks_get,
+    run_tasks_list, run_tasks_run, run_tasks_runs, run_tasks_set_enabled, run_tasks_set_schedule,
+    run_tasks_share, run_tasks_update, ScheduleFlags, TaskContentFlags,
+};
+
 use crate::config::OutputFormat;
 use crate::execution::ExecutionTarget;
 use crate::render;

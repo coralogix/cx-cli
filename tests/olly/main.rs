@@ -1,5 +1,6 @@
 #[path = "../common/mod.rs"]
 mod common;
+mod scheduled_tasks;
 
 use std::fs;
 use std::path::PathBuf;

@@ -163,6 +163,24 @@ fn olly_disabled_allows_olly_artifacts() {
 }
 
 #[test]
+fn olly_disabled_blocks_olly_scheduled_tasks() {
+    let tmp = temp_home();
+    for args in [&["list"][..], &["run", "task-1", "--yes"]] {
+        let output = cx_with_config(&tmp, "olly_enabled = false\n")
+            .args(["olly", "scheduled-tasks"])
+            .args(args)
+            .args(["--api-key", "fake", "--region", "us1"])
+            .output()
+            .expect("failed to run cx");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success() && stderr.contains("currently disabled"),
+            "{args:?} should be blocked, stderr: {stderr}"
+        );
+    }
+}
+
+#[test]
 fn olly_enabled_allows_olly_ask() {
     let tmp = temp_home();
     let output = cx_with_config(&tmp, "olly_enabled = true\n")

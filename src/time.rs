@@ -16,6 +16,31 @@ pub fn parse_timestamp(input: &str) -> Result<String> {
     Ok(format_api_timestamp(parse_datetime(input)?))
 }
 
+/// Parse a time that may lie in the future: `now+1h` (spaces around the plus
+/// are fine) or anything [`parse_timestamp`] accepts. For commands that
+/// schedule something; query commands keep rejecting `now+...`.
+pub fn parse_timestamp_allowing_future(input: &str) -> Result<String> {
+    let Some(duration_str) = input
+        .trim()
+        .strip_prefix("now")
+        .and_then(|rest| rest.trim().strip_prefix('+'))
+    else {
+        return parse_timestamp(input);
+    };
+    let std_duration = humantime::parse_duration(duration_str.trim()).map_err(|e| {
+        anyhow::anyhow!(
+            "Could not parse duration '{}' in '{input}': {e}. \
+             Examples: 'now+1h', 'now+30m', 'now+3d'.",
+            duration_str.trim()
+        )
+    })?;
+    let instant = chrono::Duration::from_std(std_duration)
+        .ok()
+        .and_then(|duration| Utc::now().checked_add_signed(duration))
+        .ok_or_else(|| anyhow::anyhow!("'{input}' is too far in the future."))?;
+    Ok(format_api_timestamp(instant))
+}
+
 /// Parse the same time expressions as [`parse_timestamp`], returning an RFC 3339
 /// instant at nanosecond precision.
 pub fn parse_timestamp_nanos(input: &str) -> Result<String> {
@@ -52,8 +77,14 @@ pub fn whole_minute_before_now(duration: &str) -> Result<String> {
         )
     })?;
     Ok(format_whole_minute(
-        Utc::now() - chrono::Duration::from_std(std_duration)?,
+        before(Utc::now(), std_duration)
+            .ok_or_else(|| anyhow::anyhow!("'{duration}' is too far in the past."))?,
     ))
+}
+
+/// `None` when the duration is longer than the calendar reaches back.
+fn before(instant: DateTime<Utc>, duration: std::time::Duration) -> Option<DateTime<Utc>> {
+    instant.checked_sub_signed(chrono::Duration::from_std(duration).ok()?)
 }
 
 fn format_whole_minute(dt: DateTime<Utc>) -> String {
@@ -81,8 +112,8 @@ fn parse_datetime_at(input: &str, now: DateTime<Utc>) -> Result<DateTime<Utc>> {
                     input
                 )
             })?;
-            let chrono_duration = chrono::Duration::from_std(std_duration)?;
-            now - chrono_duration
+            before(now, std_duration)
+                .ok_or_else(|| anyhow::anyhow!("'{input}' is too far in the past."))?
         } else {
             bail!(
                 "Invalid time expression '{}'. \
@@ -190,6 +221,30 @@ mod tests {
     fn invalid_expression_errors() {
         assert!(parse_timestamp("yesterday").is_err());
         assert!(parse_timestamp("now+1h").is_err());
+        assert!(parse_timestamp("now-300000y").is_err());
+        assert!(whole_minute_before_now("300000y").is_err());
+    }
+
+    #[test]
+    fn allowing_future_adds_the_duration_and_keeps_other_forms() {
+        let parsed = |input| {
+            parse_timestamp_allowing_future(input)
+                .unwrap()
+                .parse::<DateTime<Utc>>()
+                .unwrap()
+        };
+        for input in ["now+1h", "now + 1h", " now +1h "] {
+            let ahead = (parsed(input) - Utc::now()).num_seconds();
+            assert!((3595..=3600).contains(&ahead), "{input}: {ahead}");
+        }
+        assert!((parsed("now-1h") - Utc::now()).num_seconds() < -3590);
+        assert_eq!(
+            parse_timestamp_allowing_future("2026-12-01T09:00:00+02:00").unwrap(),
+            "2026-12-01T07:00:00.000Z"
+        );
+        assert!(parse_timestamp_allowing_future("now+soon").is_err());
+        assert!(parse_timestamp_allowing_future("now+300000y").is_err());
+        assert!(parse_timestamp_allowing_future("tomorrow").is_err());
     }
 
     #[test]

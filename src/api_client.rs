@@ -263,6 +263,32 @@ pub(crate) fn extract_error_detail(body: &str) -> Option<String> {
         .or_else(|| non_empty(&v["error"]))
         .or_else(|| non_empty(&v["error"]["message"]))
         .or_else(|| non_empty(&v["detail"]))
+        .or_else(|| validation_messages(&v["detail"]))
+}
+
+/// The messages of a FastAPI 422 body, where `detail` is a list with one
+/// entry per broken rule: `{"loc": ["body", "start_at"], "msg": "..."}`.
+/// Each message is prefixed with its field unless the rule is about the whole
+/// body. The entries also echo the request, which is left out.
+fn validation_messages(detail: &Value) -> Option<String> {
+    let messages: Vec<String> = detail
+        .as_array()?
+        .iter()
+        .filter_map(|entry| {
+            let message = entry["msg"].as_str()?;
+            let message = message.strip_prefix("Value error, ").unwrap_or(message);
+            let field = entry["loc"]
+                .as_array()
+                .and_then(|loc| loc.last())
+                .and_then(Value::as_str)
+                .filter(|field| *field != "body");
+            Some(match field {
+                Some(field) => format!("{field}: {message}"),
+                None => message.to_string(),
+            })
+        })
+        .collect();
+    (!messages.is_empty()).then(|| messages.join("; "))
 }
 
 #[cfg(test)]
@@ -274,6 +300,36 @@ mod tests {
         assert_eq!(cli_user_agent(Some("CURSOR_AGENT")), "cx-cli/cursor_agent");
         assert_eq!(cli_user_agent(Some("CLAUDE_CODE")), "cx-cli/claude_code");
         assert_eq!(cli_user_agent(None), "cx-cli/direct");
+    }
+
+    #[test]
+    fn reads_the_messages_of_a_fastapi_validation_error() {
+        let body = serde_json::json!({"detail": [
+            {
+                "type": "value_error",
+                "loc": ["body"],
+                "msg": "Value error, interval_seconds or interval_months is required when start_at is in the past",
+                "input": {"start_at": "2026-11-20T09:00:00Z", "enabled": true}
+            },
+            {
+                "type": "uuid_parsing",
+                "loc": ["path", "task_id"],
+                "msg": "Input should be a valid UUID",
+                "input": "task-1"
+            }
+        ]});
+        assert_eq!(
+            extract_error_detail(&body.to_string()).as_deref(),
+            Some(
+                "interval_seconds or interval_months is required when start_at is in the past; \
+                 task_id: Input should be a valid UUID"
+            )
+        );
+        assert_eq!(extract_error_detail(r#"{"detail": []}"#), None);
+        assert_eq!(
+            extract_error_detail(r#"{"detail": [{"loc": ["body"]}]}"#),
+            None
+        );
     }
 
     #[test]

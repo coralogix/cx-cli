@@ -963,6 +963,8 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
   cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
+  cx olly scheduled-tasks list
+  cx olly scheduled-tasks runs <task-id>
   cx olly artifacts get <artifact-id>")]
     Olly {
         #[command(subcommand)]
@@ -979,10 +981,7 @@ impl Commands {
     }
 
     fn is_olly(&self) -> bool {
-        match self {
-            Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
-            _ => false,
-        }
+        matches!(self, Self::Olly { cmd } if !matches!(cmd, OllyCmd::Artifacts { .. }))
     }
 }
 
@@ -1315,6 +1314,22 @@ Examples:
         agent_to_agent_mode: bool,
     },
 
+    /// Manage scheduled tasks: prompts Olly runs on a schedule.
+    #[command(after_help = "\
+Scheduled tasks need a personal API key or a logged-in profile. Team API keys
+are not supported.
+
+Examples:
+  cx olly scheduled-tasks list
+  cx olly scheduled-tasks create --title \"Daily errors\" --prompt \"Summarize new errors\" \\
+      --model <model-id> --start-at now+1h --every 1d --yes
+  cx olly scheduled-tasks run <task-id> --yes
+  cx olly scheduled-tasks runs <task-id>")]
+    ScheduledTasks {
+        #[command(subcommand)]
+        cmd: OllyScheduledTasksCmd,
+    },
+
     /// Manage artifacts from assistant responses.
     Artifacts {
         #[command(subcommand)]
@@ -1339,6 +1354,292 @@ Examples:
     Get {
         /// Artifact ID (UUID from the assistant's response).
         artifact_id: String,
+    },
+}
+
+const REASONING_EFFORTS: [&str; 6] = ["none", "minimal", "low", "medium", "high", "xhigh"];
+
+#[derive(Subcommand)]
+enum OllyScheduledTasksCmd {
+    /// List your scheduled tasks.
+    #[command(after_help = "\
+Examples:
+  cx olly scheduled-tasks list
+  cx olly scheduled-tasks list --kind watch_dashboard
+  cx olly scheduled-tasks list --shared
+  cx olly scheduled-tasks list --dashboard <dashboard-id> -o json")]
+    List {
+        /// Only tasks of this kind.
+        #[arg(long, value_parser = ["standard", "watch_dashboard"], conflicts_with = "dashboard")]
+        kind: Option<String>,
+
+        /// List the tasks other users shared with you instead of your own.
+        #[arg(long)]
+        shared: bool,
+
+        /// Only the tasks that watch this dashboard.
+        #[arg(long, value_name = "ID", value_parser = commands::olly::parse_id)]
+        dashboard: Option<String>,
+    },
+
+    /// Show one scheduled task.
+    #[command(after_help = "\
+You can see a task when you own it or it is shared with you.
+
+Examples:
+  cx olly scheduled-tasks get <task-id>
+  cx olly scheduled-tasks get <task-id> -o json > task.json")]
+    Get {
+        /// Task ID (from `cx olly scheduled-tasks list`).
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+    },
+
+    /// Create a scheduled task from flags or from a JSON file [requires --yes].
+    #[command(after_help = "\
+Flags cover a plain task. Use --from-file for a notification, a dashboard
+watch or sharing: the file is the API's create body, so the output of
+`get -o json` can be edited and created again (give it a new `start_at`).
+
+--start-at must be in the future and at most one month ahead. Without --every
+or --monthly the task runs once.
+
+Example file (only title, prompt, model_choice and start_at are required):
+  {
+    \"title\": \"Checkout dashboard watch\",
+    \"prompt\": \"Check the checkout dashboard for anomalies\",
+    \"model_choice\": \"<model-id>\",
+    \"reasoning_effort\": \"medium\",
+    \"start_at\": \"2026-12-01T09:00:00Z\",
+    \"interval_seconds\": 86400,
+    \"enabled\": true,
+    \"kind\": \"watch_dashboard\",
+    \"metadata\": {\"dashboard_url\": \"https://<team>.app.coralogix.com/#/dashboards/<id>\"},
+    \"notification\": {
+      \"type\": \"on_condition\",
+      \"condition\": \"error rate above 5%\",
+      \"connector_ids\": [\"<id from `cx notifications connectors list`>\"]
+    },
+    \"shared_options\": {\"shared_type\": \"entire_organization\"}
+  }
+
+`interval_seconds` is a whole number of hours from 3600 to 604800; use
+`interval_months: 1` instead for monthly. `kind` is `standard` (default, no
+`metadata`) or `watch_dashboard`. `notification.type` is `every_run`,
+`olly_judges` or `on_condition` (the only one with `condition`), with 1 to 5
+email, Slack or Microsoft Teams connectors. A key the API does not read
+(a typo, for example) fails the command before any request.
+
+Examples:
+  cx olly scheduled-tasks create --title \"Daily errors\" --prompt \"Summarize new errors\" \\
+      --model <model-id> --start-at now+1h --every 1d --yes
+  cx olly scheduled-tasks create --title \"Deploy check\" --prompt \"Did the deploy raise errors?\" \\
+      --model <model-id> --start-at 2026-12-01T09:00:00Z --yes
+  cx olly scheduled-tasks create --from-file task.json --yes
+  cat task.json | cx olly scheduled-tasks create --from-file - --yes")]
+    Create {
+        /// Path to a JSON file with the task (`-` reads stdin). Cannot be
+        /// combined with the other flags.
+        #[arg(long, value_name = "PATH", conflicts_with_all = [
+            "title", "prompt", "model", "reasoning_effort", "start_at", "every", "monthly",
+        ])]
+        from_file: Option<String>,
+
+        /// The task's title.
+        #[arg(long, required_unless_present = "from_file")]
+        title: Option<String>,
+
+        /// The prompt Olly runs each time.
+        #[arg(long, required_unless_present = "from_file")]
+        prompt: Option<String>,
+
+        /// Model ID, as `cx olly ask --model` takes it.
+        #[arg(long, required_unless_present = "from_file")]
+        model: Option<String>,
+
+        /// How much reasoning the model applies [default: medium].
+        #[arg(long, value_parser = REASONING_EFFORTS)]
+        reasoning_effort: Option<String>,
+
+        /// First run: `now+1h`, `now+3d` or an ISO-8601 time with a timezone.
+        #[arg(long, value_name = "TIME", required_unless_present = "from_file",
+              value_parser = commands::olly::parse_start_at)]
+        start_at: Option<String>,
+
+        /// Repeat on this interval: whole hours from `1h` to `1w` (`6h`, `1d`).
+        #[arg(long, value_name = "DURATION", conflicts_with = "monthly",
+              value_parser = commands::olly::parse_every)]
+        every: Option<u64>,
+
+        /// Repeat every month.
+        #[arg(long)]
+        monthly: bool,
+    },
+
+    /// Change a task's title, prompt, model, reasoning effort or notification [requires --yes].
+    #[command(
+        group(clap::ArgGroup::new("change").required(true).multiple(true)
+            .args(["from_file", "title", "prompt", "model", "reasoning_effort"])),
+        after_help = "\
+Only the fields you pass change. The notification can only be set from a
+file; `\"notification\": null` stops notifications. A file may hold title,
+prompt, model_choice, reasoning_effort and notification; any other key fails
+the command. To change when the task runs, use `set-schedule`.
+
+Example file:
+  {
+    \"notification\": {\"type\": \"every_run\", \"connector_ids\": [\"<connector-id>\"]}
+  }
+
+Examples:
+  cx olly scheduled-tasks update <task-id> --title \"Daily error summary\" --yes
+  cx olly scheduled-tasks update <task-id> --model <model-id> --reasoning-effort high --yes
+  cx olly scheduled-tasks update <task-id> --from-file changes.json --yes")]
+    Update {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+
+        /// Path to a JSON file with the fields to change (`-` reads stdin).
+        /// Cannot be combined with the other flags.
+        #[arg(long, value_name = "PATH", conflicts_with_all = [
+            "title", "prompt", "model", "reasoning_effort",
+        ])]
+        from_file: Option<String>,
+
+        /// The new title.
+        #[arg(long)]
+        title: Option<String>,
+
+        /// The new prompt.
+        #[arg(long)]
+        prompt: Option<String>,
+
+        /// The new model ID, as `cx olly ask --model` takes it.
+        #[arg(long)]
+        model: Option<String>,
+
+        /// The new reasoning effort.
+        #[arg(long, value_parser = REASONING_EFFORTS)]
+        reasoning_effort: Option<String>,
+    },
+
+    /// Change when a task runs [requires --yes].
+    #[command(after_help = "\
+This replaces the whole schedule. Without --every or --monthly the task
+becomes a one-off. A disabled task stays disabled.
+
+Examples:
+  cx olly scheduled-tasks set-schedule <task-id> --start-at now+1h --every 6h --yes
+  cx olly scheduled-tasks set-schedule <task-id> --start-at 2026-12-01T09:00:00Z --monthly --yes
+  cx olly scheduled-tasks set-schedule <task-id> --start-at now+2d --yes")]
+    SetSchedule {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+
+        /// First run: `now+1h`, `now+3d` or an ISO-8601 time with a timezone.
+        /// At most one month ahead.
+        #[arg(long, value_name = "TIME", value_parser = commands::olly::parse_start_at)]
+        start_at: String,
+
+        /// Repeat on this interval: whole hours from `1h` to `1w` (`6h`, `1d`).
+        #[arg(long, value_name = "DURATION", conflicts_with = "monthly",
+              value_parser = commands::olly::parse_every)]
+        every: Option<u64>,
+
+        /// Repeat every month.
+        #[arg(long)]
+        monthly: bool,
+    },
+
+    /// Turn a task's schedule back on [requires --yes].
+    #[command(after_help = "\
+The task keeps its schedule. A one-off task whose start time has passed
+cannot be enabled or disabled; give it a new time with `set-schedule` first.
+
+Examples:
+  cx olly scheduled-tasks enable <task-id> --yes")]
+    Enable {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+    },
+
+    /// Pause a task: it keeps its schedule but does not run [requires --yes].
+    #[command(after_help = "\
+A one-off task whose start time has passed cannot be disabled: it will not
+run again anyway.
+
+Examples:
+  cx olly scheduled-tasks disable <task-id> --yes")]
+    Disable {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+    },
+
+    /// Change who can see a task, its run history and its run chats [requires --yes].
+    #[command(after_help = "\
+Examples:
+  cx olly scheduled-tasks share <task-id> --with org --yes
+  cx olly scheduled-tasks share <task-id> --with private --yes
+  cx olly scheduled-tasks share <task-id> --with entities --entity-id <id> --entity-id <id> --yes")]
+    Share {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+
+        /// Who can see the task: only you, the whole organization, or the
+        /// entities named with --entity-id.
+        #[arg(long, value_parser = ["private", "org", "entities"])]
+        with: String,
+
+        /// An entity to share with (repeatable). Required with `--with entities`,
+        /// not allowed otherwise.
+        #[arg(long, value_name = "ID", required_if_eq("with", "entities"))]
+        entity_id: Vec<String>,
+    },
+
+    /// Delete a scheduled task [requires --yes].
+    #[command(after_help = "\
+Only the task's owner can delete it.
+
+Examples:
+  cx olly scheduled-tasks delete <task-id> --yes")]
+    Delete {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+    },
+
+    /// Run a task now, without waiting for its schedule [requires --yes].
+    #[command(after_help = "\
+The run starts in the background and sends the task's notifications like a
+scheduled run. Follow it with `runs`, which shows its status and chat ID.
+
+Examples:
+  cx olly scheduled-tasks run <task-id> --yes
+  cx olly scheduled-tasks runs <task-id>")]
+    Run {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
+    },
+
+    /// Show a task's run history, newest first.
+    #[command(after_help = "\
+Each run has a status (pending, running, succeeded, failed, stopped), and a
+failed run has an error reason. Read a run's answer with its chat ID.
+
+Examples:
+  cx olly scheduled-tasks runs <task-id>
+  cx olly scheduled-tasks runs <task-id> -o json
+  cx olly ask \"Summarize this run\" --chat-id <chat-id>")]
+    Runs {
+        /// Task ID.
+        #[arg(value_parser = commands::olly::parse_id)]
+        task_id: String,
     },
 }
 
@@ -7239,6 +7540,171 @@ async fn main() -> Result<()> {
                     )
                     .await?;
                 }
+                OllyCmd::ScheduledTasks { cmd } => match cmd {
+                    OllyScheduledTasksCmd::List {
+                        kind,
+                        shared,
+                        dashboard,
+                    } => {
+                        commands::olly::run_tasks_list(
+                            &targets,
+                            kind.as_deref(),
+                            shared,
+                            dashboard.as_deref(),
+                            output,
+                        )
+                        .await?;
+                    }
+                    OllyScheduledTasksCmd::Get { task_id } => {
+                        commands::olly::run_tasks_get(
+                            &targets,
+                            &task_id,
+                            output,
+                            max_direct,
+                            &temp_dir,
+                        )
+                        .await?;
+                    }
+                    OllyScheduledTasksCmd::Create {
+                        from_file,
+                        title,
+                        prompt,
+                        model,
+                        reasoning_effort,
+                        start_at,
+                        every,
+                        monthly,
+                    } => {
+                        commands::olly::run_tasks_create(
+                            &targets,
+                            from_file.as_deref(),
+                            commands::olly::TaskContentFlags {
+                                title,
+                                prompt,
+                                model,
+                                reasoning_effort,
+                            },
+                            start_at.map(|start_at| commands::olly::ScheduleFlags {
+                                start_at,
+                                every,
+                                monthly,
+                            }),
+                            |action| confirm_destructive(action, yes, agent_mode),
+                            output,
+                        )
+                        .await?;
+                    }
+                    OllyScheduledTasksCmd::Update {
+                        task_id,
+                        from_file,
+                        title,
+                        prompt,
+                        model,
+                        reasoning_effort,
+                    } => {
+                        commands::olly::run_tasks_update(
+                            &targets,
+                            &task_id,
+                            from_file.as_deref(),
+                            commands::olly::TaskContentFlags {
+                                title,
+                                prompt,
+                                model,
+                                reasoning_effort,
+                            },
+                            |action| confirm_destructive(action, yes, agent_mode),
+                            output,
+                        )
+                        .await?;
+                    }
+                    OllyScheduledTasksCmd::SetSchedule {
+                        task_id,
+                        start_at,
+                        every,
+                        monthly,
+                    } => {
+                        confirm_destructive(
+                            &format!("Replace the schedule of scheduled task '{task_id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_tasks_set_schedule(
+                            &targets,
+                            &task_id,
+                            commands::olly::ScheduleFlags {
+                                start_at,
+                                every,
+                                monthly,
+                            },
+                            output,
+                        )
+                        .await?;
+                    }
+                    OllyScheduledTasksCmd::Enable { task_id } => {
+                        confirm_destructive(
+                            &format!("Enable scheduled task '{task_id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_tasks_set_enabled(&targets, &task_id, true, output)
+                            .await?;
+                    }
+                    OllyScheduledTasksCmd::Disable { task_id } => {
+                        confirm_destructive(
+                            &format!("Disable scheduled task '{task_id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_tasks_set_enabled(&targets, &task_id, false, output)
+                            .await?;
+                    }
+                    OllyScheduledTasksCmd::Share {
+                        task_id,
+                        with,
+                        entity_id,
+                    } => {
+                        if with != "entities" && !entity_id.is_empty() {
+                            bail!("--entity-id is only allowed with `--with entities`.");
+                        }
+                        confirm_destructive(
+                            &format!("Share scheduled task '{task_id}' with: {with}?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_tasks_share(
+                            &targets, &task_id, &with, &entity_id, output,
+                        )
+                        .await?;
+                    }
+                    OllyScheduledTasksCmd::Delete { task_id } => {
+                        confirm_destructive(
+                            &format!("Delete scheduled task '{task_id}'?"),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_tasks_delete(&targets, &task_id).await?;
+                    }
+                    OllyScheduledTasksCmd::Run { task_id } => {
+                        confirm_destructive(
+                            &format!(
+                                "Run scheduled task '{task_id}' now? It sends the task's \
+                                 notifications like a scheduled run."
+                            ),
+                            yes,
+                            agent_mode,
+                        )?;
+                        commands::olly::run_tasks_run(
+                            &targets,
+                            &task_id,
+                            selected_profiles.first().map(String::as_str),
+                            output,
+                        )
+                        .await?;
+                    }
+                    OllyScheduledTasksCmd::Runs { task_id } => {
+                        commands::olly::run_tasks_runs(&targets, &task_id, output).await?;
+                    }
+                },
                 OllyCmd::Artifacts { cmd } => match cmd {
                     OllyArtifactsCmd::List => {
                         commands::olly::run_artifacts_list(&targets, output).await?;

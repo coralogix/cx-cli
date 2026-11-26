@@ -93,6 +93,40 @@ fn olly_ask_round_trip_with_all_flags() {
     );
 }
 
+/// Scheduled tasks need a user identity. With a personal API key this lists
+/// the user's tasks; with the team API key that CI uses, the CLI refuses before
+/// any request (the API would answer 403) and says what to use instead. The write commands create a task that runs
+/// a paid prompt and can notify people, so they are covered by wiremock only
+/// (`tests/olly/scheduled_tasks.rs`).
+#[test]
+#[ignore]
+fn olly_scheduled_tasks_list_or_team_key_refusal() {
+    if harness::require_creds("olly_scheduled_tasks_list_or_team_key_refusal").is_none() {
+        return;
+    }
+    let output = harness::run_raw(&["olly", "scheduled-tasks", "list", "-o", "json"]);
+    if output.status.success() {
+        let tasks = harness::parse_json(&output.stdout).expect("list -o json must print JSON");
+        harness::assert_array_of_objects_with_keys(&tasks, &["id", "title", "start_at", "enabled"]);
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("team API key")
+                && stderr.contains("Use a personal API key or a logged-in profile."),
+            "unexpected failure: {}",
+            harness::redact(&stderr)
+        );
+        eprintln!(
+            "[e2e] not covered: olly scheduled-tasks list/get/runs - the test key is a team \
+             API key, and scheduled tasks need a user identity"
+        );
+    }
+    eprintln!(
+        "[e2e] not covered: olly scheduled-tasks create/update/set-schedule/enable/disable/\
+         share/delete/run - a task runs a paid prompt and can notify people; wiremock only"
+    );
+}
+
 #[test]
 #[ignore]
 fn olly_artifacts_list() {

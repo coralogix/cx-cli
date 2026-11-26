@@ -24,13 +24,17 @@ const WRITE_VERBS: &[&str] = &[
     "reorder",
     "replace",
     "resolve",
+    "run",
     "set",
     "set-active",
     "set-default",
     "set-idp",
     "set-priority",
+    "set-schedule",
     "set-status",
     "settings-update",
+    "share",
+    "stop",
     "unacknowledge",
     "unarchive",
     "unassign",
@@ -242,6 +246,9 @@ mod tests {
             "settings-update",
             "archive",
             "unarchive",
+            "run",
+            "set-schedule",
+            "share",
         ];
         for verb in verbs {
             assert!(

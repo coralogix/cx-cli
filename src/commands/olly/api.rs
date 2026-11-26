@@ -8,6 +8,7 @@ use crate::error::Result;
 
 const CHATS_BASE: &str = "/api/v2/olly/v2/chats";
 const ARTIFACTS_BASE: &str = "/api/v2/olly/artifacts";
+const SCHEDULED_TASKS_BASE: &str = "/api/v2/olly/scheduled-tasks";
 const INTERACTION_SOURCE_HEADER: (&str, &str) = ("interaction-source", "cli");
 
 // ── Request types ──────────────────────────────────────────────────────────────
@@ -26,6 +27,27 @@ impl InputContentBlock {
             text: text.to_string(),
         }
     }
+}
+
+/// When a scheduled task runs. Neither interval makes it a one-off.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TaskSchedule {
+    pub start_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval_months: Option<u32>,
+    pub enabled: bool,
+}
+
+/// The body of the scheduled-task `shared` endpoint. The API
+/// requires `entity_ids` for `specific_entities` and rejects them otherwise.
+fn shared_options_body(shared_type: &str, entity_ids: &[String]) -> Value {
+    let mut body = json!({ "shared_type": shared_type });
+    if !entity_ids.is_empty() {
+        body["shared_entity_ids"] = json!(entity_ids);
+    }
+    body
 }
 
 // ── Response types ─────────────────────────────────────────────────────────────
@@ -169,6 +191,80 @@ pub struct Artifact {
     pub artifact_type: Option<String>,
 }
 
+/// A scheduled task, as far as the CLI reads it. Commands print the API's
+/// full JSON; this is for the text view and for writing a schedule back.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScheduledTask {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub prompt: String,
+    pub model_choice: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub kind: Option<String>,
+    pub start_at: String,
+    pub interval_seconds: Option<u64>,
+    pub interval_months: Option<u32>,
+    pub next_run_at: Option<String>,
+    pub last_run_at: Option<String>,
+    pub enabled: bool,
+    pub notification: Option<TaskNotification>,
+    pub metadata: Option<TaskMetadata>,
+    pub shared_options: Option<TaskSharedOptions>,
+    pub owner: Option<TaskOwner>,
+    pub is_owner: Option<bool>,
+}
+
+impl ScheduledTask {
+    /// The schedule the task has now, to write back with one field changed.
+    pub fn schedule(&self) -> TaskSchedule {
+        TaskSchedule {
+            start_at: self.start_at.clone(),
+            interval_seconds: self.interval_seconds,
+            interval_months: self.interval_months,
+            enabled: self.enabled,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaskNotification {
+    #[serde(rename = "type")]
+    pub notification_type: String,
+    pub condition: Option<String>,
+    #[serde(default)]
+    pub connector_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaskMetadata {
+    pub dashboard_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaskSharedOptions {
+    pub shared_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaskOwner {
+    pub entity_id: Option<String>,
+    pub email: Option<String>,
+}
+
+/// One run of a scheduled task.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScheduledTaskRun {
+    pub id: String,
+    pub status: String,
+    pub chat_id: Option<String>,
+    pub interaction_id: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub error_reason: Option<String>,
+}
+
 // ── API client ─────────────────────────────────────────────────────────────────
 
 /// Olly API client.
@@ -248,6 +344,102 @@ impl OllyApi {
         let path = format!("{ARTIFACTS_BASE}/{artifact_id}");
         self.client.get(&path, &[]).await
     }
+
+    /// List the caller's tasks, or with `shared` the tasks other users shared
+    /// with them. `dashboard_id` narrows to the tasks that watch one
+    /// dashboard; that endpoint takes no `kind`.
+    pub async fn list_scheduled_tasks(
+        &self,
+        kind: Option<&str>,
+        shared: bool,
+        dashboard_id: Option<&str>,
+    ) -> Result<Vec<Value>> {
+        let mut params = vec![("scope", if shared { "shared" } else { "owner" })];
+        let path = match dashboard_id {
+            Some(id) => format!("{SCHEDULED_TASKS_BASE}/for-dashboard/{id}"),
+            None => {
+                if let Some(kind) = kind {
+                    params.push(("kind", kind));
+                }
+                format!("{SCHEDULED_TASKS_BASE}/")
+            }
+        };
+        self.client.get(&path, &params).await
+    }
+
+    /// The task as the API returns it. Parse it into [`ScheduledTask`] to read
+    /// its fields.
+    pub async fn get_scheduled_task(&self, task_id: &str) -> Result<Value> {
+        self.client
+            .get(&format!("{SCHEDULED_TASKS_BASE}/{task_id}"), &[])
+            .await
+    }
+
+    /// Create a task from the API's create body. 409 means the per-user task
+    /// quota is reached; 403 can also mean AI consent is off.
+    pub async fn create_scheduled_task(&self, body: &Value) -> Result<Value> {
+        self.client
+            .post(&format!("{SCHEDULED_TASKS_BASE}/"), body)
+            .await
+    }
+
+    /// Change any of `title`, `prompt`, `model_choice`, `reasoning_effort` and
+    /// `notification`. The API requires at least one.
+    pub async fn update_scheduled_task(&self, task_id: &str, body: &Value) -> Result<Value> {
+        self.client
+            .patch(&format!("{SCHEDULED_TASKS_BASE}/{task_id}"), body)
+            .await
+    }
+
+    /// Replace the whole schedule. There is no endpoint for `enabled` alone.
+    pub async fn set_scheduled_task_schedule(
+        &self,
+        task_id: &str,
+        schedule: &TaskSchedule,
+    ) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/schedule");
+        self.client
+            .put(&path, &serde_json::to_value(schedule)?)
+            .await
+    }
+
+    /// Change who can see a task, its run history and its run chats.
+    /// `shared_type` is `private`, `specific_entities` or `entire_organization`;
+    /// the API requires `entity_ids` for `specific_entities` and rejects them
+    /// otherwise.
+    pub async fn share_scheduled_task(
+        &self,
+        task_id: &str,
+        shared_type: &str,
+        entity_ids: &[String],
+    ) -> Result<Value> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/shared");
+        self.client
+            .patch(&path, &shared_options_body(shared_type, entity_ids))
+            .await
+    }
+
+    pub async fn delete_scheduled_task(&self, task_id: &str) -> Result<()> {
+        let _: Value = self
+            .client
+            .delete(&format!("{SCHEDULED_TASKS_BASE}/{task_id}"))
+            .await?;
+        Ok(())
+    }
+
+    /// Start a run now. The API answers 204 with no body, so the run's chat
+    /// is only visible through [`Self::list_scheduled_task_runs`].
+    pub async fn run_scheduled_task(&self, task_id: &str) -> Result<()> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/manual-run");
+        let _: Value = self.client.post_empty(&path, &[]).await?;
+        Ok(())
+    }
+
+    /// A task's runs, newest first. The API does not page them.
+    pub async fn list_scheduled_task_runs(&self, task_id: &str) -> Result<Vec<Value>> {
+        let path = format!("{SCHEDULED_TASKS_BASE}/{task_id}/scheduled-task-runs");
+        self.client.get(&path, &[]).await
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -256,6 +448,142 @@ impl OllyApi {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn scheduled_task_json() -> Value {
+        json!({
+            "id": "task-1",
+            "team_id": "42",
+            "title": "Daily errors",
+            "prompt": "Summarize new errors",
+            "model_choice": "gpt-5.2",
+            "reasoning_effort": "medium",
+            "start_at": "2026-11-20T09:00:00Z",
+            "interval_seconds": 86400,
+            "interval_months": null,
+            "next_run_at": "2026-11-26T09:00:00Z",
+            "last_run_at": "2026-11-25T09:00:03Z",
+            "enabled": true,
+            "notification": {
+                "type": "on_condition",
+                "condition": "error rate above 5%",
+                "connector_ids": ["conn-1"]
+            },
+            "kind": "watch_dashboard",
+            "metadata": {
+                "dashboard_url": "https://team.app.coralogix.com/#/dashboards/abc",
+                "dashboard_id": "abc"
+            },
+            "shared_options": {"shared_type": "entire_organization", "shared_entity_ids": null},
+            "owner": {"entity_id": "user-1", "email": "owner@example.com"},
+            "is_owner": true,
+            "created_at": "2026-11-19T08:00:00Z",
+            "updated_at": "2026-11-19T08:00:00Z",
+            "scheduled_task_type": "recurring"
+        })
+    }
+
+    #[test]
+    fn deserialize_scheduled_task() {
+        let task: ScheduledTask = serde_json::from_value(scheduled_task_json()).unwrap();
+        assert_eq!(task.id, "task-1");
+        assert_eq!(task.interval_seconds, Some(86400));
+        assert_eq!(task.interval_months, None);
+        assert_eq!(task.kind.as_deref(), Some("watch_dashboard"));
+        let notification = task.notification.as_ref().unwrap();
+        assert_eq!(notification.notification_type, "on_condition");
+        assert_eq!(notification.connector_ids, ["conn-1"]);
+        assert_eq!(
+            task.owner.as_ref().unwrap().email.as_deref(),
+            Some("owner@example.com")
+        );
+        assert_eq!(
+            task.shared_options.as_ref().unwrap().shared_type.as_deref(),
+            Some("entire_organization")
+        );
+    }
+
+    #[test]
+    fn deserialize_one_off_scheduled_task_with_nulls() {
+        let task: ScheduledTask = serde_json::from_value(json!({
+            "id": "task-2",
+            "title": "Once",
+            "prompt": "Check the deploy",
+            "start_at": "2026-12-01T09:00:00Z",
+            "interval_seconds": null,
+            "interval_months": null,
+            "next_run_at": null,
+            "last_run_at": null,
+            "enabled": false,
+            "notification": null,
+            "metadata": null
+        }))
+        .unwrap();
+        assert!(!task.enabled);
+        assert!(task.notification.is_none());
+        assert!(task.next_run_at.is_none());
+    }
+
+    #[test]
+    fn schedule_keeps_the_task_cadence_and_omits_the_unset_interval() {
+        let task: ScheduledTask = serde_json::from_value(scheduled_task_json()).unwrap();
+        let mut schedule = task.schedule();
+        schedule.enabled = false;
+        assert_eq!(
+            serde_json::to_value(&schedule).unwrap(),
+            json!({
+                "start_at": "2026-11-20T09:00:00Z",
+                "interval_seconds": 86400,
+                "enabled": false
+            })
+        );
+    }
+
+    #[test]
+    fn deserialize_scheduled_task_run() {
+        let failed: ScheduledTaskRun = serde_json::from_value(json!({
+            "id": "run-1",
+            "scheduled_task_id": "task-1",
+            "team_id": "42",
+            "status": "failed",
+            "chat_id": null,
+            "interaction_id": null,
+            "started_at": "2026-11-25T09:00:00Z",
+            "finished_at": null,
+            "error_reason": "quota_exceeded",
+            "notification": null,
+            "notification_verdict": null,
+            "notification_message": null
+        }))
+        .unwrap();
+        assert_eq!(failed.status, "failed");
+        assert_eq!(failed.error_reason.as_deref(), Some("quota_exceeded"));
+        assert!(failed.chat_id.is_none());
+
+        let succeeded: ScheduledTaskRun = serde_json::from_value(json!({
+            "id": "run-2",
+            "status": "succeeded",
+            "chat_id": "chat-9",
+            "interaction_id": "int-9",
+            "started_at": "2026-11-25T09:00:00Z",
+            "finished_at": "2026-11-25T09:02:10Z",
+            "notification_verdict": {"kind": "issue", "reason": "Error rate is 7%."}
+        }))
+        .unwrap();
+        assert_eq!(succeeded.chat_id.as_deref(), Some("chat-9"));
+        assert_eq!(succeeded.interaction_id.as_deref(), Some("int-9"));
+    }
+
+    #[test]
+    fn shared_options_body_sends_entity_ids_only_when_given() {
+        assert_eq!(
+            shared_options_body("private", &[]),
+            json!({"shared_type": "private"})
+        );
+        assert_eq!(
+            shared_options_body("specific_entities", &["a".to_string()]),
+            json!({"shared_type": "specific_entities", "shared_entity_ids": ["a"]})
+        );
+    }
 
     #[test]
     fn deserialize_chat_response() {

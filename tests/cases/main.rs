@@ -33,6 +33,40 @@ async fn links_reads_the_case_deep_links() {
 }
 
 #[tokio::test]
+async fn links_renders_text_and_toon() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/mgmt/openapi/5/cases/cases/v1/CASE-383/deep-links"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "deepLinks": {
+                "detail": "https://team.app.eu2.coralogix.com/cases?id=c1",
+                "alertIndicators": {
+                    "ind-1": {
+                        "alertDef": "https://team.app.eu2.coralogix.com/alerts/a1",
+                        "logs": { "logs": "https://team.app.eu2.coralogix.com/logs?q=1" }
+                    }
+                },
+                "impactedEntities": [
+                    { "entity": { "service": { "name": "checkout" } }, "url": "https://team.app.eu2.coralogix.com/apm/checkout" }
+                ]
+            }
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let targets = vec![common::test_target("test-profile", &server.uri())];
+
+    run_links(&targets, "CASE-383", OutputFormat::Text)
+        .await
+        .expect("text output should succeed");
+    run_links(&targets, "CASE-383", OutputFormat::Toon)
+        .await
+        .expect("toon output should succeed");
+}
+
+#[tokio::test]
 async fn get_case_by_id() {
     let server = MockServer::start().await;
 

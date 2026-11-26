@@ -30,6 +30,22 @@ fn cases_get() {
 
 #[test]
 #[ignore]
+fn cases_links() {
+    if harness::require_creds("cases_links").is_none() {
+        return;
+    }
+    let Some(id) = discover_case_id() else {
+        eprintln!("[e2e] skipping cases_links: set CX_TEST_CASE_ID to a known case");
+        return;
+    };
+    let v = harness::run_ok_json(&["cases", "links", &id, "-o", "json"]);
+    harness::assert_get_response(&v, &["deepLinks"]);
+    harness::run_ok_nonempty(&["cases", "links", &id]);
+    harness::run_ok_nonempty(&["cases", "links", &id, "-o", "toon"]);
+}
+
+#[test]
+#[ignore]
 fn cases_events_list() {
     if harness::require_creds("cases_events_list").is_none() {
         return;
@@ -84,6 +100,7 @@ fn cases_commands_reject_unknown_case() {
         format!("API request failed (404): Not Found: Case {UNKNOWN_CASE} not found");
     let read_only: &[(&[&str], &str)] = &[
         (&["cases", "get", UNKNOWN_CASE], &case_not_found),
+        (&["cases", "links", UNKNOWN_CASE], &case_not_found),
         (&["cases", "events", "list", UNKNOWN_CASE], &case_not_found),
         (
             &["cases", "events", "get", UNKNOWN_CASE],

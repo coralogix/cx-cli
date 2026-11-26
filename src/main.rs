@@ -963,6 +963,7 @@ Examples:
   cx olly ask \"What alerts fired today?\"
   cx olly ask \"Show me error logs\" --chat-id <id>
   cx olly ask \"Analyze this metric\" --model claude-sonnet-4-5
+  cx olly artifacts list --chat-id <chat-id>
   cx olly artifacts get <artifact-id>")]
     Olly {
         #[command(subcommand)]
@@ -979,10 +980,7 @@ impl Commands {
     }
 
     fn is_olly(&self) -> bool {
-        match self {
-            Self::Olly { cmd } => matches!(cmd, OllyCmd::Ask { .. }),
-            _ => false,
-        }
+        matches!(self, Self::Olly { .. })
     }
 }
 
@@ -1051,7 +1049,7 @@ Examples:
         #[arg(long)]
         set_default: bool,
         /// When creating the first profile, disable the Olly AI assistant
-        /// (`cx olly ask`). Olly is enabled by default; this opts out. Only
+        /// (`cx olly`). Olly is enabled by default; this opts out. Only
         /// affects first-profile setup, where the global Olly setting is
         /// written. No prompt either way.
         #[arg(long)]
@@ -1324,12 +1322,45 @@ Examples:
 
 #[derive(Subcommand)]
 enum OllyArtifactsCmd {
-    /// List all artifacts.
+    /// List artifacts, newest first.
     #[command(after_help = "\
 Examples:
   cx olly artifacts list
-  cx olly artifacts list -o json")]
-    List,
+  cx olly artifacts list -o json
+  cx olly artifacts list --chat-id <chat-id>
+  cx olly artifacts list --type coralogix_metrics --start now-1d
+  cx olly artifacts list --start 2026-01-01T00:00:00Z --end 2026-01-02T00:00:00Z
+  cx olly artifacts list --limit 5 --offset 5
+  cx olly artifacts list --chat-id <chat-id> --type sandbox_generated_file --limit 20 -o json")]
+    List {
+        /// Only artifacts from this chat.
+        #[arg(long)]
+        chat_id: Option<String>,
+
+        /// Only artifacts of this type.
+        #[arg(
+            long = "type",
+            value_name = "ARTIFACT_TYPE",
+            value_parser = clap::builder::PossibleValuesParser::new(commands::olly::api::ARTIFACT_TYPES)
+        )]
+        artifact_type: Option<String>,
+
+        /// Only artifacts created at or after this time (ISO 8601 or relative, e.g. now-1h).
+        #[arg(long)]
+        start: Option<String>,
+
+        /// Only artifacts created at or before this time (ISO 8601 or relative).
+        #[arg(long)]
+        end: Option<String>,
+
+        /// Maximum number of artifacts to return. The server returns 100 when unset.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: Option<u32>,
+
+        /// Number of artifacts to skip, for paging.
+        #[arg(long)]
+        offset: Option<u32>,
+    },
 
     /// Get an artifact's download URL.
     #[command(after_help = "\
@@ -4987,7 +5018,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Olly gating (olly ask).
+    // Olly gating (every `cx olly` subcommand).
     if cli.command.is_olly() && !global_cfg_early.olly_enabled {
         bail!(
             "The Olly AI assistant is currently disabled in your global configuration.\n\
@@ -7240,8 +7271,23 @@ async fn main() -> Result<()> {
                     .await?;
                 }
                 OllyCmd::Artifacts { cmd } => match cmd {
-                    OllyArtifactsCmd::List => {
-                        commands::olly::run_artifacts_list(&targets, output).await?;
+                    OllyArtifactsCmd::List {
+                        chat_id,
+                        artifact_type,
+                        start,
+                        end,
+                        limit,
+                        offset,
+                    } => {
+                        let filters = commands::olly::api::ArtifactListFilters {
+                            chat_id,
+                            artifact_type,
+                            start,
+                            end,
+                            limit,
+                            offset,
+                        };
+                        commands::olly::run_artifacts_list(&targets, filters, output).await?;
                     }
                     OllyArtifactsCmd::Get { artifact_id } => {
                         commands::olly::run_artifacts_get(

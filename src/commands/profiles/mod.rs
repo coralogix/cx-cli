@@ -674,7 +674,7 @@ pub struct AddArgs {
     /// `--set-default`: set this profile as the default without prompting.
     pub set_default: bool,
     /// `--disable-olly`: on first-profile creation, disable the Olly AI
-    /// assistant (`olly ask`) instead of the default (enabled). Only meaningful
+    /// assistant (`cx olly`) instead of the default (enabled). Only meaningful
     /// when creating the first profile (that is when the global Olly setting is
     /// written). No prompt either way.
     pub disable_olly: bool,

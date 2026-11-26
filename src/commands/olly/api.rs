@@ -165,8 +165,42 @@ pub struct Artifact {
     pub filename: Option<String>,
     pub content_type: Option<String>,
     pub size: Option<u64>,
+}
+
+/// One row of `GET /artifacts/`. The list response carries no download URL or
+/// query params; those come from `get_artifact`.
+#[derive(Debug, Deserialize)]
+pub struct ArtifactListItem {
+    pub id: Option<String>,
     pub created_at: Option<String>,
+    #[serde(rename = "type")]
     pub artifact_type: Option<String>,
+    pub chat_id: Option<String>,
+    pub chat_title: Option<String>,
+    pub chat_type: Option<String>,
+    pub interaction_id: Option<String>,
+}
+
+/// Values the server accepts for the `artifact_type` filter.
+pub const ARTIFACT_TYPES: [&str; 7] = [
+    "coralogix_dataprime",
+    "coralogix_metrics",
+    "kubernetes_query_results",
+    "alert_watch_data",
+    "github_file_content",
+    "sandbox_generated_file",
+    "schema_health_suggestions",
+];
+
+/// Filters for `list_artifacts`. `start` and `end` are ISO 8601 timestamps.
+#[derive(Debug, Default)]
+pub struct ArtifactListFilters {
+    pub chat_id: Option<String>,
+    pub artifact_type: Option<String>,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 // ── API client ─────────────────────────────────────────────────────────────────
@@ -239,9 +273,26 @@ impl OllyApi {
 
     // ── Artifacts ──────────────────────────────────────────────────────────────
 
-    pub async fn list_artifacts(&self) -> Result<Vec<Artifact>> {
+    /// List artifacts, newest first. Only the filters that are set are sent.
+    pub async fn list_artifacts(
+        &self,
+        filters: &ArtifactListFilters,
+    ) -> Result<Vec<ArtifactListItem>> {
         let path = format!("{ARTIFACTS_BASE}/");
-        self.client.get(&path, &[]).await
+        let limit = filters.limit.map(|n| n.to_string());
+        let offset = filters.offset.map(|n| n.to_string());
+        let params: Vec<(&str, &str)> = [
+            ("chat_id", filters.chat_id.as_deref()),
+            ("artifact_type", filters.artifact_type.as_deref()),
+            ("start_time", filters.start.as_deref()),
+            ("end_time", filters.end.as_deref()),
+            ("limit", limit.as_deref()),
+            ("offset", offset.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| value.map(|v| (name, v)))
+        .collect();
+        self.client.get(&path, &params).await
     }
 
     pub async fn get_artifact(&self, artifact_id: &str) -> Result<Artifact> {
@@ -456,6 +507,40 @@ mod tests {
         let artifact: Artifact = serde_json::from_value(json).unwrap();
         assert!(artifact.id.is_none());
         assert!(artifact.download_url.is_none());
+    }
+
+    #[test]
+    fn deserialize_artifact_list_item() {
+        let json = json!({
+            "id": "artifact-123",
+            "created_at": "2026-01-02T03:04:05.000000Z",
+            "is_user_managed": false,
+            "chat_id": "chat-123",
+            "type": "coralogix_metrics",
+            "interaction_id": "interaction-123",
+            "data_source_id": null,
+            "chat_title": "Checkout latency",
+            "chat_type": "api"
+        });
+        let item: ArtifactListItem = serde_json::from_value(json).unwrap();
+        assert_eq!(item.id.as_deref(), Some("artifact-123"));
+        assert_eq!(item.artifact_type.as_deref(), Some("coralogix_metrics"));
+        assert_eq!(item.chat_id.as_deref(), Some("chat-123"));
+        assert_eq!(item.chat_title.as_deref(), Some("Checkout latency"));
+        assert_eq!(item.chat_type.as_deref(), Some("api"));
+        assert_eq!(item.interaction_id.as_deref(), Some("interaction-123"));
+        assert_eq!(
+            item.created_at.as_deref(),
+            Some("2026-01-02T03:04:05.000000Z")
+        );
+    }
+
+    #[test]
+    fn deserialize_artifact_list_item_minimal() {
+        let item: ArtifactListItem = serde_json::from_value(json!({})).unwrap();
+        assert!(item.id.is_none());
+        assert!(item.artifact_type.is_none());
+        assert!(item.chat_title.is_none());
     }
 
     #[test]

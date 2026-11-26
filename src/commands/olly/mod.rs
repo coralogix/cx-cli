@@ -9,7 +9,7 @@ use toon_format::encode_default as toon_encode;
 pub mod api;
 mod artifact;
 
-use api::OllyApi;
+use api::{ArtifactListFilters, OllyApi};
 use artifact::{download_content, ArtifactContent};
 
 use crate::config::OutputFormat;
@@ -309,9 +309,11 @@ fn render_artifact_text_output(
     Ok(())
 }
 
-/// List all artifacts.
+/// List artifacts, newest first. `filters.start` and `filters.end` take the
+/// CLI time forms (ISO 8601 or relative) and are sent as ISO 8601.
 pub async fn run_artifacts_list(
     targets: &[Arc<ExecutionTarget>],
+    mut filters: ArtifactListFilters,
     output: OutputFormat,
 ) -> Result<()> {
     // Olly is single-profile only
@@ -319,19 +321,30 @@ pub async fn run_artifacts_list(
         bail!("cx olly does not support multi-profile. Use a single profile with -p <profile>.");
     }
 
+    filters.start = filters
+        .start
+        .as_deref()
+        .map(crate::time::parse_timestamp_micros)
+        .transpose()?;
+    filters.end = filters
+        .end
+        .as_deref()
+        .map(crate::time::parse_timestamp_micros)
+        .transpose()?;
+
     let target = &targets[0];
     let api = OllyApi::from_client(target.client.clone());
 
     eprintln!("{}", "Fetching artifacts...".dimmed());
-    let artifacts = api.list_artifacts().await?;
+    let artifacts = api.list_artifacts(&filters).await?;
 
     match output {
         OutputFormat::Json => {
-            let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
+            let response: Vec<Value> = artifacts.iter().map(artifact_list_item_to_json).collect();
             render::render_json(&response)?;
         }
         OutputFormat::Toon => {
-            let response: Vec<Value> = artifacts.iter().map(artifact_to_json).collect();
+            let response: Vec<Value> = artifacts.iter().map(artifact_list_item_to_json).collect();
             let toon =
                 toon_encode(&response).map_err(|e| anyhow::anyhow!("TOON encoding failed: {e}"))?;
             println!("{toon}");
@@ -407,17 +420,19 @@ fn render_ask_text(chat_id: &str, interaction: &api::Interaction) -> Result<()> 
     Ok(())
 }
 
-fn artifact_to_json(artifact: &api::Artifact) -> Value {
+fn artifact_list_item_to_json(artifact: &api::ArtifactListItem) -> Value {
     json!({
         "id": artifact.id,
-        "download_url": artifact.download_url,
-        "filename": artifact.filename,
-        "content_type": artifact.content_type,
-        "size": artifact.size,
+        "type": artifact.artifact_type,
+        "chat_id": artifact.chat_id,
+        "chat_title": artifact.chat_title,
+        "chat_type": artifact.chat_type,
+        "interaction_id": artifact.interaction_id,
+        "created_at": artifact.created_at,
     })
 }
 
-fn render_artifacts_list_text(artifacts: &[api::Artifact]) -> Result<()> {
+fn render_artifacts_list_text(artifacts: &[api::ArtifactListItem]) -> Result<()> {
     use tabled::{builder::Builder, settings::Style};
 
     if artifacts.is_empty() {
@@ -425,24 +440,19 @@ fn render_artifacts_list_text(artifacts: &[api::Artifact]) -> Result<()> {
         return Ok(());
     }
 
+    let dash = || "-".to_string();
     let mut builder = Builder::default();
-    builder.push_record(["ID", "FILENAME", "TYPE", "SIZE", "CREATED"]);
+    builder.push_record(["ID", "TYPE", "CHAT", "CREATED"]);
     for artifact in artifacts {
         builder.push_record([
-            artifact.id.clone().unwrap_or_else(|| "-".to_string()),
-            artifact.filename.clone().unwrap_or_else(|| "-".to_string()),
+            artifact.id.clone().unwrap_or_else(dash),
+            artifact.artifact_type.clone().unwrap_or_else(dash),
             artifact
-                .artifact_type
+                .chat_title
                 .clone()
-                .unwrap_or_else(|| "-".to_string()),
-            artifact
-                .size
-                .map(|s| format!("{} B", s))
-                .unwrap_or_else(|| "-".to_string()),
-            artifact
-                .created_at
-                .clone()
-                .unwrap_or_else(|| "-".to_string()),
+                .or_else(|| artifact.chat_id.clone())
+                .unwrap_or_else(dash),
+            artifact.created_at.clone().unwrap_or_else(dash),
         ]);
     }
 

@@ -102,7 +102,15 @@ fn olly_artifacts_list() {
     let v = harness::run_ok_json(&["olly", "artifacts", "list", "-o", "json"]);
     harness::assert_array_of_objects_with_keys(
         &v,
-        &["id", "download_url", "filename", "content_type", "size"],
+        &[
+            "id",
+            "type",
+            "chat_id",
+            "chat_title",
+            "chat_type",
+            "interaction_id",
+            "created_at",
+        ],
     );
     let text = harness::run_ok_nonempty(&["olly", "artifacts", "list"]);
     let text = String::from_utf8_lossy(&text);
@@ -112,6 +120,76 @@ fn olly_artifacts_list() {
         assert!(text.contains("ID"), "{text}");
     }
     harness::run_ok(&["olly", "artifacts", "list", "-o", "toon"]);
+}
+
+/// A page of one, then every filter in one call built from that row: its
+/// chat, its type and its own `created_at` as both time bounds. The row must
+/// come back, which also proves the bounds are inclusive at full precision.
+/// With two artifacts on the team, `--offset 1` must return the other one.
+#[test]
+#[ignore]
+fn olly_artifacts_list_filters_and_pagination() {
+    if harness::require_creds("olly_artifacts_list_filters_and_pagination").is_none() {
+        return;
+    }
+    let page = harness::run_ok_json(&["olly", "artifacts", "list", "--limit", "1", "-o", "json"]);
+    let page = harness::assert_array(&page);
+    assert!(page.len() <= 1, "--limit 1 returned {} rows", page.len());
+
+    let Some(first) = page.first() else {
+        eprintln!("[e2e] olly artifacts list filters: no artifacts on test team");
+        return;
+    };
+    let id = first["id"].as_str().expect("id");
+    let chat_id = first["chat_id"].as_str().expect("chat_id");
+    let artifact_type = first["type"].as_str().expect("type");
+    let created_at = first["created_at"].as_str().expect("created_at");
+    let filtered = harness::run_ok_json(&[
+        "olly",
+        "artifacts",
+        "list",
+        "--chat-id",
+        chat_id,
+        "--type",
+        artifact_type,
+        "--start",
+        created_at,
+        "--end",
+        created_at,
+        "--limit",
+        "5",
+        "--offset",
+        "0",
+        "-o",
+        "json",
+    ]);
+    let filtered = harness::assert_array(&filtered);
+    assert!(filtered.len() <= 5, "--limit 5 returned {}", filtered.len());
+    assert!(
+        filtered.iter().any(|row| row["id"] == id),
+        "artifact {id} missing from its own chat, type and time window"
+    );
+    for row in filtered {
+        assert_eq!(row["chat_id"], chat_id);
+        assert_eq!(row["type"], artifact_type);
+        assert_eq!(row["created_at"], created_at);
+    }
+
+    let second = harness::run_ok_json(&[
+        "olly",
+        "artifacts",
+        "list",
+        "--limit",
+        "1",
+        "--offset",
+        "1",
+        "-o",
+        "json",
+    ]);
+    match harness::assert_array(&second).first() {
+        Some(row) => assert_ne!(row["id"], id, "--offset 1 returned the first row again"),
+        None => eprintln!("[e2e] olly artifacts list offset: only one artifact on test team"),
+    }
 }
 
 /// `get` on a real artifact when the team has one; a made-up id is a 404

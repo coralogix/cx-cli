@@ -258,6 +258,46 @@ fn slos_delete() {
 }
 
 #[test]
+fn context_writes() {
+    let writes: [&[&str]; 4] = [
+        &[
+            "memories",
+            "create",
+            "--title",
+            "T",
+            "--summary",
+            "S",
+            "--team-wide",
+            "--body-file",
+            "-",
+        ],
+        &[
+            "instructions",
+            "update",
+            "x",
+            "--expected-revision",
+            "1",
+            "--title",
+            "T",
+        ],
+        &["memories", "delete", "x", "--expected-revision", "1"],
+        &[
+            "instructions",
+            "revert",
+            "x",
+            "--to-revision",
+            "1",
+            "--expected-revision",
+            "2",
+        ],
+    ];
+    for args in writes {
+        let full: Vec<&str> = ["context"].iter().chain(args).copied().collect();
+        assert_gated(&full, &full.join(" "));
+    }
+}
+
+#[test]
 fn service_catalog_insight_types_archive() {
     assert_gated(
         &[

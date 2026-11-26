@@ -224,11 +224,13 @@ jobs:
             --output-certificate artifacts/checksums-sha256.txt.pem \
             artifacts/checksums-sha256.txt
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@55dc4ee22412511ee8c3142cbea40418e6cec693 # v0.17.8
-        with:
-          format: cyclonedx-json
-          output-file: artifacts/cx-sbom.cyclonedx.json
+      - name: Generate SBOMs
+        run: |
+          cargo install sbom-attest --version 0.4.1 --locked
+          for t in x86_64-apple-darwin aarch64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-msvc; do
+            sbom-attest generate --locked --target "$t" --author Coralogix \
+              --cdx "artifacts/cx-sbom-$t.cyclonedx.json"
+          done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2

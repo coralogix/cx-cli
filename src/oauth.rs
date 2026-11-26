@@ -149,9 +149,7 @@ const REJECTED_TOKEN_MIN_AGE_SECS: i64 = 300;
 /// next run should refresh it instead of reusing it.
 ///
 /// Only 401. A 403 is left alone because it can be a missing permission,
-/// which a refresh does not fix. Note that many HTTP endpoints currently
-/// answer 403 for a revoked token as well (for example DataPrime query), so
-/// on those a revoked token still fails until its expiry.
+/// which a refresh does not fix.
 pub fn rejection_warrants_refresh(access_token: &str, error: &anyhow::Error) -> bool {
     let rejected = error.chain().any(|cause| {
         matches!(

@@ -301,12 +301,12 @@ fn cases_write_roundtrip() {
     };
     harness::run_write_ok(&["cases", first, &id, "-o", "json"]);
     let mid = case_of(&harness::run_ok_json(&["cases", "get", &id, "-o", "json"]));
+    harness::run_write_ok(&["cases", second, &id, "-o", "json"]);
     assert_eq!(
         mid["muted"].as_bool(),
         Some(!was_muted),
         "{first} should flip muted: {mid}"
     );
-    harness::run_write_ok(&["cases", second, &id, "-o", "json"]);
 
     // comment: visible in the event timeline
     let text = harness::unique_name("comment");

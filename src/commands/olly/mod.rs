@@ -8,6 +8,12 @@ use toon_format::encode_default as toon_encode;
 
 pub mod api;
 mod artifact;
+mod rules;
+
+pub use rules::{
+    read_rule_text, run_rules_create, run_rules_delete, run_rules_get, run_rules_list,
+    run_rules_update,
+};
 
 use api::{ArtifactListFilters, OllyApi};
 use artifact::{download_content, ArtifactContent};

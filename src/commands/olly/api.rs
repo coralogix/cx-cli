@@ -301,6 +301,129 @@ impl OllyApi {
     }
 }
 
+// ── Rules ──────────────────────────────────────────────────────────────────────
+
+const USER_RULES_BASE: &str = "/api/v2/olly/user-rules";
+const TEAM_RULES_BASE: &str = "/api/v2/olly/team-rules";
+
+/// Whose rules a command acts on. Personal rules apply to the caller's own
+/// chats; team rules apply to everyone on the team.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuleScope {
+    Personal,
+    Team,
+}
+
+impl RuleScope {
+    pub fn from_team_flag(team: bool) -> Self {
+        if team {
+            Self::Team
+        } else {
+            Self::Personal
+        }
+    }
+
+    /// The word used for this scope in messages: `personal` or `team`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Personal => "personal",
+            Self::Team => "team",
+        }
+    }
+
+    fn base(self) -> &'static str {
+        match self {
+            Self::Personal => USER_RULES_BASE,
+            Self::Team => TEAM_RULES_BASE,
+        }
+    }
+}
+
+/// Rules are returned as the API sends them: `{id, rule, enabled, created_at}`.
+impl OllyApi {
+    /// Team rules that are disabled are listed only for callers with
+    /// `olly-team-rules:Manage`.
+    pub async fn list_rules(&self, scope: RuleScope) -> Result<Vec<Value>> {
+        self.client.get(&format!("{}/", scope.base()), &[]).await
+    }
+
+    pub async fn get_rule(&self, scope: RuleScope, rule_id: &str) -> Result<Value> {
+        let path = format!("{}/{rule_id}", scope.base());
+        self.client.get(&path, &[]).await
+    }
+
+    /// The API checks the text for prompt injection and foul language and
+    /// answers 422 with its reason when the check fails.
+    pub async fn create_rule(&self, scope: RuleScope, rule: &str) -> Result<Value> {
+        self.client
+            .post(&format!("{}/", scope.base()), &json!({ "rule": rule }))
+            .await
+    }
+
+    /// Change the text, the enabled state, or both. The API rejects a body
+    /// with neither.
+    pub async fn update_rule(
+        &self,
+        scope: RuleScope,
+        rule_id: &str,
+        rule: Option<&str>,
+        enabled: Option<bool>,
+    ) -> Result<Value> {
+        let path = format!("{}/{rule_id}", scope.base());
+        self.client
+            .put(&path, &rule_update_body(rule, enabled))
+            .await
+    }
+
+    pub async fn delete_rule(&self, scope: RuleScope, rule_id: &str) -> Result<()> {
+        let path = format!("{}/{rule_id}", scope.base());
+        let _: Value = self.client.delete(&path).await?;
+        Ok(())
+    }
+}
+
+/// Only the fields that were given, so an enable or disable never resends
+/// (and never re-validates) the rule text.
+fn rule_update_body(rule: Option<&str>, enabled: Option<bool>) -> Value {
+    let mut body = json!({});
+    if let Some(rule) = rule {
+        body["rule"] = json!(rule);
+    }
+    if let Some(enabled) = enabled {
+        body["enabled"] = json!(enabled);
+    }
+    body
+}
+
+#[cfg(test)]
+mod rules_tests {
+    use super::*;
+
+    #[test]
+    fn scope_follows_the_team_flag() {
+        assert_eq!(RuleScope::from_team_flag(false), RuleScope::Personal);
+        assert_eq!(RuleScope::from_team_flag(true), RuleScope::Team);
+        assert_eq!(RuleScope::Personal.base(), "/api/v2/olly/user-rules");
+        assert_eq!(RuleScope::Team.base(), "/api/v2/olly/team-rules");
+    }
+
+    #[test]
+    fn update_body_holds_only_the_given_fields() {
+        assert_eq!(
+            rule_update_body(Some("Answer in English"), None),
+            json!({"rule": "Answer in English"})
+        );
+        assert_eq!(
+            rule_update_body(None, Some(false)),
+            json!({"enabled": false})
+        );
+        assert_eq!(
+            rule_update_body(Some("x"), Some(true)),
+            json!({"rule": "x", "enabled": true})
+        );
+    }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

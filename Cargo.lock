@@ -319,7 +319,8 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 [[package]]
 name = "cli-otel"
 version = "0.1.0"
-source = "git+https://github.com/coralogix/coralogix-opentelemetry-rust?rev=8cd1284515eb9e5dd83128587d4bb9702507997e#8cd1284515eb9e5dd83128587d4bb9702507997e"
+source = "registry+sparse+https://cgx.jfrog.io/artifactory/api/cargo/internal.rust.coralogix.net/index/"
+checksum = "4bee0b8fbe41373bbff2c1c5c4bf0d12644d14ddecf05597294f022294a30c1e"
 dependencies = [
  "async-trait",
  "clap",

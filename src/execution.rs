@@ -239,8 +239,8 @@ where
             if let Err(error) = &result {
                 if crate::config::expire_rejected_access_token(&target.cfg, error) {
                     eprintln!(
-                        "The access token for profile '{profile_name}' was rejected and may \
-                         have been revoked. The next run will refresh it."
+                        "The access token for profile '{profile_name}' was rejected. The next \
+                         run will refresh it."
                     );
                 }
             }

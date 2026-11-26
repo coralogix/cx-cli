@@ -140,22 +140,23 @@ fn jwt_timestamp_claim(access_token: &str, claim: &str) -> Option<u64> {
 }
 
 /// An access token younger than this that the API rejects is not refreshed
-/// early: it was just issued, so the rejection is a real permission error.
-/// This also bounds a caller that repeats a denied command to one extra
-/// refresh per window.
+/// early: a refresh just happened and did not help. This bounds a caller that
+/// repeats a failing command to one extra refresh per window.
 const REJECTED_TOKEN_MIN_AGE_SECS: i64 = 300;
 
-/// True when the API rejected `access_token` (401 or 403) although the cached
-/// expiry says it is still valid, so the token may have been revoked and the
+/// True when the API rejected `access_token` with 401 although the cached
+/// expiry says it is still valid, so the token was probably revoked and the
 /// next run should refresh it instead of reusing it.
 ///
-/// The API answers 403 for a revoked token, the same as for a missing
-/// permission, so the two cannot be told apart from the response alone.
+/// Only 401. A 403 is left alone because it can be a missing permission,
+/// which a refresh does not fix. Note that many HTTP endpoints currently
+/// answer 403 for a revoked token as well (for example DataPrime query), so
+/// on those a revoked token still fails until its expiry.
 pub fn rejection_warrants_refresh(access_token: &str, error: &anyhow::Error) -> bool {
     let rejected = error.chain().any(|cause| {
         matches!(
             cause.downcast_ref::<crate::error::CxError>(),
-            Some(crate::error::CxError::Auth(_) | crate::error::CxError::Permission(_))
+            Some(crate::error::CxError::Auth(_))
         )
     });
     rejected && token_age_secs(access_token).is_some_and(|age| age >= REJECTED_TOKEN_MIN_AGE_SECS)
@@ -1103,18 +1104,23 @@ mod tests {
     #[test]
     fn rejected_older_token_warrants_refresh() {
         let token = jwt_issued_secs_ago(600);
-        // The API answers 403 for a revoked token, 401 for a malformed one.
-        let forbidden = api_error(crate::error::CxError::Permission("denied".into()));
         let unauthorized = api_error(crate::error::CxError::Auth("expired".into()));
-        assert!(rejection_warrants_refresh(&token, &forbidden));
         assert!(rejection_warrants_refresh(&token, &unauthorized));
     }
 
     #[test]
-    fn rejected_fresh_token_is_a_real_permission_error() {
-        let token = jwt_issued_secs_ago(10);
+    fn forbidden_is_never_treated_as_a_revoked_token() {
+        // 403 can be a missing permission, which a refresh does not fix.
+        let token = jwt_issued_secs_ago(600);
         let forbidden = api_error(crate::error::CxError::Permission("denied".into()));
         assert!(!rejection_warrants_refresh(&token, &forbidden));
+    }
+
+    #[test]
+    fn rejected_fresh_token_is_not_refreshed_again() {
+        let token = jwt_issued_secs_ago(10);
+        let unauthorized = api_error(crate::error::CxError::Auth("expired".into()));
+        assert!(!rejection_warrants_refresh(&token, &unauthorized));
     }
 
     #[test]
@@ -1130,8 +1136,8 @@ mod tests {
             &anyhow::anyhow!("no route")
         ));
         // Without a readable `iat` the token's age is unknown: leave it alone.
-        let forbidden = api_error(crate::error::CxError::Permission("denied".into()));
-        assert!(!rejection_warrants_refresh("not-a-jwt", &forbidden));
+        let unauthorized = api_error(crate::error::CxError::Auth("expired".into()));
+        assert!(!rejection_warrants_refresh("not-a-jwt", &unauthorized));
     }
 
     #[test]
